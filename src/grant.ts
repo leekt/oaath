@@ -109,7 +109,7 @@ export interface RevokingMaterialization extends BoundMaterialization {
 
 export interface RevokedMaterialization extends BoundMaterialization {
   readonly state: "revoked";
-  readonly installation: Readonly<ChainPermissionEvidence> | null;
+  readonly installation: Readonly<ChainPermissionEvidence>;
   readonly removal: Readonly<ChainPermissionEvidence>;
 }
 
@@ -646,16 +646,20 @@ function parseMaterialization(
       code,
     );
     const binding = bindingFields(record, code);
-    const installation = parseNullableInstallation(record.installation, code, context);
+    const installation = parsePermissionEvidence(
+      record.installation,
+      "permission_present",
+      code,
+      context,
+    );
     const removal = parsePermissionEvidence(record.removal, "permission_absent", code, context);
     const updatedAt = safeInteger(record.updatedAt, "materialization updatedAt", code);
     if (
       !evidenceMatchesBinding(removal, binding) ||
       removal.observedAt !== updatedAt ||
-      (installation && !evidenceMatchesBinding(installation, binding)) ||
-      (installation &&
-        (installation.observedAt > removal.observedAt ||
-          BigInt(installation.blockNumber) >= BigInt(removal.blockNumber)))
+      !evidenceMatchesBinding(installation, binding) ||
+      installation.observedAt > removal.observedAt ||
+      BigInt(installation.blockNumber) >= BigInt(removal.blockNumber)
     ) {
       return invalid(code, "revoked materialization evidence conflicts");
     }
@@ -755,7 +759,7 @@ function revokingChildCost(materialization: ChainMaterialization, code: GrantErr
     case "revoking":
       return materialization.installation === null ? 3 : 4;
     case "revoked":
-      return materialization.installation === null ? 4 : 5;
+      return 5;
     case "unreadable":
       return materialization.installation === null
         ? materialization.priorState === "revoking"

@@ -156,7 +156,7 @@ function revokingRecord(): Record<string, unknown> {
 function revokedRecord(): Record<string, unknown> {
   return {
     ...activeRecord(),
-    revision: 16,
+    revision: 17,
     state: "revoked",
     updatedAt: 60,
     revocationStartedAt: 40,
@@ -174,7 +174,7 @@ function revokedRecord(): Record<string, unknown> {
         state: "revoked",
         ...binding(3),
         updatedAt: 50,
-        installation: null,
+        installation: present(3, 10, 34),
         removal: absent(3, 12, 50),
       },
       {
@@ -285,6 +285,9 @@ describe("Grant current codec", () => {
     expect(parseGrant(valid).state).toBe("revoked");
 
     expectRecordInvalid({ ...valid, capabilityInvalidation: null });
+    const noInstallation = clone(valid);
+    child(noInstallation, 2).installation = null;
+    expectRecordInvalid(noInstallation);
     expectRecordInvalid({
       ...valid,
       capabilityInvalidation: {
