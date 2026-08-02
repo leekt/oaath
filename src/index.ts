@@ -79,3 +79,21 @@ export {
   parsePreparedUserOperation,
   prepareUserOperation,
 } from "./prepared-user-operation.js";
+export type {
+  GrantStoreAdapter,
+  GrantStoreCompareAndSwapResult,
+  GrantStoreRecord,
+  OperationStoreAdapter,
+  OperationStoreCompareAndSwapResult,
+  OperationStoreKey,
+  OperationStoreRecord,
+  StoreErrorCode,
+  StoreRecord,
+} from "./store.js";
+export {
+  GrantStore,
+  OGP_GRANT_STORE_RECORD_VERSION,
+  OGP_OPERATION_STORE_RECORD_VERSION,
+  OgpStoreError,
+  OperationStore,
+} from "./store.js";
