@@ -1,7 +1,26 @@
-/**
- * Public package surface for OGP.
- *
- * Product APIs land only with their invariant owner and focused proof. The
- * bootstrap package deliberately exports no speculative protocol shape.
- */
-export {};
+export type {
+  DroppedOperation,
+  FinalizedOperation,
+  IncludedOperation,
+  Operation,
+  OperationDropEvidence,
+  OperationErrorCode,
+  OperationFinality,
+  OperationIdentity,
+  OperationInclusion,
+  OperationKind,
+  OperationOutcome,
+  OperationTransition,
+  OperationWeakObservation,
+  PreparedOperation,
+  SubmissionAttemptedOperation,
+  SubmittedOperation,
+} from "./operation.js";
+export {
+  advanceOperation,
+  createOperation,
+  OGP_OPERATION_RECORD_VERSION,
+  OgpOperationError,
+  operationOccupiesLane,
+  parseOperation,
+} from "./operation.js";

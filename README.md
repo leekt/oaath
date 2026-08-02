@@ -27,8 +27,15 @@ The package is not released. The repository is landing the safety kernel in
 bounded, independently reviewed changes before `@leekt/ogp@0.1.0` is
 authorized for publication.
 
-The current package intentionally exports no product API. Public capabilities
-are added only when their invariant owner and focused proof land together.
+The first public unit is the pure `Operation` aggregate. It captures one exact
+chain-local UserOperation identity, records submission before an external send,
+and advances only from stronger evidence. Missing receipts, timeouts, and
+unreadable observations never authorize another submission or prove an
+operation dropped.
+
+The aggregate deliberately does not submit or observe RPC operations. Durable
+storage, the canonical observer, and the Kernel runtime land as separate,
+independently reviewed units.
 
 ## Development
 
