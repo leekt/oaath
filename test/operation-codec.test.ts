@@ -36,6 +36,33 @@ function expectRecordInvalid(value: unknown): void {
   expectOperationError(() => parseOperation(value), "operation_record_invalid");
 }
 
+function replacementDrop(observedAt = 13) {
+  return {
+    kind: "finalized_nonce_replacement" as const,
+    replacement: {
+      identity: {
+        chainId: identity.chainId,
+        entryPoint: identity.entryPoint,
+        account: identity.account,
+        nonce: identity.nonce,
+        userOperationHash: `0x${"77".repeat(32)}` as const,
+      },
+      inclusion: {
+        transactionHash: `0x${"44".repeat(32)}` as const,
+        blockNumber: "30",
+        blockHash: `0x${"55".repeat(32)}` as const,
+        outcome: "success" as const,
+        observedAt: observedAt - 1,
+      },
+      finality: {
+        blockNumber: "35",
+        blockHash: `0x${"66".repeat(32)}` as const,
+        observedAt,
+      },
+    },
+  };
+}
+
 describe("Operation current codec", () => {
   it("round-trips the one current JSON-safe record", () => {
     const operation = advanceOperation(createOperation({ identity, preparedAt: 10 }), {
@@ -253,27 +280,14 @@ describe("Operation current codec", () => {
       identity,
       attemptedAt: 11,
     });
+    const validDrop = replacementDrop();
     const drop = {
-      kind: "finalized_nonce_replacement" as const,
+      ...validDrop,
       replacement: {
+        ...validDrop.replacement,
         identity: {
-          chainId: identity.chainId,
-          entryPoint: identity.entryPoint,
-          account: identity.account,
-          nonce: identity.nonce,
+          ...validDrop.replacement.identity,
           userOperationHash: identity.userOperationHash,
-        },
-        inclusion: {
-          transactionHash: `0x${"44".repeat(32)}` as const,
-          blockNumber: "30",
-          blockHash: `0x${"55".repeat(32)}` as const,
-          outcome: "success" as const,
-          observedAt: 12,
-        },
-        finality: {
-          blockNumber: "35",
-          blockHash: `0x${"66".repeat(32)}` as const,
-          observedAt: 13,
         },
       },
     };
@@ -363,6 +377,13 @@ describe("Operation current codec", () => {
       submittedAt: 12,
     });
     expectRecordInvalid({ ...submitted, revision: 1 });
+    const observedSubmitted = advanceOperation(submitted, {
+      type: "record_pending",
+      identity,
+      observedAt: 13,
+      reason: "timeout",
+    });
+    expectRecordInvalid({ ...observedSubmitted, revision: 2 });
 
     const included = advanceOperation(submitted, {
       type: "record_included",
@@ -375,7 +396,14 @@ describe("Operation current codec", () => {
         observedAt: 13,
       },
     });
-    expectRecordInvalid({ ...included, revision: 1 });
+    expectRecordInvalid({ ...included, revision: 2 });
+    const observedIncluded = advanceOperation(included, {
+      type: "record_unreadable",
+      identity,
+      observedAt: 14,
+      reason: "provider_unavailable",
+    });
+    expectRecordInvalid({ ...observedIncluded, revision: 3 });
 
     const finalized = advanceOperation(included, {
       type: "record_finalized",
@@ -386,7 +414,21 @@ describe("Operation current codec", () => {
         observedAt: 14,
       },
     });
-    expectRecordInvalid({ ...finalized, revision: 2 });
+    expectRecordInvalid({ ...finalized, revision: 3 });
+
+    const droppedAfterSubmitted = advanceOperation(submitted, {
+      type: "record_dropped",
+      identity,
+      drop: replacementDrop(15),
+    });
+    expectRecordInvalid({ ...droppedAfterSubmitted, revision: 2 });
+
+    const droppedAfterIncluded = advanceOperation(included, {
+      type: "record_dropped",
+      identity,
+      drop: replacementDrop(15),
+    });
+    expectRecordInvalid({ ...droppedAfterIncluded, revision: 3 });
 
     const exhausted = {
       ...observedAttempt,

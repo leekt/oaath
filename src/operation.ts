@@ -522,9 +522,13 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
-    assertTimeOrder(base.revision >= 2, "submitted operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = safeInteger(record.submittedAt, "operation submittedAt", code);
+    assertTimeOrder(
+      base.revision >= (base.observation === null ? 2 : 3),
+      "submitted operation revision",
+      code,
+    );
     assertTimeOrder(
       attemptedAt >= base.preparedAt && submittedAt >= attemptedAt && submittedAt <= base.updatedAt,
       "submitted operation time",
@@ -551,10 +555,12 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
-    assertTimeOrder(base.revision >= 2, "included operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const inclusion = parseInclusion(record.inclusion, code);
+    const minimumRevision =
+      2 + (submittedAt === null ? 0 : 1) + (base.observation === null ? 0 : 1);
+    assertTimeOrder(base.revision >= minimumRevision, "included operation revision", code);
     assertTimeOrder(
       attemptedAt >= base.preparedAt &&
         (submittedAt === null || submittedAt >= attemptedAt) &&
@@ -584,11 +590,15 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
-    assertTimeOrder(base.revision >= 3, "finalized operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const inclusion = parseInclusion(record.inclusion, code);
     const finality = parseFinality(record.finality, code);
+    assertTimeOrder(
+      base.revision >= 3 + (submittedAt === null ? 0 : 1),
+      "finalized operation revision",
+      code,
+    );
     assertTimeOrder(
       attemptedAt >= base.preparedAt &&
         (submittedAt === null || submittedAt >= attemptedAt) &&
@@ -621,11 +631,12 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
-    assertTimeOrder(base.revision >= 2, "dropped operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const priorInclusion = parseNullableInclusion(record.priorInclusion, code);
     const drop = parseDrop(record.drop, base.identity, code);
+    const minimumRevision = 2 + (submittedAt === null ? 0 : 1) + (priorInclusion === null ? 0 : 1);
+    assertTimeOrder(base.revision >= minimumRevision, "dropped operation revision", code);
     assertTimeOrder(
       attemptedAt >= base.preparedAt &&
         (submittedAt === null || submittedAt >= attemptedAt) &&
