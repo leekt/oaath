@@ -262,7 +262,7 @@ describe("Operation current codec", () => {
     expectRecordInvalid(aliased);
 
     const copied = clone(dropped) as unknown as MutableDroppedRecord;
-    copied.drop.replacement.inclusion = { ...copied.priorInclusion };
+    copied.drop.replacement.inclusion = { ...copied.priorInclusion, outcome: "reverted" };
     expectRecordInvalid(copied);
 
     if (targetIncluded.state !== "included") throw new Error("Expected included operation");
@@ -276,7 +276,7 @@ describe("Operation current codec", () => {
             ...transitionDrop,
             replacement: {
               ...transitionDrop.replacement,
-              inclusion: targetIncluded.inclusion,
+              inclusion: { ...targetIncluded.inclusion, outcome: "reverted" },
             },
           },
         }),

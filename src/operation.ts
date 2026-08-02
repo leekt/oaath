@@ -679,7 +679,7 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
     const drop = parseDrop(record.drop, base.identity, code, context);
     if (
       priorInclusion !== null &&
-      inclusionIdentityEqual(priorInclusion, drop.replacement.inclusion)
+      inclusionOccurrenceEqual(priorInclusion, drop.replacement.inclusion)
     ) {
       return invalid(code, "operation drop replacement reuses the target inclusion");
     }
@@ -922,12 +922,11 @@ function forbidden(operation: Operation, transition: OperationTransition): never
   );
 }
 
-function inclusionIdentityEqual(left: OperationInclusion, right: OperationInclusion): boolean {
+function inclusionOccurrenceEqual(left: OperationInclusion, right: OperationInclusion): boolean {
   return (
     left.transactionHash === right.transactionHash &&
     left.blockNumber === right.blockNumber &&
-    left.blockHash === right.blockHash &&
-    left.outcome === right.outcome
+    left.blockHash === right.blockHash
   );
 }
 
@@ -1006,7 +1005,8 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
     requireTime(operation, transition.inclusion.observedAt);
     if (
       operation.state === "included" &&
-      !inclusionIdentityEqual(operation.inclusion, transition.inclusion)
+      (!inclusionOccurrenceEqual(operation.inclusion, transition.inclusion) ||
+        operation.inclusion.outcome !== transition.inclusion.outcome)
     ) {
       return invalid(
         "operation_transition_invalid",
@@ -1065,7 +1065,7 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
     }
     if (
       operation.state === "included" &&
-      inclusionIdentityEqual(operation.inclusion, transition.drop.replacement.inclusion)
+      inclusionOccurrenceEqual(operation.inclusion, transition.drop.replacement.inclusion)
     ) {
       return invalid(
         "operation_transition_invalid",
