@@ -748,15 +748,22 @@ function revokingChildCost(materialization: ChainMaterialization, code: GrantErr
     case "unsupported":
     case "unmaterialized":
       return 1;
+    case "installing":
+      return 2;
+    case "installed":
+      return 3;
     case "revoking":
-      return materialization.installation === null ? 2 : 3;
+      return materialization.installation === null ? 3 : 4;
     case "revoked":
-      return materialization.installation === null ? 3 : 4;
+      return materialization.installation === null ? 4 : 5;
     case "unreadable":
-      if (materialization.priorState !== "revoking") {
-        return invalid(code, "revoking grant contains pre-revocation unreadable evidence");
-      }
-      return materialization.installation === null ? 3 : 4;
+      return materialization.installation === null
+        ? materialization.priorState === "revoking"
+          ? 4
+          : 3
+        : materialization.priorState === "revoking"
+          ? 5
+          : 4;
     default:
       return invalid(code, "revoking grant contains installation authority state");
   }
@@ -817,7 +824,7 @@ function materializationChronologyValid(
       return false;
     }
     if (materialization.state === "revoking") {
-      if (revocationStartedAt === null || materialization.startedAt !== revocationStartedAt) {
+      if (revocationStartedAt === null || materialization.startedAt < revocationStartedAt) {
         return false;
       }
     }

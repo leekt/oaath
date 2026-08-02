@@ -120,9 +120,9 @@ function revokingChildren(): Record<string, unknown>[] {
     {
       state: "revoking",
       ...binding(3),
-      updatedAt: 40,
+      updatedAt: 42,
       installation: null,
-      startedAt: 40,
+      startedAt: 42,
     },
     {
       state: "revoked",
@@ -145,7 +145,7 @@ function revokingChildren(): Record<string, unknown>[] {
 function revokingRecord(): Record<string, unknown> {
   return {
     ...activeRecord(),
-    revision: 15,
+    revision: 18,
     state: "revoking",
     updatedAt: 46,
     revocationStartedAt: 40,
@@ -156,7 +156,7 @@ function revokingRecord(): Record<string, unknown> {
 function revokedRecord(): Record<string, unknown> {
   return {
     ...activeRecord(),
-    revision: 14,
+    revision: 16,
     state: "revoked",
     updatedAt: 60,
     revocationStartedAt: 40,
@@ -314,6 +314,44 @@ describe("Grant current codec", () => {
     expectRecordInvalid(unreadable);
   });
 
+  it("retains installed authority while global revocation starts", () => {
+    const installed = activeChildren()[3];
+    if (!installed) throw new Error("Missing installed fixture child");
+    const revoking = {
+      ...activeRecord([installed], 5, 34),
+      revision: 6,
+      state: "revoking",
+      updatedAt: 40,
+      revocationStartedAt: 40,
+    };
+    expect(parseGrant(revoking)).toMatchObject({
+      state: "revoking",
+      materializations: [{ state: "installed" }],
+    });
+    expect(
+      parseGrant({
+        ...revoking,
+        revision: 7,
+        state: "expired",
+        updatedAt: 100,
+        terminal: { kind: "expired", from: "revoking", recordedAt: 100 },
+      }),
+    ).toMatchObject({ state: "expired", materializations: [{ state: "installed" }] });
+    expectRecordInvalid({
+      ...revoking,
+      revision: 8,
+      state: "revoked",
+      updatedAt: 60,
+      capabilityInvalidation: {
+        kind: "approval_capability_invalidated",
+        capabilityHash: approval.capabilityHash,
+        evidenceHash: `0x${"88".repeat(32)}`,
+        invalidatedAt: 55,
+      },
+      terminal: { kind: "revoked", recordedAt: 60 },
+    });
+  });
+
   it("does not borrow permission evidence across chains, accounts, or permissions", () => {
     const active = activeRecord(activeChildren(), 13, 35);
     for (const changed of [
@@ -334,7 +372,7 @@ describe("Grant current codec", () => {
   it("rejects retained installation evidence from before Grant activation", () => {
     const revoking = revokingRecord();
     child(revoking, 2).installation = present(3, 10, 29);
-    revoking.revision = 16;
+    revoking.revision = 19;
 
     const revoked = revokedRecord();
     (child(revoked, 3).installation as Record<string, unknown>).observedAt = 29;
