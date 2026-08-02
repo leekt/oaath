@@ -126,7 +126,7 @@ function occurrence(input: {
     },
     transaction: {
       hash: input.transactionHash,
-      to: null,
+      to: identity.entryPoint,
       blockNumber,
       blockHash: input.blockHash,
       transactionIndex,
@@ -154,12 +154,39 @@ const replacement = occurrence({
   blockHash: replacementBlockHash,
   success: false,
 });
-const finalizedBlock: OperationObserverBlockEvidence = {
-  number: "0x1e",
-  hash: finalityBlockHash,
-  parentHash,
-  transactions: [],
-};
+function finalityChain(
+  inclusion: Occurrence,
+  hashSeed: number,
+): {
+  finalized: OperationObserverBlockEvidence;
+  byHash: ReadonlyMap<string, OperationObserverBlockEvidence>;
+} {
+  const byHash = new Map<string, OperationObserverBlockEvidence>();
+  byHash.set(inclusion.block.hash, inclusion.block);
+  let previous = inclusion.block;
+  for (
+    let blockNumber = Number(BigInt(inclusion.block.number)) + 1;
+    blockNumber <= 30;
+    blockNumber += 1
+  ) {
+    const block: OperationObserverBlockEvidence = {
+      number: quantity(blockNumber),
+      hash:
+        blockNumber === 30
+          ? finalityBlockHash
+          : (`0x${(hashSeed + blockNumber).toString(16).padStart(64, "0")}` as const),
+      parentHash: previous.hash,
+      transactions: [],
+    };
+    byHash.set(block.hash, block);
+    previous = block;
+  }
+  return { finalized: previous, byHash };
+}
+
+const targetFinality = finalityChain(target, 1_000);
+const replacementFinality = finalityChain(replacement, 2_000);
+const finalizedBlock = targetFinality.finalized;
 
 type FixtureOptions = {
   targetReceipt?: unknown;
@@ -181,7 +208,8 @@ function fixture(options: FixtureOptions = {}): {
   const replacementCandidate = options.replacementCandidate ?? null;
   const replacementReceipt =
     options.replacementReceipt === undefined ? replacement.receipt : options.replacementReceipt;
-  const finality = options.finality === undefined ? finalizedBlock : options.finality;
+  const selectedFinality = replacementCandidate === null ? targetFinality : replacementFinality;
+  const finality = options.finality === undefined ? selectedFinality.finalized : options.finality;
 
   function response(request: OperationObserverReadRequest): unknown {
     if (request.type === "chain_id") return identity.chainId;
@@ -198,8 +226,9 @@ function fixture(options: FixtureOptions = {}): {
     if (request.type === "transaction_receipt") return selected.transactionReceipt;
     if (request.type === "transaction") return selected.transaction;
     if (request.type === "finalized_block") return finality;
+    if (request.type === "block_by_hash") return selectedFinality.byHash.get(request.blockHash);
     if (request.type === "canonical_block") {
-      if (request.blockNumber === "30") return finalizedBlock;
+      if (request.blockNumber === "30") return selectedFinality.finalized;
       return request.blockNumber === "21" ? replacement.block : target.block;
     }
     throw new Error("unsupported request");
@@ -280,6 +309,7 @@ describe("OperationObserver", () => {
               "transaction_receipt",
               "transaction",
               "canonical_block",
+              "block_by_hash",
               "finalized_block",
             ].includes(type),
           ),
@@ -328,6 +358,30 @@ describe("OperationObserver", () => {
         inclusion: { transactionHash: targetTransactionHash },
         observation: { status: "unreadable", reason: "finality_unproven" },
       },
+    });
+  });
+
+  it("rejects a finalized child whose parent is not the inclusion block", async () => {
+    const adapter = fixture({
+      finality: {
+        number: "0x15",
+        hash: finalityBlockHash,
+        parentHash,
+        transactions: [],
+      },
+      mutate(request, value) {
+        return request.type === "block_by_hash" ? target.block : value;
+      },
+    });
+    const result = await createOperationObserver(adapter.capabilities).observeOperation({
+      operation: submitted(),
+      observedAt: 13,
+      timeoutMs: 1_000,
+    });
+    expect(result).toMatchObject({
+      status: "unreadable",
+      reason: "finality_unproven",
+      operation: { state: "included" },
     });
   });
 
@@ -407,6 +461,20 @@ describe("OperationObserver", () => {
     });
     expect(result).toMatchObject({ status: "unreadable", reason: "receipt_invalid" });
     expect(result.operation.state).toBe("submitted");
+  });
+
+  it("requires the bundle transaction to call the exact EntryPoint", async () => {
+    const adapter = fixture({
+      mutate(request, value) {
+        return request.type === "transaction" ? { ...target.transaction, to: null } : value;
+      },
+    });
+    const result = await createOperationObserver(adapter.capabilities).observeOperation({
+      operation: submitted(),
+      observedAt: 13,
+      timeoutMs: 1_000,
+    });
+    expect(result).toMatchObject({ status: "unreadable", reason: "receipt_invalid" });
   });
 
   it.each([
@@ -499,6 +567,37 @@ describe("OperationObserver", () => {
     });
     expect(result).toMatchObject({ status: "unreadable", reason: "provider_unavailable" });
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it("rejects a provider chain substitution before reading operation evidence", async () => {
+    const adapter = fixture({
+      mutate(request, value) {
+        return request.type === "chain_id" ? identity.chainId + 1 : value;
+      },
+    });
+    const result = await createOperationObserver(adapter.capabilities).observeOperation({
+      operation: submitted(),
+      observedAt: 13,
+      timeoutMs: 1_000,
+    });
+    expect(result).toMatchObject({ status: "unreadable", reason: "receipt_invalid" });
+    expect(adapter.requests.map((request) => request.type)).toEqual(["chain_id"]);
+  });
+
+  it("rejects accessor-backed evidence without invoking the accessor", async () => {
+    let reads = 0;
+    const hostileReceipt = Object.defineProperty({ ...target.receipt }, "sender", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return identity.account;
+      },
+    });
+    const result = await createOperationObserver(
+      fixture({ targetReceipt: hostileReceipt }).capabilities,
+    ).observeOperation({ operation: submitted(), observedAt: 13, timeoutMs: 1_000 });
+    expect(result).toMatchObject({ status: "unreadable", reason: "receipt_invalid" });
+    expect(reads).toBe(0);
   });
 
   it("owns a bounded timeout and performs no retry or submission", async () => {
@@ -603,6 +702,56 @@ describe("OperationObserver", () => {
         ),
       "operation_observer_capability_invalid",
     );
+  });
+
+  it("drains admitted observations before closing their read adapter", async () => {
+    let releaseChain: (() => void) | undefined;
+    let signalChainStarted: (() => void) | undefined;
+    const chainStarted = new Promise<void>((resolve) => {
+      signalChainStarted = resolve;
+    });
+    const chainGate = new Promise<void>((resolve) => {
+      releaseChain = resolve;
+    });
+    let adapterClosed = false;
+    let readsAfterClose = 0;
+    const requests: OperationObserverReadRequest[] = [];
+    const observer = createOperationObserver({
+      async read(request: OperationObserverReadRequest) {
+        if (adapterClosed) readsAfterClose += 1;
+        requests.push(request);
+        if (request.type === "chain_id") {
+          signalChainStarted?.();
+          await chainGate;
+          return identity.chainId;
+        }
+        return null;
+      },
+      async close() {
+        adapterClosed = true;
+      },
+    });
+    const observation = observer.observeOperation({
+      operation: submitted(),
+      observedAt: 13,
+      timeoutMs: 1_000,
+    });
+    await chainStarted;
+    let closeFinished = false;
+    const closing = observer.close().then(() => {
+      closeFinished = true;
+    });
+    await Promise.resolve();
+    expect(closeFinished).toBe(false);
+    releaseChain?.();
+    await expect(observation).resolves.toMatchObject({ status: "pending" });
+    await closing;
+    expect(requests.map((request) => request.type)).toEqual([
+      "chain_id",
+      "user_operation_receipt",
+      "replacement_candidate",
+    ]);
+    expect(readsAfterClose).toBe(0);
   });
 
   it("coalesces close, stays closed after success, and retries after close failure", async () => {

@@ -55,6 +55,7 @@ export type OperationObserverReadRequest =
       transactionHash: `0x${string}`;
     }>
   | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
+  | Readonly<{ type: "block_by_hash"; chainId: number; blockHash: `0x${string}` }>
   | Readonly<{ type: "finalized_block"; chainId: number }>
   | Readonly<{
       type: "replacement_candidate";
@@ -467,6 +468,8 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
   const capabilities = captureCapabilities(capabilityValue);
   let closed = false;
   let closing: Promise<void> | null = null;
+  let activeObservations = 0;
+  let drained: (() => void) | null = null;
 
   async function observeOperation(inputValue: unknown): Promise<ObserveOperationResult> {
     if (closed || closing) {
@@ -475,294 +478,336 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
         "operation observer is closed",
       );
     }
-    const { operation, observedAt, timeoutMs } = captureObserveInput(inputValue);
-    if (operation.state === "finalized" || operation.state === "dropped") {
-      return terminalResult(operation);
-    }
-    if (operation.state === "prepared") {
-      return failInput("prepared operation has not entered submission");
-    }
-
-    const deadline = Date.now() + timeoutMs;
-    async function read(request: OperationObserverReadRequest): Promise<unknown> {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new TimeoutFailure();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        return await Promise.race([
-          Promise.resolve().then(() => capabilities.read(Object.freeze(request))),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new TimeoutFailure()), remaining);
-          }),
-        ]);
-      } catch (error) {
-        if (error instanceof TimeoutFailure) throw error;
-        throw new ProviderFailure();
-      } finally {
-        if (timer !== undefined) clearTimeout(timer);
-      }
-    }
-
-    function weakPending(current: Operation, reason: PendingReason): ObserveOperationResult {
-      const next = applyVerifiedOperationObservation(current, {
-        type: "record_pending",
-        identity: current.identity,
-        observedAt,
-        reason,
-      });
-      return frozenResult({ status: "pending", reason, operation: next });
-    }
-
-    function weakUnreadable(current: Operation, reason: UnreadableReason): ObserveOperationResult {
-      const next = applyVerifiedOperationObservation(current, {
-        type: "record_unreadable",
-        identity: current.identity,
-        observedAt,
-        reason,
-      });
-      return frozenResult({ status: "unreadable", reason, operation: next });
-    }
-
-    async function verifyInclusion(
-      reference: UserOperationReference,
-    ): Promise<OperationInclusion | null> {
-      const receiptValue = await read({
-        type: "user_operation_receipt",
-        chainId: reference.chainId,
-        userOperationHash: reference.userOperationHash,
-      });
-      if (receiptValue === null) return null;
-      const receipt = parseUserOperationReceipt(receiptValue, new WeakSet());
-      if (
-        receipt.userOperationHash !== reference.userOperationHash ||
-        receipt.entryPoint !== reference.entryPoint ||
-        receipt.sender !== reference.account ||
-        decimal(parseQuantity(receipt.nonce)) !== reference.nonce
-      ) {
-        throw new EvidenceFailure("receipt_invalid");
-      }
-
-      const transactionReceipt = parseTransactionReceipt(
-        await read({
-          type: "transaction_receipt",
-          chainId: reference.chainId,
-          transactionHash: receipt.transactionHash,
-        }),
-        new WeakSet(),
-      );
-      const transaction = parseTransaction(
-        await read({
-          type: "transaction",
-          chainId: reference.chainId,
-          transactionHash: receipt.transactionHash,
-        }),
-        new WeakSet(),
-      );
-      if (
-        transactionReceipt.status !== "0x1" ||
-        transactionReceipt.transactionHash !== receipt.transactionHash ||
-        transaction.hash !== receipt.transactionHash ||
-        transactionReceipt.blockNumber !== receipt.blockNumber ||
-        transaction.blockNumber !== receipt.blockNumber ||
-        transactionReceipt.blockHash !== receipt.blockHash ||
-        transaction.blockHash !== receipt.blockHash ||
-        transactionReceipt.transactionIndex !== transaction.transactionIndex
-      ) {
-        throw new EvidenceFailure("receipt_invalid");
-      }
-
-      const candidates = transactionReceipt.logs.filter(
-        (log) =>
-          log.address === reference.entryPoint &&
-          log.topics[0] === USER_OPERATION_EVENT &&
-          log.topics[1] === reference.userOperationHash,
-      );
-      if (candidates.length !== 1) throw new EvidenceFailure("receipt_invalid");
-      const eventLog = candidates[0];
-      if (
-        !eventLog ||
-        eventLog.removed ||
-        eventLog.transactionHash !== receipt.transactionHash ||
-        eventLog.blockNumber !== receipt.blockNumber ||
-        eventLog.blockHash !== receipt.blockHash ||
-        eventLog.transactionIndex !== transaction.transactionIndex
-      ) {
-        throw new EvidenceFailure("receipt_invalid");
-      }
-      const event = parseEvent(eventLog, reference);
-      if (
-        receipt.paymaster !== event.paymaster ||
-        receipt.success !== event.success ||
-        parseQuantity(receipt.actualGasCost) !== event.actualGasCost ||
-        parseQuantity(receipt.actualGasUsed) !== event.actualGasUsed
-      ) {
-        throw new EvidenceFailure("receipt_invalid");
-      }
-
-      const blockNumber = decimal(parseQuantity(receipt.blockNumber));
-      const canonical = parseBlock(
-        await read({ type: "canonical_block", chainId: reference.chainId, blockNumber }),
-        new WeakSet(),
-        "canonicality_unproven",
-      );
-      const transactionIndex = Number(parseQuantity(transaction.transactionIndex));
-      if (
-        canonical.number !== receipt.blockNumber ||
-        canonical.hash !== receipt.blockHash ||
-        !Number.isSafeInteger(transactionIndex) ||
-        canonical.transactions[transactionIndex] !== receipt.transactionHash ||
-        canonical.transactions.filter((hash) => hash === receipt.transactionHash).length !== 1
-      ) {
-        throw new EvidenceFailure("canonicality_unproven");
-      }
-      return Object.freeze({
-        transactionHash: receipt.transactionHash,
-        blockNumber,
-        blockHash: receipt.blockHash,
-        outcome: event.success ? "success" : "reverted",
-        observedAt,
-      });
-    }
-
-    async function verifyFinality(
-      reference: UserOperationReference,
-      inclusion: OperationInclusion,
-    ): Promise<OperationFinality> {
-      try {
-        const finalized = parseBlock(
-          await read({ type: "finalized_block", chainId: reference.chainId }),
-          new WeakSet(),
-          "finality_unproven",
-        );
-        const finalizedNumber = decimal(parseQuantity(finalized.number, "finality_unproven"));
-        const reboundFinalized = parseBlock(
-          await read({
-            type: "canonical_block",
-            chainId: reference.chainId,
-            blockNumber: finalizedNumber,
-          }),
-          new WeakSet(),
-          "finality_unproven",
-        );
-        const reboundInclusion = parseBlock(
-          await read({
-            type: "canonical_block",
-            chainId: reference.chainId,
-            blockNumber: inclusion.blockNumber,
-          }),
-          new WeakSet(),
-          "finality_unproven",
-        );
-        if (
-          reboundFinalized.hash !== finalized.hash ||
-          reboundFinalized.number !== finalized.number ||
-          reboundInclusion.hash !== inclusion.blockHash ||
-          reboundInclusion.number !== `0x${BigInt(inclusion.blockNumber).toString(16)}` ||
-          BigInt(finalizedNumber) < BigInt(inclusion.blockNumber) ||
-          (finalizedNumber === inclusion.blockNumber && finalized.hash !== inclusion.blockHash)
-        ) {
-          throw new EvidenceFailure("finality_unproven");
-        }
-        return Object.freeze({
-          blockNumber: finalizedNumber,
-          blockHash: finalized.hash,
-          observedAt,
-        });
-      } catch (error) {
-        if (error instanceof EvidenceFailure && error.reason === "finality_unproven") throw error;
-        throw new EvidenceFailure("finality_unproven");
-      }
-    }
-
+    activeObservations += 1;
     try {
-      const chainIdValue = await read({ type: "chain_id", chainId: operation.identity.chainId });
-      if (chainIdValue !== operation.identity.chainId) {
-        throw new EvidenceFailure("receipt_invalid");
+      const { operation, observedAt, timeoutMs } = captureObserveInput(inputValue);
+      if (operation.state === "finalized" || operation.state === "dropped") {
+        return terminalResult(operation);
+      }
+      if (operation.state === "prepared") {
+        return failInput("prepared operation has not entered submission");
       }
 
-      let reference: UserOperationReference = operation.identity;
-      let replacement = false;
-      let inclusion = await verifyInclusion(reference);
-      if (inclusion === null) {
-        const candidateValue = await read({
-          type: "replacement_candidate",
-          chainId: operation.identity.chainId,
-          entryPoint: operation.identity.entryPoint,
-          account: operation.identity.account,
-          nonce: operation.identity.nonce,
-          excludedUserOperationHash: operation.identity.userOperationHash,
+      const deadline = Date.now() + timeoutMs;
+      async function read(request: OperationObserverReadRequest): Promise<unknown> {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new TimeoutFailure();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            Promise.resolve().then(() => capabilities.read(Object.freeze(request))),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new TimeoutFailure()), remaining);
+            }),
+          ]);
+        } catch (error) {
+          if (error instanceof TimeoutFailure) throw error;
+          throw new ProviderFailure();
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }
+
+      function weakPending(current: Operation, reason: PendingReason): ObserveOperationResult {
+        const next = applyVerifiedOperationObservation(current, {
+          type: "record_pending",
+          identity: current.identity,
+          observedAt,
+          reason,
         });
-        if (candidateValue === null) return weakPending(operation, "receipt_missing");
-        const candidate = exact(
-          candidateValue,
-          ["userOperationHash"],
-          "replacement candidate",
-          new WeakSet(),
-        );
-        const candidateHash = parseHash(candidate.userOperationHash);
-        if (candidateHash === operation.identity.userOperationHash) {
+        return frozenResult({ status: "pending", reason, operation: next });
+      }
+
+      function weakUnreadable(
+        current: Operation,
+        reason: UnreadableReason,
+      ): ObserveOperationResult {
+        const next = applyVerifiedOperationObservation(current, {
+          type: "record_unreadable",
+          identity: current.identity,
+          observedAt,
+          reason,
+        });
+        return frozenResult({ status: "unreadable", reason, operation: next });
+      }
+
+      async function verifyInclusion(
+        reference: UserOperationReference,
+      ): Promise<OperationInclusion | null> {
+        const receiptValue = await read({
+          type: "user_operation_receipt",
+          chainId: reference.chainId,
+          userOperationHash: reference.userOperationHash,
+        });
+        if (receiptValue === null) return null;
+        const receipt = parseUserOperationReceipt(receiptValue, new WeakSet());
+        if (
+          receipt.userOperationHash !== reference.userOperationHash ||
+          receipt.entryPoint !== reference.entryPoint ||
+          receipt.sender !== reference.account ||
+          decimal(parseQuantity(receipt.nonce)) !== reference.nonce
+        ) {
           throw new EvidenceFailure("receipt_invalid");
         }
-        reference = Object.freeze({
-          chainId: operation.identity.chainId,
-          entryPoint: operation.identity.entryPoint,
-          account: operation.identity.account,
-          nonce: operation.identity.nonce,
-          userOperationHash: candidateHash,
-        });
-        replacement = true;
-        inclusion = await verifyInclusion(reference);
-        if (inclusion === null) return weakPending(operation, "receipt_missing");
-      }
 
-      let includedOperation: Operation = operation;
-      if (!replacement) {
-        if (operation.state === "included" && !sameOccurrence(operation.inclusion, inclusion)) {
-          return weakUnreadable(operation, "receipt_invalid");
+        const transactionReceipt = parseTransactionReceipt(
+          await read({
+            type: "transaction_receipt",
+            chainId: reference.chainId,
+            transactionHash: receipt.transactionHash,
+          }),
+          new WeakSet(),
+        );
+        const transaction = parseTransaction(
+          await read({
+            type: "transaction",
+            chainId: reference.chainId,
+            transactionHash: receipt.transactionHash,
+          }),
+          new WeakSet(),
+        );
+        if (
+          transactionReceipt.status !== "0x1" ||
+          transactionReceipt.transactionHash !== receipt.transactionHash ||
+          transaction.hash !== receipt.transactionHash ||
+          transaction.to !== reference.entryPoint ||
+          transactionReceipt.blockNumber !== receipt.blockNumber ||
+          transaction.blockNumber !== receipt.blockNumber ||
+          transactionReceipt.blockHash !== receipt.blockHash ||
+          transaction.blockHash !== receipt.blockHash ||
+          transactionReceipt.transactionIndex !== transaction.transactionIndex
+        ) {
+          throw new EvidenceFailure("receipt_invalid");
         }
-        includedOperation =
-          operation.state === "included"
-            ? operation
-            : applyVerifiedOperationObservation(operation, {
-                type: "record_included",
-                identity: operation.identity,
-                inclusion,
-              });
-      }
 
-      let finality: OperationFinality;
-      try {
-        finality = await verifyFinality(reference, inclusion);
-      } catch {
-        return weakUnreadable(includedOperation, "finality_unproven");
-      }
+        const candidates = transactionReceipt.logs.filter(
+          (log) =>
+            log.address === reference.entryPoint &&
+            log.topics[0] === USER_OPERATION_EVENT &&
+            log.topics[1] === reference.userOperationHash,
+        );
+        if (candidates.length !== 1) throw new EvidenceFailure("receipt_invalid");
+        const eventLog = candidates[0];
+        if (
+          !eventLog ||
+          eventLog.removed ||
+          eventLog.transactionHash !== receipt.transactionHash ||
+          eventLog.blockNumber !== receipt.blockNumber ||
+          eventLog.blockHash !== receipt.blockHash ||
+          eventLog.transactionIndex !== transaction.transactionIndex
+        ) {
+          throw new EvidenceFailure("receipt_invalid");
+        }
+        const event = parseEvent(eventLog, reference);
+        if (
+          receipt.paymaster !== event.paymaster ||
+          receipt.success !== event.success ||
+          parseQuantity(receipt.actualGasCost) !== event.actualGasCost ||
+          parseQuantity(receipt.actualGasUsed) !== event.actualGasUsed
+        ) {
+          throw new EvidenceFailure("receipt_invalid");
+        }
 
-      if (replacement) {
-        const dropped = applyVerifiedOperationObservation(operation, {
-          type: "record_dropped",
-          identity: operation.identity,
-          drop: {
-            kind: "finalized_nonce_replacement",
-            replacement: { identity: reference, inclusion, finality },
-          },
+        const blockNumber = decimal(parseQuantity(receipt.blockNumber));
+        const canonical = parseBlock(
+          await read({ type: "canonical_block", chainId: reference.chainId, blockNumber }),
+          new WeakSet(),
+          "canonicality_unproven",
+        );
+        const transactionIndex = Number(parseQuantity(transaction.transactionIndex));
+        if (
+          canonical.number !== receipt.blockNumber ||
+          canonical.hash !== receipt.blockHash ||
+          !Number.isSafeInteger(transactionIndex) ||
+          canonical.transactions[transactionIndex] !== receipt.transactionHash ||
+          canonical.transactions.filter((hash) => hash === receipt.transactionHash).length !== 1
+        ) {
+          throw new EvidenceFailure("canonicality_unproven");
+        }
+        return Object.freeze({
+          transactionHash: receipt.transactionHash,
+          blockNumber,
+          blockHash: receipt.blockHash,
+          outcome: event.success ? "success" : "reverted",
+          observedAt,
         });
-        if (dropped.state !== "dropped") throw new EvidenceFailure("receipt_invalid");
-        return frozenResult({ status: "dropped", operation: dropped });
       }
 
-      const finalized = applyVerifiedOperationObservation(includedOperation, {
-        type: "record_finalized",
-        identity: operation.identity,
-        finality,
-      });
-      if (finalized.state !== "finalized") throw new EvidenceFailure("receipt_invalid");
-      return frozenResult({ status: "finalized", operation: finalized });
-    } catch (error) {
-      if (error instanceof TimeoutFailure) return weakPending(operation, "timeout");
-      if (error instanceof ProviderFailure)
-        return weakUnreadable(operation, "provider_unavailable");
-      if (error instanceof EvidenceFailure) return weakUnreadable(operation, error.reason);
-      return weakUnreadable(operation, "receipt_invalid");
+      async function verifyFinality(
+        reference: UserOperationReference,
+        inclusion: OperationInclusion,
+      ): Promise<OperationFinality> {
+        try {
+          const finalized = parseBlock(
+            await read({ type: "finalized_block", chainId: reference.chainId }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          const finalizedNumberValue = parseQuantity(finalized.number, "finality_unproven");
+          const finalizedNumber = decimal(finalizedNumberValue);
+          const inclusionNumber = BigInt(inclusion.blockNumber);
+          if (finalizedNumberValue < inclusionNumber) {
+            throw new EvidenceFailure("finality_unproven");
+          }
+
+          let descendant = finalized;
+          let descendantNumber = finalizedNumberValue;
+          while (descendantNumber > inclusionNumber) {
+            const parent = parseBlock(
+              await read({
+                type: "block_by_hash",
+                chainId: reference.chainId,
+                blockHash: descendant.parentHash,
+              }),
+              new WeakSet(),
+              "finality_unproven",
+            );
+            const parentNumber = parseQuantity(parent.number, "finality_unproven");
+            if (parent.hash !== descendant.parentHash || parentNumber + 1n !== descendantNumber) {
+              throw new EvidenceFailure("finality_unproven");
+            }
+            descendant = parent;
+            descendantNumber = parentNumber;
+          }
+          if (descendant.hash !== inclusion.blockHash) {
+            throw new EvidenceFailure("finality_unproven");
+          }
+
+          const reboundFinalized = parseBlock(
+            await read({
+              type: "canonical_block",
+              chainId: reference.chainId,
+              blockNumber: finalizedNumber,
+            }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          const reboundInclusion = parseBlock(
+            await read({
+              type: "canonical_block",
+              chainId: reference.chainId,
+              blockNumber: inclusion.blockNumber,
+            }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          if (
+            reboundFinalized.hash !== finalized.hash ||
+            reboundFinalized.number !== finalized.number ||
+            reboundInclusion.hash !== inclusion.blockHash ||
+            reboundInclusion.number !== `0x${BigInt(inclusion.blockNumber).toString(16)}` ||
+            (finalizedNumber === inclusion.blockNumber && finalized.hash !== inclusion.blockHash)
+          ) {
+            throw new EvidenceFailure("finality_unproven");
+          }
+          return Object.freeze({
+            blockNumber: finalizedNumber,
+            blockHash: finalized.hash,
+            observedAt,
+          });
+        } catch (error) {
+          if (error instanceof EvidenceFailure && error.reason === "finality_unproven") throw error;
+          throw new EvidenceFailure("finality_unproven");
+        }
+      }
+
+      try {
+        const chainIdValue = await read({ type: "chain_id", chainId: operation.identity.chainId });
+        if (chainIdValue !== operation.identity.chainId) {
+          throw new EvidenceFailure("receipt_invalid");
+        }
+
+        let reference: UserOperationReference = operation.identity;
+        let replacement = false;
+        let inclusion = await verifyInclusion(reference);
+        if (inclusion === null) {
+          const candidateValue = await read({
+            type: "replacement_candidate",
+            chainId: operation.identity.chainId,
+            entryPoint: operation.identity.entryPoint,
+            account: operation.identity.account,
+            nonce: operation.identity.nonce,
+            excludedUserOperationHash: operation.identity.userOperationHash,
+          });
+          if (candidateValue === null) return weakPending(operation, "receipt_missing");
+          const candidate = exact(
+            candidateValue,
+            ["userOperationHash"],
+            "replacement candidate",
+            new WeakSet(),
+          );
+          const candidateHash = parseHash(candidate.userOperationHash);
+          if (candidateHash === operation.identity.userOperationHash) {
+            throw new EvidenceFailure("receipt_invalid");
+          }
+          reference = Object.freeze({
+            chainId: operation.identity.chainId,
+            entryPoint: operation.identity.entryPoint,
+            account: operation.identity.account,
+            nonce: operation.identity.nonce,
+            userOperationHash: candidateHash,
+          });
+          replacement = true;
+          inclusion = await verifyInclusion(reference);
+          if (inclusion === null) return weakPending(operation, "receipt_missing");
+        }
+
+        let includedOperation: Operation = operation;
+        if (!replacement) {
+          if (operation.state === "included" && !sameOccurrence(operation.inclusion, inclusion)) {
+            return weakUnreadable(operation, "receipt_invalid");
+          }
+          includedOperation =
+            operation.state === "included"
+              ? operation
+              : applyVerifiedOperationObservation(operation, {
+                  type: "record_included",
+                  identity: operation.identity,
+                  inclusion,
+                });
+        }
+
+        let finality: OperationFinality;
+        try {
+          finality = await verifyFinality(reference, inclusion);
+        } catch {
+          return weakUnreadable(includedOperation, "finality_unproven");
+        }
+
+        if (replacement) {
+          const dropped = applyVerifiedOperationObservation(operation, {
+            type: "record_dropped",
+            identity: operation.identity,
+            drop: {
+              kind: "finalized_nonce_replacement",
+              replacement: { identity: reference, inclusion, finality },
+            },
+          });
+          if (dropped.state !== "dropped") throw new EvidenceFailure("receipt_invalid");
+          return frozenResult({ status: "dropped", operation: dropped });
+        }
+
+        const finalized = applyVerifiedOperationObservation(includedOperation, {
+          type: "record_finalized",
+          identity: operation.identity,
+          finality,
+        });
+        if (finalized.state !== "finalized") throw new EvidenceFailure("receipt_invalid");
+        return frozenResult({ status: "finalized", operation: finalized });
+      } catch (error) {
+        if (error instanceof TimeoutFailure) return weakPending(operation, "timeout");
+        if (error instanceof ProviderFailure)
+          return weakUnreadable(operation, "provider_unavailable");
+        if (error instanceof EvidenceFailure) return weakUnreadable(operation, error.reason);
+        return weakUnreadable(operation, "receipt_invalid");
+      }
+    } finally {
+      activeObservations -= 1;
+      if (activeObservations === 0 && drained) {
+        const resolve = drained;
+        drained = null;
+        resolve();
+      }
     }
   }
 
@@ -770,7 +815,14 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
     if (closed) return;
     if (closing) return closing;
     const attempt = Promise.resolve()
-      .then(() => capabilities.close())
+      .then(async () => {
+        if (activeObservations > 0) {
+          await new Promise<void>((resolve) => {
+            drained = resolve;
+          });
+        }
+        await capabilities.close();
+      })
       .then(
         () => {
           closed = true;
