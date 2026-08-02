@@ -42,6 +42,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:anvil": "OGP_REQUIRE_ANVIL=1 vitest run test/local-kernel-handle-ops.anvil.test.ts",
     "lint": "node scripts/check-package-boundary.mjs && biome check . --diagnostic-level=error",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -49,6 +50,7 @@
     "check": "node scripts/run-gate.mjs"
   },
   "devDependencies": {
+    "@account-abstraction/contracts": "0.7.0",
     "@biomejs/biome": "2.5.5",
     "@types/node": "22.13.0",
     "fast-check": "^4.9.0",
@@ -57,6 +59,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@zerodev/sdk": "5.5.10",
     "viem": "2.55.8"
   }
 }
