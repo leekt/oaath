@@ -202,6 +202,7 @@ function runner(input: {
   store: OperationStore;
   prepared: PreparedUserOperation;
   counters: RunnerCounters;
+  terminalBehavior?: "replace" | "reuse_same_kind";
   observer?: OperationObserver;
   open?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   submit?: () => Promise<unknown>;
@@ -213,6 +214,7 @@ function runner(input: {
       return { userOperationHash: input.prepared.userOperationHash };
     });
   return createOperationRunner({
+    terminalBehavior: input.terminalBehavior ?? "replace",
     store: input.store,
     observer: input.observer ?? pendingObserver(),
     preparation: {
@@ -259,6 +261,7 @@ describe("OperationRunner", () => {
     const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
     expect(() =>
       createOperationRunner({
+        terminalBehavior: "replace",
         store: memoryStore(control),
         observer: pendingObserver(),
         preparation: {
@@ -750,6 +753,7 @@ describe("OperationRunner", () => {
         store: memoryStore(control),
         prepared: prepared("revocation", "8"),
         counters: revocationCount,
+        terminalBehavior: "reuse_same_kind",
       });
       const result = await revocationRunner.runOperation({
         kind: "revocation",
@@ -802,6 +806,47 @@ describe("OperationRunner", () => {
     expect(repeatedCount).toMatchObject({ prepares: 1, opens: 0, sends: 0 });
     expect(storedOperation(control)?.state).toBe("finalized");
   });
+
+  it.each(["finalized", "dropped"] as const)(
+    "reuses a %s revocation after SQLite recreation without preparing or sending again",
+    async (terminal) => {
+      const directory = await mkdtemp(join(tmpdir(), "ogp-runner-terminal-reuse-"));
+      temporaryDirectories.push(directory);
+      const filePath = join(directory, "store.db");
+      const first = runner({
+        store: createSqliteOperationStore(filePath),
+        prepared: prepared("revocation"),
+        counters: counters(),
+        observer: terminalObserver(terminal),
+        terminalBehavior: "reuse_same_kind",
+      });
+      await first.runOperation(runInput("revocation"));
+      await first.close();
+
+      const repeatedCount = counters();
+      const repeated = runner({
+        store: createSqliteOperationStore(filePath),
+        prepared: prepared("revocation", "8"),
+        counters: repeatedCount,
+        terminalBehavior: "reuse_same_kind",
+      });
+      const result = await repeated.runOperation({
+        ...runInput("revocation"),
+        preparedAt: 20,
+        attemptedAt: 21,
+        submittedAt: 22,
+        observedAt: 23,
+      });
+
+      expect(result).toMatchObject({
+        status: "observed",
+        observation: { status: terminal },
+        record: { value: { state: terminal, identity: { kind: "revocation", nonce: "7" } } },
+      });
+      expect(repeatedCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+      await repeated.close();
+    },
+  );
 
   it("lets only one independent runner publish and send after a terminal lane", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ogp-runner-terminal-race-"));

@@ -573,6 +573,7 @@ async function execute(
   const storePath = directory ? join(directory, "operation.db") : undefined;
   let adapter = createAdapter();
   let runner = createOperationRunner({
+    terminalBehavior: "replace",
     store: storePath ? createSqliteOperationStore(storePath) : memoryStore(),
     observer: createOperationObserver(observerCapabilities(harness.entryPoint)),
     preparation: adapter.preparation,
@@ -603,6 +604,7 @@ async function execute(
     adapter = createAdapter();
     const recoveryClient = createPublicClient({ transport: http(harness.url, { retryCount: 0 }) });
     runner = createOperationRunner({
+      terminalBehavior: "replace",
       store: createSqliteOperationStore(storePath),
       observer: createOperationObserver(observerCapabilities(harness.entryPoint, recoveryClient)),
       preparation: adapter.preparation,
