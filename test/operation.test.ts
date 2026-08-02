@@ -24,7 +24,10 @@ const identity: OperationIdentity = {
 const transactionHash = `0x${"44".repeat(32)}` as const;
 const inclusionBlockHash = `0x${"55".repeat(32)}` as const;
 const finalityBlockHash = `0x${"66".repeat(32)}` as const;
+const replacementUserOperationHash = `0x${"77".repeat(32)}` as const;
 const replacementBlockHash = `0x${"88".repeat(32)}` as const;
+const replacementTransactionHash = `0x${"99".repeat(32)}` as const;
+const replacementFinalityBlockHash = `0x${"aa".repeat(32)}` as const;
 
 function prepared(at = 10): Operation {
   return createOperation({ identity, preparedAt: at });
@@ -59,6 +62,33 @@ function included(operation: Operation, outcome: OperationOutcome = "success", a
       observedAt: at,
     },
   });
+}
+
+function replacementDrop() {
+  return {
+    kind: "finalized_nonce_replacement" as const,
+    replacement: {
+      identity: {
+        chainId: identity.chainId,
+        entryPoint: identity.entryPoint,
+        account: identity.account,
+        nonce: identity.nonce,
+        userOperationHash: replacementUserOperationHash,
+      },
+      inclusion: {
+        transactionHash: replacementTransactionHash,
+        blockNumber: "30",
+        blockHash: replacementBlockHash,
+        outcome: "reverted" as const,
+        observedAt: 13,
+      },
+      finality: {
+        blockNumber: "35",
+        blockHash: replacementFinalityBlockHash,
+        observedAt: 14,
+      },
+    },
+  };
 }
 
 function expectOperationError(action: () => unknown, code: OgpOperationError["code"]): void {
@@ -165,13 +195,7 @@ describe("Operation aggregate", () => {
     const dropped = advanceOperation(waiting, {
       type: "record_dropped",
       identity,
-      drop: {
-        kind: "finalized_nonce_replacement",
-        observedNonce: "8",
-        finalizedBlockNumber: "30",
-        finalizedBlockHash: replacementBlockHash,
-        observedAt: 13,
-      },
+      drop: replacementDrop(),
     });
     expect(dropped).toMatchObject({
       state: "dropped",
@@ -180,6 +204,10 @@ describe("Operation aggregate", () => {
       priorInclusion: null,
       drop: { kind: "finalized_nonce_replacement" },
     });
+    if (dropped.state !== "dropped") throw new Error("Expected dropped operation");
+    expect(Object.isFrozen(dropped.drop)).toBe(true);
+    expect(Object.isFrozen(dropped.drop.replacement)).toBe(true);
+    expect(Object.isFrozen(dropped.drop.replacement.identity)).toBe(true);
     expect(operationOccupiesLane(dropped)).toBe(false);
   });
 
@@ -188,13 +216,7 @@ describe("Operation aggregate", () => {
     const dropped = advanceOperation(prior, {
       type: "record_dropped",
       identity,
-      drop: {
-        kind: "finalized_nonce_replacement",
-        observedNonce: "8",
-        finalizedBlockNumber: "30",
-        finalizedBlockHash: replacementBlockHash,
-        observedAt: 13,
-      },
+      drop: replacementDrop(),
     });
     expect(dropped).toMatchObject({
       state: "dropped",
@@ -235,13 +257,7 @@ describe("Operation aggregate", () => {
         advanceOperation(prepared(), {
           type: "record_dropped",
           identity,
-          drop: {
-            kind: "finalized_nonce_replacement",
-            observedNonce: "8",
-            finalizedBlockNumber: "30",
-            finalizedBlockHash: replacementBlockHash,
-            observedAt: 12,
-          },
+          drop: replacementDrop(),
         }),
       "operation_transition_forbidden",
     );

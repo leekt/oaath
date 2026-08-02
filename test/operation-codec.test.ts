@@ -200,26 +200,54 @@ describe("Operation current codec", () => {
   });
 
   it("sanitizes hostile reflection failures", () => {
-    const hostile = new Proxy(
-      {},
-      {
-        getPrototypeOf() {
-          throw new Error("do-not-leak-this-provider-secret");
+    const secret = "do-not-leak-this-provider-secret";
+    function hostile(code: OgpOperationError["code"]): object {
+      return new Proxy(
+        {},
+        {
+          getPrototypeOf() {
+            throw new OgpOperationError(code, secret);
+          },
         },
-      },
-    );
+      );
+    }
+
+    const actions: Array<readonly [() => unknown, OgpOperationError["code"]]> = [
+      [() => parseOperation(hostile("operation_record_invalid")), "operation_record_invalid"],
+      [() => createOperation(hostile("operation_input_invalid")), "operation_input_invalid"],
+      [
+        () =>
+          advanceOperation(
+            createOperation({ identity, preparedAt: 10 }),
+            hostile("operation_transition_invalid"),
+          ),
+        "operation_transition_invalid",
+      ],
+    ];
+    for (const [action, code] of actions) {
+      try {
+        action();
+      } catch (error) {
+        expect(error).toBeInstanceOf(OgpOperationError);
+        expect((error as OgpOperationError).code).toBe(code);
+        expect((error as Error).message).not.toContain(secret);
+        continue;
+      }
+      throw new Error(`Expected ${code}`);
+    }
+
+    const secretField = clone(createOperation({ identity, preparedAt: 10 }));
+    Object.defineProperty(secretField, secret, { enumerable: false, value: true });
     try {
-      parseOperation(hostile);
+      parseOperation(secretField);
     } catch (error) {
-      expect(error).toBeInstanceOf(OgpOperationError);
-      expect((error as OgpOperationError).code).toBe("operation_record_invalid");
-      expect((error as Error).message).not.toContain("do-not-leak");
+      expect((error as Error).message).not.toContain(secret);
       return;
     }
-    throw new Error("Expected hostile reflection to reject");
+    throw new Error("Expected hostile property name to reject");
   });
 
-  it("requires a positive same-lane nonce advance to record dropped", () => {
+  it("requires a distinct finalized same-lane replacement to record dropped", () => {
     const attempted = advanceOperation(createOperation({ identity, preparedAt: 10 }), {
       type: "mark_submission_attempted",
       identity,
@@ -227,28 +255,49 @@ describe("Operation current codec", () => {
     });
     const drop = {
       kind: "finalized_nonce_replacement" as const,
-      observedNonce: "0",
-      finalizedBlockNumber: "30",
-      finalizedBlockHash: `0x${"44".repeat(32)}` as const,
-      observedAt: 12,
+      replacement: {
+        identity: {
+          chainId: identity.chainId,
+          entryPoint: identity.entryPoint,
+          account: identity.account,
+          nonce: identity.nonce,
+          userOperationHash: identity.userOperationHash,
+        },
+        inclusion: {
+          transactionHash: `0x${"44".repeat(32)}` as const,
+          blockNumber: "30",
+          blockHash: `0x${"55".repeat(32)}` as const,
+          outcome: "success" as const,
+          observedAt: 12,
+        },
+        finality: {
+          blockNumber: "35",
+          blockHash: `0x${"66".repeat(32)}` as const,
+          observedAt: 13,
+        },
+      },
     };
     expectOperationError(
       () => advanceOperation(attempted, { type: "record_dropped", identity, drop }),
       "operation_transition_invalid",
     );
 
-    const keyedIdentity = { ...identity, nonce: (1n << 64n).toString() };
-    const keyed = advanceOperation(createOperation({ identity: keyedIdentity, preparedAt: 10 }), {
-      type: "mark_submission_attempted",
-      identity: keyedIdentity,
-      attemptedAt: 11,
-    });
     expectOperationError(
       () =>
-        advanceOperation(keyed, {
+        advanceOperation(attempted, {
           type: "record_dropped",
-          identity: keyedIdentity,
-          drop: { ...drop, observedNonce: (2n << 64n).toString() },
+          identity,
+          drop: {
+            ...drop,
+            replacement: {
+              ...drop.replacement,
+              identity: {
+                ...drop.replacement.identity,
+                nonce: "1",
+                userOperationHash: `0x${"77".repeat(32)}`,
+              },
+            },
+          },
         }),
       "operation_transition_invalid",
     );
@@ -287,16 +336,69 @@ describe("Operation current codec", () => {
   });
 
   it("rejects revision exhaustion before producing an unsafe alias", () => {
+    const prepared = createOperation({ identity, preparedAt: 10 });
+    expectRecordInvalid({ ...prepared, revision: 1 });
+    expectRecordInvalid({ ...prepared, revision: 999 });
+
+    const attempted = advanceOperation(prepared, {
+      type: "mark_submission_attempted",
+      identity,
+      attemptedAt: 11,
+    });
+    expectRecordInvalid({ ...attempted, revision: 0 });
+    expectRecordInvalid({ ...attempted, revision: 2 });
+
+    const observedAttempt = advanceOperation(attempted, {
+      type: "record_pending",
+      identity,
+      observedAt: 12,
+      reason: "timeout",
+    });
+    expectRecordInvalid({ ...observedAttempt, revision: 1 });
+
+    const submitted = advanceOperation(attempted, {
+      type: "mark_submitted",
+      identity,
+      returnedUserOperationHash: identity.userOperationHash,
+      submittedAt: 12,
+    });
+    expectRecordInvalid({ ...submitted, revision: 1 });
+
+    const included = advanceOperation(submitted, {
+      type: "record_included",
+      identity,
+      inclusion: {
+        transactionHash: `0x${"44".repeat(32)}`,
+        blockNumber: "20",
+        blockHash: `0x${"55".repeat(32)}`,
+        outcome: "success",
+        observedAt: 13,
+      },
+    });
+    expectRecordInvalid({ ...included, revision: 1 });
+
+    const finalized = advanceOperation(included, {
+      type: "record_finalized",
+      identity,
+      finality: {
+        blockNumber: "25",
+        blockHash: `0x${"66".repeat(32)}`,
+        observedAt: 14,
+      },
+    });
+    expectRecordInvalid({ ...finalized, revision: 2 });
+
     const exhausted = {
-      ...createOperation({ identity, preparedAt: 10 }),
+      ...observedAttempt,
       revision: Number.MAX_SAFE_INTEGER,
     };
     expectOperationError(
       () =>
         advanceOperation(exhausted, {
-          type: "mark_submission_attempted",
+          type: "record_pending",
           identity,
-          attemptedAt: 11,
+          observedAt: 13,
+          reason: "timeout",
         }),
       "operation_revision_exhausted",
     );

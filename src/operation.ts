@@ -28,15 +28,18 @@ export class OgpOperationError extends Error {
 export type OperationKind = "execution" | "revocation";
 export type OperationOutcome = "success" | "reverted";
 
-export interface OperationIdentity {
-  readonly kind: OperationKind;
-  readonly grantId: string;
+export interface UserOperationReference {
   readonly chainId: number;
   readonly entryPoint: `0x${string}`;
   readonly account: `0x${string}`;
   /** Canonical decimal uint256 string. */
   readonly nonce: string;
   readonly userOperationHash: `0x${string}`;
+}
+
+export interface OperationIdentity extends UserOperationReference {
+  readonly kind: OperationKind;
+  readonly grantId: string;
 }
 
 export type OperationWeakObservation =
@@ -71,11 +74,11 @@ export interface OperationFinality {
 
 export interface OperationDropEvidence {
   readonly kind: "finalized_nonce_replacement";
-  /** Canonical full EntryPoint nonce observed after this operation's nonce. */
-  readonly observedNonce: string;
-  readonly finalizedBlockNumber: string;
-  readonly finalizedBlockHash: `0x${string}`;
-  readonly observedAt: number;
+  readonly replacement: Readonly<{
+    identity: Readonly<UserOperationReference>;
+    inclusion: Readonly<OperationInclusion>;
+    finality: Readonly<OperationFinality>;
+  }>;
 }
 
 interface OperationCommon {
@@ -205,7 +208,7 @@ function captureRecord(value: unknown, label: string, code: OperationErrorCode):
     }
     const descriptor = descriptors[key];
     if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      return invalid(code, `${label}.${key} must be an enumerable data field`);
+      return invalid(code, `${label} contains a non-data or non-enumerable field`);
     }
     captured[key] = descriptor.value;
   }
@@ -295,6 +298,29 @@ function parseIdentity(value: unknown, code: OperationErrorCode): Readonly<Opera
   });
 }
 
+function parseUserOperationReference(
+  value: unknown,
+  code: OperationErrorCode,
+): Readonly<UserOperationReference> {
+  const record = exactRecord(
+    value,
+    ["chainId", "entryPoint", "account", "nonce", "userOperationHash"],
+    "UserOperation reference",
+    code,
+  );
+  return Object.freeze({
+    chainId: safeInteger(record.chainId, "UserOperation reference chainId", code, 1),
+    entryPoint: address(record.entryPoint, "UserOperation reference entryPoint", code),
+    account: address(record.account, "UserOperation reference account", code),
+    nonce: uint256(record.nonce, "UserOperation reference nonce", code),
+    userOperationHash: hash(
+      record.userOperationHash,
+      "UserOperation reference userOperationHash",
+      code,
+    ),
+  });
+}
+
 function parseWeakObservation(
   value: unknown,
   code: OperationErrorCode,
@@ -367,31 +393,43 @@ function parseDrop(
   identity: OperationIdentity,
   code: OperationErrorCode,
 ): Readonly<OperationDropEvidence> {
-  const record = exactRecord(
-    value,
-    ["kind", "observedNonce", "finalizedBlockNumber", "finalizedBlockHash", "observedAt"],
-    "operation drop evidence",
-    code,
-  );
+  const record = exactRecord(value, ["kind", "replacement"], "operation drop evidence", code);
   if (record.kind !== "finalized_nonce_replacement") {
     return invalid(code, "operation drop evidence kind is unsupported");
   }
-  const observedNonce = uint256(record.observedNonce, "operation drop observedNonce", code);
-  const originalNonce = BigInt(identity.nonce);
-  const replacementNonce = BigInt(observedNonce);
-  if (replacementNonce <= originalNonce || replacementNonce >> 64n !== originalNonce >> 64n) {
-    return invalid(code, "operation drop nonce does not advance the original nonce lane");
+  const replacementRecord = exactRecord(
+    record.replacement,
+    ["identity", "inclusion", "finality"],
+    "operation drop replacement",
+    code,
+  );
+  const replacementIdentity = parseUserOperationReference(replacementRecord.identity, code);
+  if (
+    replacementIdentity.chainId !== identity.chainId ||
+    replacementIdentity.entryPoint !== identity.entryPoint ||
+    replacementIdentity.account !== identity.account ||
+    replacementIdentity.nonce !== identity.nonce ||
+    replacementIdentity.userOperationHash === identity.userOperationHash
+  ) {
+    return invalid(code, "operation drop replacement does not identify a distinct same-lane op");
   }
+  const inclusion = parseInclusion(replacementRecord.inclusion, code);
+  const finality = parseFinality(replacementRecord.finality, code);
+  if (
+    finality.observedAt < inclusion.observedAt ||
+    BigInt(finality.blockNumber) < BigInt(inclusion.blockNumber) ||
+    (finality.blockNumber === inclusion.blockNumber && finality.blockHash !== inclusion.blockHash)
+  ) {
+    return invalid(code, "operation drop replacement finality contradicts inclusion");
+  }
+  const replacement = Object.freeze({
+    identity: replacementIdentity,
+    inclusion,
+    finality,
+  });
   return Object.freeze({
     kind: record.kind,
-    observedNonce,
-    finalizedBlockNumber: uint256(
-      record.finalizedBlockNumber,
-      "operation drop finalizedBlockNumber",
-      code,
-    ),
-    finalizedBlockHash: hash(record.finalizedBlockHash, "operation drop finalizedBlockHash", code),
-    observedAt: safeInteger(record.observedAt, "operation drop observedAt", code),
+    replacement,
   });
 }
 
@@ -441,6 +479,7 @@ function parseOperationUnsafe(value: unknown): Operation {
   if (state === "prepared") {
     const record = exactCapturedRecord(captured, commonKeys, "prepared operation record", code);
     const base = baseRecord(record, code);
+    assertTimeOrder(base.revision === 0, "prepared operation revision", code);
     assertTimeOrder(base.updatedAt === base.preparedAt, "prepared operation time", code);
     assertTimeOrder(base.observation === null, "prepared operation observation", code);
     return Object.freeze({ ...base, state });
@@ -461,6 +500,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     if (base.observation) {
+      assertTimeOrder(base.revision >= 2, "observed attempted operation revision", code);
       assertTimeOrder(
         base.observation.observedAt === base.updatedAt &&
           base.observation.observedAt >= attemptedAt,
@@ -468,6 +508,7 @@ function parseOperationUnsafe(value: unknown): Operation {
         code,
       );
     } else {
+      assertTimeOrder(base.revision === 1, "attempted operation revision", code);
       assertTimeOrder(base.updatedAt === attemptedAt, "attempted operation update", code);
     }
     return Object.freeze({ ...base, state, attemptedAt });
@@ -481,6 +522,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
+    assertTimeOrder(base.revision >= 2, "submitted operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = safeInteger(record.submittedAt, "operation submittedAt", code);
     assertTimeOrder(
@@ -509,6 +551,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
+    assertTimeOrder(base.revision >= 2, "included operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const inclusion = parseInclusion(record.inclusion, code);
@@ -541,6 +584,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
+    assertTimeOrder(base.revision >= 3, "finalized operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const inclusion = parseInclusion(record.inclusion, code);
@@ -577,6 +621,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       code,
     );
     const base = baseRecord(record, code);
+    assertTimeOrder(base.revision >= 2, "dropped operation revision", code);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
     const priorInclusion = parseNullableInclusion(record.priorInclusion, code);
@@ -585,8 +630,9 @@ function parseOperationUnsafe(value: unknown): Operation {
       attemptedAt >= base.preparedAt &&
         (submittedAt === null || submittedAt >= attemptedAt) &&
         (priorInclusion === null || priorInclusion.observedAt >= (submittedAt ?? attemptedAt)) &&
-        drop.observedAt >= (priorInclusion?.observedAt ?? submittedAt ?? attemptedAt) &&
-        base.updatedAt === drop.observedAt,
+        drop.replacement.finality.observedAt >=
+          (priorInclusion?.observedAt ?? submittedAt ?? attemptedAt) &&
+        base.updatedAt === drop.replacement.finality.observedAt,
       "dropped operation time",
       code,
     );
@@ -608,8 +654,7 @@ function parseOperationUnsafe(value: unknown): Operation {
 export function parseOperation(value: unknown): Operation {
   try {
     return parseOperationUnsafe(value);
-  } catch (error) {
-    if (error instanceof OgpOperationError) throw error;
+  } catch {
     throw new OgpOperationError(
       "operation_record_invalid",
       "operation record could not be captured safely",
@@ -639,8 +684,7 @@ export function createOperation(value: unknown): PreparedOperation {
       updatedAt: preparedAt,
       observation: null,
     });
-  } catch (error) {
-    if (error instanceof OgpOperationError) throw error;
+  } catch {
     throw new OgpOperationError(
       "operation_input_invalid",
       "operation preparation could not be captured safely",
@@ -830,8 +874,7 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
   let transition: OperationTransition;
   try {
     transition = parseTransition(transitionValue);
-  } catch (error) {
-    if (error instanceof OgpOperationError) throw error;
+  } catch {
     throw new OgpOperationError(
       "operation_transition_invalid",
       "operation transition could not be captured safely",
@@ -958,7 +1001,7 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
     ) {
       return forbidden(operation, transition);
     }
-    requireTime(operation, transition.drop.observedAt);
+    requireTime(operation, transition.drop.replacement.finality.observedAt);
     const attemptedAt = operation.attemptedAt;
     const submittedAt =
       operation.state === "submitted" || operation.state === "included"
@@ -975,7 +1018,7 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
       submittedAt,
       priorInclusion,
       drop: transition.drop,
-      updatedAt: transition.drop.observedAt,
+      updatedAt: transition.drop.replacement.finality.observedAt,
       observation: null,
     });
   }

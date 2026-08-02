@@ -15,6 +15,7 @@ export type {
   PreparedOperation,
   SubmissionAttemptedOperation,
   SubmittedOperation,
+  UserOperationReference,
 } from "./operation.js";
 export {
   advanceOperation,
