@@ -81,6 +81,20 @@ export {
   OgpOperationObserverError,
 } from "./operation-observer.js";
 export type {
+  OperationPreparationCapability,
+  OperationRunInput,
+  OperationRunner,
+  OperationRunnerConfiguration,
+  OperationRunnerErrorCode,
+  OperationRunResult,
+  OperationSubmissionCapability,
+  OperationSubmissionSession,
+} from "./operation-runner.js";
+export {
+  createOperationRunner,
+  OgpOperationRunnerError,
+} from "./operation-runner.js";
+export type {
   PreparedEntryPoint,
   PreparedFactory,
   PreparedPaymaster,
