@@ -74,7 +74,10 @@ export interface OperationSubmissionCapability {
   readonly close: () => Promise<void>;
 }
 
+export type OperationTerminalBehavior = "replace" | "reuse_same_kind";
+
 export interface OperationRunnerConfiguration {
+  readonly terminalBehavior: OperationTerminalBehavior;
   readonly store: OperationStore;
   readonly observer: OperationObserver;
   readonly preparation: OperationPreparationCapability;
@@ -157,6 +160,7 @@ function callable(
 }
 
 function captureConfiguration(value: unknown): {
+  terminalBehavior: OperationTerminalBehavior;
   store: OperationStore;
   observer: CapturedObserver;
   preparation: CapturedPreparation;
@@ -166,13 +170,19 @@ function captureConfiguration(value: unknown): {
     const context: CaptureContext = new WeakSet();
     const record = exact(
       value,
-      ["store", "observer", "preparation", "submission"],
+      ["terminalBehavior", "store", "observer", "preparation", "submission"],
       "OperationRunner configuration",
       "operation_runner_capability_invalid",
       context,
     );
     if (!(record.store instanceof OperationStore)) {
       return runnerError("operation_runner_capability_invalid", "runner store is invalid");
+    }
+    if (record.terminalBehavior !== "replace" && record.terminalBehavior !== "reuse_same_kind") {
+      return runnerError(
+        "operation_runner_capability_invalid",
+        "runner terminal behavior is invalid",
+      );
     }
     const observer = exact(
       record.observer,
@@ -196,6 +206,7 @@ function captureConfiguration(value: unknown): {
       context,
     );
     return {
+      terminalBehavior: record.terminalBehavior,
       store: record.store,
       observer: Object.freeze({
         observeOperation: callable(
@@ -724,6 +735,16 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       const input = parseRunInput(inputValue);
       let record = await getRecord(input.key);
       let prepared: PreparedUserOperation | undefined;
+
+      if (
+        record &&
+        !operationOccupiesLane(record.value) &&
+        configuration.terminalBehavior === "reuse_same_kind" &&
+        record.value.identity.kind === input.kind
+      ) {
+        requireLane(record.value, input);
+        return observe(record, input);
+      }
 
       if (!record || !operationOccupiesLane(record.value)) {
         prepared = await prepareExact(input);

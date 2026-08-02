@@ -104,6 +104,7 @@ export type {
   OperationRunResult,
   OperationSubmissionCapability,
   OperationSubmissionSession,
+  OperationTerminalBehavior,
 } from "./operation-runner.js";
 export {
   createOperationRunner,
