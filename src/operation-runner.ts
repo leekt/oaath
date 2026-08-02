@@ -11,6 +11,7 @@ import {
   type Operation,
   type OperationIdentity,
   type OperationKind,
+  operationOccupiesLane,
   parseOperation,
 } from "./operation.js";
 import type { ObserveOperationResult, OperationObserver } from "./operation-observer.js";
@@ -325,7 +326,7 @@ function sameIdentity(left: OperationIdentity, right: OperationIdentity): boolea
 }
 
 function sameOperation(left: Operation, right: Operation): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(parseOperation(left)) === JSON.stringify(parseOperation(right));
 }
 
 function deriveObservedOperation(
@@ -383,7 +384,8 @@ function deriveObservedOperation(
         drop: observation.operation.drop,
       });
     }
-    return sameOperation(next, observation.operation) ? next : null;
+    const canonical = parseOperation(next);
+    return sameOperation(canonical, observation.operation) ? canonical : null;
   } catch {
     return null;
   }
@@ -566,6 +568,46 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     }
   }
 
+  async function publishPrepared(
+    input: OperationRunInput,
+    current: OperationStoreRecord | undefined,
+    prepared: PreparedUserOperation,
+  ): Promise<OperationStoreRecord> {
+    const operation = createOperation({
+      identity: deriveOperationId(prepared),
+      preparedAt: input.preparedAt,
+    });
+    if (current && sameIdentity(current.value.identity, operation.identity)) {
+      return runnerError(
+        "operation_runner_state_conflict",
+        "terminal Operation identity cannot be restarted",
+      );
+    }
+
+    let expectedStoreRevision = current?.storeRevision ?? null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const persisted = await commit(input.key, expectedStoreRevision, operation);
+      if (persisted.status === "committed") return persisted.record;
+      const conflict = persisted.current;
+      if (!conflict) {
+        return runnerError(
+          "operation_runner_store_uncertain",
+          "Operation store conflict has no durable record",
+        );
+      }
+      if (sameIdentity(conflict.value.identity, operation.identity)) return conflict;
+      if (attempt === 0 && !operationOccupiesLane(conflict.value)) {
+        expectedStoreRevision = conflict.storeRevision;
+        continue;
+      }
+      return runnerError(
+        "operation_runner_state_conflict",
+        "another Operation occupies the requested lane",
+      );
+    }
+    return runnerError("operation_runner_state_conflict", "Operation publish did not converge");
+  }
+
   function requireConflictIdentity(
     record: OperationStoreRecord | undefined,
     identity: OperationIdentity,
@@ -683,17 +725,9 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       let record = await getRecord(input.key);
       let prepared: PreparedUserOperation | undefined;
 
-      if (!record) {
+      if (!record || !operationOccupiesLane(record.value)) {
         prepared = await prepareExact(input);
-        const operation = createOperation({
-          identity: deriveOperationId(prepared),
-          preparedAt: input.preparedAt,
-        });
-        const persisted = await commit(input.key, null, operation);
-        record =
-          persisted.status === "committed"
-            ? persisted.record
-            : requireConflictIdentity(persisted.current, operation.identity);
+        record = await publishPrepared(input, record, prepared);
       }
 
       requireLane(record.value, input);

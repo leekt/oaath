@@ -78,6 +78,69 @@ function pendingObserver(close: () => Promise<void> = async () => {}) {
   });
 }
 
+function terminalObserver(terminal: "finalized" | "dropped"): OperationObserver {
+  return {
+    async observeOperation(inputValue) {
+      const input = inputValue as { operation: Operation; observedAt: number };
+      if (terminal === "dropped") {
+        const dropped = applyVerifiedOperationObservation(input.operation, {
+          type: "record_dropped",
+          identity: input.operation.identity,
+          drop: {
+            kind: "finalized_nonce_replacement",
+            replacement: {
+              identity: {
+                chainId: input.operation.identity.chainId,
+                entryPoint: input.operation.identity.entryPoint,
+                account: input.operation.identity.account,
+                nonce: input.operation.identity.nonce,
+                userOperationHash: `0x${"77".repeat(32)}`,
+              },
+              inclusion: {
+                transactionHash: `0x${"88".repeat(32)}`,
+                blockNumber: "20",
+                blockHash: `0x${"99".repeat(32)}`,
+                outcome: "success",
+                observedAt: input.observedAt,
+              },
+              finality: {
+                blockNumber: "21",
+                blockHash: `0x${"aa".repeat(32)}`,
+                observedAt: input.observedAt,
+              },
+            },
+          },
+        });
+        if (dropped.state !== "dropped") throw new Error("expected dropped operation");
+        return { status: "dropped", operation: dropped };
+      }
+      const included = applyVerifiedOperationObservation(input.operation, {
+        type: "record_included",
+        identity: input.operation.identity,
+        inclusion: {
+          transactionHash: `0x${"44".repeat(32)}`,
+          blockNumber: "20",
+          blockHash: `0x${"55".repeat(32)}`,
+          outcome: "success",
+          observedAt: input.observedAt,
+        },
+      });
+      const finalized = applyVerifiedOperationObservation(included, {
+        type: "record_finalized",
+        identity: included.identity,
+        finality: {
+          blockNumber: "21",
+          blockHash: `0x${"66".repeat(32)}`,
+          observedAt: input.observedAt,
+        },
+      });
+      if (finalized.state !== "finalized") throw new Error("expected finalized operation");
+      return { status: "finalized", operation: finalized };
+    },
+    async close() {},
+  };
+}
+
 interface MemoryControl {
   raw?: unknown;
   fault?: (next: OperationStoreRecord) => boolean;
@@ -661,6 +724,186 @@ describe("OperationRunner", () => {
       observation: null,
     });
     expect(count.sends).toBe(1);
+  });
+
+  it.each(["finalized", "dropped"] as const)(
+    "publishes revocation after %s execution releases the durable lane",
+    async (terminal) => {
+      const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+      const executionSnapshot = prepared("execution");
+      const executionCount = counters();
+      const executionRunner = runner({
+        store: memoryStore(control),
+        prepared: executionSnapshot,
+        counters: executionCount,
+        observer: terminalObserver(terminal),
+      });
+      const terminalResult = await executionRunner.runOperation(runInput("execution"));
+      expect(terminalResult).toMatchObject({
+        status: "observed",
+        record: { value: { state: terminal, identity: { kind: "execution" } } },
+      });
+      await executionRunner.close();
+
+      const revocationCount = counters();
+      const revocationRunner = runner({
+        store: memoryStore(control),
+        prepared: prepared("revocation", "8"),
+        counters: revocationCount,
+      });
+      const result = await revocationRunner.runOperation({
+        kind: "revocation",
+        key,
+        preparedAt: 20,
+        attemptedAt: 21,
+        submittedAt: 22,
+        observedAt: 23,
+        timeoutMs: 1_000,
+      });
+
+      expect(result).toMatchObject({
+        status: "observed",
+        record: { value: { state: "submitted", identity: { kind: "revocation", nonce: "8" } } },
+      });
+      expect(revocationCount).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+      await revocationRunner.close();
+    },
+  );
+
+  it("never restarts the same exact identity after it becomes terminal", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const snapshot = prepared("execution");
+    const first = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: counters(),
+      observer: terminalObserver("finalized"),
+    });
+    await first.runOperation(runInput("execution"));
+    await first.close();
+
+    const repeatedCount = counters();
+    const repeated = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: repeatedCount,
+    });
+    await expectRunnerError(
+      () =>
+        repeated.runOperation({
+          ...runInput("execution"),
+          preparedAt: 20,
+          attemptedAt: 21,
+          submittedAt: 22,
+          observedAt: 23,
+        }),
+      "operation_runner_state_conflict",
+    );
+    expect(repeatedCount).toMatchObject({ prepares: 1, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.state).toBe("finalized");
+  });
+
+  it("lets only one independent runner publish and send after a terminal lane", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ogp-runner-terminal-race-"));
+    temporaryDirectories.push(directory);
+    const filePath = join(directory, "store.db");
+    const seed = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: prepared("execution"),
+      counters: counters(),
+      observer: terminalObserver("finalized"),
+    });
+    await seed.runOperation(runInput("execution"));
+    await seed.close();
+
+    const snapshot = prepared("revocation", "8");
+    const leftCount = counters();
+    const rightCount = counters();
+    const left = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: leftCount,
+    });
+    const right = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: rightCount,
+    });
+    const nextInput = {
+      kind: "revocation",
+      key,
+      preparedAt: 20,
+      attemptedAt: 21,
+      submittedAt: 22,
+      observedAt: 23,
+      timeoutMs: 1_000,
+    } as const;
+
+    await Promise.all([left.runOperation(nextInput), right.runOperation(nextInput)]);
+
+    expect(leftCount.sends + rightCount.sends).toBe(1);
+    expect(leftCount.opens + rightCount.opens).toBe(1);
+    const restored = createSqliteOperationStore(filePath);
+    expect(await restored.get(key)).toMatchObject({
+      value: { identity: { kind: "revocation", nonce: "8" } },
+    });
+    await Promise.all([left.close(), right.close(), restored.close()]);
+  });
+
+  it("retries an exact prepared publish when a missing-lane race reveals a terminal record", async () => {
+    const seedControl: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const seed = runner({
+      store: memoryStore(seedControl),
+      prepared: prepared("execution"),
+      counters: counters(),
+      observer: terminalObserver("finalized"),
+    });
+    await seed.runOperation(runInput("execution"));
+    await seed.close();
+    const terminalRecord = seedControl.raw as OperationStoreRecord;
+
+    let retained: OperationStoreRecord | undefined;
+    let injected = false;
+    const store = new OperationStore({
+      async get() {
+        return retained;
+      },
+      async compareAndSwap(input: { expectedStoreRevision: number | null; next: unknown }) {
+        if (!injected) {
+          injected = true;
+          retained = terminalRecord;
+          return false;
+        }
+        if (retained?.storeRevision !== input.expectedStoreRevision) return false;
+        retained = input.next as OperationStoreRecord;
+        return true;
+      },
+      async close() {},
+    });
+    const count = counters();
+    const operationRunner = runner({
+      store,
+      prepared: prepared("revocation", "8"),
+      counters: count,
+    });
+
+    const result = await operationRunner.runOperation({
+      kind: "revocation",
+      key,
+      preparedAt: 20,
+      attemptedAt: 21,
+      submittedAt: 22,
+      observedAt: 23,
+      timeoutMs: 1_000,
+    });
+
+    expect(injected).toBe(true);
+    expect(result).toMatchObject({
+      status: "observed",
+      record: { value: { state: "submitted", identity: { kind: "revocation", nonce: "8" } } },
+    });
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await operationRunner.close();
   });
 
   it("attempts every owned cleanup and retries only failed resources", async () => {
