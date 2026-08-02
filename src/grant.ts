@@ -808,6 +808,14 @@ function materializationChronologyValid(
     ) {
       return false;
     }
+    if (
+      activatedAt !== null &&
+      "installation" in materialization &&
+      materialization.installation !== null &&
+      materialization.installation.observedAt < activatedAt
+    ) {
+      return false;
+    }
     if (materialization.state === "revoking") {
       if (revocationStartedAt === null || materialization.startedAt !== revocationStartedAt) {
         return false;

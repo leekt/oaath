@@ -331,6 +331,20 @@ describe("Grant current codec", () => {
     }
   });
 
+  it("rejects retained installation evidence from before Grant activation", () => {
+    const revoking = revokingRecord();
+    child(revoking, 2).installation = present(3, 10, 29);
+    revoking.revision = 16;
+
+    const revoked = revokedRecord();
+    (child(revoked, 3).installation as Record<string, unknown>).observedAt = 29;
+
+    const unreadable = revokingRecord();
+    (child(unreadable, 4).installation as Record<string, unknown>).observedAt = 29;
+
+    for (const record of [revoking, revoked, unreadable]) expectRecordInvalid(record);
+  });
+
   it("rejects non-current, inexact, aliased, and non-dense record graphs", () => {
     const active = activeRecord(activeChildren(), 13, 35);
     expectRecordInvalid({ ...active, version: "ogp.grant/v0" });
