@@ -42,7 +42,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "pack:check": "pnpm build && pnpm pack --pack-destination .artifacts",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm pack:check"
+    "check": "node scripts/run-gate.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

@@ -17,10 +17,23 @@ describe("package boundary", () => {
     ["a Moesi dependency", { ...validManifest, devDependencies: { moesi: "^0.12.0" } }],
     [
       "a cross-repository workspace dependency",
-      { ...validManifest, dependencies: { viem: "workspace:*" } },
+      { ...validManifest, devDependencies: { viem: "workspace:*" } },
     ],
+    ["a git transport", { ...validManifest, devDependencies: { viem: "git://example/viem" } }],
+    ["a GitHub shorthand", { ...validManifest, dependencies: { viem: "wevm/viem" } }],
+    ["a linked checkout", { ...validManifest, dependencies: { viem: "link:../viem" } }],
+    ["a file checkout", { ...validManifest, dependencies: { viem: "file:../viem" } }],
     ["an old-repository path", { ...validManifest, repository: "leekt/deployer" }],
   ])("rejects %s", (_label, manifest) => {
     expect(() => validatePackageBoundary(manifest)).toThrow();
+  });
+
+  it("accepts an exact local tarball", () => {
+    expect(() =>
+      validatePackageBoundary({
+        ...validManifest,
+        dependencies: { viem: "file:../artifacts/viem-2.55.8.tgz" },
+      }),
+    ).not.toThrow();
   });
 });

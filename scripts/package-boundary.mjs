@@ -19,7 +19,7 @@ export function validatePackageBoundary(manifest) {
       if (name === "moesi" || name.startsWith("@moesi/")) {
         throw new Error(`${group} must not depend on Moesi: ${name}`);
       }
-      if (typeof range === "string" && /^(?:workspace:|git\+|github:)/u.test(range)) {
+      if (typeof range === "string" && isSourceDependency(range)) {
         throw new Error(`${group} must use released packages or exact tarballs: ${name}`);
       }
     }
@@ -28,4 +28,25 @@ export function validatePackageBoundary(manifest) {
   if (JSON.stringify(manifest).includes("leekt/deployer")) {
     throw new Error("package metadata must not retain the old implementation repository");
   }
+}
+
+function isSourceDependency(range) {
+  const specifier = range.trim();
+  const lower = specifier.toLowerCase();
+
+  if (lower.startsWith("file:")) {
+    return !lower.endsWith(".tgz");
+  }
+
+  if (lower.endsWith(".tgz")) {
+    return false;
+  }
+
+  return (
+    /^(?:workspace:|link:|git:|git\+|github:|gitlab:|bitbucket:|ssh:)/u.test(lower) ||
+    /^(?:\.\.?\/|\/)/u.test(lower) ||
+    /^git@/u.test(lower) ||
+    /^[0-9a-z_.-]+\/[0-9a-z_.-]+(?:#.*)?$/u.test(lower) ||
+    /^https?:\/\//u.test(lower)
+  );
 }
