@@ -1,0 +1,773 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  advanceOperation,
+  createOperation,
+  createOperationObserver,
+  createOperationRunner,
+  OgpOperationRunnerError,
+  type Operation,
+  type OperationKind,
+  type OperationObserver,
+  OperationStore,
+  type OperationStoreAdapter,
+  type OperationStoreRecord,
+  type PreparedUserOperation,
+  prepareUserOperation,
+} from "../src/index.js";
+import { applyVerifiedOperationObservation } from "../src/operation.js";
+import { createSqliteOperationStore } from "../src/testing.js";
+
+const key = { grantId: "runner-grant", chainId: 31_337 } as const;
+const entryPoint = `0x${"11".repeat(20)}` as const;
+const account = `0x${"22".repeat(20)}` as const;
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+function prepared(kind: OperationKind, nonce = "7"): PreparedUserOperation {
+  return prepareUserOperation({
+    kind,
+    grantId: key.grantId,
+    chainId: key.chainId,
+    entryPoint: { version: "0.7", address: entryPoint },
+    userOperation: {
+      sender: account,
+      nonce,
+      callData: "0x1234",
+      callGasLimit: "100000",
+      verificationGasLimit: "200000",
+      preVerificationGas: "50000",
+      maxFeePerGas: "1000000000",
+      maxPriorityFeePerGas: "100000000",
+      factory: null,
+      paymaster: null,
+    },
+  });
+}
+
+function runInput(kind: OperationKind) {
+  return {
+    kind,
+    key,
+    preparedAt: 10,
+    attemptedAt: 11,
+    submittedAt: 12,
+    observedAt: 13,
+    timeoutMs: 1_000,
+  } as const;
+}
+
+function pendingObserver(close: () => Promise<void> = async () => {}) {
+  return createOperationObserver({
+    async read(request: { type: string }) {
+      if (request.type === "chain_id") return key.chainId;
+      if (request.type === "user_operation_receipt") return null;
+      if (request.type === "replacement_candidate") return null;
+      throw new Error("unexpected observer read");
+    },
+    close,
+  });
+}
+
+interface MemoryControl {
+  raw?: unknown;
+  fault?: (next: OperationStoreRecord) => boolean;
+  closeFailures: number;
+  closeCalls: number;
+}
+
+function memoryStore(control: MemoryControl): OperationStore {
+  const adapter: OperationStoreAdapter = {
+    async get() {
+      return control.raw;
+    },
+    async compareAndSwap(input) {
+      const next = input.next as OperationStoreRecord;
+      if (control.fault?.(next)) throw new Error("private store failure");
+      const current = control.raw as OperationStoreRecord | undefined;
+      if (
+        (input.expectedStoreRevision === null && current !== undefined) ||
+        (input.expectedStoreRevision !== null &&
+          current?.storeRevision !== input.expectedStoreRevision)
+      ) {
+        return false;
+      }
+      control.raw = next;
+      return true;
+    },
+    async close() {
+      control.closeCalls += 1;
+      if (control.closeFailures > 0) {
+        control.closeFailures -= 1;
+        throw new Error("private close failure");
+      }
+    },
+  };
+  return new OperationStore(adapter);
+}
+
+interface RunnerCounters {
+  prepares: number;
+  opens: number;
+  sends: number;
+  preparationCloses: number;
+  submissionCloses: number;
+  sessionCloses: number;
+}
+
+function counters(): RunnerCounters {
+  return {
+    prepares: 0,
+    opens: 0,
+    sends: 0,
+    preparationCloses: 0,
+    submissionCloses: 0,
+    sessionCloses: 0,
+  };
+}
+
+function runner(input: {
+  store: OperationStore;
+  prepared: PreparedUserOperation;
+  counters: RunnerCounters;
+  observer?: OperationObserver;
+  open?: (snapshot: PreparedUserOperation) => Promise<unknown>;
+  submit?: () => Promise<unknown>;
+}) {
+  const submit =
+    input.submit ??
+    (async () => {
+      input.counters.sends += 1;
+      return { userOperationHash: input.prepared.userOperationHash };
+    });
+  return createOperationRunner({
+    store: input.store,
+    observer: input.observer ?? pendingObserver(),
+    preparation: {
+      async prepare() {
+        input.counters.prepares += 1;
+        return input.prepared;
+      },
+      async close() {
+        input.counters.preparationCloses += 1;
+      },
+    },
+    submission: {
+      async openSubmission(snapshot: PreparedUserOperation) {
+        input.counters.opens += 1;
+        expect(snapshot).toEqual(input.prepared);
+        if (input.open) return input.open(snapshot);
+        return {
+          submit,
+          async close() {
+            input.counters.sessionCloses += 1;
+          },
+        };
+      },
+      async close() {
+        input.counters.submissionCloses += 1;
+      },
+    },
+  });
+}
+
+function storedOperation(control: MemoryControl): Operation | undefined {
+  return (control.raw as OperationStoreRecord | undefined)?.value;
+}
+
+function expectRunnerError(
+  action: () => Promise<unknown>,
+  code: OgpOperationRunnerError["code"],
+): Promise<void> {
+  return expect(action()).rejects.toMatchObject({ name: "OgpOperationRunnerError", code });
+}
+
+describe("OperationRunner", () => {
+  it("rejects send authority or chain policy on the preparation boundary", () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    expect(() =>
+      createOperationRunner({
+        store: memoryStore(control),
+        observer: pendingObserver(),
+        preparation: {
+          async prepare() {
+            return prepared("execution");
+          },
+          async close() {},
+          async send() {},
+        },
+        submission: {
+          async openSubmission() {
+            return null;
+          },
+          async close() {},
+          supportedChains: [key.chainId],
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: "operation_runner_capability_invalid" }));
+  });
+
+  it.each<OperationKind>(["execution", "revocation"])(
+    "durably attempts before the %s signer and exact send",
+    async (kind) => {
+      const directory = await mkdtemp(join(tmpdir(), "ogp-runner-order-"));
+      temporaryDirectories.push(directory);
+      const filePath = join(directory, "store.db");
+      const store = createSqliteOperationStore(filePath);
+      const snapshot = prepared(kind);
+      const count = counters();
+      const operationRunner = runner({
+        store,
+        prepared: snapshot,
+        counters: count,
+        async open() {
+          const independent = createSqliteOperationStore(filePath);
+          expect((await independent.get(key))?.value).toMatchObject({
+            state: "submission_attempted",
+            identity: { kind, userOperationHash: snapshot.userOperationHash },
+          });
+          await independent.close();
+          return {
+            async submit() {
+              const beforeSend = createSqliteOperationStore(filePath);
+              expect((await beforeSend.get(key))?.value.state).toBe("submission_attempted");
+              await beforeSend.close();
+              count.sends += 1;
+              return { userOperationHash: snapshot.userOperationHash };
+            },
+            async close() {
+              count.sessionCloses += 1;
+            },
+          };
+        },
+      });
+
+      const result = await operationRunner.runOperation(runInput(kind));
+
+      expect(result).toMatchObject({
+        status: "observed",
+        observation: { status: "pending", reason: "receipt_missing" },
+        record: { value: { state: "submitted", identity: { kind } } },
+      });
+      expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+      await operationRunner.close();
+    },
+  );
+
+  it.each([
+    ["prepared", "prepared", undefined, 0, 0],
+    ["submission_attempted", "submission_attempted", "prepared", 0, 0],
+    ["submitted", "submitted", "submission_attempted", 1, 1],
+  ] as const)(
+    "fails closed when the %s durable commit is uncertain",
+    async (_boundary, faultState, expectedStoredState, expectedOpens, expectedSends) => {
+      const control: MemoryControl = {
+        closeFailures: 0,
+        closeCalls: 0,
+        fault: (next) => next.value.state === faultState,
+      };
+      const count = counters();
+      const operationRunner = runner({
+        store: memoryStore(control),
+        prepared: prepared("execution"),
+        counters: count,
+      });
+
+      await expectRunnerError(
+        () => operationRunner.runOperation(runInput("execution")),
+        "operation_runner_store_uncertain",
+      );
+      expect(count.opens).toBe(expectedOpens);
+      expect(count.sends).toBe(expectedSends);
+      expect(storedOperation(control)?.state).toBe(expectedStoredState);
+    },
+  );
+
+  it("survives the true send/return gap and recreates observe-only with one send", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ogp-runner-crash-"));
+    temporaryDirectories.push(directory);
+    const filePath = join(directory, "store.db");
+    const snapshot = prepared("execution");
+    const firstCount = counters();
+    const first = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: firstCount,
+      async submit() {
+        firstCount.sends += 1;
+        throw new Error("adapter died after external send");
+      },
+    });
+    const ambiguous = await first.runOperation(runInput("execution"));
+    expect(ambiguous).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      record: { value: { state: "submission_attempted" } },
+    });
+    expect(firstCount.sends).toBe(1);
+    await first.close();
+
+    const recreatedCount = counters();
+    const recreated = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: recreatedCount,
+    });
+    const recovered = await recreated.runOperation({
+      ...runInput("execution"),
+      observedAt: 14,
+    });
+    expect(recovered).toMatchObject({
+      status: "observed",
+      observation: { status: "pending" },
+      record: { value: { state: "submission_attempted" } },
+    });
+    expect(recreatedCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    expect(firstCount.sends + recreatedCount.sends).toBe(1);
+    await recreated.close();
+  });
+
+  it("allows only exact re-preparation while the durable state is still prepared", async () => {
+    const control: MemoryControl = {
+      closeFailures: 0,
+      closeCalls: 0,
+      fault: (next) => next.value.state === "submission_attempted",
+    };
+    const firstCount = counters();
+    const first = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: firstCount,
+    });
+    await expectRunnerError(
+      () => first.runOperation(runInput("execution")),
+      "operation_runner_store_uncertain",
+    );
+    expect(storedOperation(control)?.state).toBe("prepared");
+    expect(firstCount.opens).toBe(0);
+
+    delete control.fault;
+    const changedCount = counters();
+    const changed = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution", "8"),
+      counters: changedCount,
+    });
+    await expectRunnerError(
+      () => changed.runOperation(runInput("execution")),
+      "operation_runner_identity_mismatch",
+    );
+    expect(changedCount).toMatchObject({ prepares: 1, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.state).toBe("prepared");
+  });
+
+  it("resumes an exactly re-prepared durable prepared identity", async () => {
+    const control: MemoryControl = {
+      closeFailures: 0,
+      closeCalls: 0,
+      fault: (next) => next.value.state === "submission_attempted",
+    };
+    const snapshot = prepared("revocation");
+    const first = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: counters(),
+    });
+    await expectRunnerError(
+      () => first.runOperation(runInput("revocation")),
+      "operation_runner_store_uncertain",
+    );
+    delete control.fault;
+
+    const resumedCount = counters();
+    const resumed = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: resumedCount,
+    });
+    const result = await resumed.runOperation(runInput("revocation"));
+    expect(result).toMatchObject({
+      status: "observed",
+      record: { value: { state: "submitted", identity: { kind: "revocation" } } },
+    });
+    expect(resumedCount).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+  });
+
+  it("lets only one independent SQLite runner win the attempted CAS and send", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ogp-runner-race-"));
+    temporaryDirectories.push(directory);
+    const filePath = join(directory, "store.db");
+    const snapshot = prepared("execution");
+    const leftCount = counters();
+    const rightCount = counters();
+    const left = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: leftCount,
+    });
+    const right = runner({
+      store: createSqliteOperationStore(filePath),
+      prepared: snapshot,
+      counters: rightCount,
+    });
+
+    await Promise.all([
+      left.runOperation(runInput("execution")),
+      right.runOperation(runInput("execution")),
+    ]);
+
+    expect(leftCount.sends + rightCount.sends).toBe(1);
+    expect(leftCount.opens + rightCount.opens).toBe(1);
+    const restored = createSqliteOperationStore(filePath);
+    expect((await restored.get(key))?.value.state).not.toBe("prepared");
+    await Promise.all([left.close(), right.close(), restored.close()]);
+  });
+
+  it.each([
+    ["session unavailable", async () => Promise.reject(new Error("secret")), "session_unavailable"],
+    ["session invalid", async () => ({ submit: async () => null }), "session_invalid"],
+  ] as const)("keeps attempted observe-only when %s", async (_label, open, reason) => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      open,
+    });
+    const result = await operationRunner.runOperation(runInput("execution"));
+    expect(result).toMatchObject({ status: "submission_uncertain", reason });
+    expect(storedOperation(control)?.state).toBe("submission_attempted");
+    expect(count.sends).toBe(0);
+  });
+
+  it("bounds an ambiguous submission timeout and keeps recreation observe-only", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      async submit() {
+        count.sends += 1;
+        return new Promise<never>(() => {});
+      },
+    });
+    const result = await operationRunner.runOperation({
+      ...runInput("execution"),
+      timeoutMs: 5,
+    });
+    expect(result).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      record: { value: { state: "submission_attempted" } },
+    });
+    expect(count.sends).toBe(1);
+    await operationRunner.runOperation({
+      ...runInput("execution"),
+      observedAt: 14,
+      timeoutMs: 5,
+    });
+    expect(count.sends).toBe(1);
+  });
+
+  it.each([
+    ["wrong hash", { userOperationHash: `0x${"ff".repeat(32)}` }, "identity_mismatch"],
+    ["malformed hash", { userOperationHash: "0x1234" }, "result_invalid"],
+    [
+      "expanded result",
+      { userOperationHash: `0x${"33".repeat(32)}`, extra: true },
+      "result_invalid",
+    ],
+  ] as const)("never retries a %s submission result", async (_label, returned, reason) => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const snapshot = prepared("execution");
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      async submit() {
+        count.sends += 1;
+        return returned;
+      },
+    });
+    const result = await operationRunner.runOperation(runInput("execution"));
+    expect(result).toMatchObject({ status: "submission_uncertain", reason });
+    expect(storedOperation(control)?.state).toBe("submission_attempted");
+    expect(count.sends).toBe(1);
+
+    await operationRunner.runOperation({ ...runInput("execution"), observedAt: 14 });
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+  });
+
+  it("rejects an accessor-backed submission result without reading the accessor", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let reads = 0;
+    const hostile = Object.defineProperty({}, "userOperationHash", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return prepared("execution").userOperationHash;
+      },
+    });
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      async submit() {
+        count.sends += 1;
+        return hostile;
+      },
+    });
+    const result = await operationRunner.runOperation(runInput("execution"));
+    expect(result).toMatchObject({
+      status: "submission_uncertain",
+      reason: "result_invalid",
+    });
+    expect(reads).toBe(0);
+    expect(count.sends).toBe(1);
+  });
+
+  it("never resubmits when observation persistence is uncertain", async () => {
+    const control: MemoryControl = {
+      closeFailures: 0,
+      closeCalls: 0,
+      fault: (next) => next.value.state === "submitted" && next.value.observation !== null,
+    };
+    const snapshot = prepared("execution");
+    const firstCount = counters();
+    const first = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: firstCount,
+    });
+    await expectRunnerError(
+      () => first.runOperation(runInput("execution")),
+      "operation_runner_store_uncertain",
+    );
+    expect(firstCount.sends).toBe(1);
+    expect(storedOperation(control)?.state).toBe("submitted");
+
+    delete control.fault;
+    const recreatedCount = counters();
+    const recreated = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: recreatedCount,
+    });
+    await recreated.runOperation({ ...runInput("execution"), observedAt: 14 });
+    expect(recreatedCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+  });
+
+  it("fails closed on an observer identity substitution without overwriting durable state", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const observer: OperationObserver = {
+      async observeOperation(inputValue) {
+        const input = inputValue as { operation: Operation; observedAt: number };
+        const pending = applyVerifiedOperationObservation(input.operation, {
+          type: "record_pending",
+          identity: input.operation.identity,
+          observedAt: input.observedAt,
+          reason: "receipt_missing",
+        });
+        return {
+          status: "pending",
+          reason: "receipt_missing",
+          operation: {
+            ...pending,
+            identity: {
+              ...pending.identity,
+              userOperationHash: `0x${"ff".repeat(32)}`,
+            },
+          },
+        };
+      },
+      async close() {},
+    };
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer,
+    });
+    const result = await operationRunner.runOperation(runInput("execution"));
+    expect(result).toMatchObject({
+      status: "observation_unavailable",
+      reason: "identity_mismatch",
+      record: { value: { state: "submitted" } },
+    });
+    expect(storedOperation(control)).toMatchObject({
+      state: "submitted",
+      identity: { userOperationHash: prepared("execution").userOperationHash },
+    });
+    expect(count.sends).toBe(1);
+  });
+
+  it("rejects an observer lifecycle regression with the same exact identity", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const observer: OperationObserver = {
+      async observeOperation(inputValue) {
+        const input = inputValue as { operation: Operation; observedAt: number };
+        if (input.operation.state === "prepared") throw new Error("unexpected prepared state");
+        const reset = createOperation({
+          identity: input.operation.identity,
+          preparedAt: input.operation.preparedAt,
+        });
+        const attempted = advanceOperation(reset, {
+          type: "mark_submission_attempted",
+          identity: reset.identity,
+          attemptedAt: input.operation.attemptedAt,
+        });
+        const regressed = applyVerifiedOperationObservation(attempted, {
+          type: "record_pending",
+          identity: attempted.identity,
+          observedAt: input.observedAt,
+          reason: "receipt_missing",
+        });
+        return { status: "pending", reason: "receipt_missing", operation: regressed };
+      },
+      async close() {},
+    };
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer,
+    });
+
+    const result = await operationRunner.runOperation(runInput("execution"));
+
+    expect(result).toMatchObject({
+      status: "observation_unavailable",
+      reason: "result_invalid",
+      record: { value: { state: "submitted" } },
+    });
+    expect(storedOperation(control)).toMatchObject({
+      state: "submitted",
+      revision: 2,
+      observation: null,
+    });
+    expect(count.sends).toBe(1);
+  });
+
+  it("attempts every owned cleanup and retries only failed resources", async () => {
+    const control: MemoryControl = { closeFailures: 1, closeCalls: 0 };
+    const count = counters();
+    let observerCloseFailures = 1;
+    let observerCloses = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      async submit() {
+        count.sends += 1;
+        throw new Error("primary send ambiguity");
+      },
+      observer: pendingObserver(async () => {
+        observerCloses += 1;
+        if (observerCloseFailures > 0) {
+          observerCloseFailures -= 1;
+          throw new Error("private observer close failure");
+        }
+      }),
+    });
+
+    const primary = await operationRunner.runOperation(runInput("execution"));
+    expect(primary).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      record: { value: { state: "submission_attempted" } },
+    });
+
+    await expect(operationRunner.close()).rejects.toMatchObject({
+      code: "operation_runner_close_failed",
+    });
+    expect(count).toMatchObject({
+      preparationCloses: 1,
+      submissionCloses: 1,
+      sessionCloses: 1,
+    });
+    expect(observerCloses).toBe(1);
+    expect(control.closeCalls).toBe(1);
+    expect(storedOperation(control)?.state).toBe("submission_attempted");
+    await expectRunnerError(
+      () => operationRunner.runOperation(runInput("execution")),
+      "operation_runner_closed",
+    );
+
+    await operationRunner.close();
+    expect(count).toMatchObject({ preparationCloses: 1, submissionCloses: 1 });
+    expect(observerCloses).toBe(2);
+    expect(control.closeCalls).toBe(2);
+    expect(storedOperation(control)?.state).toBe("submission_attempted");
+  });
+
+  it("drains an admitted run before closing any owned resource", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let signalOpened: (() => void) | undefined;
+    let releaseOpen: (() => void) | undefined;
+    const opened = new Promise<void>((resolve) => {
+      signalOpened = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const snapshot = prepared("execution");
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      async open() {
+        signalOpened?.();
+        await gate;
+        return {
+          async submit() {
+            count.sends += 1;
+            return { userOperationHash: snapshot.userOperationHash };
+          },
+          async close() {
+            count.sessionCloses += 1;
+          },
+        };
+      },
+    });
+    const running = operationRunner.runOperation(runInput("execution"));
+    await opened;
+    let closeFinished = false;
+    const closing = operationRunner.close().then(() => {
+      closeFinished = true;
+    });
+    await Promise.resolve();
+    expect(closeFinished).toBe(false);
+    expect(count).toMatchObject({
+      preparationCloses: 0,
+      submissionCloses: 0,
+      sessionCloses: 0,
+    });
+
+    releaseOpen?.();
+    await running;
+    await closing;
+    expect(count).toMatchObject({
+      sends: 1,
+      preparationCloses: 1,
+      submissionCloses: 1,
+      sessionCloses: 1,
+    });
+    expect(control.closeCalls).toBe(1);
+  });
+});
