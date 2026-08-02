@@ -15,6 +15,7 @@ export type {
   GrantLogicalAccountProfile,
   GrantState,
   GrantTerminal,
+  GrantTransition,
   InstalledMaterialization,
   InstallingMaterialization,
   MaterializationUnreadableReason,
@@ -30,6 +31,7 @@ export type {
   UnsupportedMaterialization,
 } from "./grant.js";
 export {
+  advanceGrant,
   createGrant,
   OGP_GRANT_RECORD_VERSION,
   OgpGrantError,
