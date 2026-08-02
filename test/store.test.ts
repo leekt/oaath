@@ -479,6 +479,27 @@ describe("aggregate store boundary", () => {
         }),
       "store_commit_indeterminate",
     );
+
+    reads = 0;
+    const regressedRevision = new GrantStore({
+      async get() {
+        reads += 1;
+        return { ...current, storeRevision: reads === 1 ? 5 : 4 };
+      },
+      async compareAndSwap() {
+        return false;
+      },
+      async close() {},
+    });
+    await expectStoreError(
+      () =>
+        regressedRevision.compareAndSwap({
+          grantId: grantIdentity.grantId,
+          expectedStoreRevision: 5,
+          next: approvedGrant(),
+        }),
+      "store_commit_indeterminate",
+    );
   });
 
   it("rejects non-canonical negative-zero store revisions", async () => {

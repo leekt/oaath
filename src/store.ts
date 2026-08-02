@@ -313,7 +313,7 @@ class AggregateStore<Value, Key, Version extends string> {
     }
     if (
       retained === undefined ||
-      (expectedStoreRevision !== null && retained.storeRevision === expectedStoreRevision)
+      (expectedStoreRevision !== null && retained.storeRevision <= expectedStoreRevision)
     ) {
       return invalid("store_commit_indeterminate", "store returned an unverified conflict");
     }
