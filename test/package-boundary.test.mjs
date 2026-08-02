@@ -20,6 +20,24 @@ describe("package boundary", () => {
       { ...validManifest, devDependencies: { viem: "workspace:*" } },
     ],
     ["a git transport", { ...validManifest, devDependencies: { viem: "git://example/viem" } }],
+    [
+      "a disguised git tarball",
+      {
+        ...validManifest,
+        devDependencies: { viem: "git+https://github.com/wevm/viem.tgz" },
+      },
+    ],
+    [
+      "a disguised GitHub shorthand tarball",
+      { ...validManifest, dependencies: { viem: "github:wevm/viem.tgz" } },
+    ],
+    [
+      "a floating remote tarball",
+      {
+        ...validManifest,
+        dependencies: { viem: "https://github.com/wevm/viem/archive/main.tgz" },
+      },
+    ],
     ["a GitHub shorthand", { ...validManifest, dependencies: { viem: "wevm/viem" } }],
     ["a linked checkout", { ...validManifest, dependencies: { viem: "link:../viem" } }],
     ["a file checkout", { ...validManifest, dependencies: { viem: "file:../viem" } }],

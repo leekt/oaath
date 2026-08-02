@@ -35,11 +35,7 @@ function isSourceDependency(range) {
   const lower = specifier.toLowerCase();
 
   if (lower.startsWith("file:")) {
-    return !lower.endsWith(".tgz");
-  }
-
-  if (lower.endsWith(".tgz")) {
-    return false;
+    return !/^file:[^?#]+\.tgz$/u.test(lower);
   }
 
   return (
