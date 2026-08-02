@@ -2,19 +2,24 @@ import { describe, expect, it } from "vitest";
 import * as ogp from "../src/index.js";
 
 describe("package boundary", () => {
-  it("exports only accepted Grant and Operation owners", () => {
+  it("exports only accepted Grant, Operation, and prepared identity owners", () => {
     expect(Object.keys(ogp).sort()).toEqual([
       "OGP_GRANT_RECORD_VERSION",
       "OGP_OPERATION_RECORD_VERSION",
+      "OGP_PREPARED_USER_OPERATION_VERSION",
       "OgpGrantError",
       "OgpOperationError",
+      "OgpPreparedUserOperationError",
       "advanceGrant",
       "advanceOperation",
       "createGrant",
       "createOperation",
+      "deriveOperationId",
       "operationOccupiesLane",
       "parseGrant",
       "parseOperation",
+      "parsePreparedUserOperation",
+      "prepareUserOperation",
     ]);
   });
 });

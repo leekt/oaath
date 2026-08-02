@@ -64,3 +64,18 @@ export {
   operationOccupiesLane,
   parseOperation,
 } from "./operation.js";
+export type {
+  PreparedEntryPoint,
+  PreparedFactory,
+  PreparedPaymaster,
+  PreparedUserOperation,
+  PreparedUserOperationErrorCode,
+  UnsignedUserOperationV07,
+} from "./prepared-user-operation.js";
+export {
+  deriveOperationId,
+  OGP_PREPARED_USER_OPERATION_VERSION,
+  OgpPreparedUserOperationError,
+  parsePreparedUserOperation,
+  prepareUserOperation,
+} from "./prepared-user-operation.js";
