@@ -1,7 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createPublicClient,
@@ -12,6 +13,7 @@ import {
   http,
   keccak256,
   type PublicClient,
+  parseAbi,
   parseEther,
   zeroAddress,
 } from "viem";
@@ -26,73 +28,24 @@ import {
   OperationStore,
   type OperationStoreAdapter,
 } from "../src/index.js";
+import { createSqliteOperationStore } from "../src/testing.js";
 
 const requireAnvil = process.env.OGP_REQUIRE_ANVIL === "1";
 const chainId = 31_337;
 const userOperationEvent = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
-const kernelAbi = [
-  {
-    type: "constructor",
-    inputs: [{ name: "_entryPoint", type: "address" }],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "initialize",
-    inputs: [
-      { name: "_rootValidator", type: "bytes21" },
-      { name: "hook", type: "address" },
-      { name: "validatorData", type: "bytes" },
-      { name: "hookData", type: "bytes" },
-      { name: "initConfig", type: "bytes[]" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "rootValidator",
-    inputs: [],
-    outputs: [{ name: "", type: "bytes21" }],
-    stateMutability: "view",
-  },
-] as const;
-const factoryAbi = [
-  {
-    type: "constructor",
-    inputs: [{ name: "_impl", type: "address" }],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "createAccount",
-    inputs: [
-      { name: "data", type: "bytes" },
-      { name: "salt", type: "bytes32" },
-    ],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "getAddress",
-    inputs: [
-      { name: "data", type: "bytes" },
-      { name: "salt", type: "bytes32" },
-    ],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
-] as const;
-const validatorAbi = [
-  {
-    type: "function",
-    name: "ecdsaValidatorStorage",
-    inputs: [{ name: "", type: "address" }],
-    outputs: [{ name: "owner", type: "address" }],
-    stateMutability: "view",
-  },
-] as const;
+const kernelAbi = parseAbi([
+  "constructor(address _entryPoint)",
+  "function initialize(bytes21 _rootValidator, address hook, bytes validatorData, bytes hookData, bytes[] initConfig)",
+  "function rootValidator() view returns (bytes21)",
+]);
+const factoryAbi = parseAbi([
+  "constructor(address _impl)",
+  "function createAccount(bytes data, bytes32 salt) payable returns (address)",
+  "function getAddress(bytes data, bytes32 salt) view returns (address)",
+]);
+const validatorAbi = parseAbi([
+  "function ecdsaValidatorStorage(address account) view returns (address owner)",
+]);
 
 interface KernelArtifacts {
   provenance: { kernelVersion: string; kernelCommit: string };
@@ -336,23 +289,26 @@ function rawLog(log: {
   };
 }
 
-async function rawBlock(parameters: {
-  blockNumber?: bigint;
-  blockHash?: Hex;
-  blockTag?: "finalized";
-}) {
+async function rawBlock(
+  parameters: {
+    blockNumber?: bigint;
+    blockHash?: Hex;
+    blockTag?: "finalized";
+  },
+  client: PublicClient = harness.publicClient,
+) {
   const block =
     parameters.blockNumber !== undefined
-      ? await harness.publicClient.getBlock({
+      ? await client.getBlock({
           blockNumber: parameters.blockNumber,
           includeTransactions: false,
         })
       : parameters.blockHash !== undefined
-        ? await harness.publicClient.getBlock({
+        ? await client.getBlock({
             blockHash: parameters.blockHash,
             includeTransactions: false,
           })
-        : await harness.publicClient.getBlock({
+        : await client.getBlock({
             blockTag: parameters.blockTag ?? "finalized",
             includeTransactions: false,
           });
@@ -365,14 +321,17 @@ async function rawBlock(parameters: {
   };
 }
 
-function observerCapabilities(entryPoint: `0x${string}`) {
+function observerCapabilities(
+  entryPoint: `0x${string}`,
+  client: PublicClient = harness.publicClient,
+) {
   return {
     async read(request: OperationObserverReadRequest) {
-      if (request.type === "chain_id") return harness.publicClient.getChainId();
+      if (request.type === "chain_id") return client.getChainId();
       if (request.type === "replacement_candidate") return null;
       if (request.type === "user_operation_receipt") {
         const matches = (
-          await harness.publicClient.getLogs({
+          await client.getLogs({
             address: entryPoint,
             fromBlock: 0n,
             toBlock: "latest",
@@ -386,7 +345,7 @@ function observerCapabilities(entryPoint: `0x${string}`) {
         if (matches.length !== 1) throw new Error("duplicate UserOperation event");
         const log = matches[0];
         if (!log?.transactionHash) throw new Error("unmined UserOperation event");
-        const receipt = await harness.publicClient.getTransactionReceipt({
+        const receipt = await client.getTransactionReceipt({
           hash: log.transactionHash,
         });
         const decoded = decodeEventLog({
@@ -418,7 +377,7 @@ function observerCapabilities(entryPoint: `0x${string}`) {
         };
       }
       if (request.type === "transaction_receipt") {
-        const receipt = await harness.publicClient.getTransactionReceipt({
+        const receipt = await client.getTransactionReceipt({
           hash: request.transactionHash,
         });
         return {
@@ -431,7 +390,7 @@ function observerCapabilities(entryPoint: `0x${string}`) {
         };
       }
       if (request.type === "transaction") {
-        const transaction = await harness.publicClient.getTransaction({
+        const transaction = await client.getTransaction({
           hash: request.transactionHash,
         });
         if (
@@ -450,10 +409,11 @@ function observerCapabilities(entryPoint: `0x${string}`) {
         };
       }
       if (request.type === "canonical_block") {
-        return rawBlock({ blockNumber: BigInt(request.blockNumber) });
+        return rawBlock({ blockNumber: BigInt(request.blockNumber) }, client);
       }
-      if (request.type === "block_by_hash") return rawBlock({ blockHash: request.blockHash });
-      if (request.type === "finalized_block") return rawBlock({ blockTag: "finalized" });
+      if (request.type === "block_by_hash")
+        return rawBlock({ blockHash: request.blockHash }, client);
+      if (request.type === "finalized_block") return rawBlock({ blockTag: "finalized" }, client);
       throw new Error("unsupported observer request");
     },
     async close() {},
@@ -483,117 +443,137 @@ function memoryStore(): OperationStore {
   return new OperationStore(adapter);
 }
 
-async function execute(call: { target: `0x${string}`; data: Hex }, grantId: string) {
+async function execute(
+  call: { target: `0x${string}`; data: Hex },
+  grantId: string,
+  options: { loseAcknowledgment?: boolean } = {},
+) {
   const owner = privateKeyToAccount(generatePrivateKey());
   expect(lower(owner.address)).not.toBe(lower(harness.submitter.address));
   const account = await createKernel(lower(owner.address), keccak256(generatePrivateKey()));
   let signs = 0;
   let sends = 0;
   let signedHash: Hex | undefined;
-  const adapter = createLocalKernelHandleOpsAdapter({
-    profile: "kernel-v3.3-ecdsa-owner",
-    key: { grantId, chainId },
-    entryPoint: { version: "0.7", address: harness.entryPoint },
-    kernel: { account, rootValidator: harness.validator, owner: lower(owner.address) },
-    call: { target: call.target, value: "0", data: call.data },
-    gas: {
-      callGasLimit: "300000",
-      verificationGasLimit: "500000",
-      preVerificationGas: "100000",
-      maxFeePerGas: "2000000000",
-      maxPriorityFeePerGas: "1000000000",
-    },
-    handleOpsGasLimit: "2000000",
-    preparationReads: {
-      async read(request: { type: string; address?: `0x${string}` }) {
-        if (request.type === "chain_id") return harness.publicClient.getChainId();
-        if (request.type === "code") {
-          if (!request.address) throw new Error("code address unavailable");
-          return lower((await harness.publicClient.getCode({ address: request.address })) ?? "0x");
-        }
-        if (request.type === "kernel_root_validator") {
-          return lower(
-            await harness.publicClient.readContract({
-              address: account,
-              abi: kernelAbi,
-              functionName: "rootValidator",
-            }),
-          );
-        }
-        if (request.type === "kernel_ecdsa_owner") {
-          return lower(
-            await harness.publicClient.readContract({
-              address: harness.validator,
-              abi: validatorAbi,
-              functionName: "ecdsaValidatorStorage",
-              args: [account],
-            }),
-          );
-        }
-        if (request.type === "entry_point_nonce") {
-          return (
-            await harness.publicClient.readContract({
-              address: harness.entryPoint,
-              abi: entryPoint07Abi,
-              functionName: "getNonce",
-              args: [account, 0n],
-            })
-          ).toString(10);
-        }
-        throw new Error("unexpected preparation read");
+  let loseAcknowledgment = options.loseAcknowledgment ?? false;
+
+  function createAdapter() {
+    return createLocalKernelHandleOpsAdapter({
+      profile: "kernel-v3.3-ecdsa-owner",
+      key: { grantId, chainId },
+      entryPoint: { version: "0.7", address: harness.entryPoint },
+      kernel: { account, rootValidator: harness.validator, owner: lower(owner.address) },
+      call: { target: call.target, value: "0", data: call.data },
+      gas: {
+        callGasLimit: "300000",
+        verificationGasLimit: "500000",
+        preVerificationGas: "100000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
       },
-      async close() {},
-    },
-    userOperationSigner: {
-      address: lower(owner.address),
-      async signDigest(request: { userOperationHash: Hex }) {
-        signs += 1;
-        signedHash = request.userOperationHash;
-        return owner.sign({ hash: request.userOperationHash });
+      handleOpsGasLimit: "2000000",
+      preparationReads: {
+        async read(request: { type: string; address?: `0x${string}` }) {
+          if (request.type === "chain_id") return harness.publicClient.getChainId();
+          if (request.type === "code") {
+            if (!request.address) throw new Error("code address unavailable");
+            return lower(
+              (await harness.publicClient.getCode({ address: request.address })) ?? "0x",
+            );
+          }
+          if (request.type === "kernel_root_validator") {
+            return lower(
+              await harness.publicClient.readContract({
+                address: account,
+                abi: kernelAbi,
+                functionName: "rootValidator",
+              }),
+            );
+          }
+          if (request.type === "kernel_ecdsa_owner") {
+            return lower(
+              await harness.publicClient.readContract({
+                address: harness.validator,
+                abi: validatorAbi,
+                functionName: "ecdsaValidatorStorage",
+                args: [account],
+              }),
+            );
+          }
+          if (request.type === "entry_point_nonce") {
+            return (
+              await harness.publicClient.readContract({
+                address: harness.entryPoint,
+                abi: entryPoint07Abi,
+                functionName: "getNonce",
+                args: [account, 0n],
+              })
+            ).toString(10);
+          }
+          throw new Error("unexpected preparation read");
+        },
+        async close() {},
       },
-      async close() {},
-    },
-    handleOpsSubmitter: {
-      address: lower(harness.submitter.address),
-      async sendHandleOps(request: {
-        chainId: number;
-        entryPoint: `0x${string}`;
-        submitter: `0x${string}`;
-        userOperationHash: Hex;
-        calldata: Hex;
-        gasLimit: string;
-      }) {
-        sends += 1;
-        const wallet = createWalletClient({
-          account: harness.submitter,
-          transport: http(harness.url, { retryCount: 0 }),
-        });
-        const transactionHash = await wallet.sendTransaction({
-          account: harness.submitter,
-          to: request.entryPoint,
-          data: request.calldata,
-          gas: BigInt(request.gasLimit),
-          maxFeePerGas: 2_000_000_000n,
-          maxPriorityFeePerGas: 1_000_000_000n,
-          chain: null,
-        });
-        await harness.publicClient.waitForTransactionReceipt({ hash: transactionHash });
-        const transaction = await harness.publicClient.getTransaction({ hash: transactionHash });
-        expect(lower(transaction.from)).toBe(lower(harness.submitter.address));
-        expect(lower(transaction.to ?? zeroAddress)).toBe(harness.entryPoint);
-        return {
-          chainId: request.chainId,
-          entryPoint: request.entryPoint,
-          submitter: request.submitter,
-          userOperationHash: request.userOperationHash,
-          transactionHash: lower(transactionHash),
-        };
+      userOperationSigner: {
+        address: lower(owner.address),
+        async signDigest(request: { userOperationHash: Hex }) {
+          signs += 1;
+          signedHash = request.userOperationHash;
+          return owner.sign({ hash: request.userOperationHash });
+        },
+        async close() {},
       },
-      async close() {},
-    },
-  });
-  const runner = createOperationRunner({
-    store: memoryStore(),
+      handleOpsSubmitter: {
+        address: lower(harness.submitter.address),
+        async sendHandleOps(request: {
+          chainId: number;
+          entryPoint: `0x${string}`;
+          submitter: `0x${string}`;
+          userOperationHash: Hex;
+          calldata: Hex;
+          gasLimit: string;
+        }) {
+          sends += 1;
+          const wallet = createWalletClient({
+            account: harness.submitter,
+            transport: http(harness.url, { retryCount: 0 }),
+          });
+          const transactionHash = await wallet.sendTransaction({
+            account: harness.submitter,
+            to: request.entryPoint,
+            data: request.calldata,
+            gas: BigInt(request.gasLimit),
+            maxFeePerGas: 2_000_000_000n,
+            maxPriorityFeePerGas: 1_000_000_000n,
+            chain: null,
+          });
+          await harness.publicClient.waitForTransactionReceipt({ hash: transactionHash });
+          const transaction = await harness.publicClient.getTransaction({ hash: transactionHash });
+          expect(lower(transaction.from)).toBe(lower(harness.submitter.address));
+          expect(lower(transaction.to ?? zeroAddress)).toBe(harness.entryPoint);
+          if (loseAcknowledgment) {
+            loseAcknowledgment = false;
+            throw new Error("loopback acknowledgement lost");
+          }
+          return {
+            chainId: request.chainId,
+            entryPoint: request.entryPoint,
+            submitter: request.submitter,
+            userOperationHash: request.userOperationHash,
+            transactionHash: lower(transactionHash),
+          };
+        },
+        async close() {},
+      },
+    });
+  }
+
+  const directory = options.loseAcknowledgment
+    ? await mkdtemp(join(tmpdir(), "ogp-kernel-anvil-"))
+    : undefined;
+  const storePath = directory ? join(directory, "operation.db") : undefined;
+  let adapter = createAdapter();
+  let runner = createOperationRunner({
+    store: storePath ? createSqliteOperationStore(storePath) : memoryStore(),
     observer: createOperationObserver(observerCapabilities(harness.entryPoint)),
     preparation: adapter.preparation,
     submission: adapter.submission,
@@ -607,15 +587,28 @@ async function execute(call: { target: `0x${string}`; data: Hex }, grantId: stri
     observedAt: 13,
     timeoutMs: 60_000,
   });
-  expect(first).toMatchObject({
-    status: "observed",
-    observation: { status: "unreadable", reason: "finality_unproven" },
-    record: { value: { state: "included", identity: { chainId, account } } },
-  });
+  if (!options.loseAcknowledgment) {
+    expect(first).toMatchObject({
+      status: "observed",
+      observation: { status: "unreadable", reason: "finality_unproven" },
+      record: { value: { state: "included", identity: { chainId, account } } },
+    });
+  }
   await harness.publicClient.request({
     method: "anvil_mine" as "eth_chainId",
     params: ["0x80"] as never,
   });
+  if (storePath) {
+    await runner.close();
+    adapter = createAdapter();
+    const recoveryClient = createPublicClient({ transport: http(harness.url, { retryCount: 0 }) });
+    runner = createOperationRunner({
+      store: createSqliteOperationStore(storePath),
+      observer: createOperationObserver(observerCapabilities(harness.entryPoint, recoveryClient)),
+      preparation: adapter.preparation,
+      submission: adapter.submission,
+    });
+  }
   const finalized = await runner.runOperation({
     kind: "execution",
     key: { grantId, chainId },
@@ -626,7 +619,8 @@ async function execute(call: { target: `0x${string}`; data: Hex }, grantId: stri
     timeoutMs: 60_000,
   });
   await runner.close();
-  return { finalized, signs, sends, signedHash, account };
+  if (directory) await rm(directory, { recursive: true, force: true });
+  return { first, finalized, signs, sends, signedHash, account };
 }
 
 describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
@@ -669,4 +663,29 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
     },
     60_000,
   );
+
+  it("recovers observe-only after the real handleOps send loses its acknowledgement", async () => {
+    const result = await execute(
+      { target: lower(harness.submitter.address), data: "0x" },
+      "anvil-ambiguous",
+      { loseAcknowledgment: true },
+    );
+    expect(result.first).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      record: { value: { state: "submission_attempted" } },
+    });
+    expect(result.finalized).toMatchObject({
+      status: "observed",
+      observation: { status: "finalized" },
+      record: {
+        value: {
+          state: "finalized",
+          identity: { userOperationHash: result.signedHash },
+          inclusion: { outcome: "success" },
+        },
+      },
+    });
+    expect({ signs: result.signs, sends: result.sends }).toEqual({ signs: 1, sends: 1 });
+  }, 60_000);
 });
