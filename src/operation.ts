@@ -1,3 +1,11 @@
+import {
+  type CaptureContext,
+  captureRecord as captureExactRecord,
+  type ExactRecord,
+  exactCapturedRecord as exactCapturedRecordValue,
+  exactRecord as exactRecordValue,
+} from "./internal/exact-record.js";
+
 export const OGP_OPERATION_RECORD_VERSION = "ogp.operation/v1" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
@@ -183,11 +191,14 @@ export type OperationTransition =
       drop: OperationDropEvidence;
     }>;
 
-type PlainRecord = Record<string, unknown>;
-type CaptureContext = WeakSet<object>;
+type PlainRecord = ExactRecord;
 
 function invalid(code: OperationErrorCode, message: string): never {
   throw new OgpOperationError(code, message);
+}
+
+function captureFailure(code: OperationErrorCode): (message: string) => never {
+  return (message) => invalid(code, message);
 }
 
 function captureRecord(
@@ -196,33 +207,7 @@ function captureRecord(
   code: OperationErrorCode,
   context: CaptureContext,
 ): PlainRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return invalid(code, `${label} must be a plain object`);
-  }
-  if (context.has(value)) {
-    return invalid(code, `${label} aliases another record`);
-  }
-  context.add(value);
-
-  const prototype = Reflect.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    return invalid(code, `${label} must be a plain object`);
-  }
-
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const actualKeys = Reflect.ownKeys(descriptors);
-  const captured: PlainRecord = Object.create(null) as PlainRecord;
-  for (const key of actualKeys) {
-    if (typeof key !== "string") {
-      return invalid(code, `${label} contains a symbol field`);
-    }
-    const descriptor = descriptors[key];
-    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      return invalid(code, `${label} contains a non-data or non-enumerable field`);
-    }
-    captured[key] = descriptor.value;
-  }
-  return captured;
+  return captureExactRecord(value, label, context, captureFailure(code));
 }
 
 function exactCapturedRecord(
@@ -231,11 +216,7 @@ function exactCapturedRecord(
   label: string,
   code: OperationErrorCode,
 ): PlainRecord {
-  const actualKeys = Object.keys(captured);
-  if (actualKeys.length !== keys.length || actualKeys.some((key) => !keys.includes(key))) {
-    return invalid(code, `${label} contains missing or unknown fields`);
-  }
-  return captured;
+  return exactCapturedRecordValue(captured, keys, label, captureFailure(code));
 }
 
 function exactRecord(
@@ -245,7 +226,7 @@ function exactRecord(
   code: OperationErrorCode,
   context: CaptureContext,
 ): PlainRecord {
-  return exactCapturedRecord(captureRecord(value, label, code, context), keys, label, code);
+  return exactRecordValue(value, keys, label, context, captureFailure(code));
 }
 
 function safeInteger(value: unknown, label: string, code: OperationErrorCode, minimum = 0): number {
