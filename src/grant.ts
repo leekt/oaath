@@ -18,7 +18,13 @@ const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_GRANT_ID_LENGTH = 256;
 
-export type GrantErrorCode = "grant_input_invalid" | "grant_record_invalid";
+export type GrantErrorCode =
+  | "grant_input_invalid"
+  | "grant_record_invalid"
+  | "grant_transition_invalid"
+  | "grant_identity_mismatch"
+  | "grant_transition_forbidden"
+  | "grant_revision_exhausted";
 
 export class OgpGrantError extends Error {
   readonly code: GrantErrorCode;
@@ -247,6 +253,71 @@ export type Grant =
   | RevokedGrant
   | ExpiredGrant;
 
+export type GrantTransition =
+  | Readonly<{ type: "reject"; identity: GrantIdentity; rejectedAt: number }>
+  | Readonly<{ type: "approve"; identity: GrantIdentity; approval: GrantApproval }>
+  | Readonly<{ type: "activate"; identity: GrantIdentity; activatedAt: number }>
+  | Readonly<{ type: "expire"; identity: GrantIdentity; expiredAt: number }>
+  | Readonly<{
+      type: "record_unsupported";
+      identity: GrantIdentity;
+      chainId: number;
+      recordedAt: number;
+      reason: MaterializationUnsupportedReason;
+    }>
+  | Readonly<{
+      type: "record_unmaterialized";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      recordedAt: number;
+    }>
+  | Readonly<{
+      type: "begin_materialization";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      startedAt: number;
+    }>
+  | Readonly<{
+      type: "record_installed";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      installation: ChainPermissionEvidence;
+    }>
+  | Readonly<{
+      type: "record_unreadable";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      observedAt: number;
+      reason: MaterializationUnreadableReason;
+    }>
+  | Readonly<{
+      type: "begin_revocation";
+      identity: GrantIdentity;
+      revocationStartedAt: number;
+    }>
+  | Readonly<{
+      type: "begin_chain_revocation";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      startedAt: number;
+    }>
+  | Readonly<{
+      type: "record_chain_revoked";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      removal: ChainPermissionEvidence;
+    }>
+  | Readonly<{
+      type: "record_capability_invalidated";
+      identity: GrantIdentity;
+      invalidation: GrantCapabilityInvalidation;
+    }>
+  | Readonly<{
+      type: "complete_revocation";
+      identity: GrantIdentity;
+      revokedAt: number;
+    }>;
+
 type PlainRecord = ExactRecord;
 
 function invalid(code: GrantErrorCode, message: string): never {
@@ -404,6 +475,25 @@ function parseIdentity(
       context,
     ),
     policyHash: hash(record.policyHash, "grant policyHash", code),
+  });
+}
+
+function parseBinding(
+  value: unknown,
+  code: GrantErrorCode,
+  context: CaptureContext,
+): Readonly<ChainBinding> {
+  const record = exactRecord(
+    value,
+    ["chainId", "account", "permissionId"],
+    "chain binding",
+    code,
+    context,
+  );
+  return Object.freeze({
+    chainId: safeInteger(record.chainId, "chain binding chainId", code, 1),
+    account: address(record.account, "chain binding account", code),
+    permissionId: permissionId(record.permissionId, "chain binding permissionId", code),
   });
 }
 
@@ -1191,4 +1281,632 @@ export function createGrant(value: unknown): RequestedGrant {
   } catch {
     throw new OgpGrantError("grant_input_invalid", "grant request could not be captured safely");
   }
+}
+
+function parseGrantTransition(value: unknown): GrantTransition {
+  const code = "grant_transition_invalid" as const;
+  const context: CaptureContext = new WeakSet();
+  const captured = captureRecord(value, "grant transition", code, context);
+  const type = captured.type;
+
+  if (type === "reject") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "rejectedAt"],
+      "reject transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      rejectedAt: safeInteger(record.rejectedAt, "transition rejectedAt", code),
+    });
+  }
+
+  if (type === "approve") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "approval"],
+      "approve transition",
+      code,
+    );
+    const approval = parseApproval(record.approval, code, context);
+    if (approval === null) return invalid(code, "approve transition requires approval");
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      approval,
+    });
+  }
+
+  if (type === "activate") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "activatedAt"],
+      "activate transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      activatedAt: safeInteger(record.activatedAt, "transition activatedAt", code),
+    });
+  }
+
+  if (type === "expire") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "expiredAt"],
+      "expire transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      expiredAt: safeInteger(record.expiredAt, "transition expiredAt", code),
+    });
+  }
+
+  if (type === "record_unsupported") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "chainId", "recordedAt", "reason"],
+      "unsupported transition",
+      code,
+    );
+    if (
+      record.reason !== "runtime_unsupported" &&
+      record.reason !== "account_profile_unsupported" &&
+      record.reason !== "policy_unsupported"
+    ) {
+      return invalid(code, "unsupported transition reason is unsupported");
+    }
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      chainId: safeInteger(record.chainId, "transition chainId", code, 1),
+      recordedAt: safeInteger(record.recordedAt, "transition recordedAt", code),
+      reason: record.reason,
+    });
+  }
+
+  if (type === "record_unmaterialized") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "recordedAt"],
+      "unmaterialized transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      recordedAt: safeInteger(record.recordedAt, "transition recordedAt", code),
+    });
+  }
+
+  if (type === "begin_materialization" || type === "begin_chain_revocation") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "startedAt"],
+      `${type} transition`,
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      startedAt: safeInteger(record.startedAt, "transition startedAt", code),
+    });
+  }
+
+  if (type === "record_installed") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "installation"],
+      "installed transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      installation: parsePermissionEvidence(
+        record.installation,
+        "permission_present",
+        code,
+        context,
+      ),
+    });
+  }
+
+  if (type === "record_unreadable") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "observedAt", "reason"],
+      "unreadable transition",
+      code,
+    );
+    if (
+      record.reason !== "provider_unavailable" &&
+      record.reason !== "state_invalid" &&
+      record.reason !== "canonicality_unproven"
+    ) {
+      return invalid(code, "unreadable transition reason is unsupported");
+    }
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      observedAt: safeInteger(record.observedAt, "transition observedAt", code),
+      reason: record.reason,
+    });
+  }
+
+  if (type === "begin_revocation") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "revocationStartedAt"],
+      "begin revocation transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      revocationStartedAt: safeInteger(
+        record.revocationStartedAt,
+        "transition revocationStartedAt",
+        code,
+      ),
+    });
+  }
+
+  if (type === "record_chain_revoked") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "removal"],
+      "chain revoked transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      removal: parsePermissionEvidence(record.removal, "permission_absent", code, context),
+    });
+  }
+
+  if (type === "record_capability_invalidated") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "invalidation"],
+      "capability invalidated transition",
+      code,
+    );
+    const invalidation = parseInvalidation(record.invalidation, code, context);
+    if (invalidation === null) {
+      return invalid(code, "capability invalidated transition requires evidence");
+    }
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      invalidation,
+    });
+  }
+
+  if (type === "complete_revocation") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "revokedAt"],
+      "complete revocation transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      revokedAt: safeInteger(record.revokedAt, "transition revokedAt", code),
+    });
+  }
+
+  return invalid(code, "grant transition type is unsupported");
+}
+
+function sameCredential(left: CredentialBinding, right: CredentialBinding): boolean {
+  return left.kind === right.kind && left.publicIdentityHash === right.publicIdentityHash;
+}
+
+function sameIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
+  return (
+    left.grantId === right.grantId &&
+    left.chainScope === right.chainScope &&
+    left.logicalAccount.kind === right.logicalAccount.kind &&
+    left.logicalAccount.accountIndex === right.logicalAccount.accountIndex &&
+    left.logicalAccount.kernelVersion === right.logicalAccount.kernelVersion &&
+    left.logicalAccount.factoryRoute === right.logicalAccount.factoryRoute &&
+    sameCredential(left.logicalAccount.ownerCredential, right.logicalAccount.ownerCredential) &&
+    sameCredential(left.operatorCredential, right.operatorCredential) &&
+    left.policyHash === right.policyHash
+  );
+}
+
+function sameBinding(left: ChainBinding, right: ChainBinding): boolean {
+  return (
+    left.chainId === right.chainId &&
+    left.account === right.account &&
+    left.permissionId === right.permissionId
+  );
+}
+
+function nextGrantRevision(grant: Grant): number {
+  if (grant.revision === Number.MAX_SAFE_INTEGER) {
+    return invalid("grant_revision_exhausted", "grant revision is exhausted");
+  }
+  return grant.revision + 1;
+}
+
+function requireGrantIdentity(grant: Grant, identity: GrantIdentity): void {
+  if (!sameIdentity(grant.identity, identity)) {
+    invalid("grant_identity_mismatch", "grant transition identity does not match");
+  }
+}
+
+function requireGrantTime(grant: Grant, time: number): void {
+  if (time < grant.updatedAt) {
+    invalid("grant_transition_invalid", "grant transition time regresses");
+  }
+}
+
+function requireBeforeExpiry(grant: Grant, time: number): void {
+  requireGrantTime(grant, time);
+  if (time >= grant.expiresAt) {
+    invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+  }
+}
+
+function forbiddenGrantTransition(grant: Grant, transition: GrantTransition): never {
+  return invalid(
+    "grant_transition_forbidden",
+    `grant transition ${transition.type} is forbidden from ${grant.state}`,
+  );
+}
+
+function advanceGrantRecord(grant: Grant, changes: Record<string, unknown>): Grant {
+  return parseGrant({
+    ...grant,
+    ...changes,
+    revision: nextGrantRevision(grant),
+  });
+}
+
+function materializationForChain(grant: Grant, chainId: number): ChainMaterialization | undefined {
+  return grant.materializations.find((entry) => entry.chainId === chainId);
+}
+
+function requireBoundMaterialization(
+  grant: Grant,
+  binding: ChainBinding,
+): Exclude<ChainMaterialization, UnsupportedMaterialization> {
+  const materialization = materializationForChain(grant, binding.chainId);
+  if (!materialization || materialization.state === "unsupported") {
+    return invalid("grant_transition_forbidden", "bound chain materialization is unavailable");
+  }
+  if (!sameBinding(materialization, binding)) {
+    return invalid("grant_identity_mismatch", "chain materialization binding does not match");
+  }
+  return materialization;
+}
+
+function withMaterialization(
+  grant: Grant,
+  materialization: ChainMaterialization,
+): readonly ChainMaterialization[] {
+  const next = [...grant.materializations];
+  const index = next.findIndex((entry) => entry.chainId === materialization.chainId);
+  if (index === -1) next.push(materialization);
+  else next[index] = materialization;
+  next.sort((left, right) => left.chainId - right.chainId);
+  return Object.freeze(next);
+}
+
+function retainedInstallation(
+  materialization: Exclude<ChainMaterialization, UnsupportedMaterialization>,
+): Readonly<ChainPermissionEvidence> | null {
+  if (
+    materialization.state === "installed" ||
+    materialization.state === "revoking" ||
+    materialization.state === "revoked" ||
+    materialization.state === "unreadable"
+  ) {
+    return materialization.installation;
+  }
+  return null;
+}
+
+function requireEvidenceBinding(evidence: ChainBinding, binding: ChainBinding): void {
+  if (!sameBinding(evidence, binding)) {
+    invalid("grant_identity_mismatch", "chain evidence binding does not match");
+  }
+}
+
+function requireNonRegressingPresence(
+  prior: Readonly<ChainPermissionEvidence> | null,
+  next: Readonly<ChainPermissionEvidence>,
+): void {
+  if (
+    prior !== null &&
+    (BigInt(next.blockNumber) < BigInt(prior.blockNumber) ||
+      (next.blockNumber === prior.blockNumber && next.blockHash !== prior.blockHash))
+  ) {
+    invalid("grant_transition_invalid", "installation evidence regresses or contradicts");
+  }
+}
+
+export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
+  const grant = parseGrant(value);
+  let transition: GrantTransition;
+  try {
+    transition = parseGrantTransition(transitionValue);
+  } catch {
+    throw new OgpGrantError(
+      "grant_transition_invalid",
+      "grant transition could not be captured safely",
+    );
+  }
+  requireGrantIdentity(grant, transition.identity);
+
+  if (transition.type === "reject") {
+    if (grant.state !== "requested") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.rejectedAt);
+    return advanceGrantRecord(grant, {
+      state: "rejected",
+      updatedAt: transition.rejectedAt,
+      terminal: { kind: "rejected", recordedAt: transition.rejectedAt },
+    });
+  }
+
+  if (transition.type === "approve") {
+    if (grant.state !== "requested") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.approval.approvedAt);
+    return advanceGrantRecord(grant, {
+      state: "approved",
+      updatedAt: transition.approval.approvedAt,
+      approval: transition.approval,
+    });
+  }
+
+  if (transition.type === "activate") {
+    if (grant.state !== "approved") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.activatedAt);
+    return advanceGrantRecord(grant, {
+      state: "active",
+      updatedAt: transition.activatedAt,
+      activatedAt: transition.activatedAt,
+    });
+  }
+
+  if (transition.type === "expire") {
+    if (grant.state === "rejected" || grant.state === "revoked" || grant.state === "expired") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    requireGrantTime(grant, transition.expiredAt);
+    if (transition.expiredAt < grant.expiresAt) {
+      return invalid("grant_transition_invalid", "grant cannot expire before expiresAt");
+    }
+    return advanceGrantRecord(grant, {
+      state: "expired",
+      updatedAt: transition.expiredAt,
+      terminal: { kind: "expired", from: grant.state, recordedAt: transition.expiredAt },
+    });
+  }
+
+  if (transition.type === "record_unsupported") {
+    if (grant.state !== "active") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.recordedAt);
+    const current = materializationForChain(grant, transition.chainId);
+    if (current && current.state !== "unsupported") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.recordedAt,
+      materializations: withMaterialization(grant, {
+        state: "unsupported",
+        chainId: transition.chainId,
+        updatedAt: transition.recordedAt,
+        reason: transition.reason,
+      }),
+    });
+  }
+
+  if (transition.type === "record_unmaterialized") {
+    if (grant.state !== "active") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.recordedAt);
+    const current = materializationForChain(grant, transition.binding.chainId);
+    if (current && current.state !== "unsupported" && current.state !== "unmaterialized") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    if (current?.state === "unmaterialized" && !sameBinding(current, transition.binding)) {
+      return invalid("grant_identity_mismatch", "chain materialization binding does not match");
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.recordedAt,
+      materializations: withMaterialization(grant, {
+        state: "unmaterialized",
+        ...transition.binding,
+        updatedAt: transition.recordedAt,
+      }),
+    });
+  }
+
+  if (transition.type === "begin_materialization") {
+    if (grant.state !== "active") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.startedAt);
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (current.state !== "unmaterialized") return forbiddenGrantTransition(grant, transition);
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.startedAt,
+      materializations: withMaterialization(grant, {
+        state: "installing",
+        ...transition.binding,
+        updatedAt: transition.startedAt,
+        startedAt: transition.startedAt,
+      }),
+    });
+  }
+
+  if (transition.type === "record_installed") {
+    if (grant.state !== "active" && grant.state !== "revoking") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (
+      current.state !== "installing" &&
+      current.state !== "installed" &&
+      (current.state !== "unreadable" || current.priorState === "revoking")
+    ) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    requireEvidenceBinding(transition.installation, transition.binding);
+    if (grant.state === "active") {
+      requireBeforeExpiry(grant, transition.installation.observedAt);
+    } else {
+      requireGrantTime(grant, transition.installation.observedAt);
+    }
+    requireNonRegressingPresence(retainedInstallation(current), transition.installation);
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.installation.observedAt,
+      materializations: withMaterialization(grant, {
+        state: "installed",
+        ...transition.binding,
+        updatedAt: transition.installation.observedAt,
+        installation: transition.installation,
+      }),
+    });
+  }
+
+  if (transition.type === "record_unreadable") {
+    if (grant.state !== "active" && grant.state !== "revoking") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (
+      current.state !== "installing" &&
+      current.state !== "installed" &&
+      current.state !== "revoking" &&
+      current.state !== "unreadable"
+    ) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    if (grant.state === "active") requireBeforeExpiry(grant, transition.observedAt);
+    else requireGrantTime(grant, transition.observedAt);
+    const priorState = current.state === "unreadable" ? current.priorState : current.state;
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.observedAt,
+      materializations: withMaterialization(grant, {
+        state: "unreadable",
+        ...transition.binding,
+        updatedAt: transition.observedAt,
+        priorState,
+        installation: retainedInstallation(current),
+        reason: transition.reason,
+      }),
+    });
+  }
+
+  if (transition.type === "begin_revocation") {
+    if (grant.state !== "active") return forbiddenGrantTransition(grant, transition);
+    requireBeforeExpiry(grant, transition.revocationStartedAt);
+    return advanceGrantRecord(grant, {
+      state: "revoking",
+      updatedAt: transition.revocationStartedAt,
+      revocationStartedAt: transition.revocationStartedAt,
+    });
+  }
+
+  if (transition.type === "begin_chain_revocation") {
+    if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
+    requireGrantTime(grant, transition.startedAt);
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (
+      current.state !== "installing" &&
+      current.state !== "installed" &&
+      (current.state !== "unreadable" || current.priorState === "revoking")
+    ) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.startedAt,
+      materializations: withMaterialization(grant, {
+        state: "revoking",
+        ...transition.binding,
+        updatedAt: transition.startedAt,
+        installation: retainedInstallation(current),
+        startedAt: transition.startedAt,
+      }),
+    });
+  }
+
+  if (transition.type === "record_chain_revoked") {
+    if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
+    requireGrantTime(grant, transition.removal.observedAt);
+    requireEvidenceBinding(transition.removal, transition.binding);
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (
+      current.state !== "revoking" &&
+      (current.state !== "unreadable" || current.priorState !== "revoking")
+    ) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    const installation = retainedInstallation(current);
+    if (installation === null) return forbiddenGrantTransition(grant, transition);
+    if (BigInt(transition.removal.blockNumber) <= BigInt(installation.blockNumber)) {
+      return invalid("grant_transition_invalid", "removal does not follow installation");
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.removal.observedAt,
+      materializations: withMaterialization(grant, {
+        state: "revoked",
+        ...transition.binding,
+        updatedAt: transition.removal.observedAt,
+        installation,
+        removal: transition.removal,
+      }),
+    });
+  }
+
+  if (transition.type === "record_capability_invalidated") {
+    if (grant.state !== "revoking" || grant.capabilityInvalidation !== null) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    requireGrantTime(grant, transition.invalidation.invalidatedAt);
+    if (transition.invalidation.capabilityHash !== grant.approval.capabilityHash) {
+      return invalid("grant_identity_mismatch", "approval capability binding does not match");
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.invalidation.invalidatedAt,
+      capabilityInvalidation: transition.invalidation,
+    });
+  }
+
+  if (transition.type === "complete_revocation") {
+    if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
+    requireGrantTime(grant, transition.revokedAt);
+    if (
+      grant.capabilityInvalidation === null ||
+      grant.materializations.some(
+        (entry) =>
+          entry.state !== "unsupported" &&
+          entry.state !== "unmaterialized" &&
+          entry.state !== "revoked",
+      )
+    ) {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    return advanceGrantRecord(grant, {
+      state: "revoked",
+      updatedAt: transition.revokedAt,
+      terminal: { kind: "revoked", recordedAt: transition.revokedAt },
+    });
+  }
+
+  return forbiddenGrantTransition(grant, transition);
 }

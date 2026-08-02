@@ -8,6 +8,7 @@ describe("package boundary", () => {
       "OGP_OPERATION_RECORD_VERSION",
       "OgpGrantError",
       "OgpOperationError",
+      "advanceGrant",
       "advanceOperation",
       "createGrant",
       "createOperation",
