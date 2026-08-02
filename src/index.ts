@@ -38,6 +38,21 @@ export {
   parseGrant,
 } from "./grant.js";
 export type {
+  EntryPointHandleOpsSubmitterCapability,
+  KernelEcdsaOwnerSignerCapability,
+  KernelExecutionCall,
+  KernelHandleOpsAdapterErrorCode,
+  KernelPreparationReadCapability,
+  KernelPreparationReadRequest,
+  KernelUserOperationGas,
+  LocalKernelHandleOpsAdapter,
+  LocalKernelHandleOpsConfiguration,
+} from "./local-kernel-handle-ops.js";
+export {
+  createLocalKernelHandleOpsAdapter,
+  OgpKernelHandleOpsAdapterError,
+} from "./local-kernel-handle-ops.js";
+export type {
   DroppedOperation,
   FinalizedOperation,
   IncludedOperation,
