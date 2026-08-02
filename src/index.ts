@@ -42,14 +42,18 @@ export type {
   KernelEcdsaOwnerSignerCapability,
   KernelExecutionCall,
   KernelHandleOpsAdapterErrorCode,
+  KernelPermissionUninstallDescriptor,
   KernelPreparationReadCapability,
   KernelPreparationReadRequest,
   KernelUserOperationGas,
   LocalKernelHandleOpsAdapter,
   LocalKernelHandleOpsConfiguration,
+  LocalKernelPermissionUninstallAdapter,
+  LocalKernelPermissionUninstallConfiguration,
 } from "./local-kernel-handle-ops.js";
 export {
   createLocalKernelHandleOpsAdapter,
+  createLocalKernelPermissionUninstallAdapter,
   OgpKernelHandleOpsAdapterError,
 } from "./local-kernel-handle-ops.js";
 export type {

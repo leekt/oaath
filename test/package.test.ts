@@ -3,7 +3,7 @@ import * as ogp from "../src/index.js";
 import * as testing from "../src/testing.js";
 
 describe("package boundary", () => {
-  it("exports only accepted aggregate, execution, observation, runner, and store owners", () => {
+  it("exports only accepted aggregate, Kernel operation, observer, runner, and store owners", () => {
     expect(Object.keys(ogp).sort()).toEqual([
       "GrantStore",
       "OGP_GRANT_RECORD_VERSION",
@@ -23,6 +23,7 @@ describe("package boundary", () => {
       "advanceOperation",
       "createGrant",
       "createLocalKernelHandleOpsAdapter",
+      "createLocalKernelPermissionUninstallAdapter",
       "createOperation",
       "createOperationObserver",
       "createOperationRunner",

@@ -1,5 +1,13 @@
 import { encodeCallDataEpV07 } from "@zerodev/sdk";
-import { encodeFunctionData, recoverAddress } from "viem";
+import {
+  concat,
+  encodeAbiParameters,
+  encodeFunctionData,
+  keccak256,
+  pad,
+  recoverAddress,
+  slice,
+} from "viem";
 import {
   entryPoint07Abi,
   toPackedUserOperation,
@@ -29,8 +37,11 @@ const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const SIGNATURE = /^0x[0-9a-f]{130}$/u;
 const VALIDATION_ID = /^0x[0-9a-f]{42}$/u;
+const BYTES2 = /^0x[0-9a-f]{4}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+const NO_HOOK_ADDRESS = `0x${"00".repeat(19)}01`;
+const KERNEL_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
 const MAX_UINT120 = (1n << 120n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_GRANT_ID_LENGTH = 256;
@@ -91,6 +102,32 @@ export type KernelPreparationReadRequest =
       entryPoint: `0x${string}`;
       account: `0x${string}`;
       nonceKey: "0";
+    }>
+  | Readonly<{
+      type: "kernel_validation_config";
+      chainId: number;
+      account: `0x${string}`;
+      validationId: `0x${string}`;
+    }>
+  | Readonly<{
+      type: "kernel_permission_config";
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+    }>
+  | Readonly<{
+      type: "kernel_allowed_selector";
+      chainId: number;
+      account: `0x${string}`;
+      validationId: `0x${string}`;
+      selector: typeof KERNEL_EXECUTE_SELECTOR;
+    }>
+  | Readonly<{
+      type: "multi_chain_signer_owner";
+      chainId: number;
+      signer: `0x${string}`;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
     }>;
 
 export interface KernelPreparationReadCapability {
@@ -144,12 +181,56 @@ export interface LocalKernelHandleOpsConfiguration {
   readonly handleOpsSubmitter: EntryPointHandleOpsSubmitterCapability;
 }
 
+export interface LocalKernelPermissionUninstallConfiguration {
+  readonly profile: "kernel-v3.3-permission-uninstall";
+  readonly key: Readonly<OperationStoreKey>;
+  readonly entryPoint: Readonly<PreparedEntryPoint>;
+  readonly kernel: Readonly<{
+    account: `0x${string}`;
+    rootValidator: `0x${string}`;
+    owner: `0x${string}`;
+  }>;
+  readonly permission: Readonly<{
+    signer: `0x${string}`;
+    operator: `0x${string}`;
+  }>;
+  readonly gas: Readonly<KernelUserOperationGas>;
+  readonly handleOpsGasLimit: string;
+  readonly preparationReads: KernelPreparationReadCapability;
+  readonly userOperationSigner: KernelEcdsaOwnerSignerCapability;
+  readonly handleOpsSubmitter: EntryPointHandleOpsSubmitterCapability;
+}
+
 export interface LocalKernelHandleOpsAdapter {
   readonly preparation: OperationPreparationCapability;
   readonly submission: OperationSubmissionCapability;
 }
 
+export interface KernelPermissionUninstallDescriptor {
+  readonly kind: "kernel-v3.3-permission-uninstall";
+  readonly grantId: string;
+  readonly chainId: number;
+  readonly entryPoint: `0x${string}`;
+  readonly account: `0x${string}`;
+  readonly permissionId: `0x${string}`;
+  readonly validationId: `0x${string}`;
+  readonly signer: `0x${string}`;
+  readonly operator: `0x${string}`;
+}
+
+export interface LocalKernelPermissionUninstallAdapter extends LocalKernelHandleOpsAdapter {
+  readonly descriptor: Readonly<KernelPermissionUninstallDescriptor>;
+}
+
+type CapturedPermission = Readonly<{
+  permissionId: `0x${string}`;
+  validationId: `0x${string}`;
+  signer: `0x${string}`;
+  operator: `0x${string}`;
+}>;
+
 type CapturedConfiguration = Readonly<{
+  operationKind: "execution" | "revocation";
   key: Readonly<OperationStoreKey>;
   entryPoint: Readonly<PreparedEntryPoint>;
   kernel: Readonly<{
@@ -163,6 +244,7 @@ type CapturedConfiguration = Readonly<{
   preparationReads: Readonly<KernelPreparationReadCapability>;
   userOperationSigner: Readonly<KernelEcdsaOwnerSignerCapability>;
   handleOpsSubmitter: Readonly<EntryPointHandleOpsSubmitterCapability>;
+  permission: CapturedPermission | null;
 }>;
 
 type CloseResource = { readonly close: () => Promise<unknown>; closed: boolean };
@@ -184,6 +266,21 @@ function exact(
 ): ExactRecord {
   const fail = captureFailure(code);
   return exactCapturedRecord(captureRecord(value, label, context, fail), keys, label, fail);
+}
+
+function capturedPreparationEvidence(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): ExactRecord {
+  try {
+    return exact(value, keys, label, "kernel_handle_ops_preparation_rejected", new WeakSet());
+  } catch {
+    return adapterError(
+      "kernel_handle_ops_preparation_rejected",
+      "Kernel preparation evidence is invalid",
+    );
+  }
 }
 
 function callable(value: unknown): (...args: unknown[]) => Promise<unknown> {
@@ -262,28 +359,103 @@ function capability(
   });
 }
 
-function captureConfiguration(value: unknown): CapturedConfiguration {
+function permissionProfile(value: unknown, context: CaptureContext): CapturedPermission {
+  const record = exact(
+    value,
+    ["signer", "operator"],
+    "Kernel permission",
+    "kernel_handle_ops_capability_invalid",
+    context,
+  );
+  const signer = address(record.signer, "kernel_handle_ops_capability_invalid");
+  const operator = address(record.operator, "kernel_handle_ops_capability_invalid");
+  if (signer === operator) {
+    return adapterError(
+      "kernel_handle_ops_capability_invalid",
+      "Kernel permission authorities are invalid",
+    );
+  }
+  const policySetId = encodeAbiParameters([{ type: "bytes[]" }], [[]]);
+  const signerId = encodeAbiParameters([{ type: "bytes" }], [concat([signer, operator])]);
+  const permissionId = slice(
+    keccak256(encodeAbiParameters([{ type: "bytes[]" }], [[policySetId, "0x0000", signerId]])),
+    0,
+    4,
+  );
+  const validationId = pad(concat(["0x02", permissionId]), {
+    size: 21,
+    dir: "right",
+  });
+  return Object.freeze({ permissionId, validationId, signer, operator });
+}
+
+function uninstallCall(
+  account: `0x${string}`,
+  permission: CapturedPermission,
+): Readonly<KernelExecutionCall> {
+  const deinitData = encodeAbiParameters([{ type: "bytes[]" }], [["0x"]]);
+  const data = encodeFunctionData({
+    abi: [
+      {
+        type: "function",
+        name: "uninstallValidation",
+        stateMutability: "payable",
+        inputs: [
+          { name: "vId", type: "bytes21" },
+          { name: "deinitData", type: "bytes" },
+          { name: "hookDeinitData", type: "bytes" },
+        ],
+        outputs: [],
+      },
+    ] as const,
+    functionName: "uninstallValidation",
+    args: [permission.validationId, deinitData, "0x"],
+  });
+  return Object.freeze({ target: account, value: "0", data });
+}
+
+function captureConfiguration(
+  value: unknown,
+  operationKind: "execution" | "revocation",
+): CapturedConfiguration {
   try {
     const context: CaptureContext = new WeakSet();
+    const permissionUninstall = operationKind === "revocation";
     const record = exact(
       value,
-      [
-        "profile",
-        "key",
-        "entryPoint",
-        "kernel",
-        "call",
-        "gas",
-        "handleOpsGasLimit",
-        "preparationReads",
-        "userOperationSigner",
-        "handleOpsSubmitter",
-      ],
+      permissionUninstall
+        ? [
+            "profile",
+            "key",
+            "entryPoint",
+            "kernel",
+            "permission",
+            "gas",
+            "handleOpsGasLimit",
+            "preparationReads",
+            "userOperationSigner",
+            "handleOpsSubmitter",
+          ]
+        : [
+            "profile",
+            "key",
+            "entryPoint",
+            "kernel",
+            "call",
+            "gas",
+            "handleOpsGasLimit",
+            "preparationReads",
+            "userOperationSigner",
+            "handleOpsSubmitter",
+          ],
       "Kernel handleOps adapter configuration",
       "kernel_handle_ops_capability_invalid",
       context,
     );
-    if (record.profile !== "kernel-v3.3-ecdsa-owner") {
+    if (
+      record.profile !==
+      (permissionUninstall ? "kernel-v3.3-permission-uninstall" : "kernel-v3.3-ecdsa-owner")
+    ) {
       return adapterError(
         "kernel_handle_ops_capability_invalid",
         "Kernel adapter profile is invalid",
@@ -319,18 +491,24 @@ function captureConfiguration(value: unknown): CapturedConfiguration {
       rootValidator: address(kernelRecord.rootValidator, "kernel_handle_ops_capability_invalid"),
       owner: address(kernelRecord.owner, "kernel_handle_ops_capability_invalid"),
     });
-    const callRecord = exact(
-      record.call,
-      ["target", "value", "data"],
-      "Kernel adapter call",
-      "kernel_handle_ops_capability_invalid",
-      context,
-    );
-    const call = Object.freeze({
-      target: address(callRecord.target, "kernel_handle_ops_capability_invalid"),
-      value: uint(callRecord.value, MAX_UINT256, "kernel_handle_ops_capability_invalid"),
-      data: bytes(callRecord.data, "kernel_handle_ops_capability_invalid"),
-    });
+    const permission = permissionUninstall ? permissionProfile(record.permission, context) : null;
+    let call: Readonly<KernelExecutionCall>;
+    if (permission) {
+      call = uninstallCall(kernel.account, permission);
+    } else {
+      const callRecord = exact(
+        record.call,
+        ["target", "value", "data"],
+        "Kernel adapter call",
+        "kernel_handle_ops_capability_invalid",
+        context,
+      );
+      call = Object.freeze({
+        target: address(callRecord.target, "kernel_handle_ops_capability_invalid"),
+        value: uint(callRecord.value, MAX_UINT256, "kernel_handle_ops_capability_invalid"),
+        data: bytes(callRecord.data, "kernel_handle_ops_capability_invalid"),
+      });
+    }
     const gasRecord = exact(
       record.gas,
       [
@@ -383,7 +561,26 @@ function captureConfiguration(value: unknown): CapturedConfiguration {
         "Kernel adapter authority is invalid",
       );
     }
+    if (
+      permission &&
+      (permission.signer === kernel.account ||
+        permission.signer === kernel.rootValidator ||
+        permission.signer === kernel.owner ||
+        permission.signer === entryPoint.address ||
+        permission.signer === submitter.address ||
+        permission.operator === kernel.account ||
+        permission.operator === kernel.rootValidator ||
+        permission.operator === kernel.owner ||
+        permission.operator === entryPoint.address ||
+        permission.operator === submitter.address)
+    ) {
+      return adapterError(
+        "kernel_handle_ops_capability_invalid",
+        "Kernel permission authorities are invalid",
+      );
+    }
     return Object.freeze({
+      operationKind,
       key: operationKey,
       entryPoint,
       kernel,
@@ -408,6 +605,7 @@ function captureConfiguration(value: unknown): CapturedConfiguration {
         sendHandleOps: submitter.action as EntryPointHandleOpsSubmitterCapability["sendHandleOps"],
         close: submitter.close,
       }),
+      permission,
     });
   } catch (error) {
     if (error instanceof OgpKernelHandleOpsAdapterError) throw error;
@@ -464,8 +662,7 @@ function capturedResult(value: unknown): ExactRecord {
  * Creates one operation-bound Kernel 0.3.3 / EntryPoint 0.7 adapter.
  * Any positive chainId is accepted; chain support is not represented as a registry or policy.
  */
-export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHandleOpsAdapter {
-  const configuration = captureConfiguration(value);
+function createCapturedAdapter(configuration: CapturedConfiguration): LocalKernelHandleOpsAdapter {
   let latestPrepared: PreparedUserOperation | null = null;
 
   let preparationActive = 0;
@@ -548,7 +745,7 @@ export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHa
         );
       }
       const requestKey = key(request.key, new WeakSet());
-      if (request.kind !== "execution" || !sameKey(requestKey, configuration.key)) {
+      if (request.kind !== configuration.operationKind || !sameKey(requestKey, configuration.key)) {
         return adapterError(
           "kernel_handle_ops_preparation_rejected",
           "Kernel preparation request does not match",
@@ -596,6 +793,77 @@ export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHa
           "Kernel owner does not match",
         );
       }
+      if (configuration.permission) {
+        const permission = configuration.permission;
+        await requireCode(permission.signer);
+        const validationConfig = capturedPreparationEvidence(
+          await read({
+            type: "kernel_validation_config",
+            chainId: configuration.key.chainId,
+            account: configuration.kernel.account,
+            validationId: permission.validationId,
+          }),
+          ["nonce", "hook"],
+          "Kernel validation configuration",
+        );
+        uint(validationConfig.nonce, (1n << 32n) - 1n, "kernel_handle_ops_preparation_rejected");
+        if (validationConfig.hook !== NO_HOOK_ADDRESS) {
+          return adapterError(
+            "kernel_handle_ops_preparation_rejected",
+            "Kernel permission validation is not installed",
+          );
+        }
+        const permissionConfig = capturedPreparationEvidence(
+          await read({
+            type: "kernel_permission_config",
+            chainId: configuration.key.chainId,
+            account: configuration.kernel.account,
+            permissionId: permission.permissionId,
+          }),
+          ["permissionFlag", "signer", "policyCount"],
+          "Kernel permission configuration",
+        );
+        if (
+          permissionConfig.permissionFlag !== "0x0000" ||
+          typeof permissionConfig.permissionFlag !== "string" ||
+          !BYTES2.test(permissionConfig.permissionFlag) ||
+          permissionConfig.signer !== permission.signer ||
+          permissionConfig.policyCount !== 0
+        ) {
+          return adapterError(
+            "kernel_handle_ops_preparation_rejected",
+            "Kernel permission configuration does not match",
+          );
+        }
+        if (
+          (await read({
+            type: "kernel_allowed_selector",
+            chainId: configuration.key.chainId,
+            account: configuration.kernel.account,
+            validationId: permission.validationId,
+            selector: KERNEL_EXECUTE_SELECTOR,
+          })) !== true
+        ) {
+          return adapterError(
+            "kernel_handle_ops_preparation_rejected",
+            "Kernel permission selector is unavailable",
+          );
+        }
+        if (
+          (await read({
+            type: "multi_chain_signer_owner",
+            chainId: configuration.key.chainId,
+            signer: permission.signer,
+            account: configuration.kernel.account,
+            permissionId: permission.permissionId,
+          })) !== permission.operator
+        ) {
+          return adapterError(
+            "kernel_handle_ops_preparation_rejected",
+            "Kernel permission operator does not match",
+          );
+        }
+      }
       const nonceValue = await read({
         type: "entry_point_nonce",
         chainId: configuration.key.chainId,
@@ -621,7 +889,7 @@ export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHa
         );
       }
       const prepared = prepareUserOperation({
-        kind: "execution",
+        kind: configuration.operationKind,
         grantId: configuration.key.grantId,
         chainId: configuration.key.chainId,
         entryPoint: configuration.entryPoint,
@@ -847,5 +1115,43 @@ export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHa
   return Object.freeze({
     preparation: Object.freeze({ prepare, close: closePreparation }),
     submission: Object.freeze({ openSubmission, close: closeSubmission }),
+  });
+}
+
+/** Creates one operation-bound Kernel 0.3.3 execution adapter. */
+export function createLocalKernelHandleOpsAdapter(value: unknown): LocalKernelHandleOpsAdapter {
+  return createCapturedAdapter(captureConfiguration(value, "execution"));
+}
+
+/**
+ * Creates one operation-bound Kernel 0.3.3 permission uninstall adapter.
+ * The exact permission and uninstall calldata are derived from the concrete signer/operator pair.
+ */
+export function createLocalKernelPermissionUninstallAdapter(
+  value: unknown,
+): LocalKernelPermissionUninstallAdapter {
+  const configuration = captureConfiguration(value, "revocation");
+  const permission = configuration.permission;
+  if (!permission) {
+    return adapterError(
+      "kernel_handle_ops_capability_invalid",
+      "Kernel permission configuration is unavailable",
+    );
+  }
+  const adapter = createCapturedAdapter(configuration);
+  return Object.freeze({
+    descriptor: Object.freeze({
+      kind: "kernel-v3.3-permission-uninstall",
+      grantId: configuration.key.grantId,
+      chainId: configuration.key.chainId,
+      entryPoint: configuration.entryPoint.address,
+      account: configuration.kernel.account,
+      permissionId: permission.permissionId,
+      validationId: permission.validationId,
+      signer: permission.signer,
+      operator: permission.operator,
+    }),
+    preparation: adapter.preparation,
+    submission: adapter.submission,
   });
 }
