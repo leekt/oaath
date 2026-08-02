@@ -158,7 +158,9 @@ export type OperationTransition =
       identity: OperationIdentity;
       returnedUserOperationHash: string;
       submittedAt: number;
-    }>
+    }>;
+
+export type VerifiedOperationObservationTransition =
   | Readonly<{
       type: "record_pending";
       identity: OperationIdentity;
@@ -190,6 +192,8 @@ export type OperationTransition =
       identity: OperationIdentity;
       drop: OperationDropEvidence;
     }>;
+
+type InternalOperationTransition = OperationTransition | VerifiedOperationObservationTransition;
 
 type PlainRecord = ExactRecord;
 
@@ -739,7 +743,7 @@ export function operationOccupiesLane(value: unknown): boolean {
   return operation.state !== "finalized" && operation.state !== "dropped";
 }
 
-function parseTransition(value: unknown): OperationTransition {
+function parseTransition(value: unknown): InternalOperationTransition {
   const code = "operation_transition_invalid" as const;
   const context: CaptureContext = new WeakSet();
   const captured = captureRecord(value, "operation transition", code, context);
@@ -896,7 +900,7 @@ function requireTime(operation: Operation, time: number): void {
   }
 }
 
-function forbidden(operation: Operation, transition: OperationTransition): never {
+function forbidden(operation: Operation, transition: InternalOperationTransition): never {
   return invalid(
     "operation_transition_forbidden",
     `operation transition ${transition.type} is forbidden from ${operation.state}`,
@@ -911,17 +915,21 @@ function inclusionOccurrenceEqual(left: OperationInclusion, right: OperationIncl
   );
 }
 
-export function advanceOperation(value: unknown, transitionValue: unknown): Operation {
-  const operation = parseOperation(value);
-  let transition: OperationTransition;
+function captureTransition(transitionValue: unknown): InternalOperationTransition {
   try {
-    transition = parseTransition(transitionValue);
+    return parseTransition(transitionValue);
   } catch {
     throw new OgpOperationError(
       "operation_transition_invalid",
       "operation transition could not be captured safely",
     );
   }
+}
+
+function advanceParsedOperation(
+  operation: Operation,
+  transition: InternalOperationTransition,
+): Operation {
   requireIdentity(operation, transition.identity);
 
   if (transition.type === "mark_submission_attempted") {
@@ -1076,4 +1084,32 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
   }
 
   return forbidden(operation, transition);
+}
+
+export function advanceOperation(value: unknown, transitionValue: unknown): Operation {
+  const operation = parseOperation(value);
+  const transition = captureTransition(transitionValue);
+  if (transition.type !== "mark_submission_attempted" && transition.type !== "mark_submitted") {
+    return invalid(
+      "operation_transition_forbidden",
+      "verified observation transitions are owned by OperationObserver",
+    );
+  }
+  return advanceParsedOperation(operation, transition);
+}
+
+/** Internal owner used only after evidence has been verified by OperationObserver. */
+export function applyVerifiedOperationObservation(
+  value: unknown,
+  transitionValue: unknown,
+): Operation {
+  const operation = parseOperation(value);
+  const transition = captureTransition(transitionValue);
+  if (transition.type === "mark_submission_attempted" || transition.type === "mark_submitted") {
+    return invalid(
+      "operation_transition_forbidden",
+      "submission transitions are not verified observations",
+    );
+  }
+  return advanceParsedOperation(operation, transition);
 }
