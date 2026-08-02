@@ -2,7 +2,7 @@ import type { Grant } from "./grant.js";
 import { parseGrant } from "./grant.js";
 import { type CaptureContext, exactRecord as exactRecordValue } from "./internal/exact-record.js";
 import type { Operation } from "./operation.js";
-import { parseOperation } from "./operation.js";
+import { operationOccupiesLane, parseOperation } from "./operation.js";
 
 export const OGP_GRANT_STORE_RECORD_VERSION = "ogp.grant-store-record/v1" as const;
 export const OGP_OPERATION_STORE_RECORD_VERSION = "ogp.operation-store-record/v1" as const;
@@ -16,6 +16,7 @@ export type StoreErrorCode =
   | "store_unavailable"
   | "store_record_invalid"
   | "store_key_mismatch"
+  | "store_lane_occupied"
   | "store_revision_exhausted"
   | "store_commit_indeterminate"
   | "store_commit_unverified";
@@ -91,6 +92,7 @@ type AggregateAccess<Value, Key, Version extends string> = Readonly<{
   parse: (value: unknown) => Value;
   keyMatches: (value: Value, key: Key) => boolean;
   updatedAt: (value: Value) => number;
+  validateNext?: (current: Value | undefined, next: Value) => void;
 }>;
 
 function invalid(code: StoreErrorCode, message: string): never {
@@ -218,6 +220,10 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameOperationIdentity(left: Operation, right: Operation): boolean {
+  return sameValue(left.identity, right.identity);
+}
+
 function sameStoreRecord<Value>(
   left: StoreRecord<Value> | undefined,
   right: StoreRecord<Value>,
@@ -269,6 +275,7 @@ class AggregateStore<Value, Key, Version extends string> {
     ) {
       return Object.freeze({ status: "conflict", ...(current ? { current } : {}) });
     }
+    this.#access.validateNext?.(current?.value, nextValue);
 
     const next = Object.freeze({
       version: this.#access.version,
@@ -298,10 +305,10 @@ class AggregateStore<Value, Key, Version extends string> {
       }
       return invalid("store_commit_indeterminate", "store conflict could not be verified");
     }
-    if (retained && sameStoreRecord(retained, next)) {
-      return Object.freeze({ status: "committed", record: retained });
-    }
     if (swapped) {
+      if (retained && sameStoreRecord(retained, next)) {
+        return Object.freeze({ status: "committed", record: retained });
+      }
       return invalid("store_commit_unverified", "store did not retain the committed record");
     }
     if (
@@ -446,6 +453,15 @@ export class OperationStore {
         keyMatches: (operation, key) =>
           operation.identity.grantId === key.grantId && operation.identity.chainId === key.chainId,
         updatedAt: (operation) => operation.updatedAt,
+        validateNext: (current, next) => {
+          if (
+            current !== undefined &&
+            !sameOperationIdentity(current, next) &&
+            operationOccupiesLane(current)
+          ) {
+            invalid("store_lane_occupied", "another Operation still occupies this chain lane");
+          }
+        },
       },
     );
   }

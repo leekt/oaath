@@ -453,7 +453,7 @@ describe("aggregate store boundary", () => {
         expectedStoreRevision: null,
         next: requestedGrant(),
       }),
-    ).resolves.toMatchObject({ status: "committed", record: { storeRevision: 0 } });
+    ).resolves.toMatchObject({ status: "conflict", current: { storeRevision: 0 } });
 
     const current = {
       version: OGP_GRANT_STORE_RECORD_VERSION,

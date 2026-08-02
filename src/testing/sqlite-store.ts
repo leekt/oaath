@@ -68,7 +68,7 @@ function validateSchema(database: DatabaseSync): void {
     .prepare(`
       SELECT type, name, sql
       FROM sqlite_schema
-      WHERE name NOT LIKE 'sqlite_%'
+      WHERE substr(name, 1, 7) <> 'sqlite_'
       ORDER BY type, name
     `)
     .all() as SchemaObject[];
@@ -106,7 +106,7 @@ function initializeOrValidateSchema(database: DatabaseSync): void {
   let transactionOpen = true;
   try {
     const objectCount = database
-      .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
+      .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE substr(name, 1, 7) <> 'sqlite_'")
       .get() as { count?: unknown } | undefined;
     if (objectCount?.count === 0 || objectCount?.count === 0n) {
       database.exec(METADATA_SCHEMA);

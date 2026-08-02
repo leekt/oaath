@@ -153,11 +153,7 @@ describe("test-only durable SQLite stores", () => {
       right.compareAndSwap({
         grantId: grantIdentity.grantId,
         expectedStoreRevision: null,
-        next: createGrant({
-          identity: grantIdentity,
-          requestedAt: 11,
-          expiresAt: 101,
-        }),
+        next: requestedGrant(),
       }),
     ]);
     expect(insertion.map((result) => result.status).sort()).toEqual(["committed", "conflict"]);
@@ -201,6 +197,20 @@ describe("test-only durable SQLite stores", () => {
       }),
     ]);
     expect(sameLane.map((result) => result.status).sort()).toEqual(["committed", "conflict"]);
+    await expectStoreError(
+      () =>
+        left.compareAndSwap({
+          key: operationStoreKey(grantIdentity.grantId, 1),
+          expectedStoreRevision: 0,
+          next: preparedOperation(1, "5"),
+        }),
+      "store_lane_occupied",
+    );
+    const winner = sameLane.find((result) => result.status === "committed");
+    if (!winner || winner.status !== "committed") throw new Error("Expected one lane winner");
+    expect((await left.get(operationStoreKey(grantIdentity.grantId, 1)))?.value).toEqual(
+      winner.record.value,
+    );
 
     const otherChains = await Promise.all([
       left.compareAndSwap({
@@ -382,7 +392,7 @@ describe("test-only durable SQLite stores", () => {
     await store.close();
     const database = new DatabaseSync(filePath);
     database.exec(`
-      CREATE TRIGGER mutate_another_chain
+      CREATE TRIGGER sqliteX_mutate_another_chain
       AFTER UPDATE ON ogp_test_operation_store_v1
       BEGIN
         UPDATE ogp_test_operation_store_v1
