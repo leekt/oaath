@@ -65,6 +65,22 @@ export {
   parseOperation,
 } from "./operation.js";
 export type {
+  ObserveOperationResult,
+  OperationObserver,
+  OperationObserverBlockEvidence,
+  OperationObserverCapabilities,
+  OperationObserverErrorCode,
+  OperationObserverLogEvidence,
+  OperationObserverReadRequest,
+  OperationObserverTransactionEvidence,
+  OperationObserverTransactionReceiptEvidence,
+  OperationObserverUserOperationReceiptEvidence,
+} from "./operation-observer.js";
+export {
+  createOperationObserver,
+  OgpOperationObserverError,
+} from "./operation-observer.js";
+export type {
   PreparedEntryPoint,
   PreparedFactory,
   PreparedPaymaster,

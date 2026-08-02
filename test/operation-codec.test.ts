@@ -6,6 +6,7 @@ import {
   type OperationIdentity,
   parseOperation,
 } from "../src/index.js";
+import { applyVerifiedOperationObservation } from "../src/operation.js";
 
 const identity: OperationIdentity = {
   kind: "revocation",
@@ -229,7 +230,7 @@ describe("Operation current codec", () => {
     expect(parseOperation(unstable)).toEqual(source);
     expect(stateReads).toBe(1);
 
-    const targetIncluded = advanceOperation(
+    const targetIncluded = applyVerifiedOperationObservation(
       advanceOperation(createOperation({ identity, preparedAt: 10 }), {
         type: "mark_submission_attempted",
         identity,
@@ -247,7 +248,7 @@ describe("Operation current codec", () => {
         },
       },
     );
-    const dropped = advanceOperation(targetIncluded, {
+    const dropped = applyVerifiedOperationObservation(targetIncluded, {
       type: "record_dropped",
       identity,
       drop: replacementDrop(15),
@@ -269,7 +270,7 @@ describe("Operation current codec", () => {
     const transitionDrop = replacementDrop(15);
     expectOperationError(
       () =>
-        advanceOperation(targetIncluded, {
+        applyVerifiedOperationObservation(targetIncluded, {
           type: "record_dropped",
           identity,
           drop: {
@@ -350,13 +351,14 @@ describe("Operation current codec", () => {
       },
     };
     expectOperationError(
-      () => advanceOperation(attempted, { type: "record_dropped", identity, drop }),
+      () =>
+        applyVerifiedOperationObservation(attempted, { type: "record_dropped", identity, drop }),
       "operation_transition_invalid",
     );
 
     expectOperationError(
       () =>
-        advanceOperation(attempted, {
+        applyVerifiedOperationObservation(attempted, {
           type: "record_dropped",
           identity,
           drop: {
@@ -381,7 +383,7 @@ describe("Operation current codec", () => {
       identity,
       attemptedAt: 11,
     });
-    const included = advanceOperation(attempted, {
+    const included = applyVerifiedOperationObservation(attempted, {
       type: "record_included",
       identity,
       inclusion: {
@@ -394,7 +396,7 @@ describe("Operation current codec", () => {
     });
     expectOperationError(
       () =>
-        advanceOperation(included, {
+        applyVerifiedOperationObservation(included, {
           type: "record_finalized",
           identity,
           finality: {
@@ -420,7 +422,7 @@ describe("Operation current codec", () => {
     expectRecordInvalid({ ...attempted, revision: 0 });
     expectRecordInvalid({ ...attempted, revision: 2 });
 
-    const observedAttempt = advanceOperation(attempted, {
+    const observedAttempt = applyVerifiedOperationObservation(attempted, {
       type: "record_pending",
       identity,
       observedAt: 12,
@@ -435,7 +437,7 @@ describe("Operation current codec", () => {
       submittedAt: 12,
     });
     expectRecordInvalid({ ...submitted, revision: 1 });
-    const observedSubmitted = advanceOperation(submitted, {
+    const observedSubmitted = applyVerifiedOperationObservation(submitted, {
       type: "record_pending",
       identity,
       observedAt: 13,
@@ -443,7 +445,7 @@ describe("Operation current codec", () => {
     });
     expectRecordInvalid({ ...observedSubmitted, revision: 2 });
 
-    const included = advanceOperation(submitted, {
+    const included = applyVerifiedOperationObservation(submitted, {
       type: "record_included",
       identity,
       inclusion: {
@@ -455,7 +457,7 @@ describe("Operation current codec", () => {
       },
     });
     expectRecordInvalid({ ...included, revision: 2 });
-    const observedIncluded = advanceOperation(included, {
+    const observedIncluded = applyVerifiedOperationObservation(included, {
       type: "record_unreadable",
       identity,
       observedAt: 14,
@@ -463,7 +465,7 @@ describe("Operation current codec", () => {
     });
     expectRecordInvalid({ ...observedIncluded, revision: 3 });
 
-    const finalized = advanceOperation(included, {
+    const finalized = applyVerifiedOperationObservation(included, {
       type: "record_finalized",
       identity,
       finality: {
@@ -474,14 +476,14 @@ describe("Operation current codec", () => {
     });
     expectRecordInvalid({ ...finalized, revision: 3 });
 
-    const droppedAfterSubmitted = advanceOperation(submitted, {
+    const droppedAfterSubmitted = applyVerifiedOperationObservation(submitted, {
       type: "record_dropped",
       identity,
       drop: replacementDrop(15),
     });
     expectRecordInvalid({ ...droppedAfterSubmitted, revision: 2 });
 
-    const droppedAfterIncluded = advanceOperation(included, {
+    const droppedAfterIncluded = applyVerifiedOperationObservation(included, {
       type: "record_dropped",
       identity,
       drop: replacementDrop(15),
@@ -494,7 +496,7 @@ describe("Operation current codec", () => {
     };
     expectOperationError(
       () =>
-        advanceOperation(exhausted, {
+        applyVerifiedOperationObservation(exhausted, {
           type: "record_pending",
           identity,
           observedAt: 13,

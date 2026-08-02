@@ -10,6 +10,7 @@ import {
   operationOccupiesLane,
   parseOperation,
 } from "../src/index.js";
+import { applyVerifiedOperationObservation } from "../src/operation.js";
 
 const identity: OperationIdentity = {
   kind: "execution",
@@ -51,7 +52,7 @@ function submitted(operation: Operation, at = 12): Operation {
 }
 
 function included(operation: Operation, outcome: OperationOutcome = "success", at = 13): Operation {
-  return advanceOperation(operation, {
+  return applyVerifiedOperationObservation(operation, {
     type: "record_included",
     identity,
     inclusion: {
@@ -111,7 +112,7 @@ describe("Operation aggregate", () => {
 
     const sent = submitted(attempted(created));
     const observed = included(sent, "success");
-    const finalized = advanceOperation(observed, {
+    const finalized = applyVerifiedOperationObservation(observed, {
       type: "record_finalized",
       identity,
       finality: {
@@ -146,7 +147,7 @@ describe("Operation aggregate", () => {
 
   it("retains stronger inclusion through pending and unreadable observations", () => {
     let operation = attempted(prepared());
-    operation = advanceOperation(operation, {
+    operation = applyVerifiedOperationObservation(operation, {
       type: "record_pending",
       identity,
       observedAt: 12,
@@ -158,7 +159,7 @@ describe("Operation aggregate", () => {
     });
 
     operation = included(operation, "success", 13);
-    operation = advanceOperation(operation, {
+    operation = applyVerifiedOperationObservation(operation, {
       type: "record_unreadable",
       identity,
       observedAt: 14,
@@ -170,7 +171,7 @@ describe("Operation aggregate", () => {
       observation: { status: "unreadable" },
     });
 
-    operation = advanceOperation(operation, {
+    operation = applyVerifiedOperationObservation(operation, {
       type: "record_pending",
       identity,
       observedAt: 15,
@@ -184,7 +185,7 @@ describe("Operation aggregate", () => {
   });
 
   it("uses positive finalized nonce replacement as the only dropped transition", () => {
-    const waiting = advanceOperation(attempted(prepared()), {
+    const waiting = applyVerifiedOperationObservation(attempted(prepared()), {
       type: "record_unreadable",
       identity,
       observedAt: 12,
@@ -192,7 +193,7 @@ describe("Operation aggregate", () => {
     });
     expect(waiting.state).toBe("submission_attempted");
 
-    const dropped = advanceOperation(waiting, {
+    const dropped = applyVerifiedOperationObservation(waiting, {
       type: "record_dropped",
       identity,
       drop: replacementDrop(),
@@ -213,7 +214,7 @@ describe("Operation aggregate", () => {
 
   it("retains prior inclusion when positive evidence later proves dropped", () => {
     const prior = included(attempted(prepared()), "success", 12);
-    const dropped = advanceOperation(prior, {
+    const dropped = applyVerifiedOperationObservation(prior, {
       type: "record_dropped",
       identity,
       drop: replacementDrop(),
@@ -232,7 +233,7 @@ describe("Operation aggregate", () => {
 
     expectOperationError(
       () =>
-        advanceOperation(waiting, {
+        applyVerifiedOperationObservation(waiting, {
           type: "record_pending",
           identity: { ...identity, chainId: identity.chainId + 1 },
           observedAt: 12,
@@ -254,10 +255,29 @@ describe("Operation aggregate", () => {
 
     expectOperationError(
       () =>
-        advanceOperation(prepared(), {
+        applyVerifiedOperationObservation(prepared(), {
           type: "record_dropped",
           identity,
           drop: replacementDrop(),
+        }),
+      "operation_transition_forbidden",
+    );
+  });
+
+  it("does not let public callers fabricate observation transitions", () => {
+    const waiting = attempted(prepared());
+    expectOperationError(
+      () =>
+        advanceOperation(waiting, {
+          type: "record_included",
+          identity,
+          inclusion: {
+            transactionHash,
+            blockNumber: "20",
+            blockHash: inclusionBlockHash,
+            outcome: "success",
+            observedAt: 12,
+          },
         }),
       "operation_transition_forbidden",
     );
@@ -267,7 +287,7 @@ describe("Operation aggregate", () => {
     const waiting = attempted(prepared(10), 11);
     expectOperationError(
       () =>
-        advanceOperation(waiting, {
+        applyVerifiedOperationObservation(waiting, {
           type: "record_pending",
           identity,
           observedAt: 10,
@@ -276,12 +296,12 @@ describe("Operation aggregate", () => {
       "operation_transition_invalid",
     );
 
-    const final = advanceOperation(included(waiting, "success", 12), {
+    const final = applyVerifiedOperationObservation(included(waiting, "success", 12), {
       type: "record_finalized",
       identity,
       finality: { blockNumber: "25", blockHash: finalityBlockHash, observedAt: 13 },
     });
-    const afterUnreadable = advanceOperation(final, {
+    const afterUnreadable = applyVerifiedOperationObservation(final, {
       type: "record_unreadable",
       identity,
       observedAt: 14,

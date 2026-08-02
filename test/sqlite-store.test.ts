@@ -16,6 +16,7 @@ import {
   type OperationIdentity,
   type OperationStore,
 } from "../src/index.js";
+import { applyVerifiedOperationObservation } from "../src/operation.js";
 import { createSqliteGrantStore, createSqliteOperationStore } from "../src/testing.js";
 
 const grantIdentity: GrantIdentity = {
@@ -249,7 +250,7 @@ describe("test-only durable SQLite stores", () => {
       submittedAt: 12,
     });
     storeRevision = await commitOperation(store, first, storeRevision);
-    first = advanceOperation(first, {
+    first = applyVerifiedOperationObservation(first, {
       type: "record_included",
       identity,
       inclusion: {
@@ -261,7 +262,7 @@ describe("test-only durable SQLite stores", () => {
       },
     });
     storeRevision = await commitOperation(store, first, storeRevision);
-    first = advanceOperation(first, {
+    first = applyVerifiedOperationObservation(first, {
       type: "record_finalized",
       identity,
       finality: {
