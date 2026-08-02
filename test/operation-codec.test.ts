@@ -146,6 +146,10 @@ describe("Operation current codec", () => {
       "operation_input_invalid",
     );
     expectOperationError(
+      () => createOperation({ identity, preparedAt: -0 }),
+      "operation_input_invalid",
+    );
+    expectOperationError(
       () =>
         createOperation({
           identity: { ...identity, account: `0x${"00".repeat(20)}` },
@@ -224,6 +228,60 @@ describe("Operation current codec", () => {
     });
     expect(parseOperation(unstable)).toEqual(source);
     expect(stateReads).toBe(1);
+
+    const targetIncluded = advanceOperation(
+      advanceOperation(createOperation({ identity, preparedAt: 10 }), {
+        type: "mark_submission_attempted",
+        identity,
+        attemptedAt: 11,
+      }),
+      {
+        type: "record_included",
+        identity,
+        inclusion: {
+          transactionHash: `0x${"aa".repeat(32)}`,
+          blockNumber: "20",
+          blockHash: `0x${"bb".repeat(32)}`,
+          outcome: "success",
+          observedAt: 12,
+        },
+      },
+    );
+    const dropped = advanceOperation(targetIncluded, {
+      type: "record_dropped",
+      identity,
+      drop: replacementDrop(15),
+    });
+    type MutableDroppedRecord = {
+      priorInclusion: Record<string, unknown>;
+      drop: { replacement: { inclusion: Record<string, unknown> } };
+    };
+
+    const aliased = clone(dropped) as unknown as MutableDroppedRecord;
+    aliased.drop.replacement.inclusion = aliased.priorInclusion;
+    expectRecordInvalid(aliased);
+
+    const copied = clone(dropped) as unknown as MutableDroppedRecord;
+    copied.drop.replacement.inclusion = { ...copied.priorInclusion };
+    expectRecordInvalid(copied);
+
+    if (targetIncluded.state !== "included") throw new Error("Expected included operation");
+    const transitionDrop = replacementDrop(15);
+    expectOperationError(
+      () =>
+        advanceOperation(targetIncluded, {
+          type: "record_dropped",
+          identity,
+          drop: {
+            ...transitionDrop,
+            replacement: {
+              ...transitionDrop.replacement,
+              inclusion: targetIncluded.inclusion,
+            },
+          },
+        }),
+      "operation_transition_invalid",
+    );
   });
 
   it("sanitizes hostile reflection failures", () => {

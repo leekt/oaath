@@ -184,15 +184,25 @@ export type OperationTransition =
     }>;
 
 type PlainRecord = Record<string, unknown>;
+type CaptureContext = WeakSet<object>;
 
 function invalid(code: OperationErrorCode, message: string): never {
   throw new OgpOperationError(code, message);
 }
 
-function captureRecord(value: unknown, label: string, code: OperationErrorCode): PlainRecord {
+function captureRecord(
+  value: unknown,
+  label: string,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): PlainRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return invalid(code, `${label} must be a plain object`);
   }
+  if (context.has(value)) {
+    return invalid(code, `${label} aliases another record`);
+  }
+  context.add(value);
 
   const prototype = Reflect.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
@@ -233,12 +243,13 @@ function exactRecord(
   keys: readonly string[],
   label: string,
   code: OperationErrorCode,
+  context: CaptureContext,
 ): PlainRecord {
-  return exactCapturedRecord(captureRecord(value, label, code), keys, label, code);
+  return exactCapturedRecord(captureRecord(value, label, code, context), keys, label, code);
 }
 
 function safeInteger(value: unknown, label: string, code: OperationErrorCode, minimum = 0): number {
-  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
+  if (!Number.isSafeInteger(value) || Object.is(value, -0) || (value as number) < minimum) {
     return invalid(code, `${label} must be a safe integer at least ${minimum}`);
   }
   return value as number;
@@ -277,12 +288,17 @@ function uint256(value: unknown, label: string, code: OperationErrorCode): strin
   return value;
 }
 
-function parseIdentity(value: unknown, code: OperationErrorCode): Readonly<OperationIdentity> {
+function parseIdentity(
+  value: unknown,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationIdentity> {
   const record = exactRecord(
     value,
     ["kind", "grantId", "chainId", "entryPoint", "account", "nonce", "userOperationHash"],
     "operation identity",
     code,
+    context,
   );
   if (record.kind !== "execution" && record.kind !== "revocation") {
     return invalid(code, "operation identity kind is unsupported");
@@ -301,12 +317,14 @@ function parseIdentity(value: unknown, code: OperationErrorCode): Readonly<Opera
 function parseUserOperationReference(
   value: unknown,
   code: OperationErrorCode,
+  context: CaptureContext,
 ): Readonly<UserOperationReference> {
   const record = exactRecord(
     value,
     ["chainId", "entryPoint", "account", "nonce", "userOperationHash"],
     "UserOperation reference",
     code,
+    context,
   );
   return Object.freeze({
     chainId: safeInteger(record.chainId, "UserOperation reference chainId", code, 1),
@@ -324,9 +342,10 @@ function parseUserOperationReference(
 function parseWeakObservation(
   value: unknown,
   code: OperationErrorCode,
+  context: CaptureContext,
 ): OperationWeakObservation | null {
   if (value === null) return null;
-  const captured = captureRecord(value, "operation observation", code);
+  const captured = captureRecord(value, "operation observation", code, context);
   const status = captured.status;
   const record = exactCapturedRecord(
     captured,
@@ -355,12 +374,17 @@ function parseWeakObservation(
   return invalid(code, "operation observation status is unsupported");
 }
 
-function parseInclusion(value: unknown, code: OperationErrorCode): Readonly<OperationInclusion> {
+function parseInclusion(
+  value: unknown,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationInclusion> {
   const record = exactRecord(
     value,
     ["transactionHash", "blockNumber", "blockHash", "outcome", "observedAt"],
     "operation inclusion",
     code,
+    context,
   );
   if (record.outcome !== "success" && record.outcome !== "reverted") {
     return invalid(code, "operation inclusion outcome is unsupported");
@@ -374,12 +398,17 @@ function parseInclusion(value: unknown, code: OperationErrorCode): Readonly<Oper
   });
 }
 
-function parseFinality(value: unknown, code: OperationErrorCode): Readonly<OperationFinality> {
+function parseFinality(
+  value: unknown,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationFinality> {
   const record = exactRecord(
     value,
     ["blockNumber", "blockHash", "observedAt"],
     "operation finality",
     code,
+    context,
   );
   return Object.freeze({
     blockNumber: uint256(record.blockNumber, "operation finality blockNumber", code),
@@ -392,8 +421,15 @@ function parseDrop(
   value: unknown,
   identity: OperationIdentity,
   code: OperationErrorCode,
+  context: CaptureContext,
 ): Readonly<OperationDropEvidence> {
-  const record = exactRecord(value, ["kind", "replacement"], "operation drop evidence", code);
+  const record = exactRecord(
+    value,
+    ["kind", "replacement"],
+    "operation drop evidence",
+    code,
+    context,
+  );
   if (record.kind !== "finalized_nonce_replacement") {
     return invalid(code, "operation drop evidence kind is unsupported");
   }
@@ -402,8 +438,13 @@ function parseDrop(
     ["identity", "inclusion", "finality"],
     "operation drop replacement",
     code,
+    context,
   );
-  const replacementIdentity = parseUserOperationReference(replacementRecord.identity, code);
+  const replacementIdentity = parseUserOperationReference(
+    replacementRecord.identity,
+    code,
+    context,
+  );
   if (
     replacementIdentity.chainId !== identity.chainId ||
     replacementIdentity.entryPoint !== identity.entryPoint ||
@@ -413,8 +454,8 @@ function parseDrop(
   ) {
     return invalid(code, "operation drop replacement does not identify a distinct same-lane op");
   }
-  const inclusion = parseInclusion(replacementRecord.inclusion, code);
-  const finality = parseFinality(replacementRecord.finality, code);
+  const inclusion = parseInclusion(replacementRecord.inclusion, code, context);
+  const finality = parseFinality(replacementRecord.finality, code, context);
   if (
     finality.observedAt < inclusion.observedAt ||
     BigInt(finality.blockNumber) < BigInt(inclusion.blockNumber) ||
@@ -440,31 +481,32 @@ function parseNullableTime(value: unknown, label: string, code: OperationErrorCo
 function parseNullableInclusion(
   value: unknown,
   code: OperationErrorCode,
+  context: CaptureContext,
 ): Readonly<OperationInclusion> | null {
-  return value === null ? null : parseInclusion(value, code);
+  return value === null ? null : parseInclusion(value, code, context);
 }
 
 function assertTimeOrder(condition: boolean, label: string, code: OperationErrorCode): void {
   if (!condition) invalid(code, `${label} is chronologically contradictory`);
 }
 
-function baseRecord(record: PlainRecord, code: OperationErrorCode) {
+function baseRecord(record: PlainRecord, code: OperationErrorCode, context: CaptureContext) {
   if (record.version !== OGP_OPERATION_RECORD_VERSION) {
     return invalid(code, "operation record version is unsupported");
   }
   return {
     version: OGP_OPERATION_RECORD_VERSION,
-    identity: parseIdentity(record.identity, code),
+    identity: parseIdentity(record.identity, code, context),
     revision: safeInteger(record.revision, "operation revision", code),
     preparedAt: safeInteger(record.preparedAt, "operation preparedAt", code),
     updatedAt: safeInteger(record.updatedAt, "operation updatedAt", code),
-    observation: parseWeakObservation(record.observation, code),
+    observation: parseWeakObservation(record.observation, code, context),
   } as const;
 }
 
-function parseOperationUnsafe(value: unknown): Operation {
+function parseOperationUnsafe(value: unknown, context: CaptureContext): Operation {
   const code = "operation_record_invalid" as const;
-  const captured = captureRecord(value, "operation record", code);
+  const captured = captureRecord(value, "operation record", code, context);
   const state = captured.state;
   const commonKeys = [
     "version",
@@ -478,7 +520,7 @@ function parseOperationUnsafe(value: unknown): Operation {
 
   if (state === "prepared") {
     const record = exactCapturedRecord(captured, commonKeys, "prepared operation record", code);
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     assertTimeOrder(base.revision === 0, "prepared operation revision", code);
     assertTimeOrder(base.updatedAt === base.preparedAt, "prepared operation time", code);
     assertTimeOrder(base.observation === null, "prepared operation observation", code);
@@ -492,7 +534,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       "attempted operation record",
       code,
     );
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     assertTimeOrder(
       attemptedAt >= base.preparedAt && attemptedAt <= base.updatedAt,
@@ -521,7 +563,7 @@ function parseOperationUnsafe(value: unknown): Operation {
       "submitted operation record",
       code,
     );
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = safeInteger(record.submittedAt, "operation submittedAt", code);
     assertTimeOrder(
@@ -554,10 +596,10 @@ function parseOperationUnsafe(value: unknown): Operation {
       "included operation record",
       code,
     );
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
-    const inclusion = parseInclusion(record.inclusion, code);
+    const inclusion = parseInclusion(record.inclusion, code, context);
     const minimumRevision =
       2 + (submittedAt === null ? 0 : 1) + (base.observation === null ? 0 : 1);
     assertTimeOrder(base.revision >= minimumRevision, "included operation revision", code);
@@ -589,11 +631,11 @@ function parseOperationUnsafe(value: unknown): Operation {
       "finalized operation record",
       code,
     );
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
-    const inclusion = parseInclusion(record.inclusion, code);
-    const finality = parseFinality(record.finality, code);
+    const inclusion = parseInclusion(record.inclusion, code, context);
+    const finality = parseFinality(record.finality, code, context);
     assertTimeOrder(
       base.revision >= 3 + (submittedAt === null ? 0 : 1),
       "finalized operation revision",
@@ -630,11 +672,17 @@ function parseOperationUnsafe(value: unknown): Operation {
       "dropped operation record",
       code,
     );
-    const base = baseRecord(record, code);
+    const base = baseRecord(record, code, context);
     const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
     const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
-    const priorInclusion = parseNullableInclusion(record.priorInclusion, code);
-    const drop = parseDrop(record.drop, base.identity, code);
+    const priorInclusion = parseNullableInclusion(record.priorInclusion, code, context);
+    const drop = parseDrop(record.drop, base.identity, code, context);
+    if (
+      priorInclusion !== null &&
+      inclusionIdentityEqual(priorInclusion, drop.replacement.inclusion)
+    ) {
+      return invalid(code, "operation drop replacement reuses the target inclusion");
+    }
     const minimumRevision = 2 + (submittedAt === null ? 0 : 1) + (priorInclusion === null ? 0 : 1);
     assertTimeOrder(base.revision >= minimumRevision, "dropped operation revision", code);
     assertTimeOrder(
@@ -664,7 +712,7 @@ function parseOperationUnsafe(value: unknown): Operation {
 
 export function parseOperation(value: unknown): Operation {
   try {
-    return parseOperationUnsafe(value);
+    return parseOperationUnsafe(value, new WeakSet());
   } catch {
     throw new OgpOperationError(
       "operation_record_invalid",
@@ -675,11 +723,13 @@ export function parseOperation(value: unknown): Operation {
 
 export function createOperation(value: unknown): PreparedOperation {
   try {
+    const context: CaptureContext = new WeakSet();
     const record = exactRecord(
       value,
       ["identity", "preparedAt"],
       "operation preparation",
       "operation_input_invalid",
+      context,
     );
     const preparedAt = safeInteger(
       record.preparedAt,
@@ -688,7 +738,7 @@ export function createOperation(value: unknown): PreparedOperation {
     );
     return Object.freeze({
       version: OGP_OPERATION_RECORD_VERSION,
-      identity: parseIdentity(record.identity, "operation_input_invalid"),
+      identity: parseIdentity(record.identity, "operation_input_invalid", context),
       revision: 0,
       state: "prepared",
       preparedAt,
@@ -710,7 +760,8 @@ export function operationOccupiesLane(value: unknown): boolean {
 
 function parseTransition(value: unknown): OperationTransition {
   const code = "operation_transition_invalid" as const;
-  const captured = captureRecord(value, "operation transition", code);
+  const context: CaptureContext = new WeakSet();
+  const captured = captureRecord(value, "operation transition", code, context);
   const type = captured.type;
 
   if (type === "mark_submission_attempted") {
@@ -722,7 +773,7 @@ function parseTransition(value: unknown): OperationTransition {
     );
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
+      identity: parseIdentity(record.identity, code, context),
       attemptedAt: safeInteger(record.attemptedAt, "transition attemptedAt", code),
     });
   }
@@ -736,7 +787,7 @@ function parseTransition(value: unknown): OperationTransition {
     );
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
+      identity: parseIdentity(record.identity, code, context),
       returnedUserOperationHash: hash(
         record.returnedUserOperationHash,
         "transition returnedUserOperationHash",
@@ -758,7 +809,7 @@ function parseTransition(value: unknown): OperationTransition {
     }
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
+      identity: parseIdentity(record.identity, code, context),
       observedAt: safeInteger(record.observedAt, "transition observedAt", code),
       reason: record.reason,
     });
@@ -781,7 +832,7 @@ function parseTransition(value: unknown): OperationTransition {
     }
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
+      identity: parseIdentity(record.identity, code, context),
       observedAt: safeInteger(record.observedAt, "transition observedAt", code),
       reason: record.reason,
     });
@@ -796,8 +847,8 @@ function parseTransition(value: unknown): OperationTransition {
     );
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
-      inclusion: parseInclusion(record.inclusion, code),
+      identity: parseIdentity(record.identity, code, context),
+      inclusion: parseInclusion(record.inclusion, code, context),
     });
   }
 
@@ -810,8 +861,8 @@ function parseTransition(value: unknown): OperationTransition {
     );
     return Object.freeze({
       type,
-      identity: parseIdentity(record.identity, code),
-      finality: parseFinality(record.finality, code),
+      identity: parseIdentity(record.identity, code, context),
+      finality: parseFinality(record.finality, code, context),
     });
   }
 
@@ -822,11 +873,11 @@ function parseTransition(value: unknown): OperationTransition {
       "dropped transition",
       code,
     );
-    const identity = parseIdentity(record.identity, code);
+    const identity = parseIdentity(record.identity, code, context);
     return Object.freeze({
       type,
       identity,
-      drop: parseDrop(record.drop, identity, code),
+      drop: parseDrop(record.drop, identity, code, context),
     });
   }
 
@@ -1011,6 +1062,15 @@ export function advanceOperation(value: unknown, transitionValue: unknown): Oper
       operation.state === "dropped"
     ) {
       return forbidden(operation, transition);
+    }
+    if (
+      operation.state === "included" &&
+      inclusionIdentityEqual(operation.inclusion, transition.drop.replacement.inclusion)
+    ) {
+      return invalid(
+        "operation_transition_invalid",
+        "operation drop replacement reuses the target inclusion",
+      );
     }
     requireTime(operation, transition.drop.replacement.finality.observedAt);
     const attemptedAt = operation.attemptedAt;
