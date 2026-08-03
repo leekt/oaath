@@ -1,3 +1,51 @@
+export type { OaathCleanupResult, RunOaathCleanupInput } from "./cleanup/coordinator.js";
+export { OaathCleanupError, runOaathCleanup } from "./cleanup/coordinator.js";
+export type { OaathCleanupEffect } from "./cleanup/effects.js";
+export {
+  closeEffect,
+  forgetLocalEffect,
+  revokeEffect,
+  signOutEffect,
+} from "./cleanup/effects.js";
+export type { OaathBinding, OaathBindingInput } from "./client/binding.js";
+export {
+  captureOaathBinding,
+  OAATH_BINDING_HASH_DOMAIN,
+  OAATH_BINDING_VERSION,
+} from "./client/binding.js";
+export type {
+  OaathAuthorizationCapability,
+  OaathConnection,
+  OaathIssuerCapability,
+  OaathPermissionCallInput,
+  OaathPermissionInput,
+  OaathRequestPermissionInput,
+} from "./client/connection.js";
+export type { OaathClientErrorCode } from "./client/errors.js";
+export { OaathClientError } from "./client/errors.js";
+export type {
+  OaathCallInput,
+  OaathCapabilityInvalidationCapability,
+  OaathChainCapability,
+  OaathGrantHandle,
+  OaathQuoteCapability,
+  OaathQuoteRequest,
+  OaathSendCallsInput,
+  OaathSubmissionCapability,
+  OaathSubmissionRequest,
+} from "./client/grant-handle.js";
+export type {
+  OaathOperationHandle,
+  OaathOperationOutcome,
+  OaathOperationStatus,
+} from "./client/operation-handle.js";
+export type {
+  Oaath,
+  OaathConfiguration,
+  OaathSigningConfiguration,
+  OaathStoreConfiguration,
+} from "./create-oaath.js";
+export { createOAAth } from "./create-oaath.js";
 export type {
   DiagnoseKernelCapabilityInput,
   KernelCapability,
@@ -125,6 +173,43 @@ export {
   createOperationRunner,
   OaathOperationRunnerError,
 } from "./operation-runner.js";
+export { createIndexedDbCleanupStore } from "./persistence/indexeddb/cleanup-store.js";
+export { createIndexedDbContextStore } from "./persistence/indexeddb/context-store.js";
+export type { OaathDatabase, OaathObjectStoreName } from "./persistence/indexeddb/database.js";
+export {
+  OAATH_INDEXEDDB_NAME,
+  OAATH_INDEXEDDB_STORES,
+  OAATH_INDEXEDDB_VERSION,
+  openOaathDatabase,
+} from "./persistence/indexeddb/database.js";
+export { createIndexedDbGrantStoreAdapter } from "./persistence/indexeddb/grant-store.js";
+export { createIndexedDbKeyStore } from "./persistence/indexeddb/key-store.js";
+export { createIndexedDbOperationStoreAdapter } from "./persistence/indexeddb/operation-store.js";
+export type {
+  OaathCleanupCheckpoint,
+  OaathCleanupCheckpointStore,
+  OaathCleanupEffectName,
+  OaathClientContext,
+  OaathContextStore,
+  OaathKeyStore,
+  PersistenceErrorCode,
+} from "./persistence/interfaces.js";
+export {
+  isCleanupEffectName,
+  OAATH_CLEANUP_CHECKPOINT_VERSION,
+  OAATH_CLIENT_CONTEXT_VERSION,
+  OaathPersistenceError,
+  parseCleanupCheckpoint,
+  parseClientContext,
+  requireNonExtractableKey,
+} from "./persistence/interfaces.js";
+export {
+  createMemoryCleanupStore,
+  createMemoryContextStore,
+  createMemoryGrantStoreAdapter,
+  createMemoryKeyStore,
+  createMemoryOperationStoreAdapter,
+} from "./persistence/memory/stores.js";
 export type {
   PreparedEntryPoint,
   PreparedFactory,
