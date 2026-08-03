@@ -1,3 +1,33 @@
+export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
+export { composeKernelHooks } from "./kernel/hook/compose.js";
+export type { EcdsaKeyAccount, EcdsaKeyInput, EcdsaSignRequest } from "./kernel/key/ecdsa.js";
+export { ecdsaKey } from "./kernel/key/ecdsa.js";
+export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
+export { p256Key } from "./kernel/key/p256.js";
+export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/webauthn.js";
+export { webauthnKey } from "./kernel/key/webauthn.js";
+export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
+export { ownerOperator } from "./kernel/operator/owner.js";
+export type { SessionOperatorInput } from "./kernel/operator/session.js";
+export { sessionOperator } from "./kernel/operator/session.js";
+export type {
+  ComposedKernelHookPolicy,
+  CreateKernelRuntimeInput,
+  KernelCallHookProfile,
+  KernelExpiryHookProfile,
+  KernelHookProfile,
+  KernelKeyKind,
+  KernelOperationLimitHookProfile,
+  KernelOperatorAuthority,
+  KernelRuntime,
+  KernelRuntimeBindAccountInput,
+  KernelRuntimeErrorCode,
+  KernelRuntimePrepareInput,
+  KernelValueHookProfile,
+  KeyProfile,
+  OperatorProfile,
+} from "./kernel/types.js";
+export { OaathKernelRuntimeError } from "./kernel/types.js";
 export type {
   KernelV4AccountDescriptor,
   KernelV4AccountInput,
@@ -45,6 +75,7 @@ export {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_EXECUTE_SELECTOR,
+  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
