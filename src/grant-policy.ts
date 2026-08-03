@@ -325,7 +325,7 @@ function capturePolicy(
   const validUntil =
     record.validUntil === null
       ? null
-      : safeInteger(record.validUntil, "grant policy validUntil", code, 0, MAX_UINT48);
+      : safeInteger(record.validUntil, "grant policy validUntil", code, 1, MAX_UINT48);
   if (validUntil !== null && validAfter > validUntil) {
     return invalid(code, "grant policy time window is inverted");
   }

@@ -170,6 +170,7 @@ describe("canonical Grant policy", () => {
       { ...clone(policy), validAfter: -0 },
       { ...clone(policy), validAfter: 1.5 },
       { ...clone(policy), validAfter: 2 ** 48 },
+      { ...clone(policy), validUntil: 0 },
       { ...clone(policy), validUntil: 99 },
       { ...clone(policy), validUntil: undefined },
       { ...clone(policy), perChainOperationLimit: 0 },
