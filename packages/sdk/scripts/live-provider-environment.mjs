@@ -1,3 +1,7 @@
+// ponytail: this deny list is repo-level policy but lives under packages/sdk;
+// it now encodes @oaath/server-owned credentials (APNS_*/APPLE_*) — move it to
+// a repo-owned home (or @oaath/testing) so no package owns another's
+// credential policy. Do NOT write a second list; extend this one.
 export function scrubLiveProviderEnvironment(environment) {
   return Object.fromEntries(
     Object.entries(environment).filter(([name]) => {
