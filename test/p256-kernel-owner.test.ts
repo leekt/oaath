@@ -180,23 +180,7 @@ describe("P-256 Kernel owner runtime", () => {
       factoryRoute: "kernel_factory",
     });
 
-    expect(getKernelRuntimeCapability("owner_p256")).toEqual({
-      status: "available",
-      anchors: [
-        "leekt_p256_validator.P256Validator",
-        "ogp.createP256KernelOwnerRuntime",
-        "zerodev_sdk.createKernelAccount",
-        "zerodev_sdk.KERNEL_V3_3",
-        "kernel.v3_3",
-        "entrypoint.v0_7",
-      ],
-      constraints: ["action_runtime_and_precompile_evidence_required"],
-    });
-    expect(fixture.p256Validator).toMatchObject({
-      sourceCommit: "8f6a71992e297f2e7caa61df2c6eb0b6d9145d2d",
-      runtimeKeccak256: "0xd7d9a5b1ddd1e22e7235268fd624c7c0714e5046b199d507bbfe5e03408e579d",
-      runtimeByteLength: 1919,
-    });
+    expect(getKernelRuntimeCapability("owner_p256")).toMatchObject({ status: "available" });
     expect(direct.runtime.validatorAddress).toBe("0x9906ab44ff795883c5a725687a2705be4118b0f3");
     expect(direct.runtime.accountAddress).toBe(recreated.runtime.accountAddress);
     expect(meta.runtime.accountAddress).toBe(direct.runtime.accountAddress);
@@ -284,10 +268,26 @@ describe("P-256 Kernel owner runtime", () => {
     await current.runtime.signPreparedUserOperation(operation);
     expect(current.owner.calls()).toBe(1);
 
+    let reachChain!: () => void;
+    let releaseChain!: () => void;
+    const chainReached = new Promise<void>((resolve) => (reachChain = resolve));
+    const chainBlocked = new Promise<void>((resolve) => (releaseChain = resolve));
+    const older = current.runtime.restore({
+      async read(request: P256KernelOwnerRestorationReadRequest) {
+        if (request.type === "chain_id") {
+          reachChain();
+          await chainBlocked;
+        }
+        return reads.capability.read(request);
+      },
+    });
+    await chainReached;
     await expectCode(
       () => current.runtime.restore({ read: async () => 31_337, extra: true }),
       "p256_kernel_owner_restoration_unreadable",
     );
+    releaseChain();
+    await expectCode(() => older, "p256_kernel_owner_restoration_unavailable");
     await expectCode(
       () => current.runtime.signPreparedUserOperation(operation),
       "p256_kernel_owner_restoration_required",

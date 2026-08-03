@@ -551,11 +551,23 @@ export async function createP256KernelOwnerRuntime(
 
     let substrateVerified = false;
     let deployedVerified = false;
+    let restorationAttempt = 0;
 
     async function restore(readsValue: unknown): Promise<Readonly<RestoredP256KernelOwner>> {
+      const attempt = ++restorationAttempt;
       substrateVerified = false;
       deployedVerified = false;
       const reads = captureReads(readsValue);
+      function commitVerification(deployed: boolean): void {
+        if (attempt !== restorationAttempt) {
+          ownerError(
+            "p256_kernel_owner_restoration_unavailable",
+            "P-256 restoration was superseded",
+          );
+        }
+        substrateVerified = true;
+        deployedVerified = deployed;
+      }
       async function read(request: P256KernelOwnerRestorationReadRequest): Promise<unknown> {
         try {
           return await Reflect.apply(reads.read, undefined, [Object.freeze(request)]);
@@ -628,7 +640,7 @@ export async function createP256KernelOwnerRuntime(
         );
       }
       if (accountCode === "0x") {
-        substrateVerified = true;
+        commitVerification(false);
         return Object.freeze({
           status: "counterfactual" as const,
           chainId: action.chainId,
@@ -673,8 +685,7 @@ export async function createP256KernelOwnerRuntime(
           "P-256 validator public key does not match the selected profile",
         );
       }
-      substrateVerified = true;
-      deployedVerified = true;
+      commitVerification(true);
       return Object.freeze({
         status: "deployed" as const,
         chainId: action.chainId,
