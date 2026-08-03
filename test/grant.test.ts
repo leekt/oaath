@@ -12,18 +12,22 @@ const identity: GrantIdentity = {
     deviceId: "codec-device",
   },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
     kernelVersion: "0.3.3",
     factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
-      kind: "webauthn",
-      publicIdentityHash: `0x${"11".repeat(32)}`,
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
     },
   },
   operatorCredential: {
-    kind: "p256",
-    publicIdentityHash: `0x${"22".repeat(32)}`,
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"22".repeat(20)}`,
   },
   policyHash: `0x${"33".repeat(32)}`,
 };
@@ -229,7 +233,7 @@ describe("Grant current codec", () => {
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "ogp.grant/v2",
+      version: "ogp.grant/v3",
       state: "requested",
       revision: 0,
       identity: {
@@ -469,7 +473,7 @@ describe("Grant current codec", () => {
 
   it("rejects non-current, inexact, aliased, and non-dense record graphs", () => {
     const active = activeRecord(activeChildren(), 13, 35);
-    expectRecordInvalid({ ...active, version: "ogp.grant/v1" });
+    expectRecordInvalid({ ...active, version: "ogp.grant/v2" });
     expectRecordInvalid({ ...active, operationId: "forbidden" });
     const missing = { ...active };
     delete missing.updatedAt;
