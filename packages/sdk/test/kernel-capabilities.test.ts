@@ -19,6 +19,7 @@ import {
   type OperatorProfile,
   ownerOperator,
   p256Key,
+  pinnedSignerModule,
   sessionOperator,
   webauthnKey,
 } from "../src/index.js";
@@ -66,6 +67,13 @@ const keyProfiles: Readonly<Record<KernelKeyKind, () => Readonly<KeyProfile>>> =
 });
 
 const reads = Object.freeze({ read: () => Promise.resolve("0x") });
+/** The bounded scope every session capability composes; policies are required. */
+const scope = Object.freeze({
+  kind: "call" as const,
+  calls: Object.freeze([
+    Object.freeze({ target, selectors: Object.freeze(["0xe9ae5c53" as const]) }),
+  ]),
+});
 
 type Expectation =
   | Readonly<{ status: "available"; evidence: KernelCapabilityEvidence }>
@@ -86,21 +94,25 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     status: "unsupported",
     reason: "validator_module_deployment_unproven",
   }),
-  session_ecdsa: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
+  // A session is a permission, so its axis is the pinned signer module: ECDSA and
+  // WebAuthn have one, raw P-256 does not.
+  session_ecdsa: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   session_p256: Object.freeze({
     status: "unsupported",
-    reason: "validator_module_deployment_unproven",
+    reason: "signer_module_deployment_unproven",
   }),
-  session_webauthn: Object.freeze({
+  session_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
+  // CallPolicy enforces the call and value axes. The reviewed expiry and
+  // operation-count modules are not pinned yet, so both axes fail closed.
+  hook_call: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
+  hook_value: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
+  hook_expiry: Object.freeze({
     status: "unsupported",
-    reason: "validator_module_deployment_unproven",
+    reason: "policy_module_deployment_unproven",
   }),
-  hook_call: Object.freeze({ status: "unsupported", reason: "hook_module_deployment_unproven" }),
-  hook_value: Object.freeze({ status: "unsupported", reason: "hook_module_deployment_unproven" }),
-  hook_expiry: Object.freeze({ status: "unsupported", reason: "hook_module_deployment_unproven" }),
   hook_operation_limit: Object.freeze({
     status: "unsupported",
-    reason: "hook_module_deployment_unproven",
+    reason: "policy_module_deployment_unproven",
   }),
 });
 
@@ -122,7 +134,8 @@ const capabilities = [
 const RUNTIME_CODES: Readonly<Record<KernelCapabilityReason, KernelRuntimeErrorCode>> =
   Object.freeze({
     validator_module_deployment_unproven: "kernel_runtime_validator_unavailable",
-    hook_module_deployment_unproven: "kernel_runtime_hook_unavailable",
+    signer_module_deployment_unproven: "kernel_runtime_signer_unavailable",
+    policy_module_deployment_unproven: "kernel_runtime_policy_unavailable",
   });
 
 /**
@@ -139,30 +152,27 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
     case "owner_webauthn":
       return ownerOperator({ key: keyProfiles.webauthn() });
     case "session_ecdsa":
-      return sessionOperator({ key: keyProfiles.ecdsa(), hooks: [] });
+      return sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] });
     case "session_p256":
-      return sessionOperator({ key: keyProfiles.p256(), hooks: [] });
+      return sessionOperator({ key: keyProfiles.p256(), policies: [scope] });
     case "session_webauthn":
-      return sessionOperator({ key: keyProfiles.webauthn(), hooks: [] });
+      return sessionOperator({ key: keyProfiles.webauthn(), policies: [scope] });
     case "hook_call":
-      return sessionOperator({
-        key: keyProfiles.ecdsa(),
-        hooks: [{ kind: "call", calls: [{ target, selectors: [] }] }],
-      });
+      return sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] });
     case "hook_value":
       return sessionOperator({
         key: keyProfiles.ecdsa(),
-        hooks: [{ kind: "value", maximumValue: "1000" }],
+        policies: [scope, { kind: "value", maximumValue: "1000" }],
       });
     case "hook_expiry":
       return sessionOperator({
         key: keyProfiles.ecdsa(),
-        hooks: [{ kind: "expiry", validAfter: "0", validUntil: "1750000000" }],
+        policies: [scope, { kind: "expiry", validAfter: "0", validUntil: "1750000000" }],
       });
     case "hook_operation_limit":
       return sessionOperator({
         key: keyProfiles.ecdsa(),
-        hooks: [{ kind: "operation-limit", maximumOperations: "5" }],
+        policies: [scope, { kind: "operation-limit", maximumOperations: "5" }],
       });
   }
 }
@@ -196,7 +206,7 @@ describe("Kernel capability diagnosis", () => {
         const runtime = compose(chainId, capability)();
         expect(runtime.deployment.chainId).toBe(chainId);
         expect(runtime.authority).toBe(capability.startsWith("owner_") ? "owner" : "session");
-        expect(runtime.validator).toMatch(/^0x[0-9a-f]{40}$/u);
+        expect(runtime.authorityModule).toMatch(/^0x[0-9a-f]{40}$/u);
         continue;
       }
       // The diagnosed reason chooses the expected code, so neither side can
@@ -222,39 +232,61 @@ describe("Kernel capability diagnosis", () => {
           deployment,
           operator: ownerOperator({ key: keyProfiles.ecdsa() }),
           reads,
-        }).validator,
+        }).authorityModule,
       ).toBe(validator);
 
       const key = keyProfiles[kind]();
       expect(key.kind).toBe(kind);
       expect(key.publicMaterial).not.toBe(ecdsaAccount.address.toLowerCase());
+      // Neither kind has a reviewed validator module, so root authority fails
+      // closed for both.
       expect(() => key.resolveValidator(deployment)).toThrowError(
         expect.objectContaining({ code: "kernel_runtime_validator_unavailable" }),
       );
-
-      for (const operator of [
-        ownerOperator({ key }),
-        sessionOperator({ key, hooks: [] }),
-      ] as const) {
-        let runtime: Readonly<KernelRuntime> | null = null;
-        let code: unknown = null;
-        try {
-          runtime = createKernelRuntime({ deployment, operator, reads });
-        } catch (error) {
-          code = (error as Readonly<{ code: unknown }>).code;
-        }
-        expect(runtime).toBeNull();
-        expect(code).toBe("kernel_runtime_validator_unavailable");
+      let runtime: Readonly<KernelRuntime> | null = null;
+      let code: unknown = null;
+      try {
+        runtime = createKernelRuntime({
+          deployment,
+          operator: ownerOperator({ key }),
+          reads,
+        });
+      } catch (error) {
+        code = (error as Readonly<{ code: unknown }>).code;
       }
+      expect(runtime).toBeNull();
+      expect(code).toBe("kernel_runtime_validator_unavailable");
+      expect(diagnoseKernelCapability({ chainId, capability: `owner_${kind}` })).toEqual({
+        capability: `owner_${kind}`,
+        chainId,
+        status: "unsupported",
+        reason: "validator_module_deployment_unproven",
+      });
 
-      for (const capability of [`owner_${kind}`, `session_${kind}`] as const) {
-        expect(diagnoseKernelCapability({ chainId, capability })).toEqual({
-          capability,
+      // A session resolves the signer axis instead. Raw P-256 has no reviewed
+      // signer and fails closed on that axis; WebAuthn has one, and it must be
+      // the WebAuthn module, never the ECDSA one.
+      if (kind === "p256") {
+        expect(() => sessionOperator({ key, policies: [scope] })).toThrowError(
+          expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }),
+        );
+        expect(diagnoseKernelCapability({ chainId, capability: "session_p256" })).toEqual({
+          capability: "session_p256",
           chainId,
           status: "unsupported",
-          reason: "validator_module_deployment_unproven",
+          reason: "signer_module_deployment_unproven",
         });
+        return;
       }
+      const session = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({ key, policies: [scope] }),
+        reads,
+      });
+      expect(session.keyKind).toBe("webauthn");
+      expect(session.authorityModule).toBe(pinnedSignerModule("webauthn"));
+      expect(session.authorityModule).not.toBe(pinnedSignerModule("ecdsa"));
+      expect(session.packages[1]?.moduleData.endsWith(key.publicMaterial.slice(2))).toBe(true);
     },
   );
 

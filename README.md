@@ -46,8 +46,9 @@ records submission before an external send, and advances only from stronger
 evidence. Missing receipts, timeouts, and unreadable observations never
 authorize another submission or prove an operation dropped. `@oaath/testing`
 carries the concrete SQLite test stores and is never a production dependency.
-`@oaath/server` exports a name constant only; its implementation lands as
-bounded, independently reviewed child PRs.
+`@oaath/server` carries the durable authorization relay, its PostgreSQL store,
+and the experimental phone and APNs preview surfaces. Remaining capabilities land
+as bounded, independently reviewed child PRs.
 
 ## Browser golden path
 

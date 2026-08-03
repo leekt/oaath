@@ -26,6 +26,11 @@ export function ownerOperator(value: OwnerOperatorInput): Readonly<OperatorProfi
     authority: "owner" as const,
     key,
     policy: null,
+    resolveAuthorityModule: (deployment: Readonly<KernelV4Deployment>) =>
+      key.resolveValidator(exactKernelDeployment(deployment)),
+    // Root validation carries no envelope: Kernel hands the signature straight to
+    // the validator module.
+    encodeSignature: (signature: `0x${string}`) => signature,
     resolveValidation: (deployment: Readonly<KernelV4Deployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze({ kind: "root" as const });

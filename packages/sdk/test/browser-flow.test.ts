@@ -72,10 +72,11 @@ describe("browser golden path", () => {
     expect((await operation.wait()).status).toBe("finalized");
     await connection.close();
 
-    // With complete usage evidence the same calls are covered, the decision
-    // selects the session authority, and composing it fails closed because
-    // Kernel v4 pins no reviewed policy hook module yet. Owner authority is
-    // never substituted for the session the owner approved.
+    // With complete usage evidence the same calls are covered and the decision
+    // selects the session authority. Composing it fails closed: an approved grant
+    // always bounds its validity window, and no reviewed expiry policy module is
+    // pinned yet, so the permission cannot express the approved scope. Owner
+    // authority is never substituted for the session the owner approved.
     const covered = createRealm({ chain: createChainFixture({ usage: true }) });
     const sessionConnection = await covered.oaath.connect();
     const sessionGrant = await sessionConnection.requestPermission(permissionInput());

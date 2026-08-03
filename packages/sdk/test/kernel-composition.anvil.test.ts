@@ -9,6 +9,7 @@ import {
   encodeFunctionData,
   type Hex,
   http,
+  keccak256,
   parseEther,
 } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
@@ -32,6 +33,7 @@ import {
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
   type PreparedUserOperation,
+  pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
 } from "../src/index.js";
@@ -49,12 +51,13 @@ const gas = Object.freeze({
   maxPriorityFeePerGas: "1000000000",
 });
 
-interface SignerModuleFixture {
+interface ModuleFixture {
   repository: string;
   commit: string;
   source: string;
-  moduleType: 6;
+  moduleType: 5 | 6;
   expectedAddress: `0x${string}`;
+  runtimeCodeHash: `0x${string}`;
   deploymentInput: Hex;
 }
 
@@ -64,8 +67,9 @@ interface DeploymentFixture {
   kernelImmutableEcdsa: { deploymentInput: Hex };
   kernelFactory: { deploymentInput: Hex };
   ecdsaValidator: { bytecode: Hex };
-  ecdsaSigner: SignerModuleFixture;
-  webAuthnSigner: SignerModuleFixture;
+  ecdsaSigner: ModuleFixture;
+  webAuthnSigner: ModuleFixture;
+  callPolicy: ModuleFixture;
 }
 
 let anvil: ChildProcess | undefined;
@@ -170,33 +174,38 @@ afterAll(() => {
     // A CREATE2 address is derived from deployer, salt and init code alone, so
     // code landing on the pinned address proves the registry names exactly this
     // reviewed module and that nothing about the address depends on the chain.
-    for (const [kind, module] of [
-      ["ecdsa", fixture.ecdsaSigner],
-      ["webauthn", fixture.webAuthnSigner],
+    // The runtime code hash is compared too, so a module whose deployed code ever
+    // stopped matching the pinned artifact fails here rather than at validation.
+    for (const [pinned, module] of [
+      [pinnedSignerModule("ecdsa"), fixture.ecdsaSigner],
+      [pinnedSignerModule("webauthn"), fixture.webAuthnSigner],
+      [pinnedPolicyModule("call"), fixture.callPolicy],
+      [pinnedPolicyModule("value"), fixture.callPolicy],
     ] as const) {
-      expect(module).toMatchObject({
-        repository: "https://github.com/zerodevapp/kernel-7579-plugins",
-        commit: "332deed6eeef3d6279cde50aa1d51eff53728bd4",
-        moduleType: 6,
-      });
-      const pinned = pinnedSignerModule(kind);
       expect(pinned).toBe(module.expectedAddress);
-      if (pinned === null) throw new Error(`no pinned ${kind} signer module`);
-      expect(await client.getCode({ address: pinned })).toBeUndefined();
-      const hash = await wallet.sendTransaction({
-        account: submitter,
-        chain: null,
-        to: KERNEL_V4_CREATE2_DEPLOYER,
-        data: module.deploymentInput,
-        gas: 10_000_000n,
-      });
-      expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
-      expect(await client.getCode({ address: pinned })).toMatch(/^0x[0-9a-f]{2,}$/u);
+      if (pinned === null) throw new Error("registry pins no module for a bound axis");
+      if (!(await client.getCode({ address: pinned }))) {
+        const hash = await wallet.sendTransaction({
+          account: submitter,
+          chain: null,
+          to: KERNEL_V4_CREATE2_DEPLOYER,
+          data: module.deploymentInput,
+          gas: 10_000_000n,
+        });
+        expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
+      }
+      const code = await client.getCode({ address: pinned });
+      if (!code) throw new Error("pinned module carries no code");
+      expect(keccak256(code)).toBe(module.runtimeCodeHash);
     }
 
-    // The reviewed plugin set ships no raw P-256 signer, so that axis stays
+    // The reviewed module sets ship no raw P-256 signer, so that axis stays
     // unbound instead of borrowing the WebAuthn module.
     expect(pinnedSignerModule("p256")).toBeNull();
+    // No reviewed module is pinned for the expiry or per-chain operation-count
+    // axis yet, so a session requesting either fails closed.
+    expect(pinnedPolicyModule("expiry")).toBeNull();
+    expect(pinnedPolicyModule("operation-limit")).toBeNull();
   }, 60_000);
 
   it("executes owner and session authorities and falls back to handleOps without changing identity", async () => {
@@ -259,12 +268,28 @@ afterAll(() => {
       }),
       reads,
     });
+    // The permission's modules are chain-independent CREATE2 deployments, so they
+    // are deployed once per chain and reused; the deployer reverts on a second
+    // deployment to the same address.
+    const deployModule = async (module: ModuleFixture) => {
+      if (!(await client.getCode({ address: module.expectedAddress }))) {
+        await deployCreate2(module.deploymentInput);
+      }
+    };
+    // The session's scope: exactly one target, exactly one selector (empty
+    // calldata, which CallPolicy keys as selector zero) and one value ceiling.
+    await deployModule(fixture.callPolicy);
+    await deployModule(fixture.ecdsaSigner);
+    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     const sessionAccount = privateKeyToAccount(generatePrivateKey());
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
         key: ecdsaKey({ account: sessionAccount, validator: await deployValidator() }),
-        hooks: [],
+        policies: [
+          { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
+          { kind: "value", maximumValue: "777" },
+        ],
       }),
       reads,
     });
@@ -331,8 +356,9 @@ afterAll(() => {
     expect(await send(ownerRuntime, deployAndExecute)).toBe("success");
     expect(await client.getBalance({ address: ownerTarget })).toBe(12_345n);
 
-    // Session authority: the owner installs the session validator, then the
-    // session runtime signs its own executeUserOp-wrapped operation.
+    // Session authority: the owner installs the permission — the policy that
+    // bounds the session, then the signer that carries its key — and the session
+    // runtime signs inside Kernel's permission envelope.
     const deployed = await sessionRuntime.bindAccount({
       accountIndex: "0",
       initialPackages: ownerRuntime.packages,
@@ -356,7 +382,10 @@ afterAll(() => {
     });
     expect(await send(ownerRuntime, install)).toBe("success");
 
-    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    // One policy package per bounded axis, then the signer, all under one
+    // permission ID.
+    expect(sessionRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 6]);
+    expect(sessionRuntime.validation.kind).toBe("permission");
     const sessionOperation = sessionRuntime.prepareOperation({
       kind: "execution",
       grantId: "kernel-composition-session",
@@ -366,14 +395,45 @@ afterAll(() => {
       calls: [{ target: sessionTarget, value: "777", data: "0x" }],
       gas,
     });
+    // A hookless permission takes Kernel's fast path, so the policy module sees
+    // the plain execute calldata it decodes.
     expect(
       sessionOperation.userOperation.callData.startsWith(KERNEL_V4_EXECUTE_USER_OP_SELECTOR),
-    ).toBe(true);
+    ).toBe(false);
     expect(await send(sessionRuntime, sessionOperation)).toBe("success");
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-    // Authorities never borrow one another's operations: the owner runtime
-    // refuses to sign a session-shaped operation before any submission exists.
+    // Scope tightening, proven on-chain by the same installed session: a target
+    // the policy never named and a value above the ceiling are both rejected in
+    // Kernel's validation phase, so neither moves anything.
+    const uncoveredTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const uncovered = sessionRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-session-uncovered",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
+      gas,
+    });
+    expect(await send(sessionRuntime, uncovered)).toBe("reverted");
+    expect(await client.getBalance({ address: uncoveredTarget })).toBe(0n);
+
+    const excessive = sessionRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-session-excessive",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+      gas,
+    });
+    expect(await send(sessionRuntime, excessive)).toBe("reverted");
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Authorities never borrow one another's operations: the owner runtime refuses
+    // to sign an operation bound to the session's permission before any
+    // submission exists.
     const foreign = sessionRuntime.prepareOperation({
       kind: "execution",
       grantId: "kernel-composition-foreign",

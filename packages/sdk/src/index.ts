@@ -56,32 +56,32 @@ export type {
 } from "./kernel/capabilities.js";
 export { diagnoseKernelCapability } from "./kernel/capabilities.js";
 export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
-export { composeKernelHooks } from "./kernel/hook/compose.js";
 export type { EcdsaKeyAccount, EcdsaKeyInput, EcdsaSignRequest } from "./kernel/key/ecdsa.js";
 export { ecdsaKey } from "./kernel/key/ecdsa.js";
 export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
 export { p256Key } from "./kernel/key/p256.js";
 export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
-export { pinnedSignerModule } from "./kernel/modules.js";
+export { pinnedPolicyModule, pinnedSignerModule } from "./kernel/modules.js";
 export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
 export { ownerOperator } from "./kernel/operator/owner.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
+export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
 export type {
-  ComposedKernelHookPolicy,
+  CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
-  KernelCallHookProfile,
-  KernelExpiryHookProfile,
-  KernelHookProfile,
+  KernelCallPolicyProfile,
+  KernelExpiryPolicyProfile,
   KernelKeyKind,
-  KernelOperationLimitHookProfile,
+  KernelOperationLimitPolicyProfile,
   KernelOperatorAuthority,
+  KernelPolicyProfile,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,
   KernelRuntimePrepareInput,
-  KernelValueHookProfile,
+  KernelValuePolicyProfile,
   KeyProfile,
   OperatorProfile,
 } from "./kernel/types.js";

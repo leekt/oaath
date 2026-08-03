@@ -39,7 +39,7 @@ import { diagnoseKernelCapability, type KernelCapability } from "../kernel/capab
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
-import type { KernelHookProfile, KernelRuntime, KeyProfile } from "../kernel/types.js";
+import type { KernelPolicyProfile, KernelRuntime, KeyProfile } from "../kernel/types.js";
 import {
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
@@ -313,9 +313,9 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
  * constraint with no reviewed hook profile fails closed instead of installing a
  * session that enforces less than the owner approved.
  */
-export function deriveSessionHookProfiles(
+export function deriveSessionPolicyProfiles(
   policy: Readonly<GrantPolicy>,
-): readonly KernelHookProfile[] {
+): readonly KernelPolicyProfile[] {
   const byTarget = new Map<`0x${string}`, `0x${string}`[]>();
   let maximumValue = 0n;
   for (const call of policy.calls) {
@@ -516,7 +516,7 @@ export function createGrantHandle(
         // never reaches into how the authority is installed.
         operator: sessionOperator({
           key: input.sessionKey,
-          hooks: deriveSessionHookProfiles(input.approvedPolicy),
+          policies: deriveSessionPolicyProfiles(input.approvedPolicy),
         }),
         reads: chain.reads,
       });
