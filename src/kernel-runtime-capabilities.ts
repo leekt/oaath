@@ -27,11 +27,13 @@ export type KernelRuntimeAnchorId =
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
   | "ogp.createEcdsaKernelOwnerRuntime"
+  | "ogp.createP256KernelOwnerRuntime"
   | "ogp.createWebAuthnKernelOwnerRuntime"
   | "ogp.createLocalKernelHandleOpsAdapter"
   | "ogp.createLocalKernelPermissionUninstallAdapter"
   | "kernel.v3_3"
-  | "entrypoint.v0_7";
+  | "entrypoint.v0_7"
+  | "leekt_p256_validator.P256Validator";
 
 export type KernelRuntimeUnsupportedReason =
   | "package_not_installed"
@@ -39,6 +41,7 @@ export type KernelRuntimeUnsupportedReason =
   | "incompatible_approval_shape";
 
 export type KernelRuntimeConstraint =
+  | "action_runtime_and_precompile_evidence_required"
   | "compatible_plugin_manager_required"
   | "generic_plugin_primitive_only"
   | "verifying_contract_address_bound"
@@ -161,6 +164,24 @@ interface KernelRuntimeCapabilitiesManifestShape {
       readonly address: `0x${string}`;
       readonly runtimeKeccak256: `0x${string}`;
       readonly runtimeByteLength: 3537;
+    };
+    readonly p256Validator: {
+      readonly repository: "https://github.com/leekt/P256Validator";
+      readonly sourceCommit: string;
+      readonly deploymentEvidenceCommit: string;
+      readonly address: `0x${string}`;
+      readonly runtimeKeccak256: `0x${string}`;
+      readonly runtimeByteLength: 1919;
+      readonly compiler: "0.8.26";
+      readonly optimizerRuns: 200;
+      readonly evmVersion: "osaka";
+      readonly p256Precompile: `0x${string}`;
+      readonly deploymentEvidence: {
+        readonly chainId: 11155111;
+        readonly transactionHash: `0x${string}`;
+        readonly deployer: `0x${string}`;
+        readonly salt: `0x${string}`;
+      };
     };
   };
   readonly capabilities: Readonly<Record<KernelRuntimeProfile, KernelRuntimeCapabilityShape>>;
@@ -329,6 +350,24 @@ const manifest = {
       runtimeKeccak256: "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc",
       runtimeByteLength: 3537,
     },
+    p256Validator: {
+      repository: "https://github.com/leekt/P256Validator",
+      sourceCommit: "8f6a71992e297f2e7caa61df2c6eb0b6d9145d2d",
+      deploymentEvidenceCommit: "4be442538977b6b81453656d2f8f4938431d7d65",
+      address: "0x9906AB44fF795883C5a725687A2705BE4118B0f3",
+      runtimeKeccak256: "0xd7d9a5b1ddd1e22e7235268fd624c7c0714e5046b199d507bbfe5e03408e579d",
+      runtimeByteLength: 1919,
+      compiler: "0.8.26",
+      optimizerRuns: 200,
+      evmVersion: "osaka",
+      p256Precompile: "0x0000000000000000000000000000000000000100",
+      deploymentEvidence: {
+        chainId: 11155111,
+        transactionHash: "0xcc3381af97315ffae6ac17477f5cf0f8cc7e905f114fc2d545b5d6e9543094ca",
+        deployer: "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+        salt: "0x0000000000000000000000000000000000000000000000000000000000000000",
+      },
+    },
   },
   capabilities: {
     kernel_account: {
@@ -347,9 +386,16 @@ const manifest = {
       ],
     },
     owner_p256: {
-      status: "unsupported",
-      reason: "distinct_profile_unproven",
-      constraints: ["webauthn_is_not_raw_p256"],
+      status: "available",
+      anchors: [
+        "leekt_p256_validator.P256Validator",
+        "ogp.createP256KernelOwnerRuntime",
+        "zerodev_sdk.createKernelAccount",
+        "zerodev_sdk.KERNEL_V3_3",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
+      constraints: ["action_runtime_and_precompile_evidence_required"],
     },
     owner_webauthn: {
       status: "available",
