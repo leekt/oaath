@@ -1,4 +1,12 @@
 import {
+  captureKernelAccountProfile,
+  captureOperatorCredentialProfile,
+  type KernelAccountProfile,
+  type OperatorCredentialProfile,
+  sameKernelAccountProfile,
+  sameOperatorCredentialProfile,
+} from "./identity-profile.js";
+import {
   type CaptureContext,
   captureDenseArray,
   captureRecord as captureExactRecord,
@@ -7,7 +15,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v1" as const;
+export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v3" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -36,26 +44,19 @@ export class OgpGrantError extends Error {
   }
 }
 
-export type CredentialKind = "ecdsa" | "p256" | "webauthn";
-
-export interface CredentialBinding {
-  readonly kind: CredentialKind;
-  readonly publicIdentityHash: `0x${string}`;
-}
-
-export interface GrantLogicalAccountProfile {
-  readonly kind: "kernel";
-  readonly accountIndex: string;
-  readonly kernelVersion: string;
-  readonly factoryRoute: "kernel_factory" | "meta_factory";
-  readonly ownerCredential: Readonly<CredentialBinding>;
+export interface ApplicationBinding {
+  readonly applicationId: string;
+  readonly clientId: string;
+  readonly origin: string;
+  readonly deviceId: string;
 }
 
 export interface GrantIdentity {
   readonly grantId: string;
   readonly chainScope: "all";
-  readonly logicalAccount: Readonly<GrantLogicalAccountProfile>;
-  readonly operatorCredential: Readonly<CredentialBinding>;
+  readonly application: Readonly<ApplicationBinding>;
+  readonly logicalAccount: Readonly<KernelAccountProfile>;
+  readonly operatorCredential: Readonly<OperatorCredentialProfile>;
   readonly policyHash: `0x${string}`;
 }
 
@@ -410,44 +411,47 @@ function identifier(value: unknown, label: string, code: GrantErrorCode): string
   return value;
 }
 
-function parseCredential(
-  value: unknown,
-  label: string,
-  code: GrantErrorCode,
-  context: CaptureContext,
-): Readonly<CredentialBinding> {
-  const record = exactRecord(value, ["kind", "publicIdentityHash"], label, code, context);
-  if (record.kind !== "ecdsa" && record.kind !== "p256" && record.kind !== "webauthn") {
-    return invalid(code, `${label} kind is unsupported`);
+function origin(value: unknown, code: GrantErrorCode): string {
+  if (typeof value !== "string" || value.length > 2_048) {
+    return invalid(code, "application origin must be a bounded HTTP origin");
   }
-  return Object.freeze({
-    kind: record.kind,
-    publicIdentityHash: hash(record.publicIdentityHash, `${label} publicIdentityHash`, code),
-  });
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return invalid(code, "application origin must be a bounded HTTP origin");
+  }
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.origin === "null" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    return invalid(code, "application origin must be a bounded HTTP origin");
+  }
+  return parsed.origin;
 }
 
-function parseLogicalAccount(
+function parseApplicationBinding(
   value: unknown,
   code: GrantErrorCode,
   context: CaptureContext,
-): Readonly<GrantLogicalAccountProfile> {
+): Readonly<ApplicationBinding> {
   const record = exactRecord(
     value,
-    ["kind", "accountIndex", "kernelVersion", "factoryRoute", "ownerCredential"],
-    "grant logical account",
+    ["applicationId", "clientId", "origin", "deviceId"],
+    "application binding",
     code,
     context,
   );
-  if (record.kind !== "kernel") return invalid(code, "logical account kind is unsupported");
-  if (record.factoryRoute !== "kernel_factory" && record.factoryRoute !== "meta_factory") {
-    return invalid(code, "logical account factory route is unsupported");
-  }
   return Object.freeze({
-    kind: record.kind,
-    accountIndex: uint256(record.accountIndex, "logical account index", code),
-    kernelVersion: identifier(record.kernelVersion, "logical account kernelVersion", code),
-    factoryRoute: record.factoryRoute,
-    ownerCredential: parseCredential(record.ownerCredential, "owner credential", code, context),
+    applicationId: identifier(record.applicationId, "application applicationId", code),
+    clientId: identifier(record.clientId, "application clientId", code),
+    origin: origin(record.origin, code),
+    deviceId: identifier(record.deviceId, "application deviceId", code),
   });
 }
 
@@ -458,7 +462,7 @@ function parseIdentity(
 ): Readonly<GrantIdentity> {
   const record = exactRecord(
     value,
-    ["grantId", "chainScope", "logicalAccount", "operatorCredential", "policyHash"],
+    ["grantId", "chainScope", "application", "logicalAccount", "operatorCredential", "policyHash"],
     "grant identity",
     code,
     context,
@@ -467,12 +471,14 @@ function parseIdentity(
   return Object.freeze({
     grantId: canonicalGrantId(record.grantId, code),
     chainScope: "all",
-    logicalAccount: parseLogicalAccount(record.logicalAccount, code, context),
-    operatorCredential: parseCredential(
+    application: parseApplicationBinding(record.application, code, context),
+    logicalAccount: captureKernelAccountProfile(record.logicalAccount, context, (message) =>
+      invalid(code, message),
+    ),
+    operatorCredential: captureOperatorCredentialProfile(
       record.operatorCredential,
-      "operator credential",
-      code,
       context,
+      (message) => invalid(code, message),
     ),
     policyHash: hash(record.policyHash, "grant policyHash", code),
   });
@@ -1511,20 +1517,22 @@ function parseGrantTransition(value: unknown): GrantTransition {
   return invalid(code, "grant transition type is unsupported");
 }
 
-function sameCredential(left: CredentialBinding, right: CredentialBinding): boolean {
-  return left.kind === right.kind && left.publicIdentityHash === right.publicIdentityHash;
+function sameApplication(left: ApplicationBinding, right: ApplicationBinding): boolean {
+  return (
+    left.applicationId === right.applicationId &&
+    left.clientId === right.clientId &&
+    left.origin === right.origin &&
+    left.deviceId === right.deviceId
+  );
 }
 
-function sameIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
+export function sameGrantIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
   return (
     left.grantId === right.grantId &&
     left.chainScope === right.chainScope &&
-    left.logicalAccount.kind === right.logicalAccount.kind &&
-    left.logicalAccount.accountIndex === right.logicalAccount.accountIndex &&
-    left.logicalAccount.kernelVersion === right.logicalAccount.kernelVersion &&
-    left.logicalAccount.factoryRoute === right.logicalAccount.factoryRoute &&
-    sameCredential(left.logicalAccount.ownerCredential, right.logicalAccount.ownerCredential) &&
-    sameCredential(left.operatorCredential, right.operatorCredential) &&
+    sameApplication(left.application, right.application) &&
+    sameKernelAccountProfile(left.logicalAccount, right.logicalAccount) &&
+    sameOperatorCredentialProfile(left.operatorCredential, right.operatorCredential) &&
     left.policyHash === right.policyHash
   );
 }
@@ -1545,7 +1553,7 @@ function nextGrantRevision(grant: Grant): number {
 }
 
 function requireGrantIdentity(grant: Grant, identity: GrantIdentity): void {
-  if (!sameIdentity(grant.identity, identity)) {
+  if (!sameGrantIdentity(grant.identity, identity)) {
     invalid("grant_identity_mismatch", "grant transition identity does not match");
   }
 }

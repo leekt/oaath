@@ -22,19 +22,29 @@ import { createSqliteGrantStore, createSqliteOperationStore } from "../src/testi
 const grantIdentity: GrantIdentity = {
   grantId: "durable-grant",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "sqlite-store",
+    origin: "https://sqlite.example",
+    deviceId: "sqlite-device",
+  },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.4.0",
+    kernelVersion: "0.3.3",
     factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
-      kind: "webauthn",
-      publicIdentityHash: `0x${"11".repeat(32)}`,
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
     },
   },
   operatorCredential: {
-    kind: "p256",
-    publicIdentityHash: `0x${"22".repeat(32)}`,
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"22".repeat(20)}`,
   },
   policyHash: `0x${"33".repeat(32)}`,
 };
@@ -316,10 +326,12 @@ describe("test-only durable SQLite stores", () => {
 
     const restoredGrant = createSqliteGrantStore(filePath);
     const restoredOperation = createSqliteOperationStore(filePath);
-    expect(await restoredGrant.get(grantIdentity.grantId)).toMatchObject({
+    const restoredGrantRecord = await restoredGrant.get(grantIdentity.grantId);
+    expect(restoredGrantRecord).toMatchObject({
       storeRevision: 0,
       value: expectedGrant,
     });
+    expect(restoredGrantRecord?.value.identity.application).toEqual(grantIdentity.application);
     expect(
       await restoredOperation.get(operationStoreKey(grantIdentity.grantId, 31_337)),
     ).toMatchObject({ storeRevision: 0, value: expectedOperation });

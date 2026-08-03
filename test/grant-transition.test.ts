@@ -13,19 +13,29 @@ import {
 const identity: GrantIdentity = {
   grantId: "transition-grant",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "grant-transitions",
+    origin: "https://transitions.example",
+    deviceId: "transition-device",
+  },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.4.0",
+    kernelVersion: "0.3.3",
     factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
-      kind: "webauthn",
-      publicIdentityHash: `0x${"11".repeat(32)}`,
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
     },
   },
   operatorCredential: {
-    kind: "p256",
-    publicIdentityHash: `0x${"22".repeat(32)}`,
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"22".repeat(20)}`,
   },
   policyHash: `0x${"33".repeat(32)}`,
 };
@@ -362,6 +372,112 @@ describe("Grant transitions", () => {
         }),
       "grant_identity_mismatch",
     );
+  });
+
+  it("rejects application, client, origin, and device substitution before authority changes", () => {
+    const applicationSubstitutions = [
+      { ...identity.application, applicationId: "other-app" },
+      { ...identity.application, clientId: "other-client" },
+      { ...identity.application, origin: "https://other.example" },
+      { ...identity.application, deviceId: "other-device" },
+    ];
+
+    for (const application of applicationSubstitutions) {
+      const substitutedIdentity = { ...identity, application };
+      expectGrantError(
+        () =>
+          advanceGrant(requested(), {
+            type: "approve",
+            identity: substitutedIdentity,
+            approval,
+          }),
+        "grant_identity_mismatch",
+      );
+      expectGrantError(
+        () =>
+          advanceGrant(active(), {
+            type: "record_unmaterialized",
+            identity: substitutedIdentity,
+            binding: binding(1),
+            recordedAt: 31,
+          }),
+        "grant_identity_mismatch",
+      );
+      expectGrantError(
+        () =>
+          advanceGrant(active(), {
+            type: "begin_revocation",
+            identity: substitutedIdentity,
+            revocationStartedAt: 40,
+          }),
+        "grant_identity_mismatch",
+      );
+    }
+
+    fc.assert(
+      fc.property(
+        fc.constantFrom("applicationId", "clientId", "origin", "deviceId" as const),
+        fc.integer({ min: 1, max: 1_000_000 }),
+        (field, seed) => {
+          const value = field === "origin" ? `https://app-${seed}.example` : `identity-${seed}`;
+          const application = { ...identity.application, [field]: value };
+          expectGrantError(
+            () =>
+              advanceGrant(requested(), {
+                type: "approve",
+                identity: { ...identity, application },
+                approval,
+              }),
+            "grant_identity_mismatch",
+          );
+        },
+      ),
+      { numRuns: 64 },
+    );
+  });
+
+  it("rejects logical-account and credential-profile substitution", () => {
+    const substitutions: GrantIdentity[] = [
+      {
+        ...identity,
+        logicalAccount: { ...identity.logicalAccount, accountIndex: "1" },
+      },
+      {
+        ...identity,
+        logicalAccount: { ...identity.logicalAccount, factoryRoute: "kernel_factory" },
+      },
+      {
+        ...identity,
+        logicalAccount: {
+          ...identity.logicalAccount,
+          ownerCredential: {
+            version: "ogp.owner-credential-profile/v1",
+            kind: "ecdsa",
+            address: `0x${"44".repeat(20)}`,
+          },
+        },
+      },
+      {
+        ...identity,
+        operatorCredential: {
+          version: "ogp.operator-credential-profile/v1",
+          kind: "ecdsa",
+          address: `0x${"55".repeat(20)}`,
+        },
+      },
+    ];
+
+    for (const substitutedIdentity of substitutions) {
+      expectGrantError(
+        () =>
+          advanceGrant(requested(), {
+            type: "approve",
+            identity: substitutedIdentity,
+            approval,
+          }),
+        "grant_identity_mismatch",
+      );
+    }
   });
 
   it("preserves strongest evidence through unreadable observations", () => {

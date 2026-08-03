@@ -18,19 +18,29 @@ import {
 const grantIdentity: GrantIdentity = {
   grantId: "grant-store",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "store",
+    origin: "https://store.example",
+    deviceId: "store-device",
+  },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.4.0",
+    kernelVersion: "0.3.3",
     factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
-      kind: "webauthn",
-      publicIdentityHash: `0x${"11".repeat(32)}`,
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
     },
   },
   operatorCredential: {
-    kind: "p256",
-    publicIdentityHash: `0x${"22".repeat(32)}`,
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"22".repeat(20)}`,
   },
   policyHash: `0x${"33".repeat(32)}`,
 };
@@ -154,6 +164,85 @@ describe("aggregate store boundary", () => {
     });
   });
 
+  it("rejects same-key Grant identity replacement before the adapter write", async () => {
+    const memory = memoryGrantAdapter();
+    const store = new GrantStore(memory.adapter);
+    await store.compareAndSwap({
+      grantId: grantIdentity.grantId,
+      expectedStoreRevision: null,
+      next: requestedGrant(),
+    });
+    const retained = clone(memory.raw());
+
+    for (const application of [
+      { ...grantIdentity.application, applicationId: "other-app" },
+      { ...grantIdentity.application, clientId: "other-client" },
+      { ...grantIdentity.application, origin: "https://other.example" },
+      { ...grantIdentity.application, deviceId: "other-device" },
+    ]) {
+      const replacement = createGrant({
+        identity: { ...grantIdentity, application },
+        requestedAt: 10,
+        expiresAt: 100,
+      });
+      await expectStoreError(
+        () =>
+          store.compareAndSwap({
+            grantId: grantIdentity.grantId,
+            expectedStoreRevision: 0,
+            next: replacement,
+          }),
+        "store_identity_mismatch",
+      );
+      expect(memory.raw()).toEqual(retained);
+    }
+
+    for (const identity of [
+      {
+        ...grantIdentity,
+        logicalAccount: { ...grantIdentity.logicalAccount, accountIndex: "1" },
+      },
+      {
+        ...grantIdentity,
+        logicalAccount: {
+          ...grantIdentity.logicalAccount,
+          factoryRoute: "kernel_factory" as const,
+        },
+      },
+      {
+        ...grantIdentity,
+        logicalAccount: {
+          ...grantIdentity.logicalAccount,
+          ownerCredential: {
+            version: "ogp.owner-credential-profile/v1" as const,
+            kind: "ecdsa" as const,
+            address: `0x${"44".repeat(20)}` as const,
+          },
+        },
+      },
+      {
+        ...grantIdentity,
+        operatorCredential: {
+          version: "ogp.operator-credential-profile/v1" as const,
+          kind: "ecdsa" as const,
+          address: `0x${"55".repeat(20)}` as const,
+        },
+      },
+    ]) {
+      const replacement = createGrant({ identity, requestedAt: 10, expiresAt: 100 });
+      await expectStoreError(
+        () =>
+          store.compareAndSwap({
+            grantId: grantIdentity.grantId,
+            expectedStoreRevision: 0,
+            next: replacement,
+          }),
+        "store_identity_mismatch",
+      );
+      expect(memory.raw()).toEqual(retained);
+    }
+  });
+
   it("captures caller input before the adapter can observe later mutation", async () => {
     let releaseRead: (() => void) | undefined;
     const readGate = new Promise<void>((resolve) => {
@@ -194,7 +283,7 @@ describe("aggregate store boundary", () => {
     await expectStoreError(() => store.get(grantIdentity.grantId), "store_record_invalid");
 
     memory.set({
-      version: "ogp.grant-store-record/v0",
+      version: "ogp.grant-store-record/v2",
       storeRevision: 0,
       updatedAt: 10,
       value: requestedGrant(),

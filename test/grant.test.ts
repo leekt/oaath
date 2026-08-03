@@ -5,19 +5,29 @@ import { createGrant, type GrantIdentity, OgpGrantError, parseGrant } from "../s
 const identity: GrantIdentity = {
   grantId: "grant-all-chains",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "grant-codec",
+    origin: "https://grant.example",
+    deviceId: "codec-device",
+  },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.4.0",
+    kernelVersion: "0.3.3",
     factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
-      kind: "webauthn",
-      publicIdentityHash: `0x${"11".repeat(32)}`,
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
     },
   },
   operatorCredential: {
-    kind: "p256",
-    publicIdentityHash: `0x${"22".repeat(32)}`,
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"22".repeat(20)}`,
   },
   policyHash: `0x${"33".repeat(32)}`,
 };
@@ -213,24 +223,99 @@ describe("Grant current codec", () => {
   it("creates one owned all-chain request with no approval-time chain list", () => {
     const mutableIdentity = clone(identity) as unknown as {
       grantId: string;
+      application: { applicationId: string; origin: string };
       logicalAccount: { accountIndex: string };
     };
     const grant = createGrant({ identity: mutableIdentity, requestedAt: 10, expiresAt: 100 });
     mutableIdentity.grantId = "changed";
+    mutableIdentity.application.applicationId = "changed-app";
+    mutableIdentity.application.origin = "https://changed.example";
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "ogp.grant/v1",
+      version: "ogp.grant/v3",
       state: "requested",
       revision: 0,
-      identity: { grantId: identity.grantId, chainScope: "all" },
+      identity: {
+        grantId: identity.grantId,
+        chainScope: "all",
+        application: identity.application,
+      },
       materializations: [],
     });
     expect("chainIds" in grant.identity).toBe(false);
     expect(Object.isFrozen(grant)).toBe(true);
     expect(Object.isFrozen(grant.identity)).toBe(true);
+    expect(Object.isFrozen(grant.identity.application)).toBe(true);
     expect(Object.isFrozen(grant.identity.logicalAccount.ownerCredential)).toBe(true);
     expect(Object.isFrozen(grant.materializations)).toBe(true);
+  });
+
+  it("captures bounded application identity and canonicalizes only the origin", () => {
+    const grant = createGrant({
+      identity: {
+        ...identity,
+        application: {
+          ...identity.application,
+          origin: "https://GRANT.example:443/",
+        },
+      },
+      requestedAt: 10,
+      expiresAt: 100,
+    });
+    expect(grant.identity.application).toEqual({
+      ...identity.application,
+      origin: "https://grant.example",
+    });
+
+    for (const invalidOrigin of [
+      "null",
+      "file:///tmp/ogp",
+      "https://grant.example/path",
+      "https://grant.example?query=1",
+      "https://grant.example#fragment",
+      "https://user:secret@grant.example",
+    ]) {
+      expectGrantError(
+        () =>
+          createGrant({
+            identity: {
+              ...identity,
+              application: { ...identity.application, origin: invalidOrigin },
+            },
+            requestedAt: 10,
+            expiresAt: 100,
+          }),
+        "grant_input_invalid",
+      );
+    }
+
+    for (const field of ["applicationId", "clientId", "deviceId"] as const) {
+      const accepted = createGrant({
+        identity: {
+          ...identity,
+          application: { ...identity.application, [field]: "a".repeat(64) },
+        },
+        requestedAt: 10,
+        expiresAt: 100,
+      });
+      expect(accepted.identity.application[field]).toHaveLength(64);
+
+      for (const invalidIdentifier of ["", "a".repeat(65), "NOT-CANONICAL"]) {
+        expectGrantError(
+          () =>
+            createGrant({
+              identity: {
+                ...identity,
+                application: { ...identity.application, [field]: invalidIdentifier },
+              },
+              requestedAt: 10,
+              expiresAt: 100,
+            }),
+          "grant_input_invalid",
+        );
+      }
+    }
   });
 
   it("round-trips every Grant state and all seven child shapes", () => {
@@ -388,7 +473,7 @@ describe("Grant current codec", () => {
 
   it("rejects non-current, inexact, aliased, and non-dense record graphs", () => {
     const active = activeRecord(activeChildren(), 13, 35);
-    expectRecordInvalid({ ...active, version: "ogp.grant/v0" });
+    expectRecordInvalid({ ...active, version: "ogp.grant/v2" });
     expectRecordInvalid({ ...active, operationId: "forbidden" });
     const missing = { ...active };
     delete missing.updatedAt;
@@ -398,6 +483,19 @@ describe("Grant current codec", () => {
     const chainList = clone(active);
     (chainList.identity as Record<string, unknown>).chainIds = [1, 2];
     expectRecordInvalid(chainList);
+
+    const unbound = clone(active);
+    delete (unbound.identity as Record<string, unknown>).application;
+    expectRecordInvalid(unbound);
+
+    const extraApplicationField = clone(active);
+    (
+      (extraApplicationField.identity as Record<string, unknown>).application as Record<
+        string,
+        unknown
+      >
+    ).redirectUri = "https://grant.example/callback";
+    expectRecordInvalid(extraApplicationField);
 
     const aliased = clone(active);
     child(aliased, 4).installation = child(aliased, 3).installation;
@@ -439,6 +537,22 @@ describe("Grant current codec", () => {
       "grant_input_invalid",
     );
     expect(calls).toBe(0);
+
+    let originCalls = 0;
+    const hostileApplication = clone(identity) as unknown as Record<string, unknown>;
+    const application = hostileApplication.application as Record<string, unknown>;
+    Object.defineProperty(application, "origin", {
+      enumerable: true,
+      get() {
+        originCalls += 1;
+        return identity.application.origin;
+      },
+    });
+    expectGrantError(
+      () => createGrant({ identity: hostileApplication, requestedAt: 10, expiresAt: 100 }),
+      "grant_input_invalid",
+    );
+    expect(originCalls).toBe(0);
 
     const secret = "do-not-leak-provider-secret";
     const hostile = new Proxy(

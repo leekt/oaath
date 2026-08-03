@@ -42,7 +42,8 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OGP_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts",
+    "test:anvil": "OGP_REQUIRE_ANVIL=1 vitest run test/local-kernel-handle-ops.anvil.test.ts test/kernel-v4.anvil.test.ts",
+    "test:stack-a": "pnpm pack:check && OGP_REQUIRE_ANVIL=1 node scripts/run-stack-a-acceptance.mjs",
     "lint": "node scripts/check-package-boundary.mjs && biome check . --diagnostic-level=error",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -59,6 +60,12 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@noble/curves": "1.9.1",
+    "@zerodev/ecdsa-validator": "5.4.9",
+    "@zerodev/passkey-validator": "5.6.0",
+    "@zerodev/permissions": "5.6.3",
+    "@zerodev/sdk": "5.5.10",
+    "@zerodev/webauthn-key": "5.5.0",
     "viem": "2.55.8"
   }
 }
