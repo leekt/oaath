@@ -6,10 +6,6 @@ import {
   exactCapturedRecord,
   exactRecord,
 } from "./internal/exact-record.js";
-import {
-  getKernelRuntimeCapability,
-  type KernelRuntimeUnsupportedReason,
-} from "./kernel-runtime-capabilities.js";
 
 export const OGP_OWNER_CREDENTIAL_PROFILE_VERSION = "ogp.owner-credential-profile/v1" as const;
 export const OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION =
@@ -71,7 +67,7 @@ export interface KernelAccountProfile {
   readonly version: typeof OGP_KERNEL_ACCOUNT_PROFILE_VERSION;
   readonly kind: "kernel";
   readonly accountIndex: string;
-  readonly kernelVersion: "0.3.3";
+  readonly kernelVersion: "0.4.0";
   readonly factoryRoute: "kernel_factory" | "meta_factory";
   readonly entryPoint: Readonly<{ version: "0.7" }>;
   readonly ownerCredential: Readonly<OwnerCredentialProfile>;
@@ -80,47 +76,11 @@ export interface KernelAccountProfile {
 export interface KernelAccountActionInput {
   readonly chainId: number;
   readonly accountIndex: string;
-  readonly kernelVersion: "0.3.3";
+  readonly kernelVersion: "0.4.0";
   readonly factoryRoute: KernelAccountProfile["factoryRoute"];
   readonly entryPointVersion: "0.7";
   readonly ownerCredential: Readonly<OwnerCredentialProfile>;
 }
-
-export type CredentialRuntimeCapability =
-  | "owner_ecdsa"
-  | "owner_p256"
-  | "owner_webauthn"
-  | "permission_signer_ecdsa"
-  | "permission_signer_webauthn";
-
-export type CredentialRuntimeDiagnosis<
-  Profile extends OwnerCredentialProfile | OperatorCredentialProfile =
-    | OwnerCredentialProfile
-    | OperatorCredentialProfile,
-> =
-  | Readonly<{
-      status: "available";
-      capability: CredentialRuntimeCapability;
-      profile: Readonly<Profile>;
-    }>
-  | Readonly<{
-      status: "absent";
-      capability: CredentialRuntimeCapability;
-      profile: Readonly<Profile>;
-      reason: "required_package_not_installed";
-    }>
-  | Readonly<{
-      status: "unreadable";
-      capability: CredentialRuntimeCapability;
-      profile: Readonly<Profile>;
-      reason: "runtime_capability_evidence_unreadable";
-    }>
-  | Readonly<{
-      status: "unsupported";
-      capability: CredentialRuntimeCapability;
-      profile: Readonly<Profile>;
-      reason: "first_party_profile_unproven" | "runtime_integration_unproven";
-    }>;
 
 export type IdentityProfileErrorCode =
   | "owner_credential_profile_invalid"
@@ -299,7 +259,7 @@ export function captureKernelAccountProfile(
   if (record.version !== OGP_KERNEL_ACCOUNT_PROFILE_VERSION || record.kind !== "kernel") {
     return fail("Kernel account profile version or kind is unsupported");
   }
-  if (record.kernelVersion !== "0.3.3") {
+  if (record.kernelVersion !== "0.4.0") {
     return fail("Kernel account version is unsupported");
   }
   if (record.factoryRoute !== "kernel_factory" && record.factoryRoute !== "meta_factory") {
@@ -317,7 +277,7 @@ export function captureKernelAccountProfile(
     version: OGP_KERNEL_ACCOUNT_PROFILE_VERSION,
     kind: "kernel",
     accountIndex: accountIndex(record.accountIndex, fail),
-    kernelVersion: "0.3.3",
+    kernelVersion: "0.4.0",
     factoryRoute: record.factoryRoute,
     entryPoint: Object.freeze({ version: "0.7" }),
     ownerCredential: captureOwnerCredentialProfile(record.ownerCredential, context, fail),
@@ -392,64 +352,6 @@ export function createKernelAccountActionInput(
       "Kernel account action input could not be captured safely",
     );
   }
-}
-
-function diagnose<Profile extends OwnerCredentialProfile | OperatorCredentialProfile>(
-  profile: Readonly<Profile>,
-  capability: CredentialRuntimeCapability,
-): CredentialRuntimeDiagnosis<Profile> {
-  const runtime = getKernelRuntimeCapability(capability) as
-    | Readonly<{ status: "available" }>
-    | Readonly<{ status: "unsupported"; reason: KernelRuntimeUnsupportedReason }>;
-  if (runtime.status === "available") {
-    return Object.freeze({ status: "available", capability, profile });
-  }
-  if (runtime.reason === "package_not_installed") {
-    return Object.freeze({
-      status: "absent",
-      capability,
-      profile,
-      reason: "required_package_not_installed",
-    });
-  }
-  if (runtime.reason === "distinct_profile_unproven") {
-    return Object.freeze({
-      status: "unsupported",
-      capability,
-      profile,
-      reason: "first_party_profile_unproven",
-    });
-  }
-  if (runtime.reason === "integration_unproven") {
-    return Object.freeze({
-      status: "unsupported",
-      capability,
-      profile,
-      reason: "runtime_integration_unproven",
-    });
-  }
-  return Object.freeze({
-    status: "unreadable",
-    capability,
-    profile,
-    reason: "runtime_capability_evidence_unreadable",
-  });
-}
-
-export function diagnoseOwnerCredential(
-  value: unknown,
-): CredentialRuntimeDiagnosis<OwnerCredentialProfile> {
-  const profile = parseOwnerCredentialProfile(value);
-  const capability = `owner_${profile.kind}` as const;
-  return diagnose(profile, capability);
-}
-
-export function diagnoseOperatorCredential(
-  value: unknown,
-): CredentialRuntimeDiagnosis<OperatorCredentialProfile> {
-  const profile = parseOperatorCredentialProfile(value);
-  const capability = `permission_signer_${profile.kind}` as const;
-  return diagnose(profile, capability);
 }
 
 export function sameOwnerCredentialProfile(

@@ -1,25 +1,4 @@
 export type {
-  EcdsaKernelOwnerErrorCode,
-  EcdsaKernelOwnerRestorationReadCapability,
-  EcdsaKernelOwnerRestorationReadRequest,
-  EcdsaKernelOwnerRuntime,
-  EcdsaOwnerSignerCapability,
-  RestoredEcdsaKernelOwner,
-} from "./ecdsa-kernel-owner.js";
-export {
-  createEcdsaKernelOwnerRuntime,
-  OgpEcdsaKernelOwnerError,
-} from "./ecdsa-kernel-owner.js";
-export type {
-  EcdsaPermissionSignerCapability,
-  EcdsaPermissionSignerErrorCode,
-  EcdsaPermissionSignerRuntime,
-} from "./ecdsa-permission-signer.js";
-export {
-  createEcdsaPermissionSignerRuntime,
-  OgpEcdsaPermissionSignerError,
-} from "./ecdsa-permission-signer.js";
-export type {
   ActiveGrant,
   ApplicationBinding,
   ApprovedGrant,
@@ -83,8 +62,6 @@ export {
   parseGrantPolicy,
 } from "./grant-policy.js";
 export type {
-  CredentialRuntimeCapability,
-  CredentialRuntimeDiagnosis,
   EcdsaOperatorCredentialProfile,
   EcdsaOwnerCredentialProfile,
   IdentityProfileErrorCode,
@@ -100,8 +77,6 @@ export type {
 } from "./identity-profile.js";
 export {
   createKernelAccountActionInput,
-  diagnoseOperatorCredential,
-  diagnoseOwnerCredential,
   OGP_KERNEL_ACCOUNT_PROFILE_VERSION,
   OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OGP_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -110,43 +85,6 @@ export {
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
 } from "./identity-profile.js";
-export type {
-  KernelPermissionObserverErrorCode,
-  KernelPermissionRemovalObserver,
-  KernelPermissionStateReadCapability,
-  KernelPermissionStateReadRequest,
-  ObserveKernelPermissionRemovalResult,
-} from "./kernel-permission-observer.js";
-export {
-  createKernelPermissionRemovalObserver,
-  OgpKernelPermissionObserverError,
-} from "./kernel-permission-observer.js";
-export type {
-  KernelPermissionRevocationConfiguration,
-  KernelPermissionRevocationCoordinator,
-  KernelPermissionRevocationErrorCode,
-  KernelPermissionRevocationInput,
-  KernelPermissionRevocationResult,
-} from "./kernel-permission-revocation.js";
-export {
-  createKernelPermissionRevocationCoordinator,
-  OgpKernelPermissionRevocationError,
-} from "./kernel-permission-revocation.js";
-export type {
-  KernelRuntimeAnchorId,
-  KernelRuntimeCapabilitiesErrorCode,
-  KernelRuntimeCapabilitiesManifest,
-  KernelRuntimeCapability,
-  KernelRuntimeConstraint,
-  KernelRuntimeProfile,
-  KernelRuntimeUnsupportedReason,
-} from "./kernel-runtime-capabilities.js";
-export {
-  getKernelRuntimeCapability,
-  KERNEL_RUNTIME_CAPABILITIES,
-  OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION,
-  OgpKernelRuntimeCapabilitiesError,
-} from "./kernel-runtime-capabilities.js";
 export type {
   KernelV4AccountDescriptor,
   KernelV4AccountReadCapability,
@@ -186,25 +124,6 @@ export {
   OgpKernelV4Error,
   prepareKernelV4UserOperation,
 } from "./kernel-v4.js";
-export type {
-  EntryPointHandleOpsSubmitterCapability,
-  KernelEcdsaOwnerSignerCapability,
-  KernelExecutionCall,
-  KernelHandleOpsAdapterErrorCode,
-  KernelPermissionUninstallDescriptor,
-  KernelPreparationReadCapability,
-  KernelPreparationReadRequest,
-  KernelUserOperationGas,
-  LocalKernelHandleOpsAdapter,
-  LocalKernelHandleOpsConfiguration,
-  LocalKernelPermissionUninstallAdapter,
-  LocalKernelPermissionUninstallConfiguration,
-} from "./local-kernel-handle-ops.js";
-export {
-  createLocalKernelHandleOpsAdapter,
-  createLocalKernelPermissionUninstallAdapter,
-  OgpKernelHandleOpsAdapterError,
-} from "./local-kernel-handle-ops.js";
 export type {
   DroppedOperation,
   FinalizedOperation,
@@ -264,18 +183,6 @@ export {
   OgpOperationRunnerError,
 } from "./operation-runner.js";
 export type {
-  P256KernelOwnerErrorCode,
-  P256KernelOwnerRestorationReadCapability,
-  P256KernelOwnerRestorationReadRequest,
-  P256KernelOwnerRuntime,
-  P256OwnerSignerCapability,
-  RestoredP256KernelOwner,
-} from "./p256-kernel-owner.js";
-export {
-  createP256KernelOwnerRuntime,
-  OgpP256KernelOwnerError,
-} from "./p256-kernel-owner.js";
-export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,
   ApprovePermissionDecision,
@@ -333,16 +240,3 @@ export {
   OgpStoreError,
   OperationStore,
 } from "./store.js";
-export type {
-  RestoredWebAuthnKernelOwner,
-  WebAuthnKernelOwnerErrorCode,
-  WebAuthnKernelOwnerRestorationReadCapability,
-  WebAuthnKernelOwnerRestorationReadRequest,
-  WebAuthnKernelOwnerRuntime,
-  WebAuthnOwnerAssertion,
-  WebAuthnOwnerSignerCapability,
-} from "./webauthn-kernel-owner.js";
-export {
-  createWebAuthnKernelOwnerRuntime,
-  OgpWebAuthnKernelOwnerError,
-} from "./webauthn-kernel-owner.js";

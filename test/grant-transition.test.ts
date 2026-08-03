@@ -23,7 +23,7 @@ const identity: GrantIdentity = {
     version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.3.3",
+    kernelVersion: "0.4.0",
     factoryRoute: "meta_factory",
     entryPoint: { version: "0.7" },
     ownerCredential: {
