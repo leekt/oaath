@@ -15,15 +15,21 @@ import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  captureRoutingCapabilities,
+  classifyBundlerAcceptance,
   createKernelRuntime,
   createKernelV4Reads,
+  decideExecution,
+  deriveHandleOpsRequirement,
   ecdsaKey,
+  encodeHandleOps,
   encodeKernelV4InstallModules,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KernelRuntime,
   kernelV4Deployment,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
   type PreparedUserOperation,
   sessionOperator,
@@ -131,7 +137,7 @@ afterAll(() => {
 });
 
 (requireAnvil ? describe : describe.skip)("Kernel composition local proof", () => {
-  it("executes owner and session authorities through one composition factory", async () => {
+  it("executes owner and session authorities and falls back to handleOps without changing identity", async () => {
     const fixture = JSON.parse(
       await readFile(
         new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url),
@@ -319,5 +325,82 @@ afterAll(() => {
       code: "kernel_runtime_binding_mismatch",
     });
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Routing fallback: a conclusive pre-acceptance rejection is the only
+    // bundler evidence that authorizes EntryPoint.handleOps, and the fallback
+    // submits the same signed operation identity the bundler would have taken.
+    const capabilities = captureRoutingCapabilities({
+      chainId,
+      bundler: classifyBundlerAcceptance({ outcome: "rejected", code: -32505 }),
+      sessionCoverage: "uncovered",
+      feePayer: {
+        address: lower(submitter.address),
+        balance: (await client.getBalance({ address: submitter.address })).toString(10),
+      },
+    });
+    expect(capabilities.bundler).toBe("unsupported");
+    const decision = decideExecution({
+      operationKind: "execution",
+      sessionCoverage: capabilities.sessionCoverage,
+      bundler: capabilities.bundler,
+      feePayer: capabilities.feePayer,
+    });
+    expect(decision).toMatchObject({
+      signer: "owner",
+      route: "entrypoint-handleops",
+      reasons: ["session_calls_uncovered", "bundler_unsupported", "fee_payer_configured"],
+    });
+    const decidedFeePayer = decision.feePayer;
+    if (decidedFeePayer === null) throw new Error("handleOps decision carries no fee payer");
+
+    const fallbackTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const fallback = ownerRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-fallback",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "2",
+      calls: [{ target: fallbackTarget, value: "4321", data: "0x" }],
+      gas,
+    });
+    const requirement = deriveHandleOpsRequirement({
+      prepared: fallback,
+      feePayer: decidedFeePayer,
+      overheadGas: OAATH_HANDLE_OPS_OVERHEAD_GAS,
+    });
+    expect(requirement).toMatchObject({
+      status: "funded",
+      chainId,
+      account,
+      userOperationHash: fallback.userOperationHash,
+    });
+
+    // The signature is produced once, before the route is exercised.
+    const fallbackSignature = await ownerRuntime.signOperation(fallback);
+    const encoded = encodeHandleOps({
+      prepared: fallback,
+      signature: fallbackSignature,
+      beneficiary: decidedFeePayer.address,
+    });
+    expect(encoded.userOperationHash).toBe(fallback.userOperationHash);
+    const fallbackHash = await wallet.sendTransaction({
+      account: submitter,
+      chain: null,
+      to: encoded.entryPoint,
+      data: encoded.data,
+      gas: 8_000_000n,
+    });
+    const fallbackReceipt = await client.waitForTransactionReceipt({ hash: fallbackHash });
+    expect(fallbackReceipt.status).toBe("success");
+    // UserOperationEvent's first indexed topic is the userOpHash: the chain
+    // itself confirms the fallback preserved the prepared identity.
+    expect(
+      fallbackReceipt.logs.some(
+        (log) =>
+          lower(log.address) === KERNEL_V4_ENTRY_POINT_V07 &&
+          log.topics[1] === fallback.userOperationHash,
+      ),
+    ).toBe(true);
+    expect(await client.getBalance({ address: fallbackTarget })).toBe(4_321n);
   }, 60_000);
 });

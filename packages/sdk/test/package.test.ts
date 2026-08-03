@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as oaath from "../src/index.js";
 
 describe("package boundary", () => {
-  it("exports only accepted Kernel, observer, runner, prepared-operation, and store owners", () => {
+  it("exports only accepted Kernel, routing, observer, runner, prepared-operation, and store owners", () => {
     expect(Object.keys(oaath).sort()).toEqual([
       "GrantStore",
       "KERNEL_V4_CREATE2_DEPLOYER",
@@ -14,7 +14,9 @@ describe("package boundary", () => {
       "KERNEL_V4_FACTORY_V07_CODE_HASH",
       "KERNEL_V4_IMPLEMENTATION_SLOT",
       "KERNEL_V4_UUPS_IMPLEMENTATION_V07",
+      "OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES",
       "OAATH_GRANT_STORE_RECORD_VERSION",
+      "OAATH_HANDLE_OPS_OVERHEAD_GAS",
       "OAATH_OPERATION_STORE_RECORD_VERSION",
       "OAATH_PREPARED_USER_OPERATION_VERSION",
       "OaathKernelRuntimeError",
@@ -22,18 +24,26 @@ describe("package boundary", () => {
       "OaathOperationObserverError",
       "OaathOperationRunnerError",
       "OaathPreparedUserOperationError",
+      "OaathRoutingError",
       "OaathStoreError",
       "OperationStore",
       "asViemUserOperation",
       "bindKernelV4Account",
+      "captureRoutingCapabilities",
+      "classifyBundlerAcceptance",
+      "classifyBundlerProbe",
       "composeKernelHooks",
       "createKernelRuntime",
       "createKernelV4Reads",
       "createOperationObserver",
       "createOperationRunner",
+      "decideExecution",
+      "deriveHandleOpsRequirement",
       "deriveOperationId",
+      "deriveOperationPrefund",
       "diagnoseKernelCapability",
       "ecdsaKey",
+      "encodeHandleOps",
       "encodeKernelV4EnableSignature",
       "encodeKernelV4Execution",
       "encodeKernelV4FactoryAddressRead",
@@ -54,6 +64,7 @@ describe("package boundary", () => {
       "parsePreparedUserOperation",
       "prepareKernelV4UserOperation",
       "prepareUserOperation",
+      "probeBundlerCapability",
       "sessionOperator",
       "webauthnKey",
     ]);
