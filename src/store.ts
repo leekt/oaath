@@ -1,10 +1,10 @@
 import type { Grant } from "./grant.js";
-import { parseGrant } from "./grant.js";
+import { parseGrant, sameGrantIdentity as sameGrantIdentityValue } from "./grant.js";
 import { type CaptureContext, exactRecord as exactRecordValue } from "./internal/exact-record.js";
 import type { Operation } from "./operation.js";
 import { operationOccupiesLane, parseOperation } from "./operation.js";
 
-export const OGP_GRANT_STORE_RECORD_VERSION = "ogp.grant-store-record/v2" as const;
+export const OGP_GRANT_STORE_RECORD_VERSION = "ogp.grant-store-record/v3" as const;
 export const OGP_OPERATION_STORE_RECORD_VERSION = "ogp.operation-store-record/v1" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
@@ -226,7 +226,7 @@ function sameOperationIdentity(left: Operation, right: Operation): boolean {
 }
 
 function sameGrantIdentity(left: Grant, right: Grant): boolean {
-  return sameValue(left.identity, right.identity);
+  return sameGrantIdentityValue(left.identity, right.identity);
 }
 
 function sameStoreRecord<Value>(

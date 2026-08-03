@@ -60,6 +60,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@noble/curves": "1.9.1",
     "@zerodev/sdk": "5.5.10",
     "viem": "2.55.8"
   }

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@noble/curves':
+        specifier: 1.9.1
+        version: 1.9.1
       '@zerodev/sdk':
         specifier: 5.5.10
         version: 5.5.10(viem@2.55.8(typescript@7.0.2))

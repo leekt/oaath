@@ -10,6 +10,7 @@ const packageManifest = JSON.parse(await readFile(join(repository, "package.json
 const testFiles = [
   "package.test.ts",
   "kernel-runtime-capabilities.test.ts",
+  "identity-profile.test.ts",
   "grant.test.ts",
   "grant-transition.test.ts",
   "prepared-user-operation.test.ts",

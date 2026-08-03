@@ -1,4 +1,12 @@
 import {
+  captureKernelAccountProfile,
+  captureOperatorCredentialProfile,
+  type KernelAccountProfile,
+  type OperatorCredentialProfile,
+  sameKernelAccountProfile,
+  sameOperatorCredentialProfile,
+} from "./identity-profile.js";
+import {
   type CaptureContext,
   captureDenseArray,
   captureRecord as captureExactRecord,
@@ -7,7 +15,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v2" as const;
+export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v3" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -36,13 +44,6 @@ export class OgpGrantError extends Error {
   }
 }
 
-export type CredentialKind = "ecdsa" | "p256" | "webauthn";
-
-export interface CredentialBinding {
-  readonly kind: CredentialKind;
-  readonly publicIdentityHash: `0x${string}`;
-}
-
 export interface ApplicationBinding {
   readonly applicationId: string;
   readonly clientId: string;
@@ -50,20 +51,12 @@ export interface ApplicationBinding {
   readonly deviceId: string;
 }
 
-export interface GrantLogicalAccountProfile {
-  readonly kind: "kernel";
-  readonly accountIndex: string;
-  readonly kernelVersion: string;
-  readonly factoryRoute: "kernel_factory" | "meta_factory";
-  readonly ownerCredential: Readonly<CredentialBinding>;
-}
-
 export interface GrantIdentity {
   readonly grantId: string;
   readonly chainScope: "all";
   readonly application: Readonly<ApplicationBinding>;
-  readonly logicalAccount: Readonly<GrantLogicalAccountProfile>;
-  readonly operatorCredential: Readonly<CredentialBinding>;
+  readonly logicalAccount: Readonly<KernelAccountProfile>;
+  readonly operatorCredential: Readonly<OperatorCredentialProfile>;
   readonly policyHash: `0x${string}`;
 }
 
@@ -462,47 +455,6 @@ function parseApplicationBinding(
   });
 }
 
-function parseCredential(
-  value: unknown,
-  label: string,
-  code: GrantErrorCode,
-  context: CaptureContext,
-): Readonly<CredentialBinding> {
-  const record = exactRecord(value, ["kind", "publicIdentityHash"], label, code, context);
-  if (record.kind !== "ecdsa" && record.kind !== "p256" && record.kind !== "webauthn") {
-    return invalid(code, `${label} kind is unsupported`);
-  }
-  return Object.freeze({
-    kind: record.kind,
-    publicIdentityHash: hash(record.publicIdentityHash, `${label} publicIdentityHash`, code),
-  });
-}
-
-function parseLogicalAccount(
-  value: unknown,
-  code: GrantErrorCode,
-  context: CaptureContext,
-): Readonly<GrantLogicalAccountProfile> {
-  const record = exactRecord(
-    value,
-    ["kind", "accountIndex", "kernelVersion", "factoryRoute", "ownerCredential"],
-    "grant logical account",
-    code,
-    context,
-  );
-  if (record.kind !== "kernel") return invalid(code, "logical account kind is unsupported");
-  if (record.factoryRoute !== "kernel_factory" && record.factoryRoute !== "meta_factory") {
-    return invalid(code, "logical account factory route is unsupported");
-  }
-  return Object.freeze({
-    kind: record.kind,
-    accountIndex: uint256(record.accountIndex, "logical account index", code),
-    kernelVersion: identifier(record.kernelVersion, "logical account kernelVersion", code),
-    factoryRoute: record.factoryRoute,
-    ownerCredential: parseCredential(record.ownerCredential, "owner credential", code, context),
-  });
-}
-
 function parseIdentity(
   value: unknown,
   code: GrantErrorCode,
@@ -520,12 +472,13 @@ function parseIdentity(
     grantId: canonicalGrantId(record.grantId, code),
     chainScope: "all",
     application: parseApplicationBinding(record.application, code, context),
-    logicalAccount: parseLogicalAccount(record.logicalAccount, code, context),
-    operatorCredential: parseCredential(
+    logicalAccount: captureKernelAccountProfile(record.logicalAccount, context, (message) =>
+      invalid(code, message),
+    ),
+    operatorCredential: captureOperatorCredentialProfile(
       record.operatorCredential,
-      "operator credential",
-      code,
       context,
+      (message) => invalid(code, message),
     ),
     policyHash: hash(record.policyHash, "grant policyHash", code),
   });
@@ -1564,10 +1517,6 @@ function parseGrantTransition(value: unknown): GrantTransition {
   return invalid(code, "grant transition type is unsupported");
 }
 
-function sameCredential(left: CredentialBinding, right: CredentialBinding): boolean {
-  return left.kind === right.kind && left.publicIdentityHash === right.publicIdentityHash;
-}
-
 function sameApplication(left: ApplicationBinding, right: ApplicationBinding): boolean {
   return (
     left.applicationId === right.applicationId &&
@@ -1577,17 +1526,13 @@ function sameApplication(left: ApplicationBinding, right: ApplicationBinding): b
   );
 }
 
-function sameIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
+export function sameGrantIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
   return (
     left.grantId === right.grantId &&
     left.chainScope === right.chainScope &&
     sameApplication(left.application, right.application) &&
-    left.logicalAccount.kind === right.logicalAccount.kind &&
-    left.logicalAccount.accountIndex === right.logicalAccount.accountIndex &&
-    left.logicalAccount.kernelVersion === right.logicalAccount.kernelVersion &&
-    left.logicalAccount.factoryRoute === right.logicalAccount.factoryRoute &&
-    sameCredential(left.logicalAccount.ownerCredential, right.logicalAccount.ownerCredential) &&
-    sameCredential(left.operatorCredential, right.operatorCredential) &&
+    sameKernelAccountProfile(left.logicalAccount, right.logicalAccount) &&
+    sameOperatorCredentialProfile(left.operatorCredential, right.operatorCredential) &&
     left.policyHash === right.policyHash
   );
 }
@@ -1608,7 +1553,7 @@ function nextGrantRevision(grant: Grant): number {
 }
 
 function requireGrantIdentity(grant: Grant, identity: GrantIdentity): void {
-  if (!sameIdentity(grant.identity, identity)) {
+  if (!sameGrantIdentity(grant.identity, identity)) {
     invalid("grant_identity_mismatch", "grant transition identity does not match");
   }
 }

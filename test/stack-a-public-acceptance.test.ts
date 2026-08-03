@@ -49,6 +49,10 @@ function hash(value: number): `0x${string}` {
   return `0x${value.toString(16).padStart(64, "0")}`;
 }
 
+function address(value: number): `0x${string}` {
+  return `0x${value.toString(16).padStart(40, "0")}`;
+}
+
 function quantity(value: bigint | number): `0x${string}` {
   return `0x${BigInt(value).toString(16)}`;
 }
@@ -367,13 +371,23 @@ const grantIdentity: GrantIdentity = {
     deviceId: "stack-a-device",
   },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
     kernelVersion: "0.3.3",
     factoryRoute: "kernel_factory",
-    ownerCredential: { kind: "ecdsa", publicIdentityHash: hash(501) },
+    entryPoint: { version: "0.7" },
+    ownerCredential: {
+      version: "ogp.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: address(501),
+    },
   },
-  operatorCredential: { kind: "ecdsa", publicIdentityHash: hash(502) },
+  operatorCredential: {
+    version: "ogp.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: address(502),
+  },
   policyHash: hash(503),
 };
 

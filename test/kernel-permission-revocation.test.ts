@@ -51,18 +51,22 @@ const identity: GrantIdentity = {
     deviceId: "revocation-device",
   },
   logicalAccount: {
+    version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
     kernelVersion: "0.3.3",
     factoryRoute: "kernel_factory",
+    entryPoint: { version: "0.7" },
     ownerCredential: {
+      version: "ogp.owner-credential-profile/v1",
       kind: "ecdsa",
-      publicIdentityHash: `0x${"aa".repeat(32)}`,
+      address: `0x${"aa".repeat(20)}`,
     },
   },
   operatorCredential: {
+    version: "ogp.operator-credential-profile/v1",
     kind: "ecdsa",
-    publicIdentityHash: `0x${"bb".repeat(32)}`,
+    address: `0x${"bb".repeat(20)}`,
   },
   policyHash: `0x${"cc".repeat(32)}`,
 };
