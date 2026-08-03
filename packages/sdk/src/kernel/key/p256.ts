@@ -70,8 +70,10 @@ export function p256Key(value: P256KeyInput): Readonly<KeyProfile> {
       BigInt(`0x${publicKey.slice(4, 68)}`),
       BigInt(`0x${publicKey.slice(68)}`),
     ]),
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) =>
-      resolvePinnedValidator(exactKernelDeployment(deployment), "p256"),
+    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+      exactKernelDeployment(deployment);
+      return resolvePinnedValidator("p256");
+    },
     dummySignature: DUMMY_SIGNATURE,
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
       const produced = await invokeCapability(

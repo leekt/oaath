@@ -47,7 +47,7 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
     resolvePackages: (deploymentValue: Readonly<KernelV4Deployment>) => {
       const deployment = exactKernelDeployment(deploymentValue);
       const validator = key.resolveValidator(deployment);
-      const hook = policy ? resolveHookModule(deployment) : "none";
+      const hook = policy ? resolveHookModule() : "none";
       return Object.freeze([
         Object.freeze({
           moduleType: 1 as const,

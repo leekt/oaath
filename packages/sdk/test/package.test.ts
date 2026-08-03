@@ -62,6 +62,7 @@ describe("package boundary", () => {
       "ownerOperator",
       "p256Key",
       "parsePreparedUserOperation",
+      "pinnedSignerModule",
       "prepareKernelV4UserOperation",
       "prepareUserOperation",
       "probeBundlerCapability",

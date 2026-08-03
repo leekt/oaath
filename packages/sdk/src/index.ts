@@ -15,6 +15,7 @@ export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
 export { p256Key } from "./kernel/key/p256.js";
 export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
+export { pinnedSignerModule } from "./kernel/modules.js";
 export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
 export { ownerOperator } from "./kernel/operator/owner.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";

@@ -246,8 +246,10 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
       BigInt(`0x${publicKey.slice(68)}`),
       credential.authenticatorIdHash,
     ]),
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) =>
-      resolvePinnedValidator(exactKernelDeployment(deployment), "webauthn"),
+    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+      exactKernelDeployment(deployment);
+      return resolvePinnedValidator("webauthn");
+    },
     dummySignature: encodeAbiParameters(ASSERTION_PARAMETERS, [
       `0x${"55".repeat(MIN_AUTHENTICATOR_DATA_BYTES)}`,
       `{"type":"webauthn.get","challenge":"${"A".repeat(43)}","origin":"${origin}"}`,
