@@ -1,6 +1,6 @@
+import { createOperation } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import {
-  createOperation,
   deriveOperationId,
   OaathPreparedUserOperationError,
   parsePreparedUserOperation,

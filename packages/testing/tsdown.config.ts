@@ -9,4 +9,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   platform: "neutral",
+  deps: {
+    neverBundle: ["node:sqlite"],
+  },
 });

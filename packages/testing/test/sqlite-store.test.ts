@@ -2,22 +2,20 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
 import {
   advanceGrant,
   advanceOperation,
+  applyVerifiedOperationObservation,
   createGrant,
   createOperation,
   type Grant,
   type GrantIdentity,
-  type GrantStore,
-  OaathStoreError,
   type Operation,
   type OperationIdentity,
-  type OperationStore,
-} from "../src/index.js";
-import { applyVerifiedOperationObservation } from "../src/operation.js";
-import { createSqliteGrantStore, createSqliteOperationStore } from "../src/testing.js";
+} from "@oaath/protocol";
+import { type GrantStore, OaathStoreError, type OperationStore } from "@oaath/sdk";
+import { afterEach, describe, expect, it } from "vitest";
+import { createSqliteGrantStore, createSqliteOperationStore } from "../src/index.js";
 
 const grantIdentity: GrantIdentity = {
   grantId: "durable-grant",

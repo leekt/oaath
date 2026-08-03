@@ -1,14 +1,17 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import {
   advanceOperation,
   createOperation,
-  createOperationObserver,
-  OaathOperationObserverError,
   type Operation,
   type OperationIdentity,
+} from "@oaath/protocol";
+import { createSqliteOperationStore } from "@oaath/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  createOperationObserver,
+  OaathOperationObserverError,
   type OperationObserverBlockEvidence,
   type OperationObserverCapabilities,
   type OperationObserverReadRequest,
@@ -16,7 +19,6 @@ import {
   type OperationObserverTransactionReceiptEvidence,
   type OperationObserverUserOperationReceiptEvidence,
 } from "../src/index.js";
-import { createSqliteOperationStore } from "../src/testing.js";
 
 const identity: OperationIdentity = {
   kind: "execution",

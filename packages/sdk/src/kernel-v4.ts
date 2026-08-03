@@ -1,4 +1,11 @@
 import {
+  type CaptureContext,
+  captureDenseArray,
+  captureRecord,
+  type ExactRecord,
+  exactCapturedRecord,
+} from "@oaath/protocol";
+import {
   concat,
   decodeAbiParameters,
   encodeAbiParameters,
@@ -10,13 +17,6 @@ import {
   pad,
   toHex,
 } from "viem";
-import {
-  type CaptureContext,
-  captureDenseArray,
-  captureRecord,
-  type ExactRecord,
-  exactCapturedRecord,
-} from "./internal/exact-record.js";
 import { type PreparedUserOperation, prepareUserOperation } from "./prepared-user-operation.js";
 
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
@@ -256,7 +256,7 @@ const implementationDeployment = (transactionHash: `0x${string}`, runtimeCodeHas
   Object.freeze({ deployer: KERNEL_V4_CREATE2_DEPLOYER, transactionHash, runtimeCodeHash });
 
 const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>> = Object.freeze({
-  46_630: Object.freeze({
+  46630: Object.freeze({
     profile: "kernel-v4-uups-entrypoint-v0.7",
     kernelVersion: "0.4.0",
     accountType: "uups",
@@ -270,7 +270,7 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
       "0xaef18d8059fa2474272125891050e2e755f45db00c2668b45b7062b2a9579be0",
     ),
   }),
-  421_614: Object.freeze({
+  421614: Object.freeze({
     profile: "kernel-v4-uups-entrypoint-v0.7",
     kernelVersion: "0.4.0",
     accountType: "uups",
@@ -284,7 +284,7 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
       "0xd0c42b1ed1738560c1b243fd9e5fc04b2eb5aa1be9962ac7f1f61696f9e6902b",
     ),
   }),
-  11_155_111: Object.freeze({
+  11155111: Object.freeze({
     profile: "kernel-v4-uups-entrypoint-v0.7",
     kernelVersion: "0.4.0",
     accountType: "uups",

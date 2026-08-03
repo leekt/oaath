@@ -1,16 +1,18 @@
-import { describe, expect, it } from "vitest";
 import {
   advanceGrant,
   createGrant,
   createOperation,
   type Grant,
   type GrantIdentity,
+  type Operation,
+  type OperationIdentity,
+} from "@oaath/protocol";
+import { describe, expect, it } from "vitest";
+import {
   GrantStore,
   type GrantStoreAdapter,
   OAATH_GRANT_STORE_RECORD_VERSION,
   OaathStoreError,
-  type Operation,
-  type OperationIdentity,
   OperationStore,
   type StoreRecord,
 } from "../src/index.js";

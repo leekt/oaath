@@ -46,6 +46,15 @@ describe("package boundary", () => {
     expect(() => validatePackageBoundary(manifest)).toThrow();
   });
 
+  it("accepts an intra-workspace @oaath dependency", () => {
+    expect(() =>
+      validatePackageBoundary({
+        ...validManifest,
+        dependencies: { "@oaath/protocol": "workspace:*" },
+      }),
+    ).not.toThrow();
+  });
+
   it("accepts an exact local tarball", () => {
     expect(() =>
       validatePackageBoundary({

@@ -19,6 +19,9 @@ export function validatePackageBoundary(manifest) {
       if (name === "moesi" || name.startsWith("@moesi/")) {
         throw new Error(`${group} must not depend on Moesi: ${name}`);
       }
+      if (name.startsWith("@oaath/") && range === "workspace:*") {
+        continue;
+      }
       if (typeof range === "string" && isSourceDependency(range)) {
         throw new Error(`${group} must use released packages or exact tarballs: ${name}`);
       }

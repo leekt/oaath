@@ -1,13 +1,11 @@
 import {
+  applyVerifiedOperationObservation,
   type CaptureContext,
   captureDenseArray,
   captureRecord,
+  type DroppedOperation,
   type ExactRecord,
   exactCapturedRecord,
-} from "./internal/exact-record.js";
-import {
-  applyVerifiedOperationObservation,
-  type DroppedOperation,
   type FinalizedOperation,
   type IncludedOperation,
   type Operation,
@@ -16,7 +14,7 @@ import {
   type OperationInclusion,
   parseOperation,
   type UserOperationReference,
-} from "./operation.js";
+} from "@oaath/protocol";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;

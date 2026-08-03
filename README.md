@@ -35,13 +35,17 @@ is `0.1.0`; no package becomes `1.0.0` during this program.
 
 ## Status
 
-Nothing is released. `@oaath/sdk` carries the current safety kernel: the pure
-`Operation` aggregate, durable stores, the canonical observer, and the Kernel
-v4 runtime. It captures one exact chain-local UserOperation identity, records
-submission before an external send, and advances only from stronger evidence.
-Missing receipts, timeouts, and unreadable observations never authorize another
-submission or prove an operation dropped. `@oaath/protocol`, `@oaath/server`,
-and `@oaath/testing` export a name constant only; their implementations land as
+Nothing is released. `@oaath/protocol` owns the runtime-neutral wire and
+durable contracts: grants, grant policies, identity profiles, the pure
+`Operation` aggregate, the permission protocol, and the exact hostile-input
+capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
+it: durable store contracts, the canonical observer, the runner, and the
+Kernel v4 runtime. It captures one exact chain-local UserOperation identity,
+records submission before an external send, and advances only from stronger
+evidence. Missing receipts, timeouts, and unreadable observations never
+authorize another submission or prove an operation dropped. `@oaath/testing`
+carries the concrete SQLite test stores and is never a production dependency.
+`@oaath/server` exports a name constant only; its implementation lands as
 bounded, independently reviewed child PRs.
 
 ## Kernel runtime
