@@ -1,0 +1,150 @@
+/**
+ * Authoritative approve/reject transition.
+ *
+ * ```text
+ * state and owner        the decision record owns "decided"; the request record
+ *                        never mutates
+ * transitions            undecided -> approved | rejected, exactly once
+ * terminal               both outcomes; a second decide fails relay_already_decided
+ * retry positively safe? no
+ * crash/reload           the decision, the code, and the sealed artifact commit in
+ *                        one transaction on the row-locked request, so a crash
+ *                        leaves the request undecided and nothing released
+ * ```
+ *
+ * Subject binding: the authoritative subject is recovered from the stored
+ * authorization request by `requestId` and compared against the authenticated
+ * owner. No wire field names the subject. A decision envelope that carries a
+ * subject identifier is rejected as an unknown field by exact capture, because a
+ * field that only *names* a subject is not cryptographically bound to it and can
+ * never decide authority.
+ *
+ * @author taek <leekt216@gmail.com>
+ */
+
+import { sealArtifact } from "../artifact/encrypt.js";
+import { type RelayClock, relayNow } from "../clock.js";
+import { relayFailure } from "../relay/errors.js";
+import type { RelayCaller } from "../security/authentication.js";
+import type { RelayKms } from "../security/kms.js";
+import type { RelayStore } from "../store/interface.js";
+import { withRelayTransaction } from "../store/interface.js";
+import {
+  OAATH_AUTHORIZATION_CODE_RECORD_VERSION,
+  OAATH_AUTHORIZATION_DECISION_RECORD_VERSION,
+  OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION,
+} from "../store/records.js";
+import { randomIdentifier, sha256Base64Url } from "./challenge.js";
+
+export type AuthorizationDecisionCommand =
+  /** The owner approves and hands over the artifact the client will claim once. */
+  Readonly<{ outcome: "approved"; artifact: string }> | Readonly<{ outcome: "rejected" }>;
+
+export interface SubmitAuthorizationDecisionInput {
+  readonly store: RelayStore;
+  readonly clock: RelayClock;
+  readonly kms: RelayKms;
+  /** Authenticated `owner` caller; only the bound subject may decide. */
+  readonly caller: RelayCaller;
+  readonly requestId: string;
+  readonly command: AuthorizationDecisionCommand;
+  readonly codeTtlMs: number;
+}
+
+export type SubmittedAuthorizationDecision =
+  | Readonly<{
+      outcome: "approved";
+      decidedAt: number;
+      /** Released exactly once, here. Only its SHA-256 is stored. */
+      code: string;
+      artifactId: string;
+      redirectUri: string;
+      codeExpiresAt: number;
+    }>
+  | Readonly<{ outcome: "rejected"; decidedAt: number }>;
+
+export async function submitAuthorizationDecision(
+  input: SubmitAuthorizationDecisionInput,
+): Promise<SubmittedAuthorizationDecision> {
+  const decidedAt = relayNow(input.clock);
+  const decision = Object.freeze({
+    version: OAATH_AUTHORIZATION_DECISION_RECORD_VERSION,
+    requestId: input.requestId,
+    outcome: input.command.outcome,
+    decidedAt,
+  } as const);
+
+  // Seal before the transaction: the store only ever receives the reference, and
+  // an uncommitted decision leaves nothing but an unreferenced ciphertext.
+  const approved =
+    input.command.outcome === "approved"
+      ? Object.freeze({
+          code: randomIdentifier(),
+          artifactId: randomIdentifier(),
+          ciphertextRef: await sealArtifact(input.kms, input.command.artifact),
+        })
+      : undefined;
+  const codeHash = approved ? await sha256Base64Url(approved.code) : undefined;
+
+  const redirectUri = await withRelayTransaction(input.store, async (transaction) => {
+    const request = await transaction.lockAuthorizationRequest(input.requestId);
+    // The stored request owns the subject. A mismatch is reported as absence so
+    // the endpoint is not an existence oracle for another subject's request.
+    if (!request || request.subject !== input.caller.subject) {
+      return relayFailure("relay_not_found", "authorization request does not exist");
+    }
+    if (await transaction.lockAuthorizationDecision(input.requestId)) {
+      return relayFailure("relay_already_decided", "authorization request is already decided");
+    }
+    if (decidedAt >= request.expiresAt) {
+      return relayFailure("relay_expired", "authorization request expired");
+    }
+    if (!(await transaction.insertAuthorizationDecision(decision))) {
+      return relayFailure("relay_already_decided", "authorization request is already decided");
+    }
+    if (approved && codeHash !== undefined) {
+      const inserted =
+        (await transaction.insertAuthorizationCode(
+          Object.freeze({
+            version: OAATH_AUTHORIZATION_CODE_RECORD_VERSION,
+            codeHash,
+            requestId: request.requestId,
+            clientId: request.clientId,
+            redirectUri: request.redirectUri,
+            codeChallenge: request.codeChallenge,
+            artifactId: approved.artifactId,
+            createdAt: decidedAt,
+            expiresAt: decidedAt + input.codeTtlMs,
+            consumedAt: null,
+          }),
+        )) &&
+        (await transaction.insertEncryptedArtifact(
+          Object.freeze({
+            version: OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION,
+            artifactId: approved.artifactId,
+            requestId: request.requestId,
+            clientId: request.clientId,
+            ciphertextRef: approved.ciphertextRef,
+            createdAt: decidedAt,
+            claimedAt: null,
+          }),
+        ));
+      if (!inserted) {
+        return relayFailure("relay_internal", "released identifier is not unique");
+      }
+    }
+    return request.redirectUri;
+  });
+
+  if (approved && codeHash !== undefined) {
+    return Object.freeze({
+      outcome: "approved",
+      decidedAt,
+      code: approved.code,
+      artifactId: approved.artifactId,
+      redirectUri,
+      codeExpiresAt: decidedAt + input.codeTtlMs,
+    });
+  }
+  return Object.freeze({ outcome: "rejected", decidedAt });
+}
