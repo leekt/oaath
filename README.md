@@ -40,13 +40,57 @@ durable contracts: grants, grant policies, identity profiles, the pure
 `Operation` aggregate, the permission protocol, and the exact hostile-input
 capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
 it: durable store contracts, the canonical observer, the runner, and the
-Kernel v4 runtime. It captures one exact chain-local UserOperation identity,
+Kernel v4 runtime, and the browser client that composes them into
+`createOAAth`. It captures one exact chain-local UserOperation identity,
 records submission before an external send, and advances only from stronger
 evidence. Missing receipts, timeouts, and unreadable observations never
 authorize another submission or prove an operation dropped. `@oaath/testing`
 carries the concrete SQLite test stores and is never a production dependency.
 `@oaath/server` exports a name constant only; its implementation lands as
 bounded, independently reviewed child PRs.
+
+## Browser golden path
+
+`createOAAth` is the one supported composition. Every deployment-owned
+capability is injected: there is no preset system, no provider registry, and no
+hidden network default.
+
+```ts
+import { createOAAth } from "@oaath/sdk";
+
+const oaath = createOAAth({
+  binding: { issuer, applicationId, applicationName, clientId, origin, redirectUri, deviceId, userHandle, account, operatorCredential },
+  issuer: { url: issuer, fetch, signOut },   // your fetch carries the credentials
+  authorization: { authorize },              // returns the code the owner released
+  invalidation: { invalidateCapability },    // proves the approval capability is dead
+  stores: { grants, operations, keys, cleanup, context },
+  chains: [{ chainId, reads, observation, bundler, submission, quote, usage, feePayer }],
+  signing: { owner, session },
+  localKeyIds: ["session-key"],
+  now: () => Math.floor(Date.now() / 1000),
+});
+
+const connection = await oaath.connect();
+const grant =
+  (await connection.resume()) ??
+  (await connection.requestPermission({
+    chainScope: "all",
+    permissions: [{ calls: [{ target, selectors, valueLimit: "0" }] }],
+    expiresIn: 1800,
+    perChainOperationLimit: 10,
+  }));
+
+const operation = await grant.sendCalls({ chain, calls });
+await operation.wait();
+await oaath.disconnect(grant); // revoke, signOut, forgetLocal, close
+```
+
+Applications never handle permission ids, enable envelopes, operation journals,
+store revisions, or nonce recovery. Persistence is explicit: pass the in-memory
+backends or the IndexedDB ones from `openOaathDatabase`. IndexedDB keeps exactly
+one current schema; a database that does not carry it is deleted and recreated
+rather than migrated, and key custody stores only non-extractable `CryptoKey`
+handles and exposes no export path.
 
 ## Kernel runtime
 
