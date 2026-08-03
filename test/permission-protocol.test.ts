@@ -63,7 +63,7 @@ const request: PermissionRequest = {
     version: "ogp.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "7",
-    kernelVersion: "0.3.3",
+    kernelVersion: "0.4.0",
     factoryRoute: "meta_factory",
     entryPoint: { version: "0.7" },
     ownerCredential: {
@@ -269,7 +269,7 @@ describe("PermissionRequest current codec", () => {
     expect(hashPermissionRequest(clone(request))).toBe(hashPermissionRequest(request));
     expect(encodePermissionRequest(request)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashPermissionRequest(request)).toBe(
-      "0x9c848b9d147a8b10a9793af1aee9a28ca52520c552438f659ad39cba4f70897a",
+      "0x978327098a4e11547deeb77d6fb9d6c86b98bb94b072415826dc1116e603a766",
     );
     expect(
       hashPermissionRequest({ ...clone(request), requestId: "permission-request-2" }),
@@ -402,10 +402,10 @@ describe("PermissionDecision current codec", () => {
       expect(hashPermissionDecision(clone(parsed))).toBe(hashPermissionDecision(parsed));
     }
     expect(hashPermissionDecision(approve())).toBe(
-      "0x2d682801ee6586b4ad25c6aba12632968be9d427ac973d1f883b998958e3cc80",
+      "0x322f34303f4e06afb7bab4c907e4cba86ee3ed8868446cb6ed00f5d6e1d5a30a",
     );
     expect(hashPermissionDecision(reject())).toBe(
-      "0x2c641a57306ec4859cb847432eb6e7b48e0c6f9841db9d8943397fb0b0902e43",
+      "0x76cb488b27d524d533a88fdf94d5364eee2ee4742ce80915aa229125d5bb77f5",
     );
     expect(hashPermissionDecision(approve({ capabilityHash: `0x${"66".repeat(32)}` }))).not.toBe(
       hashPermissionDecision(approve()),

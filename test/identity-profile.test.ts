@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createKernelAccountActionInput,
-  diagnoseOperatorCredential,
-  diagnoseOwnerCredential,
   type KernelAccountProfile,
   OGP_KERNEL_ACCOUNT_PROFILE_VERSION,
   OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -54,7 +52,7 @@ const accountProfile: KernelAccountProfile = {
   version: "ogp.kernel-account-profile/v1",
   kind: "kernel",
   accountIndex: "7",
-  kernelVersion: "0.3.3",
+  kernelVersion: "0.4.0",
   factoryRoute: "meta_factory",
   entryPoint: { version: "0.7" },
   ownerCredential: ownerP256,
@@ -154,7 +152,7 @@ describe("identity profile codecs", () => {
     expect(first).toEqual({
       chainId: 1,
       accountIndex: "7",
-      kernelVersion: "0.3.3",
+      kernelVersion: "0.4.0",
       factoryRoute: "meta_factory",
       entryPointVersion: "0.7",
       ownerCredential: ownerP256,
@@ -177,36 +175,6 @@ describe("identity profile codecs", () => {
     ]) {
       expect(profileKeys.has(forbidden), `forbidden profile key: ${forbidden}`).toBe(false);
     }
-  });
-
-  it("diagnoses only the selected exact credential kind from the pinned runtime", () => {
-    expect(diagnoseOwnerCredential(ownerEcdsa)).toEqual({
-      status: "available",
-      capability: "owner_ecdsa",
-      profile: ownerEcdsa,
-    });
-    expect(diagnoseOwnerCredential(ownerWebAuthn)).toEqual({
-      status: "available",
-      capability: "owner_webauthn",
-      profile: ownerWebAuthn,
-    });
-    expect(diagnoseOwnerCredential(ownerP256)).toEqual({
-      status: "available",
-      capability: "owner_p256",
-      profile: ownerP256,
-    });
-    expect(diagnoseOperatorCredential(operatorEcdsa)).toEqual({
-      status: "available",
-      capability: "permission_signer_ecdsa",
-      profile: operatorEcdsa,
-    });
-    expect(diagnoseOperatorCredential(operatorWebAuthn)).toEqual({
-      status: "unsupported",
-      capability: "permission_signer_webauthn",
-      profile: operatorWebAuthn,
-      reason: "runtime_integration_unproven",
-    });
-    expect(Object.isFrozen(diagnoseOwnerCredential(ownerP256))).toBe(true);
   });
 
   it("rejects versions, contradictory fields, extras, symbols, and accessors", () => {

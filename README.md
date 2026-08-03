@@ -39,11 +39,10 @@ independently reviewed units.
 
 ## Kernel runtime
 
-Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.7` is the target account
-runtime; the remaining Kernel 3.3 modules are scheduled for removal in a
-follow-up unit. OGP currently recognizes the Kernel v4 deployment on Arbitrum
-Sepolia, Ethereum Sepolia, and Robinhood Chain Testnet. Kernel 3.3 permission
-representations are never translated to v4.
+The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through
+EntryPoint `0.7`. OGP currently recognizes the Kernel v4 deployment on Arbitrum
+Sepolia, Ethereum Sepolia, and Robinhood Chain Testnet. It does not retain
+Kernel 3.3 profiles or translate their permission representation.
 
 The package owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
@@ -66,7 +65,7 @@ Requirements:
 ```sh
 pnpm install
 pnpm check
-pnpm test:anvil # explicit local Kernel proofs (v3.3 handleOps + v4 / EntryPoint 0.7)
+pnpm test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
 ```
 
 Automated tests must not contact paid or shared RPC services. Contract and
