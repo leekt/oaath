@@ -22,6 +22,12 @@ import { createSqliteGrantStore, createSqliteOperationStore } from "../src/testi
 const grantIdentity: GrantIdentity = {
   grantId: "durable-grant",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "sqlite-store",
+    origin: "https://sqlite.example",
+    deviceId: "sqlite-device",
+  },
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",
@@ -316,10 +322,12 @@ describe("test-only durable SQLite stores", () => {
 
     const restoredGrant = createSqliteGrantStore(filePath);
     const restoredOperation = createSqliteOperationStore(filePath);
-    expect(await restoredGrant.get(grantIdentity.grantId)).toMatchObject({
+    const restoredGrantRecord = await restoredGrant.get(grantIdentity.grantId);
+    expect(restoredGrantRecord).toMatchObject({
       storeRevision: 0,
       value: expectedGrant,
     });
+    expect(restoredGrantRecord?.value.identity.application).toEqual(grantIdentity.application);
     expect(
       await restoredOperation.get(operationStoreKey(grantIdentity.grantId, 31_337)),
     ).toMatchObject({ storeRevision: 0, value: expectedOperation });

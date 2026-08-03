@@ -360,6 +360,12 @@ function permissionObserver(mode: PermissionMode) {
 const grantIdentity: GrantIdentity = {
   grantId: permissionDescriptor.grantId,
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "stack-a-acceptance",
+    origin: "https://stack-a.example",
+    deviceId: "stack-a-device",
+  },
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",
