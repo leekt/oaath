@@ -9,10 +9,10 @@ import { createPublicClient, custom, defineChain, type Hex, recoverMessageAddres
 import { entryPoint07Address, type UserOperation } from "viem/account-abstraction";
 import { toAccount } from "viem/accounts";
 import {
+  captureKernelAccountProfile,
   createKernelAccountActionInput,
   type KernelAccountActionInput,
   type KernelAccountProfile,
-  parseKernelAccountProfile,
 } from "./identity-profile.js";
 import { type CaptureContext, exactRecord } from "./internal/exact-record.js";
 import { KERNEL_RUNTIME_CAPABILITIES } from "./kernel-runtime-capabilities.js";
@@ -198,6 +198,17 @@ function rawHash(value: unknown): `0x${string}` {
   return record.raw as `0x${string}`;
 }
 
+function contractSignature(value: string): Hex {
+  const recoveryByte = value.slice(-2);
+  if (recoveryByte === "1b" || recoveryByte === "1c") return value as Hex;
+  if (recoveryByte === "00") return `${value.slice(0, -2)}1b` as Hex;
+  if (recoveryByte === "01") return `${value.slice(0, -2)}1c` as Hex;
+  return ownerError(
+    "ecdsa_kernel_owner_signing_failed",
+    "ECDSA owner signature recovery byte is invalid",
+  );
+}
+
 function asViemUserOperation(value: PreparedUserOperation): UserOperation<"0.7"> {
   const operation = value.userOperation;
   return {
@@ -298,8 +309,11 @@ export async function createEcdsaKernelOwnerRuntime(
     }
     let profile: Readonly<KernelAccountProfile>;
     try {
-      profile = parseKernelAccountProfile(record.profile);
-    } catch {
+      profile = captureKernelAccountProfile(record.profile, context, (message) =>
+        ownerError("ecdsa_kernel_owner_input_invalid", message),
+      );
+    } catch (error) {
+      if (error instanceof OgpEcdsaKernelOwnerError) throw error;
       return ownerError("ecdsa_kernel_owner_input_invalid", "Kernel account profile is invalid");
     }
     if (profile.ownerCredential.kind !== "ecdsa") {
@@ -361,10 +375,11 @@ export async function createEcdsaKernelOwnerRuntime(
             "ECDSA owner signature is invalid",
           );
         }
+        const normalizedSignature = contractSignature(signature);
         let recovered: `0x${string}`;
         try {
           recovered = lowerAddress(
-            await recoverMessageAddress({ message: { raw: hash }, signature: signature as Hex }),
+            await recoverMessageAddress({ message: { raw: hash }, signature: normalizedSignature }),
           );
         } catch {
           return ownerError(
@@ -378,7 +393,7 @@ export async function createEcdsaKernelOwnerRuntime(
             "ECDSA owner signature does not match the selected profile",
           );
         }
-        return signature as Hex;
+        return normalizedSignature;
       },
       async signTransaction() {
         return ownerError(

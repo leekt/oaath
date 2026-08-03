@@ -69,6 +69,13 @@ function lower(value: string): `0x${string}` {
   return value.toLowerCase() as `0x${string}`;
 }
 
+function paritySignature(signature: Hex): Hex {
+  const recoveryByte = signature.slice(-2);
+  if (recoveryByte === "1b") return `${signature.slice(0, -2)}00` as Hex;
+  if (recoveryByte === "1c") return `${signature.slice(0, -2)}01` as Hex;
+  throw new Error("unexpected recovery byte");
+}
+
 function quantity(value: bigint | number): `0x${string}` {
   return `0x${BigInt(value).toString(16)}`;
 }
@@ -251,7 +258,7 @@ function ownerRuntime(privateKey: Hex, signs: { count: number }) {
       address: owner,
       async signMessageHash({ hash }: { hash: Hex }) {
         signs.count += 1;
-        return account.signMessage({ message: { raw: hash } });
+        return paritySignature(await account.signMessage({ message: { raw: hash } }));
       },
     },
   });

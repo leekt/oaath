@@ -18,6 +18,13 @@ function lower(value: string): `0x${string}` {
   return value.toLowerCase() as `0x${string}`;
 }
 
+function paritySignature(signature: `0x${string}`): `0x${string}` {
+  const recoveryByte = signature.slice(-2);
+  if (recoveryByte === "1b") return `${signature.slice(0, -2)}00` as `0x${string}`;
+  if (recoveryByte === "1c") return `${signature.slice(0, -2)}01` as `0x${string}`;
+  throw new Error("unexpected recovery byte");
+}
+
 function profile(
   owner: `0x${string}`,
   options: {
@@ -167,6 +174,33 @@ describe("ECDSA Kernel owner runtime", () => {
       ),
     ).toBe(owner.address);
     expect(owner.calls()).toBe(1);
+
+    const parityOwner = signer();
+    const parityRuntime = await createEcdsaKernelOwnerRuntime({
+      profile: profile(parityOwner.address),
+      chainId: 31_337,
+      signer: {
+        address: parityOwner.address,
+        async signMessageHash({ hash }: { hash: `0x${string}` }) {
+          return paritySignature(
+            await privateKeyToAccount(parityOwner.privateKey).signMessage({
+              message: { raw: hash },
+            }),
+          );
+        },
+      },
+    });
+    const parityOperation = prepared(parityRuntime);
+    const normalized = await parityRuntime.signPreparedUserOperation(parityOperation);
+    expect(["1b", "1c"]).toContain(normalized.slice(-2));
+    expect(
+      lower(
+        await recoverMessageAddress({
+          message: { raw: parityOperation.userOperationHash },
+          signature: normalized,
+        }),
+      ),
+    ).toBe(parityOwner.address);
   });
 
   it("keeps derivation deterministic for generated action identities", async () => {
@@ -474,6 +508,12 @@ describe("ECDSA Kernel owner runtime", () => {
     const wrong = signer();
     const failures = [
       async () => "0x",
+      async ({ hash }: { hash: `0x${string}` }) => {
+        const signature = await privateKeyToAccount(owner.privateKey).signMessage({
+          message: { raw: hash },
+        });
+        return `${signature.slice(0, -2)}02`;
+      },
       async ({ hash }: { hash: `0x${string}` }) =>
         privateKeyToAccount(wrong.privateKey).signMessage({ message: { raw: hash } }),
       async () => {
@@ -533,6 +573,37 @@ describe("ECDSA Kernel owner runtime", () => {
         ),
       "ecdsa_kernel_owner_input_invalid",
     );
+    const profileShape = profile(owner.address) as unknown as Record<string, unknown>;
+    const signerShape = owner.capability as unknown as Record<string, unknown>;
+    let currentShape = profileShape;
+    let ownKeyReads = 0;
+    const aliasedShapeShifter = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          return Object.prototype;
+        },
+        ownKeys() {
+          ownKeyReads += 1;
+          currentShape = ownKeyReads === 1 ? profileShape : signerShape;
+          return Reflect.ownKeys(currentShape);
+        },
+        getOwnPropertyDescriptor(_target, key) {
+          const descriptor = Reflect.getOwnPropertyDescriptor(currentShape, key);
+          return descriptor ? { ...descriptor, configurable: true } : undefined;
+        },
+      },
+    );
+    await expectCodeAsync(
+      () =>
+        createEcdsaKernelOwnerRuntime({
+          profile: aliasedShapeShifter,
+          chainId: 31_337,
+          signer: aliasedShapeShifter,
+        }),
+      "ecdsa_kernel_owner_signer_invalid",
+    );
+    expect(ownKeyReads).toBe(1);
     const current = await runtime(owner);
     await expectCodeAsync(
       () => current.runtime.restore({ read: async () => 31_337, extra: true }),
