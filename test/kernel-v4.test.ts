@@ -4,12 +4,14 @@ import {
   decodeFunctionData,
   encodeAbiParameters,
   getAddress,
+  keccak256,
   pad,
   toHex,
 } from "viem";
 import { describe, expect, it } from "vitest";
 import {
   bindKernelV4Account,
+  createKernelV4Reads,
   encodeKernelV4EnableSignature,
   encodeKernelV4Execution,
   encodeKernelV4FactoryAddressRead,
@@ -19,6 +21,7 @@ import {
   encodeKernelV4InstallModules,
   encodeKernelV4Nonce,
   encodeKernelV4NonceKey,
+  encodeKernelV4NonceRead,
   encodeKernelV4PermissionSignature,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
@@ -26,8 +29,10 @@ import {
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_EXECUTE_SELECTOR,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_IMPLEMENTATION_SLOT,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelV4AccountReadRequest,
   type KernelV4Install,
@@ -51,14 +56,13 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
-const installs = Object.freeze([
-  Object.freeze({
-    moduleType: 1,
-    module: validator,
-    moduleData: "0x1234",
-    internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
-  }),
-]) satisfies readonly KernelV4Install[];
+const baseInstall: KernelV4Install = Object.freeze({
+  moduleType: 1,
+  module: validator,
+  moduleData: "0x1234",
+  internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+});
+const installs = Object.freeze([baseInstall]) satisfies readonly KernelV4Install[];
 
 const installComponents = [
   { name: "moduleType", type: "uint256" },
@@ -123,6 +127,10 @@ const kernelAbi = [
     outputs: [],
   },
 ] as const;
+
+// Hostile-input probes bypass the typed public surface on purpose: they prove
+// the runtime capture layer, which must not trust compile-time types.
+const asHostile = <R>(fn: (value: never) => R) => fn as (value: unknown) => R;
 
 describe("Kernel v4 deployment profile", () => {
   it.each([
@@ -238,7 +246,7 @@ describe("Kernel v4 module and account codecs", () => {
     [{ ...installs[0], module: validator.toUpperCase() }],
     [{ ...installs[0], internalData: "0x0" }],
   ])("rejects malformed, legacy, or ambiguous install packages", (packages) => {
-    expect(() => encodeKernelV4Initialize(packages)).toThrowError(
+    expect(() => asHostile(encodeKernelV4Initialize)(packages)).toThrowError(
       expect.objectContaining({ code: "kernel_v4_input_invalid" }),
     );
   });
@@ -249,7 +257,7 @@ describe("Kernel v4 module and account codecs", () => {
       enumerable: true,
       get: () => "0x",
     });
-    expect(() => encodeKernelV4Initialize([hostile])).toThrowError(
+    expect(() => asHostile(encodeKernelV4Initialize)([hostile])).toThrowError(
       expect.objectContaining({ code: "kernel_v4_input_invalid" }),
     );
     const reflectionFailure = new Proxy([], {
@@ -267,9 +275,9 @@ describe("Kernel v4 module and account codecs", () => {
 
   it("accepts checksummed addresses and captures them in canonical lowercase", () => {
     const checksummed = getAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
-    expect(encodeKernelV4Initialize([{ ...installs[0], module: checksummed }])).toBe(
+    expect(encodeKernelV4Initialize([{ ...baseInstall, module: checksummed }])).toBe(
       encodeKernelV4Initialize([
-        { ...installs[0], module: checksummed.toLowerCase() as `0x${string}` },
+        { ...baseInstall, module: checksummed.toLowerCase() as `0x${string}` },
       ]),
     );
   });
@@ -307,22 +315,22 @@ describe("Kernel v4 module and account codecs", () => {
       ],
     ],
   ])("rejects incomplete or contradictory permission package sequences", (packages) => {
-    expect(() => encodeKernelV4InstallModules(packages)).toThrowError(
+    expect(() => asHostile(encodeKernelV4InstallModules)(packages)).toThrowError(
       expect.objectContaining({ code: "kernel_v4_input_invalid" }),
     );
-    expect(() => encodeKernelV4Initialize(packages)).toThrowError(
+    expect(() => asHostile(encodeKernelV4Initialize)(packages)).toThrowError(
       expect.objectContaining({ code: "kernel_v4_input_invalid" }),
     );
   });
 
   it("requires every permission signer to follow its policy packages", () => {
-    const policy = {
-      ...installs[0],
+    const policy: KernelV4Install = {
+      ...baseInstall,
       moduleType: 5,
       internalData: encodeKernelV4PolicyData(permissionId),
     };
-    const signer = {
-      ...installs[0],
+    const signer: KernelV4Install = {
+      ...baseInstall,
       moduleType: 6,
       internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
     };
@@ -399,7 +407,9 @@ describe("Kernel v4 account binding", () => {
 
   it("rejects caller-selected factories instead of widening the deployment registry", async () => {
     const { input } = binding();
-    await expect(bindKernelV4Account({ ...input, factory: target })).rejects.toMatchObject({
+    await expect(
+      asHostile(bindKernelV4Account)({ ...input, factory: target }),
+    ).rejects.toMatchObject({
       code: "kernel_v4_input_invalid",
     });
   });
@@ -600,7 +610,11 @@ describe("Kernel v4 nonce and signature codecs", () => {
       }),
     ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
     expect(() =>
-      encodeKernelV4NonceKey({ mode: "toString", validation: { kind: "root" }, nonceKey: "0" }),
+      asHostile(encodeKernelV4NonceKey)({
+        mode: "toString",
+        validation: { kind: "root" },
+        nonceKey: "0",
+      }),
     ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
   });
 
@@ -678,8 +692,95 @@ describe("Kernel v4 ERC-7579 execution codec", () => {
     [[{ target: `0x${"00".repeat(20)}`, value: "0", data: "0x" }]],
     [[{ target, value: "01", data: "0x" }]],
   ])("rejects empty or non-canonical call input", (calls) => {
-    expect(() => encodeKernelV4Execution({ calls })).toThrowError(
+    expect(() => asHostile(encodeKernelV4Execution)({ calls })).toThrowError(
       expect.objectContaining({ code: "kernel_v4_input_invalid" }),
     );
+  });
+});
+
+describe("Kernel v4 read and submission adapters", () => {
+  const word = (address: `0x${string}`) => pad(address, { size: 32 });
+
+  it("adapts one viem-style client into all six read request types", async () => {
+    const chainId = 421_614 as const;
+    const code = "0xdeadbeef" as const;
+    const implementation = KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+    const slots: string[] = [];
+    const reads = createKernelV4Reads({
+      getChainId: async () => chainId,
+      getCode: async ({ address }) => (address === account ? undefined : code),
+      getStorageAt: async ({ slot }) => {
+        slots.push(slot);
+        return word(implementation);
+      },
+      call: async () => ({ data: word(implementation) }),
+    });
+    await expect(reads.read({ type: "chain_id", chainId })).resolves.toBe(chainId);
+    await expect(reads.read({ type: "code", chainId, address: account })).resolves.toBe("0x");
+    await expect(reads.read({ type: "code", chainId, address: target })).resolves.toBe(code);
+    await expect(reads.read({ type: "runtime_code_hash", chainId, address: target })).resolves.toBe(
+      keccak256(code),
+    );
+    await expect(
+      reads.read({ type: "kernel_factory_implementation", chainId, factory, calldata: "0x" }),
+    ).resolves.toBe(implementation);
+    await expect(
+      reads.read({ type: "kernel_factory_account", chainId, factory, calldata: "0x" }),
+    ).resolves.toBe(implementation);
+    await expect(
+      reads.read({ type: "kernel_account_implementation", chainId, account }),
+    ).resolves.toBe(implementation);
+    expect(slots).toEqual([KERNEL_V4_IMPLEMENTATION_SLOT]);
+  });
+
+  it("returns undefined evidence instead of guessing when the chain has no answer", async () => {
+    const chainId = 421_614 as const;
+    const reads = createKernelV4Reads({
+      getChainId: async () => chainId,
+      getCode: async () => "0x",
+      getStorageAt: async () => null,
+      call: async () => ({}),
+    });
+    await expect(
+      reads.read({ type: "runtime_code_hash", chainId, address: target }),
+    ).resolves.toBeUndefined();
+    await expect(
+      reads.read({ type: "kernel_factory_account", chainId, factory, calldata: "0x" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      reads.read({ type: "kernel_account_implementation", chainId, account }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("encodes the exact EntryPoint getNonce read for a canonical key", () => {
+    const key = encodeKernelV4NonceKey({
+      mode: "standard",
+      validation: { kind: "validator", validator },
+      nonceKey: "7",
+    });
+    const decoded = decodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "getNonce",
+          stateMutability: "view",
+          inputs: [
+            { name: "sender", type: "address" },
+            { name: "key", type: "uint192" },
+          ],
+          outputs: [{ name: "nonce", type: "uint256" }],
+        },
+      ] as const,
+      data: encodeKernelV4NonceRead({ account, key }),
+    });
+    expect(decoded.functionName).toBe("getNonce");
+    expect(decoded.args).toEqual([getAddress(account), BigInt(key)]);
+    expect(() => asHostile(encodeKernelV4NonceRead)({ account, key: "-1" })).toThrowError(
+      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+    );
+  });
+
+  it("names the execute selector every non-root validation must allow-list", () => {
+    expect(KERNEL_V4_EXECUTE_SELECTOR).toBe("0xe9ae5c53");
   });
 });

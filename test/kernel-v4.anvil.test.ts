@@ -10,7 +10,6 @@ import {
   encodeFunctionData,
   type Hex,
   http,
-  keccak256,
   parseAbi,
   parseEther,
 } from "viem";
@@ -19,20 +18,20 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   bindKernelV4Account,
+  createKernelV4Reads,
   encodeKernelV4FactoryAddressRead,
   encodeKernelV4InstallModules,
   encodeKernelV4ValidatorData,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_EXECUTE_SELECTOR,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  type KernelV4AccountReadRequest,
   prepareKernelV4UserOperation,
 } from "../src/index.js";
 
 const requireAnvil = process.env.OGP_REQUIRE_ANVIL === "1";
 const chainId = 421_614;
-const implementationSlot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 const addressResult = [{ type: "address" }] as const;
 const entryPointReads = parseAbi([
   "function getNonce(address sender, uint192 key) view returns (uint256)",
@@ -223,30 +222,7 @@ afterAll(() => {
     });
     await client.waitForTransactionReceipt({ hash: fundHash });
 
-    const reads = {
-      async read(request: KernelV4AccountReadRequest): Promise<unknown> {
-        if (request.type === "chain_id") return client.getChainId();
-        if (request.type === "runtime_code_hash") {
-          const code = await client.getCode({ address: request.address });
-          return code ? keccak256(code) : undefined;
-        }
-        if (request.type === "code")
-          return (await client.getCode({ address: request.address })) ?? "0x";
-        if (
-          request.type === "kernel_factory_implementation" ||
-          request.type === "kernel_factory_account"
-        ) {
-          const result = await client.call({ to: request.factory, data: request.calldata });
-          if (!result.data) return undefined;
-          return lower(decodeAbiParameters(addressResult, result.data)[0]);
-        }
-        const value = await client.getStorageAt({
-          address: request.account,
-          slot: implementationSlot,
-        });
-        return value ? lower(`0x${value.slice(-40)}`) : undefined;
-      },
-    };
+    const reads = createKernelV4Reads(client);
     const descriptor = await bindKernelV4Account({
       chainId,
       initialPackages: packages,
@@ -335,7 +311,7 @@ afterAll(() => {
     // Non-root proof: a root operation installs a second validator that
     // allow-lists execute(bytes32,bytes), then that validator authorizes an
     // executeUserOp-wrapped operation against the real Kernel.
-    const executeSelector = "0xe9ae5c53" as const;
+    const executeSelector = KERNEL_V4_EXECUTE_SELECTOR;
     const nonRootValidator = await deployValidator();
     const nonRootOperator = privateKeyToAccount(generatePrivateKey());
     const blockedValidator = await deployValidator();

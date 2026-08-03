@@ -1,10 +1,12 @@
 import {
   concat,
+  decodeAbiParameters,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
   type Hex,
   hexToBigInt,
+  keccak256,
   pad,
   toHex,
 } from "viem";
@@ -38,6 +40,16 @@ export const KERNEL_V4_ENTRY_POINT_V07_CODE_HASH =
   "0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58" as const;
 export const KERNEL_V4_FACTORY_V07_CODE_HASH =
   "0xac398027b5068558aaf4fb5c986a6ae397e891d0c6e8d8181881385648ff629f" as const;
+/** ERC-1967 implementation storage slot read by kernel_account_implementation. */
+export const KERNEL_V4_IMPLEMENTATION_SLOT =
+  "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
+/**
+ * Kernel v4 execute(bytes32,bytes) selector. A validator or signer installed
+ * for non-root validation must allow-list this selector in its internalData,
+ * or every prepared non-root operation reverts on-chain with
+ * UnauthorizedCallData (AA23).
+ */
+export const KERNEL_V4_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
 
 export type KernelV4SupportedChainId = 46_630 | 421_614 | 11_155_111;
 export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
@@ -110,6 +122,60 @@ export type KernelV4Validation =
   | Readonly<{ kind: "validator"; validator: `0x${string}` }>
   | Readonly<{ kind: "permission"; permissionId: `0x${string}` }>;
 
+export interface KernelV4ModuleDataInput {
+  readonly hook: "none" | `0x${string}`;
+  readonly selectors: readonly `0x${string}`[];
+}
+
+export interface KernelV4SignerDataInput extends KernelV4ModuleDataInput {
+  readonly permissionId: `0x${string}`;
+}
+
+export interface KernelV4AccountInput {
+  readonly initialPackages: readonly KernelV4Install[];
+  readonly accountIndex: string;
+}
+
+export interface KernelV4NonceKeyInput {
+  readonly mode: KernelV4ValidationMode;
+  readonly validation: KernelV4Validation;
+  readonly nonceKey: string;
+}
+
+export interface KernelV4NonceInput {
+  readonly key: string;
+  readonly sequence: string;
+}
+
+export interface KernelV4NonceReadInput {
+  readonly account: `0x${string}`;
+  readonly key: string;
+}
+
+export interface KernelV4UserOperationNonceInput extends KernelV4NonceKeyInput {
+  readonly sequence: string;
+}
+
+export interface KernelV4UserOperationInput {
+  readonly kind: "execution" | "revocation";
+  readonly grantId: string;
+  readonly account: KernelV4AccountDescriptor;
+  readonly nonce: KernelV4UserOperationNonceInput;
+  readonly calls: readonly KernelV4Call[];
+  readonly gas: KernelV4UserOperationGas;
+}
+
+export interface KernelV4EnableSignatureInput {
+  readonly nonce: string;
+  readonly packages: readonly KernelV4Install[];
+  readonly enableSignature: `0x${string}`;
+  readonly userOperationSignature: `0x${string}`;
+}
+
+export interface KernelV4ExecutionInput {
+  readonly calls: readonly KernelV4Call[];
+}
+
 export type KernelV4AccountReadRequest =
   | Readonly<{ type: "chain_id"; chainId: KernelV4SupportedChainId }>
   | Readonly<{
@@ -142,6 +208,29 @@ export type KernelV4AccountReadRequest =
 
 export interface KernelV4AccountReadCapability {
   readonly read: (request: KernelV4AccountReadRequest) => Promise<unknown>;
+}
+
+export interface KernelV4BindAccountInput extends KernelV4AccountInput {
+  readonly chainId: number;
+  readonly reads: KernelV4AccountReadCapability;
+}
+
+/**
+ * Minimal viem-PublicClient-shaped surface consumed by createKernelV4Reads.
+ * Any client whose getChainId/getCode/getStorageAt/call match structurally
+ * satisfies it.
+ */
+export interface KernelV4ReadClient {
+  readonly getChainId: () => Promise<number>;
+  readonly getCode: (args: { address: `0x${string}` }) => Promise<`0x${string}` | undefined>;
+  readonly getStorageAt: (args: {
+    address: `0x${string}`;
+    slot: `0x${string}`;
+  }) => Promise<`0x${string}` | null | undefined>;
+  readonly call: (args: {
+    to: `0x${string}`;
+    data: `0x${string}`;
+  }) => Promise<{ data?: `0x${string}` | undefined }>;
 }
 
 export interface KernelV4AccountDescriptor {
@@ -223,6 +312,19 @@ const INSTALL_ARRAY_PARAMETER = {
   type: "tuple[]",
   components: INSTALL_COMPONENTS,
 } as const;
+
+const ENTRY_POINT_GET_NONCE_ABI = [
+  {
+    type: "function",
+    name: "getNonce",
+    stateMutability: "view",
+    inputs: [
+      { name: "sender", type: "address" },
+      { name: "key", type: "uint192" },
+    ],
+    outputs: [{ name: "nonce", type: "uint256" }],
+  },
+] as const;
 
 const FACTORY_ABI = [
   {
@@ -473,7 +575,7 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
 }
 
 /** Encodes Kernel v4 validator internalData: hook followed by allowed selectors. */
-export function encodeKernelV4ValidatorData(value: unknown): Hex {
+export function encodeKernelV4ValidatorData(value: KernelV4ModuleDataInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["hook", "selectors"], "Kernel validator data", context);
   const hook = record.hook === "none" ? NO_HOOK : address(record.hook, "Kernel validator hook");
@@ -481,12 +583,12 @@ export function encodeKernelV4ValidatorData(value: unknown): Hex {
 }
 
 /** Encodes Kernel v4 policy internalData. */
-export function encodeKernelV4PolicyData(permissionId: unknown): Hex {
+export function encodeKernelV4PolicyData(permissionId: `0x${string}`): Hex {
   return bytes4(permissionId, "Kernel permission ID");
 }
 
 /** Encodes Kernel v4 signer internalData: permission ID, hook, then allowed selectors. */
-export function encodeKernelV4SignerData(value: unknown): Hex {
+export function encodeKernelV4SignerData(value: KernelV4SignerDataInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["permissionId", "hook", "selectors"], "Kernel signer data", context);
   const hook = record.hook === "none" ? NO_HOOK : address(record.hook, "Kernel signer hook");
@@ -497,7 +599,7 @@ export function encodeKernelV4SignerData(value: unknown): Hex {
   ]);
 }
 
-export function encodeKernelV4Initialize(installs: unknown): Hex {
+export function encodeKernelV4Initialize(installs: readonly KernelV4Install[]): Hex {
   const context: CaptureContext = new WeakSet();
   const packages = captureInitialPackages(installs, context);
   return encodeFunctionData({
@@ -507,7 +609,7 @@ export function encodeKernelV4Initialize(installs: unknown): Hex {
   });
 }
 
-export function encodeKernelV4InstallModules(installs: unknown): Hex {
+export function encodeKernelV4InstallModules(installs: readonly KernelV4Install[]): Hex {
   const context: CaptureContext = new WeakSet();
   const packages = captureInstalls(installs, context, "Kernel install packages");
   return encodeFunctionData({
@@ -521,7 +623,7 @@ export function encodeKernelV4FactoryImplementationRead(): Hex {
   return encodeFunctionData({ abi: FACTORY_ABI, functionName: "UUPS" });
 }
 
-export function encodeKernelV4FactoryAddressRead(value: unknown): Hex {
+export function encodeKernelV4FactoryAddressRead(value: KernelV4AccountInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["initialPackages", "accountIndex"], "Kernel account", context);
   const packages = captureInitialPackages(record.initialPackages, context);
@@ -532,7 +634,7 @@ export function encodeKernelV4FactoryAddressRead(value: unknown): Hex {
   });
 }
 
-export function encodeKernelV4FactoryDeploy(value: unknown): Hex {
+export function encodeKernelV4FactoryDeploy(value: KernelV4AccountInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["initialPackages", "accountIndex"], "Kernel account", context);
   const packages = captureInitialPackages(record.initialPackages, context);
@@ -544,11 +646,43 @@ export function encodeKernelV4FactoryDeploy(value: unknown): Hex {
 }
 
 /**
+ * Adapts one viem-style public client into the exact account read capability
+ * consumed by bindKernelV4Account, covering all six read request types.
+ */
+export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4AccountReadCapability {
+  return Object.freeze({
+    async read(request: KernelV4AccountReadRequest): Promise<unknown> {
+      if (request.type === "chain_id") return client.getChainId();
+      if (request.type === "code") {
+        return (await client.getCode({ address: request.address })) ?? "0x";
+      }
+      if (request.type === "runtime_code_hash") {
+        const code = await client.getCode({ address: request.address });
+        return code && code !== "0x" ? keccak256(code) : undefined;
+      }
+      if (
+        request.type === "kernel_factory_implementation" ||
+        request.type === "kernel_factory_account"
+      ) {
+        const result = await client.call({ to: request.factory, data: request.calldata });
+        if (!result.data) return undefined;
+        return decodeAbiParameters([{ type: "address" }] as const, result.data)[0].toLowerCase();
+      }
+      const value = await client.getStorageAt({
+        address: request.account,
+        slot: KERNEL_V4_IMPLEMENTATION_SLOT,
+      });
+      return value ? `0x${value.slice(-40)}`.toLowerCase() : undefined;
+    },
+  });
+}
+
+/**
  * Resolves one counterfactual or deployed Kernel account after proving that the
  * registered factory is bound to the supported v4 UUPS implementation.
  */
 export async function bindKernelV4Account(
-  value: unknown,
+  value: KernelV4BindAccountInput,
 ): Promise<Readonly<KernelV4AccountDescriptor>> {
   const context: CaptureContext = new WeakSet();
   const record = exact(
@@ -746,7 +880,9 @@ function captureAccountDescriptor(
  * Builds and hashes one immutable EntryPoint 0.7 UserOperation from a proven
  * Kernel v4 account descriptor and the native v4 nonce/execution codecs.
  */
-export function prepareKernelV4UserOperation(value: unknown): PreparedUserOperation {
+export function prepareKernelV4UserOperation(
+  value: KernelV4UserOperationInput,
+): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
   const record = exact(
     value,
@@ -773,7 +909,10 @@ export function prepareKernelV4UserOperation(value: unknown): PreparedUserOperat
     context,
   );
   const nonceKey = captureNonceKey(nonceRecord, context);
-  const nonce = encodeKernelV4Nonce({ key: nonceKey.value, sequence: nonceRecord.sequence });
+  const nonce = encodeKernelV4Nonce({
+    key: nonceKey.value,
+    sequence: uint(nonceRecord.sequence, MAX_UINT64, "Kernel nonce sequence").toString(10),
+  });
   const calls = captureCalls(record.calls, context);
   const execution = encodeKernelV4Execution({ calls });
   const gasRecord = exact(
@@ -882,14 +1021,28 @@ function captureNonceKey(
 }
 
 /** Returns the canonical decimal uint192 key accepted by EntryPoint 0.7 getNonce. */
-export function encodeKernelV4NonceKey(value: unknown): string {
+export function encodeKernelV4NonceKey(value: KernelV4NonceKeyInput): string {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["mode", "validation", "nonceKey"], "Kernel nonce key", context);
   return captureNonceKey(record, context).value;
 }
 
+/** Encodes EntryPoint 0.7 getNonce(sender, key) calldata for the canonical nonce key. */
+export function encodeKernelV4NonceRead(value: KernelV4NonceReadInput): Hex {
+  const context: CaptureContext = new WeakSet();
+  const record = exact(value, ["account", "key"], "Kernel nonce read", context);
+  return encodeFunctionData({
+    abi: ENTRY_POINT_GET_NONCE_ABI,
+    functionName: "getNonce",
+    args: [
+      getAddress(address(record.account, "Kernel nonce read account")),
+      uint(record.key, (1n << 192n) - 1n, "Kernel nonce read key"),
+    ],
+  });
+}
+
 /** Combines a canonical uint192 EntryPoint key and uint64 sequence into the full nonce. */
-export function encodeKernelV4Nonce(value: unknown): string {
+export function encodeKernelV4Nonce(value: KernelV4NonceInput): string {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["key", "sequence"], "Kernel nonce", context);
   const key = uint(record.key, (1n << 192n) - 1n, "Kernel nonce key");
@@ -898,7 +1051,7 @@ export function encodeKernelV4Nonce(value: unknown): string {
 }
 
 /** ABI-encodes the policy signatures followed by the signer signature. */
-export function encodeKernelV4PermissionSignature(value: unknown): Hex {
+export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[]): Hex {
   const context: CaptureContext = new WeakSet();
   const signatures = captureDenseArray(value, "Kernel permission signatures", context, fail);
   if (signatures.length < 1 || signatures.length > 256) {
@@ -911,7 +1064,7 @@ export function encodeKernelV4PermissionSignature(value: unknown): Hex {
 }
 
 /** ABI-encodes Kernel v4's EnableModeSignature struct. */
-export function encodeKernelV4EnableSignature(value: unknown): Hex {
+export function encodeKernelV4EnableSignature(value: KernelV4EnableSignatureInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(
     value,
@@ -952,7 +1105,7 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
 }
 
 /** Encodes one or more calls through Kernel v4's ERC-7579 execute entrypoint. */
-export function encodeKernelV4Execution(value: unknown): Hex {
+export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["calls"], "Kernel execution", context);
   const calls = captureCalls(record.calls, context);
