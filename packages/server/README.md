@@ -6,6 +6,9 @@ OAAth deployable relay and PostgreSQL boundary. See the
 The package entry is Fetch-standard and platform-neutral. PostgreSQL is only
 reachable through the explicit `@oaath/server/postgres` subpath.
 
+`@oaath/server/native` (phone approval) and `@oaath/server/apns` (Apple push)
+are **experimental previews**: unstable, unrouted, and not production qualified.
+
 ```ts
 import { createRelayHandler } from "@oaath/server";
 import { createPostgresRelayStore } from "@oaath/server/postgres";
