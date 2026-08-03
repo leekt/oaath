@@ -141,6 +141,51 @@ export {
   prepareUserOperation,
 } from "./prepared-user-operation.js";
 export type {
+  OaathBundlerAcceptanceEvidence,
+  OaathBundlerProbeCapability,
+  OaathBundlerProbeEvidence,
+  OaathBundlerProbeInput,
+  OaathBundlerProbeRequest,
+} from "./routing/bundler.js";
+export {
+  classifyBundlerAcceptance,
+  classifyBundlerProbe,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+  probeBundlerCapability,
+} from "./routing/bundler.js";
+export type {
+  OaathBundlerCapability,
+  OaathRoutingCapabilities,
+  OaathSessionCoverage,
+} from "./routing/capabilities.js";
+export { captureRoutingCapabilities } from "./routing/capabilities.js";
+export type { DecideExecutionInput } from "./routing/decide.js";
+export { decideExecution } from "./routing/decide.js";
+export type { OaathOperationPrefund } from "./routing/gas.js";
+export { deriveOperationPrefund } from "./routing/gas.js";
+export type {
+  OaathHandleOpsCall,
+  OaathHandleOpsEncodingInput,
+  OaathHandleOpsRequirement,
+  OaathHandleOpsRequirementInput,
+} from "./routing/handle-ops.js";
+export {
+  deriveHandleOpsRequirement,
+  encodeHandleOps,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
+} from "./routing/handle-ops.js";
+export type {
+  OaathExecutionDecision,
+  OaathExecutionReason,
+  OaathExecutionRoute,
+  OaathExecutionRouteReason,
+  OaathExecutionSigner,
+  OaathExecutionSignerReason,
+  OaathFeePayerDescriptor,
+  RoutingErrorCode,
+} from "./routing/types.js";
+export { OaathRoutingError } from "./routing/types.js";
+export type {
   GrantStoreAdapter,
   GrantStoreCompareAndSwapResult,
   GrantStoreRecord,
