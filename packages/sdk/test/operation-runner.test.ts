@@ -1,15 +1,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import {
   advanceOperation,
+  applyVerifiedOperationObservation,
   createOperation,
-  createOperationObserver,
-  createOperationRunner,
-  OaathOperationRunnerError,
   type Operation,
   type OperationKind,
+} from "@oaath/protocol";
+import { createSqliteOperationStore } from "@oaath/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  createOperationObserver,
+  createOperationRunner,
+  type OaathOperationRunnerError,
   type OperationObserver,
   OperationStore,
   type OperationStoreAdapter,
@@ -17,8 +21,6 @@ import {
   type PreparedUserOperation,
   prepareUserOperation,
 } from "../src/index.js";
-import { applyVerifiedOperationObservation } from "../src/operation.js";
-import { createSqliteOperationStore } from "../src/testing.js";
 
 const key = { grantId: "runner-grant", chainId: 31_337 } as const;
 const entryPoint = `0x${"11".repeat(20)}` as const;

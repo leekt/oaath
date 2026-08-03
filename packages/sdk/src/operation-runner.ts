@@ -1,19 +1,17 @@
 import {
-  type CaptureContext,
-  captureRecord,
-  type ExactRecord,
-  exactCapturedRecord,
-} from "./internal/exact-record.js";
-import {
   advanceOperation,
   applyVerifiedOperationObservation,
+  type CaptureContext,
+  captureRecord,
   createOperation,
+  type ExactRecord,
+  exactCapturedRecord,
   type Operation,
   type OperationIdentity,
   type OperationKind,
   operationOccupiesLane,
   parseOperation,
-} from "./operation.js";
+} from "@oaath/protocol";
 import type { ObserveOperationResult, OperationObserver } from "./operation-observer.js";
 import {
   deriveOperationId,

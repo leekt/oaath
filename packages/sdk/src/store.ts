@@ -1,8 +1,13 @@
-import type { Grant } from "./grant.js";
-import { parseGrant, sameGrantIdentity as sameGrantIdentityValue } from "./grant.js";
-import { type CaptureContext, exactRecord as exactRecordValue } from "./internal/exact-record.js";
-import type { Operation } from "./operation.js";
-import { operationOccupiesLane, parseOperation } from "./operation.js";
+import {
+  type CaptureContext,
+  exactRecord as exactRecordValue,
+  type Grant,
+  type Operation,
+  operationOccupiesLane,
+  parseGrant,
+  parseOperation,
+  sameGrantIdentity as sameGrantIdentityValue,
+} from "@oaath/protocol";
 
 export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v3" as const;
 export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v1" as const;

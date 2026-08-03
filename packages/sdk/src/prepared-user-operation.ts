@@ -1,12 +1,13 @@
-import { getUserOperationHash, type UserOperation } from "viem/account-abstraction";
 import {
   type CaptureContext,
   captureRecord as captureExactRecord,
   type ExactRecord,
   exactCapturedRecord as exactCapturedRecordValue,
   exactRecord as exactRecordValue,
-} from "./internal/exact-record.js";
-import type { OperationIdentity, OperationKind } from "./operation.js";
+  type OperationIdentity,
+  type OperationKind,
+} from "@oaath/protocol";
+import { getUserOperationHash, type UserOperation } from "viem/account-abstraction";
 
 export const OAATH_PREPARED_USER_OPERATION_VERSION = "oaath.prepared-user-operation/v1" as const;
 
