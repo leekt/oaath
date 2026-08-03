@@ -49,6 +49,17 @@ export {
   OgpKernelPermissionObserverError,
 } from "./kernel-permission-observer.js";
 export type {
+  KernelPermissionRevocationConfiguration,
+  KernelPermissionRevocationCoordinator,
+  KernelPermissionRevocationErrorCode,
+  KernelPermissionRevocationInput,
+  KernelPermissionRevocationResult,
+} from "./kernel-permission-revocation.js";
+export {
+  createKernelPermissionRevocationCoordinator,
+  OgpKernelPermissionRevocationError,
+} from "./kernel-permission-revocation.js";
+export type {
   EntryPointHandleOpsSubmitterCapability,
   KernelEcdsaOwnerSignerCapability,
   KernelExecutionCall,
