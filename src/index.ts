@@ -11,6 +11,15 @@ export {
   OgpEcdsaKernelOwnerError,
 } from "./ecdsa-kernel-owner.js";
 export type {
+  EcdsaPermissionSignerCapability,
+  EcdsaPermissionSignerErrorCode,
+  EcdsaPermissionSignerRuntime,
+} from "./ecdsa-permission-signer.js";
+export {
+  createEcdsaPermissionSignerRuntime,
+  OgpEcdsaPermissionSignerError,
+} from "./ecdsa-permission-signer.js";
+export type {
   ActiveGrant,
   ApplicationBinding,
   ApprovedGrant,

@@ -6,7 +6,10 @@ import {
   exactCapturedRecord,
   exactRecord,
 } from "./internal/exact-record.js";
-import { getKernelRuntimeCapability } from "./kernel-runtime-capabilities.js";
+import {
+  getKernelRuntimeCapability,
+  type KernelRuntimeUnsupportedReason,
+} from "./kernel-runtime-capabilities.js";
 
 export const OGP_OWNER_CREDENTIAL_PROFILE_VERSION = "ogp.owner-credential-profile/v1" as const;
 export const OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION =
@@ -116,7 +119,7 @@ export type CredentialRuntimeDiagnosis<
       status: "unsupported";
       capability: CredentialRuntimeCapability;
       profile: Readonly<Profile>;
-      reason: "first_party_profile_unproven";
+      reason: "first_party_profile_unproven" | "runtime_integration_unproven";
     }>;
 
 export type IdentityProfileErrorCode =
@@ -395,7 +398,9 @@ function diagnose<Profile extends OwnerCredentialProfile | OperatorCredentialPro
   profile: Readonly<Profile>,
   capability: CredentialRuntimeCapability,
 ): CredentialRuntimeDiagnosis<Profile> {
-  const runtime = getKernelRuntimeCapability(capability);
+  const runtime = getKernelRuntimeCapability(capability) as
+    | Readonly<{ status: "available" }>
+    | Readonly<{ status: "unsupported"; reason: KernelRuntimeUnsupportedReason }>;
   if (runtime.status === "available") {
     return Object.freeze({ status: "available", capability, profile });
   }
@@ -413,6 +418,14 @@ function diagnose<Profile extends OwnerCredentialProfile | OperatorCredentialPro
       capability,
       profile,
       reason: "first_party_profile_unproven",
+    });
+  }
+  if (runtime.reason === "integration_unproven") {
+    return Object.freeze({
+      status: "unsupported",
+      capability,
+      profile,
+      reason: "runtime_integration_unproven",
     });
   }
   return Object.freeze({

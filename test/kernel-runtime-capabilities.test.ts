@@ -7,13 +7,16 @@ import {
   signerToEcdsaValidator,
 } from "@zerodev/ecdsa-validator";
 import { PasskeyValidatorContractVersion } from "@zerodev/passkey-validator";
+import { ECDSA_SIGNER_CONTRACT } from "@zerodev/permissions";
+import { toECDSASigner, toSignerId } from "@zerodev/permissions/signers";
 import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
-import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
+import { DUMMY_ECDSA_SIG, KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { createWalletClient } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import {
   createEcdsaKernelOwnerRuntime,
+  createEcdsaPermissionSignerRuntime,
   createLocalKernelHandleOpsAdapter,
   createLocalKernelPermissionUninstallAdapter,
   createP256KernelOwnerRuntime,
@@ -53,6 +56,7 @@ describe("Kernel runtime capabilities", () => {
   it("pins the exact installed public artifacts and accepted protocol releases", () => {
     expect(OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION).toBe("ogp.kernel-runtime-capabilities/v1");
     expect(installedPackageVersion("@zerodev/sdk")).toBe("5.5.10");
+    expect(installedPackageVersion("@zerodev/permissions")).toBe("5.6.3");
     expect(installedPackageVersion("@zerodev/ecdsa-validator")).toBe("5.4.9");
     expect(installedPackageVersion("@zerodev/passkey-validator")).toBe("5.6.0");
     expect(installedPackageVersion("@zerodev/webauthn-key")).toBe("5.5.0");
@@ -63,6 +67,10 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof getKernelAddressFromECDSA).toBe("function");
     expect(typeof getValidatorAddress).toBe("function");
     expect(typeof signerToEcdsaValidator).toBe("function");
+    expect(ECDSA_SIGNER_CONTRACT).toBe("0x6A6F069E2a08c2468e7724Ab3250CdBFBA14D4FF");
+    expect(typeof toECDSASigner).toBe("function");
+    expect(typeof toSignerId).toBe("function");
+    expect(typeof createEcdsaPermissionSignerRuntime).toBe("function");
     expect(typeof createEcdsaKernelOwnerRuntime).toBe("function");
     expect(typeof createP256KernelOwnerRuntime).toBe("function");
     expect(typeof createWebAuthnKernelOwnerRuntime).toBe("function");
@@ -70,6 +78,7 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof createWalletClient).toBe("function");
     expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
     expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
+    expect(DUMMY_ECDSA_SIG).toMatch(/^0x[0-9a-f]{130}$/u);
     expect(KERNEL_V3_3).toBe("0.3.3");
     expect(
       entryPoint07Abi.some((item) => item.type === "function" && item.name === "handleOps"),
@@ -90,6 +99,16 @@ describe("Kernel runtime capabilities", () => {
         tag: null,
         alignment: "registry_version_differs_from_git_head_tree",
       },
+      publicExports: [
+        {
+          importPath: "@zerodev/sdk",
+          names: ["createKernelAccount", "createKernelAccountClient", "uninstallPlugin"],
+        },
+        {
+          importPath: "@zerodev/sdk/constants",
+          names: ["DUMMY_ECDSA_SIG", "KERNEL_V3_3"],
+        },
+      ],
     });
     expect(KERNEL_RUNTIME_CAPABILITIES.packages.viem).toMatchObject({
       packageName: "viem",
@@ -113,6 +132,31 @@ describe("Kernel runtime capabilities", () => {
         tag: null,
         alignment: "registry_version_differs_from_git_head_tree",
       },
+    });
+    expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevPermissions).toMatchObject({
+      packageName: "@zerodev/permissions",
+      packageVersion: "5.6.3",
+      integrity:
+        "sha512-MwW3Eo3rB5ViOKdY6NUoyvmQTV/bCbOZbmQMTYQqAT7B8rdI9jo44nNONMOHIhDkfF4VFhQ9+M50cCZLA/6zcg==",
+      shasum: "69ae470e03d5a750e6b3484c82d5e854e127523a",
+      npmGitHead: "6db091cc65c74526e22980a3754776618c2e3a7e",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/permission",
+        commit: "6db091cc65c74526e22980a3754776618c2e3a7e",
+        packageVersion: "5.6.2",
+        alignment: "registry_version_differs_from_git_head_tree",
+      },
+      publicExports: [
+        {
+          importPath: "@zerodev/permissions",
+          names: ["ECDSA_SIGNER_CONTRACT"],
+        },
+        {
+          importPath: "@zerodev/permissions/signers",
+          names: ["toECDSASigner", "toSignerId"],
+        },
+      ],
     });
     expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevPasskeyValidator).toMatchObject({
       packageName: "@zerodev/passkey-validator",
@@ -189,13 +233,6 @@ describe("Kernel runtime capabilities", () => {
         },
       },
     });
-
-    for (const packageName of ["@zerodev/permissions"]) {
-      expect(
-        () => require.resolve(packageName),
-        `${packageName} must remain uninstalled`,
-      ).toThrow();
-    }
   });
 
   it("reports only the exact installed capability substrate as available", () => {
@@ -211,7 +248,7 @@ describe("Kernel runtime capabilities", () => {
       owner_ecdsa: "available",
       owner_p256: "available",
       owner_webauthn: "available",
-      permission_signer_ecdsa: "unsupported",
+      permission_signer_ecdsa: "available",
       permission_signer_p256: "unsupported",
       permission_signer_webauthn: "unsupported",
       replayable_all_chain_permission_approval: "unsupported",
@@ -258,6 +295,16 @@ describe("Kernel runtime capabilities", () => {
         "entrypoint.v0_7",
       ],
     });
+    expect(getKernelRuntimeCapability("permission_signer_ecdsa")).toEqual({
+      status: "available",
+      anchors: [
+        "zerodev_permissions.ECDSA_SIGNER_CONTRACT",
+        "zerodev_sdk.DUMMY_ECDSA_SIG",
+        "ogp.createEcdsaPermissionSignerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
+    });
     expect(getKernelRuntimeCapability("bundler_submission")).toEqual({
       status: "available",
       anchors: ["zerodev_sdk.createKernelAccountClient"],
@@ -284,8 +331,7 @@ describe("Kernel runtime capabilities", () => {
   it("fails closed for remaining unavailable credentials, permission install, and approval", () => {
     expect(getKernelRuntimeCapability("permission_install")).toMatchObject({
       status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
+      reason: "integration_unproven",
       constraints: ["generic_plugin_primitive_only"],
     });
     expect(getKernelRuntimeCapability("replayable_all_chain_permission_approval")).toEqual({
@@ -305,7 +351,7 @@ describe("Kernel runtime capabilities", () => {
     expect(getKernelRuntimeCapability("owner_webauthn")).toMatchObject({ status: "available" });
     expect(getKernelRuntimeCapability("permission_signer_webauthn")).toMatchObject({
       status: "unsupported",
-      reason: "package_not_installed",
+      reason: "integration_unproven",
     });
   });
 
