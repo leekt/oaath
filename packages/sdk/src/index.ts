@@ -1,3 +1,12 @@
+export type {
+  DiagnoseKernelCapabilityInput,
+  KernelCapability,
+  KernelCapabilityEvidence,
+  KernelCapabilityFact,
+  KernelCapabilityReason,
+  KernelCapabilityStatus,
+} from "./kernel/capabilities.js";
+export { diagnoseKernelCapability } from "./kernel/capabilities.js";
 export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
 export { composeKernelHooks } from "./kernel/hook/compose.js";
 export type { EcdsaKeyAccount, EcdsaKeyInput, EcdsaSignRequest } from "./kernel/key/ecdsa.js";

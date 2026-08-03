@@ -54,19 +54,35 @@ export function exactKernelDeployment(value: unknown): Readonly<KernelV4Deployme
   return deployment;
 }
 
+/**
+ * The reviewed validator module bound to one key kind, or null when none is.
+ * Both the composition factory and capability diagnosis read the registry here,
+ * so an unbound axis can never read available on one path and fail on the other.
+ */
+export function pinnedValidatorModule(
+  deployment: Readonly<KernelV4Deployment>,
+  kind: KernelKeyKind,
+): `0x${string}` | null {
+  return PINNED_VALIDATORS[deployment.chainId][kind] ?? null;
+}
+
+/** The reviewed policy hook module bound to this chain, or null when none is. */
+export function pinnedHookModule(deployment: Readonly<KernelV4Deployment>): `0x${string}` | null {
+  return PINNED_HOOK_MODULES[deployment.chainId] ?? null;
+}
+
 /** Resolves the reviewed validator module for one key kind, or fails closed. */
 export function resolvePinnedValidator(
   deployment: Readonly<KernelV4Deployment>,
   kind: KernelKeyKind,
 ): `0x${string}` {
-  const validator = PINNED_VALIDATORS[deployment.chainId][kind];
-  if (!validator) {
-    return runtimeFail(
+  return (
+    pinnedValidatorModule(deployment, kind) ??
+    runtimeFail(
       "kernel_runtime_validator_unavailable",
       `Kernel v4 has no reviewed ${kind} validator module deployment on this chain`,
-    );
-  }
-  return validator;
+    )
+  );
 }
 
 /**
@@ -75,12 +91,11 @@ export function resolvePinnedValidator(
  * composeKernelHooks; only its on-chain materialization is unavailable.
  */
 export function resolveHookModule(deployment: Readonly<KernelV4Deployment>): `0x${string}` {
-  const module = PINNED_HOOK_MODULES[deployment.chainId];
-  if (!module) {
-    return runtimeFail(
+  return (
+    pinnedHookModule(deployment) ??
+    runtimeFail(
       "kernel_runtime_hook_unavailable",
       "Kernel v4 has no reviewed policy hook module deployment on this chain",
-    );
-  }
-  return module;
+    )
+  );
 }
