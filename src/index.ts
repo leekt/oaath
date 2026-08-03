@@ -273,3 +273,16 @@ export {
   OgpStoreError,
   OperationStore,
 } from "./store.js";
+export type {
+  RestoredWebAuthnKernelOwner,
+  WebAuthnKernelOwnerErrorCode,
+  WebAuthnKernelOwnerRestorationReadCapability,
+  WebAuthnKernelOwnerRestorationReadRequest,
+  WebAuthnKernelOwnerRuntime,
+  WebAuthnOwnerAssertion,
+  WebAuthnOwnerSignerCapability,
+} from "./webauthn-kernel-owner.js";
+export {
+  createWebAuthnKernelOwnerRuntime,
+  OgpWebAuthnKernelOwnerError,
+} from "./webauthn-kernel-owner.js";

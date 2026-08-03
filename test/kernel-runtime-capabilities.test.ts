@@ -6,6 +6,7 @@ import {
   getValidatorAddress,
   signerToEcdsaValidator,
 } from "@zerodev/ecdsa-validator";
+import { PasskeyValidatorContractVersion } from "@zerodev/passkey-validator";
 import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
 import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { createWalletClient } from "viem";
@@ -15,6 +16,7 @@ import {
   createEcdsaKernelOwnerRuntime,
   createLocalKernelHandleOpsAdapter,
   createLocalKernelPermissionUninstallAdapter,
+  createWebAuthnKernelOwnerRuntime,
   getKernelRuntimeCapability,
   KERNEL_RUNTIME_CAPABILITIES,
   OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION,
@@ -51,6 +53,8 @@ describe("Kernel runtime capabilities", () => {
     expect(OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION).toBe("ogp.kernel-runtime-capabilities/v1");
     expect(installedPackageVersion("@zerodev/sdk")).toBe("5.5.10");
     expect(installedPackageVersion("@zerodev/ecdsa-validator")).toBe("5.4.9");
+    expect(installedPackageVersion("@zerodev/passkey-validator")).toBe("5.6.0");
+    expect(installedPackageVersion("@zerodev/webauthn-key")).toBe("5.5.0");
     expect(installedPackageVersion("viem")).toBe("2.55.8");
     expect(typeof createKernelAccount).toBe("function");
     expect(typeof createKernelAccountClient).toBe("function");
@@ -59,6 +63,8 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof getValidatorAddress).toBe("function");
     expect(typeof signerToEcdsaValidator).toBe("function");
     expect(typeof createEcdsaKernelOwnerRuntime).toBe("function");
+    expect(typeof createWebAuthnKernelOwnerRuntime).toBe("function");
+    expect(PasskeyValidatorContractVersion.V0_0_3_PATCHED).toBe("0.0.3");
     expect(typeof createWalletClient).toBe("function");
     expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
     expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
@@ -106,6 +112,27 @@ describe("Kernel runtime capabilities", () => {
         alignment: "registry_version_differs_from_git_head_tree",
       },
     });
+    expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevPasskeyValidator).toMatchObject({
+      packageName: "@zerodev/passkey-validator",
+      packageVersion: "5.6.0",
+      integrity:
+        "sha512-ItnPs/6m3pT8tWaLqt31AFFQ4tAc5O01gtXP0Y7RW7xfuqUbgwYOghyeKMEkw6LfYykUWLhapL4B5c0CBYkgvg==",
+      shasum: "d01de6ebf550c532cae8508bf625e234dc4e5a1e",
+      npmGitHead: "5bf80dc1764e239e26a6af7d281a4618ed043e1e",
+      source: {
+        commit: "f61e9ca59e7ef71dedf5619a93c4799e4c9a5a65",
+        packageVersion: "5.6.0",
+        alignment: "registry_git_head_differs_from_published_source_tree",
+      },
+    });
+    expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevWebAuthnKey).toMatchObject({
+      packageName: "@zerodev/webauthn-key",
+      packageVersion: "5.5.0",
+      integrity:
+        "sha512-AbD2d/qrsX7AWxJMEfwxnLbp1TjiUjc1V4ne3Q40UJxKe+lW64Td+y8OD0qSFMqgN6rQxJZ0aOAXmat8H6xluA==",
+      shasum: "5300d4e1eed20a73aa6844d32a272697cc45baeb",
+      npmGitHead: "11143912ea1d9da965ce8b86e0982bd798f06544",
+    });
     expect(KERNEL_RUNTIME_CAPABILITIES.contracts).toEqual({
       kernel: {
         version: "0.3.3",
@@ -123,13 +150,27 @@ describe("Kernel runtime capabilities", () => {
         commit: "7af70c8993a6f42973f520ae0752386a5032abe7",
         address: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
       },
+      webauthnValidator: {
+        version: "0.0.3",
+        status: "patched",
+        address: "0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69",
+        runtimeKeccak256: "0x726d987ac55574f77f5184326631c5c51142f94c16c9b9281b751f97519c9eea",
+        runtimeByteLength: 4739,
+        verifiedSource:
+          "https://etherscan.io/address/0x7ab16ff354acb328452f1d445b3ddee9a91e9e69#code",
+        compiler: "0.8.30",
+        optimizerRuns: 20000,
+        evmVersion: "london",
+      },
+      p256Verifier: {
+        kind: "daimo",
+        address: "0xc2b78104907F722DABAc4C69f826a522B2754De4",
+        runtimeKeccak256: "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc",
+        runtimeByteLength: 3537,
+      },
     });
 
-    for (const packageName of [
-      "@zerodev/passkey-validator",
-      "@zerodev/permissions",
-      "@zerodev/webauthn-key",
-    ]) {
+    for (const packageName of ["@zerodev/permissions"]) {
       expect(
         () => require.resolve(packageName),
         `${packageName} must remain uninstalled`,
@@ -149,7 +190,7 @@ describe("Kernel runtime capabilities", () => {
       kernel_account: "available",
       owner_ecdsa: "available",
       owner_p256: "unsupported",
-      owner_webauthn: "unsupported",
+      owner_webauthn: "available",
       permission_signer_ecdsa: "unsupported",
       permission_signer_p256: "unsupported",
       permission_signer_webauthn: "unsupported",
@@ -171,6 +212,16 @@ describe("Kernel runtime capabilities", () => {
         "zerodev_ecdsa_validator.getKernelAddressFromECDSA",
         "zerodev_ecdsa_validator.signerToEcdsaValidator",
         "ogp.createEcdsaKernelOwnerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
+    });
+    expect(getKernelRuntimeCapability("owner_webauthn")).toEqual({
+      status: "available",
+      anchors: [
+        "zerodev_passkey_validator.toPasskeyValidator",
+        "zerodev_passkey_validator.V0_0_3_PATCHED",
+        "ogp.createWebAuthnKernelOwnerRuntime",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
@@ -220,10 +271,7 @@ describe("Kernel runtime capabilities", () => {
         constraints: ["webauthn_is_not_raw_p256"],
       });
     }
-    expect(getKernelRuntimeCapability("owner_webauthn")).toMatchObject({
-      status: "unsupported",
-      reason: "package_not_installed",
-    });
+    expect(getKernelRuntimeCapability("owner_webauthn")).toMatchObject({ status: "available" });
     expect(getKernelRuntimeCapability("permission_signer_webauthn")).toMatchObject({
       status: "unsupported",
       reason: "package_not_installed",
