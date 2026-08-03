@@ -8,7 +8,7 @@
 import type { CaptureContext } from "@oaath/protocol";
 import {
   bindKernelV4Account,
-  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
+  encodeKernelV4NonceKey,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
   type KernelV4Install,
@@ -39,6 +39,8 @@ import type {
 interface CapturedOperator {
   readonly authority: "owner" | "session";
   readonly key: Readonly<KeyProfile>;
+  readonly resolveAuthorityModule: OperatorProfile["resolveAuthorityModule"];
+  readonly encodeSignature: OperatorProfile["encodeSignature"];
   readonly resolveValidation: OperatorProfile["resolveValidation"];
   readonly resolvePackages: OperatorProfile["resolvePackages"];
 }
@@ -46,7 +48,15 @@ interface CapturedOperator {
 function captureOperator(value: unknown, context: CaptureContext): CapturedOperator {
   const record = exactInput(
     value,
-    ["authority", "key", "policy", "resolveValidation", "resolvePackages"],
+    [
+      "authority",
+      "key",
+      "policy",
+      "resolveAuthorityModule",
+      "encodeSignature",
+      "resolveValidation",
+      "resolvePackages",
+    ],
     "Kernel operator profile",
     context,
   );
@@ -59,6 +69,14 @@ function captureOperator(value: unknown, context: CaptureContext): CapturedOpera
   return Object.freeze({
     authority: record.authority,
     key: captureKeyProfile(record.key),
+    resolveAuthorityModule: inputCapability<OperatorProfile["resolveAuthorityModule"]>(
+      record.resolveAuthorityModule,
+      "Kernel operator authority module resolution",
+    ),
+    encodeSignature: inputCapability<OperatorProfile["encodeSignature"]>(
+      record.encodeSignature,
+      "Kernel operator signature envelope",
+    ),
     resolveValidation: inputCapability<OperatorProfile["resolveValidation"]>(
       record.resolveValidation,
       "Kernel operator validation resolution",
@@ -94,7 +112,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     exactInput(record.reads, ["read"], "Kernel runtime reads", context).read,
     "Kernel runtime read capability",
   );
-  const validator = operator.key.resolveValidator(deployment);
+  const authorityModule = operator.resolveAuthorityModule(deployment);
   const validation: Readonly<KernelV4Validation> = operator.resolveValidation(deployment);
   const packages = operator.resolvePackages(deployment);
   const rootPackage: Readonly<KernelV4Install> =
@@ -163,21 +181,30 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
         "Prepared UserOperation does not match this Kernel runtime",
       );
     }
-    const wrapped = operation.userOperation.callData.startsWith(KERNEL_V4_EXECUTE_USER_OP_SELECTOR);
-    if (wrapped !== (operator.authority === "session")) {
+    // The nonce carries Kernel's validation mode, type and identifier, so
+    // recomputing the key for this runtime's own validation is an exact authority
+    // check: a root runtime can never sign a permission operation, and a session
+    // can never sign another permission's. The namespace is read back from the
+    // prepared nonce so only the validation binding is compared.
+    const nonce = BigInt(operation.userOperation.nonce);
+    const namespace = (nonce >> 64n) & 0xffffn;
+    if (
+      (nonce >> 64n).toString(10) !==
+      encodeKernelV4NonceKey({ mode: "standard", validation, nonceKey: namespace.toString(10) })
+    ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
-        "Prepared UserOperation validation shape does not match this authority",
+        "Prepared UserOperation validation does not match this authority",
       );
     }
-    return operator.key.sign(operation.userOperationHash);
+    return operator.encodeSignature(await operator.key.sign(operation.userOperationHash));
   }
 
   return Object.freeze({
     deployment,
     authority: operator.authority,
     keyKind: operator.key.kind,
-    validator,
+    authorityModule,
     validation,
     packages,
     dummySignature: operator.key.dummySignature,

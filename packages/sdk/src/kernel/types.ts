@@ -20,7 +20,8 @@ import type { PreparedUserOperation } from "../prepared-user-operation.js";
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
   | "kernel_runtime_validator_unavailable"
-  | "kernel_runtime_hook_unavailable"
+  | "kernel_runtime_signer_unavailable"
+  | "kernel_runtime_policy_unavailable"
   | "kernel_runtime_signing_failed"
   | "kernel_runtime_signature_invalid"
   | "kernel_runtime_binding_mismatch";
@@ -60,7 +61,7 @@ export interface KeyProfile {
   readonly verify: (hash: `0x${string}`, signature: `0x${string}`) => Promise<boolean>;
 }
 
-export interface KernelCallHookProfile {
+export interface KernelCallPolicyProfile {
   readonly kind: "call";
   readonly calls: readonly Readonly<{
     readonly target: `0x${string}`;
@@ -68,13 +69,13 @@ export interface KernelCallHookProfile {
   }>[];
 }
 
-export interface KernelValueHookProfile {
+export interface KernelValuePolicyProfile {
   readonly kind: "value";
   /** Canonical decimal uint256 string; the maximum total native value per call. */
   readonly maximumValue: string;
 }
 
-export interface KernelExpiryHookProfile {
+export interface KernelExpiryPolicyProfile {
   readonly kind: "expiry";
   /** Canonical decimal uint48 seconds. */
   readonly validAfter: string;
@@ -82,30 +83,39 @@ export interface KernelExpiryHookProfile {
   readonly validUntil: string;
 }
 
-export interface KernelOperationLimitHookProfile {
+export interface KernelOperationLimitPolicyProfile {
   readonly kind: "operation-limit";
   /** Canonical decimal uint32 count of permitted operations on one chain. */
   readonly maximumOperations: string;
 }
 
-export type KernelHookProfile =
-  | KernelCallHookProfile
-  | KernelValueHookProfile
-  | KernelExpiryHookProfile
-  | KernelOperationLimitHookProfile;
+export type KernelPolicyProfile =
+  | KernelCallPolicyProfile
+  | KernelValuePolicyProfile
+  | KernelExpiryPolicyProfile
+  | KernelOperationLimitPolicyProfile;
+
+/** One policy module and the exact payload it receives after the permission ID. */
+export interface CompiledKernelPolicyPackage {
+  readonly module: `0x${string}`;
+  readonly policyData: `0x${string}`;
+}
 
 /**
- * One combined policy configuration. `moduleData` is the exact encoding a
- * pinned Kernel v4 policy/hook module would receive; absent axes carry their
- * documented unlimited sentinel.
+ * One compiled permission scope: the policy packages a session installs, in
+ * install order, plus the bounds they encode. Every requested axis is present as
+ * a package, so nothing a caller asked for is silently unenforced.
  */
-export interface ComposedKernelHookPolicy {
-  readonly calls: KernelCallHookProfile["calls"] | null;
-  readonly maximumValue: string | null;
+export interface CompiledKernelPermissionPolicy {
+  readonly packages: readonly Readonly<CompiledKernelPolicyPackage>[];
+  readonly calls: KernelCallPolicyProfile["calls"];
+  /** Canonical decimal uint256 ceiling applied to every permitted call. */
+  readonly maximumValue: string;
+  /** Canonical decimal uint48 seconds, or null when no window was requested. */
   readonly validAfter: string | null;
   readonly validUntil: string | null;
+  /** Canonical decimal uint32 count, or null when no operation limit was requested. */
   readonly maximumOperations: string | null;
-  readonly moduleData: `0x${string}`;
 }
 
 /**
@@ -115,8 +125,20 @@ export interface ComposedKernelHookPolicy {
 export interface OperatorProfile {
   readonly authority: KernelOperatorAuthority;
   readonly key: KeyProfile;
-  /** Composed policy configuration, or null when this authority carries no policy. */
-  readonly policy: Readonly<ComposedKernelHookPolicy> | null;
+  /** Compiled permission policy, or null for an authority that carries no policy. */
+  readonly policy: Readonly<CompiledKernelPermissionPolicy> | null;
+  /**
+   * The module that validates this authority: a validator module for root
+   * authority, a permission signer module for a session. Fails closed when no
+   * reviewed module is pinned for this key kind.
+   */
+  readonly resolveAuthorityModule: (deployment: Readonly<KernelV4Deployment>) => `0x${string}`;
+  /**
+   * Wraps one normalized key signature in this authority's Kernel signature
+   * envelope: identity for root, the permission signature envelope for a
+   * session, whose policy slices precede the signer slice.
+   */
+  readonly encodeSignature: (signature: `0x${string}`) => `0x${string}`;
   /** Kernel validation binding used for nonce keys and validation type. */
   readonly resolveValidation: (
     deployment: Readonly<KernelV4Deployment>,
@@ -152,7 +174,8 @@ export interface KernelRuntime {
   readonly deployment: Readonly<KernelV4Deployment>;
   readonly authority: KernelOperatorAuthority;
   readonly keyKind: KernelKeyKind;
-  readonly validator: `0x${string}`;
+  /** Validator module for root authority, permission signer module for a session. */
+  readonly authorityModule: `0x${string}`;
   readonly validation: Readonly<KernelV4Validation>;
   /** ERC-7579 packages this operator installs, in Kernel install order. */
   readonly packages: readonly Readonly<KernelV4Install>[];

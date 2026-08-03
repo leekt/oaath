@@ -942,10 +942,16 @@ export function prepareKernelV4UserOperation(
     userOperation: {
       sender: account.account,
       nonce,
+      // Root validation is exempt from Kernel's selector allow-list, and a
+      // permission installed with no hook allow-lists execute(bytes32,bytes) and
+      // takes Kernel's fast path, so both carry plain execute calldata; the
+      // policy modules of a permission decode exactly that. Only a validator
+      // validation routes through executeUserOp, where Kernel checks the inner
+      // selector against the same allow-list.
       callData:
-        nonceKey.validationType === "0x00"
-          ? execution
-          : concat([KERNEL_V4_EXECUTE_USER_OP_SELECTOR, execution]),
+        nonceKey.validationType === "0x01"
+          ? concat([KERNEL_V4_EXECUTE_USER_OP_SELECTOR, execution])
+          : execution,
       callGasLimit: uint120(gasRecord.callGasLimit, "Kernel call gas limit"),
       verificationGasLimit: uint120(
         gasRecord.verificationGasLimit,

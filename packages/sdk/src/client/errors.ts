@@ -125,7 +125,8 @@ const RUNNER_CODES: Readonly<Record<string, OaathClientErrorCode>> = Object.free
 const KERNEL_CODES: Readonly<Record<string, OaathClientErrorCode>> = Object.freeze({
   kernel_runtime_input_invalid: "oaath_client_input_invalid",
   kernel_runtime_validator_unavailable: "oaath_client_capability_unsupported",
-  kernel_runtime_hook_unavailable: "oaath_client_capability_unsupported",
+  kernel_runtime_signer_unavailable: "oaath_client_capability_unsupported",
+  kernel_runtime_policy_unavailable: "oaath_client_capability_unsupported",
   kernel_runtime_signing_failed: "oaath_client_signing_failed",
   kernel_runtime_signature_invalid: "oaath_client_signing_failed",
   kernel_runtime_binding_mismatch: "oaath_client_state_conflict",

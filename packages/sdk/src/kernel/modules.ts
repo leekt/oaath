@@ -16,7 +16,7 @@
  */
 import { type KernelV4Deployment, kernelV4Deployment } from "../kernel-v4.js";
 import { inputInvalid, runtimeFail } from "./internal.js";
-import type { KernelKeyKind } from "./types.js";
+import type { KernelKeyKind, KernelPolicyProfile } from "./types.js";
 
 /**
  * Validator modules (moduleType 1) bound per key kind. Kernel v4 ships no reviewed
@@ -54,11 +54,91 @@ const PINNED_SIGNERS: Readonly<Partial<Record<KernelKeyKind, `0x${string}`>>> = 
 });
 
 /**
- * The policy/hook module that enforces a composed policy. Kernel v4 ships no
- * reviewed OAAth call, value, expiry, or operation-limit module yet, so composed
- * policies model and encode their configuration but never materialize.
+ * ZeroDev's reviewed CallPolicy (moduleType 5), which bounds every permitted
+ * (callType, target, selector) triple and the native value each may move.
+ * Package `zerodev-kernel-call-policy` 0.0.4, source mirrored at
+ * https://github.com/cartesi/erc-4337-devnet
+ * (zerodev/kernel-call-policy/0.0.4/src/CallPolicy.sol) together with its exact
+ * Kernel v3 dependency sources and build profile (solc 0.8.24+commit.e11b9ed9,
+ * via-IR, optimizer 200 runs, EVM paris, bytecode hash and CBOR metadata
+ * disabled). Recompiling that source with that profile reproduces the package's
+ * own cannon `expected` address bit for bit, so this address is ZeroDev's, not
+ * ours. It is deployed through KERNEL_V4_CREATE2_DEPLOYER with a zero salt, so
+ * one address holds on every chain.
+ *
+ * Kernel v4 and v3 declare the identical IPolicy: checkUserOpPolicy(bytes32 id,
+ * PackedUserOperation) and PolicyBase.onInstall(bytes32 id ‖ data). The module
+ * decodes the outer execute(bytes32,bytes) calldata, which is why permission
+ * validations must not wrap their calldata in executeUserOp.
  */
-const PINNED_HOOK_MODULE: `0x${string}` | null = null;
+const CALL_POLICY = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2" as const;
+
+/**
+ * ZeroDev's reviewed TimestampPolicy (moduleType 5), which returns the ERC-4337
+ * packed validAfter/validUntil range EntryPoint enforces, so an expired session
+ * is refused on-chain with AA22 rather than by client-side refusal. Package
+ * `zerodev-kernel-timestamp-policy` 0.0.1, source mirrored at
+ * https://github.com/cartesi/erc-4337-devnet
+ * (zerodev/kernel-timestamp-policy/0.0.1/src/TimestampPolicy.sol) with its own
+ * vendored Kernel v3 dependencies and build profile (solc 0.8.24+commit.e11b9ed9,
+ * via-IR, optimizer 200 runs, EVM paris, bytecode hash and CBOR metadata
+ * disabled). Recompiling that source with that profile reproduces the package's
+ * own cannon `expected` address bit for bit, so this address is ZeroDev's, not
+ * ours. Its PolicyBase.onInstall takes `id ‖ abi.encode(ValidAfter, ValidUntil)`,
+ * two uint48 words, which is exactly what permission/compile.ts emits.
+ */
+const TIMESTAMP_POLICY = "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f" as const;
+
+/**
+ * ZeroDev's reviewed RateLimitPolicy (moduleType 5), which caps how many
+ * UserOperations one permission may validate on one chain. Package
+ * `zerodev-kernel-ratelimit-policy` 0.0.1 (the cannon package name; the mirror
+ * directory is kernel-rate-limit-policy), source mirrored at
+ * https://github.com/cartesi/erc-4337-devnet
+ * (zerodev/kernel-rate-limit-policy/0.0.1/src/RateLimitPolicy.sol) with its own
+ * vendored Kernel v3 dependencies and the same build profile, which likewise
+ * reproduces the package's cannon `expected` address.
+ *
+ * onInstall reads `id ‖ interval ‖ count ‖ startAt`, three packed uint48s, and
+ * checkUserOpPolicy decrements `count` on every operation it validates, returning
+ * 1 — Kernel's signature-failure sentinel — once the count is exhausted. With
+ * interval and startAt zero it is a pure count cap that adds no time bound.
+ *
+ * The mapping from the Grant policy is deliberately conservative: an approved
+ * perChainOperationLimit counts finalized operations, while this module counts
+ * validated ones, so an operation whose execution reverts still consumes a slot.
+ * The on-chain cap is therefore never more permissive than the approved one.
+ */
+const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
+
+/**
+ * Policy modules bound per policy axis. CallPolicy enforces the call and value
+ * axes together, in one module, from one configuration. A session installs one
+ * package per distinct module, so a scope spanning several axes installs several
+ * policies.
+ *
+ * All four axes are bound, which took one SDK-side fix. Recorded history, because
+ * the failure mode is not obvious from the ABI: a permission carrying two policy
+ * packages installed correctly — `validationInfo(vId)` read
+ * `policies = [CallPolicy, TimestampPolicy]`, `signer = ECDSASigner`, hook = the
+ * no-hook sentinel — yet its first operation was rejected with EntryPoint
+ * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, Kernel's
+ * `InvalidSignature()`, because `ValidationManager._validateUserOpPermission`
+ * requires `permissionSignature.signatures.length == vInfo.policies.length + 1`
+ * and sessionOperator's encodeSignature emitted a fixed two-slice envelope
+ * regardless of how many policy packages resolvePackages installed. The envelope
+ * now derives its empty policy slices from the same captured compiled policy that
+ * resolvePackages installs from, so the two counts cannot drift again; the local
+ * composition proof executes a two-package session, a post-expiry AA22 rejection
+ * and an exhausted operation count on-chain.
+ */
+const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x${string}`>>> =
+  Object.freeze({
+    call: CALL_POLICY,
+    value: CALL_POLICY,
+    expiry: TIMESTAMP_POLICY,
+    "operation-limit": RATE_LIMIT_POLICY,
+  });
 
 /** Accepts only the exact frozen deployment profile owned by kernel-v4.ts. */
 export function exactKernelDeployment(value: unknown): Readonly<KernelV4Deployment> {
@@ -89,9 +169,9 @@ export function pinnedSignerModule(kind: KernelKeyKind): `0x${string}` | null {
   return PINNED_SIGNERS[kind] ?? null;
 }
 
-/** The reviewed policy hook module, or null while none is pinned. */
-export function pinnedHookModule(): `0x${string}` | null {
-  return PINNED_HOOK_MODULE;
+/** The reviewed policy module bound to one policy axis, or null when none is. */
+export function pinnedPolicyModule(kind: KernelPolicyProfile["kind"]): `0x${string}` | null {
+  return PINNED_POLICIES[kind] ?? null;
 }
 
 /** Resolves the reviewed validator module for one key kind, or fails closed. */
@@ -105,17 +185,24 @@ export function resolvePinnedValidator(kind: KernelKeyKind): `0x${string}` {
   );
 }
 
-/**
- * Resolves the module that enforces a composed policy, or fails closed. The
- * policy configuration itself is fully modelled and encoded by
- * composeKernelHooks; only its on-chain materialization is unavailable.
- */
-export function resolveHookModule(): `0x${string}` {
+/** Resolves the reviewed permission signer module for one key kind, or fails closed. */
+export function resolvePinnedSigner(kind: KernelKeyKind): `0x${string}` {
   return (
-    pinnedHookModule() ??
+    pinnedSignerModule(kind) ??
     runtimeFail(
-      "kernel_runtime_hook_unavailable",
-      "Kernel v4 has no reviewed policy hook module deployment",
+      "kernel_runtime_signer_unavailable",
+      `Kernel v4 has no reviewed ${kind} permission signer module deployment`,
+    )
+  );
+}
+
+/** Resolves the reviewed policy module enforcing one policy axis, or fails closed. */
+export function resolvePolicyModule(kind: KernelPolicyProfile["kind"]): `0x${string}` {
+  return (
+    pinnedPolicyModule(kind) ??
+    runtimeFail(
+      "kernel_runtime_policy_unavailable",
+      `Kernel v4 has no reviewed ${kind} policy module deployment`,
     )
   );
 }

@@ -3,6 +3,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/index.js";
 import {
@@ -10,6 +11,7 @@ import {
   CHAIN_ID,
   createChainFixture,
   createRealm,
+  operatorCredential,
   permissionInput,
   sendCallsInput,
   TARGET,
@@ -72,18 +74,40 @@ describe("browser golden path", () => {
     expect((await operation.wait()).status).toBe("finalized");
     await connection.close();
 
-    // With complete usage evidence the same calls are covered, the decision
-    // selects the session authority, and composing it fails closed because
-    // Kernel v4 pins no reviewed policy hook module yet. Owner authority is
-    // never substituted for the session the owner approved.
+    // With complete usage evidence the same calls are covered and the decision
+    // selects the session authority, which now composes: every axis the approved
+    // policy bounds — calls, value, the validity window, the per-chain operation
+    // count — has a pinned reviewed policy module, so the permission expresses the
+    // approved scope exactly and the session key signs the operation itself.
     const covered = createRealm({ chain: createChainFixture({ usage: true }) });
     const sessionConnection = await covered.oaath.connect();
     const sessionGrant = await sessionConnection.requestPermission(permissionInput());
-    await expect(sessionGrant.sendCalls(sendCallsInput())).rejects.toMatchObject({
-      name: "OaathClientError",
-      code: "oaath_client_capability_unsupported",
-    });
-    expect(covered.chain.sends).toHaveLength(0);
+    const sessionOperation = await sessionGrant.sendCalls(sendCallsInput());
+    expect((await sessionOperation.wait()).status).toBe("finalized");
+    expect(covered.chain.sends).toHaveLength(1);
+    const sessionPrepared = covered.chain.sends[0];
+    const envelope = covered.chain.signatures[0];
+    if (!sessionPrepared || !envelope) throw new Error("expected one session submission");
+    // Kernel encodes the validation it must use in the nonce key: type 0x02 is a
+    // permission, so the chain itself would refuse root authority for this
+    // operation. Owner authority is never substituted for the approved session.
+    expect((BigInt(sessionPrepared.userOperation.nonce) >> 240n) & 0xffn).toBe(2n);
+    // The signature is Kernel's permission envelope: an empty slice per installed
+    // policy, then the session key's signature last.
+    const [slices] = decodeAbiParameters(
+      [{ name: "signatures", type: "bytes[]" }],
+      envelope as `0x${string}`,
+    );
+    const signerSlice = slices[slices.length - 1];
+    if (!signerSlice) throw new Error("permission envelope carries no signer slice");
+    expect(slices.slice(0, -1)).toEqual(slices.slice(0, -1).map(() => "0x"));
+    expect(slices.length).toBeGreaterThan(1);
+    expect(
+      await recoverAddress({
+        hash: sessionPrepared.userOperationHash,
+        signature: signerSlice,
+      }),
+    ).toBe(getAddress(operatorCredential.address));
     await sessionConnection.close();
   });
 

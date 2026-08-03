@@ -6,9 +6,11 @@ import {
   concat,
   createPublicClient,
   createWalletClient,
+  decodeErrorResult,
   encodeFunctionData,
   type Hex,
   http,
+  keccak256,
   parseEther,
 } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
@@ -32,6 +34,7 @@ import {
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
   type PreparedUserOperation,
+  pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
 } from "../src/index.js";
@@ -49,12 +52,13 @@ const gas = Object.freeze({
   maxPriorityFeePerGas: "1000000000",
 });
 
-interface SignerModuleFixture {
+interface ModuleFixture {
   repository: string;
   commit: string;
   source: string;
-  moduleType: 6;
+  moduleType: 5 | 6;
   expectedAddress: `0x${string}`;
+  runtimeCodeHash: `0x${string}`;
   deploymentInput: Hex;
 }
 
@@ -64,8 +68,11 @@ interface DeploymentFixture {
   kernelImmutableEcdsa: { deploymentInput: Hex };
   kernelFactory: { deploymentInput: Hex };
   ecdsaValidator: { bytecode: Hex };
-  ecdsaSigner: SignerModuleFixture;
-  webAuthnSigner: SignerModuleFixture;
+  ecdsaSigner: ModuleFixture;
+  webAuthnSigner: ModuleFixture;
+  callPolicy: ModuleFixture;
+  timestampPolicy: ModuleFixture;
+  rateLimitPolicy: ModuleFixture;
 }
 
 let anvil: ChildProcess | undefined;
@@ -148,109 +155,214 @@ afterAll(() => {
   anvil?.kill("SIGTERM");
 });
 
-(requireAnvil ? describe : describe.skip)("Kernel composition local proof", () => {
-  it("deploys the pinned permission signer modules at their chain-independent addresses", async () => {
-    const fixture = JSON.parse(
-      await readFile(
-        new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url),
-        "utf8",
-      ),
-    ) as DeploymentFixture;
-    const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
-    const submitter = privateKeyToAccount(generatePrivateKey());
-    const wallet = createWalletClient({
+async function readFixture(): Promise<DeploymentFixture> {
+  return JSON.parse(
+    await readFile(new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url), "utf8"),
+  ) as DeploymentFixture;
+}
+
+/**
+ * One funded submitter over the local chain, with the CREATE2 deployments every
+ * proof in this file shares. CREATE2 fixes each address, so a module or
+ * implementation already deployed by an earlier proof is reused rather than
+ * redeployed: the deployer reverts on a second deployment to the same address.
+ */
+async function createHarness() {
+  const fixture = await readFixture();
+  const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
+  const submitter = privateKeyToAccount(generatePrivateKey());
+  const wallet = createWalletClient({
+    account: submitter,
+    transport: http(url, { retryCount: 0 }),
+  });
+  await client.request({
+    method: "anvil_setBalance" as "eth_chainId",
+    params: [submitter.address, quantity(parseEther("100"))] as never,
+  });
+
+  const deployCreate2 = async (deploymentInput: Hex) => {
+    const hash = await wallet.sendTransaction({
       account: submitter,
-      transport: http(url, { retryCount: 0 }),
+      chain: null,
+      to: KERNEL_V4_CREATE2_DEPLOYER,
+      data: deploymentInput,
+      gas: 10_000_000n,
     });
-    await client.request({
-      method: "anvil_setBalance" as "eth_chainId",
-      params: [submitter.address, quantity(parseEther("100"))] as never,
+    expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
+  };
+
+  const deployModule = async (module: ModuleFixture) => {
+    if (!(await client.getCode({ address: module.expectedAddress }))) {
+      await deployCreate2(module.deploymentInput);
+    }
+  };
+
+  const deployValidator = async () => {
+    const hash = await wallet.deployContract({
+      account: submitter,
+      chain: null,
+      abi: [],
+      bytecode: fixture.ecdsaValidator.bytecode,
+      gas: 2_000_000n,
     });
+    const receipt = await client.waitForTransactionReceipt({ hash });
+    if (!receipt.contractAddress || receipt.status !== "success") {
+      throw new Error("validator deployment failed");
+    }
+    return lower(receipt.contractAddress);
+  };
+
+  const packOperation = async (
+    runtime: Readonly<KernelRuntime>,
+    prepared: PreparedUserOperation,
+  ) => {
+    const operation = prepared.userOperation;
+    return toPackedUserOperation({
+      sender: operation.sender,
+      nonce: BigInt(operation.nonce),
+      callData: operation.callData,
+      callGasLimit: BigInt(operation.callGasLimit),
+      verificationGasLimit: BigInt(operation.verificationGasLimit),
+      preVerificationGas: BigInt(operation.preVerificationGas),
+      maxFeePerGas: BigInt(operation.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
+      ...(operation.factory
+        ? { factory: operation.factory.address, factoryData: operation.factory.data }
+        : {}),
+      signature: await runtime.signOperation(prepared),
+    });
+  };
+
+  const handleOpsCalldata = (packed: Awaited<ReturnType<typeof packOperation>>) =>
+    encodeFunctionData({
+      abi: entryPoint07Abi,
+      functionName: "handleOps",
+      args: [[packed], submitter.address],
+    });
+
+  const send = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) => {
+    const hash = await wallet.sendTransaction({
+      account: submitter,
+      chain: null,
+      to: KERNEL_V4_ENTRY_POINT_V07,
+      data: handleOpsCalldata(await packOperation(runtime, prepared)),
+      gas: 8_000_000n,
+    });
+    return (await client.waitForTransactionReceipt({ hash })).status;
+  };
+
+  /**
+   * EntryPoint's own rejection for one operation, decoded. handleOps reverts
+   * during validation, so the class of the refusal — not just "the transaction
+   * failed" — is the evidence: `eth_call` carries the revert data back.
+   */
+  const rejection = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_call",
+        params: [
+          {
+            from: submitter.address,
+            to: KERNEL_V4_ENTRY_POINT_V07,
+            data: handleOpsCalldata(await packOperation(runtime, prepared)),
+            gas: quantity(8_000_000n),
+          },
+          "latest",
+        ],
+      }),
+    });
+    const body = (await response.json()) as {
+      readonly error?: { readonly data?: unknown };
+      readonly result?: Hex;
+    };
+    const data = body.error?.data;
+    if (typeof data !== "string" || !data.startsWith("0x") || data === "0x") {
+      throw new Error(`EntryPoint accepted an operation it must reject: ${JSON.stringify(body)}`);
+    }
+    return decodeErrorResult({ abi: entryPoint07Abi, data: data as Hex });
+  };
+
+  return {
+    fixture,
+    client,
+    wallet,
+    submitter,
+    reads: createKernelV4Reads(client),
+    deployCreate2,
+    deployModule,
+    deployValidator,
+    send,
+    rejection,
+  };
+}
+
+/** Deploys EntryPoint 0.7, the Kernel v4 implementations, and the factory. */
+async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarness>>) {
+  const entryPointArtifact = JSON.parse(
+    await readFile(
+      join(process.cwd(), "node_modules", harness.fixture.entryPoint.artifact),
+      "utf8",
+    ),
+  ) as { bytecode: Hex };
+  if (!(await harness.client.getCode({ address: KERNEL_V4_ENTRY_POINT_V07 }))) {
+    await harness.deployCreate2(
+      concat([harness.fixture.entryPoint.deploymentSalt, entryPointArtifact.bytecode]),
+    );
+    await harness.deployCreate2(harness.fixture.kernelUups.deploymentInput);
+    await harness.deployCreate2(harness.fixture.kernelImmutableEcdsa.deploymentInput);
+    await harness.deployCreate2(harness.fixture.kernelFactory.deploymentInput);
+  }
+}
+
+(requireAnvil ? describe : describe.skip)("Kernel composition local proof", () => {
+  it("deploys every pinned module at its chain-independent address", async () => {
+    const { fixture, client, wallet, submitter } = await createHarness();
 
     // A CREATE2 address is derived from deployer, salt and init code alone, so
     // code landing on the pinned address proves the registry names exactly this
     // reviewed module and that nothing about the address depends on the chain.
-    for (const [kind, module] of [
-      ["ecdsa", fixture.ecdsaSigner],
-      ["webauthn", fixture.webAuthnSigner],
+    // The runtime code hash is compared too, so a module whose deployed code ever
+    // stopped matching the pinned artifact fails here rather than at validation.
+    for (const [pinned, module] of [
+      [pinnedSignerModule("ecdsa"), fixture.ecdsaSigner],
+      [pinnedSignerModule("webauthn"), fixture.webAuthnSigner],
+      [pinnedPolicyModule("call"), fixture.callPolicy],
+      [pinnedPolicyModule("value"), fixture.callPolicy],
+      [pinnedPolicyModule("expiry"), fixture.timestampPolicy],
+      [pinnedPolicyModule("operation-limit"), fixture.rateLimitPolicy],
     ] as const) {
-      expect(module).toMatchObject({
-        repository: "https://github.com/zerodevapp/kernel-7579-plugins",
-        commit: "332deed6eeef3d6279cde50aa1d51eff53728bd4",
-        moduleType: 6,
-      });
-      const pinned = pinnedSignerModule(kind);
       expect(pinned).toBe(module.expectedAddress);
-      if (pinned === null) throw new Error(`no pinned ${kind} signer module`);
-      expect(await client.getCode({ address: pinned })).toBeUndefined();
-      const hash = await wallet.sendTransaction({
-        account: submitter,
-        chain: null,
-        to: KERNEL_V4_CREATE2_DEPLOYER,
-        data: module.deploymentInput,
-        gas: 10_000_000n,
-      });
-      expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
-      expect(await client.getCode({ address: pinned })).toMatch(/^0x[0-9a-f]{2,}$/u);
+      if (pinned === null) throw new Error("registry pins no module for a bound axis");
+      if (!(await client.getCode({ address: pinned }))) {
+        const hash = await wallet.sendTransaction({
+          account: submitter,
+          chain: null,
+          to: KERNEL_V4_CREATE2_DEPLOYER,
+          data: module.deploymentInput,
+          gas: 10_000_000n,
+        });
+        expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
+      }
+      const code = await client.getCode({ address: pinned });
+      if (!code) throw new Error("pinned module carries no code");
+      expect(keccak256(code)).toBe(module.runtimeCodeHash);
     }
 
-    // The reviewed plugin set ships no raw P-256 signer, so that axis stays
+    // The reviewed module sets ship no raw P-256 signer, so that axis stays
     // unbound instead of borrowing the WebAuthn module.
     expect(pinnedSignerModule("p256")).toBeNull();
   }, 60_000);
 
   it("executes owner and session authorities and falls back to handleOps without changing identity", async () => {
-    const fixture = JSON.parse(
-      await readFile(
-        new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url),
-        "utf8",
-      ),
-    ) as DeploymentFixture;
-    const entryPointArtifact = JSON.parse(
-      await readFile(join(process.cwd(), "node_modules", fixture.entryPoint.artifact), "utf8"),
-    ) as { bytecode: Hex };
-    const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
-    const submitter = privateKeyToAccount(generatePrivateKey());
-    const wallet = createWalletClient({
-      account: submitter,
-      transport: http(url, { retryCount: 0 }),
-    });
-    await client.request({
-      method: "anvil_setBalance" as "eth_chainId",
-      params: [submitter.address, quantity(parseEther("100"))] as never,
-    });
+    const harness = await createHarness();
+    const { fixture, client, wallet, submitter, reads, deployModule, deployValidator, send } =
+      harness;
+    await deployKernelStack(harness);
 
-    const deployCreate2 = async (deploymentInput: Hex) => {
-      const hash = await wallet.sendTransaction({
-        account: submitter,
-        chain: null,
-        to: KERNEL_V4_CREATE2_DEPLOYER,
-        data: deploymentInput,
-        gas: 10_000_000n,
-      });
-      expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
-    };
-    await deployCreate2(concat([fixture.entryPoint.deploymentSalt, entryPointArtifact.bytecode]));
-    await deployCreate2(fixture.kernelUups.deploymentInput);
-    await deployCreate2(fixture.kernelImmutableEcdsa.deploymentInput);
-    await deployCreate2(fixture.kernelFactory.deploymentInput);
-
-    const deployValidator = async () => {
-      const hash = await wallet.deployContract({
-        account: submitter,
-        chain: null,
-        abi: [],
-        bytecode: fixture.ecdsaValidator.bytecode,
-        gas: 2_000_000n,
-      });
-      const receipt = await client.waitForTransactionReceipt({ hash });
-      if (!receipt.contractAddress || receipt.status !== "success") {
-        throw new Error("validator deployment failed");
-      }
-      return lower(receipt.contractAddress);
-    };
-
-    const reads = createKernelV4Reads(client);
     const ownerAccount = privateKeyToAccount(generatePrivateKey());
     const ownerRuntime = createKernelRuntime({
       deployment,
@@ -259,45 +371,23 @@ afterAll(() => {
       }),
       reads,
     });
+    // The session's scope: exactly one target, exactly one selector (empty
+    // calldata, which CallPolicy keys as selector zero) and one value ceiling.
+    await deployModule(fixture.callPolicy);
+    await deployModule(fixture.ecdsaSigner);
+    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     const sessionAccount = privateKeyToAccount(generatePrivateKey());
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
         key: ecdsaKey({ account: sessionAccount, validator: await deployValidator() }),
-        hooks: [],
+        policies: [
+          { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
+          { kind: "value", maximumValue: "777" },
+        ],
       }),
       reads,
     });
-
-    const send = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) => {
-      const operation = prepared.userOperation;
-      const packed = toPackedUserOperation({
-        sender: operation.sender,
-        nonce: BigInt(operation.nonce),
-        callData: operation.callData,
-        callGasLimit: BigInt(operation.callGasLimit),
-        verificationGasLimit: BigInt(operation.verificationGasLimit),
-        preVerificationGas: BigInt(operation.preVerificationGas),
-        maxFeePerGas: BigInt(operation.maxFeePerGas),
-        maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
-        ...(operation.factory
-          ? { factory: operation.factory.address, factoryData: operation.factory.data }
-          : {}),
-        signature: await runtime.signOperation(prepared),
-      });
-      const hash = await wallet.sendTransaction({
-        account: submitter,
-        chain: null,
-        to: KERNEL_V4_ENTRY_POINT_V07,
-        data: encodeFunctionData({
-          abi: entryPoint07Abi,
-          functionName: "handleOps",
-          args: [[packed], submitter.address],
-        }),
-        gas: 8_000_000n,
-      });
-      return (await client.waitForTransactionReceipt({ hash })).status;
-    };
 
     // Root authority: the composed owner runtime derives, deploys, and executes.
     const counterfactual = await ownerRuntime.bindAccount({
@@ -331,8 +421,9 @@ afterAll(() => {
     expect(await send(ownerRuntime, deployAndExecute)).toBe("success");
     expect(await client.getBalance({ address: ownerTarget })).toBe(12_345n);
 
-    // Session authority: the owner installs the session validator, then the
-    // session runtime signs its own executeUserOp-wrapped operation.
+    // Session authority: the owner installs the permission — the policy that
+    // bounds the session, then the signer that carries its key — and the session
+    // runtime signs inside Kernel's permission envelope.
     const deployed = await sessionRuntime.bindAccount({
       accountIndex: "0",
       initialPackages: ownerRuntime.packages,
@@ -356,7 +447,10 @@ afterAll(() => {
     });
     expect(await send(ownerRuntime, install)).toBe("success");
 
-    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    // One policy package per bounded axis, then the signer, all under one
+    // permission ID.
+    expect(sessionRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 6]);
+    expect(sessionRuntime.validation.kind).toBe("permission");
     const sessionOperation = sessionRuntime.prepareOperation({
       kind: "execution",
       grantId: "kernel-composition-session",
@@ -366,14 +460,45 @@ afterAll(() => {
       calls: [{ target: sessionTarget, value: "777", data: "0x" }],
       gas,
     });
+    // A hookless permission takes Kernel's fast path, so the policy module sees
+    // the plain execute calldata it decodes.
     expect(
       sessionOperation.userOperation.callData.startsWith(KERNEL_V4_EXECUTE_USER_OP_SELECTOR),
-    ).toBe(true);
+    ).toBe(false);
     expect(await send(sessionRuntime, sessionOperation)).toBe("success");
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-    // Authorities never borrow one another's operations: the owner runtime
-    // refuses to sign a session-shaped operation before any submission exists.
+    // Scope tightening, proven on-chain by the same installed session: a target
+    // the policy never named and a value above the ceiling are both rejected in
+    // Kernel's validation phase, so neither moves anything.
+    const uncoveredTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const uncovered = sessionRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-session-uncovered",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
+      gas,
+    });
+    expect(await send(sessionRuntime, uncovered)).toBe("reverted");
+    expect(await client.getBalance({ address: uncoveredTarget })).toBe(0n);
+
+    const excessive = sessionRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-session-excessive",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+      gas,
+    });
+    expect(await send(sessionRuntime, excessive)).toBe("reverted");
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Authorities never borrow one another's operations: the owner runtime refuses
+    // to sign an operation bound to the session's permission before any
+    // submission exists.
     const foreign = sessionRuntime.prepareOperation({
       kind: "execution",
       grantId: "kernel-composition-foreign",
@@ -465,4 +590,209 @@ afterAll(() => {
     ).toBe(true);
     expect(await client.getBalance({ address: fallbackTarget })).toBe(4_321n);
   }, 60_000);
+
+  it("enforces a multi-package session, its validity window, and its operation count", async () => {
+    const harness = await createHarness();
+    const { fixture, client, wallet, submitter, reads, deployModule, deployValidator, send } =
+      harness;
+    await deployKernelStack(harness);
+    for (const module of [
+      fixture.callPolicy,
+      fixture.timestampPolicy,
+      fixture.rateLimitPolicy,
+      fixture.ecdsaSigner,
+    ]) {
+      await deployModule(module);
+    }
+
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: ecdsaKey({ account: ownerAccount, validator: await deployValidator() }),
+      }),
+      reads,
+    });
+    const counterfactual = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    const account = counterfactual.account;
+    const fundHash = await wallet.sendTransaction({
+      account: submitter,
+      chain: null,
+      to: account,
+      value: parseEther("1"),
+    });
+    await client.waitForTransactionReceipt({ hash: fundHash });
+    const deployOwner = ownerRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-expiry-owner",
+      account: counterfactual,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target: account, value: "0", data: "0x" }],
+      gas,
+    });
+    expect(await send(ownerRuntime, deployOwner)).toBe("success");
+    const deployed = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(deployed).toMatchObject({ state: "deployed", account });
+
+    const latest = await client.getBlock({ blockTag: "latest" });
+    const validUntil = Number(latest.timestamp) + 3_600;
+    const expiryTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    // Two policy packages under one permission: CallPolicy for the call and value
+    // axes, TimestampPolicy for the window. This is the exact shape Kernel refused
+    // with FailedOpWithRevert(0, "AA23 reverted", InvalidSignature()) while the
+    // permission envelope carried a fixed two-slice signature.
+    const expiryRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+        policies: [
+          { kind: "call", calls: [{ target: expiryTarget, selectors: ["0x00000000"] }] },
+          { kind: "value", maximumValue: "500" },
+          { kind: "expiry", validAfter: "0", validUntil: validUntil.toString(10) },
+        ],
+      }),
+      reads,
+    });
+    expect(expiryRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 5, 6]);
+    expect(expiryRuntime.packages.map((entry) => entry.module)).toEqual([
+      fixture.callPolicy.expectedAddress,
+      fixture.timestampPolicy.expectedAddress,
+      fixture.ecdsaSigner.expectedAddress,
+    ]);
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-expiry-install",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(expiryRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+
+    // The regression itself: a two-package session executes its covered call.
+    expect(
+      await send(
+        expiryRuntime,
+        expiryRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-expiry-covered",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: expiryTarget, value: "500", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: expiryTarget })).toBe(500n);
+
+    // Past the installed validUntil, EntryPoint itself refuses the same session:
+    // TimestampPolicy returns the packed range and EntryPoint enforces it, so the
+    // window is a chain fact, not a client-side refusal.
+    const expired = expiryRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-expiry-expired",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: expiryTarget, value: "1", data: "0x" }],
+      gas,
+    });
+    await client.request({
+      method: "evm_increaseTime" as "eth_chainId",
+      params: [3_601] as never,
+    });
+    await client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
+    expect(await harness.rejection(expiryRuntime, expired)).toMatchObject({
+      errorName: "FailedOp",
+      args: [0n, "AA22 expired or not due"],
+    });
+    expect(await client.getBalance({ address: expiryTarget })).toBe(500n);
+
+    // One session limited to two operations: the second still executes, the third
+    // is refused because RateLimitPolicy's count is exhausted.
+    const limitTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const limitRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+        policies: [
+          { kind: "call", calls: [{ target: limitTarget, selectors: ["0x00000000"] }] },
+          { kind: "value", maximumValue: "10" },
+          { kind: "operation-limit", maximumOperations: "2" },
+        ],
+      }),
+      reads,
+    });
+    expect(limitRuntime.packages.map((entry) => entry.module)).toEqual([
+      fixture.callPolicy.expectedAddress,
+      fixture.rateLimitPolicy.expectedAddress,
+      fixture.ecdsaSigner.expectedAddress,
+    ]);
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-limit-install",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "2",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(limitRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+
+    const limited = (sequence: string) =>
+      limitRuntime.prepareOperation({
+        kind: "execution",
+        grantId: `kernel-composition-limit-${sequence}`,
+        account: deployed,
+        nonceKey: "0",
+        sequence,
+        calls: [{ target: limitTarget, value: "10", data: "0x" }],
+        gas,
+      });
+    expect(await send(limitRuntime, limited("0"))).toBe("success");
+    expect(await send(limitRuntime, limited("1"))).toBe("success");
+    expect(await client.getBalance({ address: limitTarget })).toBe(20n);
+    // RateLimitPolicy returns 1 once the count is spent, which is Kernel's
+    // signature-failure sentinel, so EntryPoint refuses the operation as AA24.
+    expect(await harness.rejection(limitRuntime, limited("2"))).toMatchObject({
+      errorName: "FailedOp",
+      args: [0n, "AA24 signature error"],
+    });
+    expect(await client.getBalance({ address: limitTarget })).toBe(20n);
+  }, 90_000);
 });

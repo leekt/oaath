@@ -525,14 +525,31 @@ describe("Kernel v4 prepared UserOperation", () => {
         nonceKey: "9",
       }),
     );
+    const execution = encodeKernelV4Execution({ calls: [{ target, value: "0", data: "0x1234" }] });
     expect(prepared.userOperation.factory).toBeNull();
     expect(prepared.userOperation.nonce).toBe(((key << 64n) | 3n).toString(10));
-    expect(prepared.userOperation.callData).toBe(
-      concat([
-        "0x8dd7712f",
-        encodeKernelV4Execution({ calls: [{ target, value: "0", data: "0x1234" }] }),
-      ]),
-    );
+    // A permission installed with no hook allow-lists execute(bytes32,bytes) and
+    // takes Kernel's fast path, which enforces the same allow-list on the outer
+    // selector; its policy modules decode exactly this calldata.
+    expect(prepared.userOperation.callData).toBe(execution);
+
+    // A validator validation has no such fast path and routes through
+    // executeUserOp, where Kernel checks the inner selector instead.
+    expect(
+      prepareKernelV4UserOperation({
+        kind: "revocation",
+        grantId: "kernel-v4-grant",
+        account: await descriptor("deployed"),
+        nonce: {
+          mode: "replayable",
+          validation: { kind: "validator", validator },
+          nonceKey: "9",
+          sequence: "3",
+        },
+        calls: [{ target, value: "0", data: "0x1234" }],
+        gas,
+      }).userOperation.callData,
+    ).toBe(concat(["0x8dd7712f", execution]));
   });
 
   it("rejects a contradictory account descriptor instead of trusting cached factory calldata", async () => {
