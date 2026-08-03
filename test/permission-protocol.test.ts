@@ -123,6 +123,86 @@ function applyInput(
   };
 }
 
+type RequestSubstitution =
+  | "application_id"
+  | "client_id"
+  | "origin"
+  | "device_id"
+  | "logical_account"
+  | "owner_credential"
+  | "operator_credential"
+  | "policy"
+  | "request_id"
+  | "requested_at"
+  | "expires_at";
+
+function substituteRequest(kind: RequestSubstitution, seed: number): PermissionRequest {
+  const identifier = `changed-${seed}`;
+  if (kind === "application_id") {
+    return {
+      ...clone(request),
+      application: { ...request.application, applicationId: identifier },
+    };
+  }
+  if (kind === "client_id") {
+    return { ...clone(request), application: { ...request.application, clientId: identifier } };
+  }
+  if (kind === "origin") {
+    return {
+      ...clone(request),
+      application: { ...request.application, origin: `https://${identifier}.example` },
+    };
+  }
+  if (kind === "device_id") {
+    return { ...clone(request), application: { ...request.application, deviceId: identifier } };
+  }
+  if (kind === "logical_account") {
+    return {
+      ...clone(request),
+      logicalAccount: { ...request.logicalAccount, accountIndex: String(seed + 8) },
+    };
+  }
+  const rawByte = (seed % 250) + 1;
+  const substitutedByte =
+    (kind === "owner_credential" && rawByte === 0x33) ||
+    (kind === "operator_credential" && rawByte === 0x44)
+      ? 0xfe
+      : rawByte;
+  const byte = substitutedByte.toString(16).padStart(2, "0");
+  if (kind === "owner_credential") {
+    return {
+      ...clone(request),
+      logicalAccount: {
+        ...request.logicalAccount,
+        ownerCredential: {
+          version: "ogp.owner-credential-profile/v1",
+          kind: "ecdsa",
+          address: `0x${byte.repeat(20)}`,
+        },
+      },
+    };
+  }
+  if (kind === "operator_credential") {
+    return {
+      ...clone(request),
+      operatorCredential: {
+        version: "ogp.operator-credential-profile/v1",
+        kind: "ecdsa",
+        address: `0x${byte.repeat(20)}`,
+      },
+    };
+  }
+  if (kind === "policy") {
+    return {
+      ...clone(request),
+      policy: { ...clone(policy), perChainOperationLimit: seed + 11 },
+    };
+  }
+  if (kind === "request_id") return { ...clone(request), requestId: identifier };
+  if (kind === "requested_at") return { ...clone(request), requestedAt: (seed % 89) + 101 };
+  return { ...clone(request), expiresAt: seed + 201 };
+}
+
 function expectProtocolError(
   action: () => unknown,
   code: OgpPermissionProtocolError["code"],
@@ -652,5 +732,90 @@ describe("permission protocol properties", () => {
         expect(replay.grant).toEqual(first.grant);
       }),
     );
+  });
+
+  it("rejects generated substitutions across every request-to-Grant binding", () => {
+    const substitutions: readonly RequestSubstitution[] = [
+      "application_id",
+      "client_id",
+      "origin",
+      "device_id",
+      "logical_account",
+      "owner_credential",
+      "operator_credential",
+      "policy",
+      "request_id",
+      "requested_at",
+      "expires_at",
+    ];
+    for (const kind of substitutions) {
+      fc.assert(
+        fc.property(fc.integer({ min: 1, max: 1_000 }), (seed) => {
+          const grant = createGrantFromPermissionRequest(request);
+          const before = clone(grant);
+          expectProtocolError(
+            () =>
+              applyPermissionDecision(
+                applyInput(approve(), { request: substituteRequest(kind, seed), grant }),
+              ),
+            "permission_request_binding_mismatch",
+          );
+          expect(grant).toEqual(before);
+        }),
+      );
+    }
+  });
+
+  it("rejects generated decision request-ID/hash substitutions without Grant mutation", () => {
+    for (const kind of ["request_id", "request_hash"] as const) {
+      fc.assert(
+        fc.property(fc.integer({ min: 1, max: 250 }), (seed) => {
+          const capabilityByte = seed === 0x55 ? 0xfe : seed;
+          const byte = capabilityByte.toString(16).padStart(2, "0");
+          const decision =
+            kind === "request_id"
+              ? approve({ requestId: `another-${seed}` })
+              : approve({ requestHash: `0x${byte.repeat(32)}` });
+          const grant = createGrantFromPermissionRequest(request);
+          const before = clone(grant);
+          expectProtocolError(
+            () => applyPermissionDecision(applyInput(decision, { grant })),
+            "permission_decision_binding_mismatch",
+          );
+          expect(grant).toEqual(before);
+        }),
+      );
+    }
+  });
+
+  it("rejects generated second-decision field changes without altering accepted authority", () => {
+    for (const kind of ["capability", "policy", "time", "kind"] as const) {
+      fc.assert(
+        fc.property(fc.integer({ min: 1, max: 250 }), (seed) => {
+          const accepted = applyPermissionDecision(applyInput(approve())).grant;
+          const before = clone(accepted);
+          const capabilityByte = seed === 0x55 ? 0xfe : seed;
+          const byte = capabilityByte.toString(16).padStart(2, "0");
+          const changed: PermissionDecision =
+            kind === "capability"
+              ? approve({ capabilityHash: `0x${byte.repeat(32)}` })
+              : kind === "policy"
+                ? approve({
+                    approvedPolicy: {
+                      ...clone(policy),
+                      perChainOperationLimit: (seed % 9) + 1,
+                    },
+                  })
+                : kind === "time"
+                  ? approve({ decidedAt: (seed % 69) + 121 })
+                  : reject();
+          expectProtocolError(
+            () => applyPermissionDecision(applyInput(changed, { grant: accepted })),
+            "permission_decision_conflict",
+          );
+          expect(accepted).toEqual(before);
+        }),
+      );
+    }
   });
 });
