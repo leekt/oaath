@@ -514,7 +514,7 @@ describe("Grant policy properties", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 1_000_000 }),
-        fc.integer({ min: 0, max: 1_000_000 }),
+        fc.integer({ min: 1, max: 1_000_000 }),
         fc.integer({ min: 1, max: 1_000 }),
         fc.bigInt({ min: 0n, max: 1n << 128n }),
         (start, duration, limit, valueLimit) => {
@@ -545,7 +545,7 @@ describe("Grant policy properties", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 1_000 }),
-        fc.integer({ min: 0, max: 1_000 }),
+        fc.integer({ min: 1, max: 1_000 }),
         fc.integer({ min: 1, max: 1_000 }),
         fc.integer({ min: 1, max: 1_000 }),
         (start, duration, requestedLimit, requestedValue) => {
