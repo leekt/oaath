@@ -181,10 +181,9 @@ describe("identity profile codecs", () => {
 
   it("diagnoses only the selected exact credential kind from the pinned runtime", () => {
     expect(diagnoseOwnerCredential(ownerEcdsa)).toEqual({
-      status: "absent",
+      status: "available",
       capability: "owner_ecdsa",
       profile: ownerEcdsa,
-      reason: "required_package_not_installed",
     });
     expect(diagnoseOwnerCredential(ownerWebAuthn)).toEqual({
       status: "absent",

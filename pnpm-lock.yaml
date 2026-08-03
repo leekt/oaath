@@ -11,6 +11,9 @@ importers:
       '@noble/curves':
         specifier: 1.9.1
         version: 1.9.1
+      '@zerodev/ecdsa-validator':
+        specifier: 5.4.9
+        version: 5.4.9(@zerodev/sdk@5.5.10(viem@2.55.8(typescript@7.0.2)))(viem@2.55.8(typescript@7.0.2))
       '@zerodev/sdk':
         specifier: 5.5.10
         version: 5.5.10(viem@2.55.8(typescript@7.0.2))
@@ -561,6 +564,12 @@ packages:
 
   '@yuku-toolchain/types@0.8.2':
     resolution: {integrity: sha512-ODYjxmbajkNCaONqd7dfIsH+h2ddRiI4YsSuQXy1Sg0ZSTvOETcNz5EiEIOqVSLnHDs1+r+b2yuS9eOw3ChguA==}
+
+  '@zerodev/ecdsa-validator@5.4.9':
+    resolution: {integrity: sha512-9NVE8/sQIKRo42UOoYKkNdmmHJY8VlT4t+2MHD2ipLg21cpbY9fS17TGZh61+Bl3qlqc8pP23I6f89z9im7kuA==}
+    peerDependencies:
+      '@zerodev/sdk': ^5.4.13
+      viem: ^2.28.0
 
   '@zerodev/sdk@5.5.10':
     resolution: {integrity: sha512-WVyj2XR9F6zK2GdXrvappx7yo6zoJ46cWe42dOIArp3xDjFBninjA4O1O94MwohB0G+yFqtXNsEU+WxdE67SgQ==}
@@ -1368,6 +1377,11 @@ snapshots:
     optional: true
 
   '@yuku-toolchain/types@0.8.2': {}
+
+  '@zerodev/ecdsa-validator@5.4.9(@zerodev/sdk@5.5.10(viem@2.55.8(typescript@7.0.2)))(viem@2.55.8(typescript@7.0.2))':
+    dependencies:
+      '@zerodev/sdk': 5.5.10(viem@2.55.8(typescript@7.0.2))
+      viem: 2.55.8(typescript@7.0.2)
 
   '@zerodev/sdk@5.5.10(viem@2.55.8(typescript@7.0.2))':
     dependencies:

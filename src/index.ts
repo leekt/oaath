@@ -1,4 +1,16 @@
 export type {
+  EcdsaKernelOwnerErrorCode,
+  EcdsaKernelOwnerRestorationReadCapability,
+  EcdsaKernelOwnerRestorationReadRequest,
+  EcdsaKernelOwnerRuntime,
+  EcdsaOwnerSignerCapability,
+  RestoredEcdsaKernelOwner,
+} from "./ecdsa-kernel-owner.js";
+export {
+  createEcdsaKernelOwnerRuntime,
+  OgpEcdsaKernelOwnerError,
+} from "./ecdsa-kernel-owner.js";
+export type {
   ActiveGrant,
   ApplicationBinding,
   ApprovedGrant,

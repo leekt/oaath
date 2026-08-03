@@ -1,12 +1,18 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import {
+  getKernelAddressFromECDSA,
+  getValidatorAddress,
+  signerToEcdsaValidator,
+} from "@zerodev/ecdsa-validator";
 import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
 import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { createWalletClient } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createEcdsaKernelOwnerRuntime,
   createLocalKernelHandleOpsAdapter,
   createLocalKernelPermissionUninstallAdapter,
   getKernelRuntimeCapability,
@@ -44,10 +50,15 @@ describe("Kernel runtime capabilities", () => {
   it("pins the exact installed public artifacts and accepted protocol releases", () => {
     expect(OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION).toBe("ogp.kernel-runtime-capabilities/v1");
     expect(installedPackageVersion("@zerodev/sdk")).toBe("5.5.10");
+    expect(installedPackageVersion("@zerodev/ecdsa-validator")).toBe("5.4.9");
     expect(installedPackageVersion("viem")).toBe("2.55.8");
     expect(typeof createKernelAccount).toBe("function");
     expect(typeof createKernelAccountClient).toBe("function");
     expect(typeof uninstallPlugin).toBe("function");
+    expect(typeof getKernelAddressFromECDSA).toBe("function");
+    expect(typeof getValidatorAddress).toBe("function");
+    expect(typeof signerToEcdsaValidator).toBe("function");
+    expect(typeof createEcdsaKernelOwnerRuntime).toBe("function");
     expect(typeof createWalletClient).toBe("function");
     expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
     expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
@@ -79,6 +90,22 @@ describe("Kernel runtime capabilities", () => {
         "sha512-BHqtsmK4iMLuLnRyrPIB1jVrmFVliRIP/K0dnFT7gBOpfo8Ko4ozhkzUCRNfR+Z/ZZdnlnVrh04fAOuIm5Svkg==",
       shasum: "38858031b543b20d2330e74ec534fde89c39a4c7",
     });
+    expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevEcdsaValidator).toMatchObject({
+      packageName: "@zerodev/ecdsa-validator",
+      packageVersion: "5.4.9",
+      integrity:
+        "sha512-9NVE8/sQIKRo42UOoYKkNdmmHJY8VlT4t+2MHD2ipLg21cpbY9fS17TGZh61+Bl3qlqc8pP23I6f89z9im7kuA==",
+      shasum: "106226ac90f52f780f146037a4f1e32f6ccbe3a6",
+      npmGitHead: "8de7ce47e525459a39e731cfe6045d808dd8bb6e",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/ecdsa",
+        commit: "8de7ce47e525459a39e731cfe6045d808dd8bb6e",
+        packageVersion: "5.4.8",
+        tag: null,
+        alignment: "registry_version_differs_from_git_head_tree",
+      },
+    });
     expect(KERNEL_RUNTIME_CAPABILITIES.contracts).toEqual({
       kernel: {
         version: "0.3.3",
@@ -99,7 +126,6 @@ describe("Kernel runtime capabilities", () => {
     });
 
     for (const packageName of [
-      "@zerodev/ecdsa-validator",
       "@zerodev/passkey-validator",
       "@zerodev/permissions",
       "@zerodev/webauthn-key",
@@ -121,7 +147,7 @@ describe("Kernel runtime capabilities", () => {
       ),
     ).toEqual({
       kernel_account: "available",
-      owner_ecdsa: "unsupported",
+      owner_ecdsa: "available",
       owner_p256: "unsupported",
       owner_webauthn: "unsupported",
       permission_signer_ecdsa: "unsupported",
@@ -138,6 +164,16 @@ describe("Kernel runtime capabilities", () => {
       status: "available",
       anchors: ["zerodev_sdk.createKernelAccount", "zerodev_sdk.KERNEL_V3_3", "kernel.v3_3"],
       constraints: ["compatible_plugin_manager_required"],
+    });
+    expect(getKernelRuntimeCapability("owner_ecdsa")).toEqual({
+      status: "available",
+      anchors: [
+        "zerodev_ecdsa_validator.getKernelAddressFromECDSA",
+        "zerodev_ecdsa_validator.signerToEcdsaValidator",
+        "ogp.createEcdsaKernelOwnerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
     });
     expect(getKernelRuntimeCapability("bundler_submission")).toEqual({
       status: "available",
@@ -162,12 +198,7 @@ describe("Kernel runtime capabilities", () => {
     });
   });
 
-  it("fails closed for unavailable credentials, permission install, and all-chain approval", () => {
-    expect(getKernelRuntimeCapability("owner_ecdsa")).toMatchObject({
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/ecdsa-validator"],
-    });
+  it("fails closed for remaining unavailable credentials, permission install, and approval", () => {
     expect(getKernelRuntimeCapability("permission_install")).toMatchObject({
       status: "unsupported",
       reason: "package_not_installed",
