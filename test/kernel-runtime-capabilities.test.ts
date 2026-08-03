@@ -1,11 +1,14 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { createKernelAccount, createKernelAccountClient } from "@zerodev/sdk";
+import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
 import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
+import { createWalletClient } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createLocalKernelHandleOpsAdapter,
+  createLocalKernelPermissionUninstallAdapter,
   getKernelRuntimeCapability,
   KERNEL_RUNTIME_CAPABILITIES,
   OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION,
@@ -44,6 +47,10 @@ describe("Kernel runtime capabilities", () => {
     expect(installedPackageVersion("viem")).toBe("2.55.8");
     expect(typeof createKernelAccount).toBe("function");
     expect(typeof createKernelAccountClient).toBe("function");
+    expect(typeof uninstallPlugin).toBe("function");
+    expect(typeof createWalletClient).toBe("function");
+    expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
+    expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
     expect(KERNEL_V3_3).toBe("0.3.3");
     expect(
       entryPoint07Abi.some((item) => item.type === "function" && item.name === "handleOps"),
@@ -122,7 +129,7 @@ describe("Kernel runtime capabilities", () => {
       permission_signer_webauthn: "unsupported",
       replayable_all_chain_permission_approval: "unsupported",
       permission_install: "unsupported",
-      permission_uninstall: "unsupported",
+      permission_uninstall: "available",
       bundler_submission: "available",
       entrypoint_handle_ops_submission: "available",
     });
@@ -138,23 +145,30 @@ describe("Kernel runtime capabilities", () => {
     });
     expect(getKernelRuntimeCapability("entrypoint_handle_ops_submission")).toEqual({
       status: "available",
-      anchors: ["viem.entryPoint07Abi", "entrypoint.v0_7"],
+      anchors: [
+        "ogp.createLocalKernelHandleOpsAdapter",
+        "viem.createWalletClient",
+        "viem.entryPoint07Abi",
+        "entrypoint.v0_7",
+      ],
+    });
+    expect(getKernelRuntimeCapability("permission_uninstall")).toEqual({
+      status: "available",
+      anchors: [
+        "zerodev_sdk.uninstallPlugin",
+        "ogp.createLocalKernelPermissionUninstallAdapter",
+        "kernel.v3_3",
+      ],
     });
   });
 
-  it("fails closed for unavailable credentials, concrete permissions, and all-chain approval", () => {
+  it("fails closed for unavailable credentials, permission install, and all-chain approval", () => {
     expect(getKernelRuntimeCapability("owner_ecdsa")).toMatchObject({
       status: "unsupported",
       reason: "package_not_installed",
       requiredPackages: ["@zerodev/ecdsa-validator"],
     });
     expect(getKernelRuntimeCapability("permission_install")).toMatchObject({
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
-      constraints: ["generic_plugin_primitive_only"],
-    });
-    expect(getKernelRuntimeCapability("permission_uninstall")).toMatchObject({
       status: "unsupported",
       reason: "package_not_installed",
       requiredPackages: ["@zerodev/permissions"],

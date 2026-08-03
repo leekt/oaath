@@ -19,7 +19,11 @@ export type KernelRuntimeAnchorId =
   | "zerodev_sdk.createKernelAccount"
   | "zerodev_sdk.KERNEL_V3_3"
   | "zerodev_sdk.createKernelAccountClient"
+  | "zerodev_sdk.uninstallPlugin"
+  | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
+  | "ogp.createLocalKernelHandleOpsAdapter"
+  | "ogp.createLocalKernelPermissionUninstallAdapter"
   | "kernel.v3_3"
   | "entrypoint.v0_7";
 
@@ -80,8 +84,8 @@ interface KernelRuntimeCapabilitiesManifestShape {
       readonly integrity: `sha512-${string}`;
       readonly shasum: string;
       readonly publicExports: readonly {
-        readonly importPath: "viem/account-abstraction";
-        readonly names: readonly ["entryPoint07Abi"];
+        readonly importPath: string;
+        readonly names: readonly string[];
       }[];
     };
   };
@@ -144,7 +148,7 @@ const manifest = {
       publicExports: [
         {
           importPath: "@zerodev/sdk",
-          names: ["createKernelAccount", "createKernelAccountClient"],
+          names: ["createKernelAccount", "createKernelAccountClient", "uninstallPlugin"],
         },
         {
           importPath: "@zerodev/sdk/constants",
@@ -159,6 +163,10 @@ const manifest = {
         "sha512-BHqtsmK4iMLuLnRyrPIB1jVrmFVliRIP/K0dnFT7gBOpfo8Ko4ozhkzUCRNfR+Z/ZZdnlnVrh04fAOuIm5Svkg==",
       shasum: "38858031b543b20d2330e74ec534fde89c39a4c7",
       publicExports: [
+        {
+          importPath: "viem",
+          names: ["createWalletClient"],
+        },
         {
           importPath: "viem/account-abstraction",
           names: ["entryPoint07Abi"],
@@ -232,10 +240,12 @@ const manifest = {
       constraints: ["generic_plugin_primitive_only"],
     },
     permission_uninstall: {
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
-      constraints: ["generic_plugin_primitive_only"],
+      status: "available",
+      anchors: [
+        "zerodev_sdk.uninstallPlugin",
+        "ogp.createLocalKernelPermissionUninstallAdapter",
+        "kernel.v3_3",
+      ],
     },
     bundler_submission: {
       status: "available",
@@ -243,7 +253,12 @@ const manifest = {
     },
     entrypoint_handle_ops_submission: {
       status: "available",
-      anchors: ["viem.entryPoint07Abi", "entrypoint.v0_7"],
+      anchors: [
+        "ogp.createLocalKernelHandleOpsAdapter",
+        "viem.createWalletClient",
+        "viem.entryPoint07Abi",
+        "entrypoint.v0_7",
+      ],
     },
   },
 } as const satisfies KernelRuntimeCapabilitiesManifestShape;
