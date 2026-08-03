@@ -13,6 +13,12 @@ import {
 const identity: GrantIdentity = {
   grantId: "transition-grant",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "grant-transitions",
+    origin: "https://transitions.example",
+    deviceId: "transition-device",
+  },
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",
@@ -361,6 +367,68 @@ describe("Grant transitions", () => {
           },
         }),
       "grant_identity_mismatch",
+    );
+  });
+
+  it("rejects application, client, origin, and device substitution before authority changes", () => {
+    const applicationSubstitutions = [
+      { ...identity.application, applicationId: "other-app" },
+      { ...identity.application, clientId: "other-client" },
+      { ...identity.application, origin: "https://other.example" },
+      { ...identity.application, deviceId: "other-device" },
+    ];
+
+    for (const application of applicationSubstitutions) {
+      const substitutedIdentity = { ...identity, application };
+      expectGrantError(
+        () =>
+          advanceGrant(requested(), {
+            type: "approve",
+            identity: substitutedIdentity,
+            approval,
+          }),
+        "grant_identity_mismatch",
+      );
+      expectGrantError(
+        () =>
+          advanceGrant(active(), {
+            type: "record_unmaterialized",
+            identity: substitutedIdentity,
+            binding: binding(1),
+            recordedAt: 31,
+          }),
+        "grant_identity_mismatch",
+      );
+      expectGrantError(
+        () =>
+          advanceGrant(active(), {
+            type: "begin_revocation",
+            identity: substitutedIdentity,
+            revocationStartedAt: 40,
+          }),
+        "grant_identity_mismatch",
+      );
+    }
+
+    fc.assert(
+      fc.property(
+        fc.constantFrom("applicationId", "clientId", "origin", "deviceId" as const),
+        fc.integer({ min: 1, max: 1_000_000 }),
+        (field, seed) => {
+          const value = field === "origin" ? `https://app-${seed}.example` : `identity-${seed}`;
+          const application = { ...identity.application, [field]: value };
+          expectGrantError(
+            () =>
+              advanceGrant(requested(), {
+                type: "approve",
+                identity: { ...identity, application },
+                approval,
+              }),
+            "grant_identity_mismatch",
+          );
+        },
+      ),
+      { numRuns: 64 },
     );
   });
 

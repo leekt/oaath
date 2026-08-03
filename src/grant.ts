@@ -7,7 +7,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v1" as const;
+export const OGP_GRANT_RECORD_VERSION = "ogp.grant/v2" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -43,6 +43,13 @@ export interface CredentialBinding {
   readonly publicIdentityHash: `0x${string}`;
 }
 
+export interface ApplicationBinding {
+  readonly applicationId: string;
+  readonly clientId: string;
+  readonly origin: string;
+  readonly deviceId: string;
+}
+
 export interface GrantLogicalAccountProfile {
   readonly kind: "kernel";
   readonly accountIndex: string;
@@ -54,6 +61,7 @@ export interface GrantLogicalAccountProfile {
 export interface GrantIdentity {
   readonly grantId: string;
   readonly chainScope: "all";
+  readonly application: Readonly<ApplicationBinding>;
   readonly logicalAccount: Readonly<GrantLogicalAccountProfile>;
   readonly operatorCredential: Readonly<CredentialBinding>;
   readonly policyHash: `0x${string}`;
@@ -410,6 +418,50 @@ function identifier(value: unknown, label: string, code: GrantErrorCode): string
   return value;
 }
 
+function origin(value: unknown, code: GrantErrorCode): string {
+  if (typeof value !== "string" || value.length > 2_048) {
+    return invalid(code, "application origin must be a bounded HTTP origin");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return invalid(code, "application origin must be a bounded HTTP origin");
+  }
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.origin === "null" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    return invalid(code, "application origin must be a bounded HTTP origin");
+  }
+  return parsed.origin;
+}
+
+function parseApplicationBinding(
+  value: unknown,
+  code: GrantErrorCode,
+  context: CaptureContext,
+): Readonly<ApplicationBinding> {
+  const record = exactRecord(
+    value,
+    ["applicationId", "clientId", "origin", "deviceId"],
+    "application binding",
+    code,
+    context,
+  );
+  return Object.freeze({
+    applicationId: identifier(record.applicationId, "application applicationId", code),
+    clientId: identifier(record.clientId, "application clientId", code),
+    origin: origin(record.origin, code),
+    deviceId: identifier(record.deviceId, "application deviceId", code),
+  });
+}
+
 function parseCredential(
   value: unknown,
   label: string,
@@ -458,7 +510,7 @@ function parseIdentity(
 ): Readonly<GrantIdentity> {
   const record = exactRecord(
     value,
-    ["grantId", "chainScope", "logicalAccount", "operatorCredential", "policyHash"],
+    ["grantId", "chainScope", "application", "logicalAccount", "operatorCredential", "policyHash"],
     "grant identity",
     code,
     context,
@@ -467,6 +519,7 @@ function parseIdentity(
   return Object.freeze({
     grantId: canonicalGrantId(record.grantId, code),
     chainScope: "all",
+    application: parseApplicationBinding(record.application, code, context),
     logicalAccount: parseLogicalAccount(record.logicalAccount, code, context),
     operatorCredential: parseCredential(
       record.operatorCredential,
@@ -1515,10 +1568,20 @@ function sameCredential(left: CredentialBinding, right: CredentialBinding): bool
   return left.kind === right.kind && left.publicIdentityHash === right.publicIdentityHash;
 }
 
+function sameApplication(left: ApplicationBinding, right: ApplicationBinding): boolean {
+  return (
+    left.applicationId === right.applicationId &&
+    left.clientId === right.clientId &&
+    left.origin === right.origin &&
+    left.deviceId === right.deviceId
+  );
+}
+
 function sameIdentity(left: GrantIdentity, right: GrantIdentity): boolean {
   return (
     left.grantId === right.grantId &&
     left.chainScope === right.chainScope &&
+    sameApplication(left.application, right.application) &&
     left.logicalAccount.kind === right.logicalAccount.kind &&
     left.logicalAccount.accountIndex === right.logicalAccount.accountIndex &&
     left.logicalAccount.kernelVersion === right.logicalAccount.kernelVersion &&

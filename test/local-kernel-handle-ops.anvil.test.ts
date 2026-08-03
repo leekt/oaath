@@ -803,6 +803,12 @@ function activePermissionGrant(
   const identity: GrantIdentity = {
     grantId: "anvil-permission-revocation",
     chainScope: "all",
+    application: {
+      applicationId: "ogp-tests",
+      clientId: "anvil-revocation",
+      origin: "https://anvil.example",
+      deviceId: "anvil-device",
+    },
     logicalAccount: {
       kind: "kernel",
       accountIndex: "0",

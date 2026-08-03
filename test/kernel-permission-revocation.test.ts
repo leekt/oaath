@@ -44,6 +44,12 @@ const descriptor: KernelPermissionUninstallDescriptor = {
 const identity: GrantIdentity = {
   grantId: descriptor.grantId,
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "kernel-revocation",
+    origin: "https://revocation.example",
+    deviceId: "revocation-device",
+  },
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",

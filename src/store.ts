@@ -4,7 +4,7 @@ import { type CaptureContext, exactRecord as exactRecordValue } from "./internal
 import type { Operation } from "./operation.js";
 import { operationOccupiesLane, parseOperation } from "./operation.js";
 
-export const OGP_GRANT_STORE_RECORD_VERSION = "ogp.grant-store-record/v1" as const;
+export const OGP_GRANT_STORE_RECORD_VERSION = "ogp.grant-store-record/v2" as const;
 export const OGP_OPERATION_STORE_RECORD_VERSION = "ogp.operation-store-record/v1" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
@@ -16,6 +16,7 @@ export type StoreErrorCode =
   | "store_unavailable"
   | "store_record_invalid"
   | "store_key_mismatch"
+  | "store_identity_mismatch"
   | "store_lane_occupied"
   | "store_revision_exhausted"
   | "store_commit_indeterminate"
@@ -224,6 +225,10 @@ function sameOperationIdentity(left: Operation, right: Operation): boolean {
   return sameValue(left.identity, right.identity);
 }
 
+function sameGrantIdentity(left: Grant, right: Grant): boolean {
+  return sameValue(left.identity, right.identity);
+}
+
 function sameStoreRecord<Value>(
   left: StoreRecord<Value> | undefined,
   right: StoreRecord<Value>,
@@ -395,6 +400,11 @@ export class GrantStore {
         parse: parseGrant,
         keyMatches: (grant, grantId) => grant.identity.grantId === grantId,
         updatedAt: (grant) => grant.updatedAt,
+        validateNext: (current, next) => {
+          if (current !== undefined && !sameGrantIdentity(current, next)) {
+            invalid("store_identity_mismatch", "next Grant identity does not match current Grant");
+          }
+        },
       },
     );
   }

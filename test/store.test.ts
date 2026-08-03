@@ -18,6 +18,12 @@ import {
 const grantIdentity: GrantIdentity = {
   grantId: "grant-store",
   chainScope: "all",
+  application: {
+    applicationId: "ogp-tests",
+    clientId: "store",
+    origin: "https://store.example",
+    deviceId: "store-device",
+  },
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",
@@ -154,6 +160,40 @@ describe("aggregate store boundary", () => {
     });
   });
 
+  it("rejects same-key Grant identity replacement before the adapter write", async () => {
+    const memory = memoryGrantAdapter();
+    const store = new GrantStore(memory.adapter);
+    await store.compareAndSwap({
+      grantId: grantIdentity.grantId,
+      expectedStoreRevision: null,
+      next: requestedGrant(),
+    });
+    const retained = clone(memory.raw());
+
+    for (const application of [
+      { ...grantIdentity.application, applicationId: "other-app" },
+      { ...grantIdentity.application, clientId: "other-client" },
+      { ...grantIdentity.application, origin: "https://other.example" },
+      { ...grantIdentity.application, deviceId: "other-device" },
+    ]) {
+      const replacement = createGrant({
+        identity: { ...grantIdentity, application },
+        requestedAt: 10,
+        expiresAt: 100,
+      });
+      await expectStoreError(
+        () =>
+          store.compareAndSwap({
+            grantId: grantIdentity.grantId,
+            expectedStoreRevision: 0,
+            next: replacement,
+          }),
+        "store_identity_mismatch",
+      );
+      expect(memory.raw()).toEqual(retained);
+    }
+  });
+
   it("captures caller input before the adapter can observe later mutation", async () => {
     let releaseRead: (() => void) | undefined;
     const readGate = new Promise<void>((resolve) => {
@@ -194,7 +234,7 @@ describe("aggregate store boundary", () => {
     await expectStoreError(() => store.get(grantIdentity.grantId), "store_record_invalid");
 
     memory.set({
-      version: "ogp.grant-store-record/v0",
+      version: "ogp.grant-store-record/v1",
       storeRevision: 0,
       updatedAt: 10,
       value: requestedGrant(),
