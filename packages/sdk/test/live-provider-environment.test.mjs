@@ -16,6 +16,19 @@ describe("normal gate environment", () => {
     ).toEqual({ PATH: "/bin" });
   });
 
+  it("removes Apple push credentials", () => {
+    expect(
+      scrubLiveProviderEnvironment({
+        PATH: "/bin",
+        APNS_KEY_ID: "secret",
+        APNS_PRIVATE_KEY: "secret",
+        APNS_TOPIC: "secret",
+        APPLE_TEAM_ID: "secret",
+        apple_private_key: "secret",
+      }),
+    ).toEqual({ PATH: "/bin" });
+  });
+
   it("does not mutate the caller's environment object", () => {
     const environment = { PATH: "/bin", RPC_URL: "secret" };
     scrubLiveProviderEnvironment(environment);

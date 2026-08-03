@@ -29,6 +29,14 @@
     "./postgres": {
       "types": "./src/postgres.ts",
       "node": "./src/postgres.ts"
+    },
+    "./native": {
+      "types": "./src/native.ts",
+      "default": "./src/native.ts"
+    },
+    "./apns": {
+      "types": "./src/apns.ts",
+      "node": "./src/apns.ts"
     }
   },
   "publishConfig": {
@@ -43,6 +51,14 @@
       "./postgres": {
         "types": "./dist/postgres.d.ts",
         "node": "./dist/postgres.js"
+      },
+      "./native": {
+        "types": "./dist/native.d.ts",
+        "default": "./dist/native.js"
+      },
+      "./apns": {
+        "types": "./dist/apns.d.ts",
+        "node": "./dist/apns.js"
       }
     }
   },

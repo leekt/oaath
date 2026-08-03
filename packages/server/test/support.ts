@@ -8,7 +8,7 @@
 import { expect } from "vitest";
 import { sha256Base64Url } from "../src/authorization/challenge.js";
 import type { RelayClock } from "../src/clock.js";
-import { RELAY_ERROR_STATUS, type RelayErrorCode } from "../src/relay/errors.js";
+import { OaathRelayError, RELAY_ERROR_STATUS, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";
 import type { RelayAuthentication, RelayCaller } from "../src/security/authentication.js";
 import type { RelayKms } from "../src/security/kms.js";
@@ -149,6 +149,21 @@ export function get(path: string, token: string | null): Request {
   const headers = new Headers();
   if (token !== null) headers.set("authorization", `Bearer ${token}`);
   return new Request(`${ORIGIN}${path}`, { method: "GET", headers });
+}
+
+/** Asserts a direct use-case failure by structured code, never by message text. */
+export async function expectRelayFailure(
+  run: () => Promise<unknown>,
+  code: RelayErrorCode,
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    expect(error).toBeInstanceOf(OaathRelayError);
+    if (error instanceof OaathRelayError) expect(error.code).toBe(code);
+    return;
+  }
+  throw new Error("expected a relay failure");
 }
 
 /** Asserts a failure by code and status only; a response never carries text. */

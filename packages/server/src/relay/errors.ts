@@ -47,6 +47,16 @@ export type RelayErrorCode =
    * never authorizes resubmission.
    */
   | "relay_state_ambiguous"
+  /**
+   * EXPERIMENTAL PREVIEW (`@oaath/server/apns`): the constructed APNs payload
+   * exceeded Apple's 4096-byte limit, so nothing was sent.
+   */
+  | "relay_apns_payload_too_large"
+  /**
+   * EXPERIMENTAL PREVIEW (`@oaath/server/apns`): the injected Apple credential
+   * capability is not a usable P-256 signing key, key id, team id, or topic.
+   */
+  | "relay_apns_credentials_invalid"
   /** An invariant the relay owns was violated. */
   | "relay_internal";
 
@@ -70,6 +80,10 @@ export const RELAY_ERROR_STATUS: Readonly<Record<RelayErrorCode, number>> = Obje
   relay_kms_unavailable: 503,
   relay_store_unavailable: 503,
   relay_state_ambiguous: 500,
+  // The preview codes have no route. They are projected only so the union stays
+  // closed and one owner keeps every code's status.
+  relay_apns_payload_too_large: 500,
+  relay_apns_credentials_invalid: 500,
   relay_internal: 500,
 });
 
