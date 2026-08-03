@@ -24,9 +24,12 @@ export type KernelRuntimeAnchorId =
   | "zerodev_ecdsa_validator.signerToEcdsaValidator"
   | "zerodev_passkey_validator.toPasskeyValidator"
   | "zerodev_passkey_validator.V0_0_3_PATCHED"
+  | "zerodev_permissions.toECDSASigner"
+  | "zerodev_permissions.toSignerId"
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
   | "ogp.createEcdsaKernelOwnerRuntime"
+  | "ogp.createEcdsaPermissionSignerRuntime"
   | "ogp.createP256KernelOwnerRuntime"
   | "ogp.createWebAuthnKernelOwnerRuntime"
   | "ogp.createLocalKernelHandleOpsAdapter"
@@ -38,6 +41,7 @@ export type KernelRuntimeAnchorId =
 export type KernelRuntimeUnsupportedReason =
   | "package_not_installed"
   | "distinct_profile_unproven"
+  | "integration_unproven"
   | "incompatible_approval_shape";
 
 export type KernelRuntimeConstraint =
@@ -128,6 +132,7 @@ interface KernelRuntimeCapabilitiesManifestShape {
         readonly names: readonly string[];
       }[];
     };
+    readonly zerodevPermissions: PublishedPackageShape;
     readonly zerodevPasskeyValidator: PublishedPackageShape;
     readonly zerodevWebAuthnKey: PublishedPackageShape;
   };
@@ -272,6 +277,31 @@ const manifest = {
         },
       ],
     },
+    zerodevPermissions: {
+      packageName: "@zerodev/permissions",
+      packageVersion: "5.6.3",
+      integrity:
+        "sha512-MwW3Eo3rB5ViOKdY6NUoyvmQTV/bCbOZbmQMTYQqAT7B8rdI9jo44nNONMOHIhDkfF4VFhQ9+M50cCZLA/6zcg==",
+      shasum: "69ae470e03d5a750e6b3484c82d5e854e127523a",
+      npmGitHead: "6db091cc65c74526e22980a3754776618c2e3a7e",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/permission",
+        commit: "6db091cc65c74526e22980a3754776618c2e3a7e",
+        packageVersion: "5.6.2",
+        alignment: "registry_version_differs_from_git_head_tree",
+      },
+      publicExports: [
+        {
+          importPath: "@zerodev/permissions",
+          names: ["ECDSA_SIGNER_CONTRACT"],
+        },
+        {
+          importPath: "@zerodev/permissions/signers",
+          names: ["toECDSASigner", "toSignerId"],
+        },
+      ],
+    },
     zerodevPasskeyValidator: {
       packageName: "@zerodev/passkey-validator",
       packageVersion: "5.6.0",
@@ -408,9 +438,14 @@ const manifest = {
       ],
     },
     permission_signer_ecdsa: {
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
+      status: "available",
+      anchors: [
+        "zerodev_permissions.toECDSASigner",
+        "zerodev_permissions.toSignerId",
+        "ogp.createEcdsaPermissionSignerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
     },
     permission_signer_p256: {
       status: "unsupported",
@@ -419,8 +454,7 @@ const manifest = {
     },
     permission_signer_webauthn: {
       status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
+      reason: "integration_unproven",
     },
     replayable_all_chain_permission_approval: {
       status: "unsupported",
@@ -429,8 +463,7 @@ const manifest = {
     },
     permission_install: {
       status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/permissions"],
+      reason: "integration_unproven",
       constraints: ["generic_plugin_primitive_only"],
     },
     permission_uninstall: {

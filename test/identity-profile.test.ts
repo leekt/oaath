@@ -195,15 +195,16 @@ describe("identity profile codecs", () => {
       capability: "owner_p256",
       profile: ownerP256,
     });
-    expect(diagnoseOperatorCredential(operatorEcdsa)).toMatchObject({
-      status: "absent",
+    expect(diagnoseOperatorCredential(operatorEcdsa)).toEqual({
+      status: "available",
       capability: "permission_signer_ecdsa",
       profile: operatorEcdsa,
     });
-    expect(diagnoseOperatorCredential(operatorWebAuthn)).toMatchObject({
-      status: "absent",
+    expect(diagnoseOperatorCredential(operatorWebAuthn)).toEqual({
+      status: "unsupported",
       capability: "permission_signer_webauthn",
       profile: operatorWebAuthn,
+      reason: "runtime_integration_unproven",
     });
     expect(Object.isFrozen(diagnoseOwnerCredential(ownerP256))).toBe(true);
   });
