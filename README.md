@@ -37,6 +37,24 @@ The aggregate deliberately does not submit or observe RPC operations. Durable
 storage, the canonical observer, and the Kernel runtime land as separate,
 independently reviewed units.
 
+## Kernel runtime
+
+The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through
+EntryPoint `0.7`. OGP currently recognizes the deployment on Arbitrum Sepolia,
+Ethereum Sepolia, and Robinhood Chain Testnet. It does not retain Kernel 3.3
+profiles or translate their permission representation.
+
+The package owns the native Kernel v4 `Install[]`, validation nonce,
+enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
+KernelFactory at `0xE65C6a17bDB14070977b4AB70f1E7d9cDf441d53` is part of the
+deployment profile and is accepted only after its `UUPS()` binding and the
+EntryPoint, implementation, and factory runtime code hashes, plus the resulting
+account implementation, match that profile.
+
+Account descriptors are process-local evidence handles. After a process reload,
+call `bindKernelV4Account` again before preparing another operation; serialized
+or copied descriptors are deliberately rejected.
+
 ## Development
 
 Requirements:
@@ -47,6 +65,7 @@ Requirements:
 ```sh
 pnpm install
 pnpm check
+pnpm test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
 ```
 
 Automated tests must not contact paid or shared RPC services. Contract and

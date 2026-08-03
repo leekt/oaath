@@ -16,7 +16,7 @@ const identity: GrantIdentity = {
   logicalAccount: {
     kind: "kernel",
     accountIndex: "0",
-    kernelVersion: "0.3.3",
+    kernelVersion: "0.4.0",
     factoryRoute: "meta_factory",
     ownerCredential: {
       kind: "webauthn",
