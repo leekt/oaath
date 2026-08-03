@@ -20,8 +20,11 @@ export type KernelRuntimeAnchorId =
   | "zerodev_sdk.KERNEL_V3_3"
   | "zerodev_sdk.createKernelAccountClient"
   | "zerodev_sdk.uninstallPlugin"
+  | "zerodev_ecdsa_validator.getKernelAddressFromECDSA"
+  | "zerodev_ecdsa_validator.signerToEcdsaValidator"
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
+  | "ogp.createEcdsaKernelOwnerRuntime"
   | "ogp.createLocalKernelHandleOpsAdapter"
   | "ogp.createLocalKernelPermissionUninstallAdapter"
   | "kernel.v3_3"
@@ -85,6 +88,25 @@ interface KernelRuntimeCapabilitiesManifestShape {
       readonly shasum: string;
       readonly publicExports: readonly {
         readonly importPath: string;
+        readonly names: readonly string[];
+      }[];
+    };
+    readonly zerodevEcdsaValidator: {
+      readonly packageName: "@zerodev/ecdsa-validator";
+      readonly packageVersion: "5.4.9";
+      readonly integrity: `sha512-${string}`;
+      readonly shasum: string;
+      readonly npmGitHead: string;
+      readonly source: {
+        readonly repository: "https://github.com/zerodevapp/sdk";
+        readonly path: "plugins/ecdsa";
+        readonly commit: string;
+        readonly packageVersion: "5.4.8";
+        readonly tag: null;
+        readonly alignment: "registry_version_differs_from_git_head_tree";
+      };
+      readonly publicExports: readonly {
+        readonly importPath: "@zerodev/ecdsa-validator";
         readonly names: readonly string[];
       }[];
     };
@@ -173,6 +195,28 @@ const manifest = {
         },
       ],
     },
+    zerodevEcdsaValidator: {
+      packageName: "@zerodev/ecdsa-validator",
+      packageVersion: "5.4.9",
+      integrity:
+        "sha512-9NVE8/sQIKRo42UOoYKkNdmmHJY8VlT4t+2MHD2ipLg21cpbY9fS17TGZh61+Bl3qlqc8pP23I6f89z9im7kuA==",
+      shasum: "106226ac90f52f780f146037a4f1e32f6ccbe3a6",
+      npmGitHead: "8de7ce47e525459a39e731cfe6045d808dd8bb6e",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/ecdsa",
+        commit: "8de7ce47e525459a39e731cfe6045d808dd8bb6e",
+        packageVersion: "5.4.8",
+        tag: null,
+        alignment: "registry_version_differs_from_git_head_tree",
+      },
+      publicExports: [
+        {
+          importPath: "@zerodev/ecdsa-validator",
+          names: ["getKernelAddressFromECDSA", "getValidatorAddress", "signerToEcdsaValidator"],
+        },
+      ],
+    },
   },
   contracts: {
     kernel: {
@@ -199,9 +243,14 @@ const manifest = {
       constraints: ["compatible_plugin_manager_required"],
     },
     owner_ecdsa: {
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/ecdsa-validator"],
+      status: "available",
+      anchors: [
+        "zerodev_ecdsa_validator.getKernelAddressFromECDSA",
+        "zerodev_ecdsa_validator.signerToEcdsaValidator",
+        "ogp.createEcdsaKernelOwnerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
     },
     owner_p256: {
       status: "unsupported",
