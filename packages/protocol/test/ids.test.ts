@@ -1,0 +1,116 @@
+import { describe, expect, it } from "vitest";
+import {
+  deriveMaterializationId,
+  OaathProtocolError,
+  parseAccountId,
+  parseClientId,
+  parseDeviceId,
+  parseGrantId,
+  parseMaterializationId,
+  parseOperationId,
+  parseSubjectId,
+} from "../src/index.js";
+
+const hash = `0x${"ab".repeat(32)}`;
+
+function expectIdError(action: () => unknown): void {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(OaathProtocolError);
+    expect(error).toMatchObject({ code: "protocol_id_invalid" });
+    return;
+  }
+  throw new Error("Expected protocol_id_invalid");
+}
+
+describe("canonical protocol ids", () => {
+  it("accepts one bounded lowercase shape for client, device, and account ids", () => {
+    for (const parse of [parseClientId, parseDeviceId, parseAccountId]) {
+      expect(parse("oaath-browser.1_x")).toBe("oaath-browser.1_x");
+      expect(parse("a".repeat(64))).toBe("a".repeat(64));
+      for (const value of [
+        "",
+        "A",
+        "-leading",
+        ".leading",
+        "space id",
+        "a".repeat(65),
+        " padded",
+        "tab\t",
+        "id\0",
+        123,
+        null,
+        undefined,
+        Object("string"),
+      ]) {
+        expectIdError(() => parse(value));
+      }
+    }
+  });
+
+  it("keeps the existing bounded canonical grantId shape", () => {
+    expect(parseGrantId("permission-request-1")).toBe("permission-request-1");
+    expect(parseGrantId("Any Bounded String #1")).toBe("Any Bounded String #1");
+    expect(parseGrantId("g".repeat(256))).toBe("g".repeat(256));
+    for (const value of ["", " untrimmed", "untrimmed ", "g".repeat(257), 1, null, {}]) {
+      expectIdError(() => parseGrantId(value));
+    }
+  });
+
+  it("requires derived 32-byte hashes for subject and operation ids", () => {
+    for (const parse of [parseSubjectId, parseOperationId]) {
+      expect(parse(hash)).toBe(hash);
+      for (const value of [
+        hash.toUpperCase(),
+        hash.slice(0, -1),
+        `${hash}0`,
+        hash.slice(2),
+        "0x",
+        null,
+      ]) {
+        expectIdError(() => parse(value));
+      }
+    }
+  });
+
+  it("derives and re-parses the chain-local materialization id", () => {
+    expect(deriveMaterializationId("grant-1", 8453)).toBe("grant-1#8453");
+    expect(parseMaterializationId("grant-1#8453")).toBe("grant-1#8453");
+    // A grantId may itself contain "#": the last separator owns the chain.
+    expect(deriveMaterializationId("grant#7", 1)).toBe("grant#7#1");
+    expect(parseMaterializationId("grant#7#1")).toBe("grant#7#1");
+
+    for (const chainId of [0, -1, -0, 1.5, "1", null, undefined, Number.MAX_SAFE_INTEGER + 1]) {
+      expectIdError(() => deriveMaterializationId("grant-1", chainId));
+    }
+    expectIdError(() => deriveMaterializationId(" untrimmed ", 1));
+    for (const value of [
+      "grant-1",
+      "#1",
+      "grant-1#",
+      "grant-1#0",
+      "grant-1#01",
+      "grant-1#-1",
+      "grant-1#1.0",
+      `grant-1#${"9".repeat(16)}`,
+      " untrimmed #1",
+      42,
+    ]) {
+      expectIdError(() => parseMaterializationId(value));
+    }
+  });
+
+  it("routes failures to a caller-supplied owner code when one is given", () => {
+    const fail = (message: string): never => {
+      throw new RangeError(message);
+    };
+    expect(() => parseClientId("BAD", fail)).toThrow(RangeError);
+    expect(() => parseGrantId("", fail)).toThrow(RangeError);
+    expect(() => parseSubjectId("0x", fail)).toThrow(RangeError);
+    expect(() => parseMaterializationId(1, fail)).toThrow(RangeError);
+    expect(() => parseMaterializationId("no-separator", fail)).toThrow(RangeError);
+    expect(() => parseMaterializationId("grant#x", fail)).toThrow(RangeError);
+    expect(() => deriveMaterializationId("grant", 0, fail)).toThrow(RangeError);
+  });
+});
