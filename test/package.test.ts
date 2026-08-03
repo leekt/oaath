@@ -3,10 +3,13 @@ import * as ogp from "../src/index.js";
 import * as testing from "../src/testing.js";
 
 describe("package boundary", () => {
-  it("exports only accepted aggregate, Kernel operation, observer, runner, and store owners", () => {
+  it("exports only accepted policy, aggregate, Kernel, observer, runner, and store owners", () => {
     expect(Object.keys(ogp).sort()).toEqual([
       "GrantStore",
       "KERNEL_RUNTIME_CAPABILITIES",
+      "OGP_GRANT_POLICY_HASH_DOMAIN",
+      "OGP_GRANT_POLICY_USAGE_VERSION",
+      "OGP_GRANT_POLICY_VERSION",
       "OGP_GRANT_RECORD_VERSION",
       "OGP_GRANT_STORE_RECORD_VERSION",
       "OGP_KERNEL_ACCOUNT_PROFILE_VERSION",
@@ -17,6 +20,7 @@ describe("package boundary", () => {
       "OGP_OWNER_CREDENTIAL_PROFILE_VERSION",
       "OGP_PREPARED_USER_OPERATION_VERSION",
       "OgpGrantError",
+      "OgpGrantPolicyError",
       "OgpIdentityProfileError",
       "OgpKernelHandleOpsAdapterError",
       "OgpKernelPermissionObserverError",
@@ -42,9 +46,14 @@ describe("package boundary", () => {
       "deriveOperationId",
       "diagnoseOperatorCredential",
       "diagnoseOwnerCredential",
+      "encodeGrantPolicy",
+      "evaluateGrantPolicyCoverage",
       "getKernelRuntimeCapability",
+      "hashGrantPolicy",
+      "isGrantPolicyAttenuation",
       "operationOccupiesLane",
       "parseGrant",
+      "parseGrantPolicy",
       "parseKernelAccountProfile",
       "parseOperation",
       "parseOperatorCredentialProfile",
