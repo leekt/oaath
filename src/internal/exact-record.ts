@@ -2,24 +2,32 @@ export type ExactRecord = Record<string, unknown>;
 export type CaptureContext = WeakSet<object>;
 export type CaptureFailure = (message: string) => never;
 
+function reflect<T>(read: () => T, label: string, fail: CaptureFailure): T {
+  try {
+    return read();
+  } catch {
+    return fail(`${label} is invalid`);
+  }
+}
+
 export function captureRecord(
   value: unknown,
   label: string,
   context: CaptureContext,
   fail: CaptureFailure,
 ): ExactRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!value || typeof value !== "object" || reflect(() => Array.isArray(value), label, fail)) {
     return fail(`${label} must be a plain object`);
   }
   if (context.has(value)) return fail(`${label} aliases another record`);
   context.add(value);
 
-  const prototype = Reflect.getPrototypeOf(value);
+  const prototype = reflect(() => Reflect.getPrototypeOf(value), label, fail);
+  const descriptors = reflect(() => Object.getOwnPropertyDescriptors(value), label, fail);
   if (prototype !== Object.prototype && prototype !== null) {
     return fail(`${label} must be a plain object`);
   }
 
-  const descriptors = Object.getOwnPropertyDescriptors(value);
   const captured: ExactRecord = Object.create(null) as ExactRecord;
   for (const key of Reflect.ownKeys(descriptors)) {
     if (typeof key !== "string") return fail(`${label} contains a symbol field`);
@@ -61,17 +69,25 @@ export function captureDenseArray(
   context: CaptureContext,
   fail: CaptureFailure,
 ): readonly unknown[] {
-  if (!Array.isArray(value)) return fail(`${label} must be an array`);
+  if (!value || typeof value !== "object" || !reflect(() => Array.isArray(value), label, fail)) {
+    return fail(`${label} must be an array`);
+  }
   if (context.has(value)) return fail(`${label} aliases another record`);
   context.add(value);
-  if (Reflect.getPrototypeOf(value) !== Array.prototype) {
+  const prototype = reflect(() => Reflect.getPrototypeOf(value), label, fail);
+  const descriptors = reflect(
+    () =>
+      Object.getOwnPropertyDescriptors(value) as unknown as Record<
+        PropertyKey,
+        PropertyDescriptor | undefined
+      >,
+    label,
+    fail,
+  );
+  if (prototype !== Array.prototype) {
     return fail(`${label} must be an ordinary array`);
   }
 
-  const descriptors = Object.getOwnPropertyDescriptors(value) as unknown as Record<
-    PropertyKey,
-    PropertyDescriptor | undefined
-  >;
   const lengthDescriptor = descriptors.length;
   if (!lengthDescriptor || !("value" in lengthDescriptor)) {
     return fail(`${label} has an invalid length`);
