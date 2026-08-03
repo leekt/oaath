@@ -204,6 +204,31 @@ export {
   OgpOperationRunnerError,
 } from "./operation-runner.js";
 export type {
+  ApplyPermissionDecisionInput,
+  ApplyPermissionDecisionResult,
+  ApprovePermissionDecision,
+  PermissionDecision,
+  PermissionDecisionObservation,
+  PermissionProtocolErrorCode,
+  PermissionRequest,
+  RejectPermissionDecision,
+} from "./permission-protocol.js";
+export {
+  applyPermissionDecision,
+  createGrantFromPermissionRequest,
+  encodePermissionDecision,
+  encodePermissionRequest,
+  hashPermissionDecision,
+  hashPermissionRequest,
+  OGP_PERMISSION_DECISION_HASH_DOMAIN,
+  OGP_PERMISSION_DECISION_VERSION,
+  OGP_PERMISSION_REQUEST_HASH_DOMAIN,
+  OGP_PERMISSION_REQUEST_VERSION,
+  OgpPermissionProtocolError,
+  parsePermissionDecision,
+  parsePermissionRequest,
+} from "./permission-protocol.js";
+export type {
   PreparedEntryPoint,
   PreparedFactory,
   PreparedPaymaster,
