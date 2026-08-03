@@ -553,9 +553,9 @@ export async function createP256KernelOwnerRuntime(
     let deployedVerified = false;
 
     async function restore(readsValue: unknown): Promise<Readonly<RestoredP256KernelOwner>> {
-      const reads = captureReads(readsValue);
       substrateVerified = false;
       deployedVerified = false;
+      const reads = captureReads(readsValue);
       async function read(request: P256KernelOwnerRestorationReadRequest): Promise<unknown> {
         try {
           return await Reflect.apply(reads.read, undefined, [Object.freeze(request)]);

@@ -285,20 +285,8 @@ describe("P-256 Kernel owner runtime", () => {
     expect(current.owner.calls()).toBe(1);
 
     await expectCode(
-      () =>
-        current.runtime.restore({
-          async read(request: P256KernelOwnerRestorationReadRequest) {
-            if (request.type === "chain_id") return 31_337;
-            if (request.type === "p256_validator_code") {
-              return fixture.p256Validator.runtimeBytecode;
-            }
-            if (request.type === "p256_precompile") return PRECOMPILE_SUCCESS;
-            if (request.type === "account_code") return "0x60";
-            if (request.type === "kernel_root_validator") return `0x01${otherAddress.slice(2)}`;
-            return current.owner.publicKey;
-          },
-        }),
-      "p256_kernel_owner_binding_mismatch",
+      () => current.runtime.restore({ read: async () => 31_337, extra: true }),
+      "p256_kernel_owner_restoration_unreadable",
     );
     await expectCode(
       () => current.runtime.signPreparedUserOperation(operation),
@@ -374,15 +362,15 @@ describe("P-256 Kernel owner runtime", () => {
         "p256_kernel_owner_restoration_unreadable",
       ],
       [
-        "root unreadable",
+        "root mismatch",
         (request) => {
           if (request.type === "chain_id") return 31_337;
           if (request.type === "p256_validator_code") return fixture.p256Validator.runtimeBytecode;
           if (request.type === "p256_precompile") return PRECOMPILE_SUCCESS;
           if (request.type === "account_code") return "0x60";
-          return "0x01";
+          return `0x01${otherAddress.slice(2)}`;
         },
-        "p256_kernel_owner_restoration_unreadable",
+        "p256_kernel_owner_binding_mismatch",
       ],
       [
         "key mismatch",
