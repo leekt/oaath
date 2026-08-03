@@ -43,6 +43,12 @@ const operatorEcdsa: OperatorCredentialProfile = {
   address: `0x${"33".repeat(20)}`,
 };
 
+const operatorP256: OperatorCredentialProfile = {
+  version: "ogp.operator-credential-profile/v1",
+  kind: "p256",
+  publicKey: p256PublicKey,
+};
+
 const operatorWebAuthn: OperatorCredentialProfile = {
   version: "ogp.operator-credential-profile/v1",
   kind: "webauthn",
@@ -107,18 +113,13 @@ describe("identity profile codecs", () => {
     );
   });
 
-  it("accepts only the first-party ECDSA and WebAuthn operator shapes", () => {
+  it("accepts the three distinct first-party operator shapes", () => {
     expect(OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION).toBe("ogp.operator-credential-profile/v1");
     expect(parseOperatorCredentialProfile(operatorEcdsa)).toEqual(operatorEcdsa);
+    expect(parseOperatorCredentialProfile(operatorP256)).toEqual(operatorP256);
     expect(parseOperatorCredentialProfile(operatorWebAuthn)).toEqual(operatorWebAuthn);
-    expectProfileError(
-      () =>
-        parseOperatorCredentialProfile({
-          version: "ogp.operator-credential-profile/v1",
-          kind: "p256",
-          publicKey: p256PublicKey,
-        }),
-      "operator_credential_profile_invalid",
+    expect(parseOperatorCredentialProfile(operatorP256)).not.toEqual(
+      parseOperatorCredentialProfile(operatorWebAuthn),
     );
   });
 
@@ -137,6 +138,15 @@ describe("identity profile codecs", () => {
             publicKey,
           }),
         "owner_credential_profile_invalid",
+      );
+      expectProfileError(
+        () =>
+          parseOperatorCredentialProfile({
+            version: "ogp.operator-credential-profile/v1",
+            kind: "p256",
+            publicKey,
+          }),
+        "operator_credential_profile_invalid",
       );
     }
   });
@@ -182,29 +192,33 @@ describe("identity profile codecs", () => {
   it("diagnoses only the selected exact credential kind from the pinned runtime", () => {
     expect(diagnoseOwnerCredential(ownerEcdsa)).toEqual({
       status: "available",
-      capability: "owner_ecdsa",
+      capability: "kernel_validator_ecdsa",
       profile: ownerEcdsa,
     });
     expect(diagnoseOwnerCredential(ownerWebAuthn)).toEqual({
       status: "available",
-      capability: "owner_webauthn",
+      capability: "kernel_validator_webauthn",
       profile: ownerWebAuthn,
     });
     expect(diagnoseOwnerCredential(ownerP256)).toEqual({
       status: "available",
-      capability: "owner_p256",
+      capability: "kernel_validator_p256",
       profile: ownerP256,
     });
     expect(diagnoseOperatorCredential(operatorEcdsa)).toEqual({
       status: "available",
-      capability: "permission_signer_ecdsa",
+      capability: "kernel_validator_ecdsa",
       profile: operatorEcdsa,
     });
+    expect(diagnoseOperatorCredential(operatorP256)).toEqual({
+      status: "available",
+      capability: "kernel_validator_p256",
+      profile: operatorP256,
+    });
     expect(diagnoseOperatorCredential(operatorWebAuthn)).toEqual({
-      status: "unsupported",
-      capability: "permission_signer_webauthn",
+      status: "available",
+      capability: "kernel_validator_webauthn",
       profile: operatorWebAuthn,
-      reason: "runtime_integration_unproven",
     });
     expect(Object.isFrozen(diagnoseOwnerCredential(ownerP256))).toBe(true);
   });

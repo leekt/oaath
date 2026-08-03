@@ -30,6 +30,8 @@ const argumentWord = `0x${"22".repeat(32)}` as const;
 const ownerAddress = `0x${"33".repeat(20)}` as const;
 const operatorAddress = `0x${"44".repeat(20)}` as const;
 const capabilityHash = `0x${"55".repeat(32)}` as const;
+const p256PublicKey =
+  "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5" as const;
 
 const policy: GrantPolicy = {
   version: "ogp.grant-policy/v1",
@@ -314,6 +316,30 @@ describe("PermissionRequest current codec", () => {
     for (const mutation of mutations) {
       expect(hashPermissionRequest(mutation)).not.toBe(hashPermissionRequest(request));
     }
+  });
+
+  it("binds raw P-256 and WebAuthn operators to distinct profile hashes", () => {
+    const rawP256: PermissionRequest = {
+      ...clone(request),
+      operatorCredential: {
+        version: "ogp.operator-credential-profile/v1",
+        kind: "p256",
+        publicKey: p256PublicKey,
+      },
+    };
+    const webAuthn: PermissionRequest = {
+      ...clone(request),
+      operatorCredential: {
+        version: "ogp.operator-credential-profile/v1",
+        kind: "webauthn",
+        publicKey: p256PublicKey,
+        authenticatorIdHash: `0x${"88".repeat(32)}`,
+      },
+    };
+
+    expect(parsePermissionRequest(rawP256).operatorCredential).toEqual(rawP256.operatorCredential);
+    expect(hashPermissionRequest(rawP256)).not.toBe(hashPermissionRequest(request));
+    expect(hashPermissionRequest(rawP256)).not.toBe(hashPermissionRequest(webAuthn));
   });
 
   it("requires finite policy authority to end before the exclusive Grant expiry", () => {

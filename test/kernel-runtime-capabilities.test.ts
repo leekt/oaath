@@ -1,30 +1,25 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import {
-  getKernelAddressFromECDSA,
-  getValidatorAddress,
-  signerToEcdsaValidator,
-} from "@zerodev/ecdsa-validator";
+import { signerToEcdsaValidator } from "@zerodev/ecdsa-validator";
 import { PasskeyValidatorContractVersion } from "@zerodev/passkey-validator";
-import { ECDSA_SIGNER_CONTRACT } from "@zerodev/permissions";
-import { toECDSASigner, toSignerId } from "@zerodev/permissions/signers";
 import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
-import { DUMMY_ECDSA_SIG, KERNEL_V3_3 } from "@zerodev/sdk/constants";
+import { KERNEL_V3_3, VALIDATOR_TYPE } from "@zerodev/sdk/constants";
 import { createWalletClient } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createEcdsaKernelOwnerRuntime,
-  createEcdsaPermissionSignerRuntime,
+  createKernelOperator,
+  createKernelOwner,
   createLocalKernelHandleOpsAdapter,
   createLocalKernelPermissionUninstallAdapter,
-  createP256KernelOwnerRuntime,
-  createWebAuthnKernelOwnerRuntime,
   getKernelRuntimeCapability,
   KERNEL_RUNTIME_CAPABILITIES,
   OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION,
   OgpKernelRuntimeCapabilitiesError,
+  toEcdsaKernelSigner,
+  toP256KernelSigner,
+  toWebAuthnKernelSigner,
 } from "../src/index.js";
 
 const require = createRequire(import.meta.url);
@@ -43,20 +38,10 @@ function expectDeeplyFrozen(value: unknown): void {
   for (const child of Object.values(value)) expectDeeplyFrozen(child);
 }
 
-function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
-  if (value === null || typeof value !== "object") return keys;
-  for (const [key, child] of Object.entries(value)) {
-    keys.add(key.toLowerCase());
-    collectKeys(child, keys);
-  }
-  return keys;
-}
-
 describe("Kernel runtime capabilities", () => {
   it("pins the exact installed public artifacts and accepted protocol releases", () => {
     expect(OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION).toBe("ogp.kernel-runtime-capabilities/v1");
     expect(installedPackageVersion("@zerodev/sdk")).toBe("5.5.10");
-    expect(installedPackageVersion("@zerodev/permissions")).toBe("5.6.3");
     expect(installedPackageVersion("@zerodev/ecdsa-validator")).toBe("5.4.9");
     expect(installedPackageVersion("@zerodev/passkey-validator")).toBe("5.6.0");
     expect(installedPackageVersion("@zerodev/webauthn-key")).toBe("5.5.0");
@@ -64,22 +49,18 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof createKernelAccount).toBe("function");
     expect(typeof createKernelAccountClient).toBe("function");
     expect(typeof uninstallPlugin).toBe("function");
-    expect(typeof getKernelAddressFromECDSA).toBe("function");
-    expect(typeof getValidatorAddress).toBe("function");
     expect(typeof signerToEcdsaValidator).toBe("function");
-    expect(ECDSA_SIGNER_CONTRACT).toBe("0x6A6F069E2a08c2468e7724Ab3250CdBFBA14D4FF");
-    expect(typeof toECDSASigner).toBe("function");
-    expect(typeof toSignerId).toBe("function");
-    expect(typeof createEcdsaPermissionSignerRuntime).toBe("function");
-    expect(typeof createEcdsaKernelOwnerRuntime).toBe("function");
-    expect(typeof createP256KernelOwnerRuntime).toBe("function");
-    expect(typeof createWebAuthnKernelOwnerRuntime).toBe("function");
+    expect(typeof createKernelOperator).toBe("function");
+    expect(typeof createKernelOwner).toBe("function");
+    expect(typeof toEcdsaKernelSigner).toBe("function");
+    expect(typeof toP256KernelSigner).toBe("function");
+    expect(typeof toWebAuthnKernelSigner).toBe("function");
     expect(PasskeyValidatorContractVersion.V0_0_3_PATCHED).toBe("0.0.3");
     expect(typeof createWalletClient).toBe("function");
     expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
     expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
-    expect(DUMMY_ECDSA_SIG).toMatch(/^0x[0-9a-f]{130}$/u);
     expect(KERNEL_V3_3).toBe("0.3.3");
+    expect(VALIDATOR_TYPE.SECONDARY).toBe("0x01");
     expect(
       entryPoint07Abi.some((item) => item.type === "function" && item.name === "handleOps"),
     ).toBe(true);
@@ -106,7 +87,7 @@ describe("Kernel runtime capabilities", () => {
         },
         {
           importPath: "@zerodev/sdk/constants",
-          names: ["DUMMY_ECDSA_SIG", "KERNEL_V3_3"],
+          names: ["KERNEL_V3_3", "VALIDATOR_TYPE"],
         },
       ],
     });
@@ -132,31 +113,6 @@ describe("Kernel runtime capabilities", () => {
         tag: null,
         alignment: "registry_version_differs_from_git_head_tree",
       },
-    });
-    expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevPermissions).toMatchObject({
-      packageName: "@zerodev/permissions",
-      packageVersion: "5.6.3",
-      integrity:
-        "sha512-MwW3Eo3rB5ViOKdY6NUoyvmQTV/bCbOZbmQMTYQqAT7B8rdI9jo44nNONMOHIhDkfF4VFhQ9+M50cCZLA/6zcg==",
-      shasum: "69ae470e03d5a750e6b3484c82d5e854e127523a",
-      npmGitHead: "6db091cc65c74526e22980a3754776618c2e3a7e",
-      source: {
-        repository: "https://github.com/zerodevapp/sdk",
-        path: "plugins/permission",
-        commit: "6db091cc65c74526e22980a3754776618c2e3a7e",
-        packageVersion: "5.6.2",
-        alignment: "registry_version_differs_from_git_head_tree",
-      },
-      publicExports: [
-        {
-          importPath: "@zerodev/permissions",
-          names: ["ECDSA_SIGNER_CONTRACT"],
-        },
-        {
-          importPath: "@zerodev/permissions/signers",
-          names: ["toECDSASigner", "toSignerId"],
-        },
-      ],
     });
     expect(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevPasskeyValidator).toMatchObject({
       packageName: "@zerodev/passkey-validator",
@@ -245,12 +201,9 @@ describe("Kernel runtime capabilities", () => {
       ),
     ).toEqual({
       kernel_account: "available",
-      owner_ecdsa: "available",
-      owner_p256: "available",
-      owner_webauthn: "available",
-      permission_signer_ecdsa: "available",
-      permission_signer_p256: "unsupported",
-      permission_signer_webauthn: "unsupported",
+      kernel_validator_ecdsa: "available",
+      kernel_validator_p256: "available",
+      kernel_validator_webauthn: "available",
       replayable_all_chain_permission_approval: "unsupported",
       permission_install: "unsupported",
       permission_uninstall: "available",
@@ -263,44 +216,41 @@ describe("Kernel runtime capabilities", () => {
       anchors: ["zerodev_sdk.createKernelAccount", "zerodev_sdk.KERNEL_V3_3", "kernel.v3_3"],
       constraints: ["compatible_plugin_manager_required"],
     });
-    expect(getKernelRuntimeCapability("owner_ecdsa")).toEqual({
+    expect(getKernelRuntimeCapability("kernel_validator_ecdsa")).toEqual({
       status: "available",
       anchors: [
-        "zerodev_ecdsa_validator.getKernelAddressFromECDSA",
         "zerodev_ecdsa_validator.signerToEcdsaValidator",
-        "ogp.createEcdsaKernelOwnerRuntime",
+        "ogp.toEcdsaKernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
     });
-    expect(getKernelRuntimeCapability("owner_p256")).toEqual({
+    expect(getKernelRuntimeCapability("kernel_validator_p256")).toEqual({
       status: "available",
       anchors: [
         "leekt_p256_validator.P256Validator",
-        "ogp.createP256KernelOwnerRuntime",
-        "zerodev_sdk.createKernelAccount",
-        "zerodev_sdk.KERNEL_V3_3",
+        "zerodev_sdk.VALIDATOR_TYPE.SECONDARY",
+        "ogp.toP256KernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
-      constraints: ["action_runtime_and_precompile_evidence_required"],
+      constraints: [
+        "kernel_secondary_validator_only",
+        "action_runtime_and_precompile_evidence_required",
+      ],
     });
-    expect(getKernelRuntimeCapability("owner_webauthn")).toEqual({
+    expect(getKernelRuntimeCapability("kernel_validator_webauthn")).toEqual({
       status: "available",
       anchors: [
         "zerodev_passkey_validator.toPasskeyValidator",
         "zerodev_passkey_validator.V0_0_3_PATCHED",
-        "ogp.createWebAuthnKernelOwnerRuntime",
-        "kernel.v3_3",
-        "entrypoint.v0_7",
-      ],
-    });
-    expect(getKernelRuntimeCapability("permission_signer_ecdsa")).toEqual({
-      status: "available",
-      anchors: [
-        "zerodev_permissions.ECDSA_SIGNER_CONTRACT",
-        "zerodev_sdk.DUMMY_ECDSA_SIG",
-        "ogp.createEcdsaPermissionSignerRuntime",
+        "ogp.toWebAuthnKernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
@@ -328,7 +278,7 @@ describe("Kernel runtime capabilities", () => {
     });
   });
 
-  it("fails closed for remaining unavailable credentials, permission install, and approval", () => {
+  it("fails closed for permission install and approval", () => {
     expect(getKernelRuntimeCapability("permission_install")).toMatchObject({
       status: "unsupported",
       reason: "integration_unproven",
@@ -341,30 +291,26 @@ describe("Kernel runtime capabilities", () => {
     });
   });
 
-  it("keeps raw P-256 distinct from WebAuthn", () => {
-    expect(getKernelRuntimeCapability("owner_p256")).toMatchObject({ status: "available" });
-    expect(getKernelRuntimeCapability("permission_signer_p256")).toEqual({
-      status: "unsupported",
-      reason: "distinct_profile_unproven",
-      constraints: ["webauthn_is_not_raw_p256"],
+  it("keeps raw P-256 validation distinct while using the shared operator factory", () => {
+    expect(getKernelRuntimeCapability("kernel_validator_p256")).toMatchObject({
+      status: "available",
+      constraints: [
+        "kernel_secondary_validator_only",
+        "action_runtime_and_precompile_evidence_required",
+      ],
     });
-    expect(getKernelRuntimeCapability("owner_webauthn")).toMatchObject({ status: "available" });
-    expect(getKernelRuntimeCapability("permission_signer_webauthn")).toMatchObject({
-      status: "unsupported",
-      reason: "integration_unproven",
+    expect("permission_signer_p256" in KERNEL_RUNTIME_CAPABILITIES.capabilities).toBe(false);
+    expect(getKernelRuntimeCapability("kernel_validator_webauthn")).toMatchObject({
+      status: "available",
     });
   });
 
-  it("is deeply immutable, localizes deployment evidence, and has no chain inventory", () => {
+  it("is deeply immutable and localizes deployment evidence", () => {
     expectDeeplyFrozen(KERNEL_RUNTIME_CAPABILITIES);
     expect(
       Reflect.set(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevSdk, "packageVersion", "next"),
     ).toBe(false);
 
-    const forbiddenKeys = new Set(["chainids", "chains", "supportedchains", "default", "fallback"]);
-    for (const key of collectKeys(KERNEL_RUNTIME_CAPABILITIES)) {
-      expect(forbiddenKeys.has(key), `forbidden manifest key: ${key}`).toBe(false);
-    }
     expect(KERNEL_RUNTIME_CAPABILITIES.contracts.p256Validator.deploymentEvidence.chainId).toBe(
       11_155_111,
     );

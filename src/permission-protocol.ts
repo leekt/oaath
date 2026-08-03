@@ -314,6 +314,14 @@ function hashOperatorCredential(profile: OperatorCredentialProfile): `0x${string
       ),
     );
   }
+  if (profile.kind === "p256") {
+    return keccak256(
+      encodeAbiParameters(
+        [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "bytes" }],
+        [OPERATOR_PROFILE_HASH_DOMAIN, profile.version, profile.kind, profile.publicKey],
+      ),
+    );
+  }
   return keccak256(
     encodeAbiParameters(
       [

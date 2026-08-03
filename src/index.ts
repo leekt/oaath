@@ -1,25 +1,4 @@
 export type {
-  EcdsaKernelOwnerErrorCode,
-  EcdsaKernelOwnerRestorationReadCapability,
-  EcdsaKernelOwnerRestorationReadRequest,
-  EcdsaKernelOwnerRuntime,
-  EcdsaOwnerSignerCapability,
-  RestoredEcdsaKernelOwner,
-} from "./ecdsa-kernel-owner.js";
-export {
-  createEcdsaKernelOwnerRuntime,
-  OgpEcdsaKernelOwnerError,
-} from "./ecdsa-kernel-owner.js";
-export type {
-  EcdsaPermissionSignerCapability,
-  EcdsaPermissionSignerErrorCode,
-  EcdsaPermissionSignerRuntime,
-} from "./ecdsa-permission-signer.js";
-export {
-  createEcdsaPermissionSignerRuntime,
-  OgpEcdsaPermissionSignerError,
-} from "./ecdsa-permission-signer.js";
-export type {
   ActiveGrant,
   ApplicationBinding,
   ApprovedGrant,
@@ -94,6 +73,7 @@ export type {
   OperatorCredentialProfile,
   OwnerCredentialKind,
   OwnerCredentialProfile,
+  P256OperatorCredentialProfile,
   P256OwnerCredentialProfile,
   WebAuthnOperatorCredentialProfile,
   WebAuthnOwnerCredentialProfile,
@@ -110,6 +90,9 @@ export {
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
 } from "./identity-profile.js";
+export { createKernelOperator } from "./kernel/operator.js";
+export { createKernelOwner } from "./kernel/owner.js";
+export type { CreateKernelRuntimeInput } from "./kernel/runtime.js";
 export type {
   KernelPermissionObserverErrorCode,
   KernelPermissionRemovalObserver,
@@ -225,18 +208,6 @@ export {
   OgpOperationRunnerError,
 } from "./operation-runner.js";
 export type {
-  P256KernelOwnerErrorCode,
-  P256KernelOwnerRestorationReadCapability,
-  P256KernelOwnerRestorationReadRequest,
-  P256KernelOwnerRuntime,
-  P256OwnerSignerCapability,
-  RestoredP256KernelOwner,
-} from "./p256-kernel-owner.js";
-export {
-  createP256KernelOwnerRuntime,
-  OgpP256KernelOwnerError,
-} from "./p256-kernel-owner.js";
-export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,
   ApprovePermissionDecision,
@@ -276,6 +247,18 @@ export {
   parsePreparedUserOperation,
   prepareUserOperation,
 } from "./prepared-user-operation.js";
+export { toEcdsaKernelSigner } from "./signer/ecdsa.js";
+export { toP256KernelSigner } from "./signer/p256.js";
+export type {
+  EcdsaSigningKey,
+  Kernel33Validator,
+  KernelSigner,
+  KernelSignerErrorCode,
+  P256SigningKey,
+  WebAuthnSigningKey,
+} from "./signer/types.js";
+export { OgpKernelSignerError } from "./signer/types.js";
+export { toWebAuthnKernelSigner } from "./signer/webauthn.js";
 export type {
   GrantStoreAdapter,
   GrantStoreCompareAndSwapResult,
@@ -294,16 +277,3 @@ export {
   OgpStoreError,
   OperationStore,
 } from "./store.js";
-export type {
-  RestoredWebAuthnKernelOwner,
-  WebAuthnKernelOwnerErrorCode,
-  WebAuthnKernelOwnerRestorationReadCapability,
-  WebAuthnKernelOwnerRestorationReadRequest,
-  WebAuthnKernelOwnerRuntime,
-  WebAuthnOwnerAssertion,
-  WebAuthnOwnerSignerCapability,
-} from "./webauthn-kernel-owner.js";
-export {
-  createWebAuthnKernelOwnerRuntime,
-  OgpWebAuthnKernelOwnerError,
-} from "./webauthn-kernel-owner.js";

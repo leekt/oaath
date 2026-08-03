@@ -3,12 +3,9 @@ export const OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION =
 
 export type KernelRuntimeProfile =
   | "kernel_account"
-  | "owner_ecdsa"
-  | "owner_p256"
-  | "owner_webauthn"
-  | "permission_signer_ecdsa"
-  | "permission_signer_p256"
-  | "permission_signer_webauthn"
+  | "kernel_validator_ecdsa"
+  | "kernel_validator_p256"
+  | "kernel_validator_webauthn"
   | "replayable_all_chain_permission_approval"
   | "permission_install"
   | "permission_uninstall"
@@ -18,20 +15,19 @@ export type KernelRuntimeProfile =
 export type KernelRuntimeAnchorId =
   | "zerodev_sdk.createKernelAccount"
   | "zerodev_sdk.KERNEL_V3_3"
-  | "zerodev_sdk.DUMMY_ECDSA_SIG"
+  | "zerodev_sdk.VALIDATOR_TYPE.SECONDARY"
   | "zerodev_sdk.createKernelAccountClient"
   | "zerodev_sdk.uninstallPlugin"
-  | "zerodev_ecdsa_validator.getKernelAddressFromECDSA"
   | "zerodev_ecdsa_validator.signerToEcdsaValidator"
   | "zerodev_passkey_validator.toPasskeyValidator"
   | "zerodev_passkey_validator.V0_0_3_PATCHED"
-  | "zerodev_permissions.ECDSA_SIGNER_CONTRACT"
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
-  | "ogp.createEcdsaKernelOwnerRuntime"
-  | "ogp.createEcdsaPermissionSignerRuntime"
-  | "ogp.createP256KernelOwnerRuntime"
-  | "ogp.createWebAuthnKernelOwnerRuntime"
+  | "ogp.createKernelOperator"
+  | "ogp.createKernelOwner"
+  | "ogp.toEcdsaKernelSigner"
+  | "ogp.toP256KernelSigner"
+  | "ogp.toWebAuthnKernelSigner"
   | "ogp.createLocalKernelHandleOpsAdapter"
   | "ogp.createLocalKernelPermissionUninstallAdapter"
   | "kernel.v3_3"
@@ -40,7 +36,6 @@ export type KernelRuntimeAnchorId =
 
 export type KernelRuntimeUnsupportedReason =
   | "package_not_installed"
-  | "distinct_profile_unproven"
   | "integration_unproven"
   | "incompatible_approval_shape";
 
@@ -48,9 +43,9 @@ export type KernelRuntimeConstraint =
   | "action_runtime_and_precompile_evidence_required"
   | "compatible_plugin_manager_required"
   | "generic_plugin_primitive_only"
+  | "kernel_secondary_validator_only"
   | "verifying_contract_address_bound"
-  | "finite_account_enumeration_only"
-  | "webauthn_is_not_raw_p256";
+  | "finite_account_enumeration_only";
 
 interface AvailableKernelRuntimeCapability {
   readonly status: "available";
@@ -132,7 +127,6 @@ interface KernelRuntimeCapabilitiesManifestShape {
         readonly names: readonly string[];
       }[];
     };
-    readonly zerodevPermissions: PublishedPackageShape;
     readonly zerodevPasskeyValidator: PublishedPackageShape;
     readonly zerodevWebAuthnKey: PublishedPackageShape;
   };
@@ -234,7 +228,7 @@ const manifest = {
         },
         {
           importPath: "@zerodev/sdk/constants",
-          names: ["DUMMY_ECDSA_SIG", "KERNEL_V3_3"],
+          names: ["KERNEL_V3_3", "VALIDATOR_TYPE"],
         },
       ],
     },
@@ -273,32 +267,7 @@ const manifest = {
       publicExports: [
         {
           importPath: "@zerodev/ecdsa-validator",
-          names: ["getKernelAddressFromECDSA", "getValidatorAddress", "signerToEcdsaValidator"],
-        },
-      ],
-    },
-    zerodevPermissions: {
-      packageName: "@zerodev/permissions",
-      packageVersion: "5.6.3",
-      integrity:
-        "sha512-MwW3Eo3rB5ViOKdY6NUoyvmQTV/bCbOZbmQMTYQqAT7B8rdI9jo44nNONMOHIhDkfF4VFhQ9+M50cCZLA/6zcg==",
-      shasum: "69ae470e03d5a750e6b3484c82d5e854e127523a",
-      npmGitHead: "6db091cc65c74526e22980a3754776618c2e3a7e",
-      source: {
-        repository: "https://github.com/zerodevapp/sdk",
-        path: "plugins/permission",
-        commit: "6db091cc65c74526e22980a3754776618c2e3a7e",
-        packageVersion: "5.6.2",
-        alignment: "registry_version_differs_from_git_head_tree",
-      },
-      publicExports: [
-        {
-          importPath: "@zerodev/permissions",
-          names: ["ECDSA_SIGNER_CONTRACT"],
-        },
-        {
-          importPath: "@zerodev/permissions/signers",
-          names: ["toECDSASigner", "toSignerId"],
+          names: ["signerToEcdsaValidator"],
         },
       ],
     },
@@ -319,7 +288,7 @@ const manifest = {
       publicExports: [
         {
           importPath: "@zerodev/passkey-validator",
-          names: ["getValidatorAddress", "PasskeyValidatorContractVersion", "toPasskeyValidator"],
+          names: ["PasskeyValidatorContractVersion", "toPasskeyValidator"],
         },
       ],
     },
@@ -405,56 +374,44 @@ const manifest = {
       anchors: ["zerodev_sdk.createKernelAccount", "zerodev_sdk.KERNEL_V3_3", "kernel.v3_3"],
       constraints: ["compatible_plugin_manager_required"],
     },
-    owner_ecdsa: {
+    kernel_validator_ecdsa: {
       status: "available",
       anchors: [
-        "zerodev_ecdsa_validator.getKernelAddressFromECDSA",
         "zerodev_ecdsa_validator.signerToEcdsaValidator",
-        "ogp.createEcdsaKernelOwnerRuntime",
+        "ogp.toEcdsaKernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
     },
-    owner_p256: {
+    kernel_validator_p256: {
       status: "available",
       anchors: [
         "leekt_p256_validator.P256Validator",
-        "ogp.createP256KernelOwnerRuntime",
-        "zerodev_sdk.createKernelAccount",
-        "zerodev_sdk.KERNEL_V3_3",
+        "zerodev_sdk.VALIDATOR_TYPE.SECONDARY",
+        "ogp.toP256KernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
-      constraints: ["action_runtime_and_precompile_evidence_required"],
+      constraints: [
+        "kernel_secondary_validator_only",
+        "action_runtime_and_precompile_evidence_required",
+      ],
     },
-    owner_webauthn: {
+    kernel_validator_webauthn: {
       status: "available",
       anchors: [
         "zerodev_passkey_validator.toPasskeyValidator",
         "zerodev_passkey_validator.V0_0_3_PATCHED",
-        "ogp.createWebAuthnKernelOwnerRuntime",
+        "ogp.toWebAuthnKernelSigner",
+        "ogp.createKernelOwner",
+        "ogp.createKernelOperator",
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
-    },
-    permission_signer_ecdsa: {
-      status: "available",
-      anchors: [
-        "zerodev_permissions.ECDSA_SIGNER_CONTRACT",
-        "zerodev_sdk.DUMMY_ECDSA_SIG",
-        "ogp.createEcdsaPermissionSignerRuntime",
-        "kernel.v3_3",
-        "entrypoint.v0_7",
-      ],
-    },
-    permission_signer_p256: {
-      status: "unsupported",
-      reason: "distinct_profile_unproven",
-      constraints: ["webauthn_is_not_raw_p256"],
-    },
-    permission_signer_webauthn: {
-      status: "unsupported",
-      reason: "integration_unproven",
     },
     replayable_all_chain_permission_approval: {
       status: "unsupported",

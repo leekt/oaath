@@ -24,7 +24,7 @@ const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 export type OwnerCredentialKind = "ecdsa" | "p256" | "webauthn";
-export type OperatorCredentialKind = "ecdsa" | "webauthn";
+export type OperatorCredentialKind = "ecdsa" | "p256" | "webauthn";
 
 export interface EcdsaOwnerCredentialProfile {
   readonly version: typeof OGP_OWNER_CREDENTIAL_PROFILE_VERSION;
@@ -56,6 +56,12 @@ export interface EcdsaOperatorCredentialProfile {
   readonly address: `0x${string}`;
 }
 
+export interface P256OperatorCredentialProfile {
+  readonly version: typeof OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION;
+  readonly kind: "p256";
+  readonly publicKey: `0x${string}`;
+}
+
 export interface WebAuthnOperatorCredentialProfile {
   readonly version: typeof OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION;
   readonly kind: "webauthn";
@@ -65,6 +71,7 @@ export interface WebAuthnOperatorCredentialProfile {
 
 export type OperatorCredentialProfile =
   | EcdsaOperatorCredentialProfile
+  | P256OperatorCredentialProfile
   | WebAuthnOperatorCredentialProfile;
 
 export interface KernelAccountProfile {
@@ -87,11 +94,9 @@ export interface KernelAccountActionInput {
 }
 
 export type CredentialRuntimeCapability =
-  | "owner_ecdsa"
-  | "owner_p256"
-  | "owner_webauthn"
-  | "permission_signer_ecdsa"
-  | "permission_signer_webauthn";
+  | "kernel_validator_ecdsa"
+  | "kernel_validator_p256"
+  | "kernel_validator_webauthn";
 
 export type CredentialRuntimeDiagnosis<
   Profile extends OwnerCredentialProfile | OperatorCredentialProfile =
@@ -119,7 +124,7 @@ export type CredentialRuntimeDiagnosis<
       status: "unsupported";
       capability: CredentialRuntimeCapability;
       profile: Readonly<Profile>;
-      reason: "first_party_profile_unproven" | "runtime_integration_unproven";
+      reason: "runtime_integration_unproven";
     }>;
 
 export type IdentityProfileErrorCode =
@@ -231,9 +236,11 @@ function captureOperatorCredential(
   const keys =
     captured.kind === "ecdsa"
       ? ["version", "kind", "address"]
-      : captured.kind === "webauthn"
-        ? ["version", "kind", "publicKey", "authenticatorIdHash"]
-        : ["version", "kind"];
+      : captured.kind === "p256"
+        ? ["version", "kind", "publicKey"]
+        : captured.kind === "webauthn"
+          ? ["version", "kind", "publicKey", "authenticatorIdHash"]
+          : ["version", "kind"];
   const record = exactCapturedRecord(captured, keys, "operator credential profile", fail);
   if (record.version !== OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION) {
     return fail("operator credential profile version is unsupported");
@@ -243,6 +250,13 @@ function captureOperatorCredential(
       version: OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION,
       kind: "ecdsa",
       address: address(record.address, "operator credential address", fail),
+    });
+  }
+  if (record.kind === "p256") {
+    return Object.freeze({
+      version: OGP_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+      kind: "p256",
+      publicKey: p256PublicKey(record.publicKey, "operator credential publicKey", fail),
     });
   }
   if (record.kind === "webauthn") {
@@ -412,14 +426,6 @@ function diagnose<Profile extends OwnerCredentialProfile | OperatorCredentialPro
       reason: "required_package_not_installed",
     });
   }
-  if (runtime.reason === "distinct_profile_unproven") {
-    return Object.freeze({
-      status: "unsupported",
-      capability,
-      profile,
-      reason: "first_party_profile_unproven",
-    });
-  }
   if (runtime.reason === "integration_unproven") {
     return Object.freeze({
       status: "unsupported",
@@ -440,7 +446,7 @@ export function diagnoseOwnerCredential(
   value: unknown,
 ): CredentialRuntimeDiagnosis<OwnerCredentialProfile> {
   const profile = parseOwnerCredentialProfile(value);
-  const capability = `owner_${profile.kind}` as const;
+  const capability = `kernel_validator_${profile.kind}` as const;
   return diagnose(profile, capability);
 }
 
@@ -448,7 +454,7 @@ export function diagnoseOperatorCredential(
   value: unknown,
 ): CredentialRuntimeDiagnosis<OperatorCredentialProfile> {
   const profile = parseOperatorCredentialProfile(value);
-  const capability = `permission_signer_${profile.kind}` as const;
+  const capability = `kernel_validator_${profile.kind}` as const;
   return diagnose(profile, capability);
 }
 
@@ -473,6 +479,7 @@ export function sameOperatorCredentialProfile(
 ): boolean {
   if (left.version !== right.version || left.kind !== right.kind) return false;
   if (left.kind === "ecdsa" && right.kind === "ecdsa") return left.address === right.address;
+  if (left.kind === "p256" && right.kind === "p256") return left.publicKey === right.publicKey;
   return (
     left.kind === "webauthn" &&
     right.kind === "webauthn" &&
