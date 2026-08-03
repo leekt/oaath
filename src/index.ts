@@ -36,6 +36,32 @@ export {
   parseGrant,
 } from "./grant.js";
 export type {
+  CompleteGrantPolicyUsageEvidence,
+  GrantPolicy,
+  GrantPolicyArgumentEquality,
+  GrantPolicyCall,
+  GrantPolicyCoverageCall,
+  GrantPolicyCoverageDeniedReason,
+  GrantPolicyCoverageInconclusiveReason,
+  GrantPolicyCoverageInput,
+  GrantPolicyCoverageResult,
+  GrantPolicyErrorCode,
+  GrantPolicyUsageCheckpoint,
+  GrantPolicyUsageEvidence,
+  UnavailableGrantPolicyUsageEvidence,
+} from "./grant-policy.js";
+export {
+  encodeGrantPolicy,
+  evaluateGrantPolicyCoverage,
+  hashGrantPolicy,
+  isGrantPolicyAttenuation,
+  OGP_GRANT_POLICY_HASH_DOMAIN,
+  OGP_GRANT_POLICY_USAGE_VERSION,
+  OGP_GRANT_POLICY_VERSION,
+  OgpGrantPolicyError,
+  parseGrantPolicy,
+} from "./grant-policy.js";
+export type {
   CredentialRuntimeCapability,
   CredentialRuntimeDiagnosis,
   EcdsaOperatorCredentialProfile,
