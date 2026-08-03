@@ -8,6 +8,7 @@ import {
   getAddress,
   hexToBytes,
   keccak256,
+  pad,
   recoverAddress,
   sha256,
   stringToBytes,
@@ -16,9 +17,11 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
-  composeKernelHooks,
+  compileKernelPermissionPolicy,
   createKernelRuntime,
   ecdsaKey,
+  encodeKernelV4PolicyData,
+  encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -34,6 +37,7 @@ import {
   type OperatorProfile,
   ownerOperator,
   p256Key,
+  pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
   webauthnKey,
@@ -175,11 +179,19 @@ const keyProfiles: Readonly<Record<KernelKeyKind, () => Readonly<KeyProfile>>> =
     }),
 });
 
+/** One bounded scope every session composition in this file installs. */
+const sessionScope = Object.freeze({
+  kind: "call" as const,
+  calls: Object.freeze([
+    Object.freeze({ target, selectors: Object.freeze([KERNEL_V4_EXECUTE_SELECTOR]) }),
+  ]),
+});
+
 const operatorProfiles: Readonly<
   Record<KernelOperatorAuthority, (key: Readonly<KeyProfile>) => Readonly<OperatorProfile>>
 > = Object.freeze({
   owner: (key) => ownerOperator({ key }),
-  session: (key) => sessionOperator({ key, hooks: [] }),
+  session: (key) => sessionOperator({ key, policies: [sessionScope] }),
 });
 
 function ecdsaRuntime(authority: KernelOperatorAuthority, state?: "counterfactual" | "deployed") {
@@ -210,36 +222,77 @@ describe("Kernel composition matrix", () => {
     (kind, authority) => {
       const key = keyProfiles[kind]();
       expect(key.kind).toBe(kind);
-      const operator = operatorProfiles[authority](key);
-      expect(operator).toMatchObject({ authority, policy: null });
+      const composeOperator = () => operatorProfiles[authority](key);
+      // An owner needs a validator module for its key kind and a session needs a
+      // permission signer module: raw P-256 has neither, WebAuthn has only the
+      // signer, so each axis fails closed on its own module rather than borrowing
+      // the other's.
+      const unavailable =
+        authority === "session"
+          ? kind === "p256"
+            ? "kernel_runtime_signer_unavailable"
+            : null
+          : kind === "ecdsa"
+            ? null
+            : "kernel_runtime_validator_unavailable";
+      if (authority === "session" && unavailable) {
+        expect(composeOperator).toThrowError(
+          expect.objectContaining({ name: "OaathKernelRuntimeError", code: unavailable }),
+        );
+        return;
+      }
+      const operator = composeOperator();
+      expect(operator).toMatchObject({ authority });
       expect(operator.key.kind).toBe(kind);
       const compose = () => createKernelRuntime({ deployment, operator, reads: reads() });
-
-      // Kernel v4 pins no reviewed raw P-256 or WebAuthn validator module, so both
-      // kinds fail closed on the same axis instead of being skipped.
-      if (kind !== "ecdsa") {
+      if (unavailable) {
         expect(compose).toThrowError(
-          expect.objectContaining({
-            name: "OaathKernelRuntimeError",
-            code: "kernel_runtime_validator_unavailable",
-          }),
+          expect.objectContaining({ name: "OaathKernelRuntimeError", code: unavailable }),
         );
         return;
       }
 
       const runtime = compose();
-      expect(runtime).toMatchObject({ authority, keyKind: kind, validator, deployment });
-      expect(runtime.validation).toEqual(
-        authority === "owner" ? { kind: "root" } : { kind: "validator", validator },
-      );
+      expect(runtime).toMatchObject({ authority, keyKind: kind, deployment });
+      if (authority === "owner") {
+        expect(operator.policy).toBeNull();
+        expect(runtime.authorityModule).toBe(validator);
+        expect(runtime.validation).toEqual({ kind: "root" });
+        expect(runtime.packages).toEqual([
+          {
+            moduleType: 1,
+            module: validator,
+            moduleData: key.publicMaterial,
+            internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+          },
+        ]);
+        return;
+      }
+
+      // A session installs a permission: the policy that bounds its calls, then
+      // the signer that carries the key material, both under one permission ID.
+      const signer = pinnedSignerModule(kind);
+      expect(runtime.authorityModule).toBe(signer);
+      const validation = runtime.validation;
+      if (validation.kind !== "permission")
+        throw new Error("session validation is not a permission");
+      expect(validation.permissionId).toMatch(/^0x[0-9a-f]{8}$/u);
+      const paddedId = pad(validation.permissionId, { size: 32, dir: "right" });
       expect(runtime.packages).toEqual([
         {
-          moduleType: 1,
-          module: validator,
-          moduleData: ecdsaAccount.address.toLowerCase(),
-          internalData: encodeKernelV4ValidatorData({
+          moduleType: 5,
+          module: pinnedPolicyModule("call"),
+          moduleData: concat([paddedId, compileKernelPermissionPolicy([sessionScope]).policyData]),
+          internalData: encodeKernelV4PolicyData(validation.permissionId),
+        },
+        {
+          moduleType: 6,
+          module: signer,
+          moduleData: concat([paddedId, key.publicMaterial]),
+          internalData: encodeKernelV4SignerData({
+            permissionId: validation.permissionId,
             hook: "none",
-            selectors: authority === "owner" ? [] : [KERNEL_V4_EXECUTE_SELECTOR],
+            selectors: [KERNEL_V4_EXECUTE_SELECTOR],
           }),
         },
       ]);
@@ -261,15 +314,31 @@ describe("Kernel composition matrix", () => {
         calls: [{ target, value: "1", data: "0x" }],
         gas,
       });
+      // Root and permission validations both carry plain execute calldata: root is
+      // exempt from the selector allow-list and a hookless permission takes
+      // Kernel's fast path, which the policy module's decoder requires.
       expect(prepared.userOperation.callData.startsWith(KERNEL_V4_EXECUTE_USER_OP_SELECTOR)).toBe(
-        authority === "session",
+        false,
       );
       expect(prepared.chainId).toBe(chainId);
 
       const signature = await runtime.signOperation(prepared);
-      expect(await recoverAddress({ hash: prepared.userOperationHash, signature })).toBe(
-        getAddress(ecdsaAccount.address),
-      );
+      if (authority === "owner") {
+        expect(await recoverAddress({ hash: prepared.userOperationHash, signature })).toBe(
+          getAddress(ecdsaAccount.address),
+        );
+        return;
+      }
+      // A session signs inside Kernel's permission envelope: one empty slice for
+      // the policy, which reads no signature, then the signer slice last.
+      const [slices] = decodeAbiParameters([{ name: "signatures", type: "bytes[]" }], signature);
+      const signerSlice = slices[1];
+      if (!signerSlice) throw new Error("permission envelope carries no signer slice");
+      expect(slices.length).toBe(2);
+      expect(slices[0]).toBe("0x");
+      expect(
+        await recoverAddress({ hash: prepared.userOperationHash, signature: signerSlice }),
+      ).toBe(getAddress(ecdsaAccount.address));
     },
   );
 
@@ -670,58 +739,95 @@ describe("Kernel module registry", () => {
   });
 });
 
-describe("Kernel policy hook composition", () => {
+describe("Kernel permission policy compilation", () => {
+  const spender = `0x${"55".repeat(20)}` as const;
+  const transferSelector = "0xa9059cbb" as const;
   const calls = [
     { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
-    { target: `0x${"55".repeat(20)}` as const, selectors: [] },
-  ];
+    { target: spender, selectors: [transferSelector, "0x00000000" as const] },
+  ] as const;
+  const PERMISSIONS = [
+    {
+      name: "permissions",
+      type: "tuple[]",
+      components: [
+        { name: "callType", type: "bytes1" },
+        { name: "target", type: "address" },
+        { name: "selector", type: "bytes4" },
+        { name: "valueLimit", type: "uint256" },
+        {
+          name: "rules",
+          type: "tuple[]",
+          components: [
+            { name: "condition", type: "uint8" },
+            { name: "offset", type: "uint64" },
+            { name: "params", type: "bytes32[]" },
+          ],
+        },
+      ],
+    },
+  ] as const;
 
-  it("combines every policy axis into one module configuration", () => {
-    const policy = composeKernelHooks([
+  it("compiles one CallPolicy permission per allowed target and selector", () => {
+    const policy = compileKernelPermissionPolicy([
       { kind: "call", calls },
       { kind: "value", maximumValue: "1000" },
-      { kind: "expiry", validAfter: "10", validUntil: "20" },
-      { kind: "operation-limit", maximumOperations: "5" },
     ]);
-    expect(policy).toMatchObject({
-      maximumValue: "1000",
-      validAfter: "10",
-      validUntil: "20",
-      maximumOperations: "5",
-    });
+    expect(policy).toMatchObject({ module: pinnedPolicyModule("call"), maximumValue: "1000" });
     expect(policy.calls).toEqual(calls);
-    expect(policy.moduleData).toMatch(/^0x[0-9a-f]+$/u);
     expect(Object.isFrozen(policy)).toBe(true);
+    // Every permitted (callType, target, selector) triple carries the value
+    // ceiling, which is how CallPolicy meters a call it is asked to authorize.
+    const [permissions] = decodeAbiParameters(PERMISSIONS, policy.policyData);
+    expect(
+      permissions.map((permission) => [
+        permission.callType,
+        permission.target,
+        permission.selector,
+        permission.valueLimit,
+        permission.rules.length,
+      ]),
+    ).toEqual([
+      ["0x00", target, KERNEL_V4_EXECUTE_SELECTOR, 1000n, 0],
+      ["0x00", spender, transferSelector, 1000n, 0],
+      ["0x00", spender, "0x00000000", 1000n, 0],
+    ]);
   });
 
-  it("encodes unlimited sentinels for absent axes", () => {
-    const policy = composeKernelHooks([{ kind: "call", calls }]);
-    expect(policy).toMatchObject({
-      maximumValue: null,
-      validAfter: null,
-      validUntil: null,
-      maximumOperations: null,
-    });
+  it("compiles an absent value profile to a zero ceiling", () => {
+    // A session that never declared a spend may not move value: CallPolicy
+    // reverts CallViolatesValueRule above the ceiling, so zero is the closed
+    // default rather than an unlimited sentinel.
+    const policy = compileKernelPermissionPolicy([{ kind: "call", calls: [calls[0]] }]);
+    expect(policy.maximumValue).toBe("0");
     expect(
-      decodeAbiParameters(
-        [
-          {
-            name: "calls",
-            type: "tuple[]",
-            components: [
-              { name: "target", type: "address" },
-              { name: "selectors", type: "bytes4[]" },
-            ],
-          },
-          { name: "maximumValue", type: "uint256" },
-          { name: "validAfter", type: "uint48" },
-          { name: "validUntil", type: "uint48" },
-          { name: "maximumOperations", type: "uint32" },
-        ] as const,
-        policy.moduleData,
-      ).slice(1),
-    ).toEqual([(1n << 256n) - 1n, 0, 0, 0]);
+      decodeAbiParameters(PERMISSIONS, policy.policyData)[0].map((one) => one.valueLimit),
+    ).toEqual([0n]);
   });
+
+  it.each(["expiry", "operation-limit"] as const)(
+    "fails closed on the %s axis, which no reviewed module enforces",
+    (kind) => {
+      const profile =
+        kind === "expiry"
+          ? { kind, validAfter: "0", validUntil: "1750000000" }
+          : { kind, maximumOperations: "5" };
+      expect(pinnedPolicyModule(kind)).toBeNull();
+      // Never narrowed to the axes that do materialize: a caller who asked for a
+      // validity window must not receive an unbounded session.
+      for (const profiles of [[profile], [{ kind: "call", calls }, profile]] as const) {
+        expect(() => compileKernelPermissionPolicy(profiles as never)).toThrowError(
+          expect.objectContaining({
+            name: "OaathKernelRuntimeError",
+            code: "kernel_runtime_policy_unavailable",
+          }),
+        );
+        expect(() =>
+          sessionOperator({ key: keyProfiles.ecdsa(), policies: profiles as never }),
+        ).toThrowError(expect.objectContaining({ code: "kernel_runtime_policy_unavailable" }));
+      }
+    },
+  );
 
   it.each([
     ["an empty profile set", []],
@@ -733,16 +839,16 @@ describe("Kernel policy hook composition", () => {
       ],
     ],
     ["an unsupported kind", [{ kind: "gas" }]],
-    ["an inverted validity window", [{ kind: "expiry", validAfter: "20", validUntil: "10" }]],
-    ["a zero operation limit", [{ kind: "operation-limit", maximumOperations: "0" }]],
+    ["a value bound with no call bound", [{ kind: "value", maximumValue: "1" }]],
+    ["a target with no selector", [{ kind: "call", calls: [{ target, selectors: [] }] }]],
     [
       "a duplicate call target",
       [
         {
           kind: "call",
           calls: [
-            { target, selectors: [] },
-            { target, selectors: [] },
+            { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
+            { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
           ],
         },
       ],
@@ -757,23 +863,47 @@ describe("Kernel policy hook composition", () => {
       ],
     ],
     ["an empty call set", [{ kind: "call", calls: [] }]],
+    ["a non-array profile set", { kind: "call", calls }],
+    ["a profile set with a hole", [undefined]],
   ] as const)("fails closed on %s", (_label, profiles) => {
-    expect(() => composeKernelHooks(profiles as never)).toThrowError(
+    expect(() => compileKernelPermissionPolicy(profiles as never)).toThrowError(
       expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
   });
 
-  it("fails closed when a composed policy has no reviewed Kernel v4 hook module", () => {
-    const operator = sessionOperator({
-      key: keyProfiles.ecdsa(),
-      hooks: [{ kind: "expiry", validAfter: "0", validUntil: "1750000000" }],
-    });
-    expect(operator.policy).toMatchObject({ validUntil: "1750000000" });
-    expect(() => createKernelRuntime({ deployment, operator, reads: reads() })).toThrowError(
+  it("rejects a session with no policy at all", () => {
+    // An unscoped session is not expressible: without a policy the signer would
+    // hold whole-key authority, which is what a permission exists to replace.
+    expect(() => sessionOperator({ key: keyProfiles.ecdsa(), policies: [] })).toThrowError(
       expect.objectContaining({
         name: "OaathKernelRuntimeError",
-        code: "kernel_runtime_hook_unavailable",
+        code: "kernel_runtime_input_invalid",
       }),
     );
+  });
+
+  it("derives one permission ID per distinct scope, key and module set", () => {
+    const permissionId = (operator: ReturnType<typeof sessionOperator>) => {
+      const validation = operator.resolveValidation(deployment);
+      if (validation.kind !== "permission") throw new Error("not a permission validation");
+      return validation.permissionId;
+    };
+    const scope = { kind: "call", calls } as const;
+    const key = keyProfiles.ecdsa();
+    const first = permissionId(sessionOperator({ key, policies: [scope] }));
+    // Same scope and same key material derive the same ID on every chain, so a
+    // restored session addresses the permission it installed.
+    expect(permissionId(sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] }))).toBe(
+      first,
+    );
+    // A tighter scope is a different permission, never the same one widened.
+    expect(
+      permissionId(
+        sessionOperator({ key, policies: [scope, { kind: "value", maximumValue: "1" }] }),
+      ),
+    ).not.toBe(first);
+    expect(
+      permissionId(sessionOperator({ key, policies: [{ kind: "call", calls: [calls[0]] }] })),
+    ).not.toBe(first);
   });
 });
