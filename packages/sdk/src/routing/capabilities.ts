@@ -23,7 +23,9 @@ const MAX_UINT256 = (1n << 256n) - 1n;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 
 /**
- * The routing fact for one chain's bundler.
+ * The routing fact for one chain's bundler, in the repository's closed capability
+ * vocabulary (`kernel/capabilities.ts` diagnoses Kernel axes with the same four
+ * statuses; this owner is the evidence-derived per-chain half of it).
  *
  * - `available`: a bundler is configured, healthy, and compatible with the
  *   prepared operation's chain and EntryPoint.
