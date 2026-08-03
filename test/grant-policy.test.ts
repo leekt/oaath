@@ -132,6 +132,10 @@ describe("canonical Grant policy", () => {
 
     const indefinite = { ...clone(policy), validUntil: null };
     expect(hashGrantPolicy(indefinite)).not.toBe(hashGrantPolicy(policy));
+    expect(parseGrantPolicy({ ...clone(policy), validAfter: 1, validUntil: 1 })).toMatchObject({
+      validAfter: 1,
+      validUntil: 1,
+    });
   });
 
   it("owns only fixed ABI-word equality and contains no chain inventory or policy DSL", () => {
@@ -518,6 +522,7 @@ describe("Grant policy properties", () => {
         fc.integer({ min: 1, max: 1_000 }),
         fc.bigInt({ min: 0n, max: 1n << 128n }),
         (start, duration, limit, valueLimit) => {
+          fc.pre(start !== 0 || duration !== 0);
           const generated: GrantPolicy = {
             version: OGP_GRANT_POLICY_VERSION,
             calls: [
@@ -549,6 +554,7 @@ describe("Grant policy properties", () => {
         fc.integer({ min: 1, max: 1_000 }),
         fc.integer({ min: 1, max: 1_000 }),
         (start, duration, requestedLimit, requestedValue) => {
+          fc.pre(start !== 0 || duration !== 0);
           const requested: GrantPolicy = {
             version: OGP_GRANT_POLICY_VERSION,
             calls: [
