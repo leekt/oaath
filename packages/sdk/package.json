@@ -1,0 +1,54 @@
+{
+  "name": "@oaath/sdk",
+  "version": "0.0.0",
+  "description": "OAAth browser client and Kernel/ZeroDev runtime.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leekt/oaath.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/leekt/oaath/issues"
+  },
+  "homepage": "https://github.com/leekt/oaath#readme",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "node": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts",
+    "lint": "node scripts/check-package-boundary.mjs"
+  },
+  "devDependencies": {
+    "@account-abstraction/contracts": "0.7.0",
+    "@types/node": "22.13.0",
+    "fast-check": "^4.9.0"
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.1",
+    "viem": "2.55.8"
+  }
+}

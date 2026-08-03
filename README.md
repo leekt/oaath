@@ -1,50 +1,57 @@
-# OGP
+# OAAth
 
-OGP is OAuth for scoped smart-account authority.
+OAAth is OAuth for scoped smart-account authority.
 
-The project is being rebuilt as a focused public package. Its first runtime is
-Kernel/ZeroDev, and its canonical package name is `@leekt/ogp`.
-
-OGP owns the authority and execution lifecycle:
+OAAth owns the complete smart-account authorization journey:
 
 ```text
-connect
+connect application
+→ bind client, origin, user, device, and logical account
 → request scoped all-chain authority
 → approve or reject
-→ materialize a chain-local permission when needed
-→ prepare an exact operation identity
-→ submit once
-→ observe or recover without resubmission
-→ revoke
+→ materialize permission on a supported chain when needed
+→ choose the safe authority signer and submission route
+→ prepare and durably bind the exact operation identity
+→ submit
+→ observe, recover, and finalize without resubmission
+→ revoke authority
 ```
 
-Moesi and other products consume OGP through released packages or exact local
-tarballs. OGP never depends on Moesi.
+Kernel/ZeroDev is the opinionated first runtime. OAAth never depends on Moesi,
+and it does not own deployment manifests, drift detection, deployment planning,
+or desired-state convergence.
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@oaath/protocol` | Runtime-neutral wire and durable contracts. |
+| `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
+| `@oaath/server` | Deployable relay and PostgreSQL boundary. |
+| `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
+
+All four publish together in one fixed `0.x.y` release group. The first release
+is `0.1.0`; no package becomes `1.0.0` during this program.
 
 ## Status
 
-The package is not released. The repository is landing the safety kernel in
-bounded, independently reviewed changes before `@leekt/ogp@0.1.0` is
-authorized for publication.
-
-The first public unit is the pure `Operation` aggregate. It captures one exact
-chain-local UserOperation identity, records submission before an external send,
-and advances only from stronger evidence. Missing receipts, timeouts, and
-unreadable observations never authorize another submission or prove an
-operation dropped.
-
-The aggregate deliberately does not submit or observe RPC operations. Durable
-storage, the canonical observer, and the Kernel runtime land as separate,
-independently reviewed units.
+Nothing is released. `@oaath/sdk` carries the current safety kernel: the pure
+`Operation` aggregate, durable stores, the canonical observer, and the Kernel
+v4 runtime. It captures one exact chain-local UserOperation identity, records
+submission before an external send, and advances only from stronger evidence.
+Missing receipts, timeouts, and unreadable observations never authorize another
+submission or prove an operation dropped. `@oaath/protocol`, `@oaath/server`,
+and `@oaath/testing` export a name constant only; their implementations land as
+bounded, independently reviewed child PRs.
 
 ## Kernel runtime
 
 The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through
-EntryPoint `0.7`. OGP currently recognizes the Kernel v4 deployment on Arbitrum
-Sepolia, Ethereum Sepolia, and Robinhood Chain Testnet. It does not retain
-Kernel 3.3 profiles or translate their permission representation.
+EntryPoint `0.7`. OAAth currently recognizes the Kernel v4 deployment on
+Arbitrum Sepolia, Ethereum Sepolia, and Robinhood Chain Testnet. It does not
+retain Kernel 3.3 profiles or translate their permission representation.
 
-The package owns the native Kernel v4 `Install[]`, validation nonce,
+`@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
 KernelFactory at `0xE65C6a17bDB14070977b4AB70f1E7d9cDf441d53` is part of the
 deployment profile and is accepted only after its `UUPS()` binding and the
@@ -73,17 +80,18 @@ Requirements:
 
 ```sh
 pnpm install
-pnpm check
-pnpm test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm lint
+pnpm --filter @oaath/sdk test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
 ```
 
 Automated tests must not contact paid or shared RPC services. Contract and
 runtime integration tests use local Anvil unless a dedicated live-network suite
-is explicitly opted into and bounded.
+is explicitly opted into and bounded. Repository rules live in
+[AGENTS.md](AGENTS.md).
 
-## Scope
+## License
 
-This repository contains minimal consumption and security documentation only.
-The old generated documentation site and monorepo package structure are not
-being migrated.
-OAuth for scoped smart-account authority.
+Apache-2.0

@@ -1,0 +1,39 @@
+{
+  "name": "@oaath/server",
+  "version": "0.0.0",
+  "description": "OAAth deployable relay and PostgreSQL boundary.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leekt/oaath.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/leekt/oaath/issues"
+  },
+  "homepage": "https://github.com/leekt/oaath#readme",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts --platform neutral",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oaath/protocol": "workspace:*"
+  }
+}

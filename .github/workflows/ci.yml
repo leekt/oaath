@@ -29,5 +29,9 @@ jobs:
           version: v1.7.1
           cache: false
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm test:anvil
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+      - run: pnpm -r build
+      - run: pnpm -r lint
+      - run: pnpm lint
+      - run: pnpm --filter @oaath/sdk test:anvil
