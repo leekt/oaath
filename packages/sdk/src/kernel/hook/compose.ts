@@ -85,9 +85,9 @@ function captureCalls(value: unknown, context: CaptureContext): KernelCallHookPr
 
 /**
  * Captures one hook profile set and combines it into the exact policy
- * configuration a Kernel policy/hook module receives. Materializing it against a
- * chain is owned by resolveHookModule, which fails closed while no reviewed
- * module deployment is bound.
+ * configuration a Kernel policy/hook module receives. Materializing it is owned
+ * by resolveHookModule, which fails closed while no reviewed module deployment is
+ * pinned.
  */
 export function composeKernelHooks(
   profiles: readonly KernelHookProfile[],

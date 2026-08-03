@@ -32,6 +32,7 @@ import {
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
   type PreparedUserOperation,
+  pinnedSignerModule,
   sessionOperator,
 } from "../src/index.js";
 
@@ -48,12 +49,23 @@ const gas = Object.freeze({
   maxPriorityFeePerGas: "1000000000",
 });
 
+interface SignerModuleFixture {
+  repository: string;
+  commit: string;
+  source: string;
+  moduleType: 6;
+  expectedAddress: `0x${string}`;
+  deploymentInput: Hex;
+}
+
 interface DeploymentFixture {
   entryPoint: { deploymentSalt: Hex; artifact: string };
   kernelUups: { deploymentInput: Hex };
   kernelImmutableEcdsa: { deploymentInput: Hex };
   kernelFactory: { deploymentInput: Hex };
   ecdsaValidator: { bytecode: Hex };
+  ecdsaSigner: SignerModuleFixture;
+  webAuthnSigner: SignerModuleFixture;
 }
 
 let anvil: ChildProcess | undefined;
@@ -137,6 +149,56 @@ afterAll(() => {
 });
 
 (requireAnvil ? describe : describe.skip)("Kernel composition local proof", () => {
+  it("deploys the pinned permission signer modules at their chain-independent addresses", async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url),
+        "utf8",
+      ),
+    ) as DeploymentFixture;
+    const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
+    const submitter = privateKeyToAccount(generatePrivateKey());
+    const wallet = createWalletClient({
+      account: submitter,
+      transport: http(url, { retryCount: 0 }),
+    });
+    await client.request({
+      method: "anvil_setBalance" as "eth_chainId",
+      params: [submitter.address, quantity(parseEther("100"))] as never,
+    });
+
+    // A CREATE2 address is derived from deployer, salt and init code alone, so
+    // code landing on the pinned address proves the registry names exactly this
+    // reviewed module and that nothing about the address depends on the chain.
+    for (const [kind, module] of [
+      ["ecdsa", fixture.ecdsaSigner],
+      ["webauthn", fixture.webAuthnSigner],
+    ] as const) {
+      expect(module).toMatchObject({
+        repository: "https://github.com/zerodevapp/kernel-7579-plugins",
+        commit: "332deed6eeef3d6279cde50aa1d51eff53728bd4",
+        moduleType: 6,
+      });
+      const pinned = pinnedSignerModule(kind);
+      expect(pinned).toBe(module.expectedAddress);
+      if (pinned === null) throw new Error(`no pinned ${kind} signer module`);
+      expect(await client.getCode({ address: pinned })).toBeUndefined();
+      const hash = await wallet.sendTransaction({
+        account: submitter,
+        chain: null,
+        to: KERNEL_V4_CREATE2_DEPLOYER,
+        data: module.deploymentInput,
+        gas: 10_000_000n,
+      });
+      expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
+      expect(await client.getCode({ address: pinned })).toMatch(/^0x[0-9a-f]{2,}$/u);
+    }
+
+    // The reviewed plugin set ships no raw P-256 signer, so that axis stays
+    // unbound instead of borrowing the WebAuthn module.
+    expect(pinnedSignerModule("p256")).toBeNull();
+  }, 60_000);
+
   it("executes owner and session authorities and falls back to handleOps without changing identity", async () => {
     const fixture = JSON.parse(
       await readFile(

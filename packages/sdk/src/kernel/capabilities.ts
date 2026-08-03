@@ -10,17 +10,18 @@
  * per-chain routing, where a missing installation and an unreadable provider are
  * distinct outcomes.
  *
+ * The module-existence question carries no per-chain dimension: every pinned
+ * module address is chain-independent, so the registry is consulted without a
+ * chain. The chain enters one way only, through deployment support — an
+ * unsupported chain fails in kernelV4Deployment before any axis is diagnosed.
+ *
  * A P-256 or WebAuthn credential is never downgraded: an unbound validator axis
  * is reported unsupported and composed as a structured failure, never as
  * unrelated ECDSA authority.
  *
  * @author taek <leekt216@gmail.com>
  */
-import {
-  type KernelV4Deployment,
-  type KernelV4SupportedChainId,
-  kernelV4Deployment,
-} from "../kernel-v4.js";
+import { type KernelV4SupportedChainId, kernelV4Deployment } from "../kernel-v4.js";
 import { exactInput, inputInvalid } from "./internal.js";
 import { pinnedHookModule, pinnedValidatorModule } from "./modules.js";
 import type { KernelKeyKind } from "./types.js";
@@ -94,8 +95,8 @@ function capturedCapability(value: unknown): CapabilityAxis {
     case "owner_webauthn":
     case "session_webauthn":
       return Object.freeze({ capability: value, axis: "webauthn" as const });
-    // Kernel v4 pins one policy hook module per chain, so every policy axis
-    // shares that one deployment fact.
+    // Kernel v4 pins one policy hook module, so every policy axis shares that
+    // one deployment fact.
     case "hook_call":
     case "hook_value":
     case "hook_expiry":
@@ -106,17 +107,14 @@ function capturedCapability(value: unknown): CapabilityAxis {
   }
 }
 
-function validatorOutcome(
-  deployment: Readonly<KernelV4Deployment>,
-  kind: KernelKeyKind,
-): CapabilityOutcome {
+function validatorOutcome(kind: KernelKeyKind): CapabilityOutcome {
   // ECDSA carries no pinned entry by design: kernel/key/ecdsa.ts binds the
   // caller's validator module and bindKernelV4Account proves that module has
   // code on the action chain before any account address depends on it.
   if (kind === "ecdsa") {
     return Object.freeze({ status: "available" as const, evidence: "caller_bound_validator" });
   }
-  return pinnedValidatorModule(deployment, kind)
+  return pinnedValidatorModule(kind)
     ? Object.freeze({ status: "available" as const, evidence: "pinned_reviewed_module" })
     : Object.freeze({
         status: "unsupported" as const,
@@ -124,8 +122,8 @@ function validatorOutcome(
       });
 }
 
-function hookOutcome(deployment: Readonly<KernelV4Deployment>): CapabilityOutcome {
-  return pinnedHookModule(deployment)
+function hookOutcome(): CapabilityOutcome {
+  return pinnedHookModule()
     ? Object.freeze({ status: "available" as const, evidence: "pinned_reviewed_module" })
     : Object.freeze({ status: "unsupported" as const, reason: "hook_module_deployment_unproven" });
 }
@@ -141,12 +139,13 @@ export function diagnoseKernelCapability(
     new WeakSet(),
   );
   // kernelV4Deployment owns the chain fact, so an unsupported or non-canonical
-  // chain fails here with the same code the composition factory raises.
+  // chain fails here with the same code the composition factory raises. It is the
+  // only place the chain enters: the module registry below is chain-independent.
   const deployment = kernelV4Deployment(record.chainId);
   const { capability, axis } = capturedCapability(record.capability);
   return Object.freeze({
     capability,
     chainId: deployment.chainId,
-    ...(axis === "hook" ? hookOutcome(deployment) : validatorOutcome(deployment, axis)),
+    ...(axis === "hook" ? hookOutcome() : validatorOutcome(axis)),
   });
 }

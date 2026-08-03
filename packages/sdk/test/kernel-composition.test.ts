@@ -34,6 +34,7 @@ import {
   type OperatorProfile,
   ownerOperator,
   p256Key,
+  pinnedSignerModule,
   sessionOperator,
   webauthnKey,
 } from "../src/index.js";
@@ -642,6 +643,30 @@ describe("Kernel key profiles", () => {
       code: "kernel_runtime_signature_invalid",
       message: "ECDSA signature does not match the bound key",
     });
+  });
+});
+
+describe("Kernel module registry", () => {
+  const kinds = ["ecdsa", "p256", "webauthn"] as const satisfies readonly KernelKeyKind[];
+
+  it("pins the reviewed permission signer modules and leaves unbound axes null", () => {
+    // Addresses are chain-independent by construction: the registry takes no
+    // chain, so the same fact holds wherever a supported deployment exists. The
+    // local composition proof deploys these exact addresses through CREATE2.
+    expect(kinds.map((kind) => pinnedSignerModule(kind))).toEqual([
+      "0xd4c7dec43e67ffe3dcca0aeb71556123d3194e1d",
+      null,
+      "0x8b2df925aa16071fcdf0053768420e242935ac65",
+    ]);
+  });
+
+  it("publishes the signer material each pinned module installs", () => {
+    // ECDSASigner.onInstall requires exactly the 20-byte signer address, and
+    // WebAuthnSigner.onInstall decodes (uint256, uint256, bytes32); a drift in
+    // either public material would install a permission signer that can never
+    // validate.
+    expect(keyProfiles.ecdsa().publicMaterial).toMatch(/^0x[0-9a-f]{40}$/u);
+    expect(keyProfiles.webauthn().publicMaterial).toMatch(/^0x[0-9a-f]{192}$/u);
   });
 });
 
