@@ -78,8 +78,7 @@ function captureSigner(
       context,
       (message) => signerError("ecdsa_permission_signer_capability_invalid", message),
     );
-  } catch (error) {
-    if (error instanceof OgpEcdsaPermissionSignerError) throw error;
+  } catch {
     return signerError(
       "ecdsa_permission_signer_capability_invalid",
       "ECDSA permission signer capability could not be captured safely",
@@ -105,28 +104,28 @@ function captureSigner(
 }
 
 function requestHash(value: unknown): `0x${string}` {
+  let record: Record<string, unknown>;
   try {
-    const record = exactRecord(
+    record = exactRecord(
       value,
       ["hash"],
       "ECDSA permission signing request",
       new WeakSet(),
       (message) => signerError("ecdsa_permission_signer_request_invalid", message),
     );
-    if (typeof record.hash !== "string" || !HASH.test(record.hash)) {
-      return signerError(
-        "ecdsa_permission_signer_request_invalid",
-        "ECDSA permission signing hash must be a lowercase 32-byte value",
-      );
-    }
-    return record.hash as `0x${string}`;
-  } catch (error) {
-    if (error instanceof OgpEcdsaPermissionSignerError) throw error;
+  } catch {
     return signerError(
       "ecdsa_permission_signer_request_invalid",
       "ECDSA permission signing request could not be captured safely",
     );
   }
+  if (typeof record.hash !== "string" || !HASH.test(record.hash)) {
+    return signerError(
+      "ecdsa_permission_signer_request_invalid",
+      "ECDSA permission signing hash must be a lowercase 32-byte value",
+    );
+  }
+  return record.hash as `0x${string}`;
 }
 
 function normalizeSignature(value: unknown): `0x${string}` {
@@ -193,8 +192,7 @@ export async function createEcdsaPermissionSignerRuntime(
       context,
       (message) => signerError("ecdsa_permission_signer_input_invalid", message),
     );
-  } catch (error) {
-    if (error instanceof OgpEcdsaPermissionSignerError) throw error;
+  } catch {
     return signerError(
       "ecdsa_permission_signer_input_invalid",
       "ECDSA permission signer runtime input could not be captured safely",
@@ -206,8 +204,7 @@ export async function createEcdsaPermissionSignerRuntime(
     capturedProfile = captureOperatorCredentialProfile(record.profile, context, (message) =>
       signerError("ecdsa_permission_signer_input_invalid", message),
     );
-  } catch (error) {
-    if (error instanceof OgpEcdsaPermissionSignerError) throw error;
+  } catch {
     return signerError(
       "ecdsa_permission_signer_input_invalid",
       "ECDSA permission signer profile could not be captured safely",
@@ -237,19 +234,18 @@ export async function createEcdsaPermissionSignerRuntime(
     dummySignature,
     async signMessageHash(request: unknown) {
       const hash = requestHash(request);
+      let signature: unknown;
       try {
-        return await verifiedSignature(
-          await Reflect.apply(signer.signMessageHash, undefined, [Object.freeze({ hash })]),
-          hash,
-          profile.address,
-        );
-      } catch (error) {
-        if (error instanceof OgpEcdsaPermissionSignerError) throw error;
+        signature = await Reflect.apply(signer.signMessageHash, undefined, [
+          Object.freeze({ hash }),
+        ]);
+      } catch {
         return signerError(
           "ecdsa_permission_signer_signing_failed",
           "ECDSA permission signing failed",
         );
       }
+      return verifiedSignature(signature, hash, profile.address);
     },
   });
 }

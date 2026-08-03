@@ -324,4 +324,64 @@ describe("ECDSA permission signer", () => {
       expect(error.message).not.toContain("provider secret");
     }
   });
+
+  it("sanitizes exported OGP errors thrown by hostile callers", async () => {
+    const operator = fixture();
+    const hostileError = () =>
+      new OgpEcdsaPermissionSignerError("ecdsa_permission_signer_request_invalid", "caller secret");
+    const hostileProxy = () =>
+      new Proxy(
+        {},
+        {
+          getPrototypeOf() {
+            throw hostileError();
+          },
+          ownKeys() {
+            throw hostileError();
+          },
+        },
+      );
+
+    const inputError = await expectCode(
+      () => createEcdsaPermissionSignerRuntime(hostileProxy()),
+      "ecdsa_permission_signer_input_invalid",
+    );
+    const profileError = await expectCode(
+      () =>
+        createEcdsaPermissionSignerRuntime({
+          profile: hostileProxy(),
+          signer: operator.capability,
+        }),
+      "ecdsa_permission_signer_input_invalid",
+    );
+    const signerError = await expectCode(
+      () =>
+        createEcdsaPermissionSignerRuntime({
+          profile: profile(operator.address),
+          signer: hostileProxy(),
+        }),
+      "ecdsa_permission_signer_capability_invalid",
+    );
+    const runtime = await createEcdsaPermissionSignerRuntime({
+      profile: profile(operator.address),
+      signer: {
+        address: operator.address,
+        async signMessageHash() {
+          throw hostileError();
+        },
+      },
+    });
+    const requestError = await expectCode(
+      () => runtime.signMessageHash(hostileProxy()),
+      "ecdsa_permission_signer_request_invalid",
+    );
+    const callbackError = await expectCode(
+      () => runtime.signMessageHash({ hash }),
+      "ecdsa_permission_signer_signing_failed",
+    );
+
+    for (const error of [inputError, profileError, signerError, requestError, callbackError]) {
+      expect(error.message).not.toContain("caller secret");
+    }
+  });
 });
