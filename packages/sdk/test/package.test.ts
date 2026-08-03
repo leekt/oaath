@@ -32,6 +32,7 @@ describe("package boundary", () => {
       "createOperationObserver",
       "createOperationRunner",
       "deriveOperationId",
+      "diagnoseKernelCapability",
       "ecdsaKey",
       "encodeKernelV4EnableSignature",
       "encodeKernelV4Execution",
