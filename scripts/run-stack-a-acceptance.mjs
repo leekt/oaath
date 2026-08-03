@@ -9,6 +9,7 @@ const repository = fileURLToPath(new URL("..", import.meta.url));
 const packageManifest = JSON.parse(await readFile(join(repository, "package.json"), "utf8"));
 const testFiles = [
   "package.test.ts",
+  "kernel-runtime-capabilities.test.ts",
   "grant.test.ts",
   "grant-transition.test.ts",
   "prepared-user-operation.test.ts",
