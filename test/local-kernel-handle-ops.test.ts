@@ -1,9 +1,11 @@
+import { KernelV3ExecuteAbi } from "@zerodev/sdk";
 import { decodeFunctionData, type Hex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
   createLocalKernelHandleOpsAdapter,
+  createLocalKernelPermissionUninstallAdapter,
   type OgpKernelHandleOpsAdapterError,
   type PreparedUserOperation,
   prepareUserOperation,
@@ -16,6 +18,11 @@ const validator = `0x${"33".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
 const submitter = `0x${"55".repeat(20)}` as const;
 const transactionHash = `0x${"66".repeat(32)}` as const;
+const permissionSigner = `0x${"66".repeat(20)}` as const;
+const permissionOperator = `0x${"77".repeat(20)}` as const;
+const noHook = `0x${"00".repeat(19)}01` as const;
+const permissionId = "0x6eea81c7" as const;
+const validationId = `0x02${permissionId.slice(2)}${"00".repeat(16)}` as const;
 
 const gas = {
   callGasLimit: "150000",
@@ -393,5 +400,241 @@ describe("local Kernel handleOps adapter", () => {
     await adapter.submission.close();
     expect(state.signerCloses).toBe(2);
     expect(state.submitterCloses).toBe(2);
+  });
+});
+
+async function permissionFixture(readResults: Readonly<Record<string, unknown>> = {}) {
+  const state = control();
+  const ownerAccount = privateKeyToAccount(generatePrivateKey());
+  const permission = { signer: permissionSigner, operator: permissionOperator };
+  const adapter = createLocalKernelPermissionUninstallAdapter({
+    profile: "kernel-v3.3-permission-uninstall",
+    key,
+    entryPoint: { version: "0.7", address: entryPoint },
+    kernel: { account, rootValidator: validator, owner: ownerAccount.address.toLowerCase() },
+    permission,
+    gas,
+    handleOpsGasLimit: "1000000",
+    preparationReads: {
+      async read(request: { type: string; chainId: number }) {
+        state.reads.push(request);
+        if (request.type in readResults) return readResults[request.type];
+        if (request.type === "chain_id") return request.chainId;
+        if (request.type === "code") return "0x01";
+        if (request.type === "kernel_root_validator") return `0x01${validator.slice(2)}`;
+        if (request.type === "kernel_ecdsa_owner") return ownerAccount.address.toLowerCase();
+        if (request.type === "kernel_validation_config") return { nonce: "1", hook: noHook };
+        if (request.type === "kernel_permission_config") {
+          return { permissionFlag: "0x0000", signer: permissionSigner, policyCount: 0 };
+        }
+        if (request.type === "kernel_allowed_selector") return true;
+        if (request.type === "multi_chain_signer_owner") return permissionOperator;
+        if (request.type === "entry_point_nonce") return state.nonce;
+        throw new Error("unexpected permission read");
+      },
+      async close() {
+        state.readCloses += 1;
+      },
+    },
+    userOperationSigner: {
+      address: ownerAccount.address.toLowerCase(),
+      async signDigest(request: { userOperationHash: Hex }) {
+        state.signs.push(request);
+        return ownerAccount.sign({ hash: request.userOperationHash });
+      },
+      async close() {
+        state.signerCloses += 1;
+      },
+    },
+    handleOpsSubmitter: {
+      address: submitter,
+      async sendHandleOps(request: {
+        chainId: number;
+        entryPoint: `0x${string}`;
+        submitter: `0x${string}`;
+        userOperationHash: Hex;
+      }) {
+        state.sends.push(request);
+        return {
+          chainId: request.chainId,
+          entryPoint: request.entryPoint,
+          submitter: request.submitter,
+          userOperationHash: request.userOperationHash,
+          transactionHash,
+        };
+      },
+      async close() {
+        state.submitterCloses += 1;
+      },
+    },
+  });
+  return { adapter, permission, state };
+}
+
+describe("local Kernel permission uninstall adapter", () => {
+  it("derives and prepares the exact Kernel permission uninstall call", async () => {
+    const { adapter, permission, state } = await permissionFixture();
+    permission.operator = `0x${"88".repeat(20)}`;
+
+    expect(adapter.descriptor).toEqual({
+      kind: "kernel-v3.3-permission-uninstall",
+      grantId: key.grantId,
+      chainId: key.chainId,
+      entryPoint,
+      account,
+      permissionId,
+      validationId,
+      signer: permissionSigner,
+      operator: permissionOperator,
+    });
+    const prepared = (await adapter.preparation.prepare({
+      kind: "revocation",
+      key,
+    })) as PreparedUserOperation;
+    expect(prepared).toMatchObject({
+      kind: "revocation",
+      grantId: key.grantId,
+      chainId: key.chainId,
+      userOperation: { sender: account, nonce: "7" },
+    });
+
+    const execution = decodeFunctionData({
+      abi: KernelV3ExecuteAbi,
+      data: prepared.userOperation.callData,
+    });
+    expect(execution.functionName).toBe("execute");
+    const executionCalldata = execution.args[1] as Hex;
+    expect(`0x${executionCalldata.slice(2, 42)}`).toBe(account);
+    expect(BigInt(`0x${executionCalldata.slice(42, 106)}`)).toBe(0n);
+    const uninstall = decodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "uninstallValidation",
+          stateMutability: "payable",
+          inputs: [
+            { name: "vId", type: "bytes21" },
+            { name: "deinitData", type: "bytes" },
+            { name: "hookDeinitData", type: "bytes" },
+          ],
+          outputs: [],
+        },
+      ] as const,
+      data: `0x${executionCalldata.slice(106)}`,
+    });
+    expect(uninstall.args).toEqual([
+      validationId,
+      "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+      "0x",
+    ]);
+    expect(state.reads).toEqual([
+      { type: "chain_id", chainId: key.chainId },
+      { type: "code", chainId: key.chainId, address: entryPoint },
+      { type: "code", chainId: key.chainId, address: account },
+      { type: "code", chainId: key.chainId, address: validator },
+      { type: "kernel_root_validator", chainId: key.chainId, account },
+      { type: "kernel_ecdsa_owner", chainId: key.chainId, validator, account },
+      { type: "code", chainId: key.chainId, address: permissionSigner },
+      { type: "kernel_validation_config", chainId: key.chainId, account, validationId },
+      { type: "kernel_permission_config", chainId: key.chainId, account, permissionId },
+      {
+        type: "kernel_allowed_selector",
+        chainId: key.chainId,
+        account,
+        validationId,
+        selector: "0xe9ae5c53",
+      },
+      {
+        type: "multi_chain_signer_owner",
+        chainId: key.chainId,
+        signer: permissionSigner,
+        account,
+        permissionId,
+      },
+      { type: "entry_point_nonce", chainId: key.chainId, entryPoint, account, nonceKey: "0" },
+    ]);
+    expect(state.signs).toHaveLength(0);
+    expect(state.sends).toHaveLength(0);
+    const session = (await adapter.submission.openSubmission(prepared)) as {
+      submit(): Promise<unknown>;
+    };
+    await expect(session.submit()).resolves.toEqual({
+      userOperationHash: prepared.userOperationHash,
+    });
+    expect(state.signs).toHaveLength(1);
+    expect(state.sends).toHaveLength(1);
+  });
+
+  it.each([
+    ["kernel_validation_config", { nonce: "1", hook: `0x${"00".repeat(20)}` }],
+    [
+      "kernel_permission_config",
+      { permissionFlag: "0x0000", signer: `0x${"00".repeat(20)}`, policyCount: 0 },
+    ],
+    [
+      "kernel_permission_config",
+      { permissionFlag: "0x0000", signer: permissionSigner, policyCount: 1 },
+    ],
+    ["kernel_allowed_selector", false],
+    ["multi_chain_signer_owner", `0x${"88".repeat(20)}`],
+  ])("rejects contradictory installed %s evidence before signing", async (type, result) => {
+    const { adapter, state } = await permissionFixture({ [type]: result });
+    await expectAdapterError(
+      () => adapter.preparation.prepare({ kind: "revocation", key }),
+      "kernel_handle_ops_preparation_rejected",
+    );
+    expect(state.signs).toHaveLength(0);
+    expect(state.sends).toHaveLength(0);
+  });
+
+  it("maps hostile permission evidence to a structured rejection without invoking authority", async () => {
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("private provider detail");
+        },
+      },
+    );
+    const { adapter, state } = await permissionFixture({
+      kernel_permission_config: hostile,
+    });
+
+    await expectAdapterError(
+      () => adapter.preparation.prepare({ kind: "revocation", key }),
+      "kernel_handle_ops_preparation_rejected",
+    );
+    expect(state.signs).toHaveLength(0);
+    expect(state.sends).toHaveLength(0);
+  });
+
+  it("rejects execution requests and arbitrary-call or chain-list configuration", async () => {
+    const { adapter } = await permissionFixture();
+    await expectAdapterError(
+      () => adapter.preparation.prepare({ kind: "execution", key }),
+      "kernel_handle_ops_preparation_rejected",
+    );
+
+    const configuration = {
+      profile: "kernel-v3.3-permission-uninstall",
+      key,
+      entryPoint: { version: "0.7", address: entryPoint },
+      kernel: { account, rootValidator: validator, owner: target },
+      permission: { signer: permissionSigner, operator: permissionOperator },
+      gas,
+      handleOpsGasLimit: "1000000",
+      preparationReads: { read: async () => null, close: async () => {} },
+      userOperationSigner: { address: target, signDigest: async () => "0x", close: async () => {} },
+      handleOpsSubmitter: {
+        address: submitter,
+        sendHandleOps: async () => null,
+        close: async () => {},
+      },
+      call: { target, value: "0", data: "0x" },
+      supportedChains: [key.chainId],
+    };
+    expect(() => createLocalKernelPermissionUninstallAdapter(configuration)).toThrowError(
+      expect.objectContaining({ code: "kernel_handle_ops_capability_invalid" }),
+    );
   });
 });
