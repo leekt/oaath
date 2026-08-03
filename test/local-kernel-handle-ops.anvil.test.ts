@@ -5,30 +5,44 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  concat,
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  decodeFunctionResult,
+  encodeAbiParameters,
   encodeFunctionData,
   type Hex,
   http,
   keccak256,
   type PublicClient,
+  pad,
   parseAbi,
   parseEther,
+  slice,
   zeroAddress,
 } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  advanceGrant,
+  createGrant,
+  createKernelPermissionRemovalObserver,
+  createKernelPermissionRevocationCoordinator,
   createLocalKernelHandleOpsAdapter,
+  createLocalKernelPermissionUninstallAdapter,
   createOperationObserver,
   createOperationRunner,
+  type Grant,
+  type GrantIdentity,
+  type KernelPermissionStateReadRequest,
+  type KernelPreparationReadRequest,
   type OperationObserverReadRequest,
   OperationStore,
   type OperationStoreAdapter,
 } from "../src/index.js";
-import { createSqliteOperationStore } from "../src/testing.js";
+import { createSqliteGrantStore, createSqliteOperationStore } from "../src/testing.js";
 
 const requireAnvil = process.env.OGP_REQUIRE_ANVIL === "1";
 const chainId = 31_337;
@@ -37,6 +51,11 @@ const kernelAbi = parseAbi([
   "constructor(address _entryPoint)",
   "function initialize(bytes21 _rootValidator, address hook, bytes validatorData, bytes hookData, bytes[] initConfig)",
   "function rootValidator() view returns (bytes21)",
+  "function installValidations(bytes21[] vIds, (uint32 nonce, address hook)[] configs, bytes[] validationData, bytes[] hookData)",
+  "function grantAccess(bytes21 vId, bytes4 selector, bool allow)",
+  "function validationConfig(bytes21 vId) view returns ((uint32 nonce, address hook) config)",
+  "function permissionConfig(bytes4 pId) view returns ((bytes2 permissionFlag, address signer, bytes22[] policyData) config)",
+  "function isAllowedSelector(bytes21 vId, bytes4 selector) view returns (bool)",
 ]);
 const factoryAbi = parseAbi([
   "constructor(address _impl)",
@@ -46,12 +65,16 @@ const factoryAbi = parseAbi([
 const validatorAbi = parseAbi([
   "function ecdsaValidatorStorage(address account) view returns (address owner)",
 ]);
+const multiChainSignerAbi = parseAbi([
+  "function signer(bytes32 id, address wallet) view returns (address owner)",
+]);
 
 interface KernelArtifacts {
   provenance: { kernelVersion: string; kernelCommit: string };
   kernel: { keccak256: Hex; creationBytecode: Hex };
   factory: { keccak256: Hex; creationBytecode: Hex };
   ecdsaValidator: { keccak256: Hex; creationBytecode: Hex };
+  multiChainSigner: { keccak256: Hex; runtimeKeccak256: Hex; creationBytecode: Hex };
 }
 
 interface Harness {
@@ -62,9 +85,12 @@ interface Harness {
   entryPoint: `0x${string}`;
   factory: `0x${string}`;
   validator: `0x${string}`;
+  multiChainSigner: `0x${string}`;
+  submitterPrivateKey: Hex;
 }
 
 let harness: Harness;
+const temporaryDirectories: string[] = [];
 
 function lower(value: string): `0x${string}` {
   return value.toLowerCase() as `0x${string}`;
@@ -159,7 +185,8 @@ async function startHarness(): Promise<Harness> {
   const publicClient = createPublicClient({ transport: http(url, { retryCount: 0 }) });
   await waitForAnvil(publicClient, anvilProcess);
 
-  const submitter = privateKeyToAccount(generatePrivateKey());
+  const submitterPrivateKey = generatePrivateKey();
+  const submitter = privateKeyToAccount(submitterPrivateKey);
   await publicClient.request({
     method: "anvil_setBalance" as "eth_chainId",
     params: [submitter.address, quantity(parseEther("100"))] as never,
@@ -181,6 +208,9 @@ async function startHarness(): Promise<Harness> {
   expect(keccak256(artifacts.factory.creationBytecode)).toBe(artifacts.factory.keccak256);
   expect(keccak256(artifacts.ecdsaValidator.creationBytecode)).toBe(
     artifacts.ecdsaValidator.keccak256,
+  );
+  expect(keccak256(artifacts.multiChainSigner.creationBytecode)).toBe(
+    artifacts.multiChainSigner.keccak256,
   );
 
   const entryPointArtifactPath = join(
@@ -218,7 +248,26 @@ async function startHarness(): Promise<Harness> {
     artifacts.ecdsaValidator.creationBytecode,
     [],
   );
-  return { process: anvilProcess, url, publicClient, submitter, entryPoint, factory, validator };
+  const multiChainSigner = await deploy(
+    wallet,
+    publicClient,
+    artifacts.multiChainSigner.creationBytecode,
+    multiChainSignerAbi,
+  );
+  expect(keccak256((await publicClient.getCode({ address: multiChainSigner })) ?? "0x")).toBe(
+    artifacts.multiChainSigner.runtimeKeccak256,
+  );
+  return {
+    process: anvilProcess,
+    url,
+    publicClient,
+    submitter,
+    entryPoint,
+    factory,
+    validator,
+    multiChainSigner,
+    submitterPrivateKey,
+  };
 }
 
 async function createKernel(owner: `0x${string}`, salt: Hex): Promise<`0x${string}`> {
@@ -254,6 +303,86 @@ async function createKernel(owner: `0x${string}`, salt: Hex): Promise<`0x${strin
     params: [account, quantity(parseEther("10"))] as never,
   });
   return account;
+}
+
+function permissionProfile(signer: `0x${string}`, operator: `0x${string}`) {
+  const policySetId = encodeAbiParameters([{ type: "bytes[]" }], [[]]);
+  const signerId = encodeAbiParameters([{ type: "bytes" }], [concat([signer, operator])]);
+  const permissionId = slice(
+    keccak256(encodeAbiParameters([{ type: "bytes[]" }], [[policySetId, "0x0000", signerId]])),
+    0,
+    4,
+  );
+  return {
+    permissionId,
+    validationId: `0x02${permissionId.slice(2)}${"00".repeat(16)}` as Hex,
+    enableData: encodeAbiParameters(
+      [{ type: "bytes[]" }],
+      [[concat(["0x0000", signer, operator])]],
+    ),
+  } as const;
+}
+
+async function createKernelWithPermission(
+  owner: `0x${string}`,
+  operator: `0x${string}`,
+): Promise<{ account: `0x${string}`; blockNumber: string; blockHash: Hex }> {
+  const rootValidationId = `0x01${harness.validator.slice(2)}` as Hex;
+  const permission = permissionProfile(harness.multiChainSigner, operator);
+  const initConfig = [
+    encodeFunctionData({
+      abi: kernelAbi,
+      functionName: "installValidations",
+      args: [
+        [permission.validationId],
+        [{ nonce: 1, hook: zeroAddress }],
+        [permission.enableData],
+        ["0x"],
+      ],
+    }),
+    encodeFunctionData({
+      abi: kernelAbi,
+      functionName: "grantAccess",
+      args: [permission.validationId, "0xe9ae5c53", true],
+    }),
+  ];
+  const initialize = encodeFunctionData({
+    abi: kernelAbi,
+    functionName: "initialize",
+    args: [rootValidationId, zeroAddress, owner, "0x", initConfig],
+  });
+  const salt = keccak256(generatePrivateKey());
+  const account = lower(
+    await harness.publicClient.readContract({
+      address: harness.factory,
+      abi: factoryAbi,
+      functionName: "getAddress",
+      args: [initialize, salt],
+    }),
+  );
+  const wallet = createWalletClient({
+    account: harness.submitter,
+    transport: http(harness.url, { retryCount: 0 }),
+  });
+  const hash = await wallet.writeContract({
+    address: harness.factory,
+    abi: factoryAbi,
+    functionName: "createAccount",
+    args: [initialize, salt],
+    account: harness.submitter,
+    chain: null,
+  });
+  const receipt = await harness.publicClient.waitForTransactionReceipt({ hash });
+  expect(receipt.status).toBe("success");
+  await harness.publicClient.request({
+    method: "anvil_setBalance" as "eth_chainId",
+    params: [account, quantity(parseEther("10"))] as never,
+  });
+  return {
+    account,
+    blockNumber: receipt.blockNumber.toString(10),
+    blockHash: lower(receipt.blockHash),
+  };
 }
 
 function rawLog(log: {
@@ -625,15 +754,136 @@ async function execute(
   return { first, finalized, signs, sends, signedHash, account };
 }
 
+function activePermissionGrant(
+  account: `0x${string}`,
+  permissionId: Hex,
+  installation: { blockNumber: string; blockHash: Hex },
+): Grant {
+  const identity: GrantIdentity = {
+    grantId: "anvil-permission-revocation",
+    chainScope: "all",
+    logicalAccount: {
+      kind: "kernel",
+      accountIndex: "0",
+      kernelVersion: "0.3.3",
+      factoryRoute: "kernel_factory",
+      ownerCredential: { kind: "ecdsa", publicIdentityHash: `0x${"aa".repeat(32)}` },
+    },
+    operatorCredential: { kind: "ecdsa", publicIdentityHash: `0x${"bb".repeat(32)}` },
+    policyHash: `0x${"cc".repeat(32)}`,
+  };
+  const binding = { chainId, account, permissionId };
+  let grant: Grant = createGrant({ identity, requestedAt: 10, expiresAt: 1_000 });
+  grant = advanceGrant(grant, {
+    type: "approve",
+    identity,
+    approval: {
+      approvalHash: `0x${"dd".repeat(32)}`,
+      capabilityHash: `0x${"ee".repeat(32)}`,
+      approvedAt: 20,
+    },
+  });
+  grant = advanceGrant(grant, { type: "activate", identity, activatedAt: 30 });
+  grant = advanceGrant(grant, { type: "record_unmaterialized", identity, binding, recordedAt: 31 });
+  grant = advanceGrant(grant, { type: "begin_materialization", identity, binding, startedAt: 32 });
+  return advanceGrant(grant, {
+    type: "record_installed",
+    identity,
+    binding,
+    installation: {
+      kind: "permission_present",
+      ...binding,
+      ...installation,
+      observedAt: 33,
+    },
+  });
+}
+
+async function eip1898Call(
+  client: PublicClient,
+  account: `0x${string}`,
+  blockHash: Hex,
+  functionName: "validationConfig" | "permissionConfig",
+  args: readonly [Hex],
+) {
+  const data = encodeFunctionData({ abi: kernelAbi, functionName, args } as never);
+  const result = await client.request({
+    method: "eth_call" as "eth_chainId",
+    params: [
+      { to: account, data },
+      { blockHash, requireCanonical: true },
+    ] as never,
+  });
+  return decodeFunctionResult({ abi: kernelAbi, functionName, data: result as Hex } as never);
+}
+
+function permissionStateReads(client: PublicClient) {
+  return {
+    async read(request: KernelPermissionStateReadRequest) {
+      const common = {
+        chainId: request.chainId,
+        account: request.account,
+        blockNumber: request.blockNumber,
+        blockHash: request.blockHash,
+        requireCanonical: true as const,
+      };
+      if (request.type === "code") {
+        const code = await client.request({
+          method: "eth_getCode" as "eth_chainId",
+          params: [
+            request.account,
+            { blockHash: request.blockHash, requireCanonical: true },
+          ] as never,
+        });
+        return { ...common, code: lower(code as string) };
+      }
+      if (request.type === "kernel_validation_config") {
+        const config = (await eip1898Call(
+          client,
+          request.account,
+          request.blockHash,
+          "validationConfig",
+          [request.validationId],
+        )) as { nonce: number; hook: `0x${string}` };
+        return {
+          ...common,
+          validationId: request.validationId,
+          nonce: config.nonce.toString(10),
+          hook: lower(config.hook),
+        };
+      }
+      const config = (await eip1898Call(
+        client,
+        request.account,
+        request.blockHash,
+        "permissionConfig",
+        [request.permissionId],
+      )) as { permissionFlag: Hex; signer: `0x${string}`; policyData: readonly Hex[] };
+      return {
+        ...common,
+        permissionId: request.permissionId,
+        permissionFlag: lower(config.permissionFlag),
+        signer: lower(config.signer),
+        policyCount: config.policyData.length,
+      };
+    },
+    async close() {},
+  };
+}
+
 describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
   beforeAll(async () => {
     harness = await startHarness();
   }, 60_000);
 
   afterAll(async () => {
-    if (!harness?.process || harness.process.exitCode !== null) return;
-    harness.process.kill("SIGTERM");
-    await new Promise<void>((resolve) => harness.process.once("exit", () => resolve()));
+    if (harness?.process && harness.process.exitCode === null) {
+      harness.process.kill("SIGTERM");
+      await new Promise<void>((resolve) => harness.process.once("exit", () => resolve()));
+    }
+    await Promise.all(
+      temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+    );
   });
 
   it.each([
@@ -689,5 +939,249 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
       },
     });
     expect({ signs: result.signs, sends: result.sends }).toEqual({ signs: 1, sends: 1 });
+  }, 60_000);
+
+  it("revokes one exact permission after send-return crash and full recreation", async () => {
+    const ownerPrivateKey = generatePrivateKey();
+    const operator = privateKeyToAccount(generatePrivateKey());
+    const owner = privateKeyToAccount(ownerPrivateKey);
+    const installed = await createKernelWithPermission(
+      lower(owner.address),
+      lower(operator.address),
+    );
+    const permission = permissionProfile(harness.multiChainSigner, lower(operator.address));
+    const directory = await mkdtemp(join(tmpdir(), "ogp-kernel-revoke-anvil-"));
+    temporaryDirectories.push(directory);
+    const storePath = join(directory, "state.db");
+    const seed = createSqliteGrantStore(storePath);
+    expect(
+      await seed.compareAndSwap({
+        grantId: "anvil-permission-revocation",
+        expectedStoreRevision: null,
+        next: activePermissionGrant(installed.account, permission.permissionId, installed),
+      }),
+    ).toMatchObject({ status: "committed" });
+    await seed.close();
+
+    const counters = { signs: 0, sends: 0 };
+    let loseAcknowledgment = true;
+    function coordinator(client: PublicClient) {
+      const ownerAccount = privateKeyToAccount(ownerPrivateKey);
+      const submitter = privateKeyToAccount(harness.submitterPrivateKey);
+      const adapter = createLocalKernelPermissionUninstallAdapter({
+        profile: "kernel-v3.3-permission-uninstall",
+        key: { grantId: "anvil-permission-revocation", chainId },
+        entryPoint: { version: "0.7", address: harness.entryPoint },
+        kernel: {
+          account: installed.account,
+          rootValidator: harness.validator,
+          owner: lower(ownerAccount.address),
+        },
+        permission: { signer: harness.multiChainSigner, operator: lower(operator.address) },
+        gas: {
+          callGasLimit: "400000",
+          verificationGasLimit: "500000",
+          preVerificationGas: "100000",
+          maxFeePerGas: "2000000000",
+          maxPriorityFeePerGas: "1000000000",
+        },
+        handleOpsGasLimit: "2500000",
+        preparationReads: {
+          async read(request: KernelPreparationReadRequest) {
+            if (request.type === "chain_id") return client.getChainId();
+            if (request.type === "code") {
+              return lower((await client.getCode({ address: request.address })) ?? "0x");
+            }
+            if (request.type === "kernel_root_validator") {
+              return lower(
+                await client.readContract({
+                  address: request.account,
+                  abi: kernelAbi,
+                  functionName: "rootValidator",
+                }),
+              );
+            }
+            if (request.type === "kernel_ecdsa_owner") {
+              return lower(
+                await client.readContract({
+                  address: request.validator,
+                  abi: validatorAbi,
+                  functionName: "ecdsaValidatorStorage",
+                  args: [request.account],
+                }),
+              );
+            }
+            if (request.type === "kernel_validation_config") {
+              const config = await client.readContract({
+                address: request.account,
+                abi: kernelAbi,
+                functionName: "validationConfig",
+                args: [request.validationId],
+              });
+              return { nonce: config.nonce.toString(10), hook: lower(config.hook) };
+            }
+            if (request.type === "kernel_permission_config") {
+              const config = await client.readContract({
+                address: request.account,
+                abi: kernelAbi,
+                functionName: "permissionConfig",
+                args: [request.permissionId],
+              });
+              return {
+                permissionFlag: lower(config.permissionFlag),
+                signer: lower(config.signer),
+                policyCount: config.policyData.length,
+              };
+            }
+            if (request.type === "kernel_allowed_selector") {
+              return client.readContract({
+                address: request.account,
+                abi: kernelAbi,
+                functionName: "isAllowedSelector",
+                args: [request.validationId, request.selector],
+              });
+            }
+            if (request.type === "multi_chain_signer_owner") {
+              return lower(
+                await client.readContract({
+                  address: request.signer,
+                  abi: multiChainSignerAbi,
+                  functionName: "signer",
+                  args: [pad(request.permissionId, { dir: "right", size: 32 }), request.account],
+                }),
+              );
+            }
+            return (
+              await client.readContract({
+                address: request.entryPoint,
+                abi: entryPoint07Abi,
+                functionName: "getNonce",
+                args: [request.account, 0n],
+              })
+            ).toString(10);
+          },
+          async close() {},
+        },
+        userOperationSigner: {
+          address: lower(ownerAccount.address),
+          async signDigest(request: { userOperationHash: Hex }) {
+            counters.signs += 1;
+            return ownerAccount.sign({ hash: request.userOperationHash });
+          },
+          async close() {},
+        },
+        handleOpsSubmitter: {
+          address: lower(submitter.address),
+          async sendHandleOps(request: {
+            chainId: number;
+            entryPoint: `0x${string}`;
+            submitter: `0x${string}`;
+            userOperationHash: Hex;
+            calldata: Hex;
+            gasLimit: string;
+          }) {
+            counters.sends += 1;
+            const wallet = createWalletClient({
+              account: submitter,
+              transport: http(harness.url, { retryCount: 0 }),
+            });
+            const transactionHash = await wallet.sendTransaction({
+              account: submitter,
+              to: request.entryPoint,
+              data: request.calldata,
+              gas: BigInt(request.gasLimit),
+              maxFeePerGas: 2_000_000_000n,
+              maxPriorityFeePerGas: 1_000_000_000n,
+              chain: null,
+            });
+            expect((await client.waitForTransactionReceipt({ hash: transactionHash })).status).toBe(
+              "success",
+            );
+            if (loseAcknowledgment) {
+              loseAcknowledgment = false;
+              throw new Error("loopback acknowledgement lost");
+            }
+            return {
+              chainId: request.chainId,
+              entryPoint: request.entryPoint,
+              submitter: request.submitter,
+              userOperationHash: request.userOperationHash,
+              transactionHash: lower(transactionHash),
+            };
+          },
+          async close() {},
+        },
+      });
+      expect(adapter.descriptor).toMatchObject({
+        chainId,
+        account: installed.account,
+        permissionId: permission.permissionId,
+        validationId: permission.validationId,
+      });
+      return createKernelPermissionRevocationCoordinator({
+        grantStore: createSqliteGrantStore(storePath),
+        operationStore: createSqliteOperationStore(storePath),
+        operationObserver: createOperationObserver(
+          observerCapabilities(harness.entryPoint, client),
+        ),
+        uninstall: adapter,
+        permissionObserver: createKernelPermissionRemovalObserver(permissionStateReads(client)),
+      });
+    }
+
+    let revoker = coordinator(harness.publicClient);
+    const first = await revoker.revoke({
+      revocationStartedAt: 40,
+      chainRevocationStartedAt: 41,
+      preparedAt: 42,
+      attemptedAt: 43,
+      submittedAt: 44,
+      operationObservedAt: 45,
+      permissionObservedAt: 46,
+      timeoutMs: 60_000,
+    });
+    expect(first).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      grant: { value: { state: "revoking", materializations: [{ state: "revoking" }] } },
+      operation: { value: { state: "submission_attempted" } },
+    });
+    await revoker.close();
+    await harness.publicClient.request({
+      method: "anvil_mine" as "eth_chainId",
+      params: ["0x80"] as never,
+    });
+
+    const recoveryClient = createPublicClient({ transport: http(harness.url, { retryCount: 0 }) });
+    revoker = coordinator(recoveryClient);
+    const recovered = await revoker.revoke({
+      revocationStartedAt: 50,
+      chainRevocationStartedAt: 51,
+      preparedAt: 52,
+      attemptedAt: 53,
+      submittedAt: 54,
+      operationObservedAt: 55,
+      permissionObservedAt: 56,
+      timeoutMs: 60_000,
+    });
+    expect(recovered).toMatchObject({
+      status: "revoked",
+      removal: {
+        kind: "permission_absent",
+        chainId,
+        account: installed.account,
+        permissionId: permission.permissionId,
+      },
+      grant: { value: { state: "revoking", materializations: [{ state: "revoked" }] } },
+      operation: {
+        value: {
+          state: "finalized",
+          identity: { kind: "revocation", chainId, account: installed.account },
+          inclusion: { outcome: "success" },
+        },
+      },
+    });
+    expect(counters).toEqual({ signs: 1, sends: 1 });
+    await revoker.close();
   }, 60_000);
 });
