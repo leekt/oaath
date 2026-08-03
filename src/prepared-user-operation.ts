@@ -369,7 +369,11 @@ function parseUnsignedUserOperation(
   });
 }
 
-function asViemUserOperation(value: UnsignedUserOperationV07): UserOperation<"0.7"> {
+/**
+ * Maps one prepared unsigned UserOperation into viem's flat v0.7 shape with an
+ * empty signature, ready for signing and toPackedUserOperation submission.
+ */
+export function asViemUserOperation(value: UnsignedUserOperationV07): UserOperation<"0.7"> {
   return {
     sender: value.sender,
     nonce: BigInt(value.nonce),

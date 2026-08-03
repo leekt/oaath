@@ -53,7 +53,16 @@ account implementation, match that profile.
 
 Account descriptors are process-local evidence handles. After a process reload,
 call `bindKernelV4Account` again before preparing another operation; serialized
-or copied descriptors are deliberately rejected.
+or copied descriptors are deliberately rejected. A descriptor also freezes the
+account state observed at bind time: after a counterfactual account's first
+operation deploys it, rebind before preparing the next operation, or EntryPoint
+rejects the stale factory evidence (`AA10 sender already constructed`).
+
+Gas values are caller-supplied decimal strings. Gas and fee estimation is an
+explicit non-goal of this package; bring values from your own estimation
+source. `createKernelV4Reads` adapts any viem-style public client into the
+account read capability, and `asViemUserOperation` maps a prepared operation
+into viem's shape for signing and submission.
 
 ## Development
 
