@@ -12,6 +12,7 @@ const testFiles = [
   "kernel-runtime-capabilities.test.ts",
   "identity-profile.test.ts",
   "grant-policy.test.ts",
+  "permission-protocol.test.ts",
   "grant.test.ts",
   "grant-transition.test.ts",
   "prepared-user-operation.test.ts",
