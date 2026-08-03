@@ -85,11 +85,28 @@ const CALL_POLICY = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2" as const;
  * validAfter/validUntil range, and `zerodev-kernel-rate-limit-policy` 0.0.1 at
  * 0xf63d4139b25c836334edd76641356c6b74c86873 for a per-chain operation count.
  * Both reproduce their cannon `expected` addresses offline from the mirrored
- * sources. They are deliberately NOT pinned yet: a Kernel v4 permission carrying
- * two policy packages is rejected on-chain with AA23 in the local proof, with the
- * same failure for either second module, so pinning them would claim a scope the
- * chain does not currently accept. Both axes stay fail-closed until that is
- * understood.
+ * sources, and both are interface-compatible with Kernel v4's IPolicy.
+ *
+ * They are not pinned yet because of one SDK-side defect, now root-caused on
+ * anvil and traced end to end. A permission carrying two policy packages installs
+ * correctly — `validationInfo(vId)` reads
+ * `policies = [CallPolicy, TimestampPolicy]`, `signer = ECDSASigner`, hook = the
+ * no-hook sentinel — but its first operation is rejected with EntryPoint
+ * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, and `0x8baa579f` is
+ * Kernel's `InvalidSignature()`. That selector comes from exactly one place:
+ * `ValidationManager._validateUserOpPermission` requires
+ * `permissionSignature.signatures.length == vInfo.policies.length + 1`. The
+ * submitted envelope carried two slices for two policies, where Kernel demands
+ * three, so the operation is refused before any policy runs. The signature
+ * envelope, not the policy contracts, is wrong: sessionOperator's encodeSignature
+ * must emit one empty slice per installed policy package, and it currently emits
+ * one fewer. A single-policy session is unaffected, which is why the shipped
+ * call-and-value scope passes.
+ *
+ * Fixing that envelope is the whole remaining task for these two axes: pin both
+ * addresses here, flip hook_expiry and hook_operation_limit to available, and
+ * extend the local proof with a pre-expiry success, a post-expiry AA22 rejection
+ * and an N+1th operation rejection. No contract change is needed.
  */
 const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x${string}`>>> =
   Object.freeze({
