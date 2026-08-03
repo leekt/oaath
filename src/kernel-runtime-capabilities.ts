@@ -18,14 +18,14 @@ export type KernelRuntimeProfile =
 export type KernelRuntimeAnchorId =
   | "zerodev_sdk.createKernelAccount"
   | "zerodev_sdk.KERNEL_V3_3"
+  | "zerodev_sdk.DUMMY_ECDSA_SIG"
   | "zerodev_sdk.createKernelAccountClient"
   | "zerodev_sdk.uninstallPlugin"
   | "zerodev_ecdsa_validator.getKernelAddressFromECDSA"
   | "zerodev_ecdsa_validator.signerToEcdsaValidator"
   | "zerodev_passkey_validator.toPasskeyValidator"
   | "zerodev_passkey_validator.V0_0_3_PATCHED"
-  | "zerodev_permissions.toECDSASigner"
-  | "zerodev_permissions.toSignerId"
+  | "zerodev_permissions.ECDSA_SIGNER_CONTRACT"
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
   | "ogp.createEcdsaKernelOwnerRuntime"
@@ -234,7 +234,7 @@ const manifest = {
         },
         {
           importPath: "@zerodev/sdk/constants",
-          names: ["KERNEL_V3_3"],
+          names: ["DUMMY_ECDSA_SIG", "KERNEL_V3_3"],
         },
       ],
     },
@@ -440,8 +440,8 @@ const manifest = {
     permission_signer_ecdsa: {
       status: "available",
       anchors: [
-        "zerodev_permissions.toECDSASigner",
-        "zerodev_permissions.toSignerId",
+        "zerodev_permissions.ECDSA_SIGNER_CONTRACT",
+        "zerodev_sdk.DUMMY_ECDSA_SIG",
         "ogp.createEcdsaPermissionSignerRuntime",
         "kernel.v3_3",
         "entrypoint.v0_7",

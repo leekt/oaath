@@ -1,24 +1,23 @@
-import { ECDSA_SIGNER_CONTRACT, type ModularSigner } from "@zerodev/permissions";
-import { toECDSASigner, toSignerId } from "@zerodev/permissions/signers";
-import { concat, encodeAbiParameters, recoverMessageAddress, type SignableMessage } from "viem";
-import { toAccount } from "viem/accounts";
+import { ECDSA_SIGNER_CONTRACT } from "@zerodev/permissions";
+import { DUMMY_ECDSA_SIG } from "@zerodev/sdk/constants";
+import { concat, encodeAbiParameters, recoverMessageAddress } from "viem";
 import {
   captureOperatorCredentialProfile,
   type EcdsaOperatorCredentialProfile,
 } from "./identity-profile.js";
-import { type CaptureContext, captureRecord, exactRecord } from "./internal/exact-record.js";
+import { type CaptureContext, exactRecord } from "./internal/exact-record.js";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const SIGNATURE = /^0x[0-9a-f]{130}$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const CANONICAL_SIGNER_CONTRACT = ECDSA_SIGNER_CONTRACT.toLowerCase() as `0x${string}`;
+const CANONICAL_DUMMY_SIGNATURE = DUMMY_ECDSA_SIG.toLowerCase() as `0x${string}`;
 
 export type EcdsaPermissionSignerErrorCode =
   | "ecdsa_permission_signer_input_invalid"
   | "ecdsa_permission_signer_capability_invalid"
   | "ecdsa_permission_signer_binding_mismatch"
-  | "ecdsa_permission_signer_runtime_unavailable"
   | "ecdsa_permission_signer_request_invalid"
   | "ecdsa_permission_signer_signing_failed";
 
@@ -49,15 +48,6 @@ export interface EcdsaPermissionSignerRuntime {
 interface CapturedSigner {
   readonly address: `0x${string}`;
   readonly signMessageHash: EcdsaPermissionSignerCapability["signMessageHash"];
-}
-
-interface CapturedModularSigner {
-  readonly account: object;
-  readonly accountAddress: string;
-  readonly signMessage: ModularSigner["account"]["signMessage"];
-  readonly signerContractAddress: string;
-  readonly signerData: unknown;
-  readonly dummySignature: unknown;
 }
 
 function signerError(code: EcdsaPermissionSignerErrorCode, message: string): never {
@@ -139,22 +129,6 @@ function requestHash(value: unknown): `0x${string}` {
   }
 }
 
-function rawMessageHash(message: SignableMessage): `0x${string}` {
-  if (
-    typeof message !== "object" ||
-    message === null ||
-    !("raw" in message) ||
-    typeof message.raw !== "string" ||
-    !HASH.test(message.raw)
-  ) {
-    return signerError(
-      "ecdsa_permission_signer_request_invalid",
-      "ECDSA permission signer accepts only a raw lowercase 32-byte hash",
-    );
-  }
-  return message.raw as `0x${string}`;
-}
-
 function normalizeSignature(value: unknown): `0x${string}` {
   if (typeof value !== "string" || !SIGNATURE.test(value)) {
     return signerError(
@@ -202,51 +176,6 @@ async function verifiedSignature(
   return normalized;
 }
 
-function captureModularSigner(value: unknown): Readonly<CapturedModularSigner> {
-  try {
-    const context: CaptureContext = new WeakSet();
-    const record = exactRecord(
-      value,
-      ["account", "signerContractAddress", "getSignerData", "getDummySignature"],
-      "ZeroDev ECDSA modular signer",
-      context,
-      (message) => signerError("ecdsa_permission_signer_runtime_unavailable", message),
-    );
-    const account = captureRecord(
-      record.account,
-      "ZeroDev ECDSA modular signer account",
-      context,
-      (message) => signerError("ecdsa_permission_signer_runtime_unavailable", message),
-    );
-    if (
-      typeof account.address !== "string" ||
-      typeof account.signMessage !== "function" ||
-      typeof record.signerContractAddress !== "string" ||
-      typeof record.getSignerData !== "function" ||
-      typeof record.getDummySignature !== "function"
-    ) {
-      return signerError(
-        "ecdsa_permission_signer_runtime_unavailable",
-        "ZeroDev ECDSA modular signer output is invalid",
-      );
-    }
-    return Object.freeze({
-      account: Object.freeze(account),
-      accountAddress: account.address,
-      signMessage: account.signMessage as ModularSigner["account"]["signMessage"],
-      signerContractAddress: record.signerContractAddress,
-      signerData: Reflect.apply(record.getSignerData, undefined, []),
-      dummySignature: Reflect.apply(record.getDummySignature, undefined, []),
-    });
-  } catch (error) {
-    if (error instanceof OgpEcdsaPermissionSignerError) throw error;
-    return signerError(
-      "ecdsa_permission_signer_runtime_unavailable",
-      "ZeroDev ECDSA modular signer output could not be captured safely",
-    );
-  }
-}
-
 /**
  * Captures one chain-neutral ECDSA operator and proves its canonical Kernel 3.3
  * PermissionValidator signer identity. Permission composition owns policy and chain facts later.
@@ -292,93 +221,13 @@ export async function createEcdsaPermissionSignerRuntime(
   }
   const profile = capturedProfile;
   const signer = captureSigner(record.signer, profile.address, context);
-
-  const localAccount = toAccount({
-    address: signer.address,
-    async signMessage({ message }) {
-      const hash = rawMessageHash(message);
-      let signature: unknown;
-      try {
-        signature = await Reflect.apply(signer.signMessageHash, undefined, [
-          Object.freeze({ hash }),
-        ]);
-      } catch {
-        return signerError(
-          "ecdsa_permission_signer_signing_failed",
-          "ECDSA permission signing failed",
-        );
-      }
-      return verifiedSignature(signature, hash, signer.address);
-    },
-    async signTransaction() {
-      return signerError(
-        "ecdsa_permission_signer_request_invalid",
-        "ECDSA permission transaction signing is outside this runtime",
-      );
-    },
-    async signTypedData() {
-      return signerError(
-        "ecdsa_permission_signer_request_invalid",
-        "ECDSA permission typed-data signing is outside this runtime",
-      );
-    },
-  });
-
-  let upstreamSigner: ModularSigner;
-  try {
-    upstreamSigner = await toECDSASigner({ signer: localAccount });
-  } catch {
-    return signerError(
-      "ecdsa_permission_signer_runtime_unavailable",
-      "Canonical ECDSA permission signer could not be created",
-    );
-  }
-  const modularSigner = captureModularSigner(upstreamSigner);
-  const signerData =
-    typeof modularSigner.signerData === "string"
-      ? (modularSigner.signerData.toLowerCase() as `0x${string}`)
-      : "0x";
-  const signerContractAddress = modularSigner.signerContractAddress.toLowerCase() as `0x${string}`;
-  const expectedSignerId = encodeAbiParameters(
+  const signerContractAddress = CANONICAL_SIGNER_CONTRACT;
+  const signerData = profile.address;
+  const signerId = encodeAbiParameters(
     [{ name: "signerData", type: "bytes" }],
     [concat([CANONICAL_SIGNER_CONTRACT, profile.address])],
   ).toLowerCase() as `0x${string}`;
-  const dummySignature =
-    typeof modularSigner.dummySignature === "string"
-      ? (modularSigner.dummySignature.toLowerCase() as `0x${string}`)
-      : "0x";
-  if (
-    modularSigner.accountAddress.toLowerCase() !== profile.address ||
-    signerContractAddress !== CANONICAL_SIGNER_CONTRACT ||
-    signerData !== profile.address ||
-    !SIGNATURE.test(dummySignature)
-  ) {
-    return signerError(
-      "ecdsa_permission_signer_runtime_unavailable",
-      "Canonical ECDSA permission signer identity does not match the pinned runtime",
-    );
-  }
-  let signerId: `0x${string}`;
-  try {
-    const ownedSignerCodecInput: ModularSigner = Object.freeze({
-      account: localAccount,
-      signerContractAddress,
-      getSignerData: () => signerData,
-      getDummySignature: () => dummySignature,
-    });
-    signerId = toSignerId(ownedSignerCodecInput).toLowerCase() as `0x${string}`;
-  } catch {
-    return signerError(
-      "ecdsa_permission_signer_runtime_unavailable",
-      "Canonical ECDSA permission signer ID could not be encoded",
-    );
-  }
-  if (signerId !== expectedSignerId) {
-    return signerError(
-      "ecdsa_permission_signer_runtime_unavailable",
-      "Canonical ECDSA permission signer ID does not match the pinned runtime",
-    );
-  }
+  const dummySignature = CANONICAL_DUMMY_SIGNATURE;
 
   return Object.freeze({
     profile,
@@ -390,9 +239,7 @@ export async function createEcdsaPermissionSignerRuntime(
       const hash = requestHash(request);
       try {
         return await verifiedSignature(
-          await Reflect.apply(modularSigner.signMessage, modularSigner.account, [
-            { message: { raw: hash } },
-          ]),
+          await Reflect.apply(signer.signMessageHash, undefined, [Object.freeze({ hash })]),
           hash,
           profile.address,
         );

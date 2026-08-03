@@ -10,7 +10,7 @@ import { PasskeyValidatorContractVersion } from "@zerodev/passkey-validator";
 import { ECDSA_SIGNER_CONTRACT } from "@zerodev/permissions";
 import { toECDSASigner, toSignerId } from "@zerodev/permissions/signers";
 import { createKernelAccount, createKernelAccountClient, uninstallPlugin } from "@zerodev/sdk";
-import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
+import { DUMMY_ECDSA_SIG, KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { createWalletClient } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
@@ -78,6 +78,7 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof createWalletClient).toBe("function");
     expect(typeof createLocalKernelHandleOpsAdapter).toBe("function");
     expect(typeof createLocalKernelPermissionUninstallAdapter).toBe("function");
+    expect(DUMMY_ECDSA_SIG).toMatch(/^0x[0-9a-f]{130}$/u);
     expect(KERNEL_V3_3).toBe("0.3.3");
     expect(
       entryPoint07Abi.some((item) => item.type === "function" && item.name === "handleOps"),
@@ -98,6 +99,16 @@ describe("Kernel runtime capabilities", () => {
         tag: null,
         alignment: "registry_version_differs_from_git_head_tree",
       },
+      publicExports: [
+        {
+          importPath: "@zerodev/sdk",
+          names: ["createKernelAccount", "createKernelAccountClient", "uninstallPlugin"],
+        },
+        {
+          importPath: "@zerodev/sdk/constants",
+          names: ["DUMMY_ECDSA_SIG", "KERNEL_V3_3"],
+        },
+      ],
     });
     expect(KERNEL_RUNTIME_CAPABILITIES.packages.viem).toMatchObject({
       packageName: "viem",
@@ -287,8 +298,8 @@ describe("Kernel runtime capabilities", () => {
     expect(getKernelRuntimeCapability("permission_signer_ecdsa")).toEqual({
       status: "available",
       anchors: [
-        "zerodev_permissions.toECDSASigner",
-        "zerodev_permissions.toSignerId",
+        "zerodev_permissions.ECDSA_SIGNER_CONTRACT",
+        "zerodev_sdk.DUMMY_ECDSA_SIG",
         "ogp.createEcdsaPermissionSignerRuntime",
         "kernel.v3_3",
         "entrypoint.v0_7",

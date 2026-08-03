@@ -2,29 +2,24 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import { createEcdsaPermissionSignerRuntime } from "../src/index.js";
 
-const adapterState = vi.hoisted(() => ({ signerDataReads: 0 }));
+const adapterCalls = vi.hoisted(() => ({ signer: 0, signerId: 0 }));
 
-vi.mock("@zerodev/permissions/signers", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@zerodev/permissions/signers")>();
-  return {
-    ...original,
-    async toECDSASigner(...parameters: Parameters<typeof original.toECDSASigner>) {
-      const signer = await original.toECDSASigner(...parameters);
-      const stableSignerData = signer.getSignerData();
-      return {
-        ...signer,
-        getSignerData() {
-          adapterState.signerDataReads += 1;
-          return adapterState.signerDataReads === 1 ? stableSignerData : `0x${"ff".repeat(20)}`;
-        },
-      };
-    },
-  };
-});
+vi.mock("@zerodev/permissions/signers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zerodev/permissions/signers")>()),
+  async toECDSASigner() {
+    adapterCalls.signer += 1;
+    throw new Error("untrusted adapter output");
+  },
+  toSignerId() {
+    adapterCalls.signerId += 1;
+    throw new Error("untrusted adapter output");
+  },
+}));
 
 describe("ECDSA permission signer adapter boundary", () => {
-  it("derives the signer ID from the one captured signer-data read", async () => {
-    adapterState.signerDataReads = 0;
+  it("does not admit ZeroDev adapter output into the production runtime", async () => {
+    adapterCalls.signer = 0;
+    adapterCalls.signerId = 0;
     const account = privateKeyToAccount(generatePrivateKey());
     const address = account.address.toLowerCase() as `0x${string}`;
     const runtime = await createEcdsaPermissionSignerRuntime({
@@ -40,9 +35,9 @@ describe("ECDSA permission signer adapter boundary", () => {
         },
       },
     });
+    const signature = await runtime.signMessageHash({ hash: `0x${"ab".repeat(32)}` });
 
-    expect(adapterState.signerDataReads).toBe(1);
-    expect(runtime.signerData).toBe(address);
-    expect(runtime.signerId).toContain(address.slice(2));
+    expect(signature).toMatch(/^0x[0-9a-f]{128}(?:1b|1c)$/u);
+    expect(adapterCalls).toEqual({ signer: 0, signerId: 0 });
   });
 });

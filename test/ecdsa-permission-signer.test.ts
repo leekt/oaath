@@ -1,5 +1,6 @@
 import { ECDSA_SIGNER_CONTRACT } from "@zerodev/permissions";
 import { toECDSASigner, toSignerId } from "@zerodev/permissions/signers";
+import { DUMMY_ECDSA_SIG } from "@zerodev/sdk/constants";
 import { encodeAbiParameters, recoverMessageAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
@@ -86,7 +87,10 @@ describe("ECDSA permission signer", () => {
       signerId: expectedSignerId,
     });
     expect(runtime.signerId).toHaveLength(2 + 128 * 2);
-    expect(runtime.dummySignature).toMatch(/^0x[0-9a-f]{130}$/u);
+    expect(DUMMY_ECDSA_SIG).toBe(
+      "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c",
+    );
+    expect(runtime.dummySignature).toBe(DUMMY_ECDSA_SIG);
     expect(recreated.signerContractAddress).toBe(runtime.signerContractAddress);
     expect(recreated.signerData).toBe(runtime.signerData);
     expect(recreated.signerId).toBe(runtime.signerId);
