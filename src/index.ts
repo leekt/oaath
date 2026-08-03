@@ -61,6 +61,21 @@ export {
   OgpKernelPermissionRevocationError,
 } from "./kernel-permission-revocation.js";
 export type {
+  KernelRuntimeAnchorId,
+  KernelRuntimeCapabilitiesErrorCode,
+  KernelRuntimeCapabilitiesManifest,
+  KernelRuntimeCapability,
+  KernelRuntimeConstraint,
+  KernelRuntimeProfile,
+  KernelRuntimeUnsupportedReason,
+} from "./kernel-runtime-capabilities.js";
+export {
+  getKernelRuntimeCapability,
+  KERNEL_RUNTIME_CAPABILITIES,
+  OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION,
+  OgpKernelRuntimeCapabilitiesError,
+} from "./kernel-runtime-capabilities.js";
+export type {
   EntryPointHandleOpsSubmitterCapability,
   KernelEcdsaOwnerSignerCapability,
   KernelExecutionCall,

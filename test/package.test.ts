@@ -6,8 +6,10 @@ describe("package boundary", () => {
   it("exports only accepted aggregate, Kernel operation, observer, runner, and store owners", () => {
     expect(Object.keys(ogp).sort()).toEqual([
       "GrantStore",
+      "KERNEL_RUNTIME_CAPABILITIES",
       "OGP_GRANT_RECORD_VERSION",
       "OGP_GRANT_STORE_RECORD_VERSION",
+      "OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION",
       "OGP_OPERATION_RECORD_VERSION",
       "OGP_OPERATION_STORE_RECORD_VERSION",
       "OGP_PREPARED_USER_OPERATION_VERSION",
@@ -15,6 +17,7 @@ describe("package boundary", () => {
       "OgpKernelHandleOpsAdapterError",
       "OgpKernelPermissionObserverError",
       "OgpKernelPermissionRevocationError",
+      "OgpKernelRuntimeCapabilitiesError",
       "OgpOperationError",
       "OgpOperationObserverError",
       "OgpOperationRunnerError",
@@ -32,6 +35,7 @@ describe("package boundary", () => {
       "createOperationObserver",
       "createOperationRunner",
       "deriveOperationId",
+      "getKernelRuntimeCapability",
       "operationOccupiesLane",
       "parseGrant",
       "parseOperation",
