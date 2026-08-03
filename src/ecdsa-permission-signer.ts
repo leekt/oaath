@@ -57,7 +57,6 @@ interface CapturedModularSigner {
   readonly signMessage: ModularSigner["account"]["signMessage"];
   readonly signerContractAddress: string;
   readonly signerData: unknown;
-  readonly signerId: unknown;
   readonly dummySignature: unknown;
 }
 
@@ -237,7 +236,6 @@ function captureModularSigner(value: unknown): Readonly<CapturedModularSigner> {
       signMessage: account.signMessage as ModularSigner["account"]["signMessage"],
       signerContractAddress: record.signerContractAddress,
       signerData: Reflect.apply(record.getSignerData, undefined, []),
-      signerId: toSignerId(value as ModularSigner),
       dummySignature: Reflect.apply(record.getDummySignature, undefined, []),
     });
   } catch (error) {
@@ -341,10 +339,6 @@ export async function createEcdsaPermissionSignerRuntime(
       ? (modularSigner.signerData.toLowerCase() as `0x${string}`)
       : "0x";
   const signerContractAddress = modularSigner.signerContractAddress.toLowerCase() as `0x${string}`;
-  const signerId =
-    typeof modularSigner.signerId === "string"
-      ? (modularSigner.signerId.toLowerCase() as `0x${string}`)
-      : "0x";
   const expectedSignerId = encodeAbiParameters(
     [{ name: "signerData", type: "bytes" }],
     [concat([CANONICAL_SIGNER_CONTRACT, profile.address])],
@@ -357,12 +351,32 @@ export async function createEcdsaPermissionSignerRuntime(
     modularSigner.accountAddress.toLowerCase() !== profile.address ||
     signerContractAddress !== CANONICAL_SIGNER_CONTRACT ||
     signerData !== profile.address ||
-    signerId !== expectedSignerId ||
     !SIGNATURE.test(dummySignature)
   ) {
     return signerError(
       "ecdsa_permission_signer_runtime_unavailable",
       "Canonical ECDSA permission signer identity does not match the pinned runtime",
+    );
+  }
+  let signerId: `0x${string}`;
+  try {
+    const ownedSignerCodecInput: ModularSigner = Object.freeze({
+      account: localAccount,
+      signerContractAddress,
+      getSignerData: () => signerData,
+      getDummySignature: () => dummySignature,
+    });
+    signerId = toSignerId(ownedSignerCodecInput).toLowerCase() as `0x${string}`;
+  } catch {
+    return signerError(
+      "ecdsa_permission_signer_runtime_unavailable",
+      "Canonical ECDSA permission signer ID could not be encoded",
+    );
+  }
+  if (signerId !== expectedSignerId) {
+    return signerError(
+      "ecdsa_permission_signer_runtime_unavailable",
+      "Canonical ECDSA permission signer ID does not match the pinned runtime",
     );
   }
 
