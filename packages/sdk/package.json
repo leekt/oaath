@@ -46,7 +46,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-composition.anvil.test.ts",
     "lint": "node scripts/check-package-boundary.mjs"
   },
   "devDependencies": {
@@ -55,6 +55,7 @@
     "@types/node": "22.13.0"
   },
   "dependencies": {
+    "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "viem": "2.55.8"
   }

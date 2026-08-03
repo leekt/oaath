@@ -25,7 +25,6 @@ const BYTES32 = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const NO_HOOK = `0x${"00".repeat(19)}01` as const;
-const EXECUTE_USER_OP_SELECTOR = "0x8dd7712f" as const;
 const MAX_UINT16 = (1n << 16n) - 1n;
 const MAX_UINT64 = (1n << 64n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -50,6 +49,12 @@ export const KERNEL_V4_IMPLEMENTATION_SLOT =
  * UnauthorizedCallData (AA23).
  */
 export const KERNEL_V4_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
+/**
+ * Kernel v4 executeUserOp(PackedUserOperation,bytes32) selector. Every non-root
+ * validation prefixes its callData with it so that Kernel enforces the
+ * validation's own selector allow-list.
+ */
+export const KERNEL_V4_EXECUTE_USER_OP_SELECTOR = "0x8dd7712f" as const;
 
 export type KernelV4SupportedChainId = 46_630 | 421_614 | 11_155_111;
 export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
@@ -940,7 +945,7 @@ export function prepareKernelV4UserOperation(
       callData:
         nonceKey.validationType === "0x00"
           ? execution
-          : concat([EXECUTE_USER_OP_SELECTOR, execution]),
+          : concat([KERNEL_V4_EXECUTE_USER_OP_SELECTOR, execution]),
       callGasLimit: uint120(gasRecord.callGasLimit, "Kernel call gas limit"),
       verificationGasLimit: uint120(
         gasRecord.verificationGasLimit,
