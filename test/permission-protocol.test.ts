@@ -432,11 +432,19 @@ describe("permission request/decision binding", () => {
       identity: approved.identity,
       activatedAt: 130,
     });
+    const expired = advanceGrant(active, {
+      type: "expire",
+      identity: active.identity,
+      expiredAt: 200,
+    });
     const replayedApproval = applyPermissionDecision(
-      applyInput(approvalDecision, { grant: clone(active), evaluatedAt: 250 }),
+      applyInput(approvalDecision, { grant: clone(expired), evaluatedAt: 250 }),
     );
-    expect(replayedApproval).toMatchObject({ status: "replayed", grant: { revision: 2 } });
-    expect(replayedApproval.grant).toEqual(active);
+    expect(replayedApproval).toMatchObject({
+      status: "replayed",
+      grant: { state: "expired", revision: 3 },
+    });
+    expect(replayedApproval.grant).toEqual(expired);
 
     const rejectionDecision = reject();
     const rejected = applyPermissionDecision(applyInput(rejectionDecision)).grant;
