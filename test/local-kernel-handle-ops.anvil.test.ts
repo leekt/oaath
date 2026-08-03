@@ -148,6 +148,13 @@ async function deploy(
   return lower(receipt.contractAddress);
 }
 
+async function stopAnvil(process: ChildProcess): Promise<void> {
+  if (process.exitCode !== null) return;
+  const exited = new Promise<void>((resolve) => process.once("exit", () => resolve()));
+  process.kill("SIGTERM");
+  await exited;
+}
+
 async function startHarness(): Promise<Harness> {
   const anvilPath = globalThis.process.env.ANVIL_PATH ?? "anvil";
   const version = await new Promise<string>((resolve, reject) => {
@@ -161,7 +168,8 @@ async function startHarness(): Promise<Harness> {
       code === 0 ? resolve(output) : reject(new Error("Anvil version failed")),
     );
   });
-  if (!version.includes("1.7.1")) throw new Error("Anvil 1.7.1 is required");
+  const versionMatch = /^anvil Version: ([0-9]+\.[0-9]+\.[0-9]+)(?:-|$)/mu.exec(version);
+  if (versionMatch?.[1] !== "1.7.1") throw new Error("Anvil 1.7.1 is required");
 
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
@@ -182,92 +190,97 @@ async function startHarness(): Promise<Harness> {
     ],
     { stdio: "ignore" },
   );
-  const publicClient = createPublicClient({ transport: http(url, { retryCount: 0 }) });
-  await waitForAnvil(publicClient, anvilProcess);
+  try {
+    const publicClient = createPublicClient({ transport: http(url, { retryCount: 0 }) });
+    await waitForAnvil(publicClient, anvilProcess);
 
-  const submitterPrivateKey = generatePrivateKey();
-  const submitter = privateKeyToAccount(submitterPrivateKey);
-  await publicClient.request({
-    method: "anvil_setBalance" as "eth_chainId",
-    params: [submitter.address, quantity(parseEther("100"))] as never,
-  });
-  const wallet = createWalletClient({
-    account: submitter,
-    transport: http(url, { retryCount: 0 }),
-  });
-  const fixtureRaw = await readFile(
-    new URL("./fixtures/kernel-v3.3-bytecode.json", import.meta.url),
-    "utf8",
-  );
-  const artifacts = JSON.parse(fixtureRaw) as KernelArtifacts;
-  expect(artifacts.provenance).toMatchObject({
-    kernelVersion: "0.3.3",
-    kernelCommit: "cd697c7e21715d015e0643af22310a99aa17433b",
-  });
-  expect(keccak256(artifacts.kernel.creationBytecode)).toBe(artifacts.kernel.keccak256);
-  expect(keccak256(artifacts.factory.creationBytecode)).toBe(artifacts.factory.keccak256);
-  expect(keccak256(artifacts.ecdsaValidator.creationBytecode)).toBe(
-    artifacts.ecdsaValidator.keccak256,
-  );
-  expect(keccak256(artifacts.multiChainSigner.creationBytecode)).toBe(
-    artifacts.multiChainSigner.keccak256,
-  );
+    const submitterPrivateKey = generatePrivateKey();
+    const submitter = privateKeyToAccount(submitterPrivateKey);
+    await publicClient.request({
+      method: "anvil_setBalance" as "eth_chainId",
+      params: [submitter.address, quantity(parseEther("100"))] as never,
+    });
+    const wallet = createWalletClient({
+      account: submitter,
+      transport: http(url, { retryCount: 0 }),
+    });
+    const fixtureRaw = await readFile(
+      new URL("./fixtures/kernel-v3.3-bytecode.json", import.meta.url),
+      "utf8",
+    );
+    const artifacts = JSON.parse(fixtureRaw) as KernelArtifacts;
+    expect(artifacts.provenance).toMatchObject({
+      kernelVersion: "0.3.3",
+      kernelCommit: "cd697c7e21715d015e0643af22310a99aa17433b",
+    });
+    expect(keccak256(artifacts.kernel.creationBytecode)).toBe(artifacts.kernel.keccak256);
+    expect(keccak256(artifacts.factory.creationBytecode)).toBe(artifacts.factory.keccak256);
+    expect(keccak256(artifacts.ecdsaValidator.creationBytecode)).toBe(
+      artifacts.ecdsaValidator.keccak256,
+    );
+    expect(keccak256(artifacts.multiChainSigner.creationBytecode)).toBe(
+      artifacts.multiChainSigner.keccak256,
+    );
 
-  const entryPointArtifactPath = join(
-    process.cwd(),
-    "node_modules/@account-abstraction/contracts/artifacts/EntryPoint.json",
-  );
-  const entryPointArtifactRaw = await readFile(entryPointArtifactPath, "utf8");
-  expect(createHash("sha256").update(entryPointArtifactRaw).digest("hex")).toBe(
-    "952e7ce1e69354b9e80d0e68e0cbcc64f9304dd25c17170c3732114ea5421b04",
-  );
-  const entryPointArtifact = JSON.parse(entryPointArtifactRaw) as { bytecode: Hex };
-  const entryPoint = await deploy(
-    wallet,
-    publicClient,
-    entryPointArtifact.bytecode,
-    entryPoint07Abi,
-  );
-  const implementation = await deploy(
-    wallet,
-    publicClient,
-    artifacts.kernel.creationBytecode,
-    kernelAbi,
-    [entryPoint],
-  );
-  const factory = await deploy(
-    wallet,
-    publicClient,
-    artifacts.factory.creationBytecode,
-    factoryAbi,
-    [implementation],
-  );
-  const validator = await deploy(
-    wallet,
-    publicClient,
-    artifacts.ecdsaValidator.creationBytecode,
-    [],
-  );
-  const multiChainSigner = await deploy(
-    wallet,
-    publicClient,
-    artifacts.multiChainSigner.creationBytecode,
-    multiChainSignerAbi,
-  );
-  expect(keccak256((await publicClient.getCode({ address: multiChainSigner })) ?? "0x")).toBe(
-    artifacts.multiChainSigner.runtimeKeccak256,
-  );
-  return {
-    process: anvilProcess,
-    url,
-    publicClient,
-    submitter,
-    entryPoint,
-    factory,
-    validator,
-    multiChainSigner,
-    submitterPrivateKey,
-  };
+    const entryPointArtifactPath = join(
+      process.cwd(),
+      "node_modules/@account-abstraction/contracts/artifacts/EntryPoint.json",
+    );
+    const entryPointArtifactRaw = await readFile(entryPointArtifactPath, "utf8");
+    expect(createHash("sha256").update(entryPointArtifactRaw).digest("hex")).toBe(
+      "952e7ce1e69354b9e80d0e68e0cbcc64f9304dd25c17170c3732114ea5421b04",
+    );
+    const entryPointArtifact = JSON.parse(entryPointArtifactRaw) as { bytecode: Hex };
+    const entryPoint = await deploy(
+      wallet,
+      publicClient,
+      entryPointArtifact.bytecode,
+      entryPoint07Abi,
+    );
+    const implementation = await deploy(
+      wallet,
+      publicClient,
+      artifacts.kernel.creationBytecode,
+      kernelAbi,
+      [entryPoint],
+    );
+    const factory = await deploy(
+      wallet,
+      publicClient,
+      artifacts.factory.creationBytecode,
+      factoryAbi,
+      [implementation],
+    );
+    const validator = await deploy(
+      wallet,
+      publicClient,
+      artifacts.ecdsaValidator.creationBytecode,
+      [],
+    );
+    const multiChainSigner = await deploy(
+      wallet,
+      publicClient,
+      artifacts.multiChainSigner.creationBytecode,
+      multiChainSignerAbi,
+    );
+    expect(keccak256((await publicClient.getCode({ address: multiChainSigner })) ?? "0x")).toBe(
+      artifacts.multiChainSigner.runtimeKeccak256,
+    );
+    return {
+      process: anvilProcess,
+      url,
+      publicClient,
+      submitter,
+      entryPoint,
+      factory,
+      validator,
+      multiChainSigner,
+      submitterPrivateKey,
+    };
+  } catch (error) {
+    await stopAnvil(anvilProcess);
+    throw error;
+  }
 }
 
 async function createKernel(owner: `0x${string}`, salt: Hex): Promise<`0x${string}`> {
@@ -577,20 +590,24 @@ async function execute(
   grantId: string,
   options: { loseAcknowledgment?: boolean } = {},
 ) {
-  const owner = privateKeyToAccount(generatePrivateKey());
-  expect(lower(owner.address)).not.toBe(lower(harness.submitter.address));
-  const account = await createKernel(lower(owner.address), keccak256(generatePrivateKey()));
+  const ownerPrivateKey = generatePrivateKey();
+  const ownerAddress = lower(privateKeyToAccount(ownerPrivateKey).address);
+  expect(ownerAddress).not.toBe(lower(harness.submitter.address));
+  const account = await createKernel(ownerAddress, keccak256(generatePrivateKey()));
   let signs = 0;
   let sends = 0;
   let signedHash: Hex | undefined;
+  let sentTransactionHash: Hex | undefined;
   let loseAcknowledgment = options.loseAcknowledgment ?? false;
 
-  function createAdapter() {
+  function createAdapter(client: PublicClient) {
+    const owner = privateKeyToAccount(ownerPrivateKey);
+    const submitter = privateKeyToAccount(harness.submitterPrivateKey);
     return createLocalKernelHandleOpsAdapter({
       profile: "kernel-v3.3-ecdsa-owner",
       key: { grantId, chainId },
       entryPoint: { version: "0.7", address: harness.entryPoint },
-      kernel: { account, rootValidator: harness.validator, owner: lower(owner.address) },
+      kernel: { account, rootValidator: harness.validator, owner: ownerAddress },
       call: { target: call.target, value: "0", data: call.data },
       gas: {
         callGasLimit: "300000",
@@ -602,16 +619,14 @@ async function execute(
       handleOpsGasLimit: "2000000",
       preparationReads: {
         async read(request: { type: string; address?: `0x${string}` }) {
-          if (request.type === "chain_id") return harness.publicClient.getChainId();
+          if (request.type === "chain_id") return client.getChainId();
           if (request.type === "code") {
             if (!request.address) throw new Error("code address unavailable");
-            return lower(
-              (await harness.publicClient.getCode({ address: request.address })) ?? "0x",
-            );
+            return lower((await client.getCode({ address: request.address })) ?? "0x");
           }
           if (request.type === "kernel_root_validator") {
             return lower(
-              await harness.publicClient.readContract({
+              await client.readContract({
                 address: account,
                 abi: kernelAbi,
                 functionName: "rootValidator",
@@ -620,7 +635,7 @@ async function execute(
           }
           if (request.type === "kernel_ecdsa_owner") {
             return lower(
-              await harness.publicClient.readContract({
+              await client.readContract({
                 address: harness.validator,
                 abi: validatorAbi,
                 functionName: "ecdsaValidatorStorage",
@@ -630,7 +645,7 @@ async function execute(
           }
           if (request.type === "entry_point_nonce") {
             return (
-              await harness.publicClient.readContract({
+              await client.readContract({
                 address: harness.entryPoint,
                 abi: entryPoint07Abi,
                 functionName: "getNonce",
@@ -652,7 +667,7 @@ async function execute(
         async close() {},
       },
       handleOpsSubmitter: {
-        address: lower(harness.submitter.address),
+        address: lower(submitter.address),
         async sendHandleOps(request: {
           chainId: number;
           entryPoint: `0x${string}`;
@@ -663,11 +678,11 @@ async function execute(
         }) {
           sends += 1;
           const wallet = createWalletClient({
-            account: harness.submitter,
+            account: submitter,
             transport: http(harness.url, { retryCount: 0 }),
           });
           const transactionHash = await wallet.sendTransaction({
-            account: harness.submitter,
+            account: submitter,
             to: request.entryPoint,
             data: request.calldata,
             gas: BigInt(request.gasLimit),
@@ -675,9 +690,10 @@ async function execute(
             maxPriorityFeePerGas: 1_000_000_000n,
             chain: null,
           });
-          await harness.publicClient.waitForTransactionReceipt({ hash: transactionHash });
-          const transaction = await harness.publicClient.getTransaction({ hash: transactionHash });
-          expect(lower(transaction.from)).toBe(lower(harness.submitter.address));
+          await client.waitForTransactionReceipt({ hash: transactionHash });
+          const transaction = await client.getTransaction({ hash: transactionHash });
+          sentTransactionHash = lower(transactionHash);
+          expect(lower(transaction.from)).toBe(lower(submitter.address));
           expect(lower(transaction.to ?? zeroAddress)).toBe(harness.entryPoint);
           if (loseAcknowledgment) {
             loseAcknowledgment = false;
@@ -688,7 +704,7 @@ async function execute(
             entryPoint: request.entryPoint,
             submitter: request.submitter,
             userOperationHash: request.userOperationHash,
-            transactionHash: lower(transactionHash),
+            transactionHash: sentTransactionHash,
           };
         },
         async close() {},
@@ -699,59 +715,84 @@ async function execute(
   const directory = options.loseAcknowledgment
     ? await mkdtemp(join(tmpdir(), "ogp-kernel-anvil-"))
     : undefined;
+  if (directory) temporaryDirectories.push(directory);
   const storePath = directory ? join(directory, "operation.db") : undefined;
-  let adapter = createAdapter();
+  const firstRuntimeClient = createPublicClient({
+    transport: http(harness.url, { retryCount: 0 }),
+  });
+  let adapter = createAdapter(firstRuntimeClient);
   let runner = createOperationRunner({
     terminalBehavior: "replace",
     store: storePath ? createSqliteOperationStore(storePath) : memoryStore(),
-    observer: createOperationObserver(observerCapabilities(harness.entryPoint)),
+    observer: createOperationObserver(observerCapabilities(harness.entryPoint, firstRuntimeClient)),
     preparation: adapter.preparation,
     submission: adapter.submission,
   });
-  const first = await runner.runOperation({
-    kind: "execution",
-    key: { grantId, chainId },
-    preparedAt: 10,
-    attemptedAt: 11,
-    submittedAt: 12,
-    observedAt: 13,
-    timeoutMs: 60_000,
-  });
-  if (!options.loseAcknowledgment) {
-    expect(first).toMatchObject({
-      status: "observed",
-      observation: { status: "unreadable", reason: "finality_unproven" },
-      record: { value: { state: "included", identity: { chainId, account } } },
+  try {
+    const first = await runner.runOperation({
+      kind: "execution",
+      key: { grantId, chainId },
+      preparedAt: 10,
+      attemptedAt: 11,
+      submittedAt: 12,
+      observedAt: 13,
+      timeoutMs: 60_000,
     });
-  }
-  await harness.publicClient.request({
-    method: "anvil_mine" as "eth_chainId",
-    params: ["0x80"] as never,
-  });
-  if (storePath) {
+    if (!options.loseAcknowledgment) {
+      expect(first).toMatchObject({
+        status: "observed",
+        observation: { status: "unreadable", reason: "finality_unproven" },
+        record: { value: { state: "included", identity: { chainId, account } } },
+      });
+    }
+    if (storePath) {
+      await runner.close();
+    }
+    await harness.publicClient.request({
+      method: "anvil_mine" as "eth_chainId",
+      params: ["0x80"] as never,
+    });
+    if (storePath) {
+      const recoveryClient = createPublicClient({
+        transport: http(harness.url, { retryCount: 0 }),
+      });
+      adapter = createAdapter(recoveryClient);
+      runner = createOperationRunner({
+        terminalBehavior: "replace",
+        store: createSqliteOperationStore(storePath),
+        observer: createOperationObserver(observerCapabilities(harness.entryPoint, recoveryClient)),
+        preparation: adapter.preparation,
+        submission: adapter.submission,
+      });
+    }
+    const finalized = await runner.runOperation({
+      kind: "execution",
+      key: { grantId, chainId },
+      preparedAt: 20,
+      attemptedAt: 21,
+      submittedAt: 22,
+      observedAt: 23,
+      timeoutMs: 60_000,
+    });
+    const result = {
+      first,
+      finalized,
+      signs,
+      sends,
+      signedHash,
+      sentTransactionHash,
+      account,
+    };
     await runner.close();
-    adapter = createAdapter();
-    const recoveryClient = createPublicClient({ transport: http(harness.url, { retryCount: 0 }) });
-    runner = createOperationRunner({
-      terminalBehavior: "replace",
-      store: createSqliteOperationStore(storePath),
-      observer: createOperationObserver(observerCapabilities(harness.entryPoint, recoveryClient)),
-      preparation: adapter.preparation,
-      submission: adapter.submission,
-    });
+    if (directory) await rm(directory, { recursive: true, force: true });
+    return result;
+  } catch (error) {
+    await Promise.allSettled([
+      runner.close(),
+      directory ? rm(directory, { recursive: true, force: true }) : Promise.resolve(),
+    ]);
+    throw error;
   }
-  const finalized = await runner.runOperation({
-    kind: "execution",
-    key: { grantId, chainId },
-    preparedAt: 20,
-    attemptedAt: 21,
-    submittedAt: 22,
-    observedAt: 23,
-    timeoutMs: 60_000,
-  });
-  await runner.close();
-  if (directory) await rm(directory, { recursive: true, force: true });
-  return { first, finalized, signs, sends, signedHash, account };
 }
 
 function activePermissionGrant(
@@ -877,10 +918,7 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
   }, 60_000);
 
   afterAll(async () => {
-    if (harness?.process && harness.process.exitCode === null) {
-      harness.process.kill("SIGTERM");
-      await new Promise<void>((resolve) => harness.process.once("exit", () => resolve()));
-    }
+    if (harness?.process) await stopAnvil(harness.process);
     await Promise.all(
       temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
     );
@@ -938,6 +976,39 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
         },
       },
     });
+    if (result.first.status !== "submission_uncertain") {
+      throw new Error("expected uncertain submission");
+    }
+    if (result.finalized.status !== "observed") throw new Error("expected observed recovery");
+    expect(result.finalized.record.value.identity).toEqual(result.first.record.value.identity);
+    expect(result.finalized.record.value.identity).toEqual({
+      kind: "execution",
+      grantId: "anvil-ambiguous",
+      chainId,
+      entryPoint: harness.entryPoint,
+      account: result.account,
+      nonce: "0",
+      userOperationHash: result.signedHash,
+    });
+    if (!result.sentTransactionHash) throw new Error("missing submitted transaction identity");
+    const transactionReceipt = await harness.publicClient.getTransactionReceipt({
+      hash: result.sentTransactionHash,
+    });
+    const finalizedBlock = await harness.publicClient.getBlock({ blockTag: "finalized" });
+    expect(result.finalized.record.value).toMatchObject({
+      inclusion: {
+        transactionHash: result.sentTransactionHash,
+        blockNumber: transactionReceipt.blockNumber.toString(10),
+        blockHash: lower(transactionReceipt.blockHash),
+        outcome: "success",
+        observedAt: 23,
+      },
+      finality: {
+        blockNumber: finalizedBlock.number.toString(10),
+        blockHash: lower(finalizedBlock.hash ?? "0x"),
+        observedAt: 23,
+      },
+    });
     expect({ signs: result.signs, sends: result.sends }).toEqual({ signs: 1, sends: 1 });
   }, 60_000);
 
@@ -963,7 +1034,12 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
     ).toMatchObject({ status: "committed" });
     await seed.close();
 
-    const counters = { signs: 0, sends: 0 };
+    const counters: {
+      signs: number;
+      sends: number;
+      signedHash?: Hex;
+      transactionHash?: Hex;
+    } = { signs: 0, sends: 0 };
     let loseAcknowledgment = true;
     function coordinator(client: PublicClient) {
       const ownerAccount = privateKeyToAccount(ownerPrivateKey);
@@ -1066,6 +1142,7 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
           address: lower(ownerAccount.address),
           async signDigest(request: { userOperationHash: Hex }) {
             counters.signs += 1;
+            counters.signedHash = request.userOperationHash;
             return ownerAccount.sign({ hash: request.userOperationHash });
           },
           async close() {},
@@ -1097,6 +1174,7 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
             expect((await client.waitForTransactionReceipt({ hash: transactionHash })).status).toBe(
               "success",
             );
+            counters.transactionHash = lower(transactionHash);
             if (loseAcknowledgment) {
               loseAcknowledgment = false;
               throw new Error("loopback acknowledgement lost");
@@ -1113,10 +1191,15 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
         },
       });
       expect(adapter.descriptor).toMatchObject({
+        kind: "kernel-v3.3-permission-uninstall",
+        grantId: "anvil-permission-revocation",
         chainId,
+        entryPoint: harness.entryPoint,
         account: installed.account,
         permissionId: permission.permissionId,
         validationId: permission.validationId,
+        signer: harness.multiChainSigner,
+        operator: lower(operator.address),
       });
       return createKernelPermissionRevocationCoordinator({
         grantStore: createSqliteGrantStore(storePath),
@@ -1129,7 +1212,10 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
       });
     }
 
-    let revoker = coordinator(harness.publicClient);
+    const firstRuntimeClient = createPublicClient({
+      transport: http(harness.url, { retryCount: 0 }),
+    });
+    let revoker = coordinator(firstRuntimeClient);
     const first = await revoker.revoke({
       revocationStartedAt: 40,
       chainRevocationStartedAt: 41,
@@ -1146,6 +1232,8 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
       grant: { value: { state: "revoking", materializations: [{ state: "revoking" }] } },
       operation: { value: { state: "submission_attempted" } },
     });
+    if (first.status !== "submission_uncertain") throw new Error("expected uncertain submission");
+    const firstIdentity = first.operation.value.identity;
     await revoker.close();
     await harness.publicClient.request({
       method: "anvil_mine" as "eth_chainId",
@@ -1181,7 +1269,37 @@ describe.skipIf(!requireAnvil)("local Kernel and EntryPoint execution", () => {
         },
       },
     });
-    expect(counters).toEqual({ signs: 1, sends: 1 });
+    if (recovered.status !== "revoked") throw new Error("expected revoked result");
+    expect(recovered.operation.value.identity).toEqual(firstIdentity);
+    expect(recovered.operation.value.identity).toEqual({
+      kind: "revocation",
+      grantId: "anvil-permission-revocation",
+      chainId,
+      entryPoint: harness.entryPoint,
+      account: installed.account,
+      nonce: "0",
+      userOperationHash: counters.signedHash,
+    });
+    if (!counters.transactionHash) throw new Error("missing submitted transaction identity");
+    const transactionReceipt = await recoveryClient.getTransactionReceipt({
+      hash: counters.transactionHash,
+    });
+    const finalizedBlock = await recoveryClient.getBlock({ blockTag: "finalized" });
+    expect(recovered.operation.value).toMatchObject({
+      inclusion: {
+        transactionHash: counters.transactionHash,
+        blockNumber: transactionReceipt.blockNumber.toString(10),
+        blockHash: lower(transactionReceipt.blockHash),
+        outcome: "success",
+        observedAt: 55,
+      },
+      finality: {
+        blockNumber: finalizedBlock.number.toString(10),
+        blockHash: lower(finalizedBlock.hash ?? "0x"),
+        observedAt: 55,
+      },
+    });
+    expect(counters).toMatchObject({ signs: 1, sends: 1 });
     await revoker.close();
   }, 60_000);
 });
