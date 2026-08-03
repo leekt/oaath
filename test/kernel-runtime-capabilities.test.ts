@@ -16,6 +16,7 @@ import {
   createEcdsaKernelOwnerRuntime,
   createLocalKernelHandleOpsAdapter,
   createLocalKernelPermissionUninstallAdapter,
+  createP256KernelOwnerRuntime,
   createWebAuthnKernelOwnerRuntime,
   getKernelRuntimeCapability,
   KERNEL_RUNTIME_CAPABILITIES,
@@ -63,6 +64,7 @@ describe("Kernel runtime capabilities", () => {
     expect(typeof getValidatorAddress).toBe("function");
     expect(typeof signerToEcdsaValidator).toBe("function");
     expect(typeof createEcdsaKernelOwnerRuntime).toBe("function");
+    expect(typeof createP256KernelOwnerRuntime).toBe("function");
     expect(typeof createWebAuthnKernelOwnerRuntime).toBe("function");
     expect(PasskeyValidatorContractVersion.V0_0_3_PATCHED).toBe("0.0.3");
     expect(typeof createWalletClient).toBe("function");
@@ -168,6 +170,24 @@ describe("Kernel runtime capabilities", () => {
         runtimeKeccak256: "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc",
         runtimeByteLength: 3537,
       },
+      p256Validator: {
+        repository: "https://github.com/leekt/P256Validator",
+        sourceCommit: "8f6a71992e297f2e7caa61df2c6eb0b6d9145d2d",
+        deploymentEvidenceCommit: "4be442538977b6b81453656d2f8f4938431d7d65",
+        address: "0x9906AB44fF795883C5a725687A2705BE4118B0f3",
+        runtimeKeccak256: "0xd7d9a5b1ddd1e22e7235268fd624c7c0714e5046b199d507bbfe5e03408e579d",
+        runtimeByteLength: 1919,
+        compiler: "0.8.26",
+        optimizerRuns: 200,
+        evmVersion: "osaka",
+        p256Precompile: "0x0000000000000000000000000000000000000100",
+        deploymentEvidence: {
+          chainId: 11155111,
+          transactionHash: "0xcc3381af97315ffae6ac17477f5cf0f8cc7e905f114fc2d545b5d6e9543094ca",
+          deployer: "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+          salt: "0x0000000000000000000000000000000000000000000000000000000000000000",
+        },
+      },
     });
 
     for (const packageName of ["@zerodev/permissions"]) {
@@ -189,7 +209,7 @@ describe("Kernel runtime capabilities", () => {
     ).toEqual({
       kernel_account: "available",
       owner_ecdsa: "available",
-      owner_p256: "unsupported",
+      owner_p256: "available",
       owner_webauthn: "available",
       permission_signer_ecdsa: "unsupported",
       permission_signer_p256: "unsupported",
@@ -215,6 +235,18 @@ describe("Kernel runtime capabilities", () => {
         "kernel.v3_3",
         "entrypoint.v0_7",
       ],
+    });
+    expect(getKernelRuntimeCapability("owner_p256")).toEqual({
+      status: "available",
+      anchors: [
+        "leekt_p256_validator.P256Validator",
+        "ogp.createP256KernelOwnerRuntime",
+        "zerodev_sdk.createKernelAccount",
+        "zerodev_sdk.KERNEL_V3_3",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
+      constraints: ["action_runtime_and_precompile_evidence_required"],
     });
     expect(getKernelRuntimeCapability("owner_webauthn")).toEqual({
       status: "available",
@@ -264,13 +296,12 @@ describe("Kernel runtime capabilities", () => {
   });
 
   it("keeps raw P-256 distinct from WebAuthn", () => {
-    for (const profile of ["owner_p256", "permission_signer_p256"] as const) {
-      expect(getKernelRuntimeCapability(profile)).toEqual({
-        status: "unsupported",
-        reason: "distinct_profile_unproven",
-        constraints: ["webauthn_is_not_raw_p256"],
-      });
-    }
+    expect(getKernelRuntimeCapability("owner_p256")).toMatchObject({ status: "available" });
+    expect(getKernelRuntimeCapability("permission_signer_p256")).toEqual({
+      status: "unsupported",
+      reason: "distinct_profile_unproven",
+      constraints: ["webauthn_is_not_raw_p256"],
+    });
     expect(getKernelRuntimeCapability("owner_webauthn")).toMatchObject({ status: "available" });
     expect(getKernelRuntimeCapability("permission_signer_webauthn")).toMatchObject({
       status: "unsupported",
@@ -278,23 +309,19 @@ describe("Kernel runtime capabilities", () => {
     });
   });
 
-  it("is deeply immutable and contains no chain inventory, default, or fallback key", () => {
+  it("is deeply immutable, localizes deployment evidence, and has no chain inventory", () => {
     expectDeeplyFrozen(KERNEL_RUNTIME_CAPABILITIES);
     expect(
       Reflect.set(KERNEL_RUNTIME_CAPABILITIES.packages.zerodevSdk, "packageVersion", "next"),
     ).toBe(false);
 
-    const forbiddenKeys = new Set([
-      "chainid",
-      "chainids",
-      "chains",
-      "supportedchains",
-      "default",
-      "fallback",
-    ]);
+    const forbiddenKeys = new Set(["chainids", "chains", "supportedchains", "default", "fallback"]);
     for (const key of collectKeys(KERNEL_RUNTIME_CAPABILITIES)) {
       expect(forbiddenKeys.has(key), `forbidden manifest key: ${key}`).toBe(false);
     }
+    expect(KERNEL_RUNTIME_CAPABILITIES.contracts.p256Validator.deploymentEvidence.chainId).toBe(
+      11_155_111,
+    );
   });
 
   it("rejects unknown or hostile queries without consulting object properties", () => {

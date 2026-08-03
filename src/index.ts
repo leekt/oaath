@@ -216,6 +216,18 @@ export {
   OgpOperationRunnerError,
 } from "./operation-runner.js";
 export type {
+  P256KernelOwnerErrorCode,
+  P256KernelOwnerRestorationReadCapability,
+  P256KernelOwnerRestorationReadRequest,
+  P256KernelOwnerRuntime,
+  P256OwnerSignerCapability,
+  RestoredP256KernelOwner,
+} from "./p256-kernel-owner.js";
+export {
+  createP256KernelOwnerRuntime,
+  OgpP256KernelOwnerError,
+} from "./p256-kernel-owner.js";
+export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,
   ApprovePermissionDecision,

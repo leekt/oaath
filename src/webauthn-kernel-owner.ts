@@ -4,7 +4,7 @@ import {
   PasskeyValidatorContractVersion,
   toPasskeyValidator,
 } from "@zerodev/passkey-validator";
-import { constants, createKernelAccount, KernelV3_1AccountAbi } from "@zerodev/sdk";
+import { createKernelAccount } from "@zerodev/sdk";
 import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { b64ToBytes, base64FromUint8Array } from "@zerodev/webauthn-key";
 import {
@@ -12,14 +12,10 @@ import {
   createPublicClient,
   custom,
   encodeAbiParameters,
-  encodeFunctionData,
-  getContractAddress,
   hexToBytes,
   keccak256,
-  pad,
   sha256,
   toHex,
-  zeroAddress,
 } from "viem";
 import { entryPoint07Address, type UserOperation } from "viem/account-abstraction";
 import {
@@ -29,6 +25,7 @@ import {
   type KernelAccountProfile,
 } from "./identity-profile.js";
 import { type CaptureContext, exactRecord } from "./internal/exact-record.js";
+import { deriveKernelV3_3AccountAddress } from "./internal/kernel-v3_3-account.js";
 import { KERNEL_RUNTIME_CAPABILITIES } from "./kernel-runtime-capabilities.js";
 import {
   type PreparedFactory,
@@ -502,48 +499,6 @@ function capturePreparedOperation(
   return prepared;
 }
 
-function deriveAccountAddress(
-  validatorAddress: `0x${string}`,
-  enableData: `0x${string}`,
-  accountIndex: string,
-): `0x${string}` {
-  const sdk = constants.KernelVersionToAddressesMap[KERNEL_V3_3];
-  const manifest = KERNEL_RUNTIME_CAPABILITIES.contracts.kernel;
-  if (
-    typeof sdk.metaFactoryAddress !== "string" ||
-    lowerAddress(sdk.accountImplementationAddress) !== lowerAddress(manifest.implementation) ||
-    lowerAddress(sdk.factoryAddress) !== lowerAddress(manifest.factory) ||
-    lowerAddress(sdk.metaFactoryAddress) !== lowerAddress(manifest.metaFactory) ||
-    typeof sdk.initCodeHash !== "string" ||
-    !HASH.test(sdk.initCodeHash)
-  ) {
-    return ownerError(
-      "webauthn_kernel_owner_runtime_unavailable",
-      "Kernel account derivation does not match the pinned runtime",
-    );
-  }
-  const initializationData = encodeFunctionData({
-    abi: KernelV3_1AccountAbi,
-    functionName: "initialize",
-    args: [
-      pad(concatHex(["0x01", validatorAddress]), { size: 21, dir: "right" }),
-      zeroAddress,
-      enableData,
-      "0x",
-      [],
-    ],
-  });
-  const initCodeHash = sdk.initCodeHash as `0x${string}`;
-  return lowerAddress(
-    getContractAddress({
-      bytecodeHash: initCodeHash,
-      from: sdk.factoryAddress,
-      opcode: "CREATE2",
-      salt: keccak256(concatHex([initializationData, toHex(BigInt(accountIndex), { size: 32 })])),
-    }),
-  );
-}
-
 /**
  * Builds one exact patched WebAuthn root-owner runtime for a concrete action chain.
  * Grant authority remains all-chain; this action alone owns chainId.
@@ -656,7 +611,10 @@ export async function createWebAuthnKernelOwnerRuntime(
       );
     }
     const enableData = (await validator.getEnableData()).toLowerCase() as `0x${string}`;
-    const accountAddress = deriveAccountAddress(validatorAddress, enableData, profile.accountIndex);
+    const accountAddress = deriveKernelV3_3AccountAddress(
+      { validatorAddress, enableData, accountIndex: profile.accountIndex },
+      (message) => ownerError("webauthn_kernel_owner_runtime_unavailable", message),
+    );
     const account = await createKernelAccount(client, {
       plugins: { sudo: validator },
       entryPoint,

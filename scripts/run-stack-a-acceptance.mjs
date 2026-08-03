@@ -15,6 +15,8 @@ const testFiles = [
   "permission-protocol.test.ts",
   "ecdsa-kernel-owner.test.ts",
   "ecdsa-kernel-owner.anvil.test.ts",
+  "p256-kernel-owner.test.ts",
+  "p256-kernel-owner.anvil.test.ts",
   "webauthn-kernel-owner.test.ts",
   "webauthn-kernel-owner.anvil.test.ts",
   "grant.test.ts",

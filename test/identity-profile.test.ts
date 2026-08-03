@@ -191,10 +191,9 @@ describe("identity profile codecs", () => {
       profile: ownerWebAuthn,
     });
     expect(diagnoseOwnerCredential(ownerP256)).toEqual({
-      status: "unsupported",
+      status: "available",
       capability: "owner_p256",
       profile: ownerP256,
-      reason: "first_party_profile_unproven",
     });
     expect(diagnoseOperatorCredential(operatorEcdsa)).toMatchObject({
       status: "absent",
