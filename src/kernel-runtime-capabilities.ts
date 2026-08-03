@@ -22,9 +22,12 @@ export type KernelRuntimeAnchorId =
   | "zerodev_sdk.uninstallPlugin"
   | "zerodev_ecdsa_validator.getKernelAddressFromECDSA"
   | "zerodev_ecdsa_validator.signerToEcdsaValidator"
+  | "zerodev_passkey_validator.toPasskeyValidator"
+  | "zerodev_passkey_validator.V0_0_3_PATCHED"
   | "viem.createWalletClient"
   | "viem.entryPoint07Abi"
   | "ogp.createEcdsaKernelOwnerRuntime"
+  | "ogp.createWebAuthnKernelOwnerRuntime"
   | "ogp.createLocalKernelHandleOpsAdapter"
   | "ogp.createLocalKernelPermissionUninstallAdapter"
   | "kernel.v3_3"
@@ -58,6 +61,18 @@ interface UnsupportedKernelRuntimeCapability {
 type KernelRuntimeCapabilityShape =
   | AvailableKernelRuntimeCapability
   | UnsupportedKernelRuntimeCapability;
+
+type PublishedPackageShape = Readonly<{
+  packageName: string;
+  packageVersion: string;
+  integrity: `sha512-${string}`;
+  shasum: string;
+  npmGitHead: string;
+  source: Readonly<
+    Record<"repository" | "path" | "commit" | "packageVersion" | "alignment", string>
+  >;
+  publicExports: readonly Readonly<{ importPath: string; names: readonly string[] }>[];
+}>;
 
 interface KernelRuntimeCapabilitiesManifestShape {
   readonly version: typeof OGP_KERNEL_RUNTIME_CAPABILITIES_VERSION;
@@ -110,6 +125,8 @@ interface KernelRuntimeCapabilitiesManifestShape {
         readonly names: readonly string[];
       }[];
     };
+    readonly zerodevPasskeyValidator: PublishedPackageShape;
+    readonly zerodevWebAuthnKey: PublishedPackageShape;
   };
   readonly contracts: {
     readonly kernel: {
@@ -127,6 +144,23 @@ interface KernelRuntimeCapabilitiesManifestShape {
       readonly releaseTag: "v0.7.0";
       readonly commit: string;
       readonly address: `0x${string}`;
+    };
+    readonly webauthnValidator: {
+      readonly version: "0.0.3";
+      readonly status: "patched";
+      readonly address: `0x${string}`;
+      readonly runtimeKeccak256: `0x${string}`;
+      readonly runtimeByteLength: 4739;
+      readonly verifiedSource: string;
+      readonly compiler: "0.8.30";
+      readonly optimizerRuns: 20000;
+      readonly evmVersion: "london";
+    };
+    readonly p256Verifier: {
+      readonly kind: "daimo";
+      readonly address: `0x${string}`;
+      readonly runtimeKeccak256: `0x${string}`;
+      readonly runtimeByteLength: 3537;
     };
   };
   readonly capabilities: Readonly<Record<KernelRuntimeProfile, KernelRuntimeCapabilityShape>>;
@@ -217,6 +251,48 @@ const manifest = {
         },
       ],
     },
+    zerodevPasskeyValidator: {
+      packageName: "@zerodev/passkey-validator",
+      packageVersion: "5.6.0",
+      integrity:
+        "sha512-ItnPs/6m3pT8tWaLqt31AFFQ4tAc5O01gtXP0Y7RW7xfuqUbgwYOghyeKMEkw6LfYykUWLhapL4B5c0CBYkgvg==",
+      shasum: "d01de6ebf550c532cae8508bf625e234dc4e5a1e",
+      npmGitHead: "5bf80dc1764e239e26a6af7d281a4618ed043e1e",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/passkey",
+        commit: "f61e9ca59e7ef71dedf5619a93c4799e4c9a5a65",
+        packageVersion: "5.6.0",
+        alignment: "registry_git_head_differs_from_published_source_tree",
+      },
+      publicExports: [
+        {
+          importPath: "@zerodev/passkey-validator",
+          names: ["getValidatorAddress", "PasskeyValidatorContractVersion", "toPasskeyValidator"],
+        },
+      ],
+    },
+    zerodevWebAuthnKey: {
+      packageName: "@zerodev/webauthn-key",
+      packageVersion: "5.5.0",
+      integrity:
+        "sha512-AbD2d/qrsX7AWxJMEfwxnLbp1TjiUjc1V4ne3Q40UJxKe+lW64Td+y8OD0qSFMqgN6rQxJZ0aOAXmat8H6xluA==",
+      shasum: "5300d4e1eed20a73aa6844d32a272697cc45baeb",
+      npmGitHead: "11143912ea1d9da965ce8b86e0982bd798f06544",
+      source: {
+        repository: "https://github.com/zerodevapp/sdk",
+        path: "plugins/webauthn-key",
+        commit: "f61e9ca59e7ef71dedf5619a93c4799e4c9a5a65",
+        packageVersion: "5.5.0",
+        alignment: "registry_git_head_differs_from_published_source_tree",
+      },
+      publicExports: [
+        {
+          importPath: "@zerodev/webauthn-key",
+          names: ["b64ToBytes", "base64FromUint8Array"],
+        },
+      ],
+    },
   },
   contracts: {
     kernel: {
@@ -234,6 +310,24 @@ const manifest = {
       releaseTag: "v0.7.0",
       commit: "7af70c8993a6f42973f520ae0752386a5032abe7",
       address: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    },
+    webauthnValidator: {
+      version: "0.0.3",
+      status: "patched",
+      address: "0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69",
+      runtimeKeccak256: "0x726d987ac55574f77f5184326631c5c51142f94c16c9b9281b751f97519c9eea",
+      runtimeByteLength: 4739,
+      verifiedSource:
+        "https://etherscan.io/address/0x7ab16ff354acb328452f1d445b3ddee9a91e9e69#code",
+      compiler: "0.8.30",
+      optimizerRuns: 20000,
+      evmVersion: "london",
+    },
+    p256Verifier: {
+      kind: "daimo",
+      address: "0xc2b78104907F722DABAc4C69f826a522B2754De4",
+      runtimeKeccak256: "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc",
+      runtimeByteLength: 3537,
     },
   },
   capabilities: {
@@ -258,9 +352,14 @@ const manifest = {
       constraints: ["webauthn_is_not_raw_p256"],
     },
     owner_webauthn: {
-      status: "unsupported",
-      reason: "package_not_installed",
-      requiredPackages: ["@zerodev/passkey-validator", "@zerodev/webauthn-key"],
+      status: "available",
+      anchors: [
+        "zerodev_passkey_validator.toPasskeyValidator",
+        "zerodev_passkey_validator.V0_0_3_PATCHED",
+        "ogp.createWebAuthnKernelOwnerRuntime",
+        "kernel.v3_3",
+        "entrypoint.v0_7",
+      ],
     },
     permission_signer_ecdsa: {
       status: "unsupported",

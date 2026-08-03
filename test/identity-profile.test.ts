@@ -186,10 +186,9 @@ describe("identity profile codecs", () => {
       profile: ownerEcdsa,
     });
     expect(diagnoseOwnerCredential(ownerWebAuthn)).toEqual({
-      status: "absent",
+      status: "available",
       capability: "owner_webauthn",
       profile: ownerWebAuthn,
-      reason: "required_package_not_installed",
     });
     expect(diagnoseOwnerCredential(ownerP256)).toEqual({
       status: "unsupported",
