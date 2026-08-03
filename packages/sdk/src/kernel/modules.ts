@@ -74,44 +74,70 @@ const PINNED_SIGNERS: Readonly<Partial<Record<KernelKeyKind, `0x${string}`>>> = 
 const CALL_POLICY = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2" as const;
 
 /**
+ * ZeroDev's reviewed TimestampPolicy (moduleType 5), which returns the ERC-4337
+ * packed validAfter/validUntil range EntryPoint enforces, so an expired session
+ * is refused on-chain with AA22 rather than by client-side refusal. Package
+ * `zerodev-kernel-timestamp-policy` 0.0.1, source mirrored at
+ * https://github.com/cartesi/erc-4337-devnet
+ * (zerodev/kernel-timestamp-policy/0.0.1/src/TimestampPolicy.sol) with its own
+ * vendored Kernel v3 dependencies and build profile (solc 0.8.24+commit.e11b9ed9,
+ * via-IR, optimizer 200 runs, EVM paris, bytecode hash and CBOR metadata
+ * disabled). Recompiling that source with that profile reproduces the package's
+ * own cannon `expected` address bit for bit, so this address is ZeroDev's, not
+ * ours. Its PolicyBase.onInstall takes `id ‖ abi.encode(ValidAfter, ValidUntil)`,
+ * two uint48 words, which is exactly what permission/compile.ts emits.
+ */
+const TIMESTAMP_POLICY = "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f" as const;
+
+/**
+ * ZeroDev's reviewed RateLimitPolicy (moduleType 5), which caps how many
+ * UserOperations one permission may validate on one chain. Package
+ * `zerodev-kernel-ratelimit-policy` 0.0.1 (the cannon package name; the mirror
+ * directory is kernel-rate-limit-policy), source mirrored at
+ * https://github.com/cartesi/erc-4337-devnet
+ * (zerodev/kernel-rate-limit-policy/0.0.1/src/RateLimitPolicy.sol) with its own
+ * vendored Kernel v3 dependencies and the same build profile, which likewise
+ * reproduces the package's cannon `expected` address.
+ *
+ * onInstall reads `id ‖ interval ‖ count ‖ startAt`, three packed uint48s, and
+ * checkUserOpPolicy decrements `count` on every operation it validates, returning
+ * 1 — Kernel's signature-failure sentinel — once the count is exhausted. With
+ * interval and startAt zero it is a pure count cap that adds no time bound.
+ *
+ * The mapping from the Grant policy is deliberately conservative: an approved
+ * perChainOperationLimit counts finalized operations, while this module counts
+ * validated ones, so an operation whose execution reverts still consumes a slot.
+ * The on-chain cap is therefore never more permissive than the approved one.
+ */
+const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
+
+/**
  * Policy modules bound per policy axis. CallPolicy enforces the call and value
  * axes together, in one module, from one configuration. A session installs one
  * package per distinct module, so a scope spanning several axes installs several
  * policies.
  *
- * ZeroDev ships reviewed released policy modules for the remaining two axes —
- * `zerodev-kernel-timestamp-policy` 0.0.1 at
- * 0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f, which returns the ERC-4337 packed
- * validAfter/validUntil range, and `zerodev-kernel-rate-limit-policy` 0.0.1 at
- * 0xf63d4139b25c836334edd76641356c6b74c86873 for a per-chain operation count.
- * Both reproduce their cannon `expected` addresses offline from the mirrored
- * sources, and both are interface-compatible with Kernel v4's IPolicy.
- *
- * They are not pinned yet because of one SDK-side defect, now root-caused on
- * anvil and traced end to end. A permission carrying two policy packages installs
- * correctly — `validationInfo(vId)` reads
+ * All four axes are bound, which took one SDK-side fix. Recorded history, because
+ * the failure mode is not obvious from the ABI: a permission carrying two policy
+ * packages installed correctly — `validationInfo(vId)` read
  * `policies = [CallPolicy, TimestampPolicy]`, `signer = ECDSASigner`, hook = the
- * no-hook sentinel — but its first operation is rejected with EntryPoint
- * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, and `0x8baa579f` is
- * Kernel's `InvalidSignature()`. That selector comes from exactly one place:
- * `ValidationManager._validateUserOpPermission` requires
- * `permissionSignature.signatures.length == vInfo.policies.length + 1`. The
- * submitted envelope carried two slices for two policies, where Kernel demands
- * three, so the operation is refused before any policy runs. The signature
- * envelope, not the policy contracts, is wrong: sessionOperator's encodeSignature
- * must emit one empty slice per installed policy package, and it currently emits
- * one fewer. A single-policy session is unaffected, which is why the shipped
- * call-and-value scope passes.
- *
- * Fixing that envelope is the whole remaining task for these two axes: pin both
- * addresses here, flip hook_expiry and hook_operation_limit to available, and
- * extend the local proof with a pre-expiry success, a post-expiry AA22 rejection
- * and an N+1th operation rejection. No contract change is needed.
+ * no-hook sentinel — yet its first operation was rejected with EntryPoint
+ * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, Kernel's
+ * `InvalidSignature()`, because `ValidationManager._validateUserOpPermission`
+ * requires `permissionSignature.signatures.length == vInfo.policies.length + 1`
+ * and sessionOperator's encodeSignature emitted a fixed two-slice envelope
+ * regardless of how many policy packages resolvePackages installed. The envelope
+ * now derives its empty policy slices from the same captured compiled policy that
+ * resolvePackages installs from, so the two counts cannot drift again; the local
+ * composition proof executes a two-package session, a post-expiry AA22 rejection
+ * and an exhausted operation count on-chain.
  */
 const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x${string}`>>> =
   Object.freeze({
     call: CALL_POLICY,
     value: CALL_POLICY,
+    expiry: TIMESTAMP_POLICY,
+    "operation-limit": RATE_LIMIT_POLICY,
   });
 
 /** Accepts only the exact frozen deployment profile owned by kernel-v4.ts. */

@@ -345,6 +345,48 @@ describe("Kernel composition matrix", () => {
     },
   );
 
+  it.each([1, 2, 3] as const)(
+    "envelopes one empty policy slice per installed package for %i policy packages",
+    async (packageCount) => {
+      // Kernel's _validateUserOpPermission requires
+      // signatures.length == policies.length + 1 and reverts InvalidSignature
+      // otherwise, so the envelope's slice count is read back from the packages the
+      // permission actually installs rather than from a literal in the test.
+      const policies = [
+        sessionScope,
+        { kind: "expiry" as const, validAfter: "0", validUntil: "1750000000" },
+        { kind: "operation-limit" as const, maximumOperations: "5" },
+      ].slice(0, packageCount);
+      const runtime = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({ key: keyProfiles.ecdsa(), policies }),
+        reads: reads(),
+      });
+      const installedPolicies = runtime.packages.filter((entry) => entry.moduleType === 5);
+      expect(installedPolicies).toHaveLength(packageCount);
+      const prepared = runtime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition-slices",
+        account: await ecdsaAccountDescriptor(),
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "1", data: "0x" }],
+        gas,
+      });
+      const [slices] = decodeAbiParameters(
+        [{ name: "signatures", type: "bytes[]" }],
+        await runtime.signOperation(prepared),
+      );
+      expect(slices.length).toBe(installedPolicies.length + 1);
+      expect(slices.slice(0, installedPolicies.length)).toEqual(installedPolicies.map(() => "0x"));
+      const signerSlice = slices[installedPolicies.length];
+      if (!signerSlice) throw new Error("permission envelope carries no signer slice");
+      expect(
+        await recoverAddress({ hash: prepared.userOperationHash, signature: signerSlice }),
+      ).toBe(getAddress(ecdsaAccount.address));
+    },
+  );
+
   it("binds counterfactual and deployed accounts through the runtime", async () => {
     const runtime = ecdsaRuntime("owner");
     await expect(
@@ -732,6 +774,21 @@ describe("Kernel module registry", () => {
     ]);
   });
 
+  it("pins one reviewed policy module per bounded axis", () => {
+    // CallPolicy enforces the call and value axes from one configuration, so both
+    // resolve to one module and one installed package.
+    expect(
+      (["call", "value", "expiry", "operation-limit"] as const).map((kind) =>
+        pinnedPolicyModule(kind),
+      ),
+    ).toEqual([
+      "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+      "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+      "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f",
+      "0xf63d4139b25c836334edd76641356c6b74c86873",
+    ]);
+  });
+
   it("publishes the signer material each pinned module installs", () => {
     // ECDSASigner.onInstall requires exactly the 20-byte signer address, and
     // WebAuthnSigner.onInstall decodes (uint256, uint256, bytes32); a drift in
@@ -817,27 +874,60 @@ describe("Kernel permission policy compilation", () => {
     ).toEqual([0n]);
   });
 
+  it("compiles the expiry axis into the exact TimestampPolicy install payload", () => {
+    // TimestampPolicy._policyOninstall decodes abi.encode(ValidAfter, ValidUntil),
+    // two uint48 words; checkUserOpPolicy returns them as the ERC-4337 packed
+    // range, so EntryPoint refuses an expired session with AA22.
+    const policy = compileKernelPermissionPolicy([
+      { kind: "call", calls },
+      { kind: "expiry", validAfter: "1750000000", validUntil: "1750003600" },
+    ]);
+    expect(policy).toMatchObject({ validAfter: "1750000000", validUntil: "1750003600" });
+    expect(policy.packages.map((entry) => entry.module)).toEqual([
+      pinnedPolicyModule("call"),
+      pinnedPolicyModule("expiry"),
+    ]);
+    const expiryPackage = policy.packages[1];
+    if (!expiryPackage) throw new Error("no expiry policy package");
+    expect(
+      decodeAbiParameters(
+        [
+          { name: "validAfter", type: "uint48" },
+          { name: "validUntil", type: "uint48" },
+        ],
+        expiryPackage.policyData,
+      ),
+    ).toEqual([1_750_000_000, 1_750_003_600]);
+  });
+
+  it("compiles the operation-limit axis into a pure per-chain count cap", () => {
+    // RateLimitPolicy.onInstall reads packed uint48 interval, count and startAt. A
+    // zero interval and start make it a count cap with no time bound: every
+    // validated operation decrements count, and an exhausted count returns
+    // Kernel's signature-failure sentinel.
+    const policy = compileKernelPermissionPolicy([
+      { kind: "call", calls },
+      { kind: "operation-limit", maximumOperations: "5" },
+    ]);
+    expect(policy.maximumOperations).toBe("5");
+    const limitPackage = policy.packages[1];
+    if (!limitPackage) throw new Error("no operation limit policy package");
+    expect(limitPackage.module).toBe(pinnedPolicyModule("operation-limit"));
+    expect(limitPackage.policyData).toBe(
+      concat([toHex(0, { size: 6 }), toHex(5, { size: 6 }), toHex(0, { size: 6 })]),
+    );
+  });
+
   it.each(["expiry", "operation-limit"] as const)(
-    "fails closed on the %s axis, which no pinned module enforces yet",
+    "refuses the %s axis alone, which bounds no call at all",
     (kind) => {
       const profile =
         kind === "expiry"
           ? { kind, validAfter: "0", validUntil: "1750000000" }
           : { kind, maximumOperations: "5" };
-      expect(pinnedPolicyModule(kind)).toBeNull();
-      // Never narrowed to the axes that do materialize: a caller who asked for a
-      // validity window must not receive an unbounded session.
-      const profiles = [{ kind: "call", calls }, profile] as const;
-      expect(() => compileKernelPermissionPolicy(profiles as never)).toThrowError(
-        expect.objectContaining({
-          name: "OaathKernelRuntimeError",
-          code: "kernel_runtime_policy_unavailable",
-        }),
-      );
-      expect(() =>
-        sessionOperator({ key: keyProfiles.ecdsa(), policies: profiles as never }),
-      ).toThrowError(expect.objectContaining({ code: "kernel_runtime_policy_unavailable" }));
-      // The same axis alone bounds no call at all, which is refused first.
+      expect(
+        compileKernelPermissionPolicy([{ kind: "call", calls }, profile] as never).packages,
+      ).toHaveLength(2);
       expect(() => compileKernelPermissionPolicy([profile] as never)).toThrowError(
         expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
       );

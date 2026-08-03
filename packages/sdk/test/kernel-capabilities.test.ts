@@ -81,8 +81,9 @@ type Expectation =
 
 /**
  * The exact fact every capability carries on every supported chain: Kernel v4
- * pins no raw P-256 or WebAuthn validator module and no policy hook module, and
- * the ECDSA validator is caller-bound and code-proven when an account binds.
+ * pins no raw P-256 or WebAuthn validator module and no raw P-256 permission
+ * signer, every policy axis has a reviewed module, and the ECDSA validator is
+ * caller-bound and code-proven when an account binds.
  */
 const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.freeze({
   owner_ecdsa: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
@@ -102,17 +103,15 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     reason: "signer_module_deployment_unproven",
   }),
   session_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  // CallPolicy enforces the call and value axes. The reviewed expiry and
-  // operation-count modules are not pinned yet, so both axes fail closed.
+  // CallPolicy enforces the call and value axes, TimestampPolicy the validity
+  // window, RateLimitPolicy the per-chain operation count: all four are pinned
+  // reviewed modules, so a session can express every axis the Grant policy holds.
   hook_call: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_value: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  hook_expiry: Object.freeze({
-    status: "unsupported",
-    reason: "policy_module_deployment_unproven",
-  }),
+  hook_expiry: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_operation_limit: Object.freeze({
-    status: "unsupported",
-    reason: "policy_module_deployment_unproven",
+    status: "available",
+    evidence: "pinned_reviewed_module",
   }),
 });
 

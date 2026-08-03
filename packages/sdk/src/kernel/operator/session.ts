@@ -87,10 +87,15 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
       exactKernelDeployment(deployment);
       return signer;
     },
-    // CallPolicy reads no signature of its own, so its slice is empty; the signer
-    // slice carries the key signature, which Kernel requires last.
+    // Kernel's _validateUserOpPermission requires exactly one slice per installed
+    // policy package plus one for the signer, or it reverts InvalidSignature
+    // before any policy runs. The slices are derived from the same captured
+    // compiled policy resolvePackages installs from, so the envelope can never
+    // describe a different package count than the permission holds. No reviewed
+    // policy module reads a signature of its own, so every policy slice is empty
+    // and the signer slice, which Kernel requires last, carries the key signature.
     encodeSignature: (signature: `0x${string}`) =>
-      encodeKernelV4PermissionSignature(["0x", signature]),
+      encodeKernelV4PermissionSignature([...policy.packages.map(() => "0x" as const), signature]),
     resolveValidation: (deployment: Readonly<KernelV4Deployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze({ kind: "permission" as const, permissionId });
