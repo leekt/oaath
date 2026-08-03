@@ -38,6 +38,17 @@ export {
   parseGrant,
 } from "./grant.js";
 export type {
+  KernelPermissionObserverErrorCode,
+  KernelPermissionRemovalObserver,
+  KernelPermissionStateReadCapability,
+  KernelPermissionStateReadRequest,
+  ObserveKernelPermissionRemovalResult,
+} from "./kernel-permission-observer.js";
+export {
+  createKernelPermissionRemovalObserver,
+  OgpKernelPermissionObserverError,
+} from "./kernel-permission-observer.js";
+export type {
   EntryPointHandleOpsSubmitterCapability,
   KernelEcdsaOwnerSignerCapability,
   KernelExecutionCall,
