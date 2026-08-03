@@ -704,11 +704,18 @@ export async function createP256KernelOwnerRuntime(
         substrateVerified,
         deployedVerified,
       );
+      const signingAttempt = restorationAttempt;
       try {
         const signature = await account.signUserOperation({
           ...asViemUserOperation(prepared),
           chainId: action.chainId,
         });
+        if (signingAttempt !== restorationAttempt) {
+          return ownerError(
+            "p256_kernel_owner_restoration_required",
+            "P-256 owner verification changed during signing",
+          );
+        }
         if (!SIGNATURE.test(signature)) {
           return ownerError(
             "p256_kernel_owner_signing_failed",

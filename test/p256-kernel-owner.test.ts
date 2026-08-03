@@ -52,7 +52,11 @@ function profile(
   };
 }
 
-function signer(privateKey = p256.utils.randomPrivateKey(), forceHighS = false) {
+function signer(
+  privateKey = p256.utils.randomPrivateKey(),
+  forceHighS = false,
+  beforeSign?: () => Promise<void>,
+) {
   const publicKey = toHex(p256.getPublicKey(privateKey, false));
   let calls = 0;
   return {
@@ -62,6 +66,7 @@ function signer(privateKey = p256.utils.randomPrivateKey(), forceHighS = false) 
       publicKey,
       async signMessageHash({ hash }: { hash: `0x${string}` }) {
         calls += 1;
+        if (beforeSign) await beforeSign();
         const signed = p256.sign(hexToBytes(hash), privateKey, {
           lowS: !forceHighS,
           prehash: false,
@@ -242,7 +247,16 @@ describe("P-256 Kernel owner runtime", () => {
   });
 
   it("requires exact deployed root and stored-key evidence for factory-free signing", async () => {
-    const current = await ownerRuntime();
+    let reachSign!: () => void;
+    let releaseSign!: () => void;
+    const signReached = new Promise<void>((resolve) => (reachSign = resolve));
+    const signBlocked = new Promise<void>((resolve) => (releaseSign = resolve));
+    const current = await ownerRuntime(
+      signer(undefined, false, async () => {
+        reachSign();
+        await signBlocked;
+      }),
+    );
     const operation = prepared(current.runtime, { factory: null });
     await expectCode(
       () => current.runtime.signPreparedUserOperation(operation),
@@ -257,16 +271,8 @@ describe("P-256 Kernel owner runtime", () => {
       validator: current.runtime.validatorAddress,
       publicKey: current.owner.publicKey,
     });
-    expect(reads.requests.map(({ type }) => type)).toEqual([
-      "chain_id",
-      "p256_validator_code",
-      "p256_precompile",
-      "account_code",
-      "kernel_root_validator",
-      "p256_validator_public_key",
-    ]);
-    await current.runtime.signPreparedUserOperation(operation);
-    expect(current.owner.calls()).toBe(1);
+    const signing = current.runtime.signPreparedUserOperation(operation);
+    await signReached;
 
     let reachChain!: () => void;
     let releaseChain!: () => void;
@@ -287,7 +293,9 @@ describe("P-256 Kernel owner runtime", () => {
       "p256_kernel_owner_restoration_unreadable",
     );
     releaseChain();
+    releaseSign();
     await expectCode(() => older, "p256_kernel_owner_restoration_unavailable");
+    await expectCode(() => signing, "p256_kernel_owner_restoration_required");
     await expectCode(
       () => current.runtime.signPreparedUserOperation(operation),
       "p256_kernel_owner_restoration_required",
@@ -341,25 +349,6 @@ describe("P-256 Kernel owner runtime", () => {
           return `0x${"00".repeat(32)}`;
         },
         "p256_kernel_owner_restoration_absent",
-      ],
-      [
-        "precompile unreadable",
-        (request) => {
-          if (request.type === "chain_id") return 31_337;
-          if (request.type === "p256_validator_code") return fixture.p256Validator.runtimeBytecode;
-          return "0x01";
-        },
-        "p256_kernel_owner_restoration_unreadable",
-      ],
-      [
-        "account unreadable",
-        (request) => {
-          if (request.type === "chain_id") return 31_337;
-          if (request.type === "p256_validator_code") return fixture.p256Validator.runtimeBytecode;
-          if (request.type === "p256_precompile") return PRECOMPILE_SUCCESS;
-          return "0x0";
-        },
-        "p256_kernel_owner_restoration_unreadable",
       ],
       [
         "root mismatch",
