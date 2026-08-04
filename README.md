@@ -127,6 +127,14 @@ policy is required for every kind. A produced signature must verify against the
 profile's own bound public material before it is wrapped in any authority
 envelope, and a reviewed kind may never bind its own signer module.
 
+A raw P-256 credential — an Apple Secure Enclave key, for instance — holds root
+owner authority through a pinned reviewed validator module, and its session keys
+are ECDSA because no reviewed raw P-256 permission signer exists. That validator
+verifies through the RIP-7212 / EIP-7951 precompile and has no Solidity fallback,
+so it can only be deployed on a chain that carries the precompile; on a chain that
+does not, the pinned address holds no code and `bindAccount` fails closed with
+`kernel_runtime_validator_unavailable` before any account address depends on it.
+
 ### All-chain authority
 
 `chainScope: "all"` is one owner approval, not one approval per chain. Every
