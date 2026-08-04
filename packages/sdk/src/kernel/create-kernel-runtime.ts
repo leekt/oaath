@@ -141,8 +141,14 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
    * account's initial packages install, but a session binds the account's root
    * packages, not its own permission packages, so its signer module is proven
    * here. A caller-bound module carries no pinned review at all, which is why
-   * code presence is the fact that must hold before an account, a permission ID,
-   * or an operation identity depends on the address.
+   * code presence is proven before this runtime's bindAccount returns.
+   *
+   * Boundary, stated exactly: this proof runs only in bindAccount. The
+   * permission ID is derived locally before any chain read can exist, and a
+   * descriptor bound by a DIFFERENT runtime reaches prepareOperation with this
+   * runtime's module unproven. Both fall through to Kernel's on-chain
+   * validation, where a codeless module reverts instead of validating — the
+   * refusal is fail-closed, merely later and costlier than this read.
    */
   async function proveAuthorityModule(): Promise<void> {
     const unavailable =

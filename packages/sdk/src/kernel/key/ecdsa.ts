@@ -69,6 +69,11 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
       return validator;
     },
     // A reviewed kind installs the permission signer module pinned to its kind.
+    // signerModule stays null: reviewed kinds resolve their signer from the
+    // pinned registry, and the capture layer refuses a self-bound module.
+    // The self-verification inside this profile's own sign() is deliberate
+    // duplication of the capture layer's check — this factory is publicly
+    // exported, so direct callers need the guarantee too. Do not "clean it up".
     signerModule: null,
     dummySignature: DUMMY_SIGNATURE,
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
