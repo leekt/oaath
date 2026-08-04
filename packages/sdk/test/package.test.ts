@@ -27,8 +27,10 @@ describe("package boundary", () => {
       "OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION",
       "OAATH_OPERATION_STORE_RECORD_VERSION",
       "OAATH_PREPARED_USER_OPERATION_VERSION",
+      "OPERATION_FINALITY_MAX_ANCESTRY_DEPTH",
       "OaathCleanupError",
       "OaathClientError",
+      "OaathFinalityAncestryError",
       "OaathKernelRuntimeError",
       "OaathKernelV4Error",
       "OaathOperationObserverError",
@@ -104,6 +106,7 @@ describe("package boundary", () => {
       "runOaathCleanup",
       "sessionOperator",
       "signOutEffect",
+      "verifyFinalizedBlockAncestry",
       "webauthnKey",
     ]);
   });

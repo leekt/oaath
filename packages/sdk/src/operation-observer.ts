@@ -10,11 +10,14 @@ import {
   type IncludedOperation,
   type Operation,
   type OperationFinality,
-  type OperationIdentity,
   type OperationInclusion,
   parseOperation,
   type UserOperationReference,
 } from "@oaath/protocol";
+import {
+  OPERATION_FINALITY_MAX_ANCESTRY_DEPTH,
+  verifyFinalizedBlockAncestry,
+} from "./finality-ancestry.js";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -641,66 +644,45 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
             new WeakSet(),
             "finality_unproven",
           );
-          const finalizedNumberValue = parseQuantity(finalized.number, "finality_unproven");
-          const finalizedNumber = decimal(finalizedNumberValue);
-          const inclusionNumber = BigInt(inclusion.blockNumber);
-          if (finalizedNumberValue < inclusionNumber) {
-            throw new EvidenceFailure("finality_unproven");
-          }
-
-          let descendant = finalized;
-          let descendantNumber = finalizedNumberValue;
-          while (descendantNumber > inclusionNumber) {
-            const parent = parseBlock(
-              await read({
-                type: "block_by_hash",
-                chainId: reference.chainId,
-                blockHash: descendant.parentHash,
-              }),
-              new WeakSet(),
-              "finality_unproven",
-            );
-            const parentNumber = parseQuantity(parent.number, "finality_unproven");
-            if (parent.hash !== descendant.parentHash || parentNumber + 1n !== descendantNumber) {
-              throw new EvidenceFailure("finality_unproven");
-            }
-            descendant = parent;
-            descendantNumber = parentNumber;
-          }
-          if (descendant.hash !== inclusion.blockHash) {
-            throw new EvidenceFailure("finality_unproven");
-          }
-
-          const reboundFinalized = parseBlock(
-            await read({
-              type: "canonical_block",
-              chainId: reference.chainId,
-              blockNumber: finalizedNumber,
-            }),
-            new WeakSet(),
-            "finality_unproven",
-          );
-          const reboundInclusion = parseBlock(
-            await read({
-              type: "canonical_block",
-              chainId: reference.chainId,
-              blockNumber: inclusion.blockNumber,
-            }),
-            new WeakSet(),
-            "finality_unproven",
-          );
-          if (
-            reboundFinalized.hash !== finalized.hash ||
-            reboundFinalized.number !== finalized.number ||
-            reboundInclusion.hash !== inclusion.blockHash ||
-            reboundInclusion.number !== `0x${BigInt(inclusion.blockNumber).toString(16)}` ||
-            (finalizedNumber === inclusion.blockNumber && finalized.hash !== inclusion.blockHash)
-          ) {
-            throw new EvidenceFailure("finality_unproven");
-          }
+          const verified = await verifyFinalizedBlockAncestry({
+            finalized: {
+              number: finalized.number,
+              hash: finalized.hash,
+              parentHash: finalized.parentHash,
+            },
+            inclusion: {
+              number: `0x${BigInt(inclusion.blockNumber).toString(16)}`,
+              hash: inclusion.blockHash,
+            },
+            maxDepth: OPERATION_FINALITY_MAX_ANCESTRY_DEPTH,
+            readParent: async (blockHash) => {
+              const parent = parseBlock(
+                await read({ type: "block_by_hash", chainId: reference.chainId, blockHash }),
+                new WeakSet(),
+                "finality_unproven",
+              );
+              return { number: parent.number, hash: parent.hash, parentHash: parent.parentHash };
+            },
+            readCanonical: async (blockNumber) => {
+              const canonical = parseBlock(
+                await read({
+                  type: "canonical_block",
+                  chainId: reference.chainId,
+                  blockNumber,
+                }),
+                new WeakSet(),
+                "finality_unproven",
+              );
+              return {
+                number: canonical.number,
+                hash: canonical.hash,
+                parentHash: canonical.parentHash,
+              };
+            },
+          });
           return Object.freeze({
-            blockNumber: finalizedNumber,
-            blockHash: finalized.hash,
+            blockNumber: decimal(parseQuantity(verified.number, "finality_unproven")),
+            blockHash: verified.hash,
             observedAt,
           });
         } catch (error) {

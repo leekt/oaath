@@ -3,11 +3,14 @@ import test from "node:test";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import {
+  AtomicReservationLane,
   cacheImmutableKernelReads,
   canonicalDisplay,
   captureCanonicalDisplay,
+  captureOperationTransactionHash,
   captureSponsorship,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
+  LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RECEIPT_POLL_ATTEMPTS,
   LIVE_RPC_MAX_REQUESTS,
   LIVE_TRANSPORT_CONFIG,
@@ -62,15 +65,18 @@ test("instruments the exact worst-case live RPC call graph under one hard budget
     call("eth_getTransactionReceipt");
     call("eth_getTransactionByHash");
     call("eth_getBlockByNumber:finalized");
-    call("eth_getBlockByNumber:canonical");
+    for (let depth = 0; depth < LIVE_FINALITY_MAX_ANCESTRY_DEPTH; depth += 1)
+      call("eth_getBlockByHash:parent");
+    call("eth_getBlockByNumber:rebound-finalized");
+    call("eth_getBlockByNumber:rebound-inclusion");
   }
   assert.equal(budget.snapshot().count, DOCUMENTED_LIVE_FLOW_REQUESTS);
-  assert.equal(DOCUMENTED_LIVE_FLOW_REQUESTS, 45);
+  assert.equal(DOCUMENTED_LIVE_FLOW_REQUESTS, 72);
   while (budget.snapshot().count < LIVE_RPC_MAX_REQUESTS) call("headroom");
   assert.throws(() => call("one-too-many"), {
     message: "zerodev_request_budget_exhausted",
   });
-  assert.equal(budget.snapshot().count, 54);
+  assert.equal(budget.snapshot().count, 81);
 });
 
 test("binding cache reuses immutable success but refreshes account state", async () => {
@@ -219,6 +225,57 @@ test("pairing reservation is atomic across concurrent handlers", async () => {
   assert.equal(devices.size, 1);
 });
 
+test("permission and signature request reservations are atomic across Promise.all handlers", async () => {
+  const permissionLane = new AtomicReservationLane();
+  const signatureLane = new AtomicReservationLane();
+  const created = [];
+  const activePermissions = [];
+  const handle = async (token) => {
+    permissionLane.reserve(token, { sessionAddress: "session" });
+    signatureLane.reserve(token, { purpose: "permission" });
+    await Promise.resolve();
+    created.push(token);
+    signatureLane.activate(token, `request-${token}`);
+    permissionLane.activate(token, `request-${token}`);
+    activePermissions.push(permissionLane.active.requestId);
+  };
+  const settled = await Promise.allSettled([handle("one"), handle("two")]);
+  assert.equal(settled.filter(({ status }) => status === "fulfilled").length, 1);
+  assert.equal(created.length, 1);
+  assert.deepEqual(activePermissions, [`request-${created[0]}`]);
+  assert.equal(signatureLane.active.requestId, `request-${created[0]}`);
+  assert.equal(permissionLane.active.requestId, `request-${created[0]}`);
+
+  assert.throws(() => signatureLane.terminate("other", "rejected"), {
+    message: "reservation_lane_mismatch",
+  });
+  assert.equal(signatureLane.active.requestId, `request-${created[0]}`);
+  signatureLane.terminate(created[0], "rejected");
+  assert.equal(signatureLane.active, null);
+  assert.deepEqual(signatureLane.lastTerminal, { token: created[0], state: "rejected" });
+  assert.equal(permissionLane.active.requestId, `request-${created[0]}`);
+});
+
+test("ambiguous relay create retains a possibly-submitted reservation and forbids retry", async () => {
+  const lane = new AtomicReservationLane();
+  let creates = 0;
+  const create = async (token) => {
+    lane.reserve(token, { purpose: "permission" });
+    try {
+      creates += 1;
+      await Promise.resolve();
+      throw new Error("response_lost");
+    } catch (error) {
+      lane.markPossiblySubmitted(token);
+      throw error;
+    }
+  };
+  await assert.rejects(create("owned"), { message: "response_lost" });
+  assert.equal(lane.active.state, "possibly-submitted");
+  await assert.rejects(create("retry"), { message: "reservation_lane_occupied" });
+  assert.equal(creates, 1);
+});
+
 test("ambiguous receipt wait returns the same operation id and retry submits zero operations", async () => {
   const userOperationHash = `0x${"31".repeat(32)}`;
   const transactionHash = `0x${"32".repeat(32)}`;
@@ -255,7 +312,27 @@ test("ambiguous receipt wait returns the same operation id and retry submits zer
   assert.equal(observations, 1);
 });
 
-const operationEvidence = ({ success = true, finalizedNumber = "0x8", eventCount = 1 } = {}) => {
+test("discovered transaction hash survives later provider failure and conflicts never overwrite", async () => {
+  const first = `0x${"51".repeat(32)}`;
+  const conflicting = `0x${"52".repeat(32)}`;
+  const operation = {};
+  assert.equal(captureOperationTransactionHash(operation, first), first);
+  await assert.rejects(
+    (async () => {
+      captureOperationTransactionHash(operation, first);
+      throw new Error("provider_failed_after_discovery");
+    })(),
+    { message: "provider_failed_after_discovery" },
+  );
+  assert.equal(operation.transactionHash, first);
+  assert.throws(() => captureOperationTransactionHash(operation, conflicting), {
+    message: "operation_transaction_hash_conflict",
+  });
+  assert.equal(operation.transactionHash, first);
+  assert.equal(Object.getOwnPropertyDescriptor(operation, "transactionHash").writable, false);
+});
+
+const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRpc } = {}) => {
   const userOperationHash = `0x${"41".repeat(32)}`;
   const transactionHash = `0x${"42".repeat(32)}`;
   const blockHash = `0x${"43".repeat(32)}`;
@@ -268,7 +345,7 @@ const operationEvidence = ({ success = true, finalizedNumber = "0x8", eventCount
     eventName: "UserOperationEvent",
     args: { userOpHash: userOperationHash, sender: account, paymaster },
   });
-  const log = {
+  const baseLog = {
     address: entryPoint,
     topics,
     data: encodeAbiParameters(
@@ -280,6 +357,7 @@ const operationEvidence = ({ success = true, finalizedNumber = "0x8", eventCount
     blockNumber: "0x7",
     removed: false,
   };
+  const log = mutateLog ? mutateLog(structuredClone(baseLog)) : baseLog;
   const operation = {
     chainId: 421614,
     prepared: {
@@ -288,55 +366,115 @@ const operationEvidence = ({ success = true, finalizedNumber = "0x8", eventCount
       userOperation: { sender: account, nonce: "7" },
     },
   };
-  const values = new Map([
-    [
-      "eth_getTransactionReceipt",
-      {
-        transactionHash,
-        to: entryPoint,
-        status: "0x1",
-        blockHash,
-        blockNumber: "0x7",
-        logs: Array(eventCount).fill(log),
-      },
-    ],
-    [
-      "eth_getTransactionByHash",
-      {
-        hash: transactionHash,
-        to: entryPoint,
-        chainId: "0x66eee",
-        blockHash,
-        blockNumber: "0x7",
-      },
-    ],
-  ]);
-  const rpc = async (method, params) => {
-    if (method === "eth_getBlockByNumber")
-      return params[0] === "finalized"
-        ? { number: finalizedNumber, hash: finalizedHash }
-        : { number: "0x7", hash: blockHash };
-    return values.get(method);
+  const receipt = {
+    transactionHash,
+    to: entryPoint,
+    status: "0x1",
+    blockHash,
+    blockNumber: "0x7",
+    logs: Array(eventCount).fill(log),
   };
-  return { operation, transactionHash, rpc };
+  const transaction = {
+    hash: transactionHash,
+    to: entryPoint,
+    chainId: "0x66eee",
+    blockHash,
+    blockNumber: "0x7",
+  };
+  const inclusion = {
+    number: "0x7",
+    hash: blockHash,
+    parentHash: `0x${"40".repeat(32)}`,
+  };
+  const finalized = {
+    number: "0x8",
+    hash: finalizedHash,
+    parentHash: blockHash,
+  };
+  const rpc = async (method, params) => {
+    let value;
+    if (method === "eth_getTransactionReceipt") value = receipt;
+    else if (method === "eth_getTransactionByHash") value = transaction;
+    else if (method === "eth_getBlockByHash") value = inclusion;
+    else if (method === "eth_getBlockByNumber")
+      value = params[0] === "finalized" || params[0] === "0x8" ? finalized : inclusion;
+    if (mutateRpc) value = mutateRpc(method, params, structuredClone(value));
+    return value;
+  };
+  return { operation, transactionHash, rpc, baseLog };
 };
 
-test("only a finalized EntryPoint event authorizes inclusion", async () => {
+test("only a parent-linked and canonically rebound finalized event authorizes inclusion", async () => {
   const fixture = operationEvidence();
   const evidence = await validateFinalizedUserOperation(fixture);
   assert.equal(evidence.status, "included");
   assert.equal(evidence.userOperationHash, fixture.operation.prepared.userOperationHash);
   assert.equal(evidence.finalizedBlockNumber, "0x8");
+});
 
+test("unrelated finalized heads and endpoint reorgs remain unresolved", async () => {
   await assert.rejects(
-    validateFinalizedUserOperation(operationEvidence({ finalizedNumber: "0x6" })),
+    validateFinalizedUserOperation(
+      operationEvidence({
+        mutateRpc(method, params, value) {
+          if (method === "eth_getBlockByNumber" && params[0] === "finalized")
+            return { ...value, parentHash: `0x${"55".repeat(32)}` };
+          if (method === "eth_getBlockByHash") return { ...value, hash: `0x${"55".repeat(32)}` };
+          return value;
+        },
+      }),
+    ),
+    { message: "operation_finality_evidence_invalid" },
+  );
+  await assert.rejects(
+    validateFinalizedUserOperation(
+      operationEvidence({
+        mutateRpc(method, params, value) {
+          if (method === "eth_getBlockByNumber" && params[0] === "0x7")
+            return { ...value, hash: `0x${"56".repeat(32)}` };
+          return value;
+        },
+      }),
+    ),
     { message: "operation_finality_evidence_invalid" },
   );
 });
 
-test("missing or ambiguous EntryPoint events remain unresolved evidence", async () => {
+test("missing, duplicate, and contradictory EntryPoint events remain unresolved", async () => {
   for (const eventCount of [0, 2])
     await assert.rejects(validateFinalizedUserOperation(operationEvidence({ eventCount })), {
+      message: "operation_event_evidence_invalid",
+    });
+  const fixture = operationEvidence();
+  const contradictory = {
+    ...fixture.baseLog,
+    data: fixture.baseLog.data.replace(/01$/u, "00"),
+  };
+  await assert.rejects(
+    validateFinalizedUserOperation(
+      operationEvidence({
+        mutateRpc(method, _params, value) {
+          return method === "eth_getTransactionReceipt"
+            ? { ...value, logs: [fixture.baseLog, contradictory] }
+            : value;
+        },
+      }),
+    ),
+    { message: "operation_event_evidence_invalid" },
+  );
+});
+
+test("hostile noncanonical EntryPoint topic/data/quantity shapes fail closed", async () => {
+  const mutations = [
+    (log) => ({ ...log, topics: [...log.topics, `0x${"00".repeat(32)}`] }),
+    (log) => ({ ...log, data: `${log.data}00` }),
+    (log) => ({ ...log, topics: [log.topics[0].toUpperCase(), ...log.topics.slice(1)] }),
+    (log) => ({ ...log, topics: [`0x${"11".repeat(31)}`, ...log.topics.slice(1)] }),
+    (log) => ({ ...log, blockNumber: "0x07" }),
+    (log) => ({ ...log, data: `${log.data.slice(0, -2)}0A` }),
+  ];
+  for (const mutateLog of mutations)
+    await assert.rejects(validateFinalizedUserOperation(operationEvidence({ mutateLog })), {
       message: "operation_event_evidence_invalid",
     });
 });

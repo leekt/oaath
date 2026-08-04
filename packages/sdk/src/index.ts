@@ -47,6 +47,15 @@ export type {
 } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";
 export type {
+  FinalityBlockReference,
+  VerifyFinalizedBlockAncestryInput,
+} from "./finality-ancestry.js";
+export {
+  OaathFinalityAncestryError,
+  OPERATION_FINALITY_MAX_ANCESTRY_DEPTH,
+  verifyFinalizedBlockAncestry,
+} from "./finality-ancestry.js";
+export type {
   DiagnoseKernelCapabilityInput,
   KernelCapability,
   KernelCapabilityEvidence,

@@ -40,11 +40,15 @@ if (anvilAvailable()) {
 }
 
 const failures = [];
-const phoneUnits = spawnSync("node", ["--test", "phone/operation.test.mjs"], {
-  cwd: HERE,
-  stdio: "inherit",
-  env: process.env,
-});
+const phoneUnits = spawnSync(
+  "node",
+  ["--import", HOOK, "--test", "phone/operation.test.mjs", "phone/browser-recovery.test.mjs"],
+  {
+    cwd: HERE,
+    stdio: "inherit",
+    env: process.env,
+  },
+);
 if (phoneUnits.status !== 0) failures.push("phone-unit");
 
 for (const example of examples) {

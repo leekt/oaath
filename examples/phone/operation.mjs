@@ -6,10 +6,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { verifyFinalizedBlockAncestry } from "@oaath/sdk";
 import { decodeEventLog, toEventSelector } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 
-export const LIVE_RPC_MAX_REQUESTS = 54;
+export const LIVE_FINALITY_MAX_ANCESTRY_DEPTH = 8;
+export const LIVE_RPC_MAX_REQUESTS = 81;
 export const LIVE_TRANSPORT_CONFIG = Object.freeze({ retryCount: 0 });
 export const LIVE_RECEIPT_POLL_ATTEMPTS = 4;
 export const LIVE_RECEIPT_POLL_INTERVAL_MS = 1_000;
@@ -18,7 +20,12 @@ export const DOCUMENTED_LIVE_FLOW_REQUESTS =
   3 + // nonce reads, including the first enable attempt
   3 + // sponsorship
   3 + // submission
-  3 * (LIVE_RECEIPT_POLL_ATTEMPTS + 4); // receipt polls + tx/receipt/finality/canonical reads
+  3 *
+    (LIVE_RECEIPT_POLL_ATTEMPTS +
+      2 + // transaction + receipt
+      1 + // finalized head
+      LIVE_FINALITY_MAX_ANCESTRY_DEPTH + // bounded parent-hash walk
+      2); // canonical rebounds of finalized and inclusion blocks
 
 /** Caches only immutable successful Kernel binding evidence. */
 export function cacheImmutableKernelReads(reads) {
@@ -170,6 +177,50 @@ export function captureCanonicalDisplay(display, digest) {
   return display;
 }
 
+/** Synchronous reservation owner for consent/authority request lanes. */
+export class AtomicReservationLane {
+  #active = null;
+  #lastTerminal = null;
+
+  reserve(token, detail = {}) {
+    if (this.#active !== null) throw new Error("reservation_lane_occupied");
+    this.#active = { token, state: "pre-submit", requestId: null, ...detail };
+    return this.#active;
+  }
+
+  markPossiblySubmitted(token) {
+    if (this.#active?.token !== token) throw new Error("reservation_lane_mismatch");
+    this.#active.state = "possibly-submitted";
+  }
+
+  activate(token, requestId) {
+    if (this.#active?.token !== token) throw new Error("reservation_lane_mismatch");
+    this.#active.state = "active";
+    this.#active.requestId = requestId;
+  }
+
+  release(token) {
+    if (this.#active?.token !== token) throw new Error("reservation_lane_mismatch");
+    this.#active = null;
+  }
+
+  terminate(token, outcome) {
+    if (this.#active?.token !== token) throw new Error("reservation_lane_mismatch");
+    if (outcome !== "rejected" && outcome !== "completed")
+      throw new Error("reservation_terminal_state_invalid");
+    this.#lastTerminal = Object.freeze({ token, state: outcome });
+    this.#active = null;
+  }
+
+  get active() {
+    return this.#active;
+  }
+
+  get lastTerminal() {
+    return this.#lastTerminal;
+  }
+}
+
 /** One operation lane. Only terminal observation releases it. */
 export class OperationLane {
   #active = null;
@@ -223,9 +274,8 @@ export function validateBundlerAcceptance(preparedHash, returnedHash) {
 }
 
 const requireHash = (value, code) => {
-  const normalized = lower(value);
-  if (!HASH.test(normalized)) throw new Error(code);
-  return normalized;
+  if (typeof value !== "string" || !HASH.test(value)) throw new Error(code);
+  return value;
 };
 const requireQuantity = (value, code) => {
   if (typeof value !== "string" || !QUANTITY.test(value)) throw new Error(code);
@@ -287,6 +337,16 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
     )
       continue;
     try {
+      if (
+        typeof log.address !== "string" ||
+        !ADDRESS.test(log.address) ||
+        log.topics.length !== 4 ||
+        log.topics.some((topic) => typeof topic !== "string" || !HASH.test(topic)) ||
+        typeof log.data !== "string" ||
+        !DATA.test(log.data) ||
+        log.data.length !== 258
+      )
+        throw new Error("operation_event_evidence_invalid");
       const decoded = decodeEventLog({
         abi: entryPoint07Abi,
         data: log.data,
@@ -298,8 +358,8 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
         lower(decoded.args.userOpHash) !== userOperationHash ||
         lower(decoded.args.sender) !== account ||
         BigInt(decoded.args.nonce) !== BigInt(prepared.userOperation.nonce) ||
-        lower(log.transactionHash) !== txHash ||
-        lower(log.blockHash) !== blockHash ||
+        requireHash(log.transactionHash, "operation_event_evidence_invalid") !== txHash ||
+        requireHash(log.blockHash, "operation_event_evidence_invalid") !== blockHash ||
         requireQuantity(log.blockNumber, "operation_event_evidence_invalid") !== blockNumber ||
         log.removed === true ||
         typeof decoded.args.success !== "boolean"
@@ -312,20 +372,30 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
   }
   if (matches.length !== 1) throw new Error("operation_event_evidence_invalid");
 
-  const [finalized, canonical] = await Promise.all([
-    rpc("eth_getBlockByNumber", ["finalized", false]),
-    rpc("eth_getBlockByNumber", [`0x${blockNumber.toString(16)}`, false]),
-  ]);
-  if (
-    finalized === null ||
-    canonical === null ||
-    typeof finalized !== "object" ||
-    typeof canonical !== "object" ||
-    requireQuantity(finalized.number, "operation_finality_evidence_invalid") < blockNumber ||
-    requireQuantity(canonical.number, "operation_finality_evidence_invalid") !== blockNumber ||
-    lower(canonical.hash) !== blockHash
-  )
+  const reference = (value) => {
+    if (value === null || typeof value !== "object")
+      throw new Error("operation_finality_evidence_invalid");
+    return {
+      number: value.number,
+      hash: value.hash,
+      parentHash: value.parentHash,
+    };
+  };
+  let finalized;
+  try {
+    const finalizedValue = await rpc("eth_getBlockByNumber", ["finalized", false]);
+    finalized = await verifyFinalizedBlockAncestry({
+      finalized: reference(finalizedValue),
+      inclusion: { number: `0x${blockNumber.toString(16)}`, hash: blockHash },
+      maxDepth: LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
+      readParent: async (parentHash) =>
+        reference(await rpc("eth_getBlockByHash", [parentHash, false])),
+      readCanonical: async (number) =>
+        reference(await rpc("eth_getBlockByNumber", [`0x${BigInt(number).toString(16)}`, false])),
+    });
+  } catch {
     throw new Error("operation_finality_evidence_invalid");
+  }
 
   return Object.freeze({
     chainId: operation.chainId,
@@ -334,7 +404,7 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
     transactionHash: txHash,
     blockHash,
     blockNumber: `0x${blockNumber.toString(16)}`,
-    finalizedBlockHash: requireHash(finalized.hash, "operation_finality_evidence_invalid"),
+    finalizedBlockHash: finalized.hash,
     finalizedBlockNumber: finalized.number,
     status: matches[0] ? "included" : "reverted",
   });
@@ -345,6 +415,23 @@ export async function withFreshSequence(input, readSequence) {
   return Object.freeze({ ...input, sequence: await readSequence() });
 }
 
+/** Captures the first canonical transaction hash as immutable operation evidence. */
+export function captureOperationTransactionHash(operation, value) {
+  const transactionHash = requireHash(value, "operation_evidence_invalid");
+  if (operation.transactionHash !== undefined) {
+    if (operation.transactionHash !== transactionHash)
+      throw new Error("operation_transaction_hash_conflict");
+    return transactionHash;
+  }
+  Object.defineProperty(operation, "transactionHash", {
+    value: transactionHash,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  });
+  return transactionHash;
+}
+
 /** Submission state owner: after send starts every failure becomes unresolved. */
 export async function submitOnce({ operation, signature, send, observe, terminalize }) {
   if (operationAction(operation.status) !== "submit")
@@ -353,7 +440,7 @@ export async function submitOnce({ operation, signature, send, observe, terminal
   operation.submissionAttempted = true;
   try {
     const sent = await send(operation.prepared, signature, (transactionHash) => {
-      operation.transactionHash = requireHash(transactionHash, "operation_evidence_invalid");
+      captureOperationTransactionHash(operation, transactionHash);
     });
     const acceptance = validateBundlerAcceptance(
       operation.prepared.userOperationHash,
@@ -361,7 +448,7 @@ export async function submitOnce({ operation, signature, send, observe, terminal
     );
     operation.acceptance = Object.freeze({ ...acceptance, acceptedAt: Date.now() });
     if (sent.transactionHash !== undefined)
-      operation.transactionHash = requireHash(sent.transactionHash, "operation_evidence_invalid");
+      captureOperationTransactionHash(operation, sent.transactionHash);
     operation.status = "submitted";
     return await observe(operation, terminalize);
   } catch {

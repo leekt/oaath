@@ -6,6 +6,9 @@ const $ = (id) => document.getElementById(id);
 const status = $("status");
 const account = $("account");
 const keyName = "oaath-demo-session-private-key-v1";
+const permissionRequestKey = "oaath-demo-permission-request-v1";
+const sessionOperationKey = "oaath-demo-session-operation-v1";
+const ownerRequestKey = "oaath-demo-owner-request-v1";
 const say = (text) => {
   status.textContent = text;
 };
@@ -18,6 +21,8 @@ const json = async (path, options) => {
   if (!response.ok) throw new Error(body.error?.code ?? `HTTP ${response.status}`);
   return body;
 };
+const remember = (key, value) => localStorage.setItem(key, value);
+const forget = (key) => localStorage.removeItem(key);
 const sessionKey = () => {
   let hex = localStorage.getItem(keyName);
   if (hex === null || !/^[0-9a-f]{64}$/.test(hex)) {
@@ -36,21 +41,38 @@ const sessionIdentity = () => {
   };
 };
 const sign = (hash, key) => {
-  const signature = secp256k1.sign(hexToBytes(hash), key, { lowS: true, prehash: false });
+  const signature = secp256k1.sign(hexToBytes(hash.slice(2)), key, {
+    lowS: true,
+    prehash: false,
+  });
   const recovery = signature.recovery;
   if (recovery === undefined) throw new Error("session signature has no recovery id");
   return `0x${signature.toCompactHex()}${(27 + recovery).toString(16).padStart(2, "0")}`;
 };
-const poll = async (path, label) => {
+const poll = async (path, label, id) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const answer = await json(path);
     if (answer.status !== "pending" && answer.status !== "unresolved") return answer;
-    say(
-      `${label}\nWaiting for explicit Approve/Reject on the phone…\nOperation id: ${answer.requestId}`,
-    );
+    say(`${label}\nWaiting without creating another request or operation…\nExact id: ${id}`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error("phone decision timed out");
+};
+const finishSession = (answer) => {
+  if (answer.status === "unresolved") {
+    say(
+      `Session operation remains unresolved. Observation retried without resubmission.\nUserOperation: ${answer.userOperationHash}`,
+    );
+    return;
+  }
+  forget(sessionOperationKey);
+  say(
+    `Session operation ${answer.status}.\nUserOperation: ${answer.userOperationHash}\nTransaction: ${answer.transactionHash}`,
+  );
+};
+const observeSession = async (operationId) => {
+  remember(sessionOperationKey, operationId);
+  finishSession(await json(`/demo/operations/${operationId}`));
 };
 
 $("unlock").onclick = async () => {
@@ -65,6 +87,26 @@ $("unlock").onclick = async () => {
 $("permission").onclick = async () => {
   try {
     const identity = sessionIdentity();
+    const state = await json("/demo/state");
+    if (state.permission?.sessionAddress === identity.address) {
+      if (!state.permission.requestId) {
+        say("The matching permission reservation is still occupied; no duplicate was created.");
+        return;
+      }
+      remember(permissionRequestKey, state.permission.requestId);
+      const resumed = await poll(
+        `/demo/permission/${state.permission.requestId}`,
+        "Resuming the existing permission request.",
+        state.permission.requestId,
+      );
+      if (resumed.status === "rejected") forget(permissionRequestKey);
+      say(
+        resumed.status === "rejected"
+          ? "Permission rejected on the phone. No signature or permission was created."
+          : `Permission approved for ${resumed.account}.\nThe phone signed ${resumed.digest}.`,
+      );
+      return;
+    }
     const created = await json("/demo/permission", {
       method: "POST",
       body: JSON.stringify({
@@ -72,14 +114,15 @@ $("permission").onclick = async () => {
         sessionPublicKey: identity.publicKey,
       }),
     });
-    say(
-      `Permission request created.\nOperation id: ${created.requestId}\nThe session private key remains in this browser.`,
-    );
+    // Persist as soon as the API reveals the owner request id, before polling.
+    remember(permissionRequestKey, created.requestId);
     const approved = await poll(
       `/demo/permission/${created.requestId}`,
       "Permission request created.",
+      created.requestId,
     );
     if (approved.status === "rejected") {
+      forget(permissionRequestKey);
       say("Permission rejected on the phone. No signature or permission was created.");
       return;
     }
@@ -88,45 +131,42 @@ $("permission").onclick = async () => {
     say(`Permission failed: ${error.message}`);
   }
 };
-const unresolvedOperationKey = "oaath-demo-unresolved-session-operation-v1";
-let unresolvedSessionOperationId = localStorage.getItem(unresolvedOperationKey);
 $("session").onclick = async () => {
   try {
-    if (unresolvedSessionOperationId !== null) {
-      const observed = await json(`/demo/operations/${unresolvedSessionOperationId}`);
-      if (observed.status === "unresolved") {
-        say(
-          `Session operation remains unresolved. Observation retried without resubmission.\nUserOperation: ${observed.userOperationHash}`,
+    const identity = sessionIdentity();
+    const state = await json("/demo/state");
+    if (state.operation?.kind === "session") {
+      const existing = state.operation;
+      remember(sessionOperationKey, existing.operationId);
+      if (existing.status === "prepared") {
+        const signature = sign(existing.userOperationHash, identity.key);
+        finishSession(
+          await json("/demo/session/submit", {
+            method: "POST",
+            body: JSON.stringify({ operationId: existing.operationId, signature }),
+          }),
         );
-        return;
-      }
-      unresolvedSessionOperationId = null;
-      localStorage.removeItem(unresolvedOperationKey);
-      say(
-        `Session operation ${observed.status}.\nUserOperation: ${observed.userOperationHash}\nTransaction: ${observed.transactionHash}`,
-      );
+      } else await observeSession(existing.operationId);
       return;
     }
-    const identity = sessionIdentity();
+    const remembered = localStorage.getItem(sessionOperationKey);
+    if (remembered !== null) {
+      await observeSession(remembered);
+      return;
+    }
     const prepared = await json("/demo/session/prepare", {
       method: "POST",
       body: JSON.stringify({ sessionAddress: identity.address }),
     });
+    // The prepared hash/id is known before submit. Retain it across response
+    // loss and reload so every later click observes this exact occupied lane.
+    remember(sessionOperationKey, prepared.operationId);
     const signature = sign(prepared.userOperationHash, identity.key);
-    const sent = await json("/demo/session/submit", {
-      method: "POST",
-      body: JSON.stringify({ operationId: prepared.operationId, signature }),
-    });
-    if (sent.status === "unresolved") {
-      unresolvedSessionOperationId = sent.operationId;
-      localStorage.setItem(unresolvedOperationKey, sent.operationId);
-      say(
-        `Session operation unresolved. Click again to observe the same hash without resubmitting.\nUserOperation: ${sent.userOperationHash}`,
-      );
-      return;
-    }
-    say(
-      `Session operation ${sent.status}.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
+    finishSession(
+      await json("/demo/session/submit", {
+        method: "POST",
+        body: JSON.stringify({ operationId: prepared.operationId, signature }),
+      }),
     );
   } catch (error) {
     say(`Session transaction failed: ${error.message}`);
@@ -134,18 +174,34 @@ $("session").onclick = async () => {
 };
 $("owner").onclick = async () => {
   try {
-    const prepared = await json("/demo/owner/prepare", { method: "POST", body: "{}" });
-    say(
-      `Owner signature request created.\nOperation id: ${prepared.requestId}\nThe phone shows the full UserOperation JSON.`,
-    );
+    const state = await json("/demo/state");
+    let requestId =
+      state.operation?.kind === "owner" && state.operation.status !== "awaiting-request"
+        ? state.operation.operationId
+        : state.signatureRequest?.purpose === "owner-operation"
+          ? state.signatureRequest.requestId
+          : localStorage.getItem(ownerRequestKey);
+    if (!requestId && (state.operation?.kind === "owner" || state.signatureRequest)) {
+      say("The owner request lane is occupied and possibly submitted; no duplicate was created.");
+      return;
+    }
+    if (!requestId) {
+      const prepared = await json("/demo/owner/prepare", { method: "POST", body: "{}" });
+      requestId = prepared.requestId;
+    }
+    // Persist immediately when the API reveals the signature request id.
+    remember(ownerRequestKey, requestId);
     const sent = await poll(
-      `/demo/owner/${prepared.requestId}`,
-      "Owner signature request created.",
+      `/demo/owner/${requestId}`,
+      "Resuming the exact owner signature request.",
+      requestId,
     );
     if (sent.status === "rejected") {
+      forget(ownerRequestKey);
       say("Owner operation rejected on the phone. No signature or operation was submitted.");
       return;
     }
+    forget(ownerRequestKey);
     say(
       `Owner operation ${sent.status} after phone approval.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
     );

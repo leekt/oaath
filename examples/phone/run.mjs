@@ -39,12 +39,15 @@ import qrcode from "qrcode-terminal";
 import { createPublicClient, custom, hexToBytes, keccak256, parseEther, toHex } from "viem";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
 import {
+  AtomicReservationLane,
   cacheImmutableKernelReads,
   canonicalDisplay,
   captureCanonicalDisplay,
+  captureOperationTransactionHash,
   captureSponsorship,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   exactKeys,
+  LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RECEIPT_POLL_ATTEMPTS,
   LIVE_RECEIPT_POLL_INTERVAL_MS,
   LIVE_RPC_MAX_REQUESTS,
@@ -121,8 +124,10 @@ const pairedDevices = new Map();
 let activeDevice = null;
 let redirectUri = "";
 let relayPort = 0;
-let activeRequestId = null;
+let signingRequestId = null;
 const signatureRequests = new Map();
+const signatureRequestLane = new AtomicReservationLane();
+const permissionLane = new AtomicReservationLane();
 const operations = new Map();
 const operationLane = new OperationLane();
 let permission = null;
@@ -133,8 +138,10 @@ let stack = null;
 let simulatedOwnerSecret = null;
 const target = `0x${"71".repeat(20)}`;
 // Immutable successful binding reads are cached; account state is refreshed
-// once after deployment. The 45-request worst case leaves nine hard headroom.
-expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 45, "live request model drifted");
+// once after deployment. The 72-request worst case includes three complete
+// eight-parent finality walks and leaves nine requests of hard headroom.
+expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 72, "live request model drifted");
+expect(LIVE_FINALITY_MAX_ANCESTRY_DEPTH === 8, "live ancestry budget drifted");
 const LIVE_RPC_TIMEOUT_MS = 10_000;
 const liveRequestBudget = new LiveRequestBudget();
 
@@ -206,7 +213,7 @@ async function bindOwner(publicMaterial) {
     deployment: kernelV4Deployment(CHAIN_ID),
     operator: ownerOperator({
       key: p256Profile(publicMaterial, async ({ hash }) => {
-        const current = signatureRequests.get(activeRequestId);
+        const current = signatureRequests.get(signingRequestId);
         if (!current || current.digest !== hash || current.artifact === null)
           throw new Error("owner signature unavailable");
         return current.artifact;
@@ -290,20 +297,30 @@ async function maybePush(projection) {
   }
 }
 async function createSignatureRequest(digest, display, purpose, simulationCommand = "approve") {
-  if (activeRequestId !== null) throw new Error("signature_request_lane_occupied");
+  const reservationToken = randomBytes(18).toString("base64url");
+  signatureRequestLane.reserve(reservationToken, { purpose });
   const verifier = randomBytes(32).toString("base64url");
-  const created = await relayCall("POST", "/authorization/requests", CLIENT_TOKEN, {
-    redirectUri,
-    codeChallenge: deriveCodeChallenge(verifier),
-    requestedScope: JSON.stringify({
-      version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-      kind: "signature-request",
-      digest,
-      display: captureCanonicalDisplay(display, digest),
-    }),
-  });
+  let created;
+  try {
+    created = await relayCall("POST", "/authorization/requests", CLIENT_TOKEN, {
+      redirectUri,
+      codeChallenge: deriveCodeChallenge(verifier),
+      requestedScope: JSON.stringify({
+        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
+        kind: "signature-request",
+        digest,
+        display: captureCanonicalDisplay(display, digest),
+      }),
+    });
+  } catch (error) {
+    // The relay may have committed even when its response was lost. Retain the
+    // reservation permanently; retrying create could orphan duplicate consent.
+    signatureRequestLane.markPossiblySubmitted(reservationToken);
+    throw error;
+  }
   const record = {
     requestId: created.requestId,
+    reservationToken,
     digest,
     verifier,
     purpose,
@@ -313,13 +330,18 @@ async function createSignatureRequest(digest, display, purpose, simulationComman
     consumed: false,
   };
   signatureRequests.set(created.requestId, record);
-  activeRequestId = created.requestId;
-  const projection = await relayCall(
-    "GET",
-    `/native/projections/${created.requestId}`,
-    activeDevice.credential,
-  );
-  maybePush(projection).catch(() => {});
+  signatureRequestLane.activate(reservationToken, created.requestId);
+  let projection = null;
+  try {
+    projection = await relayCall(
+      "GET",
+      `/native/projections/${created.requestId}`,
+      activeDevice.credential,
+    );
+    maybePush(projection).catch(() => {});
+  } catch (error) {
+    if (SIMULATE) throw error;
+  }
   say(`signature request ${created.requestId} (${purpose}); phone must explicitly Approve/Reject`);
   if (SIMULATE) {
     expect(projection.scope?.kind === "signature-request", "simulation projection was not signed");
@@ -353,7 +375,7 @@ async function resolveSignature(record) {
     );
     if (state.decision?.outcome === "rejected") {
       record.outcome = "rejected";
-      activeRequestId = null;
+      signatureRequestLane.terminate(record.reservationToken, "rejected");
     }
     return null;
   }
@@ -372,7 +394,7 @@ async function resolveSignature(record) {
   );
   record.artifact = claimed.artifact;
   record.outcome = "approved";
-  activeRequestId = null;
+  signatureRequestLane.terminate(record.reservationToken, "completed");
   return record.artifact;
 }
 async function sequence(runtime, mode) {
@@ -510,6 +532,7 @@ async function observeOperation(operation) {
     status: "unresolved",
     operationId: operation.operationId,
     userOperationHash: operation.prepared.userOperationHash,
+    ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
   };
 }
 
@@ -533,6 +556,43 @@ async function handleDemo(method, path, body, outgoing) {
       mode: MODE,
     });
   }
+  if (method === "GET" && path === "/demo/state") {
+    const activeOperation =
+      operationLane.active === null ? null : (operations.get(operationLane.active) ?? null);
+    return jsonResponse(outgoing, 200, {
+      permission:
+        permission === null
+          ? null
+          : {
+              state: permission.state,
+              sessionAddress: permission.sessionAddress,
+              ...(permission.request ? { requestId: permission.request.requestId } : {}),
+            },
+      signatureRequest:
+        signatureRequestLane.active === null
+          ? null
+          : {
+              state: signatureRequestLane.active.state,
+              purpose: signatureRequestLane.active.purpose,
+              ...(signatureRequestLane.active.requestId
+                ? { requestId: signatureRequestLane.active.requestId }
+                : {}),
+            },
+      operation:
+        operationLane.active === null
+          ? null
+          : activeOperation
+            ? {
+                operationId: activeOperation.operationId,
+                kind: activeOperation.kind,
+                status: activeOperation.status,
+                ...(activeOperation.prepared
+                  ? { userOperationHash: activeOperation.prepared.userOperationHash }
+                  : {}),
+              }
+            : { operationId: operationLane.active, kind: "preparing", status: "preparing" },
+    });
+  }
   let value = {};
   if (body.length > 0) {
     try {
@@ -552,47 +612,59 @@ async function handleDemo(method, path, body, outgoing) {
         value.sessionAddress
     )
       return refusal(outgoing, 400, "session_identity_invalid");
-    const supplied = { hash: null, value: null };
-    const runtime = sessionRuntimeFor(value.sessionAddress, supplied);
-    const descriptor = await runtime.bindAccount({
-      accountIndex: "0",
-      initialPackages: ownerRuntime.packages,
-    });
-    expect(descriptor.account === accountDescriptor.account, "session bound another account");
-    // Derive without signing; the SDK owner is authoritative for the digest formula.
-    const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk");
-    const exactDigest = kernelV4ReplayableInstallDigest({
-      account: descriptor.account,
-      nonce: "0",
-      packages: runtime.packages,
-    });
-    const request = await createSignatureRequest(
-      exactDigest,
-      canonicalDisplay({
-        kind: "kernel-enable-digest",
-        chainScope: "all",
-        account: descriptor.account,
-        digest: exactDigest,
-        installNonce: "0",
-        sessionAddress: value.sessionAddress,
-        policies: runtime.operator?.policy ?? { call: { target, maximumValue: "10" } },
-      }),
-      "permission",
-    );
+    const reservationToken = randomBytes(18).toString("base64url");
+    permissionLane.reserve(reservationToken, { sessionAddress: value.sessionAddress });
     permission = {
-      runtime,
-      descriptor,
-      supplied,
-      request,
+      reservationToken,
+      state: "pre-submit",
+      sessionAddress: value.sessionAddress,
+      request: null,
       approval: null,
       materialized: false,
-      sessionAddress: value.sessionAddress,
     };
-    return jsonResponse(outgoing, 201, {
-      requestId: request.requestId,
-      digest: exactDigest,
-      account: descriptor.account,
-    });
+    try {
+      const supplied = { hash: null, value: null };
+      const runtime = sessionRuntimeFor(value.sessionAddress, supplied);
+      const descriptor = await runtime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      });
+      expect(descriptor.account === accountDescriptor.account, "session bound another account");
+      // Derive without signing; the SDK owner is authoritative for the digest formula.
+      const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk");
+      const exactDigest = kernelV4ReplayableInstallDigest({
+        account: descriptor.account,
+        nonce: "0",
+        packages: runtime.packages,
+      });
+      permission.state = "possibly-submitted";
+      const request = await createSignatureRequest(
+        exactDigest,
+        canonicalDisplay({
+          kind: "kernel-enable-digest",
+          chainScope: "all",
+          account: descriptor.account,
+          digest: exactDigest,
+          installNonce: "0",
+          sessionAddress: value.sessionAddress,
+          policies: runtime.operator?.policy ?? { call: { target, maximumValue: "10" } },
+        }),
+        "permission",
+      );
+      Object.assign(permission, { runtime, descriptor, supplied, request, state: "active" });
+      permissionLane.activate(reservationToken, request.requestId);
+      return jsonResponse(outgoing, 201, {
+        requestId: request.requestId,
+        digest: exactDigest,
+        account: descriptor.account,
+      });
+    } catch (error) {
+      if (permission?.state === "pre-submit") {
+        permissionLane.release(reservationToken);
+        permission = null;
+      }
+      throw error;
+    }
   }
   const permissionMatch = path.match(/^\/demo\/permission\/([^/]+)$/);
   if (method === "GET" && permissionMatch) {
@@ -601,6 +673,7 @@ async function handleDemo(method, path, body, outgoing) {
     const artifact = await resolveSignature(permission.request);
     if (artifact === null) {
       if (permission.request.outcome === "rejected") {
+        permissionLane.terminate(permission.reservationToken, "rejected");
         permission = null;
         return jsonResponse(outgoing, 200, {
           status: "rejected",
@@ -746,12 +819,22 @@ async function handleDemo(method, path, body, outgoing) {
         () => sequence(ownerRuntime, "standard"),
       );
       const prepared = await sponsoredPrepare(ownerRuntime, input);
+      operations.set(preparingId, {
+        operationId: preparingId,
+        chainId: CHAIN_ID,
+        kind: "owner",
+        status: "awaiting-request",
+        prepared,
+        installsPermission: false,
+        request: null,
+      });
       const request = await createSignatureRequest(
         prepared.userOperationHash,
         displayOperation(prepared, "owner-user-operation"),
         "owner-operation",
       );
       operationLane.replace(preparingId, request.requestId);
+      operations.delete(preparingId);
       operations.set(request.requestId, {
         operationId: request.requestId,
         chainId: CHAIN_ID,
@@ -766,7 +849,13 @@ async function handleDemo(method, path, body, outgoing) {
         userOperationHash: prepared.userOperationHash,
       });
     } catch (error) {
-      if (operationLane.active === preparingId) operationLane.cancel(preparingId);
+      if (
+        operationLane.active === preparingId &&
+        signatureRequestLane.active?.purpose !== "owner-operation"
+      ) {
+        operationLane.cancel(preparingId);
+        operations.delete(preparingId);
+      }
       throw error;
     }
   }
@@ -801,12 +890,12 @@ async function handleDemo(method, path, body, outgoing) {
       });
     }
     try {
-      activeRequestId = operation.request.requestId;
+      signingRequestId = operation.request.requestId;
       const signature = await ownerRuntime.signOperation(operation.prepared);
-      activeRequestId = null;
+      signingRequestId = null;
       return jsonResponse(outgoing, 200, await submitOperation(operation, signature));
     } catch (error) {
-      activeRequestId = null;
+      signingRequestId = null;
       if (operation.status !== "prepared") operation.status = "unresolved";
       throw error;
     }
@@ -840,7 +929,7 @@ function listener(incoming, outgoing) {
         url.pathname === "/demo/callback" &&
         url.searchParams.has("code")
       ) {
-        const record = signatureRequests.get(activeRequestId);
+        const record = signatureRequests.get(signatureRequestLane.active?.requestId);
         if (record) record.code = url.searchParams.get("code");
         outgoing.writeHead(200, { "content-type": "text/plain" });
         return outgoing.end("Signature delivered. Return to the web page.\n");
@@ -900,7 +989,10 @@ if (LIVE) {
           operation.prepared.userOperationHash,
         ]);
         if (observed !== null) {
-          const transactionHash = lower(observed.receipt?.transactionHash ?? "");
+          const transactionHash = captureOperationTransactionHash(
+            operation,
+            observed?.receipt?.transactionHash,
+          );
           return validateFinalizedUserOperation({ operation, transactionHash, rpc: budgetedRpc });
         }
         if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
@@ -987,7 +1079,7 @@ async function simulate() {
   const rejectedAt = Date.now();
   expect((await resolveSignature(rejectedRequest)) === null, "reject produced an artifact");
   expect(rejectedRequest.outcome === "rejected", "reject was not terminal");
-  expect(activeRequestId === null, "reject did not clear the signature lane");
+  expect(signatureRequestLane.active === null, "reject did not clear the signature lane");
   expect(Date.now() - rejectedAt < 1_000, "reject did not terminate promptly");
 
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
