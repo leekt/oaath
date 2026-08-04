@@ -321,6 +321,9 @@ const requireHash = (value, code) => {
   if (typeof value !== "string" || !HASH.test(value)) throw new Error(code);
   return value;
 };
+
+/** Strict canonical parser for transaction evidence received from an RPC boundary. */
+export const canonicalTransactionHash = (value) => requireHash(value, "operation_evidence_invalid");
 const requireQuantity = (value, code) => {
   if (typeof value !== "string" || !QUANTITY.test(value)) throw new Error(code);
   return BigInt(value);
@@ -461,7 +464,7 @@ export async function withFreshSequence(input, readSequence) {
 
 /** Captures the first canonical transaction hash as immutable operation evidence. */
 export function captureOperationTransactionHash(operation, value) {
-  const transactionHash = requireHash(value, "operation_evidence_invalid");
+  const transactionHash = canonicalTransactionHash(value);
   if (operation.transactionHash !== undefined) {
     if (operation.transactionHash !== transactionHash)
       throw new Error("operation_transaction_hash_conflict");
@@ -511,7 +514,11 @@ function beginTransition(operation, kind, run) {
 
 async function observeOwned({ operation, owner, observe, terminalize, ownsLane }) {
   try {
-    const evidence = await observe(operation);
+    const evidence = await observe(operation, (transactionHash) => {
+      if (!ownsTransition(operation, owner, ownsLane))
+        throw new Error("operation_observation_owner_stale");
+      return captureOperationTransactionHash(operation, transactionHash);
+    });
     if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
     if (evidence !== null) return terminalize(operation, evidence);
   } catch {
@@ -536,6 +543,28 @@ export function observeOnce({ operation, observe, terminalize, ownsLane = () => 
   return beginTransition(operation, "observe", (owner) =>
     observeOwned({ operation, owner, observe, terminalize, ownsLane }),
   );
+}
+
+/**
+ * Production live observer. Transaction identity is captured before any RPC
+ * that validates the transaction, event, blocks, ancestry, or finality.
+ */
+export function createLiveUserOperationObserver({ rpc, sleep = setTimeout }) {
+  return async (operation, captureTransactionHash) => {
+    for (let attempt = 0; attempt < LIVE_RECEIPT_POLL_ATTEMPTS; attempt += 1) {
+      const observed = await rpc("eth_getUserOperationReceipt", [
+        operation.prepared.userOperationHash,
+      ]);
+      if (observed !== null) {
+        const transactionHash = canonicalTransactionHash(observed?.receipt?.transactionHash);
+        captureTransactionHash(transactionHash);
+        return validateFinalizedUserOperation({ operation, transactionHash, rpc });
+      }
+      if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
+        await new Promise((resolve) => sleep(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
+    }
+    return null;
+  };
 }
 
 /**

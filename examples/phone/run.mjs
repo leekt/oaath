@@ -45,11 +45,10 @@ import {
   canonicalDisplay,
   captureCanonicalDisplay,
   captureSponsorship,
+  createLiveUserOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   exactKeys,
   LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
-  LIVE_RECEIPT_POLL_ATTEMPTS,
-  LIVE_RECEIPT_POLL_INTERVAL_MS,
   LIVE_RPC_MAX_REQUESTS,
   LIVE_TRANSPORT_CONFIG,
   LiveRequestBudget,
@@ -132,6 +131,12 @@ const permissionReservation = new AtomicPermissionReservation(permissionLane, si
 let relayCreates = 0;
 const operations = new Map();
 const operationLane = new OperationLane();
+const simulationRouteVisits = new Map();
+const recordSimulationRouteVisit = (route, operationId) => {
+  if (!SIMULATE) return;
+  const key = `${route}:${operationId}`;
+  simulationRouteVisits.set(key, (simulationRouteVisits.get(key) ?? 0) + 1);
+};
 let permission = null;
 let ownerRuntime = null;
 let accountDescriptor = null;
@@ -795,6 +800,7 @@ async function handleDemo(method, path, body, outgoing) {
       return refusal(outgoing, 400, "session_submission_invalid");
     const operation = operations.get(value.operationId);
     if (operation?.kind !== "session") return refusal(outgoing, 404, "operation_not_found");
+    recordSimulationRouteVisit("submit", operation.operationId);
     try {
       const result = await submitOperation(operation, async () => {
         // Submission ownership was installed synchronously before this first
@@ -833,6 +839,7 @@ async function handleDemo(method, path, body, outgoing) {
   if (method === "GET" && operationMatch) {
     const operation = operations.get(operationMatch[1]);
     if (!operation) return refusal(outgoing, 404, "operation_not_found");
+    recordSimulationRouteVisit("observe", operation.operationId);
     return jsonResponse(outgoing, 200, await observeOperation(operation));
   }
   if (method === "POST" && path === "/demo/owner/prepare") {
@@ -1048,22 +1055,7 @@ if (LIVE) {
     validator: `0x${"01".repeat(20)}`,
     rpc: budgetedRpc,
     fund: async () => {},
-    observe: async (operation) => {
-      for (let attempt = 0; attempt < LIVE_RECEIPT_POLL_ATTEMPTS; attempt += 1) {
-        const observed = await budgetedRpc("eth_getUserOperationReceipt", [
-          operation.prepared.userOperationHash,
-        ]);
-        if (observed !== null)
-          return validateFinalizedUserOperation({
-            operation,
-            transactionHash: observed?.receipt?.transactionHash,
-            rpc: budgetedRpc,
-          });
-        if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
-          await new Promise((resolve) => setTimeout(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
-      }
-      return null;
-    },
+    observe: createLiveUserOperationObserver({ rpc: budgetedRpc }),
     sendSigned: async (prepared, signature) => {
       const userOperationHash = await budgetedRpc("eth_sendUserOperation", [
         rpcUserOperation(prepared, signature),
@@ -1231,29 +1223,187 @@ async function simulate() {
   );
   const approved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
   expect(approved.status === "approved", "permission did not approve");
-  for (let index = 0; index < 2; index += 1) {
+  const prepareSession = async () => {
     const prepared = await relayCall("POST", "/demo/session/prepare", null, { sessionAddress });
-    if (index === 0) {
-      const concurrent = await fetch(`http://127.0.0.1:${relayPort}/demo/session/prepare`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionAddress }),
-      });
-      expect(concurrent.status === 409, "concurrent operation lane was not blocked");
-    }
     const signed = secp256k1.sign(hexToBytes(prepared.userOperationHash), sessionSecret, {
       lowS: true,
       prehash: false,
     });
-    const signature = `0x${signed.toCompactHex()}${(27 + signed.recovery).toString(16)}`;
-    const sent = await relayCall("POST", "/demo/session/submit", null, {
-      operationId: prepared.operationId,
-      signature,
+    return {
+      prepared,
+      submission: {
+        operationId: prepared.operationId,
+        signature: `0x${signed.toCompactHex()}${(27 + signed.recovery).toString(16)}`,
+      },
+    };
+  };
+  const responseBody = async (response, message) => {
+    expect(response.status === 200, message);
+    return response.json();
+  };
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((settle) => {
+      resolve = settle;
     });
-    expect(sent.status === "included", `session operation ${sent.status}`);
-    if (index === 0) expect(permission.materialized, "included install did not materialize");
+    return { promise, resolve };
+  };
+  const waitForRouteVisits = async (route, operationId, count) => {
+    const key = `${route}:${operationId}`;
+    while ((simulationRouteVisits.get(key) ?? 0) < count)
+      await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  // Two actual POST handlers overlap after the first has synchronously claimed
+  // the operation transition. Both join one send and return the same result.
+  const first = await prepareSession();
+  const concurrentPrepare = await postDemo("/demo/session/prepare", { sessionAddress });
+  expect(concurrentPrepare.status === 409, "concurrent operation lane was not blocked");
+  {
+    const originalSend = stack.sendSigned;
+    const entered = deferred();
+    const release = deferred();
+    let sends = 0;
+    stack.sendSigned = async (...args) => {
+      sends += 1;
+      entered.resolve();
+      await release.promise;
+      return originalSend(...args);
+    };
+    try {
+      const one = postDemo("/demo/session/submit", first.submission);
+      await entered.promise;
+      const two = postDemo("/demo/session/submit", first.submission);
+      await waitForRouteVisits("submit", first.prepared.operationId, 2);
+      release.resolve();
+      const [left, right] = await Promise.all([
+        one.then((response) => responseBody(response, "first concurrent submit failed")),
+        two.then((response) => responseBody(response, "second concurrent submit failed")),
+      ]);
+      expect(sends === 1, "concurrent submit handlers sent more than once");
+      expect(
+        JSON.stringify(left) === JSON.stringify(right),
+        "concurrent submit responses diverged",
+      );
+      expect(left.status === "included", `concurrent session operation ${left.status}`);
+      expect(permission.materialized, "included install did not materialize");
+    } finally {
+      stack.sendSigned = originalSend;
+    }
   }
-  say("simulate         all four buttons passed; atomic owner/permission interleavings passed");
+
+  // An overlapping POST submit and GET observation handler share the submit
+  // transition. The GET cannot start a second observation or submission.
+  const mixed = await prepareSession();
+  {
+    const originalSend = stack.sendSigned;
+    const entered = deferred();
+    const release = deferred();
+    let sends = 0;
+    stack.sendSigned = async (...args) => {
+      sends += 1;
+      entered.resolve();
+      await release.promise;
+      return originalSend(...args);
+    };
+    try {
+      const submitted = postDemo("/demo/session/submit", mixed.submission);
+      await entered.promise;
+      const observed = fetch(
+        `http://127.0.0.1:${relayPort}/demo/operations/${mixed.prepared.operationId}`,
+      );
+      await waitForRouteVisits("observe", mixed.prepared.operationId, 1);
+      release.resolve();
+      const [submitResult, observeResult] = await Promise.all([
+        submitted.then((response) => responseBody(response, "mixed submit failed")),
+        observed.then((response) => responseBody(response, "mixed observation failed")),
+      ]);
+      expect(sends === 1, "submit/observe race resubmitted");
+      expect(
+        JSON.stringify(submitResult) === JSON.stringify(observeResult),
+        "submit/observe responses diverged",
+      );
+      expect(submitResult.status === "included", "submit/observe terminal state regressed");
+    } finally {
+      stack.sendSigned = originalSend;
+    }
+  }
+
+  // First leave a real sent operation unresolved, then overlap two actual GET
+  // handlers. One owned observation finalizes; its joining handler cannot
+  // downgrade the operation or release/replace the lane a second time.
+  const observed = await prepareSession();
+  {
+    const originalObserve = stack.observe;
+    let observations = 0;
+    stack.observe = async () => null;
+    const unresolved = await relayCall("POST", "/demo/session/submit", null, observed.submission);
+    expect(unresolved.status === "unresolved", "missing observation did not stay unresolved");
+    const entered = deferred();
+    const release = deferred();
+    stack.observe = async (...args) => {
+      observations += 1;
+      entered.resolve();
+      await release.promise;
+      return originalObserve(...args);
+    };
+    try {
+      const one = fetch(
+        `http://127.0.0.1:${relayPort}/demo/operations/${observed.prepared.operationId}`,
+      );
+      await entered.promise;
+      const two = fetch(
+        `http://127.0.0.1:${relayPort}/demo/operations/${observed.prepared.operationId}`,
+      );
+      await waitForRouteVisits("observe", observed.prepared.operationId, 2);
+      const occupied = await postDemo("/demo/session/prepare", { sessionAddress });
+      expect(occupied.status === 409, "observing operation released its lane early");
+      release.resolve();
+      const [left, right] = await Promise.all([
+        one.then((response) => responseBody(response, "first concurrent observation failed")),
+        two.then((response) => responseBody(response, "second concurrent observation failed")),
+      ]);
+      expect(observations === 1, "concurrent observations did not share one owner");
+      expect(JSON.stringify(left) === JSON.stringify(right), "concurrent observations diverged");
+      expect(left.status === "included", "concurrent observation did not finalize");
+      expect(operationLane.active === null, "terminal observation did not release its lane");
+      const terminal = await relayCall(
+        "GET",
+        `/demo/operations/${observed.prepared.operationId}`,
+        null,
+      );
+      expect(terminal.status === "included", "stale route downgraded terminal operation");
+      expect(observations === 1, "terminal retry started a stale observation");
+    } finally {
+      stack.observe = originalObserve;
+    }
+  }
+
+  // Treat the first successful response as lost at the client boundary. A POST
+  // retry returns the same immutable operation identity without another send.
+  const responseLoss = await prepareSession();
+  {
+    const originalSend = stack.sendSigned;
+    let sends = 0;
+    stack.sendSigned = async (...args) => {
+      sends += 1;
+      return originalSend(...args);
+    };
+    try {
+      await postDemo("/demo/session/submit", responseLoss.submission);
+      const retry = await relayCall("POST", "/demo/session/submit", null, responseLoss.submission);
+      expect(sends === 1, "response-loss retry resubmitted");
+      expect(
+        retry.operationId === responseLoss.prepared.operationId &&
+          retry.userOperationHash === responseLoss.prepared.userOperationHash,
+        "response-loss retry changed operation identity",
+      );
+      expect(retry.status === "included", "response-loss retry lost terminal result");
+    } finally {
+      stack.sendSigned = originalSend;
+    }
+  }
+  say("simulate         all four buttons passed; atomic authority and HTTP operation races passed");
 }
 
 try {

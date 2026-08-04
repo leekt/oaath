@@ -11,6 +11,7 @@ import {
   captureCanonicalDisplay,
   captureOperationTransactionHash,
   captureSponsorship,
+  createLiveUserOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RECEIPT_POLL_ATTEMPTS,
@@ -556,6 +557,120 @@ test("discovered transaction hash survives later provider failure and conflicts 
   });
   assert.equal(operation.transactionHash, first);
   assert.equal(Object.getOwnPropertyDescriptor(operation, "transactionHash").writable, false);
+});
+
+test("production live observer retains discovered evidence across downstream failure and retry", async () => {
+  const userOperationHash = `0x${"53".repeat(32)}`;
+  const transactionHash = `0x${"54".repeat(32)}`;
+  const conflictingHash = `0x${"55".repeat(32)}`;
+  const operation = {
+    operationId: "live-observer-failure",
+    chainId: 421_614,
+    status: "prepared",
+    prepared: {
+      userOperationHash,
+      userOperation: { sender: `0x${"56".repeat(20)}` },
+      entryPoint: { address: `0x${"57".repeat(20)}` },
+    },
+  };
+  const calls = [];
+  let receiptReads = 0;
+  const rpc = async (method, params) => {
+    calls.push([method, params]);
+    if (method === "eth_getUserOperationReceipt") {
+      receiptReads += 1;
+      return {
+        receipt: { transactionHash: receiptReads < 3 ? transactionHash : conflictingHash },
+      };
+    }
+    if (method === "eth_getTransactionReceipt") throw new Error("paid_rpc_failed");
+    if (method === "eth_getTransactionByHash") return null;
+    assert.fail(`unexpected RPC method ${method}`);
+  };
+  const observe = createLiveUserOperationObserver({ rpc });
+  let sends = 0;
+  const first = await submitOnce({
+    operation,
+    signature: "0xsigned",
+    send: async () => {
+      sends += 1;
+      return { userOperationHash };
+    },
+    observe,
+    terminalize: () => assert.fail("failed downstream evidence cannot terminalize"),
+  });
+  assert.deepEqual(first, {
+    status: "unresolved",
+    operationId: operation.operationId,
+    userOperationHash,
+    transactionHash,
+  });
+  assert.equal(operation.transactionHash, transactionHash);
+
+  const retried = await observeOnce({
+    operation,
+    observe,
+    terminalize: () => assert.fail("failed retry cannot terminalize"),
+  });
+  assert.deepEqual(retried, first);
+  assert.equal(sends, 1, "observation retry must send zero additional user operations");
+  assert.ok(
+    calls.some(
+      ([method, params]) => method === "eth_getTransactionReceipt" && params[0] === transactionHash,
+    ),
+    "retry must validate the retained transaction identity",
+  );
+
+  const conflicting = await observeOnce({
+    operation,
+    observe,
+    terminalize: () => assert.fail("conflicting transaction cannot terminalize"),
+  });
+  assert.deepEqual(conflicting, first);
+  assert.equal(operation.transactionHash, transactionHash);
+  assert.equal(sends, 1);
+});
+
+test("stale production observer cannot capture discovered transaction evidence", async () => {
+  const transactionHash = `0x${"58".repeat(32)}`;
+  const operation = {
+    operationId: "stale-live-observer",
+    chainId: 421_614,
+    status: "unresolved",
+    prepared: {
+      userOperationHash: `0x${"59".repeat(32)}`,
+      userOperation: { sender: `0x${"5a".repeat(20)}` },
+      entryPoint: { address: `0x${"5b".repeat(20)}` },
+    },
+  };
+  let releaseReceipt;
+  const receiptGate = new Promise((resolve) => {
+    releaseReceipt = resolve;
+  });
+  const methods = [];
+  const observe = createLiveUserOperationObserver({
+    rpc: async (method) => {
+      methods.push(method);
+      if (method === "eth_getUserOperationReceipt") return await receiptGate;
+      assert.fail("stale observer must stop before downstream validation");
+    },
+  });
+  let activeOperationId = operation.operationId;
+  const pending = observeOnce({
+    operation,
+    observe,
+    terminalize: () => assert.fail("stale observer cannot terminalize"),
+    ownsLane: (current) => activeOperationId === current.operationId,
+  });
+  activeOperationId = "replacement-operation";
+  releaseReceipt({ receipt: { transactionHash } });
+  assert.deepEqual(await pending, {
+    status: "unresolved",
+    operationId: operation.operationId,
+    userOperationHash: operation.prepared.userOperationHash,
+  });
+  assert.equal(operation.transactionHash, undefined);
+  assert.deepEqual(methods, ["eth_getUserOperationReceipt"]);
 });
 
 const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRpc } = {}) => {
