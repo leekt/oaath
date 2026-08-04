@@ -62,9 +62,13 @@ re-prepares so those fields are hash-bound, then sends
 prepared hash exactly. Inclusion is then observed separately with at most four
 one-second-spaced `eth_getUserOperationReceipt` polls. The adapter independently
 reads the transaction and receipt, decodes exactly one matching EntryPoint
-`UserOperationEvent`, and binds its hash, sender, nonce, success, transaction,
-and block. It also reads the finalized head and canonical inclusion block;
-outer transaction status and bundler `success` are never sufficient.
+`UserOperationEvent`, and binds its hash, sender, nonce, success, canonical
+transaction/log indexes, and block. The canonical by-hash and number-rebound
+inclusion blocks must expose the same strict transaction-hash array with the
+transaction exactly once at its claimed index. These checks reuse the SDK's
+canonical transaction-inclusion validator and existing ancestry reads, so the
+budget is unchanged. Outer transaction status and bundler `success` are never
+sufficient.
 
 The exact worst-case documented path for the three-operation sponsored sequence
 is **72** requests: 12 paid reads across owner binding, session binding, and one

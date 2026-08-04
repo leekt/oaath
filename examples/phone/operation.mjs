@@ -6,8 +6,13 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { verifyFinalizedBlockAncestry } from "@oaath/sdk";
-import { decodeEventLog, toEventSelector } from "viem";
+import {
+  OaathCanonicalTransactionInclusionError,
+  requireSameCanonicalTransactionInclusion,
+  validateCanonicalTransactionInclusion,
+  verifyFinalizedBlockAncestry,
+} from "@oaath/sdk";
+import { decodeEventLog } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 
 export const LIVE_FINALITY_MAX_ANCESTRY_DEPTH = 8;
@@ -73,9 +78,6 @@ const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const DATA = /^0x(?:[0-9a-f]{2})*$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
-const USER_OPERATION_EVENT = toEventSelector(
-  "UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)",
-);
 const lower = (value) => (typeof value === "string" ? value.toLowerCase() : "");
 
 /** Synchronously reserves a valid one-shot code before its handler can await. */
@@ -372,53 +374,6 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
   )
     throw new Error("operation_transaction_evidence_invalid");
 
-  const matches = [];
-  for (const log of receipt.logs) {
-    if (
-      log === null ||
-      typeof log !== "object" ||
-      lower(log.address) !== entryPoint ||
-      !Array.isArray(log.topics) ||
-      lower(log.topics[0]) !== USER_OPERATION_EVENT ||
-      lower(log.topics[1]) !== userOperationHash
-    )
-      continue;
-    try {
-      if (
-        typeof log.address !== "string" ||
-        !ADDRESS.test(log.address) ||
-        log.topics.length !== 4 ||
-        log.topics.some((topic) => typeof topic !== "string" || !HASH.test(topic)) ||
-        typeof log.data !== "string" ||
-        !DATA.test(log.data) ||
-        log.data.length !== 258
-      )
-        throw new Error("operation_event_evidence_invalid");
-      const decoded = decodeEventLog({
-        abi: entryPoint07Abi,
-        data: log.data,
-        topics: log.topics,
-        strict: true,
-      });
-      if (
-        decoded.eventName !== "UserOperationEvent" ||
-        lower(decoded.args.userOpHash) !== userOperationHash ||
-        lower(decoded.args.sender) !== account ||
-        BigInt(decoded.args.nonce) !== BigInt(prepared.userOperation.nonce) ||
-        requireHash(log.transactionHash, "operation_event_evidence_invalid") !== txHash ||
-        requireHash(log.blockHash, "operation_event_evidence_invalid") !== blockHash ||
-        requireQuantity(log.blockNumber, "operation_event_evidence_invalid") !== blockNumber ||
-        log.removed === true ||
-        typeof decoded.args.success !== "boolean"
-      )
-        throw new Error("operation_event_evidence_invalid");
-      matches.push(decoded.args.success);
-    } catch {
-      throw new Error("operation_event_evidence_invalid");
-    }
-  }
-  if (matches.length !== 1) throw new Error("operation_event_evidence_invalid");
-
   const reference = (value) => {
     if (value === null || typeof value !== "object")
       throw new Error("operation_finality_evidence_invalid");
@@ -429,19 +384,90 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
     };
   };
   let finalized;
+  let byHashMembership = null;
+  let reboundMembership = null;
+  const membership = (canonicalBlock) => {
+    try {
+      return validateCanonicalTransactionInclusion({
+        entryPoint,
+        userOperationHash,
+        transactionHash: txHash,
+        transactionReceipt: receipt,
+        transaction,
+        canonicalBlock,
+      });
+    } catch (error) {
+      if (error instanceof OaathCanonicalTransactionInclusionError) {
+        if (error.scope === "event") throw new Error("operation_event_evidence_invalid");
+        if (error.scope === "transaction")
+          throw new Error("operation_transaction_evidence_invalid");
+      }
+      throw error;
+    }
+  };
   try {
     const finalizedValue = await rpc("eth_getBlockByNumber", ["finalized", false]);
     finalized = await verifyFinalizedBlockAncestry({
       finalized: reference(finalizedValue),
       inclusion: { number: `0x${blockNumber.toString(16)}`, hash: blockHash },
       maxDepth: LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
-      readParent: async (parentHash) =>
-        reference(await rpc("eth_getBlockByHash", [parentHash, false])),
-      readCanonical: async (number) =>
-        reference(await rpc("eth_getBlockByNumber", [`0x${BigInt(number).toString(16)}`, false])),
+      readParent: async (parentHash) => {
+        const parent = await rpc("eth_getBlockByHash", [parentHash, false]);
+        if (parentHash !== blockHash) return reference(parent);
+        byHashMembership = membership(parent);
+        return reference(byHashMembership.canonicalBlock);
+      },
+      readCanonical: async (number) => {
+        const canonical = await rpc("eth_getBlockByNumber", [
+          `0x${BigInt(number).toString(16)}`,
+          false,
+        ]);
+        if (BigInt(number) === blockNumber) {
+          reboundMembership = membership(canonical);
+          if (byHashMembership !== null)
+            requireSameCanonicalTransactionInclusion(byHashMembership, reboundMembership);
+          return reference(reboundMembership.canonicalBlock);
+        }
+        return reference(canonical);
+      },
     });
-  } catch {
+    if (reboundMembership === null) throw new Error("inclusion_rebound_missing");
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "operation_event_evidence_invalid" ||
+        error.message === "operation_transaction_evidence_invalid")
+    )
+      throw error;
     throw new Error("operation_finality_evidence_invalid");
+  }
+
+  let success;
+  try {
+    const log = reboundMembership.eventLog;
+    if (
+      log.topics.length !== 4 ||
+      log.data.length !== 258 ||
+      log.topics.some((topic) => typeof topic !== "string" || !HASH.test(topic))
+    )
+      throw new Error("operation_event_evidence_invalid");
+    const decoded = decodeEventLog({
+      abi: entryPoint07Abi,
+      data: log.data,
+      topics: log.topics,
+      strict: true,
+    });
+    if (
+      decoded.eventName !== "UserOperationEvent" ||
+      lower(decoded.args.userOpHash) !== userOperationHash ||
+      lower(decoded.args.sender) !== account ||
+      BigInt(decoded.args.nonce) !== BigInt(prepared.userOperation.nonce) ||
+      typeof decoded.args.success !== "boolean"
+    )
+      throw new Error("operation_event_evidence_invalid");
+    success = decoded.args.success;
+  } catch {
+    throw new Error("operation_event_evidence_invalid");
   }
 
   return Object.freeze({
@@ -453,7 +479,7 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
     blockNumber: `0x${blockNumber.toString(16)}`,
     finalizedBlockHash: finalized.hash,
     finalizedBlockNumber: finalized.number,
-    status: matches[0] ? "included" : "reverted",
+    status: success ? "included" : "reverted",
   });
 }
 

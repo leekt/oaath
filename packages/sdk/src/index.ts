@@ -314,3 +314,13 @@ export {
   OaathStoreError,
   OperationStore,
 } from "./store.js";
+export type {
+  CanonicalTransactionInclusionErrorScope,
+  CanonicalTransactionInclusionEvidence,
+  CanonicalTransactionLogEvidence,
+} from "./transaction-inclusion.js";
+export {
+  OaathCanonicalTransactionInclusionError,
+  requireSameCanonicalTransactionInclusion,
+  validateCanonicalTransactionInclusion,
+} from "./transaction-inclusion.js";

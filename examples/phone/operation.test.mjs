@@ -699,6 +699,8 @@ const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRp
     transactionHash,
     blockHash,
     blockNumber: "0x7",
+    transactionIndex: "0x0",
+    logIndex: "0x0",
     removed: false,
   };
   const log = mutateLog ? mutateLog(structuredClone(baseLog)) : baseLog;
@@ -716,7 +718,10 @@ const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRp
     status: "0x1",
     blockHash,
     blockNumber: "0x7",
-    logs: Array(eventCount).fill(log),
+    transactionIndex: "0x0",
+    logs: Array(eventCount)
+      .fill(null)
+      .map((_, index) => ({ ...log, logIndex: `0x${index.toString(16)}` })),
   };
   const transaction = {
     hash: transactionHash,
@@ -724,16 +729,19 @@ const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRp
     chainId: "0x66eee",
     blockHash,
     blockNumber: "0x7",
+    transactionIndex: "0x0",
   };
   const inclusion = {
     number: "0x7",
     hash: blockHash,
     parentHash: `0x${"40".repeat(32)}`,
+    transactions: [transactionHash],
   };
   const finalized = {
     number: "0x8",
     hash: finalizedHash,
     parentHash: blockHash,
+    transactions: [],
   };
   const rpc = async (method, params) => {
     let value;
@@ -777,6 +785,99 @@ test("unrelated finalized heads and endpoint reorgs remain unresolved", async ()
           if (method === "eth_getBlockByNumber" && params[0] === "0x7")
             return { ...value, hash: `0x${"56".repeat(32)}` };
           return value;
+        },
+      }),
+    ),
+    { message: "operation_finality_evidence_invalid" },
+  );
+});
+
+test("canonical transaction membership rejects absent, duplicate, and ambiguous hashes", async () => {
+  const otherHash = `0x${"47".repeat(32)}`;
+  for (const transactions of [
+    [],
+    [operationEvidence().transactionHash, operationEvidence().transactionHash],
+    [otherHash],
+    [otherHash, operationEvidence().transactionHash],
+    [{ hash: operationEvidence().transactionHash }],
+  ])
+    await assert.rejects(
+      validateFinalizedUserOperation(
+        operationEvidence({
+          mutateRpc(method, params, value) {
+            const inclusionBlock =
+              method === "eth_getBlockByHash" ||
+              (method === "eth_getBlockByNumber" && params[0] === "0x7");
+            return inclusionBlock ? { ...value, transactions } : value;
+          },
+        }),
+      ),
+      { message: "operation_finality_evidence_invalid" },
+    );
+});
+
+test("transaction, receipt, and event indexes must be present, equal, canonical, and bounded", async () => {
+  const cases = [
+    (method, value) =>
+      method === "eth_getTransactionReceipt" ? { ...value, transactionIndex: "0x1" } : value,
+    (method, value) =>
+      method === "eth_getTransactionByHash" ? { ...value, transactionIndex: "0x1" } : value,
+    (method, value) =>
+      method === "eth_getTransactionReceipt"
+        ? { ...value, logs: value.logs.map((log) => ({ ...log, transactionIndex: "0x1" })) }
+        : value,
+    (method, value) => {
+      if (method !== "eth_getTransactionReceipt") return value;
+      const { transactionIndex: _missing, ...receipt } = value;
+      return receipt;
+    },
+    (method, value) => {
+      if (method !== "eth_getTransactionByHash") return value;
+      const { transactionIndex: _missing, ...transaction } = value;
+      return transaction;
+    },
+    (method, value) => {
+      if (method !== "eth_getTransactionReceipt") return value;
+      return {
+        ...value,
+        logs: value.logs.map(({ transactionIndex: _missing, ...log }) => log),
+      };
+    },
+    (method, value) =>
+      method === "eth_getTransactionReceipt" ? { ...value, transactionIndex: "0x01" } : value,
+    (method, value) =>
+      method === "eth_getTransactionByHash"
+        ? { ...value, transactionIndex: "0x20000000000000" }
+        : value,
+    (method, value) =>
+      method === "eth_getTransactionReceipt"
+        ? {
+            ...value,
+            logs: value.logs.map((log) => ({ ...log, logIndex: "0x20000000000000" })),
+          }
+        : value,
+  ];
+  for (const mutate of cases)
+    await assert.rejects(
+      validateFinalizedUserOperation(
+        operationEvidence({
+          mutateRpc(method, _params, value) {
+            return mutate(method, value);
+          },
+        }),
+      ),
+      /operation_(?:transaction|event)_evidence_invalid/u,
+    );
+});
+
+test("canonical inclusion block changes on number rebound remain unresolved", async () => {
+  await assert.rejects(
+    validateFinalizedUserOperation(
+      operationEvidence({
+        mutateRpc(method, params, value) {
+          return method === "eth_getBlockByNumber" && params[0] === "0x7"
+            ? { ...value, transactions: [`0x${"48".repeat(32)}`] }
+            : value;
         },
       }),
     ),

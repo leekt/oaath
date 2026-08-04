@@ -18,6 +18,12 @@ import {
   OPERATION_FINALITY_MAX_ANCESTRY_DEPTH,
   verifyFinalizedBlockAncestry,
 } from "./finality-ancestry.js";
+import {
+  type CanonicalTransactionInclusionEvidence,
+  OaathCanonicalTransactionInclusionError,
+  requireSameCanonicalTransactionInclusion,
+  validateCanonicalTransactionInclusion,
+} from "./transaction-inclusion.js";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -149,6 +155,12 @@ export interface OperationObserver {
 type CapturedCapabilities = Readonly<OperationObserverCapabilities>;
 type UnreadableReason = Extract<ObserveOperationResult, { status: "unreadable" }>["reason"];
 type PendingReason = Extract<ObserveOperationResult, { status: "pending" }>["reason"];
+type VerifiedInclusion = Readonly<{
+  inclusion: OperationInclusion;
+  membership: CanonicalTransactionInclusionEvidence;
+  transactionReceipt: OperationObserverTransactionReceiptEvidence;
+  transaction: OperationObserverTransactionEvidence;
+}>;
 
 class EvidenceFailure extends Error {
   readonly reason: UnreadableReason;
@@ -534,7 +546,7 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
 
       async function verifyInclusion(
         reference: UserOperationReference,
-      ): Promise<OperationInclusion | null> {
+      ): Promise<VerifiedInclusion | null> {
         const receiptValue = await read({
           type: "user_operation_receipt",
           chainId: reference.chainId,
@@ -589,16 +601,7 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
         );
         if (candidates.length !== 1) throw new EvidenceFailure("receipt_invalid");
         const eventLog = candidates[0];
-        if (
-          !eventLog ||
-          eventLog.removed ||
-          eventLog.transactionHash !== receipt.transactionHash ||
-          eventLog.blockNumber !== receipt.blockNumber ||
-          eventLog.blockHash !== receipt.blockHash ||
-          eventLog.transactionIndex !== transaction.transactionIndex
-        ) {
-          throw new EvidenceFailure("receipt_invalid");
-        }
+        if (!eventLog) throw new EvidenceFailure("receipt_invalid");
         const event = parseEvent(eventLog, reference);
         if (
           receipt.paymaster !== event.paymaster ||
@@ -615,29 +618,54 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           new WeakSet(),
           "canonicality_unproven",
         );
-        const transactionIndex = Number(parseQuantity(transaction.transactionIndex));
-        if (
-          canonical.number !== receipt.blockNumber ||
-          canonical.hash !== receipt.blockHash ||
-          !Number.isSafeInteger(transactionIndex) ||
-          canonical.transactions[transactionIndex] !== receipt.transactionHash ||
-          canonical.transactions.filter((hash) => hash === receipt.transactionHash).length !== 1
-        ) {
-          throw new EvidenceFailure("canonicality_unproven");
+        let membership: CanonicalTransactionInclusionEvidence;
+        try {
+          membership = validateCanonicalTransactionInclusion({
+            entryPoint: reference.entryPoint,
+            userOperationHash: reference.userOperationHash,
+            transactionHash: receipt.transactionHash,
+            transactionReceipt,
+            transaction,
+            canonicalBlock: canonical,
+          });
+        } catch (error) {
+          throw new EvidenceFailure(
+            error instanceof OaathCanonicalTransactionInclusionError &&
+              error.scope !== "canonical_block"
+              ? "receipt_invalid"
+              : "canonicality_unproven",
+          );
         }
         return Object.freeze({
-          transactionHash: receipt.transactionHash,
-          blockNumber,
-          blockHash: receipt.blockHash,
-          outcome: event.success ? "success" : "reverted",
-          observedAt,
+          inclusion: Object.freeze({
+            transactionHash: receipt.transactionHash,
+            blockNumber,
+            blockHash: receipt.blockHash,
+            outcome: event.success ? "success" : "reverted",
+            observedAt,
+          }),
+          membership,
+          transactionReceipt,
+          transaction,
         });
       }
 
       async function verifyFinality(
         reference: UserOperationReference,
-        inclusion: OperationInclusion,
+        verifiedInclusion: VerifiedInclusion,
       ): Promise<OperationFinality> {
+        const { inclusion, membership, transactionReceipt, transaction } = verifiedInclusion;
+        const validateRebound = (canonicalBlock: OperationObserverBlockEvidence): void => {
+          const rebound = validateCanonicalTransactionInclusion({
+            entryPoint: reference.entryPoint,
+            userOperationHash: reference.userOperationHash,
+            transactionHash: inclusion.transactionHash,
+            transactionReceipt,
+            transaction,
+            canonicalBlock,
+          });
+          requireSameCanonicalTransactionInclusion(membership, rebound);
+        };
         try {
           const finalized = parseBlock(
             await read({ type: "finalized_block", chainId: reference.chainId }),
@@ -661,6 +689,7 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
                 new WeakSet(),
                 "finality_unproven",
               );
+              if (blockHash === inclusion.blockHash) validateRebound(parent);
               return { number: parent.number, hash: parent.hash, parentHash: parent.parentHash };
             },
             readCanonical: async (blockNumber) => {
@@ -673,6 +702,8 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
                 new WeakSet(),
                 "finality_unproven",
               );
+              if (canonical.number === `0x${BigInt(inclusion.blockNumber).toString(16)}`)
+                validateRebound(canonical);
               return {
                 number: canonical.number,
                 hash: canonical.hash,
@@ -699,8 +730,8 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
 
         let reference: UserOperationReference = operation.identity;
         let replacement = false;
-        let inclusion = await verifyInclusion(reference);
-        if (inclusion === null) {
+        let verifiedInclusion = await verifyInclusion(reference);
+        if (verifiedInclusion === null) {
           const candidateValue = await read({
             type: "replacement_candidate",
             chainId: operation.identity.chainId,
@@ -728,9 +759,10 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
             userOperationHash: candidateHash,
           });
           replacement = true;
-          inclusion = await verifyInclusion(reference);
-          if (inclusion === null) return weakPending(operation, "receipt_missing");
+          verifiedInclusion = await verifyInclusion(reference);
+          if (verifiedInclusion === null) return weakPending(operation, "receipt_missing");
         }
+        const inclusion = verifiedInclusion.inclusion;
 
         let includedOperation: Operation = operation;
         if (!replacement) {
@@ -749,7 +781,7 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
 
         let finality: OperationFinality;
         try {
-          finality = await verifyFinality(reference, inclusion);
+          finality = await verifyFinality(reference, verifiedInclusion);
         } catch {
           return weakUnreadable(includedOperation, "finality_unproven");
         }
