@@ -16,6 +16,16 @@
  * POST /authorization/resume                         client  fresh auth + recovery read
  * ```
  *
+ * EXPERIMENTAL PREVIEW routes for the owner-phone approval surface. Preview
+ * means: no stability guarantee and no production qualification. Their wire
+ * shapes are pinned field-for-field by the strict Swift decoders in
+ * `native/ios/Sources/OwnerPhone/{Projection,Decision}.swift`.
+ *
+ * ```text
+ * GET  /native/projections/{operationId}             owner   consent projection
+ * POST /native/decisions/{operationId}               owner   approve or reject saga
+ * ```
+ *
  * @author taek <leekt216@gmail.com>
  */
 
@@ -31,6 +41,8 @@ import {
 } from "../authorization/request.js";
 import { resumeAuthorization } from "../authorization/resume.js";
 import type { RelayClock } from "../clock.js";
+import { submitOwnerPhoneDecision } from "../native/decision.js";
+import { projectOwnerPhoneRequest } from "../native/projection.js";
 import {
   authenticateCaller,
   type RelayAuthentication,
@@ -201,6 +213,26 @@ function decisionCommand(record: Record<string, unknown>): AuthorizationDecision
   return relayFailure(INVALID, "decision outcome is unsupported");
 }
 
+/**
+ * EXPERIMENTAL PREVIEW — the phone decision body: `{command, artifact?}`.
+ * `approve` hands over the artifact the client will claim once; `reject`
+ * carries nothing else. The saga answers the stored outcome on a replay.
+ */
+function phoneDecisionCommand(record: Record<string, unknown>): AuthorizationDecisionCommand {
+  if (record.command === "approve") {
+    const exact = exactBody(record, ["command", "artifact"]);
+    return Object.freeze({
+      outcome: "approved",
+      artifact: boundedText(exact.artifact, RELAY_LIMITS.artifactPlaintext, "artifact", INVALID),
+    });
+  }
+  if (record.command === "reject") {
+    exactBody(record, ["command"]);
+    return Object.freeze({ outcome: "rejected" });
+  }
+  return relayFailure(INVALID, "decision command is unsupported");
+}
+
 function stateBody(state: AuthorizationState): unknown {
   return {
     requestId: state.requestId,
@@ -230,10 +262,43 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
 
   const route = async (request: Request): Promise<Response> => {
     const segments = new URL(request.url).pathname.split("/").filter((part) => part.length > 0);
-    if (segments[0] !== "authorization") {
+    const [head, group, third, fourth] = segments;
+
+    // EXPERIMENTAL PREVIEW — owner-phone approval routes. Same wire hygiene as
+    // every relay route: exact capture, structured codes, no-store responses.
+    if (head === "native") {
+      if (segments.length === 3 && group === "projections") {
+        requireMethod(request, "GET");
+        const caller = await authenticate(request, "owner", "native.project");
+        const projection = await projectOwnerPhoneRequest({
+          store: captured.store,
+          clock: captured.clock,
+          caller,
+          requestId: canonicalIdentifier(third, "operationId", INVALID),
+        });
+        return jsonResponse(200, projection);
+      }
+      if (segments.length === 3 && group === "decisions") {
+        requireMethod(request, "POST");
+        const caller = await authenticate(request, "owner", "native.decide");
+        const command = phoneDecisionCommand(await bodyRecord(request, captured.maxBodyBytes));
+        const decided = await submitOwnerPhoneDecision({
+          store: captured.store,
+          clock: captured.clock,
+          kms: captured.kms,
+          caller,
+          operationId: canonicalIdentifier(third, "operationId", INVALID),
+          command,
+          codeTtlMs: captured.codeTtlMs,
+        });
+        return jsonResponse(200, decided);
+      }
+      return relayFailure("relay_not_found", "route does not exist");
+    }
+
+    if (head !== "authorization") {
       relayFailure("relay_not_found", "route does not exist");
     }
-    const [, group, third, fourth] = segments;
 
     if (segments.length === 2 && group === "requests") {
       requireMethod(request, "POST");

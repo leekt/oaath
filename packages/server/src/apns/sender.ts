@@ -26,7 +26,7 @@
 import { createPrivateKey, type KeyObject, sign } from "node:crypto";
 import { type CaptureContext, exactRecord } from "@oaath/protocol";
 import { type RelayClock, relayNow } from "../clock.js";
-import type { OwnerPhoneRequestProjection } from "../native/projection.js";
+import type { OwnerPhonePushProjection } from "../native/projection.js";
 import { relayFailure } from "../relay/errors.js";
 import { canonicalIdentifier, timestamp } from "../store/records.js";
 
@@ -75,7 +75,11 @@ export interface CreateApnsSenderInput {
 export interface ApnsNotificationInput {
   /** Lowercase or uppercase hex device token. */
   readonly deviceToken: string;
-  readonly projection: OwnerPhoneRequestProjection;
+  /**
+   * Only the opaque push subset is accepted: the payload transits Apple, so
+   * the consent projection's client and scope detail must never reach here.
+   */
+  readonly projection: OwnerPhonePushProjection;
 }
 
 export interface ApnsNotification {
@@ -163,7 +167,7 @@ function base64UrlJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
-function captureProjection(value: unknown): OwnerPhoneRequestProjection {
+function captureProjection(value: unknown): OwnerPhonePushProjection {
   const context: CaptureContext = new WeakSet();
   const fail = (message: string): never => relayFailure(INVALID, message);
   const record = exactRecord(

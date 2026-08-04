@@ -1,13 +1,13 @@
 /**
  EXPERIMENTAL PREVIEW — thin client for the relay's native preview surface.
 
- The server exposes `projectOwnerPhoneRequest` and `submitOwnerPhoneDecision`
- only as a programmatic composition (`@oaath/server/native`); **no HTTP route
- exists yet server-side**. This client is therefore defined against the
- documented projection/decision shapes, and the transport — URL, method,
- authentication, TLS — is deployment-wired: a deployment that exposes the
- preview injects one closure that moves bytes and carries the authenticated
- owner session. Nothing here reads configuration or holds credentials.
+ The relay serves the preview routes `GET /native/projections/{operationId}`
+ and `POST /native/decisions/{operationId}` (see
+ `packages/server/src/relay/handler.ts`). This client is defined against the
+ documented projection/decision shapes, and the transport — base URL,
+ authentication, TLS — stays deployment-wired: a deployment injects one
+ closure that moves bytes and carries the authenticated owner credential.
+ Nothing here reads configuration or holds credentials.
 
  @author taek <leekt216@gmail.com>
  */

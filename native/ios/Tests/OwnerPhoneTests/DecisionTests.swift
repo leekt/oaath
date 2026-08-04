@@ -41,11 +41,7 @@ final class DecisionTests: XCTestCase {
     }
 
     private var projection: OwnerPhoneRequestProjection {
-        OwnerPhoneRequestProjection(
-            operationId: "req-1",
-            matchCode: try! MatchCode("Ab1-_9Zz"),
-            expiresAt: 1_754_000_000_000
-        )
+        .fixture()
     }
 
     // MARK: decode
