@@ -24,12 +24,66 @@ private struct FakeHTTP: DemoHTTP {
     }
 }
 
+private actor PairingCapture {
+    private var value: PersistedPairing?
+    func record(_ pairing: PersistedPairing) { value = pairing }
+    func read() -> PersistedPairing? { value }
+}
+
 private struct FakeOwnerSigning: DemoOwnerSigning {
     let secureEnclave = false
     func publicMaterialHex() throws -> String { "0x" + String(repeating: "11", count: 64) }
     func signDigestHex(_ digestHex: String) throws -> String {
         "0x" + String(repeating: "22", count: 64)
     }
+}
+
+private enum DeferredHTTPError: Error {
+    case transport
+}
+
+private actor DeferredHTTP: DemoHTTP {
+    typealias Response = (Data, Int)
+    private var pending: [String: CheckedContinuation<Response, Error>] = [:]
+    private var recorded: [URLRequest] = []
+
+    func send(_ request: URLRequest) async throws -> Response {
+        recorded.append(request)
+        let key = Self.key(for: request)
+        return try await withCheckedThrowingContinuation { continuation in
+            precondition(pending[key] == nil, "duplicate deferred request key \(key)")
+            pending[key] = continuation
+        }
+    }
+
+    func wait(for key: String) async {
+        while pending[key] == nil { await Task.yield() }
+    }
+
+    func succeed(_ key: String, body: Data, status: Int = 200) {
+        precondition(pending.removeValue(forKey: key)?.resume(returning: (body, status)) != nil)
+    }
+
+    func fail(_ key: String) {
+        precondition(pending.removeValue(forKey: key)?.resume(throwing: DeferredHTTPError.transport) != nil)
+    }
+
+    func requests() -> [URLRequest] { recorded }
+
+    nonisolated static func key(for request: URLRequest) -> String {
+        if request.url?.path == "/native/pairings",
+           let body = request.httpBody,
+           let object = try? JSONSerialization.jsonObject(with: body) as? [String: String],
+           let code = object["pairingCode"] {
+            return "pair:\(code)"
+        }
+        let bearer = request.value(forHTTPHeaderField: "Authorization") ?? "none"
+        return "auth:\(bearer):\(request.url?.lastPathComponent ?? "none")"
+    }
+}
+
+private func pairingResponse(_ credential: String) -> Data {
+    Data(#"{"deviceCredential":"\#(credential)","account":null}"#.utf8)
 }
 
 private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
@@ -104,41 +158,44 @@ final class DemoRelayEndpointTests: XCTestCase {
         }
     }
 
-    func testTransportMapsCallsOntoRoutesAndReportsStatuses() async throws {
+    func testTransportMapsCallsOntoRoutesWithoutReportingSuccessAsAuthority() async throws {
         let recorder = FakeHTTP.Recorder()
         let body = try JSONSerialization.data(withJSONObject: projectionJson(operationId: "req-1"))
-        let statuses = LastStatusBox()
+        let unauthorized = PairingCapture()
         let client = demoRelayClient(
             pairing: try PersistedPairing(
                 endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
                 credential: "cred",
                 account: nil),
             http: FakeHTTP(status: 200, body: body, recorder: recorder),
-            onStatus: { statuses.record($0) })
+            onUnauthorized: { await unauthorized.record($0) })
         let projection = try await client.projection(operationId: "req-1")
         XCTAssertEqual(projection.operationId, "req-1")
-        XCTAssertEqual(statuses.read(), 200)
+        let reportedPairing = await unauthorized.read()
+        XCTAssertNil(reportedPairing)
         XCTAssertEqual(
             recorder.requests.map { $0.url?.absoluteString },
             ["http://127.0.0.1:8787/native/projections/req-1"])
     }
 
-    func testTransportSurfacesARefusalAsItsStatus() async throws {
-        let statuses = LastStatusBox()
+    func testTransportReportsTheExactPairingThatReceived401() async throws {
+        let unauthorized = PairingCapture()
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
+            credential: "stale",
+            account: nil)
         let client = demoRelayClient(
-            pairing: try PersistedPairing(
-                endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
-                credential: "stale",
-                account: nil),
+            pairing: pairing,
             http: FakeHTTP(status: 401, body: Data("{}".utf8), recorder: .init()),
-            onStatus: { statuses.record($0) })
+            onUnauthorized: { await unauthorized.record($0) })
         do {
             _ = try await client.projection(operationId: "req-1")
             XCTFail("a refused credential must fail closed")
         } catch {
             XCTAssertEqual(error as? DemoRelayError, .status(401))
         }
-        XCTAssertEqual(statuses.read(), 401)
+        let reportedPairing = await unauthorized.read()
+        XCTAssertEqual(reportedPairing, pairing)
     }
 }
 
@@ -301,6 +358,132 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(http.requests().count, requestCount)
         XCTAssertTrue(model.pairingCodeText.isEmpty)
         XCTAssertTrue(model.statusLine.contains("Already paired"))
+    }
+
+    func testLatestPairingAttemptWinsInBothResponseOrders() async throws {
+        for firstResponse in ["PAIR-A", "PAIR-B"] {
+            let store = InMemoryPairingStore()
+            let http = DeferredHTTP()
+            let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+            model.baseURLText = "http://relay-a.example:8787"
+            model.pairingCodeText = "PAIR-A"
+            let attemptA = Task { await model.pair() }
+            await http.wait(for: "pair:PAIR-A")
+
+            model.baseURLText = "http://relay-b.example:9999"
+            model.pairingCodeText = "PAIR-B"
+            let attemptB = Task { await model.pair() }
+            await http.wait(for: "pair:PAIR-B")
+
+            if firstResponse == "PAIR-A" {
+                await http.succeed("pair:PAIR-A", body: pairingResponse("credential-a"))
+                await attemptA.value
+                XCTAssertNil(store.load())
+                await http.succeed("pair:PAIR-B", body: pairingResponse("credential-b"))
+            } else {
+                await http.succeed("pair:PAIR-B", body: pairingResponse("credential-b"))
+                await attemptB.value
+                await http.succeed("pair:PAIR-A", body: pairingResponse("credential-a"))
+            }
+            await attemptA.value
+            await attemptB.value
+
+            let bound = try XCTUnwrap(store.load())
+            XCTAssertEqual(bound.endpoint.baseURL.absoluteString, "http://relay-b.example:9999")
+            XCTAssertEqual(bound.credential, "credential-b")
+            XCTAssertTrue(model.paired)
+            XCTAssertNotNil(model.approval)
+        }
+    }
+
+    func testApplyingLinkWhilePairingInvalidatesTheOldAttempt() async throws {
+        let store = InMemoryPairingStore()
+        let http = DeferredHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+        model.baseURLText = "http://relay-a.example:8787"
+        model.pairingCodeText = "PAIR-A"
+        let attempt = Task { await model.pair() }
+        await http.wait(for: "pair:PAIR-A")
+
+        model.apply(link: PairingLink(
+            relayURL: "http://relay-b.example:9999", pairingCode: "PAIR-B"))
+        await http.succeed("pair:PAIR-A", body: pairingResponse("credential-a"))
+        await attempt.value
+
+        XCTAssertNil(store.load())
+        XCTAssertFalse(model.paired)
+        XCTAssertEqual(model.baseURLText, "http://relay-b.example:9999")
+        XCTAssertEqual(model.pairingCodeText, "PAIR-B")
+        XCTAssertNil(model.approval)
+    }
+
+    func testDelayedA401CannotClearBAndCurrentB401ClearsOnlyB() async throws {
+        let store = InMemoryPairingStore()
+        let pairingA = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
+            credential: "credential-a",
+            account: nil)
+        try store.save(pairingA)
+        let http = DeferredHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+        model.operationIdText = "request-a"
+        let requestA = Task { await model.openManually() }
+        await http.wait(for: "auth:Bearer credential-a:request-a")
+
+        model.unpair()
+        model.baseURLText = "http://relay-b.example:9999"
+        model.pairingCodeText = "PAIR-B"
+        let attemptB = Task { await model.pair() }
+        await http.wait(for: "pair:PAIR-B")
+        await http.succeed("pair:PAIR-B", body: pairingResponse("credential-b"))
+        await attemptB.value
+        let pairingB = try XCTUnwrap(store.load())
+
+        await http.succeed("auth:Bearer credential-a:request-a", body: Data("{}".utf8), status: 401)
+        await requestA.value
+        XCTAssertEqual(store.load(), pairingB)
+        XCTAssertTrue(model.paired)
+
+        model.operationIdText = "request-b"
+        let requestB = Task { await model.openManually() }
+        await http.wait(for: "auth:Bearer credential-b:request-b")
+        await http.succeed("auth:Bearer credential-b:request-b", body: Data("{}".utf8), status: 401)
+        await requestB.value
+        XCTAssertNil(store.load())
+        XCTAssertFalse(model.paired)
+        XCTAssertTrue(model.statusLine.contains("refused"))
+    }
+
+    func testPrior401IsNotReusedAfterStatuslessTransportFailure() async throws {
+        let store = InMemoryPairingStore()
+        try store.save(PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
+            credential: "credential-a",
+            account: nil))
+        let http = DeferredHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+        model.operationIdText = "refused-a"
+        let refusedA = Task { await model.openManually() }
+        await http.wait(for: "auth:Bearer credential-a:refused-a")
+        await http.succeed("auth:Bearer credential-a:refused-a", body: Data(), status: 401)
+        await refusedA.value
+        XCTAssertNil(store.load())
+
+        model.baseURLText = "http://relay-b.example:9999"
+        model.pairingCodeText = "PAIR-B"
+        let attemptB = Task { await model.pair() }
+        await http.wait(for: "pair:PAIR-B")
+        await http.succeed("pair:PAIR-B", body: pairingResponse("credential-b"))
+        await attemptB.value
+        let pairingB = try XCTUnwrap(store.load())
+
+        model.operationIdText = "failed-b"
+        let failedB = Task { await model.openManually() }
+        await http.wait(for: "auth:Bearer credential-b:failed-b")
+        await http.fail("auth:Bearer credential-b:failed-b")
+        await failedB.value
+        XCTAssertEqual(store.load(), pairingB)
+        XCTAssertTrue(model.paired)
     }
 }
 

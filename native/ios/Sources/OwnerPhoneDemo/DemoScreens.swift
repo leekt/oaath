@@ -18,31 +18,17 @@ import Foundation
 import OwnerPhone
 import SwiftUI
 
-/// The transport records the last HTTP status so the model can distinguish a
-/// refused credential (401 → re-pair) from an unavailable relay.
-final class LastStatusBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var status: Int?
-
-    func record(_ value: Int?) {
-        lock.lock()
-        status = value
-        lock.unlock()
-    }
-
-    func read() -> Int? {
-        lock.lock()
-        defer { lock.unlock() }
-        return status
-    }
-}
-
 @MainActor
 public final class DemoModel: ObservableObject {
     /// Transient candidate before pairing; while paired this mirrors the bound
-    /// endpoint and is never an independent persisted authority input.
-    @Published public var baseURLText = ""
-    @Published public var pairingCodeText = ""
+    /// endpoint and is never an independent persisted authority input. Editing
+    /// either candidate invalidates any request made from the prior snapshot.
+    @Published public var baseURLText = "" {
+        didSet { invalidatePairingAttempt() }
+    }
+    @Published public var pairingCodeText = "" {
+        didSet { invalidatePairingAttempt() }
+    }
     @Published public var operationIdText = ""
     @Published public private(set) var paired = false
     @Published public private(set) var statusLine = ""
@@ -61,7 +47,10 @@ public final class DemoModel: ObservableObject {
 
     private let pairings: any DevicePairingStore
     private let http: any DemoHTTP
-    private let lastStatus = LastStatusBox()
+    /// Latest-wins attempt ownership: a second explicit pair, candidate edit,
+    /// link application, or unpair invalidates every older completion.
+    private var pairingAttempt: UUID?
+    private var pairingIdentity: PersistedPairing?
     private var phaseSink: AnyCancellable?
     private var delivered: Set<String> = []
 
@@ -75,6 +64,7 @@ public final class DemoModel: ObservableObject {
         self.ownerKey = ownerKey
         self.deviceToken = Self.placeholderDeviceToken()
         if let pairing = pairings.load() {
+            pairingIdentity = pairing
             baseURLText = pairing.endpoint.baseURL.absoluteString
             account = pairing.account
             paired = true
@@ -120,14 +110,23 @@ public final class DemoModel: ObservableObject {
             statusLine = "Owner key unavailable: this device could not create a P-256 key."
             return
         }
+        // Capture the complete candidate and install latest-wins ownership
+        // before the first suspension point. Response order has no authority.
+        let candidateURL = baseURLText
+        let code = pairingCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let capturedDeviceToken = deviceToken
+        let token = UUID()
+        pairingAttempt = token
         do {
-            let endpoint = try DemoRelayEndpoint(baseURLText: baseURLText)
+            let endpoint = try DemoRelayEndpoint(baseURLText: candidateURL)
+            let publicKey = try ownerKey.publicMaterialHex()
             let device = try await OwnerPhoneDemo.pair(
                 endpoint: endpoint,
-                pairingCode: pairingCodeText.trimmingCharacters(in: .whitespacesAndNewlines),
-                deviceToken: deviceToken,
-                publicKey: try ownerKey.publicMaterialHex(),
+                pairingCode: code,
+                deviceToken: capturedDeviceToken,
+                publicKey: publicKey,
                 http: http)
+            guard pairingAttempt == token, !paired, pairings.load() == nil else { return }
             let pairing = try PersistedPairing(
                 endpoint: endpoint,
                 credential: device.deviceCredential,
@@ -135,6 +134,8 @@ public final class DemoModel: ObservableObject {
             // The response must succeed before the single bound value is stored;
             // model state changes only after that atomic store operation succeeds.
             try pairings.save(pairing)
+            pairingAttempt = nil
+            pairingIdentity = pairing
             account = pairing.account
             baseURLText = pairing.endpoint.baseURL.absoluteString
             pairingCodeText = ""
@@ -142,20 +143,20 @@ public final class DemoModel: ObservableObject {
             rebuildApproval(pairing)
             statusLine = "Paired. Relay and owner credential are now bound together."
         } catch DemoPairingError.refused {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
             statusLine = "Pairing refused: the code is unknown, already used, or expired."
         } catch {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
             statusLine = "Pairing failed: check the relay URL (same network as the Mac?)."
         }
     }
 
     public func unpair() {
+        invalidatePairingAttempt()
         pairings.clear()
-        approval = nil
-        phaseSink = nil
-        paired = false
-        account = nil
-        baseURLText = ""
-        pairingCodeText = ""
+        resetPairingUI()
         statusLine = "Bound relay and credential cleared. Pair again with a fresh code."
     }
 
@@ -164,14 +165,12 @@ public final class DemoModel: ObservableObject {
         deliveryLine = ""
         await approval.open(
             operationId: operationIdText.trimmingCharacters(in: .whitespacesAndNewlines))
-        failBackToPairingOn401()
     }
 
     public func receive(push: OwnerPhonePush) async {
         guard let approval else { return }
         deliveryLine = ""
         await approval.receive(push: push)
-        failBackToPairingOn401()
     }
 
     private func rebuildApproval(_ pairing: PersistedPairing? = nil) {
@@ -180,13 +179,15 @@ public final class DemoModel: ObservableObject {
             paired = false
             return
         }
+        pairingIdentity = boundPairing
         baseURLText = boundPairing.endpoint.baseURL.absoluteString
         account = boundPairing.account
-        let box = lastStatus
         let client = demoRelayClient(
             pairing: boundPairing,
             http: http,
-            onStatus: { box.record($0) })
+            onUnauthorized: { [weak self] rejectedPairing in
+                await self?.rejectIfCurrent(rejectedPairing)
+            })
         // The signing boundary: a signature-request approval signs the
         // projected digest with the on-device owner key (Secure Enclave when
         // available) — the artifact IS the signature. Every other scope keeps
@@ -204,11 +205,28 @@ public final class DemoModel: ObservableObject {
             .sink { [weak self] phase in self?.observe(phase: phase) }
     }
 
-    private func failBackToPairingOn401() {
-        if lastStatus.read() == 401 {
-            unpair()
-            statusLine = "The relay refused this device's credential. Pair again."
-        }
+    private func invalidatePairingAttempt() {
+        pairingAttempt = nil
+    }
+
+    /// Compare-and-clear both authority owners. A delayed request made by A
+    /// cannot change persistence or UI after A was replaced by B.
+    private func rejectIfCurrent(_ rejectedPairing: PersistedPairing) {
+        guard pairingIdentity == rejectedPairing,
+              pairings.clear(ifCurrent: rejectedPairing)
+        else { return }
+        resetPairingUI()
+        statusLine = "The relay refused this device's credential. Pair again."
+    }
+
+    private func resetPairingUI() {
+        pairingIdentity = nil
+        approval = nil
+        phaseSink = nil
+        paired = false
+        account = nil
+        baseURLText = ""
+        pairingCodeText = ""
     }
 
     /// Delivers the released code exactly once per decided approval, the OAuth

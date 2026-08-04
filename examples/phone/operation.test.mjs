@@ -19,6 +19,7 @@ import {
   LiveRequestBudget,
   OneShotPairing,
   OperationLane,
+  observeOnce,
   operationAction,
   pairingSecretMayRender,
   permissionMaterializedAfter,
@@ -359,6 +360,182 @@ test("ambiguous receipt wait returns the same operation id and retry submits zer
   if (operationAction(operation.status) === "observe") observations += 1;
   assert.equal(sends, 1);
   assert.equal(observations, 1);
+});
+
+test("Promise.all submit routes share one owner and send exactly once", async () => {
+  const userOperationHash = `0x${"61".repeat(32)}`;
+  const operation = {
+    operationId: "concurrent-submit",
+    status: "prepared",
+    prepared: { userOperationHash },
+  };
+  let releaseSend;
+  const sendGate = new Promise((resolve) => {
+    releaseSend = resolve;
+  });
+  let signatures = 0;
+  let sends = 0;
+  const route = () =>
+    submitOnce({
+      operation,
+      signature: async () => {
+        signatures += 1;
+        await Promise.resolve();
+        return "0xsigned";
+      },
+      send: async () => {
+        sends += 1;
+        await sendGate;
+        return { userOperationHash };
+      },
+      observe: async () => null,
+      terminalize: () => assert.fail("missing evidence cannot terminalize"),
+    });
+  const first = route();
+  const second = route();
+  releaseSend();
+  const results = await Promise.all([first, second]);
+  assert.equal(signatures, 1);
+  assert.equal(sends, 1);
+  assert.deepEqual(results[0], results[1]);
+  assert.equal(operation.status, "unresolved");
+});
+
+test("Promise.all observation routes coalesce and preserve the terminal transition", async () => {
+  const userOperationHash = `0x${"62".repeat(32)}`;
+  const operation = {
+    operationId: "concurrent-observe",
+    status: "unresolved",
+    prepared: { userOperationHash },
+  };
+  let releaseObservation;
+  const observationGate = new Promise((resolve) => {
+    releaseObservation = resolve;
+  });
+  let observations = 0;
+  const route = () =>
+    observeOnce({
+      operation,
+      observe: async () => {
+        observations += 1;
+        return await observationGate;
+      },
+      terminalize: (current, evidence) => {
+        current.status = evidence.status;
+        current.result = Object.freeze({
+          status: evidence.status,
+          operationId: current.operationId,
+        });
+        return current.result;
+      },
+    });
+  const first = route();
+  const second = route();
+  releaseObservation({ status: "included" });
+  const results = await Promise.all([first, second]);
+  assert.equal(observations, 1);
+  assert.equal(operation.status, "included");
+  assert.deepEqual(results, [operation.result, operation.result]);
+});
+
+test("submit and observe route race joins submission, never resubmits or downgrades terminal", async () => {
+  const userOperationHash = `0x${"63".repeat(32)}`;
+  const operation = {
+    operationId: "submit-observe-race",
+    status: "prepared",
+    prepared: { userOperationHash },
+  };
+  let releaseSend;
+  const sendGate = new Promise((resolve) => {
+    releaseSend = resolve;
+  });
+  let sends = 0;
+  let observations = 0;
+  const terminalize = (current) => {
+    current.status = "included";
+    current.result = Object.freeze({ status: "included", operationId: current.operationId });
+    return current.result;
+  };
+  const submitRoute = () =>
+    submitOnce({
+      operation,
+      signature: "0xsigned",
+      send: async () => {
+        sends += 1;
+        await sendGate;
+        return { userOperationHash };
+      },
+      observe: async () => {
+        observations += 1;
+        return { status: "included" };
+      },
+      terminalize,
+    });
+  const observeRoute = () =>
+    observeOnce({
+      operation,
+      observe: async () => assert.fail("joined observer must not start a second read"),
+      terminalize,
+    });
+  const submitted = submitRoute();
+  const observed = observeRoute();
+  releaseSend();
+  const [submitResult, observeResult] = await Promise.all([submitted, observed]);
+  assert.equal(sends, 1);
+  assert.equal(observations, 1);
+  assert.deepEqual(submitResult, observeResult);
+  assert.equal(operation.status, "included");
+
+  const idempotent = await submitRoute();
+  assert.deepEqual(idempotent, operation.result);
+  assert.equal(sends, 1);
+  assert.equal(operation.status, "included");
+});
+
+test("stale route catch after lane replacement mutates neither operation", async () => {
+  const oldOperation = {
+    operationId: "old-operation",
+    status: "prepared",
+    prepared: { userOperationHash: `0x${"64".repeat(32)}` },
+  };
+  const newOperation = {
+    operationId: "new-operation",
+    status: "prepared",
+    prepared: { userOperationHash: `0x${"65".repeat(32)}` },
+  };
+  let activeOperationId = oldOperation.operationId;
+  let rejectSend;
+  const sendGate = new Promise((_, reject) => {
+    rejectSend = reject;
+  });
+  const stale = submitOnce({
+    operation: oldOperation,
+    signature: "0xsigned",
+    send: async () => await sendGate,
+    observe: async () => null,
+    terminalize: () => assert.fail("stale submit cannot terminalize"),
+    ownsLane: (current) => activeOperationId === current.operationId,
+  });
+  activeOperationId = newOperation.operationId;
+  oldOperation.status = "cancelled";
+  oldOperation.result = Object.freeze({
+    status: "cancelled",
+    operationId: oldOperation.operationId,
+  });
+  rejectSend(new Error("operation_lane_mismatch"));
+  assert.deepEqual(await stale, oldOperation.result);
+  assert.equal(oldOperation.status, "cancelled");
+  assert.equal(newOperation.status, "prepared");
+  assert.equal(activeOperationId, newOperation.operationId);
+
+  const idempotent = await submitOnce({
+    operation: oldOperation,
+    signature: "0xignored",
+    send: async () => assert.fail("terminal retry cannot send"),
+    observe: async () => assert.fail("terminal retry cannot observe"),
+    terminalize: () => assert.fail("terminal retry cannot terminalize"),
+  });
+  assert.deepEqual(idempotent, oldOperation.result);
 });
 
 test("discovered transaction hash survives later provider failure and conflicts never overwrite", async () => {

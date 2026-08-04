@@ -44,7 +44,6 @@ import {
   cacheImmutableKernelReads,
   canonicalDisplay,
   captureCanonicalDisplay,
-  captureOperationTransactionHash,
   captureSponsorship,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   exactKeys,
@@ -56,7 +55,7 @@ import {
   LiveRequestBudget,
   OneShotPairing,
   OperationLane,
-  operationAction,
+  observeOnce,
   pairingSecretMayRender,
   permissionMaterializedAfter,
   submitOnce,
@@ -542,34 +541,25 @@ function terminalize(operation, evidence) {
   return operation.result;
 }
 
-async function observeOperation(operation) {
-  const action = operationAction(operation.status);
-  if (action === "return") return operation.result;
-  if (action !== "observe") throw new Error("operation_not_observable");
-  try {
-    const evidence = await stack.observe(operation);
-    if (evidence !== null) return terminalize(operation, evidence);
-  } catch {
-    // Unreadable/missing/provider evidence is not inclusion and never permits a
-    // second submission. The exact prepared hash and acceptance stay in memory.
-  }
-  operation.status = "unresolved";
-  return {
-    status: "unresolved",
-    operationId: operation.operationId,
-    userOperationHash: operation.prepared.userOperationHash,
-    ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
-  };
+function observeOperation(operation) {
+  return observeOnce({
+    operation,
+    observe: (current) => stack.observe(current),
+    terminalize,
+    ownsLane: (current) => operationLane.active === current.operationId,
+  });
 }
 
-async function submitOperation(operation, signature) {
+function submitOperation(operation, signature, terminateWithoutSubmission) {
   return submitOnce({
     operation,
     signature,
     send: (prepared, exactSignature, onTransactionHash) =>
       stack.sendSigned(prepared, exactSignature, onTransactionHash),
-    observe: observeOperation,
+    observe: (current) => stack.observe(current),
     terminalize,
+    terminateWithoutSubmission,
+    ownsLane: (current) => operationLane.active === current.operationId,
   });
 }
 
@@ -805,35 +795,37 @@ async function handleDemo(method, path, body, outgoing) {
       return refusal(outgoing, 400, "session_submission_invalid");
     const operation = operations.get(value.operationId);
     if (operation?.kind !== "session") return refusal(outgoing, 404, "operation_not_found");
-    if (operation.status !== "prepared")
-      return refusal(outgoing, 409, "operation_not_resubmittable");
-    permission.supplied.hash = operation.prepared.userOperationHash;
-    permission.supplied.value = value.signature;
     try {
-      const prepared = operation.prepared;
-      let signature;
-      if (!permission.materialized) {
-        const materialized = await materializeKernelPermission({
-          approval: permission.approval,
-          runtime: permission.runtime,
-          grantId: operation.input.grantId,
-          account: operation.input.account,
-          nonceKey: "0",
-          sequence: operation.input.sequence,
-          calls: operation.input.calls,
-          gas: operation.input.gas,
-          paymaster: operation.input.paymaster,
-        });
-        expect(
-          materialized.prepared.userOperationHash === prepared.userOperationHash,
-          "materialization changed operation identity",
-        );
-        signature = materialized.signature;
-      } else signature = await permission.runtime.signOperation(prepared);
-      const result = await submitOperation(operation, signature);
+      const result = await submitOperation(operation, async () => {
+        // Submission ownership was installed synchronously before this first
+        // await. Concurrent route handlers join it and never replace inputs.
+        permission.supplied.hash = operation.prepared.userOperationHash;
+        permission.supplied.value = value.signature;
+        const prepared = operation.prepared;
+        if (!permission.materialized) {
+          const materialized = await materializeKernelPermission({
+            approval: permission.approval,
+            runtime: permission.runtime,
+            grantId: operation.input.grantId,
+            account: operation.input.account,
+            nonceKey: "0",
+            sequence: operation.input.sequence,
+            calls: operation.input.calls,
+            gas: operation.input.gas,
+            paymaster: operation.input.paymaster,
+          });
+          expect(
+            materialized.prepared.userOperationHash === prepared.userOperationHash,
+            "materialization changed operation identity",
+          );
+          return materialized.signature;
+        }
+        return await permission.runtime.signOperation(prepared);
+      });
       return jsonResponse(outgoing, 200, result);
     } catch (error) {
-      if (operation.status !== "prepared") operation.status = "unresolved";
+      if (error.message === "operation_not_resubmittable")
+        return refusal(outgoing, 409, "operation_not_resubmittable");
       throw error;
     }
   }
@@ -921,34 +913,55 @@ async function handleDemo(method, path, body, outgoing) {
       operation.status === "rejected"
     )
       return jsonResponse(outgoing, 200, operation.result);
-    if (operation.status === "submitted" || operation.status === "unresolved")
+    if (
+      operation.transition?.promise ||
+      operation.status === "submitted" ||
+      operation.status === "unresolved"
+    )
       return jsonResponse(outgoing, 200, await observeOperation(operation));
     if (operation.status !== "prepared")
       return refusal(outgoing, 409, "operation_not_resubmittable");
-    const artifact = await resolveSignature(operation.request);
-    if (artifact === null) {
-      if (operation.request.outcome === "rejected") {
-        operation.status = "rejected";
-        operationLane.cancel(operation.operationId);
-        operation.result = {
-          status: "rejected",
-          requestId: operation.request.requestId,
-        };
-        return jsonResponse(outgoing, 200, operation.result);
-      }
-      return jsonResponse(outgoing, 200, {
-        status: "pending",
-        requestId: operation.request.requestId,
-      });
-    }
     try {
-      signingRequestId = operation.request.requestId;
-      const signature = await ownerRuntime.signOperation(operation.prepared);
-      signingRequestId = null;
-      return jsonResponse(outgoing, 200, await submitOperation(operation, signature));
+      const result = await submitOperation(
+        operation,
+        async () => {
+          // Resolve and sign inside the synchronously claimed transition. A
+          // second GET joins this exact attempt instead of racing it.
+          const artifact = await resolveSignature(operation.request);
+          if (artifact === null) {
+            if (operation.request.outcome === "rejected")
+              return {
+                kind: "terminal",
+                status: "rejected",
+                result: {
+                  status: "rejected",
+                  requestId: operation.request.requestId,
+                },
+              };
+            return {
+              kind: "pending",
+              result: { status: "pending", requestId: operation.request.requestId },
+            };
+          }
+          const requestId = operation.request.requestId;
+          signingRequestId = requestId;
+          try {
+            return await ownerRuntime.signOperation(operation.prepared);
+          } finally {
+            if (signingRequestId === requestId) signingRequestId = null;
+          }
+        },
+        (current, terminal) => {
+          expect(terminal.status === "rejected", "operation terminal transition invalid");
+          current.status = "rejected";
+          operationLane.cancel(current.operationId);
+          current.result = terminal.result;
+        },
+      );
+      return jsonResponse(outgoing, 200, result);
     } catch (error) {
-      signingRequestId = null;
-      if (operation.status !== "prepared") operation.status = "unresolved";
+      if (error.message === "operation_not_resubmittable")
+        return refusal(outgoing, 409, "operation_not_resubmittable");
       throw error;
     }
   }
@@ -1040,13 +1053,12 @@ if (LIVE) {
         const observed = await budgetedRpc("eth_getUserOperationReceipt", [
           operation.prepared.userOperationHash,
         ]);
-        if (observed !== null) {
-          const transactionHash = captureOperationTransactionHash(
+        if (observed !== null)
+          return validateFinalizedUserOperation({
             operation,
-            observed?.receipt?.transactionHash,
-          );
-          return validateFinalizedUserOperation({ operation, transactionHash, rpc: budgetedRpc });
-        }
+            transactionHash: observed?.receipt?.transactionHash,
+            rpc: budgetedRpc,
+          });
         if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
           await new Promise((resolve) => setTimeout(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
       }

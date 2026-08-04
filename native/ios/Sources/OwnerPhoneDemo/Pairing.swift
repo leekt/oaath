@@ -142,11 +142,14 @@ public struct PersistedPairing: Equatable, Sendable {
     }
 }
 
-/// Atomic custody of the complete persisted pairing value.
+/// Atomic custody of the complete persisted pairing value. Authenticated
+/// requests capture this exact value; a refusal may clear it only while it is
+/// still current, so a delayed response cannot revoke a replacement pairing.
 public protocol DevicePairingStore: Sendable {
     func load() -> PersistedPairing?
     func save(_ pairing: PersistedPairing) throws
     func clear()
+    @discardableResult func clear(ifCurrent pairing: PersistedPairing) -> Bool
 }
 
 /// Test double and simulator fallback.
@@ -169,6 +172,13 @@ public final class InMemoryPairingStore: DevicePairingStore, @unchecked Sendable
         pairing = nil
         lock.unlock()
     }
+    @discardableResult public func clear(ifCurrent expected: PersistedPairing) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pairing == expected else { return false }
+        pairing = nil
+        return true
+    }
 }
 
 #if canImport(Security)
@@ -178,6 +188,7 @@ import Security
 /// non-synchronizable generic-password value. Old raw credential values are
 /// rejected rather than combined with another endpoint.
 public struct KeychainPairingStore: DevicePairingStore {
+    private static let lock = NSLock()
     public let service: String
 
     public init(service: String = "org.oaath.owner-phone.pairing-v1") {
@@ -185,6 +196,45 @@ public struct KeychainPairingStore: DevicePairingStore {
     }
 
     public func load() -> PersistedPairing? {
+        Self.lock.withLock { loadUnlocked() }
+    }
+
+    public func save(_ pairing: PersistedPairing) throws {
+        try Self.lock.withLock {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service
+            ]
+            let data = try pairing.encoded()
+            let update: [CFString: Any] = [kSecValueData: data]
+            let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+            if status == errSecSuccess { return }
+            guard status == errSecItemNotFound else { throw PairingStoreError.storageFailed }
+            let attributes: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service,
+                kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecValueData: data
+            ]
+            guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else {
+                throw PairingStoreError.storageFailed
+            }
+        }
+    }
+
+    public func clear() {
+        Self.lock.withLock { deleteUnlocked() }
+    }
+
+    @discardableResult public func clear(ifCurrent expected: PersistedPairing) -> Bool {
+        Self.lock.withLock {
+            guard loadUnlocked() == expected else { return false }
+            deleteUnlocked()
+            return true
+        }
+    }
+
+    private func loadUnlocked() -> PersistedPairing? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -198,28 +248,7 @@ public struct KeychainPairingStore: DevicePairingStore {
         return try? PersistedPairing.decode(data)
     }
 
-    public func save(_ pairing: PersistedPairing) throws {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service
-        ]
-        let data = try pairing.encoded()
-        let update: [CFString: Any] = [kSecValueData: data]
-        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if status == errSecSuccess { return }
-        guard status == errSecItemNotFound else { throw PairingStoreError.storageFailed }
-        let attributes: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecValueData: data
-        ]
-        guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else {
-            throw PairingStoreError.storageFailed
-        }
-    }
-
-    public func clear() {
+    private func deleteUnlocked() {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service

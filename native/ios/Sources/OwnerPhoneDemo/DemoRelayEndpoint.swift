@@ -106,12 +106,12 @@ extension URLSession: DemoHTTP {
 
 /// Maps the library's transport-injected relay client onto the preview routes.
 /// The library validates and decodes everything; this closure only moves bytes.
-/// `onStatus` reports every HTTP status so the app can route a 401 back to
-/// pairing without re-decoding anything the library owns.
+/// Each client captures the exact pairing that authorized its requests. A 401
+/// reports only that captured identity, never process-global transport status.
 public func demoRelayClient(
     pairing: PersistedPairing,
     http: any DemoHTTP,
-    onStatus: (@Sendable (Int) -> Void)? = nil
+    onUnauthorized: (@Sendable (PersistedPairing) async -> Void)? = nil
 ) -> TransportRelayClient {
     TransportRelayClient { call in
         let request: URLRequest
@@ -126,7 +126,7 @@ public func demoRelayClient(
                 credential: pairing.credential)
         }
         let (data, status) = try await http.send(request)
-        onStatus?(status)
+        if status == 401 { await onUnauthorized?(pairing) }
         guard status == 200 else { throw DemoRelayError.status(status) }
         return data
     }

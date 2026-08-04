@@ -476,32 +476,127 @@ export function captureOperationTransactionHash(operation, value) {
   return transactionHash;
 }
 
-/** Submission state owner: after send starts every failure becomes unresolved. */
-export async function submitOnce({ operation, signature, send, observe, terminalize }) {
-  if (operationAction(operation.status) !== "submit")
-    throw new Error("operation_not_resubmittable");
-  operation.status = "submitting";
-  operation.submissionAttempted = true;
+const terminalOperation = (operation) =>
+  operation.status === "included" ||
+  operation.status === "reverted" ||
+  operation.status === "rejected" ||
+  operation.status === "cancelled";
+
+const unresolvedResult = (operation) =>
+  Object.freeze({
+    status: "unresolved",
+    operationId: operation.operationId,
+    userOperationHash: operation.prepared.userOperationHash,
+    ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
+  });
+
+const currentResult = (operation) => operation.result ?? unresolvedResult(operation);
+const ownsTransition = (operation, owner, ownsLane) =>
+  operation.transition === owner && !terminalOperation(operation) && ownsLane(operation);
+
+function beginTransition(operation, kind, run) {
+  if (operation.transition?.promise) return operation.transition.promise;
+  const owner = { kind, promise: null };
+  operation.transition = owner;
+  owner.promise = (async () => {
+    try {
+      return await run(owner);
+    } finally {
+      // A stale completion never releases a replacement transition owner.
+      if (operation.transition === owner) delete operation.transition;
+    }
+  })();
+  return owner.promise;
+}
+
+async function observeOwned({ operation, owner, observe, terminalize, ownsLane }) {
   try {
-    const sent = await send(operation.prepared, signature, (transactionHash) => {
-      captureOperationTransactionHash(operation, transactionHash);
-    });
-    const acceptance = validateBundlerAcceptance(
-      operation.prepared.userOperationHash,
-      sent.userOperationHash,
-    );
-    operation.acceptance = Object.freeze({ ...acceptance, acceptedAt: Date.now() });
-    if (sent.transactionHash !== undefined)
-      captureOperationTransactionHash(operation, sent.transactionHash);
-    operation.status = "submitted";
-    return await observe(operation, terminalize);
+    const evidence = await observe(operation);
+    if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+    if (evidence !== null) return terminalize(operation, evidence);
   } catch {
-    operation.status = "unresolved";
-    return Object.freeze({
-      status: "unresolved",
-      operationId: operation.operationId,
-      userOperationHash: operation.prepared.userOperationHash,
-      ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
-    });
+    if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+    if (terminalOperation(operation)) return currentResult(operation);
   }
+  if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+  operation.status = "unresolved";
+  return unresolvedResult(operation);
+}
+
+/**
+ * One synchronous observation owner per operation. Concurrent handlers join
+ * the same promise; only the current owner of the still-occupied lane may
+ * terminalize or downgrade to unresolved.
+ */
+export function observeOnce({ operation, observe, terminalize, ownsLane = () => true }) {
+  if (operation.transition?.promise) return operation.transition.promise;
+  if (terminalOperation(operation)) return Promise.resolve(operation.result);
+  if (operationAction(operation.status) !== "observe")
+    return Promise.reject(new Error("operation_not_observable"));
+  return beginTransition(operation, "observe", (owner) =>
+    observeOwned({ operation, owner, observe, terminalize, ownsLane }),
+  );
+}
+
+/**
+ * One synchronous submission owner per operation. `signature` may be an async
+ * attempt-owned preparation closure and can return `{ kind: "pending", result
+ * }` or `{ kind: "terminal", status, result }` before send. Once send starts,
+ * every owned failure is unresolved; before send, failures restore prepared.
+ */
+export function submitOnce({
+  operation,
+  signature,
+  send,
+  observe,
+  terminalize,
+  terminateWithoutSubmission,
+  ownsLane = () => true,
+}) {
+  if (operation.transition?.promise) return operation.transition.promise;
+  if (terminalOperation(operation)) return Promise.resolve(operation.result);
+  if (operationAction(operation.status) !== "submit")
+    return Promise.reject(new Error("operation_not_resubmittable"));
+
+  return beginTransition(operation, "submit", async (owner) => {
+    let sendStarted = false;
+    try {
+      const preparedSignature =
+        typeof signature === "function" ? await signature() : { kind: "signature", signature };
+      if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+      if (preparedSignature?.kind === "pending") return preparedSignature.result;
+      if (preparedSignature?.kind === "terminal") {
+        terminateWithoutSubmission?.(operation, preparedSignature);
+        return operation.result;
+      }
+      const exactSignature =
+        preparedSignature?.kind === "signature" ? preparedSignature.signature : preparedSignature;
+      operation.status = "submitting";
+      operation.submissionAttempted = true;
+      sendStarted = true;
+      const sent = await send(operation.prepared, exactSignature, (transactionHash) => {
+        if (ownsTransition(operation, owner, ownsLane))
+          captureOperationTransactionHash(operation, transactionHash);
+      });
+      if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+      const acceptance = validateBundlerAcceptance(
+        operation.prepared.userOperationHash,
+        sent.userOperationHash,
+      );
+      operation.acceptance = Object.freeze({ ...acceptance, acceptedAt: Date.now() });
+      if (sent.transactionHash !== undefined)
+        captureOperationTransactionHash(operation, sent.transactionHash);
+      operation.status = "submitted";
+      return await observeOwned({ operation, owner, observe, terminalize, ownsLane });
+    } catch (error) {
+      if (!ownsTransition(operation, owner, ownsLane)) return currentResult(operation);
+      if (terminalOperation(operation)) return currentResult(operation);
+      if (!sendStarted) {
+        operation.status = "prepared";
+        throw error;
+      }
+      operation.status = "unresolved";
+      return unresolvedResult(operation);
+    }
+  });
 }
