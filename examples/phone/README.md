@@ -60,17 +60,22 @@ an exact v0.7 response containing gas plus separate paymaster address/gas/data,
 re-prepares so those fields are hash-bound, then sends
 `eth_sendUserOperation([signedUserOp, entryPoint])`. Acceptance must return the
 prepared hash exactly. Inclusion is then observed separately with at most four
-one-second-spaced `eth_getUserOperationReceipt` polls, followed by independent
-transaction and receipt reads that bind chain, account, EntryPoint, operation,
-transaction, block, and success.
+one-second-spaced `eth_getUserOperationReceipt` polls. The adapter independently
+reads the transaction and receipt, decodes exactly one matching EntryPoint
+`UserOperationEvent`, and binds its hash, sender, nonce, success, transaction,
+and block. It also reads the finalized head and canonical inclusion block;
+outer transaction status and bundler `success` are never sufficient.
 
-The full documented path is modeled at **36** requests: at most 12 account/nonce
-reads, three sponsorships, three submissions, and three times (four polls plus
-two evidence reads). One process-wide hard cap of **48** leaves 12 requests of
-headroom. Every request has a **10 second** timeout; the viem custom transport
-sets `retryCount: 0`, observation concurrency is at most two evidence reads,
-and there is no hidden fallback. Credential values and RPC errors are never
-printed.
+The exact worst-case documented path is **45** requests: 12 paid reads across
+owner binding, session binding, and one post-deployment account-state refresh
+(the adapter caches only successful immutable chain/code/factory evidence),
+three fresh EntryPoint nonce reads, three sponsorships, three submissions, and
+three times (four receipt polls plus transaction, receipt, finalized-head, and
+canonical-block reads). One process-wide hard cap of **54** leaves nine requests
+of headroom. Every request has a **10 second** timeout; the
+viem custom transport sets `retryCount: 0`, observation concurrency is at most
+two evidence reads, and there is no hidden fallback. Credential values and RPC
+errors are never printed.
 
 ## Push and networking
 

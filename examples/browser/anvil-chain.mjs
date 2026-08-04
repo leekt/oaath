@@ -172,10 +172,11 @@ export async function createAnvilChain(chainId) {
           sends.push(request.prepared);
           return {
             async send() {
-              const sent = await stack.sendSigned(request.prepared, request.signature);
-              // Recorded before the outcome is checked: the operation left this
-              // process, which is exactly what the durable journal already says.
-              transactionHash = sent.transactionHash;
+              const sent = await stack.sendSigned(request.prepared, request.signature, (hash) => {
+                // Captured before receipt waiting: an ambiguous wait cannot
+                // erase the submitted transaction identity.
+                transactionHash = hash;
+              });
               if (sent.status !== "success") throw new Error("the handleOps transaction failed");
               // A devnet only finalizes as blocks arrive, so mine past the
               // inclusion block and let the node's own `finalized` tag catch up.

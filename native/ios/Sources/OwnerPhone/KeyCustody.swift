@@ -102,6 +102,24 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
         ]
     }
 
+    /// Host-testable claim check used for every reload. A software key can
+    /// never satisfy an enclave-tagged custody instance (or vice versa).
+    static func storedAttributesMatchClaim(
+        _ attributes: [CFString: Any],
+        useSecureEnclave: Bool
+    ) -> Bool {
+        guard attributes[kSecAttrIsExtractable] as? Bool == false,
+              attributes[kSecAttrAccessible] as? String
+                == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+        else {
+            return false
+        }
+        let token = attributes[kSecAttrTokenID] as? String
+        return useSecureEnclave
+            ? token == kSecAttrTokenIDSecureEnclave as String
+            : token != kSecAttrTokenIDSecureEnclave as String
+    }
+
     private func ensureKey() throws -> SecKey {
         if let existing = try loadKey() {
             return existing
@@ -146,45 +164,45 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
     }
 
     private func loadKey() throws -> SecKey? {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassKey,
-            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrApplicationTag: applicationTag,
-            kSecReturnRef: true,
-            kSecMatchLimit: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound {
-            return nil
-        }
-        guard status == errSecSuccess, let item else {
-            throw OwnerPhoneKeyCustodyError.keyUnavailable
-        }
-        // swiftlint:disable:next force_cast
-        let key = item as! SecKey
-        guard let attributes = SecKeyCopyAttributes(key) as? [CFString: Any],
-              attributes[kSecAttrIsExtractable] as? Bool == false
-        else {
-            throw OwnerPhoneKeyCustodyError.keyUnavailable
-        }
-        // Query the keychain item's accessibility separately: SecKey attributes
-        // do not consistently expose it on every supported host.
-        let accessQuery: [CFString: Any] = [
+        // Capture the persisted item attributes, including token identity,
+        // before returning a signing reference. SecKey attributes alone do not
+        // consistently expose accessibility or token identity on reload.
+        let attributesQuery: [CFString: Any] = [
             kSecClass: kSecClassKey,
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrApplicationTag: applicationTag,
             kSecReturnAttributes: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]
-        var accessItem: CFTypeRef?
-        guard SecItemCopyMatching(accessQuery as CFDictionary, &accessItem) == errSecSuccess,
-              let stored = accessItem as? [CFString: Any],
-              stored[kSecAttrAccessible] as? String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+        var attributesItem: CFTypeRef?
+        let attributesStatus = SecItemCopyMatching(
+            attributesQuery as CFDictionary, &attributesItem)
+        if attributesStatus == errSecItemNotFound {
+            return nil
+        }
+        guard attributesStatus == errSecSuccess,
+              let stored = attributesItem as? [CFString: Any],
+              Self.storedAttributesMatchClaim(stored, useSecureEnclave: useSecureEnclave)
         else {
             throw OwnerPhoneKeyCustodyError.keyUnavailable
         }
-        return key
+
+        let referenceQuery: [CFString: Any] = [
+            kSecClass: kSecClassKey,
+            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrApplicationTag: applicationTag,
+            kSecReturnRef: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var referenceItem: CFTypeRef?
+        guard SecItemCopyMatching(referenceQuery as CFDictionary, &referenceItem) == errSecSuccess,
+              let referenceItem,
+              CFGetTypeID(referenceItem) == SecKeyGetTypeID()
+        else {
+            throw OwnerPhoneKeyCustodyError.keyUnavailable
+        }
+        // swiftlint:disable:next force_cast
+        return (referenceItem as! SecKey)
     }
 }
 #endif

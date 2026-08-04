@@ -8,7 +8,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { randomBytes, webcrypto } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { connect } from "node:http2";
@@ -39,6 +39,7 @@ import qrcode from "qrcode-terminal";
 import { createPublicClient, custom, hexToBytes, keccak256, parseEther, toHex } from "viem";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
 import {
+  cacheImmutableKernelReads,
   canonicalDisplay,
   captureCanonicalDisplay,
   captureSponsorship,
@@ -49,11 +50,14 @@ import {
   LIVE_RPC_MAX_REQUESTS,
   LIVE_TRANSPORT_CONFIG,
   LiveRequestBudget,
+  OneShotPairing,
   OperationLane,
   operationAction,
   pairingSecretMayRender,
   permissionMaterializedAfter,
-  validateBundlerAcceptance,
+  submitOnce,
+  validateFinalizedUserOperation,
+  withFreshSequence,
 } from "./operation.mjs";
 
 const SIMULATE = process.env.OAATH_PHONE_SIMULATE === "1";
@@ -104,19 +108,15 @@ const lanIp = () => {
     }
   return null;
 };
-const sha256 = async (text) =>
-  Buffer.from(await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).toString(
-    "base64url",
-  );
+const sha256 = (text) => createHash("sha256").update(text).digest("base64url");
 const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const PAIRING_CODE = [...randomBytes(10)]
   .map((byte) => codeAlphabet[byte % codeAlphabet.length])
   .join("");
-const pairing = {
-  hash: await sha256(PAIRING_CODE),
+const pairing = new OneShotPairing({
+  hash: sha256(PAIRING_CODE),
   expiresAt: Date.now() + PAIRING_TTL_MS,
-  consumed: false,
-};
+});
 const pairedDevices = new Map();
 let activeDevice = null;
 let redirectUri = "";
@@ -132,9 +132,9 @@ let chain = null;
 let stack = null;
 let simulatedOwnerSecret = null;
 const target = `0x${"71".repeat(20)}`;
-// The modeled full path is 36 requests. Twelve requests remain as hard
-// headroom; every live request still passes through the process-wide 48 cap.
-expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 36, "live request model drifted");
+// Immutable successful binding reads are cached; account state is refreshed
+// once after deployment. The 45-request worst case leaves nine hard headroom.
+expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 45, "live request model drifted");
 const LIVE_RPC_TIMEOUT_MS = 10_000;
 const liveRequestBudget = new LiveRequestBudget();
 
@@ -235,14 +235,17 @@ async function handlePairing(body, outgoing) {
     !/^0x[0-9a-f]{128}$/.test(value.publicKey)
   )
     return refusal(outgoing, 400, "pairing_request_invalid");
-  if (
-    pairing.consumed ||
-    Date.now() >= pairing.expiresAt ||
-    (await sha256(value.pairingCode.replace(/[\s-]/g, "").toUpperCase())) !== pairing.hash
-  )
+  try {
+    // reserve() mutates the one-shot state synchronously. No bind/read await can
+    // let a concurrent request authenticate with the same code.
+    pairing.reserve({
+      hash: sha256(value.pairingCode.replace(/[\s-]/g, "").toUpperCase()),
+      now: Date.now(),
+    });
+  } catch {
     return refusal(outgoing, 401, "pairing_invalid");
+  }
   const account = await bindOwner(value.publicKey);
-  pairing.consumed = true;
   const credential = randomBytes(32).toString("base64url");
   activeDevice = {
     credential,
@@ -510,81 +513,15 @@ async function observeOperation(operation) {
   };
 }
 
-async function validateLiveObservation(operation, observed, rpc) {
-  const hash = operation.prepared.userOperationHash;
-  const account = operation.prepared.userOperation.sender;
-  const entryPoint = lower(operation.prepared.entryPoint.address);
-  if (
-    observed === null ||
-    typeof observed !== "object" ||
-    Array.isArray(observed) ||
-    lower(observed.userOpHash ?? "") !== hash ||
-    lower(observed.sender ?? "") !== account ||
-    typeof observed.success !== "boolean" ||
-    observed.receipt === null ||
-    typeof observed.receipt !== "object" ||
-    Array.isArray(observed.receipt)
-  )
-    throw new Error("zerodev_receipt_invalid");
-  const transactionHash = lower(observed.receipt.transactionHash ?? "");
-  const blockHash = lower(observed.receipt.blockHash ?? "");
-  const blockNumber = observed.receipt.blockNumber;
-  if (
-    !/^0x[0-9a-f]{64}$/.test(transactionHash) ||
-    !/^0x[0-9a-f]{64}$/.test(blockHash) ||
-    !/^0x(?:0|[1-9a-f][0-9a-f]*)$/.test(blockNumber)
-  )
-    throw new Error("zerodev_receipt_invalid");
-  const [receipt, transaction] = await Promise.all([
-    rpc("eth_getTransactionReceipt", [transactionHash]),
-    rpc("eth_getTransactionByHash", [transactionHash]),
-  ]);
-  if (
-    receipt === null ||
-    transaction === null ||
-    lower(receipt.transactionHash ?? "") !== transactionHash ||
-    lower(transaction.hash ?? "") !== transactionHash ||
-    lower(receipt.blockHash ?? "") !== blockHash ||
-    lower(transaction.blockHash ?? "") !== blockHash ||
-    receipt.blockNumber !== blockNumber ||
-    transaction.blockNumber !== blockNumber ||
-    lower(receipt.to ?? "") !== entryPoint ||
-    lower(transaction.to ?? "") !== entryPoint ||
-    !/^0x(?:0|[1-9a-f][0-9a-f]*)$/.test(transaction.chainId ?? "") ||
-    BigInt(transaction.chainId) !== BigInt(CHAIN_ID) ||
-    (receipt.status !== "0x1" && receipt.status !== "0x0") ||
-    observed.success !== (receipt.status === "0x1")
-  )
-    throw new Error("zerodev_transaction_evidence_invalid");
-  return Object.freeze({
-    chainId: CHAIN_ID,
-    account,
-    userOperationHash: hash,
-    transactionHash,
-    blockHash,
-    blockNumber,
-    status: observed.success ? "included" : "reverted",
-  });
-}
-
 async function submitOperation(operation, signature) {
-  if (operationAction(operation.status) !== "submit")
-    throw new Error("operation_not_resubmittable");
-  operation.status = "submitting";
-  try {
-    const sent = await stack.sendSigned(operation.prepared, signature);
-    const acceptance = validateBundlerAcceptance(
-      operation.prepared.userOperationHash,
-      sent.userOperationHash,
-    );
-    operation.acceptance = Object.freeze({ ...acceptance, acceptedAt: Date.now() });
-    operation.status = "submitted";
-    if (sent.evidence) return terminalize(operation, sent.evidence);
-    return await observeOperation(operation);
-  } catch (error) {
-    operation.status = "unresolved";
-    throw error;
-  }
+  return submitOnce({
+    operation,
+    signature,
+    send: (prepared, exactSignature, onTransactionHash) =>
+      stack.sendSigned(prepared, exactSignature, onTransactionHash),
+    observe: observeOperation,
+    terminalize,
+  });
 }
 
 async function handleDemo(method, path, body, outgoing) {
@@ -702,24 +639,29 @@ async function handleDemo(method, path, body, outgoing) {
     let input;
     let prepared;
     try {
-      const refreshed = await permission.runtime.bindAccount({
-        accountIndex: "0",
-        initialPackages: ownerRuntime.packages,
-      });
-      expect(refreshed.account === accountDescriptor.account, "refreshed another account");
-      permission.descriptor = refreshed;
-      input = {
-        kind: "execution",
-        mode,
-        grantId: `phone-session-${Date.now()}`,
-        account: permission.descriptor,
-        nonceKey: "0",
-        // A counterfactual account's first nonce is known locally. Avoiding a
-        // pre-deployment EntryPoint call also saves one paid/shared read.
-        sequence: permission.materialized ? await sequence(permission.runtime, mode) : "0",
-        calls: [{ target, value: "1", data: "0x" }],
-        gas: GAS,
-      };
+      if (permission.materialized && permission.descriptor.state !== "deployed") {
+        const refreshed = await permission.runtime.bindAccount({
+          accountIndex: "0",
+          initialPackages: ownerRuntime.packages,
+        });
+        expect(refreshed.account === accountDescriptor.account, "refreshed another account");
+        permission.descriptor = refreshed;
+        accountDescriptor = refreshed;
+      }
+      input = await withFreshSequence(
+        {
+          kind: "execution",
+          mode,
+          grantId: `phone-session-${Date.now()}`,
+          account: permission.descriptor,
+          nonceKey: "0",
+          calls: [{ target, value: "1", data: "0x" }],
+          gas: GAS,
+        },
+        // A failed UserOperationEvent still consumes its sequence. Read the
+        // EntryPoint immediately before every preparation, including enable.
+        () => sequence(permission.runtime, mode),
+      );
       prepared = await sponsoredPrepare(permission.runtime, input);
     } catch (error) {
       operationLane.cancel(operationId);
@@ -727,6 +669,7 @@ async function handleDemo(method, path, body, outgoing) {
     }
     operations.set(operationId, {
       operationId,
+      chainId: CHAIN_ID,
       kind: "session",
       status: "prepared",
       prepared,
@@ -791,21 +734,17 @@ async function handleDemo(method, path, body, outgoing) {
     const preparingId = randomBytes(18).toString("base64url");
     operationLane.claim(preparingId);
     try {
-      const descriptor = await ownerRuntime.bindAccount({
-        accountIndex: "0",
-        initialPackages: ownerRuntime.packages,
-      });
-      expect(descriptor.account === accountDescriptor.account, "owner refresh changed account");
-      accountDescriptor = descriptor;
-      const input = {
-        kind: "execution",
-        grantId: `phone-owner-${Date.now()}`,
-        account: accountDescriptor,
-        nonceKey: "0",
-        sequence: await sequence(ownerRuntime, "standard"),
-        calls: [{ target, value: "2", data: "0x" }],
-        gas: GAS,
-      };
+      const input = await withFreshSequence(
+        {
+          kind: "execution",
+          grantId: `phone-owner-${Date.now()}`,
+          account: accountDescriptor,
+          nonceKey: "0",
+          calls: [{ target, value: "2", data: "0x" }],
+          gas: GAS,
+        },
+        () => sequence(ownerRuntime, "standard"),
+      );
       const prepared = await sponsoredPrepare(ownerRuntime, input);
       const request = await createSignatureRequest(
         prepared.userOperationHash,
@@ -815,6 +754,7 @@ async function handleDemo(method, path, body, outgoing) {
       operationLane.replace(preparingId, request.requestId);
       operations.set(request.requestId, {
         operationId: request.requestId,
+        chainId: CHAIN_ID,
         kind: "owner",
         status: "prepared",
         prepared,
@@ -948,7 +888,7 @@ if (LIVE) {
     ),
   });
   stack = {
-    reads: createKernelV4Reads(publicClient),
+    reads: cacheImmutableKernelReads(createKernelV4Reads(publicClient)),
     // Session authority resolves the pinned ECDSA signer; this syntactically
     // valid placeholder is never installed or used as an owner validator.
     validator: `0x${"01".repeat(20)}`,
@@ -959,7 +899,10 @@ if (LIVE) {
         const observed = await budgetedRpc("eth_getUserOperationReceipt", [
           operation.prepared.userOperationHash,
         ]);
-        if (observed !== null) return validateLiveObservation(operation, observed, budgetedRpc);
+        if (observed !== null) {
+          const transactionHash = lower(observed.receipt?.transactionHash ?? "");
+          return validateFinalizedUserOperation({ operation, transactionHash, rpc: budgetedRpc });
+        }
         if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
           await new Promise((resolve) => setTimeout(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
       }
@@ -972,7 +915,8 @@ if (LIVE) {
       ]);
       if (typeof userOperationHash !== "string" || !/^0x[0-9a-f]{64}$/.test(userOperationHash))
         throw new Error("zerodev_submission_response_invalid");
-      validateBundlerAcceptance(prepared.userOperationHash, userOperationHash);
+      if (userOperationHash !== prepared.userOperationHash)
+        throw new Error("zerodev_submission_hash_mismatch");
       return { userOperationHash };
     },
   };
@@ -980,6 +924,16 @@ if (LIVE) {
   chain = await startAnvil(CHAIN_ID, "osaka");
   stack = await deployKernelStack(chain, { p256: true });
   stack.rpc = chain.rpc;
+  stack.observe = async (operation) => {
+    if (!operation.transactionHash) return null;
+    // Let Anvil's real finalized tag advance beyond the inclusion block.
+    await chain.rpc("anvil_mine", ["0x3"]);
+    return validateFinalizedUserOperation({
+      operation,
+      transactionHash: operation.transactionHash,
+      rpc: chain.rpc,
+    });
+  };
 }
 const server = createServer(listener);
 await new Promise((resolve) => server.listen(PORT, HOST, resolve));

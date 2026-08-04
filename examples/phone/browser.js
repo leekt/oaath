@@ -88,7 +88,8 @@ $("permission").onclick = async () => {
     say(`Permission failed: ${error.message}`);
   }
 };
-let unresolvedSessionOperationId = null;
+const unresolvedOperationKey = "oaath-demo-unresolved-session-operation-v1";
+let unresolvedSessionOperationId = localStorage.getItem(unresolvedOperationKey);
 $("session").onclick = async () => {
   try {
     if (unresolvedSessionOperationId !== null) {
@@ -100,6 +101,7 @@ $("session").onclick = async () => {
         return;
       }
       unresolvedSessionOperationId = null;
+      localStorage.removeItem(unresolvedOperationKey);
       say(
         `Session operation ${observed.status}.\nUserOperation: ${observed.userOperationHash}\nTransaction: ${observed.transactionHash}`,
       );
@@ -116,7 +118,8 @@ $("session").onclick = async () => {
       body: JSON.stringify({ operationId: prepared.operationId, signature }),
     });
     if (sent.status === "unresolved") {
-      unresolvedSessionOperationId = prepared.operationId;
+      unresolvedSessionOperationId = sent.operationId;
+      localStorage.setItem(unresolvedOperationKey, sent.operationId);
       say(
         `Session operation unresolved. Click again to observe the same hash without resubmitting.\nUserOperation: ${sent.userOperationHash}`,
       );

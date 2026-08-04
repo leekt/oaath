@@ -120,6 +120,24 @@ final class KeyCustodyTests: XCTestCase {
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
     }
 
+    func testReloadRejectsSoftwareKeyForSecureEnclaveClaim() {
+        let base: [CFString: Any] = [
+            kSecAttrIsExtractable: false,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
+            base, useSecureEnclave: true))
+        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
+            base.merging([kSecAttrTokenID: "software"] as [CFString: Any]) { _, new in new },
+            useSecureEnclave: true))
+        XCTAssertTrue(KeychainKeyCustodyStub.storedAttributesMatchClaim(
+            base.merging([kSecAttrTokenID: kSecAttrTokenIDSecureEnclave]) { _, new in new },
+            useSecureEnclave: true))
+        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
+            base.merging([kSecAttrTokenID: kSecAttrTokenIDSecureEnclave]) { _, new in new },
+            useSecureEnclave: false))
+    }
+
     func testANonDigestInputFailsBeforeAnyKeychainAccess() {
         let custody = KeychainKeyCustodyStub()
         XCTAssertThrowsError(try custody.signDigest(Data(count: 31))) {

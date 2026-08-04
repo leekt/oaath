@@ -181,7 +181,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
      * `encodeHandleOps` re-derives the operation hash while packing, so the
      * identity cannot drift between preparing and submitting.
      */
-    sendSigned: async (prepared, signature) => {
+    sendSigned: async (prepared, signature, onTransactionHash = () => {}) => {
       const call = encodeHandleOps({ prepared, signature, beneficiary: submitter.address });
       const hash = await wallet.sendTransaction({
         chain: null,
@@ -189,6 +189,9 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
         data: call.data,
         gas: 8_000_000n,
       });
+      // The outer hash exists before receipt waiting can fail. Expose it at that
+      // exact boundary so operation owners retain evidence and observe only.
+      onTransactionHash(hash);
       const receipt = await chain.client.waitForTransactionReceipt({ hash });
       return {
         status: receipt.status,
