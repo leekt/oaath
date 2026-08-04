@@ -1,2 +1,6 @@
 packages:
   - "packages/*"
+  # One private examples package. It publishes nothing and is never a dependency
+  # of a published package; it exists so the runnable examples resolve the same
+  # public `@oaath/*` entries an adopter installs.
+  - "examples"

@@ -31,6 +31,7 @@
     "smoke:server": "node scripts/smoke-packed-server.mjs",
     "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs",
     "smoke": "pnpm smoke:browser && pnpm smoke:server && pnpm smoke:all-chain",
+    "examples:check": "node examples/check.mjs",
     "changeset": "changeset",
     "release:status": "changeset status",
     "release:version": "changeset version",
