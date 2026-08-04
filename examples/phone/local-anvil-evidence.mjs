@@ -1,99 +1,54 @@
-import {
-  type CaptureContext,
-  captureDenseArray,
-  captureRecord,
-  type ExactRecord,
-  exactRecord,
-} from "@oaath/protocol";
+/*
+ * Strict evidence capture for the repository-owned Anvil demo only. This code
+ * checks the owned local transport and chain views; it is not Byzantine RPC
+ * verification and is deliberately not part of the public SDK surface.
+ *
+ * @author taek <leekt216@gmail.com>
+ */
+import { captureDenseArray, captureRecord, exactRecord } from "@oaath/protocol";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const HEX_DATA = /^0x(?:[0-9a-f]{2})*$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
+const USER_OPERATION_EVENT = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
 
-export type CanonicalTransactionInclusionErrorScope = "transaction" | "event" | "canonical_block";
-
-export class OaathCanonicalTransactionInclusionError extends Error {
-  readonly scope: CanonicalTransactionInclusionErrorScope;
-
-  constructor(scope: CanonicalTransactionInclusionErrorScope) {
-    super("canonical_transaction_inclusion_unproven");
-    this.name = "OaathCanonicalTransactionInclusionError";
+export class OwnedLocalTransactionInclusionError extends Error {
+  constructor(scope) {
+    super("owned_local_transaction_inclusion_invalid");
+    this.name = "OwnedLocalTransactionInclusionError";
     this.scope = scope;
   }
 }
 
-export interface CanonicalTransactionLogEvidence {
-  readonly address: `0x${string}`;
-  readonly blockNumber: `0x${string}`;
-  readonly blockHash: `0x${string}`;
-  readonly transactionHash: `0x${string}`;
-  readonly transactionIndex: `0x${string}`;
-  readonly logIndex: `0x${string}`;
-  readonly removed: boolean;
-  readonly topics: readonly `0x${string}`[];
-  readonly data: `0x${string}`;
-}
+const fail = (scope) => {
+  throw new OwnedLocalTransactionInclusionError(scope);
+};
 
-export interface CanonicalTransactionInclusionEvidence {
-  readonly transactionHash: `0x${string}`;
-  readonly blockNumber: `0x${string}`;
-  readonly blockHash: `0x${string}`;
-  readonly transactionIndex: `0x${string}`;
-  readonly eventLog: CanonicalTransactionLogEvidence;
-  readonly canonicalBlock: Readonly<{
-    number: `0x${string}`;
-    hash: `0x${string}`;
-    parentHash: `0x${string}`;
-    transactions: readonly `0x${string}`[];
-  }>;
-}
-
-function fail(scope: CanonicalTransactionInclusionErrorScope): never {
-  throw new OaathCanonicalTransactionInclusionError(scope);
-}
-
-function required(
-  record: ExactRecord,
-  key: string,
-  scope: CanonicalTransactionInclusionErrorScope,
-): unknown {
+const required = (record, key, scope) => {
   if (!Object.hasOwn(record, key)) return fail(scope);
   return record[key];
-}
+};
 
-function hash(value: unknown, scope: CanonicalTransactionInclusionErrorScope): `0x${string}` {
+const hash = (value, scope) => {
   if (typeof value !== "string" || !HASH.test(value)) return fail(scope);
-  return value as `0x${string}`;
-}
+  return value;
+};
 
-function address(value: unknown): `0x${string}` {
+const address = (value) => {
   if (typeof value !== "string" || !ADDRESS.test(value)) return fail("transaction");
-  return value as `0x${string}`;
-}
+  return value;
+};
 
-function quantity(
-  value: unknown,
-  scope: CanonicalTransactionInclusionErrorScope,
-): { canonical: `0x${string}`; value: bigint } {
+const quantity = (value, scope) => {
   if (typeof value !== "string" || !QUANTITY.test(value)) return fail(scope);
-  return { canonical: value as `0x${string}`, value: BigInt(value) };
-}
+  return { canonical: value, value: BigInt(value) };
+};
 
-function record(
-  value: unknown,
-  label: string,
-  context: CaptureContext,
-  scope: CanonicalTransactionInclusionErrorScope,
-): ExactRecord {
-  return captureRecord(value, label, context, () => fail(scope));
-}
+const record = (value, label, context, scope) =>
+  captureRecord(value, label, context, () => fail(scope));
 
-function logEvidence(
-  value: unknown,
-  context: CaptureContext,
-): CanonicalTransactionLogEvidence &
-  Readonly<{ transactionIndexValue: bigint; logIndexValue: bigint }> {
+function logEvidence(value, context) {
   const captured = record(value, "transaction log", context, "event");
   const topics = captureDenseArray(
     required(captured, "topics", "event"),
@@ -116,30 +71,21 @@ function logEvidence(
   const logAddress = required(captured, "address", "event");
   if (typeof logAddress !== "string" || !ADDRESS.test(logAddress)) return fail("event");
   return Object.freeze({
-    address: logAddress as `0x${string}`,
+    address: logAddress,
     blockNumber: quantity(required(captured, "blockNumber", "event"), "event").canonical,
     blockHash: hash(required(captured, "blockHash", "event"), "event"),
     transactionHash: hash(required(captured, "transactionHash", "event"), "event"),
     transactionIndex: transactionIndex.canonical,
-    transactionIndexValue: transactionIndex.value,
     logIndex: logIndex.canonical,
-    logIndexValue: logIndex.value,
     removed,
     topics: Object.freeze(topics),
-    data: data as `0x${string}`,
+    data,
   });
 }
 
-/**
- * Strictly captures and proves one transaction's canonical block membership
- * together with the exact matching EntryPoint event. RPC records may contain
- * unrelated standard fields, but every consumed field must be an enumerable
- * own data property with a canonical wire shape.
- */
-export function validateCanonicalTransactionInclusion(
-  value: unknown,
-): CanonicalTransactionInclusionEvidence {
-  const context: CaptureContext = new WeakSet();
+/** Strictly captures one transaction and EntryPoint event from owned Anvil. */
+export function validateOwnedLocalTransactionInclusion(value) {
+  const context = new WeakSet();
   const input = exactRecord(
     value,
     [
@@ -150,7 +96,7 @@ export function validateCanonicalTransactionInclusion(
       "transaction",
       "canonicalBlock",
     ],
-    "canonical transaction inclusion input",
+    "owned local transaction inclusion input",
     context,
     () => fail("transaction"),
   );
@@ -196,7 +142,7 @@ export function validateCanonicalTransactionInclusion(
     context,
     () => fail("event"),
   ).map((log) => logEvidence(log, context));
-  const logIndexes = new Set<string>();
+  const logIndexes = new Set();
   for (const log of logs) {
     if (
       log.transactionHash !== transactionHash ||
@@ -211,7 +157,7 @@ export function validateCanonicalTransactionInclusion(
   const candidates = logs.filter(
     (log) =>
       log.address === entryPoint &&
-      log.topics[0] === "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" &&
+      log.topics[0] === USER_OPERATION_EVENT &&
       log.topics[1] === userOperationHash,
   );
   if (candidates.length !== 1) return fail("event");
@@ -243,23 +189,12 @@ export function validateCanonicalTransactionInclusion(
   )
     return fail("canonical_block");
 
-  const capturedEventLog: CanonicalTransactionLogEvidence = Object.freeze({
-    address: eventLog.address,
-    blockNumber: eventLog.blockNumber,
-    blockHash: eventLog.blockHash,
-    transactionHash: eventLog.transactionHash,
-    transactionIndex: eventLog.transactionIndex,
-    logIndex: eventLog.logIndex,
-    removed: eventLog.removed,
-    topics: eventLog.topics,
-    data: eventLog.data,
-  });
   return Object.freeze({
     transactionHash,
     blockNumber,
     blockHash,
     transactionIndex: transactionIndex.canonical,
-    eventLog: capturedEventLog,
+    eventLog: Object.freeze({ ...eventLog }),
     canonicalBlock: Object.freeze({
       number: canonicalNumber,
       hash: canonicalHash,
@@ -269,17 +204,27 @@ export function validateCanonicalTransactionInclusion(
   });
 }
 
-/** Rejects contradictory by-hash/number views of the same inclusion block. */
-export function requireSameCanonicalTransactionInclusion(
-  first: CanonicalTransactionInclusionEvidence,
-  rebound: CanonicalTransactionInclusionEvidence,
-): void {
+/** Every immutable captured field must survive the owned local number rebound. */
+export function requireSameOwnedLocalTransactionInclusion(first, rebound) {
+  const leftLog = first.eventLog;
+  const rightLog = rebound.eventLog;
   if (
     first.transactionHash !== rebound.transactionHash ||
     first.blockNumber !== rebound.blockNumber ||
     first.blockHash !== rebound.blockHash ||
     first.transactionIndex !== rebound.transactionIndex ||
-    first.eventLog.logIndex !== rebound.eventLog.logIndex ||
+    leftLog.address !== rightLog.address ||
+    leftLog.blockNumber !== rightLog.blockNumber ||
+    leftLog.blockHash !== rightLog.blockHash ||
+    leftLog.transactionHash !== rightLog.transactionHash ||
+    leftLog.transactionIndex !== rightLog.transactionIndex ||
+    leftLog.logIndex !== rightLog.logIndex ||
+    leftLog.removed !== rightLog.removed ||
+    leftLog.data !== rightLog.data ||
+    leftLog.topics.length !== rightLog.topics.length ||
+    leftLog.topics.some((topic, index) => topic !== rightLog.topics[index]) ||
+    first.canonicalBlock.number !== rebound.canonicalBlock.number ||
+    first.canonicalBlock.hash !== rebound.canonicalBlock.hash ||
     first.canonicalBlock.parentHash !== rebound.canonicalBlock.parentHash ||
     first.canonicalBlock.transactions.length !== rebound.canonicalBlock.transactions.length ||
     first.canonicalBlock.transactions.some(
@@ -287,4 +232,66 @@ export function requireSameCanonicalTransactionInclusion(
     )
   )
     fail("canonical_block");
+}
+
+const blockReference = (value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("owned_local_finality_invalid");
+  if (
+    Object.keys(value).sort().join(",") !== "hash,number,parentHash" ||
+    typeof value.number !== "string" ||
+    !QUANTITY.test(value.number) ||
+    typeof value.hash !== "string" ||
+    !HASH.test(value.hash) ||
+    typeof value.parentHash !== "string" ||
+    !HASH.test(value.parentHash)
+  )
+    throw new Error("owned_local_finality_invalid");
+  return Object.freeze({ number: value.number, hash: value.hash, parentHash: value.parentHash });
+};
+
+/** Bounded ancestry and endpoint rebound over repository-owned Anvil. */
+export async function verifyOwnedLocalFinalizedBlockAncestry(input) {
+  if (
+    !Number.isSafeInteger(input.maxDepth) ||
+    input.maxDepth < 0 ||
+    typeof input.readParent !== "function" ||
+    typeof input.readCanonical !== "function"
+  )
+    throw new Error("owned_local_finality_invalid");
+  const finalized = blockReference(input.finalized);
+  const inclusion = blockReference({
+    number: input.inclusion.number,
+    hash: input.inclusion.hash,
+    parentHash: `0x${"00".repeat(32)}`,
+  });
+  const finalizedNumber = BigInt(finalized.number);
+  const inclusionNumber = BigInt(inclusion.number);
+  if (finalizedNumber < inclusionNumber || finalizedNumber - inclusionNumber > input.maxDepth)
+    throw new Error("owned_local_finality_invalid");
+
+  let descendant = finalized;
+  let descendantNumber = finalizedNumber;
+  while (descendantNumber > inclusionNumber) {
+    const parent = blockReference(await input.readParent(descendant.parentHash));
+    const parentNumber = BigInt(parent.number);
+    if (parent.hash !== descendant.parentHash || parentNumber + 1n !== descendantNumber)
+      throw new Error("owned_local_finality_invalid");
+    descendant = parent;
+    descendantNumber = parentNumber;
+  }
+  if (descendant.hash !== inclusion.hash) throw new Error("owned_local_finality_invalid");
+
+  const [reboundFinalized, reboundInclusion] = await Promise.all([
+    input.readCanonical(finalizedNumber.toString(10)).then(blockReference),
+    input.readCanonical(inclusionNumber.toString(10)).then(blockReference),
+  ]);
+  if (
+    reboundFinalized.number !== finalized.number ||
+    reboundFinalized.hash !== finalized.hash ||
+    reboundInclusion.number !== inclusion.number ||
+    reboundInclusion.hash !== inclusion.hash
+  )
+    throw new Error("owned_local_finality_invalid");
+  return finalized;
 }

@@ -34,7 +34,9 @@ public func parsePairingLink(_ text: String) -> PairingLink? {
     }
     var relay: String?
     var code: String?
+    var seenNames = Set<String>()
     for item in components.queryItems ?? [] {
+        guard seenNames.insert(item.name).inserted else { return nil }
         switch item.name {
         case "relay": relay = item.value
         case "code": code = item.value

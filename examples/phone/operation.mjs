@@ -6,31 +6,26 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import {
-  OaathCanonicalTransactionInclusionError,
-  requireSameCanonicalTransactionInclusion,
-  validateCanonicalTransactionInclusion,
-  verifyFinalizedBlockAncestry,
-} from "@oaath/sdk";
 import { decodeEventLog } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
+import {
+  OwnedLocalTransactionInclusionError,
+  requireSameOwnedLocalTransactionInclusion,
+  validateOwnedLocalTransactionInclusion,
+  verifyOwnedLocalFinalizedBlockAncestry,
+} from "./local-anvil-evidence.mjs";
 
-export const LIVE_FINALITY_MAX_ANCESTRY_DEPTH = 8;
-export const LIVE_RPC_MAX_REQUESTS = 81;
+export const LOCAL_FINALITY_MAX_ANCESTRY_DEPTH = 8;
+export const LIVE_RPC_MAX_REQUESTS = 26;
 export const LIVE_TRANSPORT_CONFIG = Object.freeze({ retryCount: 0 });
 export const LIVE_RECEIPT_POLL_ATTEMPTS = 4;
 export const LIVE_RECEIPT_POLL_INTERVAL_MS = 1_000;
 export const DOCUMENTED_LIVE_FLOW_REQUESTS =
-  12 + // owner/session binding misses with immutable evidence cached
-  3 + // nonce reads, including the first enable attempt
-  3 + // sponsorship
-  3 + // submission
-  3 *
-    (LIVE_RECEIPT_POLL_ATTEMPTS +
-      2 + // transaction + receipt
-      1 + // finalized head
-      LIVE_FINALITY_MAX_ANCESTRY_DEPTH + // bounded parent-hash walk
-      2); // canonical rebounds of finalized and inclusion blocks
+  10 + // owner/session binding misses with immutable evidence cached
+  1 + // one fresh EntryPoint nonce read
+  1 + // one sponsorship
+  1 + // one submission
+  LIVE_RECEIPT_POLL_ATTEMPTS; // bounded same-hash transaction discovery only
 
 /** Caches only immutable successful Kernel binding evidence. */
 export function cacheImmutableKernelReads(reads) {
@@ -332,11 +327,15 @@ const requireQuantity = (value, code) => {
 };
 
 /**
- * Validates the authoritative EntryPoint event, its transaction, canonical
- * inclusion block, and the node's finalized head. No outer status or bundler
- * success flag is treated as UserOperation evidence.
+ * Strictly validates repository-owned local Anvil evidence. This is the
+ * complete demo proof path, not Byzantine RPC verification, and must never be
+ * used by the live ZeroDev observer.
  */
-export async function validateFinalizedUserOperation({ operation, transactionHash, rpc }) {
+export async function validateOwnedLocalFinalizedUserOperation({
+  operation,
+  transactionHash,
+  rpc,
+}) {
   const prepared = operation.prepared;
   const userOperationHash = requireHash(prepared.userOperationHash, "operation_evidence_invalid");
   const account = lower(prepared.userOperation.sender);
@@ -388,7 +387,7 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
   let reboundMembership = null;
   const membership = (canonicalBlock) => {
     try {
-      return validateCanonicalTransactionInclusion({
+      return validateOwnedLocalTransactionInclusion({
         entryPoint,
         userOperationHash,
         transactionHash: txHash,
@@ -397,7 +396,7 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
         canonicalBlock,
       });
     } catch (error) {
-      if (error instanceof OaathCanonicalTransactionInclusionError) {
+      if (error instanceof OwnedLocalTransactionInclusionError) {
         if (error.scope === "event") throw new Error("operation_event_evidence_invalid");
         if (error.scope === "transaction")
           throw new Error("operation_transaction_evidence_invalid");
@@ -407,10 +406,10 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
   };
   try {
     const finalizedValue = await rpc("eth_getBlockByNumber", ["finalized", false]);
-    finalized = await verifyFinalizedBlockAncestry({
+    finalized = await verifyOwnedLocalFinalizedBlockAncestry({
       finalized: reference(finalizedValue),
       inclusion: { number: `0x${blockNumber.toString(16)}`, hash: blockHash },
-      maxDepth: LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
+      maxDepth: LOCAL_FINALITY_MAX_ANCESTRY_DEPTH,
       readParent: async (parentHash) => {
         const parent = await rpc("eth_getBlockByHash", [parentHash, false]);
         if (parentHash !== blockHash) return reference(parent);
@@ -425,7 +424,7 @@ export async function validateFinalizedUserOperation({ operation, transactionHas
         if (BigInt(number) === blockNumber) {
           reboundMembership = membership(canonical);
           if (byHashMembership !== null)
-            requireSameCanonicalTransactionInclusion(byHashMembership, reboundMembership);
+            requireSameOwnedLocalTransactionInclusion(byHashMembership, reboundMembership);
           return reference(reboundMembership.canonicalBlock);
         }
         return reference(canonical);
@@ -516,6 +515,7 @@ const unresolvedResult = (operation) =>
     status: "unresolved",
     operationId: operation.operationId,
     userOperationHash: operation.prepared.userOperationHash,
+    ...(operation.unresolvedCode ? { code: operation.unresolvedCode } : {}),
     ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
   });
 
@@ -593,25 +593,38 @@ export function createStackOperationObserver(stack) {
 }
 
 /**
- * Production live observer. Transaction identity is captured before any RPC
- * that validates the transaction, event, blocks, ancestry, or finality.
+ * Live ZeroDev observer. Ordinary provider receipts can only reveal and retain
+ * a transaction hash. Without an authenticated finalized header plus receipt
+ * proof source, every provider view remains unresolved and cannot terminalize.
  */
 export function createLiveUserOperationObserver({ rpc, sleep = setTimeout }) {
   return async (operation, captureTransactionHash) => {
+    operation.unresolvedCode = "receipt_proof_unavailable";
     for (let attempt = 0; attempt < LIVE_RECEIPT_POLL_ATTEMPTS; attempt += 1) {
       const observed = await rpc("eth_getUserOperationReceipt", [
         operation.prepared.userOperationHash,
       ]);
       if (observed !== null) {
-        const transactionHash = canonicalTransactionHash(observed?.receipt?.transactionHash);
-        captureTransactionHash(transactionHash);
-        return validateFinalizedUserOperation({ operation, transactionHash, rpc });
+        captureTransactionHash(canonicalTransactionHash(observed?.receipt?.transactionHash));
+        return null;
       }
       if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
         await new Promise((resolve) => sleep(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
     }
     return null;
   };
+}
+
+/** Structured refusal for a second live session operation after unproved enablement. */
+export function sessionPreparationRefusal({ live, permissionMaterialized, activeOperation }) {
+  if (
+    live &&
+    !permissionMaterialized &&
+    activeOperation?.installsPermission === true &&
+    (activeOperation.status === "submitted" || activeOperation.status === "unresolved")
+  )
+    return "permission_unproved";
+  return activeOperation ? "operation_lane_occupied" : null;
 }
 
 /**

@@ -4,6 +4,10 @@ import test from "node:test";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import {
+  requireSameOwnedLocalTransactionInclusion,
+  validateOwnedLocalTransactionInclusion,
+} from "./local-anvil-evidence.mjs";
+import {
   AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
@@ -14,20 +18,21 @@ import {
   createLiveUserOperationObserver,
   createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
-  LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RECEIPT_POLL_ATTEMPTS,
   LIVE_RPC_MAX_REQUESTS,
   LIVE_TRANSPORT_CONFIG,
   LiveRequestBudget,
+  LOCAL_FINALITY_MAX_ANCESTRY_DEPTH,
   OneShotPairing,
   OperationLane,
   observeOnce,
   operationAction,
   pairingSecretMayRender,
   permissionMaterializedAfter,
+  sessionPreparationRefusal,
   submitOnce,
   validateBundlerAcceptance,
-  validateFinalizedUserOperation,
+  validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
 } from "./operation.mjs";
 
@@ -44,8 +49,8 @@ const validSponsorship = Object.freeze({
 test("instruments the exact worst-case live RPC call graph under one hard budget", () => {
   const budget = new LiveRequestBudget();
   const call = (method) => budget.take(method);
-  // Actual cache misses across owner bind, session bind, then the one deployed
-  // state refresh: immutable successful evidence is reused, account state is not.
+  // Actual cache misses across owner and session binding before the single
+  // submission. Unproved live evidence never permits a deployed-state refresh.
   for (const method of [
     "eth_getCode", // owner authority (also its initial module)
     "eth_chainId",
@@ -57,44 +62,29 @@ test("instruments the exact worst-case live RPC call graph under one hard budget
     "eth_getCode", // counterfactual account (not cached)
     "eth_getCode", // session signer
     "eth_getCode", // counterfactual account on session bind
-    "eth_getCode", // deployed account refresh
-    "eth_getStorageAt", // deployed implementation binding
   ])
     call(method);
-  for (let operation = 0; operation < 3; operation += 1) {
-    call("eth_call"); // EntryPoint getNonce, including enable mode.
-    call("zd_sponsorUserOperation");
-    call("eth_sendUserOperation");
-    for (let poll = 0; poll < LIVE_RECEIPT_POLL_ATTEMPTS; poll += 1)
-      call("eth_getUserOperationReceipt");
-    call("eth_getTransactionReceipt");
-    call("eth_getTransactionByHash");
-    call("eth_getBlockByNumber:finalized");
-    for (let depth = 0; depth < LIVE_FINALITY_MAX_ANCESTRY_DEPTH; depth += 1)
-      call("eth_getBlockByHash:parent");
-    call("eth_getBlockByNumber:rebound-finalized");
-    call("eth_getBlockByNumber:rebound-inclusion");
-  }
+  call("eth_call"); // one fresh EntryPoint nonce read
+  call("zd_sponsorUserOperation");
+  call("eth_sendUserOperation");
+  for (let poll = 0; poll < LIVE_RECEIPT_POLL_ATTEMPTS; poll += 1)
+    call("eth_getUserOperationReceipt");
   assert.equal(budget.snapshot().count, DOCUMENTED_LIVE_FLOW_REQUESTS);
-  assert.equal(DOCUMENTED_LIVE_FLOW_REQUESTS, 72);
+  assert.equal(DOCUMENTED_LIVE_FLOW_REQUESTS, 17);
+  assert.equal(LOCAL_FINALITY_MAX_ANCESTRY_DEPTH, 8);
   while (budget.snapshot().count < LIVE_RPC_MAX_REQUESTS) call("headroom");
   assert.throws(() => call("one-too-many"), {
     message: "zerodev_request_budget_exhausted",
   });
-  assert.equal(budget.snapshot().count, 81);
+  assert.equal(budget.snapshot().count, 26);
 });
 
 test("README documents the exported live budget without drift", () => {
   const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
   assert.match(
     readme,
-    new RegExp(`up to \\*\\*${LIVE_FINALITY_MAX_ANCESTRY_DEPTH}\\*\\* ancestry\\s+parent reads`),
-  );
-  assert.match(readme, /\*\*2\*\* canonical endpoint rebounds per operation/u);
-  assert.match(
-    readme,
     new RegExp(
-      `three-operation sponsored sequence\\s+is \\*\\*${DOCUMENTED_LIVE_FLOW_REQUESTS}\\*\\* requests`,
+      `single-submission live sequence\\s+is \\*\\*${DOCUMENTED_LIVE_FLOW_REQUESTS}\\*\\* requests`,
     ),
   );
   assert.match(readme, new RegExp(`hard cap of \\*\\*${LIVE_RPC_MAX_REQUESTS}\\*\\*`));
@@ -104,10 +94,10 @@ test("README documents the exported live budget without drift", () => {
       `\\*\\*${LIVE_RPC_MAX_REQUESTS - DOCUMENTED_LIVE_FLOW_REQUESTS}\\*\\* requests of headroom`,
     ),
   );
-  assert.match(readme, /at most \*\*four\*\* receipt\s+polls/u);
+  assert.match(readme, /At most \*\*four\*\* one-second-spaced transaction-discovery/u);
   assert.match(readme, /\*\*10 second\*\* timeout/u);
   assert.match(readme, /`retryCount: 0`/u);
-  assert.match(readme, /no retry and no hidden fallback/u);
+  assert.match(readme, /no retry\s+and no\s+hidden fallback/u);
 });
 
 test("binding cache reuses immutable success but refreshes account state", async () => {
@@ -560,36 +550,41 @@ test("discovered transaction hash survives later provider failure and conflicts 
   assert.equal(Object.getOwnPropertyDescriptor(operation, "transactionHash").writable, false);
 });
 
-test("production stack adapter retains discovered evidence across downstream failure and retry", async () => {
+test("coherent forged live views remain proof-unavailable and retry never resubmits", async () => {
   const userOperationHash = `0x${"53".repeat(32)}`;
   const transactionHash = `0x${"54".repeat(32)}`;
-  const conflictingHash = `0x${"55".repeat(32)}`;
   const operation = {
-    operationId: "live-observer-failure",
+    operationId: "live-forged-view",
     chainId: 421_614,
     status: "prepared",
+    installsPermission: true,
     prepared: {
       userOperationHash,
       userOperation: { sender: `0x${"56".repeat(20)}` },
       entryPoint: { address: `0x${"57".repeat(20)}` },
     },
   };
+  let claimedSuccess = true;
   const calls = [];
-  let receiptReads = 0;
   const rpc = async (method, params) => {
     calls.push([method, params]);
-    if (method === "eth_getUserOperationReceipt") {
-      receiptReads += 1;
-      return {
-        receipt: { transactionHash: receiptReads < 3 ? transactionHash : conflictingHash },
-      };
-    }
-    if (method === "eth_getTransactionReceipt") throw new Error("paid_rpc_failed");
-    if (method === "eth_getTransactionByHash") return null;
-    assert.fail(`unexpected RPC method ${method}`);
+    assert.equal(method, "eth_getUserOperationReceipt");
+    return {
+      userOpHash: userOperationHash,
+      success: claimedSuccess,
+      receipt: {
+        transactionHash,
+        status: claimedSuccess ? "0x1" : "0x0",
+        blockHash: `0x${"58".repeat(32)}`,
+        blockNumber: "0x7",
+        logs: [{ claimedFinalizedEvent: true }],
+      },
+      finalizedBlock: { number: "0x8", hash: `0x${"59".repeat(32)}` },
+    };
   };
-  const stack = { observe: createLiveUserOperationObserver({ rpc }) };
-  const observe = createStackOperationObserver(stack);
+  const observe = createStackOperationObserver({
+    observe: createLiveUserOperationObserver({ rpc }),
+  });
   await assert.rejects(observe(operation), { message: "operation_capture_callback_required" });
   let sends = 0;
   const first = await submitOnce({
@@ -600,38 +595,72 @@ test("production stack adapter retains discovered evidence across downstream fai
       return { userOperationHash };
     },
     observe,
-    terminalize: () => assert.fail("failed downstream evidence cannot terminalize"),
+    terminalize: () => assert.fail("ordinary live receipt data cannot terminalize"),
   });
   assert.deepEqual(first, {
     status: "unresolved",
     operationId: operation.operationId,
     userOperationHash,
+    code: "receipt_proof_unavailable",
     transactionHash,
   });
   assert.equal(operation.transactionHash, transactionHash);
+  assert.equal(
+    permissionMaterializedAfter({ current: false, installsPermission: true, status: first.status }),
+    false,
+  );
 
+  claimedSuccess = false;
   const retried = await observeOnce({
     operation,
     observe,
-    terminalize: () => assert.fail("failed retry cannot terminalize"),
+    terminalize: () => assert.fail("flipped provider success cannot terminalize"),
   });
   assert.deepEqual(retried, first);
   assert.equal(sends, 1, "observation retry must send zero additional user operations");
-  assert.ok(
-    calls.some(
-      ([method, params]) => method === "eth_getTransactionReceipt" && params[0] === transactionHash,
-    ),
-    "retry must validate the retained transaction identity",
+  assert.deepEqual(
+    calls.map(([method]) => method),
+    ["eth_getUserOperationReceipt", "eth_getUserOperationReceipt"],
   );
+  assert.equal(
+    sessionPreparationRefusal({
+      live: true,
+      permissionMaterialized: false,
+      activeOperation: operation,
+    }),
+    "permission_unproved",
+  );
+});
 
-  const conflicting = await observeOnce({
-    operation,
-    observe,
-    terminalize: () => assert.fail("conflicting transaction cannot terminalize"),
-  });
-  assert.deepEqual(conflicting, first);
-  assert.equal(operation.transactionHash, transactionHash);
-  assert.equal(sends, 1);
+test("missing and unreadable live provider views share the proof-unavailable class", async () => {
+  for (const providerView of ["missing", "unreadable"]) {
+    const userOperationHash = `0x${(providerView === "missing" ? "5c" : "5d").repeat(32)}`;
+    const operation = {
+      operationId: `live-${providerView}`,
+      status: "prepared",
+      prepared: { userOperationHash },
+    };
+    let reads = 0;
+    const observe = createLiveUserOperationObserver({
+      rpc: async () => {
+        reads += 1;
+        if (providerView === "unreadable") throw new Error("private_provider_failure");
+        return null;
+      },
+      sleep: (resolve) => resolve(),
+    });
+    const result = await submitOnce({
+      operation,
+      signature: "0xsigned",
+      send: async () => ({ userOperationHash }),
+      observe,
+      terminalize: () => assert.fail("missing/unreadable live provider cannot terminalize"),
+    });
+    assert.equal(result.status, "unresolved");
+    assert.equal(result.code, "receipt_proof_unavailable");
+    assert.equal(operation.transactionHash, undefined);
+    assert.equal(reads, providerView === "missing" ? LIVE_RECEIPT_POLL_ATTEMPTS : 1);
+  }
 });
 
 test("stale production observer cannot capture discovered transaction evidence", async () => {
@@ -671,6 +700,7 @@ test("stale production observer cannot capture discovered transaction evidence",
     status: "unresolved",
     operationId: operation.operationId,
     userOperationHash: operation.prepared.userOperationHash,
+    code: "receipt_proof_unavailable",
   });
   assert.equal(operation.transactionHash, undefined);
   assert.deepEqual(methods, ["eth_getUserOperationReceipt"]);
@@ -753,12 +783,58 @@ const operationEvidence = ({ success = true, eventCount = 1, mutateLog, mutateRp
     if (mutateRpc) value = mutateRpc(method, params, structuredClone(value));
     return value;
   };
-  return { operation, transactionHash, rpc, baseLog };
+  return {
+    operation,
+    transactionHash,
+    rpc,
+    baseLog,
+    localInclusionInput: {
+      entryPoint,
+      userOperationHash,
+      transactionHash,
+      transactionReceipt: receipt,
+      transaction,
+      canonicalBlock: inclusion,
+    },
+  };
 };
 
-test("only a parent-linked and canonically rebound finalized event authorizes inclusion", async () => {
+test("local inclusion rebound compares every immutable event field", () => {
+  const captured = validateOwnedLocalTransactionInclusion(operationEvidence().localInclusionInput);
+  const changedHash = `0x${"6a".repeat(32)}`;
+  const changedAddress = `0x${"6b".repeat(20)}`;
+  const mutations = [
+    ["address", (log) => ({ ...log, address: changedAddress })],
+    ["blockNumber", (log) => ({ ...log, blockNumber: "0x8" })],
+    ["blockHash", (log) => ({ ...log, blockHash: changedHash })],
+    ["transactionHash", (log) => ({ ...log, transactionHash: changedHash })],
+    ["transactionIndex", (log) => ({ ...log, transactionIndex: "0x1" })],
+    ["logIndex", (log) => ({ ...log, logIndex: "0x1" })],
+    ["removed", (log) => ({ ...log, removed: true })],
+    ["data", (log) => ({ ...log, data: `${log.data.slice(0, -2)}00` })],
+    ["topics length", (log) => ({ ...log, topics: log.topics.slice(0, -1) })],
+    [
+      "topics order",
+      (log) => ({ ...log, topics: [log.topics[0], log.topics[1], log.topics[3], log.topics[2]] }),
+    ],
+    ["topics content", (log) => ({ ...log, topics: [changedHash, ...log.topics.slice(1)] })],
+  ];
+  for (const [field, mutate] of mutations) {
+    const rebound = structuredClone(captured);
+    rebound.eventLog = mutate(rebound.eventLog);
+    assert.throws(
+      () => requireSameOwnedLocalTransactionInclusion(captured, rebound),
+      {
+        message: "owned_local_transaction_inclusion_invalid",
+      },
+      field,
+    );
+  }
+});
+
+test("only repository-owned local Anvil evidence authorizes inclusion", async () => {
   const fixture = operationEvidence();
-  const evidence = await validateFinalizedUserOperation(fixture);
+  const evidence = await validateOwnedLocalFinalizedUserOperation(fixture);
   assert.equal(evidence.status, "included");
   assert.equal(evidence.userOperationHash, fixture.operation.prepared.userOperationHash);
   assert.equal(evidence.finalizedBlockNumber, "0x8");
@@ -766,7 +842,7 @@ test("only a parent-linked and canonically rebound finalized event authorizes in
 
 test("unrelated finalized heads and endpoint reorgs remain unresolved", async () => {
   await assert.rejects(
-    validateFinalizedUserOperation(
+    validateOwnedLocalFinalizedUserOperation(
       operationEvidence({
         mutateRpc(method, params, value) {
           if (method === "eth_getBlockByNumber" && params[0] === "finalized")
@@ -779,7 +855,7 @@ test("unrelated finalized heads and endpoint reorgs remain unresolved", async ()
     { message: "operation_finality_evidence_invalid" },
   );
   await assert.rejects(
-    validateFinalizedUserOperation(
+    validateOwnedLocalFinalizedUserOperation(
       operationEvidence({
         mutateRpc(method, params, value) {
           if (method === "eth_getBlockByNumber" && params[0] === "0x7")
@@ -802,7 +878,7 @@ test("canonical transaction membership rejects absent, duplicate, and ambiguous 
     [{ hash: operationEvidence().transactionHash }],
   ])
     await assert.rejects(
-      validateFinalizedUserOperation(
+      validateOwnedLocalFinalizedUserOperation(
         operationEvidence({
           mutateRpc(method, params, value) {
             const inclusionBlock =
@@ -859,7 +935,7 @@ test("transaction, receipt, and event indexes must be present, equal, canonical,
   ];
   for (const mutate of cases)
     await assert.rejects(
-      validateFinalizedUserOperation(
+      validateOwnedLocalFinalizedUserOperation(
         operationEvidence({
           mutateRpc(method, _params, value) {
             return mutate(method, value);
@@ -872,7 +948,7 @@ test("transaction, receipt, and event indexes must be present, equal, canonical,
 
 test("canonical inclusion block changes on number rebound remain unresolved", async () => {
   await assert.rejects(
-    validateFinalizedUserOperation(
+    validateOwnedLocalFinalizedUserOperation(
       operationEvidence({
         mutateRpc(method, params, value) {
           return method === "eth_getBlockByNumber" && params[0] === "0x7"
@@ -887,16 +963,19 @@ test("canonical inclusion block changes on number rebound remain unresolved", as
 
 test("missing, duplicate, and contradictory EntryPoint events remain unresolved", async () => {
   for (const eventCount of [0, 2])
-    await assert.rejects(validateFinalizedUserOperation(operationEvidence({ eventCount })), {
-      message: "operation_event_evidence_invalid",
-    });
+    await assert.rejects(
+      validateOwnedLocalFinalizedUserOperation(operationEvidence({ eventCount })),
+      {
+        message: "operation_event_evidence_invalid",
+      },
+    );
   const fixture = operationEvidence();
   const contradictory = {
     ...fixture.baseLog,
     data: fixture.baseLog.data.replace(/01$/u, "00"),
   };
   await assert.rejects(
-    validateFinalizedUserOperation(
+    validateOwnedLocalFinalizedUserOperation(
       operationEvidence({
         mutateRpc(method, _params, value) {
           return method === "eth_getTransactionReceipt"
@@ -919,13 +998,18 @@ test("hostile noncanonical EntryPoint topic/data/quantity shapes fail closed", a
     (log) => ({ ...log, data: `${log.data.slice(0, -2)}0A` }),
   ];
   for (const mutateLog of mutations)
-    await assert.rejects(validateFinalizedUserOperation(operationEvidence({ mutateLog })), {
-      message: "operation_event_evidence_invalid",
-    });
+    await assert.rejects(
+      validateOwnedLocalFinalizedUserOperation(operationEvidence({ mutateLog })),
+      {
+        message: "operation_event_evidence_invalid",
+      },
+    );
 });
 
 test("EntryPoint success=false is terminal reverted despite successful outer transaction", async () => {
-  const evidence = await validateFinalizedUserOperation(operationEvidence({ success: false }));
+  const evidence = await validateOwnedLocalFinalizedUserOperation(
+    operationEvidence({ success: false }),
+  );
   assert.equal(evidence.status, "reverted");
 });
 

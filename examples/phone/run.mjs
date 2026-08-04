@@ -49,17 +49,18 @@ import {
   createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   exactKeys,
-  LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RPC_MAX_REQUESTS,
   LIVE_TRANSPORT_CONFIG,
   LiveRequestBudget,
+  LOCAL_FINALITY_MAX_ANCESTRY_DEPTH,
   OneShotPairing,
   OperationLane,
   observeOnce,
   pairingSecretMayRender,
   permissionMaterializedAfter,
+  sessionPreparationRefusal,
   submitOnce,
-  validateFinalizedUserOperation,
+  validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
 } from "./operation.mjs";
 
@@ -146,11 +147,11 @@ let stack = null;
 let stackObserver = null;
 let simulatedOwnerSecret = null;
 const target = `0x${"71".repeat(20)}`;
-// Immutable successful binding reads are cached; account state is refreshed
-// once after deployment. The 72-request worst case includes three complete
-// eight-parent finality walks and leaves nine requests of hard headroom.
-expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 72, "live request model drifted");
-expect(LIVE_FINALITY_MAX_ANCESTRY_DEPTH === 8, "live ancestry budget drifted");
+// Immutable successful binding reads are cached. Live can submit only one
+// operation because its proof-unavailable result permanently occupies the
+// in-memory lane and forbids a post-deployment authority refresh.
+expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 17, "live request model drifted");
+expect(LOCAL_FINALITY_MAX_ANCESTRY_DEPTH === 8, "local ancestry budget drifted");
 const LIVE_RPC_TIMEOUT_MS = 10_000;
 const liveRequestBudget = new LiveRequestBudget();
 
@@ -745,7 +746,14 @@ async function handleDemo(method, path, body, outgoing) {
     if (!permission?.approval) return refusal(outgoing, 409, "permission_not_approved");
     if (!exactKeys(value, ["sessionAddress"]) || value.sessionAddress !== permission.sessionAddress)
       return refusal(outgoing, 400, "session_identity_invalid");
-    if (operationLane.active !== null) return refusal(outgoing, 409, "operation_lane_occupied");
+    const activeOperation =
+      operationLane.active === null ? null : (operations.get(operationLane.active) ?? null);
+    const preparationRefusal = sessionPreparationRefusal({
+      live: LIVE,
+      permissionMaterialized: permission.materialized,
+      activeOperation,
+    });
+    if (preparationRefusal) return refusal(outgoing, 409, preparationRefusal);
     const operationId = randomBytes(18).toString("base64url");
     operationLane.claim(operationId);
     const mode = permission.materialized ? "standard" : "enable-replayable";
@@ -1079,7 +1087,7 @@ if (LIVE) {
     // Anvil learns the hash during send, so it has no new identity to capture.
     // Let Anvil's real finalized tag advance beyond the inclusion block.
     await chain.rpc("anvil_mine", ["0x3"]);
-    return validateFinalizedUserOperation({
+    return validateOwnedLocalFinalizedUserOperation({
       operation,
       transactionHash: operation.transactionHash,
       rpc: chain.rpc,

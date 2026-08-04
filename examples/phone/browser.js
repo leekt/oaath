@@ -52,7 +52,7 @@ const sign = (hash, key) => {
 const poll = async (path, label, id) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const answer = await json(path);
-    if (answer.status !== "pending" && answer.status !== "unresolved") return answer;
+    if (answer.status !== "pending") return answer;
     say(`${label}\nWaiting without creating another request or operation…\nExact id: ${id}`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -61,7 +61,7 @@ const poll = async (path, label, id) => {
 const finishSession = (answer) => {
   if (answer.status === "unresolved") {
     say(
-      `Session operation remains unresolved. Observation retried without resubmission.\nUserOperation: ${answer.userOperationHash}`,
+      `Session operation remains unresolved (${answer.code ?? "evidence_unavailable"}). Observation retried without resubmission. Permission remains unmaterialized.\nUserOperation: ${answer.userOperationHash}${answer.transactionHash ? `\nDiscovered transaction: ${answer.transactionHash}` : ""}`,
     );
     return;
   }
@@ -103,7 +103,7 @@ $("permission").onclick = async () => {
       say(
         resumed.status === "rejected"
           ? "Permission rejected on the phone. No signature or permission was created."
-          : `Permission approved for ${resumed.account}.\nThe phone signed ${resumed.digest}.`,
+          : `Permission signature approved for ${resumed.account}.\nThe phone signed ${resumed.digest}. Onchain permission is not materialized yet.`,
       );
       return;
     }
@@ -126,7 +126,9 @@ $("permission").onclick = async () => {
       say("Permission rejected on the phone. No signature or permission was created.");
       return;
     }
-    say(`Permission approved for ${approved.account}.\nThe phone signed ${approved.digest}.`);
+    say(
+      `Permission signature approved for ${approved.account}.\nThe phone signed ${approved.digest}. Onchain permission is not materialized yet.`,
+    );
   } catch (error) {
     say(`Permission failed: ${error.message}`);
   }
@@ -203,7 +205,9 @@ $("owner").onclick = async () => {
     }
     forget(ownerRequestKey);
     say(
-      `Owner operation ${sent.status} after phone approval.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
+      sent.status === "unresolved"
+        ? `Owner operation remains unresolved (${sent.code ?? "evidence_unavailable"}) after phone approval. Observation is same-hash only.\nUserOperation: ${sent.userOperationHash}${sent.transactionHash ? `\nDiscovered transaction: ${sent.transactionHash}` : ""}`
+        : `Owner operation ${sent.status} after phone approval.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
     );
   } catch (error) {
     say(`Owner transaction failed: ${error.message}`);

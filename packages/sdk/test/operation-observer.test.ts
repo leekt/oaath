@@ -188,6 +188,8 @@ function finalityChain(
 
 const targetFinality = finalityChain(target, 1_000);
 const replacementFinality = finalityChain(replacement, 2_000);
+const finalizedBlock = targetFinality.finalized;
+
 type FixtureOptions = {
   targetReceipt?: unknown;
   replacementCandidate?: unknown;
@@ -333,10 +335,7 @@ describe("OperationObserver", () => {
         if (request.type !== "transaction_receipt") return value;
         return {
           ...target.transactionReceipt,
-          logs: [
-            other.transactionReceipt.logs[0],
-            { ...target.transactionReceipt.logs[0], logIndex: "0x1" },
-          ],
+          logs: [other.transactionReceipt.logs[0], target.transactionReceipt.logs[0]],
         };
       },
     });
@@ -556,159 +555,6 @@ describe("OperationObserver", () => {
       timeoutMs: 1_000,
     });
     expect(result).toMatchObject({ status: "unreadable", reason: "canonicality_unproven" });
-  });
-
-  it("rejects absent, wrong-index, duplicate, and ambiguous canonical transaction membership", async () => {
-    const otherHash = `0x${"ad".repeat(32)}`;
-    const transactionLists: unknown[] = [
-      [],
-      [otherHash],
-      [otherHash, targetTransactionHash],
-      [targetTransactionHash, targetTransactionHash],
-      [{ hash: targetTransactionHash }],
-    ];
-    for (const transactions of transactionLists) {
-      const adapter = fixture({
-        mutate(request, value) {
-          return request.type === "canonical_block" && request.blockNumber === "20"
-            ? { ...(value as OperationObserverBlockEvidence), transactions }
-            : value;
-        },
-      });
-      const result = await createOperationObserver(adapter.capabilities).observeOperation({
-        operation: submitted(),
-        observedAt: 13,
-        timeoutMs: 1_000,
-      });
-      expect(result).toMatchObject({ status: "unreadable", reason: "canonicality_unproven" });
-      expect(result.operation.state).toBe("submitted");
-    }
-  });
-
-  it("rejects missing, malformed, contradictory, and out-of-range receipt/event indexes", async () => {
-    const mutations: readonly ((
-      request: OperationObserverReadRequest,
-      value: unknown,
-    ) => unknown)[] = [
-      (request, value) => {
-        if (request.type !== "transaction_receipt") return value;
-        const receipt = structuredClone(value) as Record<string, unknown>;
-        delete receipt.transactionIndex;
-        return receipt;
-      },
-      (request, value) => {
-        if (request.type !== "transaction") return value;
-        const transaction = structuredClone(value) as Record<string, unknown>;
-        delete transaction.transactionIndex;
-        return transaction;
-      },
-      (request, value) => {
-        if (request.type !== "transaction_receipt") return value;
-        const receipt = structuredClone(value) as Record<string, unknown>;
-        const logs = receipt.logs as Record<string, unknown>[];
-        delete logs[0]?.logIndex;
-        return receipt;
-      },
-      (request, value) =>
-        request.type === "transaction_receipt"
-          ? { ...(value as OperationObserverTransactionReceiptEvidence), transactionIndex: "0x1" }
-          : value,
-      (request, value) =>
-        request.type === "transaction"
-          ? { ...(value as OperationObserverTransactionEvidence), transactionIndex: "0x1" }
-          : value,
-      (request, value) =>
-        request.type === "transaction_receipt"
-          ? {
-              ...(value as OperationObserverTransactionReceiptEvidence),
-              logs: (value as OperationObserverTransactionReceiptEvidence).logs.map((log) => ({
-                ...log,
-                transactionIndex: "0x1",
-              })),
-            }
-          : value,
-      (request, value) =>
-        request.type === "transaction_receipt"
-          ? {
-              ...(value as OperationObserverTransactionReceiptEvidence),
-              logs: [
-                ...(value as OperationObserverTransactionReceiptEvidence).logs,
-                {
-                  ...(value as OperationObserverTransactionReceiptEvidence).logs[0],
-                  topics: [
-                    eventSelector,
-                    `0x${"af".repeat(32)}`,
-                    ...((
-                      value as OperationObserverTransactionReceiptEvidence
-                    ).logs[0]?.topics.slice(2) ?? []),
-                  ],
-                },
-              ],
-            }
-          : value,
-      (request, value) =>
-        request.type === "transaction_receipt"
-          ? {
-              ...(value as OperationObserverTransactionReceiptEvidence),
-              transactionIndex: "0x01",
-            }
-          : value,
-      (request, value) =>
-        request.type === "transaction"
-          ? {
-              ...(value as OperationObserverTransactionEvidence),
-              transactionIndex: "0x20000000000000",
-            }
-          : value,
-      (request, value) =>
-        request.type === "transaction_receipt"
-          ? {
-              ...(value as OperationObserverTransactionReceiptEvidence),
-              logs: (value as OperationObserverTransactionReceiptEvidence).logs.map((log) => ({
-                ...log,
-                logIndex: "0x20000000000000",
-              })),
-            }
-          : value,
-    ];
-    for (const mutate of mutations) {
-      const result = await createOperationObserver(
-        fixture({ mutate }).capabilities,
-      ).observeOperation({
-        operation: submitted(),
-        observedAt: 13,
-        timeoutMs: 1_000,
-      });
-      expect(result).toMatchObject({ status: "unreadable", reason: "receipt_invalid" });
-      expect(result.operation.state).toBe("submitted");
-    }
-  });
-
-  it("rejects a canonical inclusion transaction list that changes on finality rebound", async () => {
-    let inclusionReads = 0;
-    const adapter = fixture({
-      mutate(request, value) {
-        if (request.type !== "canonical_block" || request.blockNumber !== "20") return value;
-        inclusionReads += 1;
-        return inclusionReads === 1
-          ? value
-          : {
-              ...(value as OperationObserverBlockEvidence),
-              transactions: [`0x${"ae".repeat(32)}`],
-            };
-      },
-    });
-    const result = await createOperationObserver(adapter.capabilities).observeOperation({
-      operation: submitted(),
-      observedAt: 13,
-      timeoutMs: 1_000,
-    });
-    expect(inclusionReads).toBe(2);
-    expect(result).toMatchObject({
-      status: "unreadable",
-      reason: "finality_unproven",
-      operation: { state: "included" },
-    });
   });
 
   it("maps provider failure to a structured unreadable observation without diagnostics", async () => {

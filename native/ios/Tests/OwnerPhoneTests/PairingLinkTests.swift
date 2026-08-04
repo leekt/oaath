@@ -19,6 +19,17 @@ final class PairingLinkTests: XCTestCase {
             PairingLink(relayURL: "http://10.0.0.5:8787", pairingCode: "AB-CD"))
     }
 
+    func testRejectsDuplicateRequiredParameters() {
+        for bad in [
+            "oaath-demo://pair?relay=http://10.0.0.5:8787&relay=http://10.0.0.6:8787&code=AB",
+            "oaath-demo://pair?relay&relay=http://10.0.0.5:8787&code=AB",
+            "oaath-demo://pair?relay=http://10.0.0.5:8787&code=AB&code=CD",
+            "oaath-demo://pair?relay=http://10.0.0.5:8787&code&code=AB"
+        ] {
+            XCTAssertNil(parsePairingLink(bad), bad)
+        }
+    }
+
     func testRejectsEverythingElse() {
         for bad in [
             "",

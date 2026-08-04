@@ -47,15 +47,6 @@ export type {
 } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";
 export type {
-  FinalityBlockReference,
-  VerifyFinalizedBlockAncestryInput,
-} from "./finality-ancestry.js";
-export {
-  OaathFinalityAncestryError,
-  OPERATION_FINALITY_MAX_ANCESTRY_DEPTH,
-  verifyFinalizedBlockAncestry,
-} from "./finality-ancestry.js";
-export type {
   DiagnoseKernelCapabilityInput,
   KernelCapability,
   KernelCapabilityEvidence,
@@ -314,13 +305,3 @@ export {
   OaathStoreError,
   OperationStore,
 } from "./store.js";
-export type {
-  CanonicalTransactionInclusionErrorScope,
-  CanonicalTransactionInclusionEvidence,
-  CanonicalTransactionLogEvidence,
-} from "./transaction-inclusion.js";
-export {
-  OaathCanonicalTransactionInclusionError,
-  requireSameCanonicalTransactionInclusion,
-  validateCanonicalTransactionInclusion,
-} from "./transaction-inclusion.js";
