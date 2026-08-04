@@ -7,10 +7,10 @@ import {
   createKernelRuntime,
   diagnoseKernelCapability,
   ecdsaKey,
+  type KernelBuiltInKeyKind,
   type KernelCapability,
   type KernelCapabilityEvidence,
   type KernelCapabilityReason,
-  type KernelKeyKind,
   type KernelRuntime,
   type KernelRuntimeErrorCode,
   type KernelV4SupportedChainId,
@@ -23,6 +23,7 @@ import {
   sessionOperator,
   webauthnKey,
 } from "../src/index.js";
+import { kernelKeyCapability } from "../src/kernel/capabilities.js";
 
 const chainIds: readonly KernelV4SupportedChainId[] = [46_630, 421_614, 11_155_111];
 const validator = `0x${"22".repeat(20)}` as const;
@@ -52,19 +53,36 @@ const webauthnCredential = Object.freeze({
   authenticatorIdHash: keccak256(bytesToHex(base64UrlBytes(credentialId))),
 });
 
+const customSigner = `0x${"33".repeat(20)}` as const;
+
 /** Diagnosis and composition never sign here, so the signing capabilities are unused. */
-const keyProfiles: Readonly<Record<KernelKeyKind, () => Readonly<KeyProfile>>> = Object.freeze({
-  ecdsa: () => ecdsaKey({ account: ecdsaAccount, validator }),
-  p256: () => p256Key({ credential: p256Credential, sign: () => Promise.resolve("0x") }),
-  webauthn: () =>
-    webauthnKey({
-      credential: webauthnCredential,
-      credentialId,
-      rpId: "app.example",
-      origin: "https://app.example",
-      authenticate: () => Promise.resolve("0x"),
-    }),
-});
+const keyProfiles: Readonly<Record<KernelBuiltInKeyKind, () => Readonly<KeyProfile>>> =
+  Object.freeze({
+    ecdsa: () => ecdsaKey({ account: ecdsaAccount, validator }),
+    p256: () => p256Key({ credential: p256Credential, sign: () => Promise.resolve("0x") }),
+    webauthn: () =>
+      webauthnKey({
+        credential: webauthnCredential,
+        credentialId,
+        rpId: "app.example",
+        origin: "https://app.example",
+        authenticate: () => Promise.resolve("0x"),
+      }),
+  });
+
+/** One consumer-authored profile, binding both of its own modules. */
+function customKey(): Readonly<KeyProfile> {
+  const inner = keyProfiles.ecdsa();
+  return Object.freeze({
+    kind: "custom:demo",
+    publicMaterial: inner.publicMaterial,
+    resolveValidator: inner.resolveValidator,
+    signerModule: customSigner,
+    dummySignature: inner.dummySignature,
+    sign: inner.sign,
+    verify: inner.verify,
+  });
+}
 
 const reads = Object.freeze({ read: () => Promise.resolve("0x") });
 /** The bounded scope every session capability composes; policies are required. */
@@ -95,6 +113,12 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     status: "unsupported",
     reason: "validator_module_deployment_unproven",
   }),
+  // A consumer-authored kind resolves no pinned module on either axis, so both
+  // its axes are available on caller-bound evidence alone: the validator and
+  // permission signer module its own KeyProfile binds, each proven to carry code
+  // on the action chain when an account binds.
+  owner_custom: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
+  session_custom: Object.freeze({ status: "available", evidence: "caller_bound_signer" }),
   // A session is a permission, so its axis is the pinned signer module: ECDSA and
   // WebAuthn have one, raw P-256 does not.
   session_ecdsa: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
@@ -120,9 +144,11 @@ const capabilities = [
   "owner_ecdsa",
   "owner_p256",
   "owner_webauthn",
+  "owner_custom",
   "session_ecdsa",
   "session_p256",
   "session_webauthn",
+  "session_custom",
   "hook_call",
   "hook_value",
   "hook_expiry",
@@ -150,6 +176,10 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
       return ownerOperator({ key: keyProfiles.p256() });
     case "owner_webauthn":
       return ownerOperator({ key: keyProfiles.webauthn() });
+    case "owner_custom":
+      return ownerOperator({ key: customKey() });
+    case "session_custom":
+      return sessionOperator({ key: customKey(), policies: [scope] });
     case "session_ecdsa":
       return sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] });
     case "session_p256":
@@ -217,6 +247,28 @@ describe("Kernel capability diagnosis", () => {
         }),
       );
     }
+  });
+
+  it("names one capability per authority and kind, custom kinds included", () => {
+    // The client asks for a capability by authority and key kind, so an unbounded
+    // custom kind string must never become an unbounded capability name.
+    const named = (["owner", "session"] as const).flatMap((authority) =>
+      (["ecdsa", "p256", "webauthn", "custom:demo", "custom:other"] as const).map(
+        (kind) => kernelKeyCapability(authority, kind) satisfies KernelCapability,
+      ),
+    );
+    expect(named).toEqual([
+      "owner_ecdsa",
+      "owner_p256",
+      "owner_webauthn",
+      "owner_custom",
+      "owner_custom",
+      "session_ecdsa",
+      "session_p256",
+      "session_webauthn",
+      "session_custom",
+      "session_custom",
+    ]);
   });
 
   it.each(["p256", "webauthn"] as const)(

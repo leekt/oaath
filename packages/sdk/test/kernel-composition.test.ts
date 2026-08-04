@@ -29,6 +29,7 @@ import {
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  type KernelBuiltInKeyKind,
   type KernelKeyKind,
   type KernelOperatorAuthority,
   type KernelV4AccountReadRequest,
@@ -98,12 +99,18 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
-function reads(state: "counterfactual" | "deployed" = "counterfactual") {
+/**
+ * The account read capability. `codeless` names one address observed to carry no
+ * code, which is how a caller-bound module that was never deployed is proven
+ * absent on the action chain.
+ */
+function reads(state: "counterfactual" | "deployed" = "counterfactual", codeless?: `0x${string}`) {
   return {
     async read(request: KernelV4AccountReadRequest): Promise<unknown> {
       if (request.type === "chain_id") return request.chainId;
       if (request.type === "runtime_code_hash") return runtimeCodeHash(request.address);
       if (request.type === "code") {
+        if (request.address === codeless) return "0x";
         return request.address === account && state === "counterfactual" ? "0x" : "0x01";
       }
       if (request.type === "kernel_factory_implementation") {
@@ -166,7 +173,38 @@ function webauthnAuthenticate(overrides: AssertionOverrides = {}) {
   };
 }
 
-const keyProfiles: Readonly<Record<KernelKeyKind, () => Readonly<KeyProfile>>> = Object.freeze({
+/** One consumer-authored kind and the permission signer module it binds itself. */
+const customKind = "custom:demo" as const;
+const customSigner = `0x${"33".repeat(20)}` as const;
+
+/**
+ * A consumer-authored KeyProfile: a credential kind this SDK does not author,
+ * carrying its own validator and permission signer module. It wraps the ECDSA
+ * machinery so the composition under test is the caller-bound path, never the
+ * pinned registry — pinnedSignerModule(customKind) is null on every chain.
+ */
+function customKey(
+  overrides: Readonly<{
+    kind?: string;
+    signerModule?: `0x${string}` | null;
+    sign?: KeyProfile["sign"];
+  }> = {},
+): Readonly<KeyProfile> {
+  const inner = ecdsaKey({ account: ecdsaAccount, validator });
+  return Object.freeze({
+    kind: (overrides.kind ?? customKind) as KernelKeyKind,
+    publicMaterial: inner.publicMaterial,
+    resolveValidator: inner.resolveValidator,
+    signerModule: overrides.signerModule === undefined ? customSigner : overrides.signerModule,
+    dummySignature: inner.dummySignature,
+    sign: overrides.sign ?? inner.sign,
+    verify: inner.verify,
+  });
+}
+
+type MatrixKeyKind = KernelBuiltInKeyKind | typeof customKind;
+
+const keyProfiles: Readonly<Record<MatrixKeyKind, () => Readonly<KeyProfile>>> = Object.freeze({
   ecdsa: () => ecdsaKey({ account: ecdsaAccount, validator }),
   p256: () => p256Key({ credential: p256Credential, sign: p256Sign }),
   webauthn: () =>
@@ -177,6 +215,7 @@ const keyProfiles: Readonly<Record<KernelKeyKind, () => Readonly<KeyProfile>>> =
       origin,
       authenticate: webauthnAuthenticate(),
     }),
+  [customKind]: () => customKey(),
 });
 
 /** One bounded scope every session composition in this file installs. */
@@ -208,13 +247,16 @@ async function ecdsaAccountDescriptor() {
 }
 
 describe("Kernel composition matrix", () => {
-  const matrix: readonly (readonly [KernelKeyKind, KernelOperatorAuthority])[] = [
+  const matrix: readonly (readonly [MatrixKeyKind, KernelOperatorAuthority])[] = [
     ["ecdsa", "owner"],
     ["ecdsa", "session"],
     ["p256", "owner"],
     ["p256", "session"],
     ["webauthn", "owner"],
     ["webauthn", "session"],
+    // The same factory, the same two authorities, a kind this SDK never authored.
+    [customKind, "owner"],
+    [customKind, "session"],
   ];
 
   it.each(matrix)(
@@ -226,13 +268,14 @@ describe("Kernel composition matrix", () => {
       // An owner needs a validator module for its key kind and a session needs a
       // permission signer module: raw P-256 has neither, WebAuthn has only the
       // signer, so each axis fails closed on its own module rather than borrowing
-      // the other's.
+      // the other's. A consumer-authored kind binds both itself, so both compose.
+      const callerBound = kind === "ecdsa" || kind === customKind;
       const unavailable =
         authority === "session"
           ? kind === "p256"
             ? "kernel_runtime_signer_unavailable"
             : null
-          : kind === "ecdsa"
+          : callerBound
             ? null
             : "kernel_runtime_validator_unavailable";
       if (authority === "session" && unavailable) {
@@ -271,7 +314,10 @@ describe("Kernel composition matrix", () => {
 
       // A session installs a permission: the policy that bounds its calls, then
       // the signer that carries the key material, both under one permission ID.
-      const signer = pinnedSignerModule(kind);
+      // A reviewed kind takes the pinned module; a consumer-authored kind takes
+      // the one its own profile bound, and the registry pins nothing for it.
+      const signer = kind === customKind ? customSigner : pinnedSignerModule(kind);
+      if (kind === customKind) expect(pinnedSignerModule(kind)).toBeNull();
       expect(runtime.authorityModule).toBe(signer);
       const validation = runtime.validation;
       if (validation.kind !== "permission")
@@ -523,6 +569,254 @@ describe("Kernel composition matrix", () => {
   });
 });
 
+describe("Consumer-authored key profiles", () => {
+  const operation = Object.freeze({
+    kind: "execution" as const,
+    grantId: "kernel-composition-custom",
+    nonceKey: "0",
+    sequence: "0",
+    calls: Object.freeze([Object.freeze({ target, value: "1", data: "0x" as const })]),
+    gas,
+  });
+
+  function customRuntime(
+    authority: KernelOperatorAuthority,
+    key: Readonly<KeyProfile> = customKey(),
+    codeless?: `0x${string}`,
+  ) {
+    return createKernelRuntime({
+      deployment,
+      operator: operatorProfiles[authority](key),
+      reads: reads("counterfactual", codeless),
+    });
+  }
+
+  it.each(["owner", "session"] as const)(
+    "prepares and signs %s operations for a kind this SDK never authored",
+    async (authority) => {
+      const runtime = customRuntime(authority);
+      expect(runtime.keyKind).toBe(customKind);
+      const descriptor = await runtime.bindAccount({
+        accountIndex: "0",
+        // The account's root packages are the owner's, on every authority.
+        initialPackages: customRuntime("owner").packages,
+      });
+      const prepared = runtime.prepareOperation({ ...operation, account: descriptor });
+      const signature = await runtime.signOperation(prepared);
+      if (authority === "owner") {
+        // Root validation carries no envelope, so the signature is the key's own.
+        expect(await recoverAddress({ hash: prepared.userOperationHash, signature })).toBe(
+          getAddress(ecdsaAccount.address),
+        );
+        expect(runtime.packages).toEqual([
+          {
+            moduleType: 1,
+            module: validator,
+            moduleData: ecdsaAccount.address.toLowerCase(),
+            internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+          },
+        ]);
+        return;
+      }
+      // The session installs the caller-bound signer module as its moduleType 6
+      // package and signs inside Kernel's permission envelope.
+      const signerPackage = runtime.packages[1];
+      expect(signerPackage).toMatchObject({ moduleType: 6, module: customSigner });
+      const [slices] = decodeAbiParameters([{ name: "signatures", type: "bytes[]" }], signature);
+      expect(slices.length).toBe(2);
+      const signerSlice = slices[1];
+      if (!signerSlice) throw new Error("permission envelope carries no signer slice");
+      expect(
+        await recoverAddress({ hash: prepared.userOperationHash, signature: signerSlice }),
+      ).toBe(getAddress(ecdsaAccount.address));
+    },
+  );
+
+  it.each([
+    ["a non-hex signature", "not-hex"],
+    ["a non-string signature", 1],
+    ["a signature of the wrong kind entirely", null],
+  ] as const)("verifies %s as false rather than throwing", async (_label, signature) => {
+    // The captured profile, not the caller's object: the boundary owns both the
+    // mandatory self-verification and the shape of what it will verify at all.
+    const key = ownerOperator({ key: customKey() }).key;
+    expect(await key.verify(keccak256("0xdeadbeef"), signature as never)).toBe(false);
+    expect(await key.verify("0x00" as never, key.dummySignature)).toBe(false);
+  });
+
+  it("refuses to sign anything that is not a 32-byte hash", async () => {
+    const key = ownerOperator({ key: customKey() }).key;
+    await expect(key.sign("0xdeadbeef")).rejects.toMatchObject({
+      code: "kernel_runtime_input_invalid",
+      message: "Kernel key profile signing hash is invalid",
+    });
+  });
+
+  it.each([
+    ["is not hex bytes at all", "nope"],
+    ["is empty", "0x"],
+    ["is not a string", 1],
+  ] as const)("refuses a capability whose signature %s", async (_label, produced) => {
+    const key = ownerOperator({
+      key: customKey({ sign: () => Promise.resolve(produced as never) }),
+    }).key;
+    await expect(key.sign(keccak256("0xdeadbeef"))).rejects.toMatchObject({
+      code: "kernel_runtime_signature_invalid",
+      message: "Kernel key signature is invalid",
+    });
+  });
+
+  it("maps a throwing consumer signing capability to one signing-failure code", async () => {
+    const key = ownerOperator({
+      key: customKey({
+        sign: () => Promise.reject(new Error("credential-bearing provider detail")),
+      }),
+    }).key;
+    await expect(key.sign(keccak256("0xdeadbeef"))).rejects.toMatchObject({
+      code: "kernel_runtime_signing_failed",
+      message: "Kernel key signing failed",
+    });
+  });
+
+  it("refuses a signature the profile's own verification rejects", async () => {
+    // Self-verification is mandatory at the capture boundary, so a consumer
+    // profile cannot opt out of it: these bytes never reach an envelope.
+    const foreign = privateKeyToAccount(`0x${"12".repeat(32)}`);
+    const runtime = customRuntime(
+      "owner",
+      customKey({ sign: (hash) => foreign.sign({ hash }) as Promise<`0x${string}`> }),
+    );
+    const prepared = runtime.prepareOperation({
+      ...operation,
+      account: await runtime.bindAccount({
+        accountIndex: "0",
+        initialPackages: runtime.packages,
+      }),
+    });
+    await expect(runtime.signOperation(prepared)).rejects.toMatchObject({
+      code: "kernel_runtime_signature_invalid",
+      message: "Kernel key signature does not verify against the bound public material",
+    });
+  });
+
+  it("refuses a session whose consumer-authored key binds no signer module", () => {
+    // No pinned module exists for a kind this SDK never reviewed, so a session
+    // without a caller-bound signer module has no authority module at all. The
+    // same key still composes owner authority, which needs only its validator.
+    const key = customKey({ signerModule: null });
+    expect(
+      createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads: reads() }),
+    ).toMatchObject({ authority: "owner", keyKind: customKind, authorityModule: validator });
+    expect(() => sessionOperator({ key, policies: [sessionScope] })).toThrowError(
+      expect.objectContaining({
+        name: "OaathKernelRuntimeError",
+        code: "kernel_runtime_signer_unavailable",
+      }),
+    );
+  });
+
+  it("refuses an unscoped session for a consumer-authored key", () => {
+    // Policies stay required on every kind: a session is a permission.
+    expect(() => sessionOperator({ key: customKey(), policies: [] })).toThrowError(
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+    );
+  });
+
+  it.each(["owner", "session"] as const)(
+    "refuses to bind an account when the %s authority module carries no code",
+    async (authority) => {
+      const module = authority === "owner" ? validator : customSigner;
+      const runtime = customRuntime(authority, customKey(), module);
+      await expect(
+        runtime.bindAccount({
+          accountIndex: "0",
+          initialPackages: customRuntime("owner").packages,
+        }),
+      ).rejects.toMatchObject({
+        code:
+          authority === "owner"
+            ? "kernel_runtime_validator_unavailable"
+            : "kernel_runtime_signer_unavailable",
+        message: "Kernel authority module carries no code on this chain",
+      });
+    },
+  );
+
+  it("refuses to bind when the authority module code cannot be read", async () => {
+    const runtime = createKernelRuntime({
+      deployment,
+      operator: operatorProfiles.session(customKey()),
+      reads: { read: () => Promise.reject(new Error("provider detail")) },
+    });
+    await expect(
+      runtime.bindAccount({ accountIndex: "0", initialPackages: runtime.packages }),
+    ).rejects.toMatchObject({
+      code: "kernel_runtime_signer_unavailable",
+      message: "Kernel authority module code could not be read",
+    });
+  });
+
+  it("refuses a reviewed kind that binds its own permission signer module", () => {
+    // A caller may never select the module a reviewed credential installs.
+    const key = ecdsaKey({ account: ecdsaAccount, validator });
+    expect(() =>
+      ownerOperator({ key: Object.freeze({ ...key, signerModule: customSigner }) }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "kernel_runtime_input_invalid",
+        message: "Kernel key profile of a reviewed kind may not bind a signer module",
+      }),
+    );
+  });
+
+  it.each([
+    ["an unprefixed kind", "bls"],
+    ["a bare prefix", "custom:"],
+    ["an uppercase slug", "custom:Demo"],
+    ["a slug opening with a hyphen", "custom:-demo"],
+    ["a slug carrying a separator", "custom:demo/two"],
+    ["a nested prefix", "custom:custom:demo"],
+    ["an overlong slug", `custom:${"a".repeat(33)}`],
+    ["a reviewed kind's name behind no prefix", "ECDSA"],
+    ["a non-string kind", 1],
+  ] as const)("refuses %s", (_label, kind) => {
+    expect(() => ownerOperator({ key: customKey({ kind: kind as never }) })).toThrowError(
+      expect.objectContaining({
+        code: "kernel_runtime_input_invalid",
+        message: "Kernel key profile kind is unsupported",
+      }),
+    );
+  });
+
+  it.each([
+    ["a zero signer module", `0x${"00".repeat(20)}` as const],
+    ["a truncated signer module", "0x1234" as const],
+  ] as const)("refuses %s on a consumer-authored key", (_label, signerModule) => {
+    expect(() =>
+      sessionOperator({ key: customKey({ signerModule }), policies: [sessionScope] }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "kernel_runtime_input_invalid",
+        message: "Kernel key profile signer module is invalid",
+      }),
+    );
+  });
+
+  it("derives one permission ID per kind for the same key material and modules", () => {
+    // The kind is hashed into the permission ID, so a consumer kind reusing
+    // another's public material and modules still installs its own permission.
+    const permissionId = (key: Readonly<KeyProfile>) => {
+      const validation = sessionOperator({ key, policies: [sessionScope] }).resolveValidation(
+        deployment,
+      );
+      if (validation.kind !== "permission") throw new Error("not a permission validation");
+      return validation.permissionId;
+    };
+    expect(permissionId(customKey())).not.toBe(permissionId(customKey({ kind: "custom:other" })));
+    expect(permissionId(customKey())).toBe(permissionId(customKey()));
+  });
+});
+
 describe("Kernel key profiles", () => {
   it("signs and verifies through the ECDSA key profile", async () => {
     const key = keyProfiles.ecdsa();
@@ -761,7 +1055,7 @@ describe("Kernel key profiles", () => {
 });
 
 describe("Kernel module registry", () => {
-  const kinds = ["ecdsa", "p256", "webauthn"] as const satisfies readonly KernelKeyKind[];
+  const kinds = ["ecdsa", "p256", "webauthn"] as const satisfies readonly KernelBuiltInKeyKind[];
 
   it("pins the reviewed permission signer modules and leaves unbound axes null", () => {
     // Addresses are chain-independent by construction: the registry takes no
@@ -772,6 +1066,15 @@ describe("Kernel module registry", () => {
       null,
       "0x8b2df925aa16071fcdf0053768420e242935ac65",
     ]);
+  });
+
+  it("pins nothing for a consumer-authored kind", () => {
+    // Pluggability never widens the reviewed registry: a custom kind resolves no
+    // module on either axis, which is why it must bind its own and have them
+    // code-proven on the action chain.
+    for (const kind of [customKind, "custom:other"] as const satisfies readonly KernelKeyKind[]) {
+      expect(pinnedSignerModule(kind)).toBeNull();
+    }
   });
 
   it("pins one reviewed policy module per bounded axis", () => {

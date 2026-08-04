@@ -74,6 +74,8 @@ export function p256Key(value: P256KeyInput): Readonly<KeyProfile> {
       exactKernelDeployment(deployment);
       return resolvePinnedValidator("p256");
     },
+    // A reviewed kind installs the permission signer module pinned to its kind.
+    signerModule: null,
     dummySignature: DUMMY_SIGNATURE,
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
       const produced = await invokeCapability(

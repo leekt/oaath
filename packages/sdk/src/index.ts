@@ -82,7 +82,9 @@ export {
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
+  KernelBuiltInKeyKind,
   KernelCallPolicyProfile,
+  KernelCustomKeyKind,
   KernelExpiryPolicyProfile,
   KernelKeyKind,
   KernelOperationLimitPolicyProfile,

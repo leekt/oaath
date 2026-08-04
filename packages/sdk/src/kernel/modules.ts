@@ -15,8 +15,8 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type KernelV4Deployment, kernelV4Deployment } from "../kernel-v4.js";
-import { inputInvalid, runtimeFail } from "./internal.js";
-import type { KernelKeyKind, KernelPolicyProfile } from "./types.js";
+import { inputInvalid, isBuiltInKeyKind, runtimeFail } from "./internal.js";
+import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from "./types.js";
 
 /**
  * Validator modules (moduleType 1) bound per key kind. Kernel v4 ships no reviewed
@@ -25,9 +25,8 @@ import type { KernelKeyKind, KernelPolicyProfile } from "./types.js";
  * kernel/key/ecdsa.ts binds the caller's validator module and bindKernelV4Account
  * proves it has code before any account address depends on it.
  */
-const PINNED_VALIDATORS: Readonly<Partial<Record<KernelKeyKind, `0x${string}`>>> = Object.freeze(
-  {},
-);
+const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
+  Object.freeze({});
 
 /**
  * Permission signer modules (moduleType 6) bound per key kind. Both are reviewed
@@ -48,10 +47,11 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelKeyKind, `0x${string}`>>>
  * Raw P-256 carries no entry: the reviewed plugin set ships only the WebAuthn
  * assertion signer, so a raw P-256 permission signer fails closed.
  */
-const PINNED_SIGNERS: Readonly<Partial<Record<KernelKeyKind, `0x${string}`>>> = Object.freeze({
-  ecdsa: "0xd4c7dec43e67ffe3dcca0aeb71556123d3194e1d",
-  webauthn: "0x8b2df925aa16071fcdf0053768420e242935ac65",
-});
+const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
+  Object.freeze({
+    ecdsa: "0xd4c7dec43e67ffe3dcca0aeb71556123d3194e1d",
+    webauthn: "0x8b2df925aa16071fcdf0053768420e242935ac65",
+  });
 
 /**
  * ZeroDev's reviewed CallPolicy (moduleType 5), which bounds every permitted
@@ -156,17 +156,26 @@ export function exactKernelDeployment(value: unknown): Readonly<KernelV4Deployme
 }
 
 /**
- * The reviewed validator module bound to one key kind, or null when none is.
- * Both the composition factory and capability diagnosis read the registry here,
- * so an unbound axis can never read available on one path and fail on the other.
+ * The reviewed validator module bound to one reviewed key kind, or null when none
+ * is. Both the composition factory and capability diagnosis read the registry
+ * here, so an unbound axis can never read available on one path and fail on the
+ * other.
+ *
+ * A consumer-authored kind is in neither registry and never reaches this one at
+ * all: it binds its own validator through its KeyProfile, and the runtime proves
+ * that module carries code on the action chain.
  */
-export function pinnedValidatorModule(kind: KernelKeyKind): `0x${string}` | null {
+export function pinnedValidatorModule(kind: KernelBuiltInKeyKind): `0x${string}` | null {
   return PINNED_VALIDATORS[kind] ?? null;
 }
 
-/** The reviewed permission signer module bound to one key kind, or null when none is. */
+/**
+ * The reviewed permission signer module bound to one key kind, or null when none
+ * is. A consumer-authored kind resolves null here by construction, which is what
+ * makes a session refuse to compose unless its own profile bound a signer module.
+ */
 export function pinnedSignerModule(kind: KernelKeyKind): `0x${string}` | null {
-  return PINNED_SIGNERS[kind] ?? null;
+  return (isBuiltInKeyKind(kind) ? PINNED_SIGNERS[kind] : null) ?? null;
 }
 
 /** The reviewed policy module bound to one policy axis, or null when none is. */
@@ -174,8 +183,8 @@ export function pinnedPolicyModule(kind: KernelPolicyProfile["kind"]): `0x${stri
   return PINNED_POLICIES[kind] ?? null;
 }
 
-/** Resolves the reviewed validator module for one key kind, or fails closed. */
-export function resolvePinnedValidator(kind: KernelKeyKind): `0x${string}` {
+/** Resolves the reviewed validator module for one reviewed key kind, or fails closed. */
+export function resolvePinnedValidator(kind: KernelBuiltInKeyKind): `0x${string}` {
   return (
     pinnedValidatorModule(kind) ??
     runtimeFail(

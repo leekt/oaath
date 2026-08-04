@@ -250,6 +250,8 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
       exactKernelDeployment(deployment);
       return resolvePinnedValidator("webauthn");
     },
+    // A reviewed kind installs the permission signer module pinned to its kind.
+    signerModule: null,
     dummySignature: encodeAbiParameters(ASSERTION_PARAMETERS, [
       `0x${"55".repeat(MIN_AUTHENTICATOR_DATA_BYTES)}`,
       `{"type":"webauthn.get","challenge":"${"A".repeat(43)}","origin":"${origin}"}`,

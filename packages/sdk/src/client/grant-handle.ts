@@ -35,7 +35,11 @@ import {
   type OperationKind,
   type PermissionRequest,
 } from "@oaath/protocol";
-import { diagnoseKernelCapability, type KernelCapability } from "../kernel/capabilities.js";
+import {
+  diagnoseKernelCapability,
+  type KernelCapability,
+  kernelKeyCapability,
+} from "../kernel/capabilities.js";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
@@ -704,7 +708,7 @@ export function createGrantHandle(
       }
     })();
 
-    requireKernelCapability(chainId, `owner_${input.ownerKey.kind}`);
+    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
     const coverage = await sessionCoverage(grant, chainId, calls);
     const bundler = await probeBundlerCapability({
       capability: chain.bundler,
@@ -725,7 +729,7 @@ export function createGrantHandle(
       );
     }
     if (decision.signer === "session") {
-      requireKernelCapability(chainId, `session_${input.sessionKey.kind}`);
+      requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
       requireKernelCapability(chainId, "hook_call");
     }
     const runtime = decision.signer === "session" ? sessionRuntime(chainId) : ownerRuntime(chainId);

@@ -19,6 +19,10 @@
  * signer axis is reported unsupported and composed as a structured failure, never
  * as unrelated ECDSA authority.
  *
+ * A consumer-authored kind carries caller-bound evidence on both axes and widens
+ * no registry: its modules are the ones its own KeyProfile binds, proven to carry
+ * code on the action chain when an account binds.
+ *
  * All-chain materialization deliberately adds no axis here. It installs exactly
  * the packages the session's own credential and policy axes already resolve, and
  * its authority is Kernel's own replayable enable mode rather than a module — so
@@ -29,18 +33,30 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type KernelV4SupportedChainId, kernelV4Deployment } from "../kernel-v4.js";
-import { exactInput, inputInvalid } from "./internal.js";
+import { exactInput, inputInvalid, isBuiltInKeyKind } from "./internal.js";
 import { pinnedPolicyModule, pinnedSignerModule, pinnedValidatorModule } from "./modules.js";
-import type { KernelKeyKind, KernelPolicyProfile } from "./types.js";
+import type {
+  KernelBuiltInKeyKind,
+  KernelKeyKind,
+  KernelOperatorAuthority,
+  KernelPolicyProfile,
+} from "./types.js";
 
-/** One owner credential, session credential, or policy hook axis. */
+/**
+ * One owner credential, session credential, or policy hook axis. Every
+ * consumer-authored kind shares the `owner_custom` and `session_custom` axes:
+ * the fact they carry is that the SDK pins no module for such a kind and accepts
+ * caller-bound evidence for one, which is identical for every custom kind.
+ */
 export type KernelCapability =
   | "owner_ecdsa"
   | "owner_p256"
   | "owner_webauthn"
+  | "owner_custom"
   | "session_ecdsa"
   | "session_p256"
   | "session_webauthn"
+  | "session_custom"
   | "hook_call"
   | "hook_value"
   | "hook_expiry"
@@ -49,7 +65,10 @@ export type KernelCapability =
 export type KernelCapabilityStatus = "available" | "absent" | "unsupported" | "unreadable";
 
 /** Why an available capability is available; a consumer never infers it from prose. */
-export type KernelCapabilityEvidence = "caller_bound_validator" | "pinned_reviewed_module";
+export type KernelCapabilityEvidence =
+  | "caller_bound_validator"
+  | "caller_bound_signer"
+  | "pinned_reviewed_module";
 
 export type KernelCapabilityReason =
   | "validator_module_deployment_unproven"
@@ -88,8 +107,9 @@ type CapabilityOutcome =
  * for it, and a policy capability needs the module enforcing that policy axis.
  */
 type CapabilityAxis = Readonly<
-  | { capability: KernelCapability; axis: "validator" | "signer"; kind: KernelKeyKind }
+  | { capability: KernelCapability; axis: "validator" | "signer"; kind: KernelBuiltInKeyKind }
   | { capability: KernelCapability; axis: "policy"; kind: KernelPolicyProfile["kind"] }
+  | { capability: KernelCapability; axis: "caller-bound"; evidence: KernelCapabilityEvidence }
 >;
 
 /**
@@ -115,6 +135,23 @@ function capturedCapability(value: unknown): CapabilityAxis {
         capability: value,
         axis: "validator" as const,
         kind: "webauthn" as const,
+      });
+    // A consumer-authored kind resolves no pinned module on either axis, so both
+    // its axes are satisfied by caller-bound evidence: the validator and signer
+    // module addresses its KeyProfile binds, each code-proven on the action chain
+    // before an account or permission depends on it. The pinned registry stays
+    // exactly as narrow as the modules this SDK has reviewed.
+    case "owner_custom":
+      return Object.freeze({
+        capability: value,
+        axis: "caller-bound" as const,
+        evidence: "caller_bound_validator" as const,
+      });
+    case "session_custom":
+      return Object.freeze({
+        capability: value,
+        axis: "caller-bound" as const,
+        evidence: "caller_bound_signer" as const,
       });
     // A session is a permission, so its credential axis is the signer module,
     // never a validator that would carry whole-key authority.
@@ -145,7 +182,7 @@ function capturedCapability(value: unknown): CapabilityAxis {
   }
 }
 
-function validatorOutcome(kind: KernelKeyKind): CapabilityOutcome {
+function validatorOutcome(kind: KernelBuiltInKeyKind): CapabilityOutcome {
   // ECDSA carries no pinned entry by design: kernel/key/ecdsa.ts binds the
   // caller's validator module and bindKernelV4Account proves that module has
   // code on the action chain before any account address depends on it.
@@ -160,7 +197,7 @@ function validatorOutcome(kind: KernelKeyKind): CapabilityOutcome {
       });
 }
 
-function signerOutcome(kind: KernelKeyKind): CapabilityOutcome {
+function signerOutcome(kind: KernelBuiltInKeyKind): CapabilityOutcome {
   return pinnedSignerModule(kind)
     ? Object.freeze({ status: "available" as const, evidence: "pinned_reviewed_module" })
     : Object.freeze({
@@ -179,9 +216,27 @@ function policyOutcome(kind: KernelPolicyProfile["kind"]): CapabilityOutcome {
 }
 
 function axisOutcome(captured: CapabilityAxis): CapabilityOutcome {
+  if (captured.axis === "caller-bound") {
+    return Object.freeze({ status: "available" as const, evidence: captured.evidence });
+  }
   if (captured.axis === "policy") return policyOutcome(captured.kind);
   if (captured.axis === "signer") return signerOutcome(captured.kind);
   return validatorOutcome(captured.kind);
+}
+
+/**
+ * The capability one composition stands for. A consumer-authored kind maps to the
+ * shared custom axis, so a caller never assembles a capability name from an
+ * unbounded kind string.
+ */
+export function kernelKeyCapability(
+  authority: KernelOperatorAuthority,
+  kind: KernelKeyKind,
+): KernelCapability {
+  if (authority === "owner") {
+    return isBuiltInKeyKind(kind) ? `owner_${kind}` : "owner_custom";
+  }
+  return isBuiltInKeyKind(kind) ? `session_${kind}` : "session_custom";
 }
 
 /** Diagnoses one capability on one supported chain into one frozen fact. */

@@ -36,13 +36,31 @@ export class OaathKernelRuntimeError extends Error {
   }
 }
 
-export type KernelKeyKind = "ecdsa" | "p256" | "webauthn";
+/** The credential kinds this SDK authors, each with its own reviewed modules. */
+export type KernelBuiltInKeyKind = "ecdsa" | "p256" | "webauthn";
+/**
+ * One consumer-authored credential kind, bounded to `custom:` followed by 1 to
+ * 32 lowercase alphanumeric or hyphen characters. The prefix is what keeps a
+ * consumer profile from claiming a reviewed kind and inheriting its pinned
+ * modules: a custom kind resolves no pinned module on any axis, so both its
+ * validator and its permission signer module must be caller-bound and are
+ * code-proven on the action chain before an account or permission depends on
+ * them. The kind string is hashed into a session's permission ID, so two
+ * distinct kinds never share a permission.
+ */
+export type KernelCustomKeyKind = `custom:${string}`;
+export type KernelKeyKind = KernelBuiltInKeyKind | KernelCustomKeyKind;
 export type KernelOperatorAuthority = "owner" | "session";
 
 /**
  * One credential kind. Owns public material, validator resolution against a
  * deployment profile, signing normalization, and local verification only. It
  * never chooses an authority, a policy, a bundler, or a fallback route.
+ *
+ * A consumer implements this interface to add a credential kind. The runtime
+ * captures every member as a hostile capability and mandates what it can verify
+ * locally: a produced signature must verify against this profile's own bound
+ * public material before it is ever wrapped in an authority envelope.
  */
 export interface KeyProfile {
   readonly kind: KernelKeyKind;
@@ -53,6 +71,20 @@ export interface KeyProfile {
    * with kernel_runtime_validator_unavailable when no reviewed module is bound.
    */
   readonly resolveValidator: (deployment: Readonly<KernelV4Deployment>) => `0x${string}`;
+  /**
+   * Caller-bound ERC-7579 permission signer module (moduleType 6) for a
+   * consumer-authored kind, or null for a reviewed kind, whose signer module is
+   * pinned by kind in kernel/modules.ts. A reviewed kind that carries one is
+   * refused: a caller may never select the module a reviewed credential
+   * installs.
+   *
+   * It is a plain address rather than a deployment-taking resolver because a
+   * session's permission ID binds the signer module before any deployment is
+   * known, which also makes the address chain-independent, exactly like every
+   * pinned module. The runtime proves it carries code on the action chain when
+   * an account binds.
+   */
+  readonly signerModule: `0x${string}` | null;
   /** Fixed-width placeholder signature for gas estimation; never authorizes anything. */
   readonly dummySignature: `0x${string}`;
   /** Signs a 32-byte hash and returns normalized Kernel-native signature bytes. */

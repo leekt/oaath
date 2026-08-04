@@ -1,5 +1,5 @@
 import { keccak256, parseEther, toFunctionSelector } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   captureRoutingCapabilities,
@@ -12,6 +12,7 @@ import {
   encodeKernelV4InstallModules,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
+  type KeyProfile,
   kernelV4Deployment,
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
@@ -55,6 +56,33 @@ const gas = Object.freeze({
 });
 
 let anvil: AnvilChain | undefined;
+
+/** One consumer-authored credential kind, which this SDK pins nothing for. */
+const customKind = "custom:demo" as const;
+
+/**
+ * A consumer-authored KeyProfile wrapping the reviewed ECDSA machinery under a
+ * kind this SDK never authored: the same secp256k1 signing and public material,
+ * but every module resolved through the caller-bound path rather than a pin.
+ */
+function customKey(
+  input: Readonly<{
+    account: PrivateKeyAccount;
+    validator: `0x${string}`;
+    signerModule: `0x${string}` | null;
+  }>,
+): Readonly<KeyProfile> {
+  const inner = ecdsaKey({ account: input.account, validator: input.validator });
+  return Object.freeze({
+    kind: customKind,
+    publicMaterial: inner.publicMaterial,
+    resolveValidator: inner.resolveValidator,
+    signerModule: input.signerModule,
+    dummySignature: inner.dummySignature,
+    sign: inner.sign,
+    verify: inner.verify,
+  });
+}
 
 beforeAll(async () => {
   if (!requireAnvil) return;
@@ -345,6 +373,207 @@ async function createHarness() {
     ).toBe(true);
     expect(await client.getBalance({ address: fallbackTarget })).toBe(4_321n);
   }, 60_000);
+
+  it("composes a consumer-authored key profile through both authorities", async () => {
+    const harness = await createHarness();
+    const { fixture, client, reads, deployModule, deployValidator, fund, send } = harness;
+    await deployKernelStack(harness);
+    await deployModule(fixture.callPolicy);
+    await deployModule(fixture.ecdsaSigner);
+
+    // The pinned registry is not consulted for this kind at all: it binds the
+    // ECDSAValidator this test deploys and the ECDSASigner module by address, so
+    // every module resolution below runs through the caller-bound path.
+    expect(pinnedSignerModule(customKind)).toBeNull();
+    const ownerKey = customKey({
+      account: privateKeyToAccount(generatePrivateKey()),
+      validator: await deployValidator(),
+      signerModule: fixture.ecdsaSigner.expectedAddress,
+    });
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({ key: ownerKey }),
+      reads,
+    });
+    expect(ownerRuntime.keyKind).toBe(customKind);
+
+    // Root authority: the consumer-authored owner derives, deploys and executes.
+    const counterfactual = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    const account = counterfactual.account;
+    await fund(account, parseEther("1"));
+    const ownerTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-custom-owner",
+          account: counterfactual,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: ownerTarget, value: "2468", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: ownerTarget })).toBe(2_468n);
+    const deployed = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(deployed).toMatchObject({ state: "deployed", account });
+
+    // Permission authority for the same kind: one bounded scope, one caller-bound
+    // signer module, installed by the owner and exercised by the session.
+    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const sessionKey = customKey({
+      account: privateKeyToAccount(generatePrivateKey()),
+      validator: await deployValidator(),
+      signerModule: fixture.ecdsaSigner.expectedAddress,
+    });
+    const sessionRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: sessionKey,
+        policies: [
+          { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
+          { kind: "value", maximumValue: "777" },
+        ],
+      }),
+      reads,
+    });
+    expect(sessionRuntime.authorityModule).toBe(fixture.ecdsaSigner.expectedAddress);
+    expect(sessionRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 6]);
+    await expect(
+      sessionRuntime.bindAccount({ accountIndex: "0", initialPackages: ownerRuntime.packages }),
+    ).resolves.toMatchObject({ state: "deployed", account });
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-custom-install",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(sessionRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(
+      await send(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-custom-session",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: sessionTarget, value: "777", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // The scope still bounds this kind on-chain: CallPolicy itself refuses a value
+    // above the installed ceiling inside Kernel's validation phase.
+    expect(
+      await harness.rejection(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-custom-excessive",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
+    });
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Fail-closed negatives on the same live chain. Self-verification is
+    // mandatory, so a profile whose signature does not verify against its own
+    // bound public material never reaches EntryPoint.
+    const foreign = privateKeyToAccount(generatePrivateKey());
+    const foreignRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: Object.freeze({ ...ownerKey, sign: (hash: `0x${string}`) => foreign.sign({ hash }) }),
+      }),
+      reads,
+    });
+    await expect(
+      foreignRuntime.signOperation(
+        foreignRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-custom-unverified",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "2",
+          calls: [{ target: ownerTarget, value: "1", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
+    expect(await client.getBalance({ address: ownerTarget })).toBe(2_468n);
+
+    // A consumer-authored kind that binds no signer module has no session
+    // authority at all, and a session with no policy is not expressible.
+    expect(() =>
+      sessionOperator({
+        key: customKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: ownerKey.resolveValidator(deployment),
+          signerModule: null,
+        }),
+        policies: [{ kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] }],
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }));
+    expect(() => sessionOperator({ key: sessionKey, policies: [] })).toThrowError(
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+    );
+
+    // A caller-bound module carries no pinned review, so an address that holds no
+    // code on this chain fails closed at bind, before any account or permission
+    // identity depends on it.
+    const undeployedRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: customKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: ownerKey.resolveValidator(deployment),
+          signerModule: lower(privateKeyToAccount(generatePrivateKey()).address),
+        }),
+        policies: [{ kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] }],
+      }),
+      reads,
+    });
+    await expect(
+      undeployedRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      }),
+    ).rejects.toMatchObject({
+      code: "kernel_runtime_signer_unavailable",
+      message: "Kernel authority module carries no code on this chain",
+    });
+  }, 90_000);
 
   it("enforces a multi-package session, its validity window, and its operation count", async () => {
     const harness = await createHarness();

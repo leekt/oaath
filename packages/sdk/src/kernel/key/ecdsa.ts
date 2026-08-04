@@ -68,6 +68,8 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
       exactKernelDeployment(deployment);
       return validator;
     },
+    // A reviewed kind installs the permission signer module pinned to its kind.
+    signerModule: null,
     dummySignature: DUMMY_SIGNATURE,
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
       const produced = await invokeCapability(
