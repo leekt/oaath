@@ -33,6 +33,10 @@ or desired-state convergence.
 All four publish together in one fixed `0.x.y` release group. The first release
 is `0.1.0`; no package becomes `1.0.0` during this program.
 
+[`native/ios`](native/ios/README.md) carries the experimental owner-phone
+SwiftUI approval app (preview only): it is not part of the release group and is
+never published to npm.
+
 ## Status
 
 Nothing is released. `@oaath/protocol` owns the runtime-neutral wire and
