@@ -52,6 +52,7 @@ import {
   type OaathChainCapability,
   type OaathGrantHandle,
 } from "./client/grant-handle.js";
+import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
 import type {
   OaathCleanupCheckpointStore,
@@ -147,12 +148,15 @@ function storePort<Port>(
 function keyProfile(value: unknown, label: string, context: CaptureContext): Readonly<KeyProfile> {
   const record = exactClientRecord(
     value,
-    ["kind", "publicMaterial", "resolveValidator", "dummySignature", "sign", "verify"],
+    KEY_PROFILE_KEYS,
     label,
     context,
     "oaath_client_capability_invalid",
   );
-  if (record.kind !== "ecdsa" && record.kind !== "p256" && record.kind !== "webauthn") {
+  // A reviewed kind or one bounded consumer-authored kind; captureKeyProfile owns
+  // the same fact at the composition boundary, and this one keeps a client
+  // configuration failure a client code rather than a runtime one.
+  if (!isBuiltInKeyKind(record.kind) && !isCustomKeyKind(record.kind)) {
     return clientFail("oaath_client_capability_invalid", `${label} kind is unsupported`);
   }
   // createKernelRuntime captures the profile again at the composition boundary.

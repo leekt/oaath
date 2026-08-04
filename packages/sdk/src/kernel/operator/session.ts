@@ -75,7 +75,11 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
   // Compile and resolve eagerly so the scope is captured once, at the authority
   // boundary, and an unavailable module fails before any permission ID exists.
   const policy = compileCapturedKernelPermissionPolicy(profiles, context);
-  const signer = resolvePinnedSigner(key.kind);
+  // A reviewed kind installs the permission signer module pinned to it; a
+  // consumer-authored kind has none, so it binds its own, which captureKeyProfile
+  // accepts only for a custom kind and createKernelRuntime proves has code on the
+  // action chain before any account binds to this permission.
+  const signer = key.signerModule ?? resolvePinnedSigner(key.kind);
   const permissionId = derivePermissionId(policy.packages, signer, key.kind, key.publicMaterial);
   const paddedPermissionId = pad(permissionId, { size: 32, dir: "right" });
 

@@ -107,6 +107,22 @@ deployment profile and is accepted only after its `UUPS()` binding and the
 EntryPoint, implementation, and factory runtime code hashes, plus the resulting
 account implementation, match that profile.
 
+Credential kinds are pluggable through one interface. `ecdsaKey`, `p256Key`, and
+`webauthnKey` are `KeyProfile` implementations, and a consumer implements the same
+interface to add a kind: `{ kind: "custom:<slug>", publicMaterial,
+resolveValidator, signerModule, dummySignature, sign, verify }` composes through
+`ownerOperator` and `sessionOperator` into the one `createKernelRuntime`, with no
+credential-specific runtime. A custom kind resolves no pinned module, so it binds
+its own ERC-7579 validator and permission signer module (`moduleType` 6). Both are
+proven to carry code on the action chain when this runtime binds the account —
+before the account address depends on them. The permission ID is derived locally
+before any chain read, and a descriptor bound by a different runtime skips this
+runtime's code proof; either way a codeless module fails closed at Kernel's
+on-chain validation rather than granting anything. Sessions stay permission-scoped: at least one
+policy is required for every kind. A produced signature must verify against the
+profile's own bound public material before it is wrapped in any authority
+envelope, and a reviewed kind may never bind its own signer module.
+
 ### All-chain authority
 
 `chainScope: "all"` is one owner approval, not one approval per chain. Every

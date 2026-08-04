@@ -250,6 +250,13 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
       exactKernelDeployment(deployment);
       return resolvePinnedValidator("webauthn");
     },
+    // A reviewed kind installs the permission signer module pinned to its kind.
+    // signerModule stays null: reviewed kinds resolve their signer from the
+    // pinned registry, and the capture layer refuses a self-bound module.
+    // The self-verification inside this profile's own sign() is deliberate
+    // duplication of the capture layer's check — this factory is publicly
+    // exported, so direct callers need the guarantee too. Do not "clean it up".
+    signerModule: null,
     dummySignature: encodeAbiParameters(ASSERTION_PARAMETERS, [
       `0x${"55".repeat(MIN_AUTHENTICATOR_DATA_BYTES)}`,
       `{"type":"webauthn.get","challenge":"${"A".repeat(43)}","origin":"${origin}"}`,

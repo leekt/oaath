@@ -24,6 +24,7 @@ import {
   exactInput,
   inputCapability,
   inputInvalid,
+  isBytes,
   runtimeFail,
   sameInstall,
 } from "./internal.js";
@@ -134,9 +135,45 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
   const reachableModes: readonly KernelRuntimeValidationMode[] =
     validation.kind === "root" ? Object.freeze(["standard" as const]) : RUNTIME_MODES;
 
+  /**
+   * Proves this authority's module carries code on the action chain. An owner's
+   * validator is covered by bindKernelV4Account, which proves every module the
+   * account's initial packages install, but a session binds the account's root
+   * packages, not its own permission packages, so its signer module is proven
+   * here. A caller-bound module carries no pinned review at all, which is why
+   * code presence is proven before this runtime's bindAccount returns.
+   *
+   * Boundary, stated exactly: this proof runs only in bindAccount. The
+   * permission ID is derived locally before any chain read can exist, and a
+   * descriptor bound by a DIFFERENT runtime reaches prepareOperation with this
+   * runtime's module unproven. Both fall through to Kernel's on-chain
+   * validation, where a codeless module reverts instead of validating — the
+   * refusal is fail-closed, merely later and costlier than this read.
+   */
+  async function proveAuthorityModule(): Promise<void> {
+    const unavailable =
+      operator.authority === "owner"
+        ? "kernel_runtime_validator_unavailable"
+        : "kernel_runtime_signer_unavailable";
+    let code: unknown;
+    try {
+      code = await read({
+        type: "code",
+        chainId: deployment.chainId,
+        address: authorityModule,
+      });
+    } catch {
+      return runtimeFail(unavailable, "Kernel authority module code could not be read");
+    }
+    if (!isBytes(code) || code === "0x") {
+      return runtimeFail(unavailable, "Kernel authority module carries no code on this chain");
+    }
+  }
+
   async function bindAccount(
     input: KernelRuntimeBindAccountInput,
   ): Promise<Readonly<KernelV4AccountDescriptor>> {
+    await proveAuthorityModule();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
     // field below; each caller field is read exactly once into its argument.
     const descriptor = await bindKernelV4Account({
