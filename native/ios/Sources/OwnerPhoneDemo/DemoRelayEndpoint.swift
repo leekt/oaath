@@ -47,6 +47,14 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
         self.baseURL = url
     }
 
+    /// `GET /demo/inbox`, authenticated to this exact paired device.
+    func inboxRequest(credential: String) -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent("demo/inbox"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     /// `GET /native/projections/{operationId}`, owner-authenticated.
     func projectionRequest(operationId: String, credential: String) -> URLRequest {
         var request = URLRequest(

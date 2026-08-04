@@ -1,20 +1,103 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>OAAth owner-phone demo</title>
-  <style>
-    :root{font:16px system-ui;color-scheme:dark;background:#111;color:#eee}body{max-width:760px;margin:3rem auto;padding:0 1rem}main{display:grid;gap:1rem}button{font:inherit;padding:.9rem;text-align:left;border:1px solid #666;border-radius:.5rem;background:#222;color:inherit}button:disabled{opacity:.5}code,pre{font-family:ui-monospace,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#191919;padding:1rem;border-radius:.5rem;min-height:8rem}.account{color:#8ee}
-  </style>
-</head>
-<body><main>
-  <h1>Owner-phone demo</h1>
-  <p>Arbitrum Sepolia profile. The owner P-256 key stays on the phone; the session private key is generated and signs only in this page.</p>
-  <p class="account" id="account">Account: locked</p>
-  <button type="button" id="unlock">1. Unlock account</button>
-  <button type="button" id="permission">2. Request permission</button>
-  <button type="button" id="session">3. Send tx with session key</button>
-  <button type="button" id="owner">4. Send tx with owner key</button>
-  <pre id="status">Ready. Pair the phone using the terminal QR/link first.</pre>
-</main><script type="module" src="/demo.js"></script></body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>OAAth owner-phone demo</title>
+    <style>
+      :root {
+        font: 16px system-ui;
+        color-scheme: dark;
+        background: #111;
+        color: #eee;
+      }
+      body {
+        max-width: 760px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+      main {
+        display: grid;
+        gap: 1rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.9rem;
+        text-align: left;
+        border: 1px solid #666;
+        border-radius: 0.5rem;
+        background: #222;
+        color: inherit;
+      }
+      button:disabled {
+        opacity: 0.5;
+      }
+      code,
+      pre,
+      input {
+        font-family: ui-monospace, monospace;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: #191919;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        min-height: 8rem;
+      }
+      .account {
+        color: #8ee;
+      }
+      .pairing {
+        display: grid;
+        gap: 0.75rem;
+        padding: 1rem;
+        border: 1px solid #666;
+        border-radius: 0.5rem;
+      }
+      .pairing[hidden] {
+        display: none;
+      }
+      .pairing img {
+        width: min(100%, 320px);
+        background: #fff;
+      }
+      .pairing input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.6rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Owner-phone demo</h1>
+      <p>
+        Arbitrum Sepolia profile. The owner P-256 key stays on the phone; the
+        session private key is generated and signs only in this page.
+      </p>
+      <button type="button" id="pair">Pair phone</button>
+      <section class="pairing" id="pairing" aria-live="polite" hidden>
+        <strong
+          >Scan with the iPhone camera, then confirm pairing in the app.</strong
+        >
+        <img id="pairing-qr" alt="One-time phone pairing QR code" />
+        <label for="pairing-link">Copyable one-time pairing link</label>
+        <input
+          id="pairing-link"
+          type="text"
+          readonly
+          aria-label="Copyable one-time phone pairing link"
+        />
+      </section>
+      <p class="account" id="account">Account: locked</p>
+      <button type="button" id="unlock">1. Unlock account</button>
+      <button type="button" id="permission">2. Request permission</button>
+      <button type="button" id="session">3. Send tx with session key</button>
+      <button type="button" id="owner">4. Send tx with owner key</button>
+      <pre id="status">
+Ready. Open this page on loopback and choose Pair phone, then use the four account actions.</pre>
+    </main>
+    <script type="module" src="/demo.js"></script>
+  </body>
 </html>

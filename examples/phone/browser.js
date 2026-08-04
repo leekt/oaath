@@ -5,6 +5,9 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 const $ = (id) => document.getElementById(id);
 const status = $("status");
 const account = $("account");
+const pairingPanel = $("pairing");
+const pairingQr = $("pairing-qr");
+const pairingLink = $("pairing-link");
 const keyName = "oaath-demo-session-private-key-v1";
 const permissionRequestKey = "oaath-demo-permission-request-v1";
 const sessionOperationKey = "oaath-demo-session-operation-v1";
@@ -48,6 +51,78 @@ const sign = (hash, key) => {
   const recovery = signature.recovery;
   if (recovery === undefined) throw new Error("session signature has no recovery id");
   return `0x${signature.toCompactHex()}${(27 + recovery).toString(16).padStart(2, "0")}`;
+};
+let pairingExpiryTimer = null;
+let pairingStatusTimer = null;
+let pairingRequestGeneration = 0;
+const clearPairingSecret = () => {
+  if (pairingExpiryTimer !== null) clearTimeout(pairingExpiryTimer);
+  if (pairingStatusTimer !== null) clearInterval(pairingStatusTimer);
+  pairingExpiryTimer = null;
+  pairingStatusTimer = null;
+  pairingQr.removeAttribute("src");
+  pairingLink.value = "";
+  pairingPanel.hidden = true;
+};
+const exactPairingSecret = (value) => {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !== "expiresAt,pairingLink,qrDataUrl,version" ||
+    value.version !== "oaath.demo-pairing-secret/v1" ||
+    typeof value.pairingLink !== "string" ||
+    !value.pairingLink.startsWith("oaath-demo://pair?") ||
+    typeof value.qrDataUrl !== "string" ||
+    !value.qrDataUrl.startsWith("data:image/png;base64,") ||
+    !Number.isSafeInteger(value.expiresAt) ||
+    value.expiresAt <= Date.now()
+  )
+    throw new Error("pairing_secret_invalid");
+  return value;
+};
+$("pair").onclick = async () => {
+  const generation = ++pairingRequestGeneration;
+  clearPairingSecret();
+  try {
+    const secret = exactPairingSecret(
+      await json("/demo/pairing-secret", { method: "POST", body: "{}" }),
+    );
+    if (generation !== pairingRequestGeneration) return;
+    pairingQr.src = secret.qrDataUrl;
+    pairingLink.value = secret.pairingLink;
+    pairingPanel.hidden = false;
+    say("Pairing secret shown only in this loopback page. Scan or copy it before it expires.");
+    pairingExpiryTimer = setTimeout(
+      () => {
+        if (generation !== pairingRequestGeneration) return;
+        pairingRequestGeneration += 1;
+        clearPairingSecret();
+        say("The one-time pairing secret expired. Restart the example for a fresh code.");
+      },
+      Math.min(secret.expiresAt - Date.now(), 2_147_483_647),
+    );
+    pairingStatusTimer = setInterval(async () => {
+      if (generation !== pairingRequestGeneration) return;
+      try {
+        const response = await fetch("/demo/account");
+        if (!response.ok || generation !== pairingRequestGeneration) return;
+        pairingRequestGeneration += 1;
+        clearPairingSecret();
+        say("Phone paired. The one-time pairing secret is now hidden.");
+      } catch {
+        // A bounded status check has no authority and reveals no diagnostics.
+      }
+    }, 1_000);
+  } catch {
+    if (generation !== pairingRequestGeneration) return;
+    pairingRequestGeneration += 1;
+    clearPairingSecret();
+    const port = globalThis.location?.port ? `:${globalThis.location.port}` : "";
+    say(
+      `Pairing secret unavailable. Open http://127.0.0.1${port}/ on this Mac; LAN pages cannot disclose it.`,
+    );
+  }
 };
 const poll = async (path, label, id) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {

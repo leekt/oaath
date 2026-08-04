@@ -1,14 +1,15 @@
 /**
  EXPERIMENTAL PREVIEW — the demo app's screens over the OwnerPhone library.
 
- First launch pairs: relay base URL + the pairing code the example prints. The
+ First launch pairs: relay base URL + the one-shot code the example provides. The
  normalized relay endpoint and returned device credential are persisted as one
  bound identity and used together for every later call; a refused credential
  (HTTP 401) clears that whole identity and returns to pairing.
 
- A push notification tap NEVER approves anything: it only opens the consent
- screen, which presents Approve and Reject as explicit buttons (the library's
- `ApprovalView`). Nothing decides on tap, foreground, or notification action.
+ The authenticated pull inbox is the default chooser. Polling, selecting an
+ item, or tapping an optional push notification NEVER approves anything: each
+ only opens the consent screen, which presents Approve and Reject as explicit
+ buttons (the library's `ApprovalView`).
 
  @author taek <leekt216@gmail.com>
  */
@@ -34,6 +35,12 @@ public final class DemoModel: ObservableObject {
     @Published public private(set) var statusLine = ""
     @Published public private(set) var approval: ApprovalModel?
     @Published public private(set) var deliveryLine = ""
+    /// Opaque pending summaries from the authenticated example-owned inbox.
+    @Published public private(set) var inbox: [DemoInboxItem] = []
+    /// Bounded status codes/prose only; transport bodies and errors never enter UI state.
+    @Published public private(set) var inboxStatusLine = ""
+    /// Changes whenever polling ownership changes so SwiftUI cancels the old task.
+    @Published public private(set) var pollingIdentity = UUID()
     /// The smart account address the relay derived from this key at pairing.
     @Published public private(set) var account: String?
 
@@ -51,6 +58,7 @@ public final class DemoModel: ObservableObject {
     /// link application, or unpair invalidates every older completion.
     private var pairingAttempt: UUID?
     private var pairingIdentity: PersistedPairing?
+    private var inboxRefreshToken: UUID?
     private var phaseSink: AnyCancellable?
     private var delivered: Set<String> = []
 
@@ -140,6 +148,7 @@ public final class DemoModel: ObservableObject {
             baseURLText = pairing.endpoint.baseURL.absoluteString
             pairingCodeText = ""
             paired = true
+            pollingIdentity = UUID()
             rebuildApproval(pairing)
             statusLine = "Paired. Relay and owner credential are now bound together."
         } catch DemoPairingError.refused {
@@ -165,6 +174,61 @@ public final class DemoModel: ObservableObject {
         deliveryLine = ""
         await approval.open(
             operationId: operationIdText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Latest-wins authenticated inbox read. A completion owns model state only
+    /// while the exact captured pairing and refresh token are still current.
+    public func refreshInbox() async {
+        guard let capturedPairing = pairingIdentity, paired else { return }
+        let token = UUID()
+        inboxRefreshToken = token
+        do {
+            let items = try await fetchDemoInbox(
+                pairing: capturedPairing,
+                http: http,
+                onUnauthorized: { [weak self] rejectedPairing in
+                    await self?.rejectInboxIfOwned(
+                        rejectedPairing, refreshToken: token)
+                })
+            guard inboxRefreshToken == token,
+                  pairingIdentity == capturedPairing,
+                  paired,
+                  !Task.isCancelled
+            else { return }
+            inboxRefreshToken = nil
+            inbox = items
+            inboxStatusLine = items.isEmpty ? "No pending requests." : "Pending requests refreshed."
+        } catch {
+            guard inboxRefreshToken == token,
+                  pairingIdentity == capturedPairing,
+                  paired,
+                  !Task.isCancelled
+            else { return }
+            inboxRefreshToken = nil
+            inboxStatusLine = "Inbox unavailable (refresh_failed)."
+        }
+    }
+
+    /// Polls only while this paired-screen task owns the current identity.
+    public func pollInbox() async {
+        let owner = pollingIdentity
+        while !Task.isCancelled, paired, pollingIdentity == owner {
+            await refreshInbox()
+            guard !Task.isCancelled, paired, pollingIdentity == owner else { return }
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+        }
+    }
+
+    /// Selection opens the existing full projection flow and never decides.
+    public func openInboxItem(_ item: DemoInboxItem) async {
+        guard inbox.contains(item), pairingIdentity != nil, let approval else { return }
+        operationIdText = item.operationId
+        deliveryLine = ""
+        await approval.open(operationId: item.operationId)
     }
 
     public func receive(push: OwnerPhonePush) async {
@@ -209,6 +273,20 @@ public final class DemoModel: ObservableObject {
         pairingAttempt = nil
     }
 
+    /// A stale or cancelled inbox response has no authority even when it used
+    /// the same pairing as a newer successful refresh.
+    private func rejectInboxIfOwned(
+        _ rejectedPairing: PersistedPairing,
+        refreshToken: UUID
+    ) {
+        guard inboxRefreshToken == refreshToken,
+              pairingIdentity == rejectedPairing,
+              paired,
+              !Task.isCancelled
+        else { return }
+        rejectIfCurrent(rejectedPairing)
+    }
+
     /// Compare-and-clear both authority owners. A delayed request made by A
     /// cannot change persistence or UI after A was replaced by B.
     private func rejectIfCurrent(_ rejectedPairing: PersistedPairing) {
@@ -221,6 +299,10 @@ public final class DemoModel: ObservableObject {
 
     private func resetPairingUI() {
         pairingIdentity = nil
+        inboxRefreshToken = nil
+        inbox = []
+        inboxStatusLine = ""
+        pollingIdentity = UUID()
         approval = nil
         phaseSink = nil
         paired = false
@@ -287,14 +369,17 @@ public struct DemoRootView: View {
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
             }
-            Section("Pairing code (printed by examples/phone)") {
+            Section("Pairing code (shown by the browser Pair action)") {
                 TextField("ABCD-EFGH-IJ or oaath-demo:// link", text: $model.pairingCodeText)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
                 Button("Pair this device") { Task { await model.pair() } }
             }
             Section {
-                Text("Scan the QR code the terminal printed (system camera), tap the oaath-demo:// link, or paste it above — it fills this screen; pairing is still this button.")
+                Text(
+                    "On the Mac, open the printed loopback browser URL and choose Pair phone. "
+                    + "Scan its transient QR (system camera), tap the oaath-demo:// link, or paste "
+                    + "it above — pairing is still this button.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -303,7 +388,10 @@ public struct DemoRootView: View {
                 Text(model.statusLine).font(.footnote)
             }
             Section {
-                Text("The pairing code printed to the terminal is this demo's trust root, on a trusted network only. A production deployment owns pairing UX (QR, attestation).")
+                Text(
+                    "The one-shot code shown by the loopback browser (or interactive terminal fallback) "
+                    + "is this demo's trust root, on a trusted network only. A production deployment "
+                    + "owns pairing UX (QR, attestation).")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -351,6 +439,41 @@ public struct DemoRootView: View {
             VStack(spacing: 16) {
                 accountBody
                 ownerKeyBanner
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Pending requests").font(.headline)
+                        Spacer()
+                        Button("Refresh") { Task { await model.refreshInbox() } }
+                    }
+                    Text("Pull inbox is the default Simulator/free-account path. APNs is an optional physical-device enhancement.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if model.inbox.isEmpty {
+                        Text("No pending requests.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.inbox) { item in
+                            Button {
+                                Task { await model.openInboxItem(item) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.matchCode.display)
+                                        .font(.body.monospaced().bold())
+                                    Text("Expires \(Date(timeIntervalSince1970: Double(item.expiresAt) / 1000).formatted())")
+                                        .font(.caption)
+                                    Text(item.operationId)
+                                        .font(.caption2.monospaced())
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    if !model.inboxStatusLine.isEmpty {
+                        Text(model.inboxStatusLine).font(.caption)
+                    }
+                }
                 if let approval = model.approval {
                     ApprovalView(model: approval)
                 }
@@ -359,7 +482,7 @@ public struct DemoRootView: View {
                 }
                 Divider()
                 VStack(spacing: 8) {
-                    Text("No notification? Paste the operation id the web example printed.")
+                    Text("Inbox unavailable? Paste the operation id from the web example.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     TextField("operation id", text: $model.operationIdText)
@@ -377,6 +500,9 @@ public struct DemoRootView: View {
             .padding()
         }
         .navigationTitle("OAAth approvals")
+        .task(id: model.pollingIdentity) {
+            await model.pollInbox()
+        }
     }
 }
 #endif

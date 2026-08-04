@@ -44,28 +44,37 @@ private enum DeferredHTTPError: Error {
 
 private actor DeferredHTTP: DemoHTTP {
     typealias Response = (Data, Int)
-    private var pending: [String: CheckedContinuation<Response, Error>] = [:]
+    private var pending: [String: [CheckedContinuation<Response, Error>]] = [:]
     private var recorded: [URLRequest] = []
 
     func send(_ request: URLRequest) async throws -> Response {
         recorded.append(request)
         let key = Self.key(for: request)
         return try await withCheckedThrowingContinuation { continuation in
-            precondition(pending[key] == nil, "duplicate deferred request key \(key)")
-            pending[key] = continuation
+            pending[key, default: []].append(continuation)
         }
     }
 
-    func wait(for key: String) async {
-        while pending[key] == nil { await Task.yield() }
+    func wait(for key: String, count: Int = 1) async {
+        while (pending[key]?.count ?? 0) < count { await Task.yield() }
     }
 
-    func succeed(_ key: String, body: Data, status: Int = 200) {
-        precondition(pending.removeValue(forKey: key)?.resume(returning: (body, status)) != nil)
+    func succeed(_ key: String, body: Data, status: Int = 200, index: Int = 0) {
+        guard var continuations = pending[key], continuations.indices.contains(index) else {
+            preconditionFailure("missing deferred request key \(key) at index \(index)")
+        }
+        let continuation = continuations.remove(at: index)
+        pending[key] = continuations.isEmpty ? nil : continuations
+        continuation.resume(returning: (body, status))
     }
 
-    func fail(_ key: String) {
-        precondition(pending.removeValue(forKey: key)?.resume(throwing: DeferredHTTPError.transport) != nil)
+    func fail(_ key: String, index: Int = 0) {
+        guard var continuations = pending[key], continuations.indices.contains(index) else {
+            preconditionFailure("missing deferred request key \(key) at index \(index)")
+        }
+        let continuation = continuations.remove(at: index)
+        pending[key] = continuations.isEmpty ? nil : continuations
+        continuation.resume(throwing: DeferredHTTPError.transport)
     }
 
     func requests() -> [URLRequest] { recorded }
@@ -84,6 +93,48 @@ private actor DeferredHTTP: DemoHTTP {
 
 private func pairingResponse(_ credential: String) -> Data {
     Data(#"{"deviceCredential":"\#(credential)","account":null}"#.utf8)
+}
+
+private func inboxResponse(
+    _ items: [(operationId: String, displayPayload: String, expiresAt: Int)]
+) throws -> Data {
+    try JSONSerialization.data(
+        withJSONObject: [
+            "requests": items.map {
+                [
+                    "displayPayload": $0.displayPayload,
+                    "expiresAt": $0.expiresAt,
+                    "operationId": $0.operationId
+                ] as [String: Any]
+            },
+            "version": demoInboxVersion
+        ],
+        options: [.sortedKeys])
+}
+
+private final class InboxRecordingHTTP: DemoHTTP, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [URLRequest] = []
+    let inboxBody: Data
+
+    init(inboxBody: Data) {
+        self.inboxBody = inboxBody
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, Int) {
+        lock.withLock { recorded.append(request) }
+        if request.url?.path == "/demo/inbox" { return (inboxBody, 200) }
+        if request.httpMethod == "GET", request.url?.path.hasPrefix("/native/projections/") == true {
+            let operationId = request.url?.lastPathComponent ?? "request"
+            return (try JSONSerialization.data(
+                withJSONObject: projectionJson(operationId: operationId)), 200)
+        }
+        return (Data(), 500)
+    }
+
+    func requests() -> [URLRequest] {
+        lock.withLock { recorded }
+    }
 }
 
 private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
@@ -125,6 +176,11 @@ final class DemoRelayEndpointTests: XCTestCase {
     func testBuildsTheExactPreviewRoutes() throws {
         let endpoint = try DemoRelayEndpoint(baseURLText: "http://192.168.1.20:8787/")
         XCTAssertEqual(endpoint.baseURL.absoluteString, "http://192.168.1.20:8787")
+
+        let inbox = endpoint.inboxRequest(credential: "cred")
+        XCTAssertEqual(inbox.httpMethod, "GET")
+        XCTAssertEqual(inbox.url?.absoluteString, "http://192.168.1.20:8787/demo/inbox")
+        XCTAssertEqual(inbox.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
 
         let projection = endpoint.projectionRequest(operationId: "req-1", credential: "cred")
         XCTAssertEqual(projection.httpMethod, "GET")
@@ -196,6 +252,99 @@ final class DemoRelayEndpointTests: XCTestCase {
         }
         let reportedPairing = await unauthorized.read()
         XCTAssertEqual(reportedPairing, pairing)
+    }
+}
+
+final class DemoInboxCodecTests: XCTestCase {
+    func testDecodesTheExactCanonicalBoundedInbox() throws {
+        let data = try inboxResponse([
+            ("request-a", "AAAA1111", 1_900_000_000_000),
+            ("request-b", "BBBB2222", 1_900_000_000_001)
+        ])
+        let items = try decodeDemoInbox(data)
+        XCTAssertNoThrow(try decodeDemoInbox(
+            Data(#"{"requests":[],"version":"oaath.demo-inbox/v1"}"#.utf8)))
+        XCTAssertEqual(items.map(\.operationId), ["request-a", "request-b"])
+        XCTAssertEqual(items.map(\.matchCode.value), ["AAAA1111", "BBBB2222"])
+        XCTAssertEqual(items.map(\.expiresAt), [1_900_000_000_000, 1_900_000_000_001])
+
+        let tied = try inboxResponse([
+            ("0", "ZERO0000", 1_900_000_000_002),
+            ("A", "UPPER000", 1_900_000_000_002),
+            ("_", "UNDER000", 1_900_000_000_002),
+            ("a", "LOWER000", 1_900_000_000_002)
+        ])
+        XCTAssertEqual(try decodeDemoInbox(tied).map(\.operationId), ["0", "A", "_", "a"])
+        let localeOrdered = try inboxResponse([
+            ("_", "UNDER000", 1_900_000_000_002),
+            ("0", "ZERO0000", 1_900_000_000_002),
+            ("a", "LOWER000", 1_900_000_000_002),
+            ("A", "UPPER000", 1_900_000_000_002)
+        ])
+        XCTAssertThrowsError(try decodeDemoInbox(localeOrdered))
+    }
+
+    func testRejectsUnknownMalformedDuplicateNoncanonicalAndOversizedInput() throws {
+        let valid = try inboxResponse([("request-a", "AAAA1111", 1_900_000_000_000)])
+        let validText = try XCTUnwrap(String(data: valid, encoding: .utf8))
+        let malformed = [
+            Data(),
+            Data("[]".utf8),
+            Data(#"{"extra":true,"requests":[],"version":"oaath.demo-inbox/v1"}"#.utf8),
+            Data(validText.replacingOccurrences(of: "AAAA1111", with: "short").utf8),
+            Data(validText.replacingOccurrences(of: "request-a", with: "bad/request").utf8),
+            Data(validText.replacingOccurrences(of: "1900000000000", with: "true").utf8),
+            Data("{\"requests\":[],\"version\":\"oaath.demo-inbox/v1\",\"version\":\"oaath.demo-inbox/v1\"}".utf8),
+            Data(repeating: 0x20, count: 8_193)
+        ]
+        for (index, data) in malformed.enumerated() {
+            XCTAssertThrowsError(try decodeDemoInbox(data), "malformed case \(index)") {
+                XCTAssertEqual($0 as? DemoInboxError, .invalidResponse)
+            }
+        }
+
+        let tooMany = try inboxResponse((0...demoInboxLimit).map {
+            ("request-\($0)", "CODE\(String(format: "%04d", $0))", 1_900_000_000_000 + $0)
+        })
+        XCTAssertThrowsError(try decodeDemoInbox(tooMany))
+
+        let unsorted = try inboxResponse([
+            ("request-b", "BBBB2222", 1_900_000_000_001),
+            ("request-a", "AAAA1111", 1_900_000_000_000)
+        ])
+        XCTAssertThrowsError(try decodeDemoInbox(unsorted))
+    }
+
+    func testFetchBindsEndpointAndCredentialAndReportsOnlyCaptured401() async throws {
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: "device-credential",
+            account: nil)
+        let recorder = FakeHTTP.Recorder()
+        let items = try await fetchDemoInbox(
+            pairing: pairing,
+            http: FakeHTTP(
+                status: 200,
+                body: try inboxResponse([("request-a", "AAAA1111", 1_900_000_000_000)]),
+                recorder: recorder))
+        XCTAssertEqual(items.map(\.operationId), ["request-a"])
+        XCTAssertEqual(recorder.requests.first?.url?.absoluteString, "http://relay.example:8787/demo/inbox")
+        XCTAssertEqual(
+            recorder.requests.first?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer device-credential")
+
+        let unauthorized = PairingCapture()
+        do {
+            _ = try await fetchDemoInbox(
+                pairing: pairing,
+                http: FakeHTTP(status: 401, body: Data(), recorder: .init()),
+                onUnauthorized: { await unauthorized.record($0) })
+            XCTFail("401 must fail closed")
+        } catch {
+            XCTAssertEqual(error as? DemoInboxError, .status(401))
+        }
+        let rejectedPairing = await unauthorized.read()
+        XCTAssertEqual(rejectedPairing, pairing)
     }
 }
 
@@ -288,6 +437,122 @@ final class PairingClientTests: XCTestCase {
 
 @MainActor
 final class DemoPairingIdentityTests: XCTestCase {
+    func testInboxRefreshAndSelectionOpenExactProjectionWithoutDeciding() async throws {
+        let store = InMemoryPairingStore()
+        try store.save(PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: "credential-a",
+            account: nil))
+        let http = InboxRecordingHTTP(inboxBody: try inboxResponse([
+            ("request-a", "AAAA1111", 1_900_000_000_000)
+        ]))
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+
+        await model.refreshInbox()
+        XCTAssertEqual(model.inbox.map(\.operationId), ["request-a"])
+        XCTAssertEqual(model.inboxStatusLine, "Pending requests refreshed.")
+        await model.openInboxItem(try XCTUnwrap(model.inbox.first))
+
+        XCTAssertEqual(
+            http.requests().map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" },
+            ["GET /demo/inbox", "GET /native/projections/request-a"])
+        XCTAssertFalse(http.requests().contains {
+            $0.httpMethod == "POST" && $0.url?.path.hasPrefix("/native/decisions/") == true
+        })
+        guard case let .review(review) = model.approval?.phase else {
+            return XCTFail("selection did not open the existing approval model")
+        }
+        XCTAssertEqual(review.projection.operationId, "request-a")
+        XCTAssertEqual(review.state, .pending)
+    }
+
+    func testStaleInboxRefreshCannotOverwriteAReplacementPairingOrList() async throws {
+        let store = InMemoryPairingStore()
+        try store.save(PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
+            credential: "credential-a",
+            account: nil))
+        let http = DeferredHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+        let refreshA = Task { await model.refreshInbox() }
+        await http.wait(for: "auth:Bearer credential-a:inbox")
+
+        model.unpair()
+        model.baseURLText = "http://relay-b.example:9999"
+        model.pairingCodeText = "PAIR-B"
+        let pairB = Task { await model.pair() }
+        await http.wait(for: "pair:PAIR-B")
+        await http.succeed("pair:PAIR-B", body: pairingResponse("credential-b"))
+        await pairB.value
+
+        let refreshB = Task { await model.refreshInbox() }
+        await http.wait(for: "auth:Bearer credential-b:inbox")
+        await http.succeed(
+            "auth:Bearer credential-b:inbox",
+            body: try inboxResponse([("request-b", "BBBB2222", 1_900_000_000_001)]))
+        await refreshB.value
+        await http.succeed(
+            "auth:Bearer credential-a:inbox",
+            body: try inboxResponse([("request-a", "AAAA1111", 1_900_000_000_000)]))
+        await refreshA.value
+
+        XCTAssertEqual(store.load()?.credential, "credential-b")
+        XCTAssertEqual(model.inbox.map(\.operationId), ["request-b"])
+
+        // A 401 from the current inbox request compare-clears only B.
+        let refusedB = Task { await model.refreshInbox() }
+        await http.wait(for: "auth:Bearer credential-b:inbox")
+        await http.succeed("auth:Bearer credential-b:inbox", body: Data(), status: 401)
+        await refusedB.value
+        XCTAssertNil(store.load())
+        XCTAssertFalse(model.paired)
+        XCTAssertTrue(model.inbox.isEmpty)
+    }
+
+    func testStaleAndCancelledInbox401CannotClearTheCurrentPairing() async throws {
+        let store = InMemoryPairingStore()
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: "credential-a",
+            account: nil)
+        try store.save(pairing)
+        let http = DeferredHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+        let key = "auth:Bearer credential-a:inbox"
+
+        let stale = Task { await model.refreshInbox() }
+        await http.wait(for: key)
+        let current = Task { await model.refreshInbox() }
+        await http.wait(for: key, count: 2)
+        await http.succeed(
+            key,
+            body: try inboxResponse([("request-current", "CURR0000", 1_900_000_000_001)]),
+            index: 1)
+        await current.value
+        await http.succeed(key, body: Data(), status: 401)
+        await stale.value
+
+        XCTAssertEqual(store.load(), pairing)
+        XCTAssertTrue(model.paired)
+        XCTAssertEqual(model.inbox.map(\.operationId), ["request-current"])
+
+        let cancelled = Task { await model.refreshInbox() }
+        await http.wait(for: key)
+        cancelled.cancel()
+        await http.succeed(key, body: Data(), status: 401)
+        await cancelled.value
+        XCTAssertEqual(store.load(), pairing)
+        XCTAssertTrue(model.paired)
+
+        let refusedCurrent = Task { await model.refreshInbox() }
+        await http.wait(for: key)
+        await http.succeed(key, body: Data(), status: 401)
+        await refusedCurrent.value
+        XCTAssertNil(store.load())
+        XCTAssertFalse(model.paired)
+        XCTAssertTrue(model.inbox.isEmpty)
+    }
+
     func testDifferentEndpointLinkCannotRebindAndRestartUsesOnlyBoundEndpoint() async throws {
         let ownerKey = FakeOwnerSigning()
         let store = InMemoryPairingStore()

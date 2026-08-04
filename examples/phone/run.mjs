@@ -35,9 +35,11 @@ import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
 import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
 import { build } from "esbuild";
+import QRCode from "qrcode";
 import qrcode from "qrcode-terminal";
 import { createPublicClient, custom, hexToBytes, keccak256, parseEther, toHex } from "viem";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
+import { markInboxTerminal, serveDemoInbox, servePairingSecret } from "./demo-routes.mjs";
 import {
   AtomicPermissionReservation,
   AtomicReservationLane,
@@ -117,9 +119,10 @@ const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const PAIRING_CODE = [...randomBytes(10)]
   .map((byte) => codeAlphabet[byte % codeAlphabet.length])
   .join("");
+const pairingExpiresAt = Date.now() + PAIRING_TTL_MS;
 const pairing = new OneShotPairing({
   hash: sha256(PAIRING_CODE),
-  expiresAt: Date.now() + PAIRING_TTL_MS,
+  expiresAt: pairingExpiresAt,
 });
 const pairedDevices = new Map();
 let activeDevice = null;
@@ -361,6 +364,7 @@ async function createSignatureRequest(
     code: null,
     outcome: null,
     consumed: false,
+    inboxState: "unavailable",
   };
   signatureRequests.set(created.requestId, record);
   signatureRequestLane.activate(reservationToken, created.requestId);
@@ -371,6 +375,12 @@ async function createSignatureRequest(
       `/native/projections/${created.requestId}`,
       activeDevice.credential,
     );
+    record.inboxSummary = Object.freeze({
+      operationId: projection.operationId,
+      displayPayload: projection.displayPayload,
+      expiresAt: projection.expiresAt,
+    });
+    record.inboxState = "pending";
     maybePush(projection).catch(() => {});
   } catch (error) {
     if (SIMULATE) throw error;
@@ -384,7 +394,7 @@ async function createSignatureRequest(
       await relayCall("POST", `/native/decisions/${created.requestId}`, activeDevice.credential, {
         command: "reject",
       });
-    } else {
+    } else if (simulationCommand === "approve") {
       const signature = `0x${p256.sign(hexToBytes(digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
       const decision = await relayCall(
         "POST",
@@ -1020,6 +1030,35 @@ function listener(incoming, outgoing) {
         if (incoming.method !== "POST") return refusal(outgoing, 405, "pairing_request_invalid");
         return await handlePairing(body, outgoing);
       }
+      if (
+        serveDemoInbox({
+          incoming,
+          outgoing,
+          pathname: url.pathname,
+          activeDevice,
+          records: signatureRequests,
+          now: () => Date.now(),
+        })
+      )
+        return;
+      if (
+        await servePairingSecret({
+          incoming,
+          outgoing,
+          pathname: url.pathname,
+          allowedOrigins: new Set([
+            `http://127.0.0.1:${relayPort}`,
+            `http://localhost:${relayPort}`,
+            `http://[::1]:${relayPort}`,
+          ]),
+          pairingAvailable: () => pairing.available(Date.now()),
+          pairingLink,
+          expiresAt: pairingExpiresAt,
+          renderQr: (value) =>
+            QRCode.toDataURL(value, { type: "image/png", errorCorrectionLevel: "M", margin: 2 }),
+        })
+      )
+        return;
       if (url.pathname.startsWith("/demo/"))
         return await handleDemo(incoming.method, url.pathname, body, outgoing);
       const headers = [];
@@ -1028,8 +1067,15 @@ function listener(incoming, outgoing) {
       const response = await relayHandler(
         new Request(url, { method: incoming.method, headers, ...(body.length ? { body } : {}) }),
       );
+      const responseBody = Buffer.from(await response.arrayBuffer());
+      if (
+        response.status === 200 &&
+        incoming.method === "POST" &&
+        /^\/native\/decisions\/[^/]+$/u.test(url.pathname)
+      )
+        markInboxTerminal(signatureRequests, decodeURIComponent(url.pathname.split("/").at(-1)));
       outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-      outgoing.end(Buffer.from(await response.arrayBuffer()));
+      outgoing.end(responseBody);
     } catch {
       say("request failed", "demo_failed");
       if (!outgoing.headersSent) refusal(outgoing, 500, "demo_failed");
@@ -1106,7 +1152,7 @@ redirectUri = `${relayUrl}/demo/callback`;
 const pairingLink = `oaath-demo://pair?relay=${encodeURIComponent(relayUrl)}&code=${encodeURIComponent(PAIRING_CODE)}`;
 say("\nOAAth owner-phone demo");
 say(`mode             ${MODE}`);
-say(`web + relay      ${relayUrl}`);
+say(`browser UI       http://127.0.0.1:${relayPort}`);
 if (pairingSecretMayRender({ simulate: SIMULATE, isTTY: process.stdout.isTTY })) {
   // This is transient interactive UI, never a log/captured-output path.
   process.stdout.write(`pairing link     ${pairingLink}\n`);
@@ -1137,6 +1183,85 @@ async function simulate() {
     (await relayCall("GET", "/demo/account", null)).account === pair.account,
     "unlock changed the account",
   );
+
+  // The pull inbox is an authenticated read-only projection of the existing
+  // signature records. It neither decides the request nor touches its release
+  // path, lane, operation state, or relay-create count.
+  const inboxDigest = `0x${"59".repeat(32)}`;
+  const inboxRequest = await createSignatureRequest(
+    inboxDigest,
+    canonicalDisplay({ digest: inboxDigest, kind: "inbox-regression" }),
+    "inbox-regression",
+    "pending",
+  );
+  const inboxUrl = `http://127.0.0.1:${relayPort}/demo/inbox`;
+  const inboxFetch = (token) =>
+    fetch(inboxUrl, {
+      headers: token === null ? {} : { authorization: `Bearer ${token}` },
+    });
+  for (const token of [null, "stale-device", CLIENT_TOKEN, OWNER_TOKEN]) {
+    const refused = await inboxFetch(token);
+    expect(refused.status === 401, "non-device credential reached the inbox");
+  }
+  const createsBeforePull = relayCreates;
+  const laneBeforePull = JSON.stringify(signatureRequestLane.active);
+  const operationsBeforePull = JSON.stringify([...operations.entries()]);
+  const artifactBeforePull = inboxRequest.artifact;
+  const codeBeforePull = inboxRequest.code;
+  const inboxResponse = await inboxFetch(activeDevice.credential);
+  expect(inboxResponse.status === 200, "paired device could not read inbox");
+  const inboxBody = await inboxResponse.json();
+  expect(
+    JSON.stringify(Object.keys(inboxBody)) === JSON.stringify(["requests", "version"]),
+    "inbox envelope drifted",
+  );
+  expect(inboxBody.version === "oaath.demo-inbox/v1", "inbox version drifted");
+  expect(inboxBody.requests.length === 1, "pending request missing from inbox");
+  expect(
+    JSON.stringify(Object.keys(inboxBody.requests[0])) ===
+      JSON.stringify(["displayPayload", "expiresAt", "operationId"]),
+    "inbox item fields drifted",
+  );
+  expect(inboxBody.requests[0].operationId === inboxRequest.requestId, "inbox id drifted");
+  const serializedInbox = JSON.stringify(inboxBody);
+  for (const forbidden of [
+    "digest",
+    "consent",
+    "signature",
+    "credential",
+    "pairingCode",
+    "redirectUri",
+    "provider",
+  ])
+    expect(!serializedInbox.includes(forbidden), `inbox leaked ${forbidden}`);
+  expect(relayCreates === createsBeforePull, "inbox pull created relay consent");
+  expect(JSON.stringify(signatureRequestLane.active) === laneBeforePull, "inbox pull changed lane");
+  expect(
+    JSON.stringify([...operations.entries()]) === operationsBeforePull,
+    "inbox pull changed operations",
+  );
+  expect(
+    inboxRequest.artifact === artifactBeforePull && inboxRequest.code === codeBeforePull,
+    "inbox pull changed release state",
+  );
+  const inboxSignature = `0x${p256.sign(hexToBytes(inboxDigest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
+  const inboxDecision = await relayCall(
+    "POST",
+    `/native/decisions/${inboxRequest.requestId}`,
+    activeDevice.credential,
+    { command: "approve", artifact: inboxSignature },
+  );
+  inboxRequest.code = inboxDecision.release.code;
+  expect(
+    (await (await inboxFetch(activeDevice.credential)).json()).requests.length === 0,
+    "approved request remained in inbox",
+  );
+  expect(
+    inboxRequest.artifact === null && inboxRequest.code !== null,
+    "inbox terminal marker stole release",
+  );
+  expect((await resolveSignature(inboxRequest)) !== null, "approved inbox request did not deliver");
+
   const rejectedDigest = `0x${"5a".repeat(32)}`;
   const rejectedRequest = await createSignatureRequest(
     rejectedDigest,
@@ -1149,6 +1274,47 @@ async function simulate() {
   expect(rejectedRequest.outcome === "rejected", "reject was not terminal");
   expect(signatureRequestLane.active === null, "reject did not clear the signature lane");
   expect(Date.now() - rejectedAt < 1_000, "reject did not terminate promptly");
+  expect(
+    (await (await inboxFetch(activeDevice.credential)).json()).requests.length === 0,
+    "rejected request remained in inbox",
+  );
+
+  // Defensive cap/order and expiry are exercised over the actual HTTP route.
+  const syntheticIds = [];
+  const syntheticNow = Date.now();
+  for (let index = 0; index < 25; index += 1) {
+    const operationId = `synthetic-${String(24 - index).padStart(2, "0")}`;
+    syntheticIds.push(operationId);
+    signatureRequests.set(operationId, {
+      inboxState: "pending",
+      inboxSummary: Object.freeze({
+        operationId,
+        displayPayload: `CODE${String(index).padStart(4, "0")}`,
+        expiresAt: syntheticNow + 10_000 + (index % 3),
+      }),
+    });
+  }
+  signatureRequests.set("synthetic-expired", {
+    inboxState: "pending",
+    inboxSummary: Object.freeze({
+      operationId: "synthetic-expired",
+      displayPayload: "EXPR0000",
+      expiresAt: syntheticNow,
+    }),
+  });
+  const capped = await (await inboxFetch(activeDevice.credential)).json();
+  expect(capped.requests.length === 20, "inbox cap drifted");
+  const sorted = [...capped.requests].sort(
+    (left, right) =>
+      left.expiresAt - right.expiresAt || left.operationId.localeCompare(right.operationId),
+  );
+  expect(JSON.stringify(capped.requests) === JSON.stringify(sorted), "inbox order drifted");
+  expect(
+    !capped.requests.some(({ operationId }) => operationId === "synthetic-expired"),
+    "expired request remained in inbox",
+  );
+  for (const operationId of [...syntheticIds, "synthetic-expired"])
+    signatureRequests.delete(operationId);
 
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
   const sessionSecret = secp256k1.utils.randomPrivateKey();
@@ -1415,7 +1581,9 @@ async function simulate() {
       stack.sendSigned = originalSend;
     }
   }
-  say("simulate         all four buttons passed; atomic authority and HTTP operation races passed");
+  say(
+    "simulate         Pair plus four account actions passed; atomic authority and HTTP operation races passed",
+  );
 }
 
 try {

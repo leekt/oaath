@@ -13,6 +13,12 @@ published to npm.
   `{version, operationId, expiresAt}` under `oaath`. Nothing else exists in
   the payload by design, and nothing else is accepted — any unknown field at
   any level fails closed, so authority material can never ride a notification.
+- Polls the example-owned authenticated pull inbox by default while paired
+  (about every two seconds, plus manual Refresh). The inbox is a strict closed
+  versioned list of at most 20 immutable operation-id/match-code/expiry
+  summaries. Selecting one only opens the full projection; poll and tap never
+  approve or reject. This is the Simulator/free-account path; APNs remains an
+  optional physical-device enhancement.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
@@ -39,7 +45,8 @@ against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.
 Nothing in the `OwnerPhone` library reads configuration or holds credentials;
 the demo wiring (URLSession transport, pairing, bound endpoint/credential
-custody, code delivery) lives in the `OwnerPhoneDemo` target.
+custody, example-owned `GET /demo/inbox`, code delivery) lives in the
+`OwnerPhoneDemo` target.
 
 ## App wiring
 
@@ -108,7 +115,8 @@ swift build   # macOS host, no simulator or device required
 swift test    # unit tests over the pure parts of both targets
 ```
 
-The tests cover the closed push decode, the consent projection decode
+The tests cover the closed pull-inbox and push decodes, authenticated inbox
+endpoint/model ownership, the consent projection decode
 (structured and raw scope) and match-code rendering, decision decode with
 one-shot/replay consistency, the review state machine including forbidden
 transitions, the transport-injected client, and the demo wiring (routes,

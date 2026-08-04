@@ -86,9 +86,12 @@ export class OneShotPairing {
     this.#expiresAt = expiresAt;
   }
 
+  available(now) {
+    return !this.#consumed && now < this.#expiresAt;
+  }
+
   reserve({ hash, now }) {
-    if (this.#consumed || now >= this.#expiresAt || hash !== this.#hash)
-      throw new Error("pairing_invalid");
+    if (!this.available(now) || hash !== this.#hash) throw new Error("pairing_invalid");
     this.#consumed = true;
   }
 }

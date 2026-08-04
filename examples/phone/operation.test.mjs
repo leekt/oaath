@@ -229,6 +229,7 @@ test("pairing secret renders only in the interactive non-simulation UI", () => {
 
 test("pairing reservation is atomic across concurrent handlers", async () => {
   const pairing = new OneShotPairing({ hash: "expected", expiresAt: 100 });
+  assert.equal(pairing.available(1), true);
   const credentials = [];
   const devices = new Map();
   const handle = async (index) => {
@@ -244,6 +245,8 @@ test("pairing reservation is atomic across concurrent handlers", async () => {
   assert.equal(settled.filter(({ status }) => status === "rejected").length, 1);
   assert.equal(credentials.length, 1);
   assert.equal(devices.size, 1);
+  assert.equal(pairing.available(1), false);
+  assert.equal(new OneShotPairing({ hash: "expected", expiresAt: 1 }).available(1), false);
 });
 
 test("permission owner atomically reserves both lanes or mutates neither", async () => {

@@ -9,10 +9,10 @@ guarantee and no production qualification.
 ## Run on a physical iPhone (primary target)
 
 1. Start the web half on your Mac: `pnpm --filter @oaath/examples example:phone`
-   (see `examples/phone/README.md`). It prints the Mac's LAN IP, a one-shot
-   **pairing code**, and later an operation id + match code. macOS will ask to
-   allow incoming connections for `node` — allow it, or the phone cannot reach
-   the relay.
+   (see `examples/phone/README.md`). Open its printed loopback browser URL and
+   click **Pair phone** to reveal the one-shot link/QR; the secret is never
+   printed in captured output. macOS will ask to allow incoming connections for
+   `node` — allow it, or the phone cannot reach the relay.
 2. Open `native/ios/Demo/Demo.xcodeproj` in Xcode (it references the package
    in `native/ios` automatically).
 3. Signing & Capabilities → select your personal team (a free Apple account
@@ -21,9 +21,9 @@ guarantee and no production qualification.
 4. Select your iPhone as the destination. On iOS 16+ enable Developer Mode
    first: Settings → Privacy & Security → Developer Mode, then reboot.
 5. Run. The app ships with an **empty** relay field: a phone can never use the
-   Mac's loopback address. Scan/tap the terminal's QR/link (it carries both the
-   reachable LAN relay URL and pairing code), review the filled fields, then tap
-   "Pair this device". The phone and Mac must be on the same network.
+   Mac's loopback address. Scan/tap the browser's transient QR/link (it carries
+   both the reachable LAN relay URL and pairing code), review the filled fields,
+   then tap "Pair this device". The phone and Mac must be on the same network.
 
 The device keeps the normalized relay endpoint and its issued credential as one
 versioned Keychain value after pairing; neither can be loaded or used apart.
@@ -31,14 +31,14 @@ While paired, new pairing links are ignored until **Clear pairing** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
 bound relay refuses the credential (after an example restart — its state is
 in-memory), the app clears the whole pairing and returns to the pairing screen:
-pair again with the freshly printed code.
+restart the example and use the fresh browser Pair flow.
 
 ## Push notifications (optional, paid account required)
 
 The push entitlement (`aps-environment`) requires a **paid Apple Developer
 membership** — free personal teams cannot use it. Without one: remove the Push
-Notifications capability (and ignore the entitlements file) and use the manual
-operation-id entry in the app; everything else works.
+Notifications capability (and ignore the entitlements file) and use the default
+authenticated pull inbox; manual operation-id entry remains a fallback.
 
 With a paid membership:
 
@@ -58,7 +58,8 @@ With a paid membership:
 
 Any iOS simulator runs the app without signing (Xcode → Demo scheme → a
 simulator destination). Tests may fill a loopback relay URL. The simulator
-receives no APNs pushes and uses manual operation-id entry. It cannot create a
+receives no APNs pushes and uses the authenticated pull inbox (with manual
+operation-id entry as fallback). It cannot create a
 Secure Enclave key, so the app uses a distinct non-extractable keychain P-256
 key available only while this device is unlocked
 (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) and shows an explicit
