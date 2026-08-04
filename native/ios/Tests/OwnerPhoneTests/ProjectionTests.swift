@@ -11,7 +11,7 @@ import XCTest
 
 final class ProjectionTests: XCTestCase {
     private func json(_ object: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: object)
+        (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
 
     private let rawScope: [String: Any] = [
@@ -74,9 +74,51 @@ final class ProjectionTests: XCTestCase {
 
     func testRejectsAnUnknownScopeKindInsteadOfRenderingPartially() {
         var object = valid
-        object["scope"] = ["kind": "signature-request", "digest": "0x00"]
+        object["scope"] = ["kind": "delegation-request", "detail": "everything"]
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("scope kind"))
+        }
+    }
+
+    func testDecodesASignatureRequestScope() throws {
+        let digest = "0x" + String(repeating: "4b", count: 32)
+        let display = #"{"chainId":421614,"digest":"\#(digest)","kind":"user-operation"}"#
+        var object = valid
+        object["scope"] = ["kind": "signature-request", "digest": digest, "display": display]
+        let projection = try OwnerPhoneRequestProjection.decode(json(object))
+        XCTAssertEqual(
+            projection.scope,
+            .signatureRequest(OwnerPhoneSignatureRequestScope(digest: digest, display: display)))
+    }
+
+    func testRejectsMalformedSignatureRequestScopes() {
+        let digest = "0x" + String(repeating: "4b", count: 32)
+        let malformed: [[String: Any]] = [
+            // short digest
+            ["kind": "signature-request", "digest": "0x4b", "display": "{}"],
+            // uppercase digest
+            ["kind": "signature-request", "digest": digest.uppercased(), "display": "{}"],
+            // missing display
+            ["kind": "signature-request", "digest": digest],
+            // empty display
+            ["kind": "signature-request", "digest": digest, "display": ""],
+            // control character in display
+            ["kind": "signature-request", "digest": digest, "display": "line\nbreak"],
+            // extra field
+            ["kind": "signature-request", "digest": digest, "display": "{}", "extra": 1],
+            // valid JSON that omits the independently supplied digest
+            ["kind": "signature-request", "digest": digest, "display": #"{"kind":"user-operation"}"#],
+            // duplicate key ambiguity must not collapse before consent
+            ["kind": "signature-request", "digest": digest,
+             "display": #"{"digest":"\#(digest)","kind":"gone","kind":"user-operation"}"#],
+            // same fields, different bytes/order
+            ["kind": "signature-request", "digest": digest,
+             "display": #"{"kind":"user-operation","digest":"\#(digest)"}"#]
+        ]
+        for scope in malformed {
+            var object = valid
+            object["scope"] = scope
+            XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object)))
         }
     }
 

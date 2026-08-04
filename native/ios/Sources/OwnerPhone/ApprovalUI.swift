@@ -37,13 +37,16 @@ public final class ApprovalModel: ObservableObject {
     @Published public private(set) var unresolvedNotice = false
 
     private let relay: any OwnerPhoneRelayClient
-    /// Produces the artifact an approval hands over; deployment-injected.
-    private let approvalArtifact: @Sendable () async throws -> String
+    /// Produces the artifact an approval hands over for the reviewed
+    /// projection; deployment-injected. For a signature-request scope the demo
+    /// signs the projected digest with the on-device owner key — the artifact
+    /// IS the signature.
+    private let approvalArtifact: @Sendable (OwnerPhoneRequestProjection) async throws -> String
     private let now: @Sendable () -> Int
 
     public init(
         relay: any OwnerPhoneRelayClient,
-        approvalArtifact: @escaping @Sendable () async throws -> String,
+        approvalArtifact: @escaping @Sendable (OwnerPhoneRequestProjection) async throws -> String,
         now: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
     ) {
         self.relay = relay
@@ -80,8 +83,8 @@ public final class ApprovalModel: ObservableObject {
     }
 
     public func approve() async {
-        guard case .review = phase else { return }
-        guard let artifact = try? await approvalArtifact() else {
+        guard case let .review(review) = phase else { return }
+        guard let artifact = try? await approvalArtifact(review.projection) else {
             return // artifact composition failed before any submission; still pending
         }
         await decide(.approved(artifact: artifact))
@@ -210,6 +213,24 @@ public struct ApprovalView: View {
                         .font(.footnote)
                     Text("Permission expires \(Date(timeIntervalSince1970: Double(scope.expiresAt)).formatted())")
                         .font(.footnote)
+                        .foregroundStyle(.secondary)
+                case let .signatureRequest(scope):
+                    // The signing consent: the FULL authenticated canonical
+                    // display bytes plus the exact digest the owner key signs. Approve
+                    // signs; Reject signs nothing. Nothing decides on tap.
+                    Text("Signature request — Approve signs this with the owner key on this device:")
+                        .font(.footnote)
+                        .bold()
+                    ScrollView {
+                        // Render the exact authenticated canonical UTF-8 text.
+                        // Parse/reserialize would create a second consent surface.
+                        Text(scope.display)
+                            .font(.caption2.monospaced())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 180)
+                    Text("digest \(scope.digest)")
+                        .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 case let .raw(text):
                     // Explicit unstructured state: the owner reviews the raw

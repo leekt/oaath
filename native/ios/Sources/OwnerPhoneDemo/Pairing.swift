@@ -16,28 +16,66 @@ public enum DemoPairingError: Error, Equatable, Sendable {
     case invalidResponse
 }
 
-/// Strict decode of `{deviceCredential}` — exactly one key, bounded text.
-public func decodePairingResponse(_ data: Data) throws -> String {
+/// One paired device: the device-scoped owner credential, plus the smart
+/// account address the relay derived server-side from the registered public
+/// key (`null` when the web half has no chain to derive it against). The phone
+/// displays what the relay derived — the derivation honestly lives with the
+/// web half, which is the side that proves the chain evidence.
+public struct PairedDevice: Equatable, Sendable {
+    public let deviceCredential: String
+    public let account: String?
+
+    public init(deviceCredential: String, account: String?) {
+        self.deviceCredential = deviceCredential
+        self.account = account
+    }
+}
+
+/// Strict decode of `{deviceCredential, account}` — exactly two keys; the
+/// account is a lowercase 20-byte hex address or null.
+public func decodePairingResponse(_ data: Data) throws -> PairedDevice {
     guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          Set(object.keys) == ["deviceCredential"],
+          Set(object.keys) == ["deviceCredential", "account"],
           let credential = object["deviceCredential"] as? String,
           !credential.isEmpty,
           credential.count <= 256
     else {
         throw DemoPairingError.invalidResponse
     }
-    return credential
+    if object["account"] is NSNull {
+        return PairedDevice(deviceCredential: credential, account: nil)
+    }
+    guard let account = object["account"] as? String, isLowercaseAddress(account) else {
+        throw DemoPairingError.invalidResponse
+    }
+    return PairedDevice(deviceCredential: credential, account: account)
 }
 
-/// One pairing call. A refused code (unknown, consumed, or expired — the relay
+/// Lowercase `0x`-prefixed 20-byte hex, the projection's address shape.
+private func isLowercaseAddress(_ text: String) -> Bool {
+    guard text.count == 42, text.hasPrefix("0x") else { return false }
+    for scalar in text.unicodeScalars.dropFirst(2) {
+        switch scalar {
+        case "0"..."9", "a"..."f": continue
+        default: return false
+        }
+    }
+    return true
+}
+
+/// One pairing call. The body registers the APNs device token AND the owner
+/// key's public material (`0x` + 64-byte x‖y) beside the one-shot pairing
+/// code. A refused code (unknown, consumed, or expired — the relay
 /// deliberately does not distinguish) surfaces as `.refused`.
 public func pair(
     endpoint: DemoRelayEndpoint,
     pairingCode: String,
     deviceToken: String,
+    publicKey: String,
     http: any DemoHTTP
-) async throws -> String {
-    let request = try endpoint.pairingRequest(pairingCode: pairingCode, deviceToken: deviceToken)
+) async throws -> PairedDevice {
+    let request = try endpoint.pairingRequest(
+        pairingCode: pairingCode, deviceToken: deviceToken, publicKey: publicKey)
     let (data, status) = try await http.send(request)
     guard status == 200 else { throw DemoPairingError.refused }
     return try decodePairingResponse(data)

@@ -43,7 +43,18 @@ export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
 export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
 
+/**
+ * The versioned scope envelope a client stores to ask the owner's phone for one
+ * signature over one 32-byte digest. It rides the existing kind-agnostic
+ * authorization routes: `requestedScope` carries this JSON, the phone approves
+ * with the signature as the decision artifact, and the one-time code/artifact
+ * machinery releases it to the client exactly once. The relay never verifies or
+ * interprets the signature; the requesting client's own key profile does.
+ */
+export const OAATH_SIGNATURE_REQUEST_SCOPE_VERSION = "oaath.signature-request/v1" as const;
+
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
+const DIGEST = /^0x[0-9a-f]{64}$/u;
 
 /**
  * The requested scope as the phone renders it. When the stored scope parses as
@@ -63,6 +74,18 @@ export type OwnerPhoneScopeProjection =
       /** The permission request's own expiry, as the requesting client stated it. */
       expiresAt: number;
       perChainOperationLimit: number;
+    }>
+  | Readonly<{
+      kind: "signature-request";
+      /** The exact 32-byte digest the owner's key is asked to sign. */
+      digest: `0x${string}`;
+      /**
+       * The full display JSON as one recursively key-sorted compact canonical
+       * string. Ambiguous/noncanonical bytes fail closed to `raw`. The phone
+       * renders these exact bytes, including the independently supplied digest,
+       * before the owner decides.
+       */
+      display: string;
     }>
   | Readonly<{ kind: "raw"; text: string }>;
 
@@ -113,6 +136,8 @@ function projectScope(requestedScope: string, operationId: string): OwnerPhoneSc
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
       return Object.freeze({ kind: "raw", text: requestedScope });
     }
+    const signatureRequest = projectSignatureRequestScope(parsed);
+    if (signatureRequest) return signatureRequest;
     const request = parsePermissionRequest({ ...parsed, requestId: operationId });
     return Object.freeze({
       kind: "permission-request",
@@ -132,6 +157,56 @@ function projectScope(requestedScope: string, operationId: string): OwnerPhoneSc
   } catch {
     return Object.freeze({ kind: "raw", text: requestedScope });
   }
+}
+
+/**
+ * Projects a stored signature-request scope structurally, or returns null so a
+ * malformed one falls through to the labeled raw text: the owner still reviews
+ * exactly what was stored, and the phone simply has no digest to sign.
+ */
+function sortedJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedJsonValue);
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, sortedJsonValue(record[key])]),
+    );
+  }
+  return value;
+}
+
+function projectSignatureRequestScope(parsed: object): OwnerPhoneScopeProjection | null {
+  const record = parsed as Record<string, unknown>;
+  if (
+    record.version !== OAATH_SIGNATURE_REQUEST_SCOPE_VERSION ||
+    record.kind !== "signature-request"
+  )
+    return null;
+  if (Object.keys(record).sort().join(",") !== "digest,display,kind,version") return null;
+  const digest = record.digest;
+  const display = record.display;
+  if (typeof digest !== "string" || !DIGEST.test(digest)) return null;
+  if (typeof display !== "string" || display.length < 1) return null;
+  // Parse and re-encode the actual consent bytes using the same recursively
+  // sorted compact codec the Swift decoder pins. This rejects whitespace,
+  // duplicate-key collapse, noncanonical escapes, and any display that does
+  // not visibly bind the independently supplied digest.
+  try {
+    const displayed: unknown = JSON.parse(display);
+    if (
+      displayed === null ||
+      typeof displayed !== "object" ||
+      Array.isArray(displayed) ||
+      (displayed as Record<string, unknown>).digest !== digest ||
+      JSON.stringify(sortedJsonValue(displayed)) !== display
+    )
+      return null;
+  } catch {
+    return null;
+  }
+  return Object.freeze({ kind: "signature-request", digest: digest as `0x${string}`, display });
 }
 
 /**

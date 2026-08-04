@@ -20,9 +20,10 @@ guarantee and no production qualification.
    identifier (replace `org.oaath.owner-phone-demo`).
 4. Select your iPhone as the destination. On iOS 16+ enable Developer Mode
    first: Settings → Privacy & Security → Developer Mode, then reboot.
-5. Run. On first launch, enter the relay URL (`http://<your-mac-lan-ip>:8787`,
-   exactly as the example printed it) and the pairing code, then tap
-   "Pair this device". The phone and the Mac must be on the same network.
+5. Run. The app ships with an **empty** relay field: a phone can never use the
+   Mac's loopback address. Scan/tap the terminal's QR/link (it carries both the
+   reachable LAN relay URL and pairing code), review the filled fields, then tap
+   "Pair this device". The phone and Mac must be on the same network.
 
 The device keeps its own relay credential (keychain) after pairing; the
 pairing code is one-shot and expires. If the relay refuses the credential
@@ -53,8 +54,12 @@ With a paid membership:
 ## Simulator fallback
 
 Any iOS simulator runs the app without signing (Xcode → Demo scheme → a
-simulator destination). The simulator reaches the Mac at `127.0.0.1`, receives
-no APNs pushes, and uses manual operation-id entry.
+simulator destination). Tests may fill a loopback relay URL. The simulator
+receives no APNs pushes and uses manual operation-id entry. It cannot create a
+Secure Enclave key, so the app uses a distinct non-extractable keychain P-256
+key available only while this device is unlocked
+(`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) and shows an explicit
+**SIMULATOR FALLBACK** banner.
 
 ## Dev-only ATS exception
 
@@ -62,24 +67,32 @@ no APNs pushes, and uses manual operation-id entry.
 serves plain http on the LAN. That is a development-only setting: a real
 deployment serves https and deletes the key.
 
-## Honest signing boundary
+## Owner key and signing boundary
 
-In this demo the phone AUTHORIZES via the relay's one-shot decision. The
-approve artifact is an opaque placeholder (`demoApprovalArtifact()`): a real
-deployment seals owner-device material behind that seam. The on-device
-owner-key signature of the Kernel enable digest is NOT cryptographically real
-here — and cannot be on-chain-real yet, because no reviewed Kernel v4
-P-256/WebAuthn validator is pinned (the recorded release blocker). What the
-phone displays IS what the relay's decision authorizes: the consent screen
-renders the projection exactly as the relay serves it.
+First launch generates a persistent P-256 key in the Secure Enclave on a
+physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry
+requirement because Approve is already the explicit consent gate). Pairing
+registers its `x ‖ y` public material. The web half derives the chain-independent
+CREATE2 account and returns it; the phone labels the server-side derivation
+honestly. For both the replayable enable digest and owner UserOperation hash,
+Approve signs the exact projected 32 bytes, converts platform DER to raw
+`r ‖ s`, low-S normalizes, and releases that signature once. Reject signs
+nothing. Push/tap only opens review.
+
+## Provenance
+
+The Xcode target in `Demo/Demo.xcodeproj` is a thin current wrapper around the
+local Swift package. Its provenance owner and discarded-retired-source record
+is the parent [`native/ios/README.md`](../README.md#provenance); this cross-link
+is intentional so the project cannot imply a second provenance authority.
 
 ## Build evidence and limits
 
 `swift build` + `swift test` (macOS host) cover every testable part:
 `OwnerPhone` (wire decoders, review machine) and `OwnerPhoneDemo` (routes,
-pairing, credential store, code delivery, screens compile). The app target was
-validated as far as a CLI without the iOS platform allows: `xcodebuild -list`
-parses the project, resolves the local package, and generates the Demo scheme.
-Not proven headlessly: a simulator/device build (requires the iOS platform in
-Xcode), APNs delivery, provisioning, and on-device keychain behavior — a human
-with Xcode and an iPhone owns those steps above.
+pairing, credential store, code delivery, screens compile). The Demo app also
+builds unsigned for the generic iOS Simulator with `xcodebuild -sdk
+iphonesimulator -destination 'generic/platform=iOS Simulator'
+CODE_SIGNING_ALLOWED=NO build`. Not proven headlessly: a physical-device build,
+APNs delivery, provisioning, and physical Secure Enclave/keychain behavior — a
+human with Xcode and an iPhone owns those steps above.

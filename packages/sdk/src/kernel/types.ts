@@ -15,7 +15,7 @@ import type {
   KernelV4UserOperationGas,
   KernelV4Validation,
 } from "../kernel-v4.js";
-import type { PreparedUserOperation } from "../prepared-user-operation.js";
+import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
@@ -210,6 +210,11 @@ export interface KernelRuntimePrepareInput {
    * resulting operation's signature envelope requires.
    */
   readonly mode?: KernelRuntimeValidationMode;
+  /**
+   * Optional EntryPoint 0.7 paymaster sponsorship; defaults to null
+   * (self-funded). The fields are part of the hashed operation identity.
+   */
+  readonly paymaster?: Readonly<PreparedPaymaster> | null;
 }
 
 export interface CreateKernelRuntimeInput {

@@ -97,11 +97,30 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     }
 }
 
+/// One signature request: the relay asks this device's owner key to sign one
+/// 32-byte digest. `display` is the server-validated canonical display JSON;
+/// the UI renders its exact authenticated bytes before the owner decides. Approving
+/// returns the signature as the decision artifact — the artifact IS the
+/// signature, released to the client through the one-shot code/artifact flow.
+public struct OwnerPhoneSignatureRequestScope: Equatable, Sendable {
+    /// Lowercase `0x`-prefixed 32-byte digest the owner key signs on approval.
+    public let digest: String
+    /// The full display JSON, exactly as the requesting client stored it.
+    public let display: String
+
+    public init(digest: String, display: String) {
+        self.digest = digest
+        self.display = display
+    }
+}
+
 /// Closed scope union mirroring `OwnerPhoneScopeProjection`. A scope that is
-/// not a protocol permission request arrives as `.raw` and the UI must show it
-/// as an explicit "unstructured scope" state — an unknown `kind` fails closed.
+/// not a protocol permission request or a signature request arrives as `.raw`
+/// and the UI must show it as an explicit "unstructured scope" state — an
+/// unknown `kind` fails closed.
 public enum OwnerPhoneScope: Equatable, Sendable {
     case permissionRequest(OwnerPhonePermissionScope)
+    case signatureRequest(OwnerPhoneSignatureRequestScope)
     case raw(String)
 }
 
@@ -184,6 +203,17 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 perChainOperationLimit: try Wire.timestamp(
                     object["perChainOperationLimit"], label: "perChainOperationLimit")
             ))
+        case "signature-request":
+            try Wire.exactKeys(object, ["kind", "digest", "display"], label: "scope")
+            let digest = try Wire.lowercaseHex(
+                object["digest"], byteLength: 32, label: "digest")
+            let display = try Wire.text(
+                object["display"], maximum: WireLimits.requestedScope, label: "display")
+            try validateCanonicalDisplay(display, digest: digest)
+            return .signatureRequest(OwnerPhoneSignatureRequestScope(
+                digest: digest,
+                display: display
+            ))
         case "raw":
             try Wire.exactKeys(object, ["kind", "text"], label: "scope")
             return .raw(try Wire.text(
@@ -192,6 +222,22 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
             // A scope kind this build does not know is contradictory evidence,
             // never something to render partially.
             throw OwnerPhoneWireError.invalidField("scope kind")
+        }
+    }
+
+    /// The server accepts only recursively sorted, compact JSON display bytes.
+    /// Re-encoding with the same closed codec rejects duplicate-key collapse,
+    /// whitespace/escape drift, and a display that omits or changes the digest.
+    private static func validateCanonicalDisplay(_ display: String, digest: String) throws {
+        let bytes = Data(display.utf8)
+        guard let value = try? JSONSerialization.jsonObject(with: bytes),
+              let object = value as? [String: Any],
+              object["digest"] as? String == digest,
+              let canonical = try? JSONSerialization.data(
+                  withJSONObject: object, options: [.sortedKeys]),
+              canonical == bytes
+        else {
+            throw OwnerPhoneWireError.invalidField("display")
         }
     }
 

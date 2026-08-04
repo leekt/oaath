@@ -13,5 +13,22 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!--
+	  The pairing deep link: examples/phone prints
+	  oaath-demo://pair?relay=...&code=... as a QR code and copyable text.
+	  Scanning with the system camera or tapping it opens this app and fills
+	  the pairing screen; pairing itself stays an explicit button.
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.oaath.owner-phone-demo.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>oaath-demo</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

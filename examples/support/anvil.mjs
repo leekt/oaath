@@ -54,8 +54,15 @@ async function reservePort() {
   return port;
 }
 
-/** Starts one loopback Anvil bound to `chainId`, or throws if Anvil is absent. */
-export async function startAnvil(chainId) {
+/**
+ * Starts one loopback Anvil bound to `chainId`, or throws if Anvil is absent.
+ *
+ * The hardfork is a parameter because one module's dependency is a chain
+ * feature rather than a deployment: the pinned raw P-256 validator staticcalls
+ * the RIP-7212 / EIP-7951 precompile at 0x100, which Prague does not carry and
+ * Osaka does. The phone demo asks for `osaka`; everything else keeps Prague.
+ */
+export async function startAnvil(chainId, hardfork = "prague") {
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
   const child = spawn(
@@ -68,7 +75,7 @@ export async function startAnvil(chainId) {
       "--chain-id",
       String(chainId),
       "--hardfork",
-      "prague",
+      hardfork,
       "--accounts",
       "0",
       // A devnet finalizes nothing by default: its `finalized` tag never leaves
@@ -115,7 +122,7 @@ export async function startAnvil(chainId) {
  * policy and signer modules, and one ECDSA validator, and returns the funded
  * submitter every direct `EntryPoint.handleOps` submission uses.
  */
-export async function deployKernelStack(chain) {
+export async function deployKernelStack(chain, { p256 = false } = {}) {
   const fixture = JSON.parse(await readFile(FIXTURE, "utf8"));
   const entryPoint = JSON.parse(
     await readFile(createRequire(import.meta.url).resolve(fixture.entryPoint.artifact), "utf8"),
@@ -149,6 +156,9 @@ export async function deployKernelStack(chain) {
     fixture.callPolicy,
     fixture.timestampPolicy,
     fixture.rateLimitPolicy,
+    // The pinned P-256 validator's constructor probes the RIP-7212 precompile
+    // and reverts without it, so it deploys only on an osaka chain that asked.
+    ...(p256 ? [fixture.p256Validator] : []),
   ]) {
     await deploy(module.deploymentInput);
   }
@@ -184,6 +194,15 @@ export async function deployKernelStack(chain) {
         status: receipt.status,
         transactionHash: hash,
         userOperationHash: call.userOperationHash,
+        evidence: Object.freeze({
+          chainId: chain.chainId,
+          account: prepared.userOperation.sender,
+          userOperationHash: call.userOperationHash,
+          transactionHash: hash,
+          blockHash: receipt.blockHash,
+          blockNumber: `0x${receipt.blockNumber.toString(16)}`,
+          status: receipt.status === "success" ? "included" : "reverted",
+        }),
       };
     },
   };

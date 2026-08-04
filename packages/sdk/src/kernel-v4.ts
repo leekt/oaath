@@ -18,7 +18,11 @@ import {
   pad,
   toHex,
 } from "viem";
-import { type PreparedUserOperation, prepareUserOperation } from "./prepared-user-operation.js";
+import {
+  type PreparedPaymaster,
+  type PreparedUserOperation,
+  prepareUserOperation,
+} from "./prepared-user-operation.js";
 
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const BYTES4 = /^0x[0-9a-f]{8}$/u;
@@ -169,6 +173,12 @@ export interface KernelV4UserOperationInput {
   readonly nonce: KernelV4UserOperationNonceInput;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
+  /**
+   * Optional EntryPoint 0.7 paymaster sponsorship. Absent or null prepares a
+   * self-funded operation. The fields are hashed into the operation identity,
+   * so sponsorship can never be attached or swapped after preparation.
+   */
+  readonly paymaster?: Readonly<PreparedPaymaster> | null;
 }
 
 export interface KernelV4EnableSignatureInput {
@@ -932,11 +942,15 @@ export function prepareKernelV4UserOperation(
   value: KernelV4UserOperationInput,
 ): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
-  const record = exact(
-    value,
-    ["kind", "grantId", "account", "nonce", "calls", "gas"],
+  const captured = captureRecord(value, "Kernel UserOperation", context, fail);
+  // The paymaster axis is optional at this boundary; every other key is exact.
+  const record = exactCapturedRecord(
+    captured,
+    Object.hasOwn(captured, "paymaster")
+      ? ["kind", "grantId", "account", "nonce", "calls", "gas", "paymaster"]
+      : ["kind", "grantId", "account", "nonce", "calls", "gas"],
     "Kernel UserOperation",
-    context,
+    fail,
   );
   if (record.kind !== "execution" && record.kind !== "revocation") {
     return fail("Kernel UserOperation kind is invalid");
@@ -1010,8 +1024,36 @@ export function prepareKernelV4UserOperation(
         account.state === "counterfactual"
           ? { address: account.factory, data: account.factoryDeployCalldata }
           : null,
-      paymaster: null,
+      paymaster: capturePaymaster(record.paymaster, context),
     },
+  });
+}
+
+/**
+ * Captures the optional paymaster input exactly. The shapes are the ones
+ * parsePreparedUserOperation validates and viem's getUserOperationHash hashes,
+ * so a sponsored operation's identity covers its sponsorship byte for byte.
+ */
+function capturePaymaster(
+  value: unknown,
+  context: CaptureContext,
+): Readonly<PreparedPaymaster> | null {
+  if (value === undefined || value === null) return null;
+  const record = exact(
+    value,
+    ["address", "verificationGasLimit", "postOpGasLimit", "data"],
+    "Kernel UserOperation paymaster",
+    context,
+  );
+  const uint120 = (gas: unknown, label: string) => uint(gas, (1n << 120n) - 1n, label).toString(10);
+  return Object.freeze({
+    address: address(record.address, "Kernel paymaster address"),
+    verificationGasLimit: uint120(
+      record.verificationGasLimit,
+      "Kernel paymaster verification gas limit",
+    ),
+    postOpGasLimit: uint120(record.postOpGasLimit, "Kernel paymaster post-operation gas limit"),
+    data: bytes(record.data, "Kernel paymaster data"),
   });
 }
 

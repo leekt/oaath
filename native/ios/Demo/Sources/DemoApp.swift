@@ -20,6 +20,9 @@ struct OwnerPhoneDemoApp: App {
     var body: some Scene {
         WindowGroup {
             DemoRootView(model: model)
+                // A scanned QR / tapped oaath-demo://pair link only FILLS the
+                // pairing screen; pairing stays an explicit button.
+                .onOpenURL { url in model.open(url: url) }
                 .task {
                     pushDelegate.onDeviceToken = { token in
                         // Pairing registers this token with the relay.

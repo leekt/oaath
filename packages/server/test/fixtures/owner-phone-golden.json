@@ -1,0 +1,91 @@
+{
+  "note": "One committed fixture consumed by both TypeScript and Swift. exactSignatureProjectionBytes is the authoritative exact UTF-8 projection string: both languages consume those same bytes first and then strictly decode them. The object variants cover the remaining closed union branches.",
+  "projection": {
+    "permissionRequest": {
+      "version": "oaath.native-projection/v1",
+      "operationId": "fixture-operation-id",
+      "displayPayload": "Ab1-_9Zz",
+      "expiresAt": 1700000300000,
+      "client": {
+        "clientId": "client-a",
+        "redirectUri": "https://app.example/callback"
+      },
+      "scope": {
+        "kind": "permission-request",
+        "chainScope": "all",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100"
+          }
+        ],
+        "expiresAt": 200,
+        "perChainOperationLimit": 10
+      }
+    },
+    "signatureRequest": {
+      "version": "oaath.native-projection/v1",
+      "operationId": "fixture-operation-id",
+      "displayPayload": "Ab1-_9Zz",
+      "expiresAt": 1700000300000,
+      "client": {
+        "clientId": "client-a",
+        "redirectUri": "https://app.example/callback"
+      },
+      "scope": {
+        "kind": "signature-request",
+        "digest": "0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+        "display": "{\"account\":\"0x6666666666666666666666666666666666666666\",\"chainScope\":\"all supported chains\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"installNonce\":\"0\",\"kind\":\"kernel-enable-digest\"}"
+      }
+    },
+    "raw": {
+      "version": "oaath.native-projection/v1",
+      "operationId": "fixture-operation-id",
+      "displayPayload": "Ab1-_9Zz",
+      "expiresAt": 1700000300000,
+      "client": {
+        "clientId": "client-a",
+        "redirectUri": "https://app.example/callback"
+      },
+      "scope": {
+        "kind": "raw",
+        "text": "{\"permission\":\"erc20-transfer\",\"token\":\"0xdeadbeefcafe\",\"chainScope\":\"all\"}"
+      }
+    }
+  },
+  "decision": {
+    "decidedApproved": {
+      "operationId": "fixture-operation-id",
+      "outcome": "approved",
+      "decidedAt": 1700000000000,
+      "settlement": "decided",
+      "release": {
+        "outcome": "approved",
+        "decidedAt": 1700000000000,
+        "code": "fixture-one-time-code-000000000000000000000",
+        "artifactId": "fixture-artifact-id-00000000000000000000000",
+        "redirectUri": "https://app.example/callback",
+        "codeExpiresAt": 1700000060000
+      }
+    },
+    "replayed": {
+      "operationId": "fixture-operation-id",
+      "outcome": "approved",
+      "decidedAt": 1700000000000,
+      "settlement": "replayed",
+      "release": null
+    },
+    "decidedRejected": {
+      "operationId": "fixture-operation-id",
+      "outcome": "rejected",
+      "decidedAt": 1700000000000,
+      "settlement": "decided",
+      "release": {
+        "outcome": "rejected",
+        "decidedAt": 1700000000000
+      }
+    }
+  },
+  "exactSignatureProjectionBytes": "{\"version\":\"oaath.native-projection/v1\",\"operationId\":\"fixture-operation-id\",\"displayPayload\":\"Ab1-_9Zz\",\"expiresAt\":1700000300000,\"client\":{\"clientId\":\"client-a\",\"redirectUri\":\"https://app.example/callback\"},\"scope\":{\"kind\":\"signature-request\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"display\":\"{\\\"account\\\":\\\"0x6666666666666666666666666666666666666666\\\",\\\"chainScope\\\":\\\"all supported chains\\\",\\\"digest\\\":\\\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\\\",\\\"installNonce\\\":\\\"0\\\",\\\"kind\\\":\\\"kernel-enable-digest\\\"}\"}}"
+}

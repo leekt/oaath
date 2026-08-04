@@ -231,6 +231,7 @@ export async function materializeKernelPermission(
     sequence: value.sequence,
     calls: value.calls,
     gas: value.gas,
+    paymaster: value.paymaster ?? null,
   });
   if (prepared.userOperation.sender !== scope.account) {
     return runtimeFail(

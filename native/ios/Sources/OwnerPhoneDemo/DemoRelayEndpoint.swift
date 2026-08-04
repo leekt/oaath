@@ -59,13 +59,22 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
     }
 
     /// `POST /native/pairings` — the pairing code IS the authentication for
-    /// this one call, so no bearer is attached.
-    public func pairingRequest(pairingCode: String, deviceToken: String) throws -> URLRequest {
+    /// this one call, so no bearer is attached. The body registers the APNs
+    /// device token and the owner key's public material together.
+    public func pairingRequest(
+        pairingCode: String,
+        deviceToken: String,
+        publicKey: String
+    ) throws -> URLRequest {
         var request = URLRequest(url: baseURL.appendingPathComponent("native/pairings"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(
-            withJSONObject: ["pairingCode": pairingCode, "deviceToken": deviceToken],
+            withJSONObject: [
+                "pairingCode": pairingCode,
+                "deviceToken": deviceToken,
+                "publicKey": publicKey
+            ],
             options: [.sortedKeys])
         return request
     }

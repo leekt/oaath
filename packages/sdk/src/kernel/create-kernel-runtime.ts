@@ -211,6 +211,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       },
       calls: input.calls,
       gas: input.gas,
+      paymaster: input.paymaster ?? null,
     });
   }
 

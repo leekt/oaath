@@ -43,13 +43,14 @@ final class DemoRelayEndpointTests: XCTestCase {
         XCTAssertEqual(decision.value(forHTTPHeaderField: "Content-Type"), "application/json")
         XCTAssertEqual(decision.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
 
-        let pairing = try endpoint.pairingRequest(pairingCode: "AAAA-BBBB", deviceToken: "ab12")
+        let pairing = try endpoint.pairingRequest(
+            pairingCode: "AAAA-BBBB", deviceToken: "ab12", publicKey: "0xbeef")
         XCTAssertEqual(pairing.url?.absoluteString, "http://192.168.1.20:8787/native/pairings")
         // The pairing code IS the authentication for this one call: no bearer.
         XCTAssertNil(pairing.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(
             pairing.httpBody.flatMap { String(data: $0, encoding: .utf8) },
-            #"{"deviceToken":"ab12","pairingCode":"AAAA-BBBB"}"#)
+            #"{"deviceToken":"ab12","pairingCode":"AAAA-BBBB","publicKey":"0xbeef"}"#)
     }
 
     func testRejectsANonHttpBaseURL() {
@@ -97,23 +98,40 @@ final class DemoRelayEndpointTests: XCTestCase {
 final class PairingClientTests: XCTestCase {
     func testPairsAndDecodesTheExactCredentialEnvelope() async throws {
         let recorder = FakeHTTP.Recorder()
-        let credential = try await pair(
+        let account = "0x" + String(repeating: "66", count: 20)
+        let device = try await pair(
             endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
             pairingCode: "AAAA-BBBB-CC",
             deviceToken: String(repeating: "ab", count: 32),
+            publicKey: "0x" + String(repeating: "cd", count: 64),
             http: FakeHTTP(
                 status: 200,
-                body: Data(#"{"deviceCredential":"issued-token"}"#.utf8),
+                body: Data(
+                    #"{"deviceCredential":"issued-token","account":"\#(account)"}"#.utf8),
                 recorder: recorder))
-        XCTAssertEqual(credential, "issued-token")
+        XCTAssertEqual(device, PairedDevice(deviceCredential: "issued-token", account: account))
         XCTAssertEqual(recorder.requests.count, 1)
+
+        // A chainless web half derives no account; the phone shows that honestly.
+        let chainless = try await pair(
+            endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
+            pairingCode: "AAAA-BBBB-CC",
+            deviceToken: "ab",
+            publicKey: "0xcd",
+            http: FakeHTTP(
+                status: 200,
+                body: Data(#"{"deviceCredential":"issued-token","account":null}"#.utf8),
+                recorder: .init()))
+        XCTAssertNil(chainless.account)
     }
 
     func testARefusedOrMalformedPairingFailsClosed() async throws {
         for (status, body) in [
             (401, #"{"error":{"code":"pairing_invalid"}}"#),
-            (200, #"{"deviceCredential":"x","extra":1}"#),
-            (200, #"{"deviceCredential":""}"#),
+            (200, #"{"deviceCredential":"x","account":null,"extra":1}"#),
+            (200, #"{"deviceCredential":"x"}"#),
+            (200, #"{"deviceCredential":"","account":null}"#),
+            (200, #"{"deviceCredential":"x","account":"0xNOT"}"#),
             (200, #"[]"#)
         ] {
             do {
@@ -121,6 +139,7 @@ final class PairingClientTests: XCTestCase {
                     endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
                     pairingCode: "AAAA",
                     deviceToken: "ab",
+                    publicKey: "0xcd",
                     http: FakeHTTP(status: status, body: Data(body.utf8), recorder: .init()))
                 XCTFail("pairing must fail closed for status \(status) body \(body)")
             } catch {

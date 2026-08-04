@@ -7,6 +7,9 @@
  */
 import XCTest
 @testable import OwnerPhone
+#if canImport(Security)
+import Security
+#endif
 
 func projectionJson(operationId: String) -> [String: Any] {
     [
@@ -108,6 +111,15 @@ final class RelayClientTests: XCTestCase {
 
 #if canImport(Security)
 final class KeyCustodyTests: XCTestCase {
+    func testSoftwareFallbackPinsNonExtractableDeviceOnlyUnlockedAttributes() {
+        let attributes = KeychainKeyCustodyStub.softwarePrivateKeyAttributes(
+            applicationTag: Data("test".utf8))
+        XCTAssertEqual(attributes[kSecAttrIsExtractable] as? Bool, false)
+        XCTAssertEqual(
+            attributes[kSecAttrAccessible] as? String,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+    }
+
     func testANonDigestInputFailsBeforeAnyKeychainAccess() {
         let custody = KeychainKeyCustodyStub()
         XCTAssertThrowsError(try custody.signDigest(Data(count: 31))) {

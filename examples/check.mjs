@@ -40,13 +40,30 @@ if (anvilAvailable()) {
 }
 
 const failures = [];
+const phoneUnits = spawnSync("node", ["--test", "phone/operation.test.mjs"], {
+  cwd: HERE,
+  stdio: "inherit",
+  env: process.env,
+});
+if (phoneUnits.status !== 0) failures.push("phone-unit");
+
 for (const example of examples) {
   console.log(`\n=== ${example.label} ===`);
+  const captured = example.label === "phone";
   const result = spawnSync("node", ["--import", HOOK, example.script], {
     cwd: HERE,
-    stdio: "inherit",
+    stdio: captured ? "pipe" : "inherit",
+    encoding: captured ? "utf8" : undefined,
     env: { ...process.env, ...example.env },
   });
+  if (captured) {
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    process.stdout.write(output);
+    if (/oaath-demo:\/\/pair|pairing link|[?&]code=/u.test(output)) {
+      console.error("phone: captured simulation output leaked pairing material");
+      failures.push("phone-secret-output");
+    }
+  }
   if (result.status !== 0) failures.push(example.label);
 }
 

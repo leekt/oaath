@@ -185,6 +185,17 @@ pnpm examples:check # all four; skips all-chain when Anvil is absent
 They are documentation, not release evidence, and are deliberately not a CI gate;
 the packed smokes below own that. Run them locally when a public surface changes.
 
+## Before 0.1.0
+
+The remaining release blockers have one durable ledger here:
+
+- owner-authorized changeset for the fixed `0.x` release group;
+- revocation send/return crash proof, including reload without resubmission;
+- real-Chromium IndexedDB proof across independent realm recreation;
+- PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
+- pin or explicitly remove the unsupported `session_p256` / WebAuthn signer
+  surface before release.
+
 ## Development
 
 Requirements:

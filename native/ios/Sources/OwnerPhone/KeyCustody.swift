@@ -8,9 +8,12 @@
  - No physical Secure Enclave behavior is proven anywhere in this repository.
    `useSecureEnclave` defaults to `false`; flipping it on requires a
    provisioned physical device — simulators and macOS test hosts prove nothing.
+   The demo app probes it at first launch and falls back honestly
+   (`OwnerPhoneDemo/DemoOwnerKey.swift`).
  - Signatures are returned in the platform's DER form. ECDSA normalization
-   (P1363 r||s, low-S) belongs to the composition that consumes the signature
-   and is deliberately absent: no oaath consumer for it exists yet.
+   (raw r‖s, low-S) is owned by `Signing.swift`, mirroring the SDK's
+   `kernel/key/p256.ts` rule; the demo key applies it before any byte leaves
+   the device.
  - Nothing here composes an operation, account, or chain; the custody boundary
    signs only a caller-supplied, already-domain-separated 32-byte digest.
 
@@ -40,8 +43,10 @@ public protocol OwnerPhoneKeyCustody: Sendable {
 #if canImport(Security)
 /// Keychain-backed stub. On a provisioned physical iOS device with
 /// `useSecureEnclave: true` the private key is created inside the Secure
-/// Enclave and protected by user presence; everywhere else it is an ordinary
-/// non-synchronizable keychain key. Neither mode is production-qualified.
+/// Enclave; everywhere else it is a non-extractable, non-synchronizable
+/// keychain key available only while this device is unlocked. The demo
+/// intentionally requires no biometry or user-presence prompt: its explicit
+/// Approve tap is the consent gate. Neither mode is production-qualified.
 public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
     public let applicationTag: Data
     public let useSecureEnclave: Bool
@@ -88,37 +93,56 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
         return signature
     }
 
+    static func softwarePrivateKeyAttributes(applicationTag: Data) -> [CFString: Any] {
+        [
+            kSecAttrIsPermanent: true,
+            kSecAttrApplicationTag: applicationTag,
+            kSecAttrIsExtractable: false,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+    }
+
     private func ensureKey() throws -> SecKey {
         if let existing = try loadKey() {
             return existing
         }
-        var privateKeyAttributes: [CFString: Any] = [
-            kSecAttrIsPermanent: true,
-            kSecAttrApplicationTag: applicationTag
-        ]
+        var privateKeyAttributes = Self.softwarePrivateKeyAttributes(
+            applicationTag: applicationTag)
         var attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits: 256
         ]
         if useSecureEnclave {
             var accessError: Unmanaged<CFError>?
+            // `.privateKeyUsage` only, no biometry/user-presence requirement:
+            // the demo's explicit Approve tap is the consent gate, and a
+            // presence prompt on top of it would double-ask. A production
+            // deployment adds `.userPresence`/biometry policy here.
             guard let access = SecAccessControlCreateWithFlags(
                 nil,
                 kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                [.privateKeyUsage, .userPresence],
+                [.privateKeyUsage],
                 &accessError
             ) else {
                 throw OwnerPhoneKeyCustodyError.keyCreationFailed
             }
             attributes[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
+            // Access control owns accessibility for Enclave items; software
+            // fallback keeps the direct kSecAttrAccessible attribute above.
+            privateKeyAttributes.removeValue(forKey: kSecAttrAccessible)
             privateKeyAttributes[kSecAttrAccessControl] = access
         }
         attributes[kSecPrivateKeyAttrs] = privateKeyAttributes
         var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+        guard SecKeyCreateRandomKey(attributes as CFDictionary, &error) != nil else {
             throw OwnerPhoneKeyCustodyError.keyCreationFailed
         }
-        return key
+        // Re-read through the same attribute checks used on every later load.
+        // A backend that ignored either custody attribute fails closed.
+        guard let established = try loadKey() else {
+            throw OwnerPhoneKeyCustodyError.keyCreationFailed
+        }
+        return established
     }
 
     private func loadKey() throws -> SecKey? {
@@ -138,7 +162,29 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
             throw OwnerPhoneKeyCustodyError.keyUnavailable
         }
         // swiftlint:disable:next force_cast
-        return (item as! SecKey)
+        let key = item as! SecKey
+        guard let attributes = SecKeyCopyAttributes(key) as? [CFString: Any],
+              attributes[kSecAttrIsExtractable] as? Bool == false
+        else {
+            throw OwnerPhoneKeyCustodyError.keyUnavailable
+        }
+        // Query the keychain item's accessibility separately: SecKey attributes
+        // do not consistently expose it on every supported host.
+        let accessQuery: [CFString: Any] = [
+            kSecClass: kSecClassKey,
+            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrApplicationTag: applicationTag,
+            kSecReturnAttributes: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var accessItem: CFTypeRef?
+        guard SecItemCopyMatching(accessQuery as CFDictionary, &accessItem) == errSecSuccess,
+              let stored = accessItem as? [CFString: Any],
+              stored[kSecAttrAccessible] as? String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+        else {
+            throw OwnerPhoneKeyCustodyError.keyUnavailable
+        }
+        return key
     }
 }
 #endif

@@ -1,13 +1,12 @@
 /**
- EXPERIMENTAL PREVIEW — the demo's approval artifact source.
+ EXPERIMENTAL PREVIEW — the demo's approval artifact for NON-signature scopes.
 
- HONEST SIGNING BOUNDARY: in this demo the phone AUTHORIZES via the relay's
- one-shot decision, and this artifact is an opaque placeholder. A real
- deployment seals owner-device material here — the on-device owner-key
- signature of the Kernel enable digest lives behind exactly this seam and is
- NOT cryptographically real in this demo (and cannot be on-chain-real yet: no
- reviewed Kernel v4 P-256/WebAuthn validator is pinned — the recorded release
- blocker). What the phone displays IS what the relay's decision authorizes.
+ The signing boundary is real now: a signature-request scope's approval signs
+ the projected digest with the on-device owner key (`DemoOwnerKey`, Secure
+ Enclave where available) and the artifact IS that signature. This placeholder
+ remains only for the other scope kinds (permission-request consent, raw
+ text), whose demo approvals authorize via the relay's one-shot decision and
+ seal no device material.
 
  @author taek <leekt216@gmail.com>
  */

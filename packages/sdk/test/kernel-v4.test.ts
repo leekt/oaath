@@ -39,6 +39,7 @@ import {
   kernelV4Deployment,
   prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
+import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
 
 const validator = `0x${"22".repeat(20)}` as const;
 const hook = `0x${"33".repeat(20)}` as const;
@@ -550,6 +551,104 @@ describe("Kernel v4 prepared UserOperation", () => {
         gas,
       }).userOperation.callData,
     ).toBe(concat(["0x8dd7712f", execution]));
+  });
+
+  it("threads an optional paymaster into the exact operation identity", async () => {
+    const accountDescriptor = await descriptor("deployed");
+    const base = {
+      kind: "execution" as const,
+      grantId: "kernel-v4-grant",
+      account: accountDescriptor,
+      nonce: {
+        mode: "standard" as const,
+        validation: { kind: "root" as const },
+        nonceKey: "0",
+        sequence: "0",
+      },
+      calls: [{ target, value: "0", data: "0x" as const }],
+      gas,
+    };
+    const paymaster = Object.freeze({
+      address: `0x${"77".repeat(20)}` as const,
+      verificationGasLimit: "60000",
+      postOpGasLimit: "25000",
+      data: "0xdeadbeef" as const,
+    });
+
+    const sponsored = prepareKernelV4UserOperation({ ...base, paymaster });
+    // Round-trip: the exact fields survive preparation and re-parsing.
+    expect(sponsored.userOperation.paymaster).toEqual(paymaster);
+    expect(parsePreparedUserOperation(sponsored).userOperation.paymaster).toEqual(paymaster);
+
+    // The hash covers the paymaster fields (viem packs paymasterAndData), so
+    // sponsorship can never be attached or swapped after preparation.
+    const unsponsored = prepareKernelV4UserOperation(base);
+    const explicitNull = prepareKernelV4UserOperation({ ...base, paymaster: null });
+    expect(unsponsored.userOperation.paymaster).toBeNull();
+    expect(explicitNull.userOperationHash).toBe(unsponsored.userOperationHash);
+    expect(sponsored.userOperationHash).not.toBe(unsponsored.userOperationHash);
+    const differentData = prepareKernelV4UserOperation({
+      ...base,
+      paymaster: { ...paymaster, data: "0xdeadbee0" },
+    });
+    expect(differentData.userOperationHash).not.toBe(sponsored.userOperationHash);
+    // Checksummed sponsorship addresses are captured in canonical lowercase.
+    expect(
+      prepareKernelV4UserOperation({
+        ...base,
+        paymaster: { ...paymaster, address: getAddress(paymaster.address) },
+      }).userOperationHash,
+    ).toBe(sponsored.userOperationHash);
+  });
+
+  it("rejects hostile paymaster inputs instead of preparing a distorted identity", async () => {
+    const accountDescriptor = await descriptor("deployed");
+    const base = {
+      kind: "execution" as const,
+      grantId: "kernel-v4-grant",
+      account: accountDescriptor,
+      nonce: {
+        mode: "standard" as const,
+        validation: { kind: "root" as const },
+        nonceKey: "0",
+        sequence: "0",
+      },
+      calls: [{ target, value: "0", data: "0x" as const }],
+      gas,
+    };
+    const paymaster = {
+      address: `0x${"77".repeat(20)}`,
+      verificationGasLimit: "60000",
+      postOpGasLimit: "25000",
+      data: "0xdeadbeef",
+    };
+    for (const hostile of [
+      "sponsor-me",
+      { ...paymaster, address: `0x${"00".repeat(20)}` },
+      { ...paymaster, address: "0x1234" },
+      { ...paymaster, verificationGasLimit: "-1" },
+      { ...paymaster, verificationGasLimit: "0x60000" },
+      { ...paymaster, postOpGasLimit: (1n << 120n).toString(10) },
+      { ...paymaster, data: "0xzz" },
+      { ...paymaster, extra: true },
+      { address: paymaster.address, data: "0x" },
+      {
+        ...paymaster,
+        get data() {
+          return "0x";
+        },
+      },
+    ]) {
+      expect(() =>
+        asHostile(prepareKernelV4UserOperation)({ ...base, paymaster: hostile }),
+      ).toThrowError(
+        expect.objectContaining({ code: "kernel_v4_input_invalid" }) as unknown as Error,
+      );
+    }
+    // An unknown sibling key stays refused even while paymaster is optional.
+    expect(() => asHostile(prepareKernelV4UserOperation)({ ...base, sponsor: paymaster })).toThrow(
+      expect.objectContaining({ code: "kernel_v4_input_invalid" }) as unknown as Error,
+    );
   });
 
   it("rejects a contradictory account descriptor instead of trusting cached factory calldata", async () => {

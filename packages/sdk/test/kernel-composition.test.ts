@@ -377,6 +377,27 @@ describe("Kernel composition matrix", () => {
         false,
       );
       expect(prepared.chainId).toBe(chainId);
+      expect(prepared.userOperation.paymaster).toBeNull();
+
+      // The runtime threads an optional paymaster into the hashed identity.
+      const paymaster = Object.freeze({
+        address: `0x${"77".repeat(20)}` as const,
+        verificationGasLimit: "60000",
+        postOpGasLimit: "25000",
+        data: "0x" as const,
+      });
+      const sponsored = runtime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition",
+        account: descriptor,
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "1", data: "0x" }],
+        gas,
+        paymaster,
+      });
+      expect(sponsored.userOperation.paymaster).toEqual(paymaster);
+      expect(sponsored.userOperationHash).not.toBe(prepared.userOperationHash);
 
       const signature = await runtime.signOperation(prepared);
       if (authority === "owner") {

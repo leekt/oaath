@@ -47,12 +47,19 @@ public final class DemoModel: ObservableObject {
     @Published public private(set) var statusLine = ""
     @Published public private(set) var approval: ApprovalModel?
     @Published public private(set) var deliveryLine = ""
+    /// The smart account address the relay derived from this key at pairing.
+    @Published public private(set) var account: String?
 
     /// Set by APNs registration; until then a random placeholder keeps pairing
     /// usable (pushes to it go nowhere — manual operation-id entry still works).
     public var deviceToken: String
 
+    /// The on-device owner P-256 key: Secure Enclave when available, honest
+    /// keychain fallback otherwise. Nil only when key creation itself failed.
+    public let ownerKey: DemoOwnerKey?
+
     static let baseURLKey = "oaath.demo.baseURL"
+    static let accountKey = "oaath.demo.account"
 
     private let credentials: any DeviceCredentialStore
     private let http: any DemoHTTP
@@ -64,12 +71,15 @@ public final class DemoModel: ObservableObject {
     public init(
         credentials: any DeviceCredentialStore,
         http: any DemoHTTP = URLSession.shared,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        ownerKey: DemoOwnerKey? = resolveDemoOwnerKey()
     ) {
         self.credentials = credentials
         self.http = http
         self.defaults = defaults
+        self.ownerKey = ownerKey
         self.baseURLText = defaults.string(forKey: Self.baseURLKey) ?? ""
+        self.account = defaults.string(forKey: Self.accountKey)
         self.deviceToken = Self.placeholderDeviceToken()
         if credentials.load() != nil {
             paired = true
@@ -81,16 +91,42 @@ public final class DemoModel: ObservableObject {
         (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
     }
 
+    /// Fills the pairing screen from a scanned/tapped/pasted
+    /// `oaath-demo://pair?...` link. Filling only — pairing stays a button.
+    public func apply(link: PairingLink) {
+        baseURLText = link.relayURL
+        pairingCodeText = link.pairingCode
+        statusLine = "Pairing link read. Review and tap \"Pair this device\"."
+    }
+
+    /// `onOpenURL` entry: a tapped or camera-scanned pairing link.
+    public func open(url: URL) {
+        if let link = parsePairingLink(url.absoluteString) {
+            apply(link: link)
+        }
+    }
+
     public func pair() async {
         statusLine = ""
+        // A pasted full pairing link works in the code field too.
+        if let link = parsePairingLink(pairingCodeText) {
+            apply(link: link)
+        }
+        guard let ownerKey else {
+            statusLine = "Owner key unavailable: this device could not create a P-256 key."
+            return
+        }
         do {
             let endpoint = try DemoRelayEndpoint(baseURLText: baseURLText)
-            let credential = try await OwnerPhoneDemo.pair(
+            let device = try await OwnerPhoneDemo.pair(
                 endpoint: endpoint,
                 pairingCode: pairingCodeText.trimmingCharacters(in: .whitespacesAndNewlines),
                 deviceToken: deviceToken,
+                publicKey: try ownerKey.publicMaterialHex(),
                 http: http)
-            credentials.save(credential)
+            credentials.save(device.deviceCredential)
+            account = device.account
+            defaults.set(device.account, forKey: Self.accountKey)
             pairingCodeText = ""
             paired = true
             rebuildApproval()
@@ -107,6 +143,8 @@ public final class DemoModel: ObservableObject {
         approval = nil
         phaseSink = nil
         paired = false
+        account = nil
+        defaults.removeObject(forKey: Self.accountKey)
         statusLine = "Credential cleared. Pair again with a fresh code."
     }
 
@@ -139,7 +177,17 @@ public final class DemoModel: ObservableObject {
             credential: credential,
             http: http,
             onStatus: { box.record($0) })
-        let model = ApprovalModel(relay: client, approvalArtifact: { demoApprovalArtifact() })
+        // The signing boundary: a signature-request approval signs the
+        // projected digest with the on-device owner key (Secure Enclave when
+        // available) — the artifact IS the signature. Every other scope keeps
+        // the demo's opaque placeholder artifact.
+        let ownerKey = self.ownerKey
+        let model = ApprovalModel(relay: client, approvalArtifact: { projection in
+            if case let .signatureRequest(scope) = projection.scope, let ownerKey {
+                return try ownerKey.signDigestHex(scope.digest)
+            }
+            return demoApprovalArtifact()
+        })
         approval = model
         phaseSink = model.$phase
             .receive(on: RunLoop.main)
@@ -212,11 +260,17 @@ public struct DemoRootView: View {
                     .font(.body.monospaced())
             }
             Section("Pairing code (printed by examples/phone)") {
-                TextField("ABCD-EFGH-IJ", text: $model.pairingCodeText)
+                TextField("ABCD-EFGH-IJ or oaath-demo:// link", text: $model.pairingCodeText)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
                 Button("Pair this device") { Task { await model.pair() } }
             }
+            Section {
+                Text("Scan the QR code the terminal printed (system camera), tap the oaath-demo:// link, or paste it above — it fills this screen; pairing is still this button.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            ownerKeyBanner
             if !model.statusLine.isEmpty {
                 Text(model.statusLine).font(.footnote)
             }
@@ -229,10 +283,46 @@ public struct DemoRootView: View {
         .navigationTitle("Pair with the relay")
     }
 
+    /// The custody truth, said out loud: Enclave, honest fallback, or failure.
+    @ViewBuilder
+    private var ownerKeyBanner: some View {
+        if let ownerKey = model.ownerKey {
+            if ownerKey.secureEnclave {
+                Text("Owner key: P-256, generated inside the Secure Enclave. The private key never leaves it.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Owner key: SIMULATOR FALLBACK — a regular keychain P-256 key. No Secure Enclave is available here; a physical iPhone uses the Enclave.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        } else {
+            Text("Owner key unavailable: this device could not create a P-256 key.")
+                .font(.caption2)
+                .foregroundStyle(.red)
+        }
+    }
+
+    @ViewBuilder
+    private var accountBody: some View {
+        VStack(spacing: 4) {
+            Text("Smart account (CREATE2, chain-independent — Arbitrum Sepolia profile)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(model.account ?? "not derived yet — the relay derives it at pairing")
+                .font(.caption.monospaced())
+            Text("Derived by the web half from this key's registered public material; this screen displays what the relay derived.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder
     private var pairedBody: some View {
         ScrollView {
             VStack(spacing: 16) {
+                accountBody
+                ownerKeyBanner
                 if let approval = model.approval {
                     ApprovalView(model: approval)
                 }

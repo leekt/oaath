@@ -16,8 +16,8 @@ published to npm.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
-  the structured scope (permitted calls with value limits, operation limit,
-  expiry) — or an explicit "unstructured scope, review the raw text" state.
+  the structured permission scope, or a signature request's exact digest and
+  full display JSON — with explicit Approve/Reject for both signature flows.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
@@ -72,12 +72,17 @@ struct OwnerPhoneDemoApp: App {
 
 ## Key custody
 
-`OwnerPhoneKeyCustody` plus `KeychainKeyCustodyStub` scaffold the owner
-credential seam. No physical Secure Enclave behavior is proven anywhere in
-this repository: `useSecureEnclave` defaults to `false`, simulators and macOS
-test hosts prove nothing, and signature normalization belongs to the future
-consumer of the signature. Apple provisioning and physical-device
-qualification remain later work, per the program plan.
+The demo first probes a persistent P-256 Secure Enclave key created with
+`kSecAttrTokenIDSecureEnclave` and `.privateKeyUsage` (the explicit approval tap
+is the consent gate; no extra biometry prompt). It registers 64-byte `x ‖ y`
+public material and returns DER signatures as raw low-S `r ‖ s`. If the Enclave
+is unavailable, it uses a distinct non-synchronizable, non-extractable keychain
+P-256 key with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and displays an
+explicit simulator/fallback banner. Both modes intentionally omit a
+user-presence/biometry requirement because Approve is the consent gate. Host
+tests pin the fallback attributes and prove the
+pure DER conversion, low-S arithmetic and real CryptoKit verification; they do
+not prove physical Enclave custody.
 
 ## Provenance
 
@@ -88,12 +93,13 @@ Reference material: `leekt/deployer` (master @ 3b732ff98b87),
 (`packages/server/src/apns/sender.ts`, `native/{projection,decision}.ts`):
 the push/projection/decision codecs, the review state machine's
 ambiguous-submission discipline, and the custody seam. Deliberately discarded:
-the retired `wallet.oauth.*` wire names and `/v1/...` routes, the
-DER→P1363/low-S signature conversion (no oaath signature consumer exists yet),
-the UserDefaults inbox persistence, the blocklist-style payload parsing
-(replaced by closed exact-key capture), and the Xcode project (plain SPM
-builds headlessly). A future reader re-mining that demo should treat this list
-as the record of what was rejected on purpose.
+the retired `wallet.oauth.*` wire names and `/v1/...` routes, the old signature
+codec (the current DER→raw low-S implementation was rebuilt against the SDK's
+P-256 rule), the UserDefaults inbox persistence, and the blocklist-style payload
+parsing (replaced by closed exact-key capture). The thin current Xcode project
+is provenance-cross-referenced in [`Demo/README.md`](Demo/README.md#provenance);
+no retired project was copied. A future reader re-mining that demo should treat
+this list as the record of what was rejected on purpose.
 
 ## Gates
 
@@ -110,6 +116,7 @@ pairing, credential custody, code delivery). The relay pins the same
 envelopes from its side in `packages/server/test/native.test.ts`.
 
 Evidence explicitly **not** available from these gates: real APNs delivery,
-Apple provisioning and entitlements, physical Secure Enclave key creation and
-user-presence prompts, hosted relay interoperability, and any simulator or
-device run (see [Demo/README.md](Demo/README.md) for the human-owned steps).
+Apple provisioning and entitlements, physical Secure Enclave key creation,
+hosted relay interoperability, a simulator run, or any
+physical-device build/run (see [Demo/README.md](Demo/README.md)). The unsigned
+generic simulator build is a compile/link proof only.

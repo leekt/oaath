@@ -1,30 +1,9 @@
-/**
- * The owner-phone approval demo, web half: a relay your iPhone can reach, a
- * one-shot pairing code, a real APNs push (opt-in), and a tiny "web app"
- * waiting for its authorization code.
- *
- *   1. relay on the LAN     `createRelayHandler` over `node:http`, plus the
- *                           preview phone routes it now serves, plus one
- *                           example-owned pairing route
- *   2. pairing              a printed one-shot code; the phone trades it (with
- *                           its APNs device token) for a device-scoped owner
- *                           credential
- *   3. authorization        a PKCE request whose consent scope the phone
- *                           renders in full before the owner decides
- *   4. push (optional)      the merged APNs sender + settle-once transport,
- *                           one send, Apple SANDBOX host
- *   5. delivery             the phone GETs the redirect URI with the released
- *                           one-time code; this file consumes + claims it and
- *                           proves the one-shot semantics
- *
- * SECURITY HONESTY: this is a demo. It binds 0.0.0.0 and uses fixed demo
- * tokens, so anyone on your network could hit the relay — run it on a trusted
- * network only. The pairing code printed to this terminal is the demo's trust
- * root; a production deployment owns pairing UX (QR, attestation) through its
- * authentication port. Every line a deployment must replace says `REPLACE`.
- *
- * `OAATH_PHONE_SIMULATE=1` drives the phone's half over HTTP itself so
- * `examples:check` covers the whole loop unattended (no Apple contact).
+/*
+ * Owner-phone integration demo. The invariant owners are deliberately narrow:
+ * the relay owns one-shot requests/artifacts, the phone owns the P-256 owner
+ * key and explicit consent, this page owns the session private key, and the SDK
+ * owns the exact Kernel operation hash. A missing receipt or transport error
+ * leaves an operation unresolved and never authorizes resubmission.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -36,572 +15,1082 @@ import { connect } from "node:http2";
 import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
-import { deriveCodeChallenge } from "@oaath/protocol";
+import { p256 } from "@noble/curves/nist.js";
+import { deriveCodeChallenge, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  approveKernelPermissionAllChain,
+  asViemUserOperation,
+  createKernelRuntime,
+  createKernelV4Reads,
+  ecdsaKey,
+  encodeKernelV4NonceKey,
+  encodeKernelV4NonceRead,
+  kernelV4Deployment,
+  materializeKernelPermission,
+  ownerOperator,
+  p256Key,
+  sessionOperator,
+} from "@oaath/sdk";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
+import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
+import { build } from "esbuild";
+import qrcode from "qrcode-terminal";
+import { createPublicClient, custom, hexToBytes, keccak256, parseEther, toHex } from "viem";
+import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
+import {
+  canonicalDisplay,
+  captureCanonicalDisplay,
+  captureSponsorship,
+  DOCUMENTED_LIVE_FLOW_REQUESTS,
+  exactKeys,
+  LIVE_RECEIPT_POLL_ATTEMPTS,
+  LIVE_RECEIPT_POLL_INTERVAL_MS,
+  LIVE_RPC_MAX_REQUESTS,
+  LIVE_TRANSPORT_CONFIG,
+  LiveRequestBudget,
+  OperationLane,
+  operationAction,
+  pairingSecretMayRender,
+  permissionMaterializedAfter,
+  validateBundlerAcceptance,
+} from "./operation.mjs";
 
 const SIMULATE = process.env.OAATH_PHONE_SIMULATE === "1";
-
-/**
- * Opt-in variables may live in `examples/.env` (never committed; see the root
- * .gitignore). The real environment wins over the file. These are credentials:
- * only their NAMES are ever narrated, never their values. They are scrubbed
- * from every test/gate environment on purpose — this example reads them at
- * runtime only, and it is not a gate.
- */
-const ENV_FILE = fileURLToPath(new URL("../.env", import.meta.url));
-const OPT_IN_VARS = [
-  "APNS_KEY_PEM",
-  "APNS_KEY_PEM_PATH",
-  "APNS_KEY_ID",
-  "APPLE_TEAM_ID",
-  "APNS_TOPIC",
-  "ZERODEV_PROJECT_ID", // consumed by a later phase; loaded here so the file is wired once
-];
-if (existsSync(ENV_FILE)) {
-  const fromFile = parseEnv(readFileSync(ENV_FILE, "utf8"));
-  for (const [name, value] of Object.entries(fromFile)) {
-    if (process.env[name] === undefined) process.env[name] = value;
-  }
-}
-
-const HOST = process.env.OAATH_HOST ?? (SIMULATE ? "127.0.0.1" : "0.0.0.0");
-const PORT = Number(process.env.OAATH_PORT ?? 8787);
-const CALLBACK_PORT = Number(process.env.OAATH_CALLBACK_PORT ?? 8788);
-/** How long the demo waits for the phone before giving up. */
-const WAIT_MS = Number(process.env.OAATH_PHONE_WAIT_MS ?? 300_000);
-const PAIRING_TTL_MS = 600_000;
-
-/** REPLACE: real deployments authenticate clients and owners, not fixed strings. */
+const LIVE = process.env.OAATH_ZERODEV_LIVE === "1";
+const CHAIN_ID = 421_614;
+const GAS = Object.freeze({
+  callGasLimit: "900000",
+  verificationGasLimit: "3000000",
+  preVerificationGas: "150000",
+  maxFeePerGas: "2000000000",
+  maxPriorityFeePerGas: "1000000000",
+});
 const CLIENT_TOKEN = "demo-client-token";
 const OWNER_TOKEN = "demo-owner-token";
 const CLIENT_ID = "demo-web-app";
 const SUBJECT = "demo-owner-subject";
-/** PKCE: the client keeps the verifier and sends only the challenge. */
-const CODE_VERIFIER = "demo-code-verifier-that-is-long-enough-0123456789";
-
+const PAIRING_TTL_MS = 600_000;
+const WAIT_MS = Number(process.env.OAATH_PHONE_WAIT_MS ?? 300_000);
+const HOST = process.env.OAATH_HOST ?? (SIMULATE ? "127.0.0.1" : "0.0.0.0");
+const PORT = Number(process.env.OAATH_PORT ?? 8787);
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+const ENV_FILE = fileURLToPath(new URL("../.env", import.meta.url));
+for (const key of ["INFURA_API_KEY", "ALCHEMY_API_KEY", "PARITY_RPC_URL"]) {
+  if (!LIVE) delete process.env[key];
+}
+if (existsSync(ENV_FILE)) {
+  for (const [name, value] of Object.entries(parseEnv(readFileSync(ENV_FILE, "utf8")))) {
+    if (process.env[name] === undefined) process.env[name] = value;
+  }
+}
+if (LIVE && !process.env.ZERODEV_PROJECT_ID)
+  throw new Error("OAATH_ZERODEV_LIVE=1 requires ZERODEV_PROJECT_ID");
+const MODE = LIVE ? "zerodev-sponsored" : "anvil";
 const say = (...parts) => console.log(...parts);
 const expect = (condition, message) => {
   if (!condition) throw new Error(message);
 };
-const sha256Base64Url = async (text) => {
-  const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Buffer.from(digest).toString("base64url");
+const lower = (text) => text.toLowerCase();
+const jsonResponse = (outgoing, status, body) => {
+  outgoing.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  outgoing.end(JSON.stringify(body));
 };
-
-/** First non-internal IPv4 — the address the phone must dial. */
-function lanIp() {
-  for (const addresses of Object.values(networkInterfaces())) {
+const refusal = (outgoing, status, code) => jsonResponse(outgoing, status, { error: { code } });
+const lanIp = () => {
+  for (const addresses of Object.values(networkInterfaces()))
     for (const address of addresses ?? []) {
       if (address.family === "IPv4" && !address.internal) return address.address;
     }
-  }
   return null;
-}
-
-/**
- * Pairing state, in memory and example-owned ON PURPOSE: the relay store
- * contract is not widened for a preview. A module-level Map is the honest
- * shape of "this demo process knows its paired devices"; restarting the
- * example forgets them, and the phone re-pairs with a fresh code.
- */
-const DEVICE_TOKEN_SHAPE = /^[0-9a-fA-F]{64,200}$/u; // the APNs sender's rule
+};
+const sha256 = async (text) =>
+  Buffer.from(await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).toString(
+    "base64url",
+  );
+const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const PAIRING_CODE = [...randomBytes(10)]
+  .map((byte) => codeAlphabet[byte % codeAlphabet.length])
+  .join("");
 const pairing = {
-  codeHash: "",
-  expiresAt: 0,
+  hash: await sha256(PAIRING_CODE),
+  expiresAt: Date.now() + PAIRING_TTL_MS,
   consumed: false,
 };
-/** deviceCredential -> hex APNs device token. */
 const pairedDevices = new Map();
+let activeDevice = null;
+let redirectUri = "";
+let relayPort = 0;
+let activeRequestId = null;
+const signatureRequests = new Map();
+const operations = new Map();
+const operationLane = new OperationLane();
+let permission = null;
+let ownerRuntime = null;
+let accountDescriptor = null;
+let chain = null;
+let stack = null;
+let simulatedOwnerSecret = null;
+const target = `0x${"71".repeat(20)}`;
+// The modeled full path is 36 requests. Twelve requests remain as hard
+// headroom; every live request still passes through the process-wide 48 cap.
+expect(DOCUMENTED_LIVE_FLOW_REQUESTS === 36, "live request model drifted");
+const LIVE_RPC_TIMEOUT_MS = 10_000;
+const liveRequestBudget = new LiveRequestBudget();
 
-function newPairingCode() {
-  // 10 characters from an unambiguous alphabet: typed by hand on a phone.
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(10);
-  let code = "";
-  for (const byte of bytes) code += alphabet[byte % alphabet.length];
-  return code;
-}
+await build({
+  entryPoints: [`${HERE}/browser.js`],
+  outfile: `${HERE}/.demo-browser.js`,
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  logLevel: "silent",
+});
+const PAGE = readFileSync(`${HERE}/page.html`);
+const BROWSER = readFileSync(`${HERE}/.demo-browser.js`);
 
-const PAIRING_CODE = newPairingCode();
-pairing.codeHash = await sha256Base64Url(PAIRING_CODE);
-pairing.expiresAt = Date.now() + PAIRING_TTL_MS;
-
-/**
- * REPLACE: the deployment owns authentication. Here: two fixed demo tokens,
- * plus every device credential the pairing route issued — each an owner-role
- * caller bound to the demo subject.
- */
+const store = createMemoryRelayStore();
+const kms = {
+  async encrypt(plaintext) {
+    return `demo-not-encrypted:v1:${Buffer.from(plaintext).toString("base64")}`;
+  },
+  async decrypt(reference) {
+    const prefix = "demo-not-encrypted:v1:";
+    if (!reference.startsWith(prefix)) throw new Error("unknown ciphertext");
+    return Buffer.from(reference.slice(prefix.length), "base64").toString();
+  },
+};
 const authentication = {
   async authenticate(request) {
     const header = request.headers.get("authorization") ?? "";
-    const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-    if (token === CLIENT_TOKEN) {
-      return {
-        role: "client",
-        clientId: CLIENT_ID,
-        subject: SUBJECT,
-        redirectUris: [REDIRECT_URI],
-      };
-    }
-    if (token === OWNER_TOKEN) {
-      return { role: "owner", clientId: "demo-owner-console", subject: SUBJECT, redirectUris: [] };
-    }
-    if (pairedDevices.has(token)) {
-      return { role: "owner", clientId: "demo-paired-phone", subject: SUBJECT, redirectUris: [] };
-    }
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    if (token === CLIENT_TOKEN)
+      return { role: "client", clientId: CLIENT_ID, subject: SUBJECT, redirectUris: [redirectUri] };
+    if (token === OWNER_TOKEN || pairedDevices.has(token))
+      return { role: "owner", clientId: "demo-owner-phone", subject: SUBJECT, redirectUris: [] };
     return null;
   },
 };
-
-/** REPLACE: this is NOT encryption; a deployment injects KMS/HSM sealing. */
-const KMS_PREFIX = "demo-not-encrypted:v1:";
-const kms = {
-  async encrypt(plaintext) {
-    return KMS_PREFIX + Buffer.from(plaintext, "utf8").toString("base64");
-  },
-  async decrypt(reference) {
-    if (!reference.startsWith(KMS_PREFIX)) throw new Error("unknown ciphertext reference");
-    return Buffer.from(reference.slice(KMS_PREFIX.length), "base64").toString("utf8");
-  },
-};
-
-const refusal = (outgoing, status, code) => {
-  outgoing.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
-  outgoing.end(JSON.stringify({ error: { code } }));
-};
-
-/**
- * POST /native/pairings {pairingCode, deviceToken} — the pairing code IS the
- * authentication for this one call. One-shot: consumed on success; a second
- * use, an unknown code, and an expired code are indistinguishable refusals.
- */
-async function handlePairing(body, outgoing) {
-  let parsed;
-  try {
-    parsed = JSON.parse(body.toString("utf8"));
-  } catch {
-    return refusal(outgoing, 400, "pairing_request_invalid");
-  }
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Object.keys(parsed).sort().join(",") !== "deviceToken,pairingCode" ||
-    typeof parsed.pairingCode !== "string" ||
-    typeof parsed.deviceToken !== "string" ||
-    !DEVICE_TOKEN_SHAPE.test(parsed.deviceToken)
-  ) {
-    return refusal(outgoing, 400, "pairing_request_invalid");
-  }
-  const normalized = parsed.pairingCode.replace(/[\s-]/gu, "").toUpperCase();
-  const hash = await sha256Base64Url(normalized);
-  if (hash !== pairing.codeHash || pairing.consumed || Date.now() >= pairing.expiresAt) {
-    return refusal(outgoing, 401, "pairing_invalid");
-  }
-  pairing.consumed = true;
-  const deviceCredential = randomBytes(32).toString("base64url");
-  pairedDevices.set(deviceCredential, parsed.deviceToken.toLowerCase());
-  say("  pairing          phone paired; device-scoped owner credential issued");
-  outgoing.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-  outgoing.end(JSON.stringify({ deviceCredential }));
-}
-
-/** node:http request/response ↔ Fetch Request/Response, plus the pairing route. */
-function listener(handler) {
-  return (incoming, outgoing) => {
-    const chunks = [];
-    incoming.on("data", (chunk) => chunks.push(chunk));
-    incoming.on("end", () => {
-      const url = new URL(incoming.url, `http://${incoming.headers.host ?? "127.0.0.1"}`);
-      const body = chunks.length === 0 ? null : Buffer.concat(chunks);
-      if (url.pathname === "/native/pairings") {
-        if (incoming.method !== "POST") return refusal(outgoing, 405, "pairing_request_invalid");
-        handlePairing(body ?? Buffer.alloc(0), outgoing).catch(() =>
-          refusal(outgoing, 500, "pairing_failed"),
-        );
-        return;
-      }
-      const headers = [];
-      for (let index = 0; index < incoming.rawHeaders.length; index += 2) {
-        headers.push([incoming.rawHeaders[index], incoming.rawHeaders[index + 1]]);
-      }
-      handler(new Request(url, { method: incoming.method, headers, ...(body ? { body } : {}) }))
-        .then(async (response) => {
-          outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-          outgoing.end(Buffer.from(await response.arrayBuffer()));
-        })
-        .catch(() => refusal(outgoing, 500, "adapter_failed"));
-    });
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Start the relay and the "web app" callback listener.
-// ---------------------------------------------------------------------------
-
-const store = createMemoryRelayStore();
-const handler = createRelayHandler({
+const relayHandler = createRelayHandler({
   store,
   authentication,
   kms,
   clock: { now: () => Date.now() },
 });
-const relayServer = createServer(listener(handler));
-await new Promise((resolve) => relayServer.listen(PORT, HOST, resolve));
-const relayPort = relayServer.address().port;
 
-let resolveCode;
-const codeArrived = new Promise((resolve) => {
-  resolveCode = resolve;
-});
-const callbackServer = createServer((incoming, outgoing) => {
-  const url = new URL(incoming.url, `http://${incoming.headers.host ?? "127.0.0.1"}`);
-  if (url.pathname === "/callback" && url.searchParams.has("code")) {
-    outgoing.writeHead(200, { "content-type": "text/plain" });
-    outgoing.end("Code received - return to the terminal.\n");
-    resolveCode(url.searchParams.get("code"));
-    return;
-  }
-  outgoing.writeHead(404, { "content-type": "text/plain" });
-  outgoing.end("not found\n");
-});
-await new Promise((resolve) => callbackServer.listen(CALLBACK_PORT, HOST, resolve));
-const callbackPort = callbackServer.address().port;
-
-const phoneHost = SIMULATE ? "127.0.0.1" : (lanIp() ?? "127.0.0.1");
-const RELAY_URL = `http://${phoneHost}:${relayPort}`;
-const REDIRECT_URI = `http://${phoneHost}:${callbackPort}/callback`;
-
-say("");
-say("OAAth owner-phone demo (web half)");
-say(`relay            ${RELAY_URL} (bound to ${HOST})`);
-say(`web app callback ${REDIRECT_URI}`);
-if (HOST === "0.0.0.0") {
-  say("WARNING          demo binding on 0.0.0.0 with demo tokens: anyone on this");
-  say("                 network can hit the relay. Trusted network only.");
-}
-const foundOptIn = OPT_IN_VARS.filter((name) => process.env[name] !== undefined);
-if (foundOptIn.length > 0) {
-  say(`opt-in env       found (names only): ${foundOptIn.join(", ")}`);
-}
-say("");
-
-// ---------------------------------------------------------------------------
-// The authorization request: PKCE + a real protocol permission scope, so the
-// phone renders structured consent (client, calls, limits, expiry).
-// ---------------------------------------------------------------------------
-
-const call = async (label, method, path, token, body) => {
+async function relayCall(method, path, token, body) {
   const response = await fetch(`http://127.0.0.1:${relayPort}${path}`, {
     method,
     headers: {
-      ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { "content-type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const payload = await response.json();
-  say(`  ${label.padEnd(16)} ${response.status} ${JSON.stringify(payload).slice(0, 96)}`);
-  return { status: response.status, payload };
-};
-
-const nowSeconds = Math.floor(Date.now() / 1000);
-/** The scope the owner consents to: one ERC-20 transfer target, tight limits. */
-const requestedScope = {
-  version: "oaath.permission-request/v1",
-  application: {
-    applicationId: "oaath-phone-demo",
-    clientId: CLIENT_ID,
-    origin: "https://demo.oaath.example",
-    deviceId: "demo-web-device",
-  },
-  chainScope: "all",
-  logicalAccount: {
-    version: "oaath.kernel-account-profile/v1",
-    kind: "kernel",
-    accountIndex: "1",
-    kernelVersion: "0.4.0",
-    factoryRoute: "meta_factory",
-    entryPoint: { version: "0.7" },
-    ownerCredential: {
-      version: "oaath.owner-credential-profile/v1",
-      kind: "ecdsa",
-      address: `0x${"aa".repeat(20)}`,
+  if (!response.ok) throw new Error(payload.error?.code ?? `relay_${response.status}`);
+  return payload;
+}
+function p256Profile(publicMaterial, sign) {
+  return p256Key({
+    credential: {
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "p256",
+      publicKey: `0x04${publicMaterial.slice(2)}`,
     },
-  },
-  operatorCredential: {
-    version: "oaath.operator-credential-profile/v1",
-    kind: "ecdsa",
-    address: `0x${"bb".repeat(20)}`,
-  },
-  policy: {
-    version: "oaath.grant-policy/v1",
-    calls: [
-      {
-        target: `0x${"11".repeat(20)}`,
-        selector: "0xa9059cbb", // ERC-20 transfer(address,uint256)
-        valueLimit: "0",
-        argumentEquals: [],
-      },
-    ],
-    validAfter: nowSeconds,
-    validUntil: nowSeconds + 3_540,
-    perChainOperationLimit: 3,
-  },
-  requestedAt: nowSeconds,
-  expiresAt: nowSeconds + 3_600,
-};
+    sign,
+  });
+}
+async function bindOwner(publicMaterial) {
+  ownerRuntime = createKernelRuntime({
+    deployment: kernelV4Deployment(CHAIN_ID),
+    operator: ownerOperator({
+      key: p256Profile(publicMaterial, async ({ hash }) => {
+        const current = signatureRequests.get(activeRequestId);
+        if (!current || current.digest !== hash || current.artifact === null)
+          throw new Error("owner signature unavailable");
+        return current.artifact;
+      }),
+    }),
+    reads: stack.reads,
+  });
+  accountDescriptor = await ownerRuntime.bindAccount({
+    accountIndex: "0",
+    initialPackages: ownerRuntime.packages,
+  });
+  if (!LIVE) await stack.fund(accountDescriptor.account, parseEther("2"));
+  return accountDescriptor.account;
+}
+async function handlePairing(body, outgoing) {
+  let value;
+  try {
+    value = JSON.parse(body.toString());
+  } catch {
+    return refusal(outgoing, 400, "pairing_request_invalid");
+  }
+  if (
+    !exactKeys(value, ["pairingCode", "deviceToken", "publicKey"]) ||
+    typeof value.pairingCode !== "string" ||
+    !/^[0-9a-fA-F]{64,200}$/.test(value.deviceToken) ||
+    !/^0x[0-9a-f]{128}$/.test(value.publicKey)
+  )
+    return refusal(outgoing, 400, "pairing_request_invalid");
+  if (
+    pairing.consumed ||
+    Date.now() >= pairing.expiresAt ||
+    (await sha256(value.pairingCode.replace(/[\s-]/g, "").toUpperCase())) !== pairing.hash
+  )
+    return refusal(outgoing, 401, "pairing_invalid");
+  const account = await bindOwner(value.publicKey);
+  pairing.consumed = true;
+  const credential = randomBytes(32).toString("base64url");
+  activeDevice = {
+    credential,
+    deviceToken: value.deviceToken.toLowerCase(),
+    publicMaterial: value.publicKey,
+    account,
+  };
+  pairedDevices.set(credential, activeDevice);
+  say(`paired account   ${account}`);
+  jsonResponse(outgoing, 200, { deviceCredential: credential, account });
+}
 
-const created = await call("create request", "POST", "/authorization/requests", CLIENT_TOKEN, {
-  redirectUri: REDIRECT_URI,
-  codeChallenge: deriveCodeChallenge(CODE_VERIFIER),
-  requestedScope: JSON.stringify(requestedScope),
-});
-expect(created.status === 201, "the client could not create an authorization request");
-const { requestId } = created.payload;
-
-// The expected display payload, computed the same way the phone will see it:
-// through the preview projection route, with an owner credential.
-const projected = await call(
-  "project consent",
-  "GET",
-  `/native/projections/${requestId}`,
-  OWNER_TOKEN,
-);
-expect(projected.status === 200, "the owner could not project the request");
-const matchCode = projected.payload.displayPayload;
-expect(
-  projected.payload.scope.kind === "permission-request",
-  "the phone would not receive structured consent",
-);
-
-say("");
-say("================= HAND THIS TO YOUR PHONE =================");
-say(`  pairing code      ${PAIRING_CODE}   (one-shot, expires in 10 minutes)`);
-say(`  relay URL         ${RELAY_URL}`);
-say(`  operation id      ${requestId}`);
-say(`  match code        ${matchCode}`);
-say("  What your phone must show: the match code above, split as");
-say(`  "${matchCode.slice(0, 4)} ${matchCode.slice(4)}", plus this consent scope:`);
-say(`    client          ${CLIENT_ID} -> ${REDIRECT_URI}`);
-say("    chain scope     all chains");
-say(`    permitted call  ${requestedScope.policy.calls[0].target}`);
-say("                    selector 0xa9059cbb (ERC-20 transfer), value limit 0 wei");
-say(`    operation limit ${requestedScope.policy.perChainOperationLimit} per chain`);
-say("============================================================");
-say("");
-say("  On the iPhone (native/ios/Demo/README.md):");
-say("    1. Pair: enter the relay URL and the pairing code.");
-say("    2. Open the request: tap the push notification, or paste the");
-say("       operation id under 'Open request'.");
-say("    3. Compare the match code, review the consent, then Approve");
-say("       or Reject - both are explicit buttons; nothing auto-decides.");
-say("");
-
-// ---------------------------------------------------------------------------
-// Optional real APNs push, Apple SANDBOX host. Opt-in via env vars at runtime
-// (never a gate; gates scrub APNS_*/APPLE_*). Exactly one send per request.
-// ---------------------------------------------------------------------------
-
-async function pushProjection() {
+async function maybePush(projection) {
+  if (SIMULATE || activeDevice === null) return;
   const pem =
     process.env.APNS_KEY_PEM ??
     (process.env.APNS_KEY_PEM_PATH ? readFileSync(process.env.APNS_KEY_PEM_PATH, "utf8") : "");
-  const keyId = process.env.APNS_KEY_ID ?? "";
-  const teamId = process.env.APPLE_TEAM_ID ?? "";
-  const topic = process.env.APNS_TOPIC ?? "";
-  if (pem === "" || keyId === "" || teamId === "" || topic === "") {
-    say("  push             skipped (set APNS_KEY_PEM or APNS_KEY_PEM_PATH, APNS_KEY_ID,");
-    say("                   APPLE_TEAM_ID, APNS_TOPIC). Paste the operation id instead.");
+  if (!pem || !process.env.APNS_KEY_ID || !process.env.APPLE_TEAM_ID || !process.env.APNS_TOPIC)
     return;
-  }
-  say("  push             waiting for a paired device token...");
-  const deadline = Date.now() + WAIT_MS;
-  while (pairedDevices.size === 0 && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  const deviceToken = [...pairedDevices.values()][0];
-  if (deviceToken === undefined) {
-    say("  push             no device paired in time; paste the operation id instead");
-    return;
-  }
   const sender = createApnsSender({
-    credentials: { privateKeyPem: pem, keyId, teamId, topic },
+    credentials: {
+      privateKeyPem: pem,
+      keyId: process.env.APNS_KEY_ID,
+      teamId: process.env.APPLE_TEAM_ID,
+      topic: process.env.APNS_TOPIC,
+    },
     clock: { now: () => Date.now() },
   });
-  // Only the opaque push subset may transit Apple - never client or scope.
   const notification = sender.notification({
-    deviceToken,
+    deviceToken: activeDevice.deviceToken,
     projection: {
-      operationId: projected.payload.operationId,
-      displayPayload: projected.payload.displayPayload,
-      expiresAt: projected.payload.expiresAt,
+      operationId: projection.operationId,
+      displayPayload: projection.displayPayload,
+      expiresAt: projection.expiresAt,
     },
   });
-  // SANDBOX on purpose: dev-signed apps receive SANDBOX device tokens. Using
-  // api.push.apple.com (production) here is the classic silent failure.
   const session = connect("https://api.sandbox.push.apple.com:443");
-  const outcome = await sendApnsNotification({ session, notification, timeoutMs: 10_000 });
-  session.close();
-  switch (outcome.kind) {
-    case "delivered":
-      say("  push             delivered - check the iPhone");
-      break;
-    case "rejected":
-      say(`  push             rejected by Apple (${outcome.status} ${outcome.reason});`);
-      say("                   check APNS_TOPIC = the app's bundle id, and the key/team ids");
-      break;
-    case "unavailable":
-      say("  push             Apple unavailable; paste the operation id instead");
-      break;
-    default:
-      say("  push             outcome unreadable (may still arrive); watch the iPhone");
+  try {
+    await sendApnsNotification({ session, notification, timeoutMs: 10_000 });
+  } finally {
+    session.close();
+  }
+}
+async function createSignatureRequest(digest, display, purpose, simulationCommand = "approve") {
+  if (activeRequestId !== null) throw new Error("signature_request_lane_occupied");
+  const verifier = randomBytes(32).toString("base64url");
+  const created = await relayCall("POST", "/authorization/requests", CLIENT_TOKEN, {
+    redirectUri,
+    codeChallenge: deriveCodeChallenge(verifier),
+    requestedScope: JSON.stringify({
+      version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
+      kind: "signature-request",
+      digest,
+      display: captureCanonicalDisplay(display, digest),
+    }),
+  });
+  const record = {
+    requestId: created.requestId,
+    digest,
+    verifier,
+    purpose,
+    artifact: null,
+    code: null,
+    outcome: null,
+    consumed: false,
+  };
+  signatureRequests.set(created.requestId, record);
+  activeRequestId = created.requestId;
+  const projection = await relayCall(
+    "GET",
+    `/native/projections/${created.requestId}`,
+    activeDevice.credential,
+  );
+  maybePush(projection).catch(() => {});
+  say(`signature request ${created.requestId} (${purpose}); phone must explicitly Approve/Reject`);
+  if (SIMULATE) {
+    expect(projection.scope?.kind === "signature-request", "simulation projection was not signed");
+    expect(projection.scope.digest === digest, "simulation projection digest drifted");
+    expect(projection.scope.display === display, "simulation projection display bytes drifted");
+    if (simulationCommand === "reject") {
+      await relayCall("POST", `/native/decisions/${created.requestId}`, activeDevice.credential, {
+        command: "reject",
+      });
+    } else {
+      const signature = `0x${p256.sign(hexToBytes(digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
+      const decision = await relayCall(
+        "POST",
+        `/native/decisions/${created.requestId}`,
+        activeDevice.credential,
+        { command: "approve", artifact: signature },
+      );
+      record.code = decision.release.code;
+    }
+  }
+  return record;
+}
+async function resolveSignature(record) {
+  if (record.artifact !== null) return record.artifact;
+  if (record.outcome === "rejected") return null;
+  if (record.code === null) {
+    const state = await relayCall(
+      "GET",
+      `/authorization/requests/${record.requestId}`,
+      OWNER_TOKEN,
+    );
+    if (state.decision?.outcome === "rejected") {
+      record.outcome = "rejected";
+      activeRequestId = null;
+    }
+    return null;
+  }
+  if (record.consumed) throw new Error("signature_artifact_already_consumed");
+  record.consumed = true;
+  const consumed = await relayCall("POST", "/authorization/codes/consume", CLIENT_TOKEN, {
+    code: record.code,
+    codeVerifier: record.verifier,
+    redirectUri,
+  });
+  expect(consumed.requestId === record.requestId, "released another signature request");
+  const claimed = await relayCall(
+    "POST",
+    `/authorization/artifacts/${consumed.artifactId}/claim`,
+    CLIENT_TOKEN,
+  );
+  record.artifact = claimed.artifact;
+  record.outcome = "approved";
+  activeRequestId = null;
+  return record.artifact;
+}
+async function sequence(runtime, mode) {
+  const key = encodeKernelV4NonceKey({ mode, validation: runtime.validation, nonceKey: "0" });
+  const result = await stack.rpc("eth_call", [
+    {
+      to: ownerRuntime.deployment.entryPoint.address,
+      data: encodeKernelV4NonceRead({ account: accountDescriptor.account, key }),
+    },
+    "latest",
+  ]);
+  return (BigInt(result) & ((1n << 64n) - 1n)).toString();
+}
+function sessionRuntimeFor(sessionAddress, supplied) {
+  return createKernelRuntime({
+    deployment: kernelV4Deployment(CHAIN_ID),
+    operator: sessionOperator({
+      key: ecdsaKey({
+        account: {
+          address: sessionAddress,
+          sign: async ({ hash }) => {
+            if (!supplied.value || supplied.hash !== hash)
+              throw new Error("browser signature unavailable");
+            return supplied.value;
+          },
+        },
+        validator: stack.validator,
+      }),
+      policies: [
+        { kind: "call", calls: [{ target, selectors: ["0x00000000"] }] },
+        { kind: "value", maximumValue: "10" },
+      ],
+    }),
+    reads: stack.reads,
+  });
+}
+const rpcUserOperation = (prepared, signature = "0x") => {
+  const value = { ...asViemUserOperation(prepared.userOperation), signature };
+  return Object.fromEntries(
+    Object.entries(value).map(([key, field]) => [
+      key,
+      typeof field === "bigint" ? toHex(field) : field,
+    ]),
+  );
+};
+async function sponsoredPrepare(runtime, input) {
+  const unsigned = runtime.prepareOperation(input);
+  if (!LIVE) return unsigned;
+  const result = await stack.rpc("zd_sponsorUserOperation", [
+    { ...rpcUserOperation(unsigned), signature: runtime.dummySignature },
+    unsigned.entryPoint.address,
+    { sponsorshipPolicyData: { policyId: "oaath-owner-phone-demo" } },
+  ]);
+  const sponsorship = captureSponsorship(result);
+  return runtime.prepareOperation({
+    ...input,
+    gas: {
+      ...input.gas,
+      callGasLimit: sponsorship.callGasLimit,
+      verificationGasLimit: sponsorship.verificationGasLimit,
+      preVerificationGas: sponsorship.preVerificationGas,
+    },
+    paymaster: {
+      address: sponsorship.paymaster,
+      verificationGasLimit: sponsorship.paymasterVerificationGasLimit,
+      postOpGasLimit: sponsorship.paymasterPostOpGasLimit,
+      data: sponsorship.paymasterData,
+    },
+  });
+}
+const operationInput = (input, prepared) => ({
+  ...input,
+  gas: {
+    callGasLimit: prepared.userOperation.callGasLimit,
+    verificationGasLimit: prepared.userOperation.verificationGasLimit,
+    preVerificationGas: prepared.userOperation.preVerificationGas,
+    maxFeePerGas: prepared.userOperation.maxFeePerGas,
+    maxPriorityFeePerGas: prepared.userOperation.maxPriorityFeePerGas,
+  },
+  paymaster: prepared.userOperation.paymaster,
+});
+const displayOperation = (prepared, kind) =>
+  canonicalDisplay({
+    kind,
+    chainId: CHAIN_ID,
+    account: prepared.userOperation.sender,
+    digest: prepared.userOperationHash,
+    userOperationHash: prepared.userOperationHash,
+    userOperation: prepared.userOperation,
+  });
+
+function terminalize(operation, evidence) {
+  expect(evidence.chainId === CHAIN_ID, "observation chain mismatch");
+  expect(
+    evidence.account === operation.prepared.userOperation.sender,
+    "observation account mismatch",
+  );
+  expect(
+    evidence.userOperationHash === operation.prepared.userOperationHash,
+    "observation operation mismatch",
+  );
+  expect(/^0x[0-9a-f]{64}$/.test(evidence.transactionHash), "observation transaction invalid");
+  expect(evidence.status === "included" || evidence.status === "reverted", "observation invalid");
+  operation.status = evidence.status;
+  operation.observation = Object.freeze({ ...evidence });
+  if (operation.installsPermission)
+    permission.materialized = permissionMaterializedAfter({
+      current: permission.materialized,
+      installsPermission: true,
+      status: evidence.status,
+    });
+  operationLane.release(operation.operationId, evidence.status);
+  operation.result = {
+    status: evidence.status,
+    operationId: operation.operationId,
+    userOperationHash: evidence.userOperationHash,
+    transactionHash: evidence.transactionHash,
+  };
+  return operation.result;
+}
+
+async function observeOperation(operation) {
+  const action = operationAction(operation.status);
+  if (action === "return") return operation.result;
+  if (action !== "observe") throw new Error("operation_not_observable");
+  try {
+    const evidence = await stack.observe(operation);
+    if (evidence !== null) return terminalize(operation, evidence);
+  } catch {
+    // Unreadable/missing/provider evidence is not inclusion and never permits a
+    // second submission. The exact prepared hash and acceptance stay in memory.
+  }
+  operation.status = "unresolved";
+  return {
+    status: "unresolved",
+    operationId: operation.operationId,
+    userOperationHash: operation.prepared.userOperationHash,
+  };
+}
+
+async function validateLiveObservation(operation, observed, rpc) {
+  const hash = operation.prepared.userOperationHash;
+  const account = operation.prepared.userOperation.sender;
+  const entryPoint = lower(operation.prepared.entryPoint.address);
+  if (
+    observed === null ||
+    typeof observed !== "object" ||
+    Array.isArray(observed) ||
+    lower(observed.userOpHash ?? "") !== hash ||
+    lower(observed.sender ?? "") !== account ||
+    typeof observed.success !== "boolean" ||
+    observed.receipt === null ||
+    typeof observed.receipt !== "object" ||
+    Array.isArray(observed.receipt)
+  )
+    throw new Error("zerodev_receipt_invalid");
+  const transactionHash = lower(observed.receipt.transactionHash ?? "");
+  const blockHash = lower(observed.receipt.blockHash ?? "");
+  const blockNumber = observed.receipt.blockNumber;
+  if (
+    !/^0x[0-9a-f]{64}$/.test(transactionHash) ||
+    !/^0x[0-9a-f]{64}$/.test(blockHash) ||
+    !/^0x(?:0|[1-9a-f][0-9a-f]*)$/.test(blockNumber)
+  )
+    throw new Error("zerodev_receipt_invalid");
+  const [receipt, transaction] = await Promise.all([
+    rpc("eth_getTransactionReceipt", [transactionHash]),
+    rpc("eth_getTransactionByHash", [transactionHash]),
+  ]);
+  if (
+    receipt === null ||
+    transaction === null ||
+    lower(receipt.transactionHash ?? "") !== transactionHash ||
+    lower(transaction.hash ?? "") !== transactionHash ||
+    lower(receipt.blockHash ?? "") !== blockHash ||
+    lower(transaction.blockHash ?? "") !== blockHash ||
+    receipt.blockNumber !== blockNumber ||
+    transaction.blockNumber !== blockNumber ||
+    lower(receipt.to ?? "") !== entryPoint ||
+    lower(transaction.to ?? "") !== entryPoint ||
+    !/^0x(?:0|[1-9a-f][0-9a-f]*)$/.test(transaction.chainId ?? "") ||
+    BigInt(transaction.chainId) !== BigInt(CHAIN_ID) ||
+    (receipt.status !== "0x1" && receipt.status !== "0x0") ||
+    observed.success !== (receipt.status === "0x1")
+  )
+    throw new Error("zerodev_transaction_evidence_invalid");
+  return Object.freeze({
+    chainId: CHAIN_ID,
+    account,
+    userOperationHash: hash,
+    transactionHash,
+    blockHash,
+    blockNumber,
+    status: observed.success ? "included" : "reverted",
+  });
+}
+
+async function submitOperation(operation, signature) {
+  if (operationAction(operation.status) !== "submit")
+    throw new Error("operation_not_resubmittable");
+  operation.status = "submitting";
+  try {
+    const sent = await stack.sendSigned(operation.prepared, signature);
+    const acceptance = validateBundlerAcceptance(
+      operation.prepared.userOperationHash,
+      sent.userOperationHash,
+    );
+    operation.acceptance = Object.freeze({ ...acceptance, acceptedAt: Date.now() });
+    operation.status = "submitted";
+    if (sent.evidence) return terminalize(operation, sent.evidence);
+    return await observeOperation(operation);
+  } catch (error) {
+    operation.status = "unresolved";
+    throw error;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Simulate mode: drive the phone's half over HTTP so the loop runs unattended.
-// ---------------------------------------------------------------------------
-
-async function simulatePhone() {
-  say("  simulate         driving the phone's half over HTTP (no Apple contact)");
-  const fakeDeviceToken = "ab".repeat(32);
-  const paired = await call("pair", "POST", "/native/pairings", null, {
-    pairingCode: PAIRING_CODE,
-    deviceToken: fakeDeviceToken,
-  });
-  expect(paired.status === 200, "pairing must succeed once");
-  const deviceCredential = paired.payload.deviceCredential;
-  expect(typeof deviceCredential === "string" && deviceCredential.length > 0, "no credential");
-
-  const replayedPairing = await call("pair replay", "POST", "/native/pairings", null, {
-    pairingCode: PAIRING_CODE,
-    deviceToken: fakeDeviceToken,
-  });
-  expect(replayedPairing.status === 401, "a pairing code must be one-shot");
-
-  const projection = await call(
-    "phone projects",
-    "GET",
-    `/native/projections/${requestId}`,
-    deviceCredential,
-  );
-  expect(projection.status === 200, "the paired device could not project the request");
-  expect(projection.payload.displayPayload === matchCode, "match codes must agree");
-
-  const unpaired = await call(
-    "stale credential",
-    "GET",
-    `/native/projections/${requestId}`,
-    "nope",
-  );
-  expect(unpaired.status === 401, "an unknown credential must be refused");
-
-  const decided = await call(
-    "phone approves",
-    "POST",
-    `/native/decisions/${requestId}`,
-    deviceCredential,
-    {
-      command: "approve",
-      artifact: "demo-owner-phone-approval:v1:placeholder-artifact",
-    },
-  );
-  expect(decided.status === 200 && decided.payload.settlement === "decided", "not decided");
-  const release = decided.payload.release;
-  expect(release !== null && typeof release.code === "string", "no one-time release");
-
-  const replayedDecision = await call(
-    "decide replay",
-    "POST",
-    `/native/decisions/${requestId}`,
-    deviceCredential,
-    { command: "reject" },
-  );
-  expect(
-    replayedDecision.payload.settlement === "replayed" &&
-      replayedDecision.payload.outcome === "approved" &&
-      replayedDecision.payload.release === null,
-    "a replay must answer the stored outcome and release nothing",
-  );
-
-  // The phone's delivery step: GET redirectUri?code=<released code>.
-  const delivery = await fetch(`${release.redirectUri}?code=${release.code}`);
-  expect(delivery.status === 200, "the web app did not accept the code");
-}
-
-if (SIMULATE) {
-  await simulatePhone();
-} else {
-  await pushProjection();
-  say(`  waiting          up to ${Math.round(WAIT_MS / 60_000)} minutes for the phone...`);
-}
-
-// ---------------------------------------------------------------------------
-// The web app's half: receive the code, consume it (PKCE), claim the sealed
-// artifact once, and prove the one-shot semantics.
-// ---------------------------------------------------------------------------
-
-let waitTimer;
-const code = await Promise.race([
-  codeArrived,
-  new Promise((_, reject) => {
-    waitTimer = setTimeout(
-      () => reject(new Error("timed out waiting for the phone's approval")),
-      WAIT_MS,
+async function handleDemo(method, path, body, outgoing) {
+  if (method === "GET" && path === "/demo/account") {
+    if (!activeDevice) return refusal(outgoing, 409, "phone_not_paired");
+    return jsonResponse(outgoing, 200, {
+      account: activeDevice.account,
+      chainId: CHAIN_ID,
+      mode: MODE,
+    });
+  }
+  let value = {};
+  if (body.length > 0) {
+    try {
+      value = JSON.parse(body.toString());
+    } catch {
+      return refusal(outgoing, 400, "demo_request_invalid");
+    }
+  }
+  if (method === "POST" && path === "/demo/permission") {
+    if (!activeDevice) return refusal(outgoing, 409, "phone_not_paired");
+    if (permission) return refusal(outgoing, 409, "permission_already_requested");
+    if (
+      !exactKeys(value, ["sessionAddress", "sessionPublicKey"]) ||
+      !/^0x[0-9a-f]{40}$/.test(value.sessionAddress) ||
+      !/^0x04[0-9a-f]{128}$/.test(value.sessionPublicKey) ||
+      lower(`0x${keccak256(`0x${value.sessionPublicKey.slice(4)}`).slice(-40)}`) !==
+        value.sessionAddress
+    )
+      return refusal(outgoing, 400, "session_identity_invalid");
+    const supplied = { hash: null, value: null };
+    const runtime = sessionRuntimeFor(value.sessionAddress, supplied);
+    const descriptor = await runtime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(descriptor.account === accountDescriptor.account, "session bound another account");
+    // Derive without signing; the SDK owner is authoritative for the digest formula.
+    const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk");
+    const exactDigest = kernelV4ReplayableInstallDigest({
+      account: descriptor.account,
+      nonce: "0",
+      packages: runtime.packages,
+    });
+    const request = await createSignatureRequest(
+      exactDigest,
+      canonicalDisplay({
+        kind: "kernel-enable-digest",
+        chainScope: "all",
+        account: descriptor.account,
+        digest: exactDigest,
+        installNonce: "0",
+        sessionAddress: value.sessionAddress,
+        policies: runtime.operator?.policy ?? { call: { target, maximumValue: "10" } },
+      }),
+      "permission",
     );
-  }),
-]);
-clearTimeout(waitTimer);
-say("");
-say("  code arrived     the phone delivered the one-time code");
+    permission = {
+      runtime,
+      descriptor,
+      supplied,
+      request,
+      approval: null,
+      materialized: false,
+      sessionAddress: value.sessionAddress,
+    };
+    return jsonResponse(outgoing, 201, {
+      requestId: request.requestId,
+      digest: exactDigest,
+      account: descriptor.account,
+    });
+  }
+  const permissionMatch = path.match(/^\/demo\/permission\/([^/]+)$/);
+  if (method === "GET" && permissionMatch) {
+    if (!permission || permission.request.requestId !== permissionMatch[1])
+      return refusal(outgoing, 404, "signature_request_not_found");
+    const artifact = await resolveSignature(permission.request);
+    if (artifact === null) {
+      if (permission.request.outcome === "rejected") {
+        permission = null;
+        return jsonResponse(outgoing, 200, {
+          status: "rejected",
+          requestId: permissionMatch[1],
+        });
+      }
+      return jsonResponse(outgoing, 200, {
+        status: "pending",
+        requestId: permission.request.requestId,
+      });
+    }
+    if (!permission.approval)
+      permission.approval = await approveKernelPermissionAllChain({
+        owner: p256Profile(activeDevice.publicMaterial, async ({ hash }) => {
+          expect(hash === permission.request.digest, "approval digest drifted");
+          return artifact;
+        }),
+        account: permission.descriptor.account,
+        installNonce: "0",
+        packages: permission.runtime.packages,
+      });
+    return jsonResponse(outgoing, 200, {
+      status: "approved",
+      account: permission.descriptor.account,
+      digest: permission.approval.digest,
+    });
+  }
+  if (method === "POST" && path === "/demo/session/prepare") {
+    if (!permission?.approval) return refusal(outgoing, 409, "permission_not_approved");
+    if (!exactKeys(value, ["sessionAddress"]) || value.sessionAddress !== permission.sessionAddress)
+      return refusal(outgoing, 400, "session_identity_invalid");
+    if (operationLane.active !== null) return refusal(outgoing, 409, "operation_lane_occupied");
+    const operationId = randomBytes(18).toString("base64url");
+    operationLane.claim(operationId);
+    const mode = permission.materialized ? "standard" : "enable-replayable";
+    let input;
+    let prepared;
+    try {
+      const refreshed = await permission.runtime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      });
+      expect(refreshed.account === accountDescriptor.account, "refreshed another account");
+      permission.descriptor = refreshed;
+      input = {
+        kind: "execution",
+        mode,
+        grantId: `phone-session-${Date.now()}`,
+        account: permission.descriptor,
+        nonceKey: "0",
+        // A counterfactual account's first nonce is known locally. Avoiding a
+        // pre-deployment EntryPoint call also saves one paid/shared read.
+        sequence: permission.materialized ? await sequence(permission.runtime, mode) : "0",
+        calls: [{ target, value: "1", data: "0x" }],
+        gas: GAS,
+      };
+      prepared = await sponsoredPrepare(permission.runtime, input);
+    } catch (error) {
+      operationLane.cancel(operationId);
+      throw error;
+    }
+    operations.set(operationId, {
+      operationId,
+      kind: "session",
+      status: "prepared",
+      prepared,
+      installsPermission: !permission.materialized,
+      input: operationInput(input, prepared),
+    });
+    return jsonResponse(outgoing, 201, {
+      operationId,
+      userOperationHash: prepared.userOperationHash,
+    });
+  }
+  if (method === "POST" && path === "/demo/session/submit") {
+    if (
+      !exactKeys(value, ["operationId", "signature"]) ||
+      !/^0x[0-9a-f]{130}$/.test(value.signature)
+    )
+      return refusal(outgoing, 400, "session_submission_invalid");
+    const operation = operations.get(value.operationId);
+    if (operation?.kind !== "session") return refusal(outgoing, 404, "operation_not_found");
+    if (operation.status !== "prepared")
+      return refusal(outgoing, 409, "operation_not_resubmittable");
+    permission.supplied.hash = operation.prepared.userOperationHash;
+    permission.supplied.value = value.signature;
+    try {
+      const prepared = operation.prepared;
+      let signature;
+      if (!permission.materialized) {
+        const materialized = await materializeKernelPermission({
+          approval: permission.approval,
+          runtime: permission.runtime,
+          grantId: operation.input.grantId,
+          account: operation.input.account,
+          nonceKey: "0",
+          sequence: operation.input.sequence,
+          calls: operation.input.calls,
+          gas: operation.input.gas,
+          paymaster: operation.input.paymaster,
+        });
+        expect(
+          materialized.prepared.userOperationHash === prepared.userOperationHash,
+          "materialization changed operation identity",
+        );
+        signature = materialized.signature;
+      } else signature = await permission.runtime.signOperation(prepared);
+      const result = await submitOperation(operation, signature);
+      return jsonResponse(outgoing, 200, result);
+    } catch (error) {
+      if (operation.status !== "prepared") operation.status = "unresolved";
+      throw error;
+    }
+  }
+  const operationMatch = path.match(/^\/demo\/operations\/([^/]+)$/);
+  if (method === "GET" && operationMatch) {
+    const operation = operations.get(operationMatch[1]);
+    if (!operation) return refusal(outgoing, 404, "operation_not_found");
+    return jsonResponse(outgoing, 200, await observeOperation(operation));
+  }
+  if (method === "POST" && path === "/demo/owner/prepare") {
+    if (!activeDevice || !exactKeys(value, []))
+      return refusal(outgoing, 400, "owner_request_invalid");
+    if (operationLane.active !== null) return refusal(outgoing, 409, "operation_lane_occupied");
+    const preparingId = randomBytes(18).toString("base64url");
+    operationLane.claim(preparingId);
+    try {
+      const descriptor = await ownerRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      });
+      expect(descriptor.account === accountDescriptor.account, "owner refresh changed account");
+      accountDescriptor = descriptor;
+      const input = {
+        kind: "execution",
+        grantId: `phone-owner-${Date.now()}`,
+        account: accountDescriptor,
+        nonceKey: "0",
+        sequence: await sequence(ownerRuntime, "standard"),
+        calls: [{ target, value: "2", data: "0x" }],
+        gas: GAS,
+      };
+      const prepared = await sponsoredPrepare(ownerRuntime, input);
+      const request = await createSignatureRequest(
+        prepared.userOperationHash,
+        displayOperation(prepared, "owner-user-operation"),
+        "owner-operation",
+      );
+      operationLane.replace(preparingId, request.requestId);
+      operations.set(request.requestId, {
+        operationId: request.requestId,
+        kind: "owner",
+        status: "prepared",
+        prepared,
+        installsPermission: false,
+        request,
+      });
+      return jsonResponse(outgoing, 201, {
+        requestId: request.requestId,
+        userOperationHash: prepared.userOperationHash,
+      });
+    } catch (error) {
+      if (operationLane.active === preparingId) operationLane.cancel(preparingId);
+      throw error;
+    }
+  }
+  const ownerMatch = path.match(/^\/demo\/owner\/([^/]+)$/);
+  if (method === "GET" && ownerMatch) {
+    const operation = operations.get(ownerMatch[1]);
+    if (operation?.kind !== "owner") return refusal(outgoing, 404, "operation_not_found");
+    if (
+      operation.status === "included" ||
+      operation.status === "reverted" ||
+      operation.status === "rejected"
+    )
+      return jsonResponse(outgoing, 200, operation.result);
+    if (operation.status === "submitted" || operation.status === "unresolved")
+      return jsonResponse(outgoing, 200, await observeOperation(operation));
+    if (operation.status !== "prepared")
+      return refusal(outgoing, 409, "operation_not_resubmittable");
+    const artifact = await resolveSignature(operation.request);
+    if (artifact === null) {
+      if (operation.request.outcome === "rejected") {
+        operation.status = "rejected";
+        operationLane.cancel(operation.operationId);
+        operation.result = {
+          status: "rejected",
+          requestId: operation.request.requestId,
+        };
+        return jsonResponse(outgoing, 200, operation.result);
+      }
+      return jsonResponse(outgoing, 200, {
+        status: "pending",
+        requestId: operation.request.requestId,
+      });
+    }
+    try {
+      activeRequestId = operation.request.requestId;
+      const signature = await ownerRuntime.signOperation(operation.prepared);
+      activeRequestId = null;
+      return jsonResponse(outgoing, 200, await submitOperation(operation, signature));
+    } catch (error) {
+      activeRequestId = null;
+      if (operation.status !== "prepared") operation.status = "unresolved";
+      throw error;
+    }
+  }
+  return refusal(outgoing, 404, "demo_route_not_found");
+}
 
-const consumed = await call("consume code", "POST", "/authorization/codes/consume", CLIENT_TOKEN, {
-  code,
-  codeVerifier: CODE_VERIFIER,
-  redirectUri: REDIRECT_URI,
-});
-expect(consumed.payload.requestId === requestId, "the code released another request");
+function listener(incoming, outgoing) {
+  const chunks = [];
+  incoming.on("data", (chunk) => chunks.push(chunk));
+  incoming.on("end", async () => {
+    const url = new URL(incoming.url, `http://${incoming.headers.host ?? "127.0.0.1"}`);
+    const body = Buffer.concat(chunks);
+    try {
+      if (incoming.method === "GET" && url.pathname === "/") {
+        outgoing.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        });
+        return outgoing.end(PAGE);
+      }
+      if (incoming.method === "GET" && url.pathname === "/demo.js") {
+        outgoing.writeHead(200, {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "no-store",
+        });
+        return outgoing.end(BROWSER);
+      }
+      if (
+        incoming.method === "GET" &&
+        url.pathname === "/demo/callback" &&
+        url.searchParams.has("code")
+      ) {
+        const record = signatureRequests.get(activeRequestId);
+        if (record) record.code = url.searchParams.get("code");
+        outgoing.writeHead(200, { "content-type": "text/plain" });
+        return outgoing.end("Signature delivered. Return to the web page.\n");
+      }
+      if (url.pathname === "/native/pairings") {
+        if (incoming.method !== "POST") return refusal(outgoing, 405, "pairing_request_invalid");
+        return await handlePairing(body, outgoing);
+      }
+      if (url.pathname.startsWith("/demo/"))
+        return await handleDemo(incoming.method, url.pathname, body, outgoing);
+      const headers = [];
+      for (let index = 0; index < incoming.rawHeaders.length; index += 2)
+        headers.push([incoming.rawHeaders[index], incoming.rawHeaders[index + 1]]);
+      const response = await relayHandler(
+        new Request(url, { method: incoming.method, headers, ...(body.length ? { body } : {}) }),
+      );
+      outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+      outgoing.end(Buffer.from(await response.arrayBuffer()));
+    } catch {
+      say("request failed", "demo_failed");
+      if (!outgoing.headersSent) refusal(outgoing, 500, "demo_failed");
+      else outgoing.end();
+    }
+  });
+}
 
-const claimed = await call(
-  "claim artifact",
-  "POST",
-  `/authorization/artifacts/${consumed.payload.artifactId}/claim`,
-  CLIENT_TOKEN,
-);
-expect(typeof claimed.payload.artifact === "string", "the sealed artifact was not released");
+if (LIVE) {
+  const endpoint = `https://rpc.zerodev.app/api/v3/${encodeURIComponent(process.env.ZERODEV_PROJECT_ID)}/chain/${CHAIN_ID}`;
+  const budgetedRpc = async (method, params) => {
+    const requestId = liveRequestBudget.take(method);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
+      signal: AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS),
+    });
+    const body = await response.json();
+    if (!response.ok || body.error || !("result" in body)) throw new Error("zerodev_rpc_failed");
+    return body.result;
+  };
+  const publicClient = createPublicClient({
+    transport: custom(
+      { request: ({ method, params }) => budgetedRpc(method, params ?? []) },
+      LIVE_TRANSPORT_CONFIG,
+    ),
+  });
+  stack = {
+    reads: createKernelV4Reads(publicClient),
+    // Session authority resolves the pinned ECDSA signer; this syntactically
+    // valid placeholder is never installed or used as an owner validator.
+    validator: `0x${"01".repeat(20)}`,
+    rpc: budgetedRpc,
+    fund: async () => {},
+    observe: async (operation) => {
+      for (let attempt = 0; attempt < LIVE_RECEIPT_POLL_ATTEMPTS; attempt += 1) {
+        const observed = await budgetedRpc("eth_getUserOperationReceipt", [
+          operation.prepared.userOperationHash,
+        ]);
+        if (observed !== null) return validateLiveObservation(operation, observed, budgetedRpc);
+        if (attempt + 1 < LIVE_RECEIPT_POLL_ATTEMPTS)
+          await new Promise((resolve) => setTimeout(resolve, LIVE_RECEIPT_POLL_INTERVAL_MS));
+      }
+      return null;
+    },
+    sendSigned: async (prepared, signature) => {
+      const userOperationHash = await budgetedRpc("eth_sendUserOperation", [
+        rpcUserOperation(prepared, signature),
+        prepared.entryPoint.address,
+      ]);
+      if (typeof userOperationHash !== "string" || !/^0x[0-9a-f]{64}$/.test(userOperationHash))
+        throw new Error("zerodev_submission_response_invalid");
+      validateBundlerAcceptance(prepared.userOperationHash, userOperationHash);
+      return { userOperationHash };
+    },
+  };
+} else {
+  chain = await startAnvil(CHAIN_ID, "osaka");
+  stack = await deployKernelStack(chain, { p256: true });
+  stack.rpc = chain.rpc;
+}
+const server = createServer(listener);
+await new Promise((resolve) => server.listen(PORT, HOST, resolve));
+relayPort = server.address().port;
+const phoneHost = SIMULATE ? "127.0.0.1" : lanIp();
+if (!phoneHost)
+  throw new Error("No LAN IPv4 address found; set OAATH_HOST and use a reachable relay URL");
+const relayUrl = `http://${phoneHost}:${relayPort}`;
+redirectUri = `${relayUrl}/demo/callback`;
+const pairingLink = `oaath-demo://pair?relay=${encodeURIComponent(relayUrl)}&code=${encodeURIComponent(PAIRING_CODE)}`;
+say("\nOAAth owner-phone demo");
+say(`mode             ${MODE}`);
+say(`web + relay      ${relayUrl}`);
+if (pairingSecretMayRender({ simulate: SIMULATE, isTTY: process.stdout.isTTY })) {
+  // This is transient interactive UI, never a log/captured-output path.
+  process.stdout.write(`pairing link     ${pairingLink}\n`);
+  qrcode.generate(pairingLink, { small: true }, (qr) => process.stdout.write(`${qr}\n`));
+}
+if (process.env.ZERODEV_PROJECT_ID && !LIVE)
+  say("ZeroDev project   present but NOT consent: ignored unless OAATH_ZERODEV_LIVE=1");
 
-const replayedClaim = await call(
-  "replay claim",
-  "POST",
-  `/authorization/artifacts/${consumed.payload.artifactId}/claim`,
-  CLIENT_TOKEN,
-);
-expect(replayedClaim.status >= 400, "a claimed artifact must never be released twice");
-expect(
-  typeof replayedClaim.payload.error?.code === "string",
-  "a refusal must carry a structured code",
-);
+async function simulate() {
+  simulatedOwnerSecret = p256.utils.randomPrivateKey();
+  const publicMaterial = `0x${Buffer.from(p256.getPublicKey(simulatedOwnerSecret, false).slice(1)).toString("hex")}`;
+  const pair = await relayCall("POST", "/native/pairings", null, {
+    pairingCode: PAIRING_CODE,
+    deviceToken: "ab".repeat(32),
+    publicKey: publicMaterial,
+  });
+  const replay = await fetch(`http://127.0.0.1:${relayPort}/native/pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      pairingCode: PAIRING_CODE,
+      deviceToken: "ab".repeat(32),
+      publicKey: publicMaterial,
+    }),
+  });
+  expect(replay.status === 401, "pairing was not one-shot");
+  expect(
+    (await relayCall("GET", "/demo/account", null)).account === pair.account,
+    "unlock changed the account",
+  );
+  const rejectedDigest = `0x${"5a".repeat(32)}`;
+  const rejectedRequest = await createSignatureRequest(
+    rejectedDigest,
+    canonicalDisplay({ digest: rejectedDigest, kind: "reject-regression" }),
+    "reject-regression",
+    "reject",
+  );
+  const rejectedAt = Date.now();
+  expect((await resolveSignature(rejectedRequest)) === null, "reject produced an artifact");
+  expect(rejectedRequest.outcome === "rejected", "reject was not terminal");
+  expect(activeRequestId === null, "reject did not clear the signature lane");
+  expect(Date.now() - rejectedAt < 1_000, "reject did not terminate promptly");
 
-// The decision saga stays replay-only after the fact, on any owner credential.
-const replayedDecision = await call(
-  "decide replay",
-  "POST",
-  `/native/decisions/${requestId}`,
-  OWNER_TOKEN,
-  { command: "approve", artifact: "ignored-on-replay" },
-);
-expect(
-  replayedDecision.payload.settlement === "replayed" && replayedDecision.payload.release === null,
-  "a decision replay must answer the stored outcome and release nothing",
-);
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
+  const sessionSecret = secp256k1.utils.randomPrivateKey();
+  const sessionPublic = secp256k1.getPublicKey(sessionSecret, false);
+  const sessionAddress = lower(
+    `0x${keccak256(`0x${Buffer.from(sessionPublic.slice(1)).toString("hex")}`).slice(-40)}`,
+  );
+  const requested = await relayCall("POST", "/demo/permission", null, {
+    sessionAddress,
+    sessionPublicKey: `0x${Buffer.from(sessionPublic).toString("hex")}`,
+  });
+  const approved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
+  expect(approved.status === "approved", "permission did not approve");
+  for (let index = 0; index < 2; index += 1) {
+    const prepared = await relayCall("POST", "/demo/session/prepare", null, { sessionAddress });
+    if (index === 0) {
+      const concurrent = await fetch(`http://127.0.0.1:${relayPort}/demo/session/prepare`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionAddress }),
+      });
+      expect(concurrent.status === 409, "concurrent operation lane was not blocked");
+    }
+    const signed = secp256k1.sign(hexToBytes(prepared.userOperationHash), sessionSecret, {
+      lowS: true,
+      prehash: false,
+    });
+    const signature = `0x${signed.toCompactHex()}${(27 + signed.recovery).toString(16)}`;
+    const sent = await relayCall("POST", "/demo/session/submit", null, {
+      operationId: prepared.operationId,
+      signature,
+    });
+    expect(sent.status === "included", `session operation ${sent.status}`);
+    if (index === 0) expect(permission.materialized, "included install did not materialize");
+  }
+  const owner = await relayCall("POST", "/demo/owner/prepare", null, {});
+  const ownerSent = await relayCall("GET", `/demo/owner/${owner.requestId}`, null);
+  expect(ownerSent.status === "included", `owner operation ${ownerSent.status}`);
+  say(
+    "simulate         all four buttons passed; session send repeated with getNonce-driven sequences",
+  );
+}
 
-say("");
-say("  success - the full loop held:");
-say("    pairing was one-shot, the phone held its own credential,");
-say("    the consent the phone displayed is exactly what was authorized,");
-say("    the code and artifact released once, and every replay was refused.");
-
-await new Promise((resolve) => callbackServer.close(resolve));
-await new Promise((resolve) => relayServer.close(resolve));
-await store.close();
+try {
+  if (SIMULATE) await simulate();
+  else await new Promise((resolve) => setTimeout(resolve, WAIT_MS));
+} finally {
+  if (LIVE) {
+    const observed = liveRequestBudget.snapshot();
+    const methods = observed.methods.map(([method, count]) => `${method}:${count}`).join(",");
+    say(`live RPC requests ${observed.count}/${LIVE_RPC_MAX_REQUESTS} (${methods})`);
+  }
+  await new Promise((resolve) => server.close(resolve));
+  await store.close();
+  chain?.stop();
+  try {
+    await (await import("node:fs/promises")).unlink(`${HERE}/.demo-browser.js`);
+  } catch {}
+}
