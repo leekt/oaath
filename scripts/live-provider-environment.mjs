@@ -1,7 +1,15 @@
-// ponytail: this deny list is repo-level policy but lives under packages/sdk;
-// it now encodes @oaath/server-owned credentials (APNS_*/APPLE_*) — move it to
-// a repo-owned home (or @oaath/testing) so no package owns another's
-// credential policy. Do NOT write a second list; extend this one.
+/**
+ * Owns: the one repo-level deny list of live-provider credentials.
+ *
+ * Repo-owned because it spans packages: it names RPC providers `@oaath/sdk`
+ * could reach and the Apple push credentials `@oaath/server` could reach, so no
+ * package owns another's credential policy. `scrub-live-rpc-env.mjs` is the only
+ * consumer, wired as the vitest `globalSetup` for every project.
+ *
+ * There is exactly one list. Extend this function; never add a second.
+ *
+ * @author taek <leekt216@gmail.com>
+ */
 export function scrubLiveProviderEnvironment(environment) {
   return Object.fromEntries(
     Object.entries(environment).filter(([name]) => {

@@ -141,6 +141,39 @@ runtime integration tests use local Anvil unless a dedicated live-network suite
 is explicitly opted into and bounded. Repository rules live in
 [AGENTS.md](AGENTS.md).
 
+## Packaging gates
+
+These run in CI on every change and prove the published artifacts, not the
+workspace:
+
+```sh
+pnpm check:public-surface # no node:/pg leakage into a browser graph; one-way deps
+pnpm smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
+pnpm smoke:server         # packed server, relay round-trip, ./postgres under node
+```
+
+Each smoke builds, packs, and `npm install`s the tarballs into a throwaway
+consumer outside the workspace, so nothing resolves through a workspace link and
+no `src` path is reachable. `pnpm smoke:all-chain` is a fail-closed stub until
+the two-chain Anvil suite lands.
+
+## Release
+
+All four packages are one fixed `0.x.y` group and publish together. Publishing is
+a manual, owner-authorized action; no workflow runs it.
+
+```sh
+pnpm changeset         # describe the change
+pnpm release:status    # what would be released
+pnpm release:version   # apply versions and changelogs
+pnpm release:publish   # owner only: publish the fixed group and tag it
+```
+
+`release:publish` is plain `changeset publish`, so it publishes only what
+`release:version` already committed and tags each published package. Set
+`NPM_CONFIG_PROVENANCE=true` to attach npm provenance when publishing from a
+trusted CI runner.
+
 ## License
 
 Apache-2.0

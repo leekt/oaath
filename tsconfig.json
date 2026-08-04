@@ -1,0 +1,15 @@
+{
+  // Repo-level configuration files were typechecked by nothing: every package
+  // tsconfig includes only its own directory. This project covers the root
+  // config files so a broken `vitest.config.ts` fails the gate instead of the
+  // next test run.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": []
+  },
+  "include": ["vitest.config.ts"]
+}

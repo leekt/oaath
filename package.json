@@ -21,7 +21,7 @@
   "scripts": {
     "preinstall": "node scripts/check-package-manager.mjs",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "biome check . --diagnostic-level=error",
     "format": "biome format --write .",
@@ -30,8 +30,11 @@
     "smoke:browser": "node scripts/smoke-packed-browser.mjs",
     "smoke:server": "node scripts/smoke-packed-server.mjs",
     "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs",
+    "smoke": "pnpm smoke:browser && pnpm smoke:server",
     "changeset": "changeset",
-    "release:version": "changeset version"
+    "release:status": "changeset status",
+    "release:version": "changeset version",
+    "release:publish": "changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
