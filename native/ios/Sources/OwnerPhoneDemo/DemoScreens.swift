@@ -2,8 +2,9 @@
  EXPERIMENTAL PREVIEW — the demo app's screens over the OwnerPhone library.
 
  First launch pairs: relay base URL + the pairing code the example prints. The
- returned device-scoped credential is persisted and used for every later call;
- a refused credential (HTTP 401) clears it and returns to pairing.
+ normalized relay endpoint and returned device credential are persisted as one
+ bound identity and used together for every later call; a refused credential
+ (HTTP 401) clears that whole identity and returns to pairing.
 
  A push notification tap NEVER approves anything: it only opens the consent
  screen, which presents Approve and Reject as explicit buttons (the library's
@@ -38,9 +39,9 @@ final class LastStatusBox: @unchecked Sendable {
 
 @MainActor
 public final class DemoModel: ObservableObject {
-    @Published public var baseURLText: String {
-        didSet { defaults.set(baseURLText, forKey: Self.baseURLKey) }
-    }
+    /// Transient candidate before pairing; while paired this mirrors the bound
+    /// endpoint and is never an independent persisted authority input.
+    @Published public var baseURLText = ""
     @Published public var pairingCodeText = ""
     @Published public var operationIdText = ""
     @Published public private(set) var paired = false
@@ -56,34 +57,28 @@ public final class DemoModel: ObservableObject {
 
     /// The on-device owner P-256 key: Secure Enclave when available, honest
     /// keychain fallback otherwise. Nil only when key creation itself failed.
-    public let ownerKey: DemoOwnerKey?
+    public let ownerKey: (any DemoOwnerSigning)?
 
-    static let baseURLKey = "oaath.demo.baseURL"
-    static let accountKey = "oaath.demo.account"
-
-    private let credentials: any DeviceCredentialStore
+    private let pairings: any DevicePairingStore
     private let http: any DemoHTTP
-    private let defaults: UserDefaults
     private let lastStatus = LastStatusBox()
     private var phaseSink: AnyCancellable?
     private var delivered: Set<String> = []
 
     public init(
-        credentials: any DeviceCredentialStore,
+        pairings: any DevicePairingStore,
         http: any DemoHTTP = URLSession.shared,
-        defaults: UserDefaults = .standard,
-        ownerKey: DemoOwnerKey? = resolveDemoOwnerKey()
+        ownerKey: (any DemoOwnerSigning)? = resolveDemoOwnerKey()
     ) {
-        self.credentials = credentials
+        self.pairings = pairings
         self.http = http
-        self.defaults = defaults
         self.ownerKey = ownerKey
-        self.baseURLText = defaults.string(forKey: Self.baseURLKey) ?? ""
-        self.account = defaults.string(forKey: Self.accountKey)
         self.deviceToken = Self.placeholderDeviceToken()
-        if credentials.load() != nil {
+        if let pairing = pairings.load() {
+            baseURLText = pairing.endpoint.baseURL.absoluteString
+            account = pairing.account
             paired = true
-            rebuildApproval()
+            rebuildApproval(pairing)
         }
     }
 
@@ -94,7 +89,12 @@ public final class DemoModel: ObservableObject {
     /// Fills the pairing screen from a scanned/tapped/pasted
     /// `oaath-demo://pair?...` link. Filling only — pairing stays a button.
     public func apply(link: PairingLink) {
-        baseURLText = link.relayURL
+        guard !paired else {
+            statusLine = "Already paired. Clear the bound relay before using another pairing link."
+            return
+        }
+        guard let endpoint = try? DemoRelayEndpoint(baseURLText: link.relayURL) else { return }
+        baseURLText = endpoint.baseURL.absoluteString
         pairingCodeText = link.pairingCode
         statusLine = "Pairing link read. Review and tap \"Pair this device\"."
     }
@@ -107,6 +107,10 @@ public final class DemoModel: ObservableObject {
     }
 
     public func pair() async {
+        guard !paired else {
+            statusLine = "Already paired. Clear the bound relay before pairing again."
+            return
+        }
         statusLine = ""
         // A pasted full pairing link works in the code field too.
         if let link = parsePairingLink(pairingCodeText) {
@@ -124,13 +128,19 @@ public final class DemoModel: ObservableObject {
                 deviceToken: deviceToken,
                 publicKey: try ownerKey.publicMaterialHex(),
                 http: http)
-            credentials.save(device.deviceCredential)
-            account = device.account
-            defaults.set(device.account, forKey: Self.accountKey)
+            let pairing = try PersistedPairing(
+                endpoint: endpoint,
+                credential: device.deviceCredential,
+                account: device.account)
+            // The response must succeed before the single bound value is stored;
+            // model state changes only after that atomic store operation succeeds.
+            try pairings.save(pairing)
+            account = pairing.account
+            baseURLText = pairing.endpoint.baseURL.absoluteString
             pairingCodeText = ""
             paired = true
-            rebuildApproval()
-            statusLine = "Paired. This device now holds its own owner credential."
+            rebuildApproval(pairing)
+            statusLine = "Paired. Relay and owner credential are now bound together."
         } catch DemoPairingError.refused {
             statusLine = "Pairing refused: the code is unknown, already used, or expired."
         } catch {
@@ -139,13 +149,14 @@ public final class DemoModel: ObservableObject {
     }
 
     public func unpair() {
-        credentials.clear()
+        pairings.clear()
         approval = nil
         phaseSink = nil
         paired = false
         account = nil
-        defaults.removeObject(forKey: Self.accountKey)
-        statusLine = "Credential cleared. Pair again with a fresh code."
+        baseURLText = ""
+        pairingCodeText = ""
+        statusLine = "Bound relay and credential cleared. Pair again with a fresh code."
     }
 
     public func openManually() async {
@@ -163,18 +174,17 @@ public final class DemoModel: ObservableObject {
         failBackToPairingOn401()
     }
 
-    private func rebuildApproval() {
-        guard let credential = credentials.load(),
-              let endpoint = try? DemoRelayEndpoint(baseURLText: baseURLText)
-        else {
-            statusLine = "Set a valid relay URL first."
-            paired = credentials.load() != nil
+    private func rebuildApproval(_ pairing: PersistedPairing? = nil) {
+        guard let boundPairing = pairing ?? pairings.load() else {
+            approval = nil
+            paired = false
             return
         }
+        baseURLText = boundPairing.endpoint.baseURL.absoluteString
+        account = boundPairing.account
         let box = lastStatus
         let client = demoRelayClient(
-            endpoint: endpoint,
-            credential: credential,
+            pairing: boundPairing,
             http: http,
             onStatus: { box.record($0) })
         // The signing boundary: a signature-request approval signs the
@@ -343,7 +353,7 @@ public struct DemoRootView: View {
                 if !model.statusLine.isEmpty {
                     Text(model.statusLine).font(.footnote)
                 }
-                Button("Unpair this device", role: .destructive) { model.unpair() }
+                Button("Clear pairing", role: .destructive) { model.unpair() }
                     .font(.footnote)
             }
             .padding()

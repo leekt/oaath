@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import {
+  AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
   canonicalDisplay,
@@ -77,6 +79,32 @@ test("instruments the exact worst-case live RPC call graph under one hard budget
     message: "zerodev_request_budget_exhausted",
   });
   assert.equal(budget.snapshot().count, 81);
+});
+
+test("README documents the exported live budget without drift", () => {
+  const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
+  assert.match(
+    readme,
+    new RegExp(`up to \\*\\*${LIVE_FINALITY_MAX_ANCESTRY_DEPTH}\\*\\* ancestry\\s+parent reads`),
+  );
+  assert.match(readme, /\*\*2\*\* canonical endpoint rebounds per operation/u);
+  assert.match(
+    readme,
+    new RegExp(
+      `three-operation sponsored sequence\\s+is \\*\\*${DOCUMENTED_LIVE_FLOW_REQUESTS}\\*\\* requests`,
+    ),
+  );
+  assert.match(readme, new RegExp(`hard cap of \\*\\*${LIVE_RPC_MAX_REQUESTS}\\*\\*`));
+  assert.match(
+    readme,
+    new RegExp(
+      `\\*\\*${LIVE_RPC_MAX_REQUESTS - DOCUMENTED_LIVE_FLOW_REQUESTS}\\*\\* requests of headroom`,
+    ),
+  );
+  assert.match(readme, /at most \*\*four\*\* receipt\s+polls/u);
+  assert.match(readme, /\*\*10 second\*\* timeout/u);
+  assert.match(readme, /`retryCount: 0`/u);
+  assert.match(readme, /no retry and no hidden fallback/u);
 });
 
 test("binding cache reuses immutable success but refreshes account state", async () => {
@@ -225,35 +253,56 @@ test("pairing reservation is atomic across concurrent handlers", async () => {
   assert.equal(devices.size, 1);
 });
 
-test("permission and signature request reservations are atomic across Promise.all handlers", async () => {
+test("permission owner atomically reserves both lanes or mutates neither", async () => {
   const permissionLane = new AtomicReservationLane();
   const signatureLane = new AtomicReservationLane();
+  const owner = new AtomicPermissionReservation(permissionLane, signatureLane);
   const created = [];
-  const activePermissions = [];
   const handle = async (token) => {
-    permissionLane.reserve(token, { sessionAddress: "session" });
-    signatureLane.reserve(token, { purpose: "permission" });
+    owner.reserve(token, "session");
     await Promise.resolve();
     created.push(token);
-    signatureLane.activate(token, `request-${token}`);
-    permissionLane.activate(token, `request-${token}`);
-    activePermissions.push(permissionLane.active.requestId);
   };
   const settled = await Promise.allSettled([handle("one"), handle("two")]);
   assert.equal(settled.filter(({ status }) => status === "fulfilled").length, 1);
+  assert.deepEqual(permissionLane.active?.token, signatureLane.active?.token);
   assert.equal(created.length, 1);
-  assert.deepEqual(activePermissions, [`request-${created[0]}`]);
-  assert.equal(signatureLane.active.requestId, `request-${created[0]}`);
-  assert.equal(permissionLane.active.requestId, `request-${created[0]}`);
 
-  assert.throws(() => signatureLane.terminate("other", "rejected"), {
+  const occupiedSignature = new AtomicReservationLane();
+  occupiedSignature.reserve("owner", { purpose: "owner-operation" });
+  const absentPermission = new AtomicReservationLane();
+  const blocked = new AtomicPermissionReservation(absentPermission, occupiedSignature);
+  assert.throws(() => blocked.reserve("permission", "session"), {
+    message: "signature_request_lane_occupied",
+  });
+  assert.equal(absentPermission.active, null);
+  assert.deepEqual(occupiedSignature.active, {
+    token: "owner",
+    state: "pre-submit",
+    requestId: null,
+    purpose: "owner-operation",
+  });
+});
+
+test("permission cleanup is token-owned and only definitely pre-submission", () => {
+  const permissionLane = new AtomicReservationLane();
+  const signatureLane = new AtomicReservationLane();
+  const owner = new AtomicPermissionReservation(permissionLane, signatureLane);
+  owner.reserve("clean", "session");
+  assert.throws(() => owner.releasePreSubmission("other"), {
     message: "reservation_lane_mismatch",
   });
-  assert.equal(signatureLane.active.requestId, `request-${created[0]}`);
-  signatureLane.terminate(created[0], "rejected");
+  owner.releasePreSubmission("clean");
+  assert.equal(permissionLane.active, null);
   assert.equal(signatureLane.active, null);
-  assert.deepEqual(signatureLane.lastTerminal, { token: created[0], state: "rejected" });
-  assert.equal(permissionLane.active.requestId, `request-${created[0]}`);
+
+  owner.reserve("ambiguous", "session");
+  owner.markPossiblySubmitted("ambiguous");
+  assert.throws(() => owner.releasePreSubmission("ambiguous"), {
+    message: "reservation_not_pre_submission",
+  });
+  assert.equal(permissionLane.active?.state, "possibly-submitted");
+  assert.equal(signatureLane.active?.state, "possibly-submitted");
 });
 
 test("ambiguous relay create retains a possibly-submitted reservation and forbids retry", async () => {

@@ -27,19 +27,28 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
     /// Plain http is tolerated because this is a LAN demo; see the Demo README
     /// for the dev-only ATS exception it requires.
     public init(baseURLText: String) throws {
-        let trimmed = baseURLText.hasSuffix("/") ? String(baseURLText.dropLast()) : baseURLText
-        guard let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
+        let trimmed = baseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
-              url.host != nil
+              let host = components.host,
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil
         else {
             throw DemoRelayError.invalidBaseURL
         }
+        components.scheme = scheme
+        components.host = host.lowercased()
+        while components.path.hasSuffix("/") { components.path.removeLast() }
+        guard let url = components.url else { throw DemoRelayError.invalidBaseURL }
         self.baseURL = url
     }
 
     /// `GET /native/projections/{operationId}`, owner-authenticated.
-    public func projectionRequest(operationId: String, credential: String) -> URLRequest {
+    func projectionRequest(operationId: String, credential: String) -> URLRequest {
         var request = URLRequest(
             url: baseURL.appendingPathComponent("native/projections/\(operationId)"))
         request.httpMethod = "GET"
@@ -48,7 +57,7 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
     }
 
     /// `POST /native/decisions/{operationId}`, owner-authenticated.
-    public func decisionRequest(operationId: String, body: Data, credential: String) -> URLRequest {
+    func decisionRequest(operationId: String, body: Data, credential: String) -> URLRequest {
         var request = URLRequest(
             url: baseURL.appendingPathComponent("native/decisions/\(operationId)"))
         request.httpMethod = "POST"
@@ -100,8 +109,7 @@ extension URLSession: DemoHTTP {
 /// `onStatus` reports every HTTP status so the app can route a 401 back to
 /// pairing without re-decoding anything the library owns.
 public func demoRelayClient(
-    endpoint: DemoRelayEndpoint,
-    credential: String,
+    pairing: PersistedPairing,
     http: any DemoHTTP,
     onStatus: (@Sendable (Int) -> Void)? = nil
 ) -> TransportRelayClient {
@@ -109,10 +117,13 @@ public func demoRelayClient(
         let request: URLRequest
         switch call.kind {
         case .fetchProjection:
-            request = endpoint.projectionRequest(operationId: call.operationId, credential: credential)
+            request = pairing.endpoint.projectionRequest(
+                operationId: call.operationId, credential: pairing.credential)
         case .submitDecision:
-            request = endpoint.decisionRequest(
-                operationId: call.operationId, body: call.body ?? Data(), credential: credential)
+            request = pairing.endpoint.decisionRequest(
+                operationId: call.operationId,
+                body: call.body ?? Data(),
+                credential: pairing.credential)
         }
         let (data, status) = try await http.send(request)
         onStatus?(status)

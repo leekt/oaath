@@ -24,6 +24,49 @@ private struct FakeHTTP: DemoHTTP {
     }
 }
 
+private struct FakeOwnerSigning: DemoOwnerSigning {
+    let secureEnclave = false
+    func publicMaterialHex() throws -> String { "0x" + String(repeating: "11", count: 64) }
+    func signDigestHex(_ digestHex: String) throws -> String {
+        "0x" + String(repeating: "22", count: 64)
+    }
+}
+
+private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [URLRequest] = []
+    let pairingStatus: Int
+    let credential: String
+    let account: String
+
+    init(pairingStatus: Int = 200, credential: String = "credential-a") {
+        self.pairingStatus = pairingStatus
+        self.credential = credential
+        self.account = "0x" + String(repeating: "66", count: 20)
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, Int) {
+        lock.withLock { recorded.append(request) }
+        if request.url?.path == "/native/pairings" {
+            if pairingStatus != 200 { return (Data("{}".utf8), pairingStatus) }
+            return (
+                Data(#"{"deviceCredential":"\#(credential)","account":"\#(account)"}"#.utf8),
+                200)
+        }
+        let operationId = request.url?.lastPathComponent ?? "request"
+        return (
+            try JSONSerialization.data(
+                withJSONObject: projectionJson(operationId: operationId)),
+            200)
+    }
+
+    func requests() -> [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+}
+
 final class DemoRelayEndpointTests: XCTestCase {
     func testBuildsTheExactPreviewRoutes() throws {
         let endpoint = try DemoRelayEndpoint(baseURLText: "http://192.168.1.20:8787/")
@@ -66,8 +109,10 @@ final class DemoRelayEndpointTests: XCTestCase {
         let body = try JSONSerialization.data(withJSONObject: projectionJson(operationId: "req-1"))
         let statuses = LastStatusBox()
         let client = demoRelayClient(
-            endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
-            credential: "cred",
+            pairing: try PersistedPairing(
+                endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
+                credential: "cred",
+                account: nil),
             http: FakeHTTP(status: 200, body: body, recorder: recorder),
             onStatus: { statuses.record($0) })
         let projection = try await client.projection(operationId: "req-1")
@@ -81,8 +126,10 @@ final class DemoRelayEndpointTests: XCTestCase {
     func testTransportSurfacesARefusalAsItsStatus() async throws {
         let statuses = LastStatusBox()
         let client = demoRelayClient(
-            endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
-            credential: "stale",
+            pairing: try PersistedPairing(
+                endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
+                credential: "stale",
+                account: nil),
             http: FakeHTTP(status: 401, body: Data("{}".utf8), recorder: .init()),
             onStatus: { statuses.record($0) })
         do {
@@ -148,13 +195,112 @@ final class PairingClientTests: XCTestCase {
         }
     }
 
-    func testCredentialStoreRoundTrips() {
-        let store = InMemoryCredentialStore()
+    func testPairingStoreRoundTripsOneExactVersionedValue() throws {
+        let store = InMemoryPairingStore()
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "HTTP://RELAY.EXAMPLE:8787/"),
+            credential: "issued-token",
+            account: nil)
         XCTAssertNil(store.load())
-        store.save("issued-token")
-        XCTAssertEqual(store.load(), "issued-token")
+        try store.save(pairing)
+        XCTAssertEqual(store.load(), pairing)
+        XCTAssertEqual(pairing.endpoint.baseURL.absoluteString, "http://relay.example:8787")
+        XCTAssertEqual(try PersistedPairing.decode(pairing.encoded()), pairing)
         store.clear()
         XCTAssertNil(store.load())
+    }
+
+    func testPairingRecordRejectsOldCredentialOnlyAndShapeDrift() throws {
+        XCTAssertThrowsError(try PersistedPairing.decode(Data("issued-token".utf8)))
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a:8787"),
+            credential: "secret",
+            account: nil)
+        let valid = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: pairing.encoded()) as? [String: Any])
+        for changed in [
+            valid.merging(["extra": true]) { _, right in right },
+            valid.merging(["version": 2]) { _, right in right },
+            valid.merging(["endpoint": "http://RELAY-A:8787/"]) { _, right in right }
+        ] {
+            let data = try JSONSerialization.data(withJSONObject: changed)
+            XCTAssertThrowsError(try PersistedPairing.decode(data))
+        }
+    }
+}
+
+@MainActor
+final class DemoPairingIdentityTests: XCTestCase {
+    func testDifferentEndpointLinkCannotRebindAndRestartUsesOnlyBoundEndpoint() async throws {
+        let ownerKey = FakeOwnerSigning()
+        let store = InMemoryPairingStore()
+        let http = PairingIdentityHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: ownerKey)
+        model.baseURLText = "http://relay-a.example:8787/"
+        model.pairingCodeText = "AAAA-BBBB"
+        await model.pair()
+        XCTAssertTrue(model.paired, model.statusLine)
+        let bound = try XCTUnwrap(store.load())
+        XCTAssertEqual(bound.endpoint.baseURL.absoluteString, "http://relay-a.example:8787")
+
+        model.apply(link: PairingLink(
+            relayURL: "http://relay-b.example:9999", pairingCode: "BBBB-CCCC"))
+        XCTAssertEqual(model.baseURLText, "http://relay-a.example:8787")
+        XCTAssertEqual(store.load(), bound)
+        XCTAssertTrue(model.pairingCodeText.isEmpty)
+        XCTAssertTrue(model.statusLine.contains("Already paired"))
+
+        let restarted = DemoModel(pairings: store, http: http, ownerKey: ownerKey)
+        XCTAssertTrue(restarted.paired)
+        XCTAssertEqual(restarted.baseURLText, "http://relay-a.example:8787")
+        restarted.operationIdText = "request-after-restart"
+        await restarted.openManually()
+
+        let authenticated = http.requests().filter {
+            $0.value(forHTTPHeaderField: "Authorization") != nil
+        }
+        XCTAssertEqual(authenticated.count, 1)
+        XCTAssertEqual(
+            authenticated.first?.url?.absoluteString,
+            "http://relay-a.example:8787/native/projections/request-after-restart")
+        XCTAssertEqual(
+            authenticated.first?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer credential-a")
+        XCTAssertFalse(http.requests().contains {
+            $0.url?.host == "relay-b.example" &&
+                $0.value(forHTTPHeaderField: "Authorization") == "Bearer credential-a"
+        })
+    }
+
+    func testFailedCandidateNeverPersistsAndSameEndpointLinkIsIgnoredWhilePaired() async throws {
+        let ownerKey = FakeOwnerSigning()
+        let failedStore = InMemoryPairingStore()
+        let failed = DemoModel(
+            pairings: failedStore,
+            http: PairingIdentityHTTP(pairingStatus: 401, credential: "never-store"),
+            ownerKey: ownerKey)
+        failed.baseURLText = "http://relay-b.example:9999"
+        failed.pairingCodeText = "BAD-CODE"
+        await failed.pair()
+        XCTAssertFalse(failed.paired)
+        XCTAssertNil(failedStore.load())
+        XCTAssertFalse(failed.statusLine.contains("never-store"))
+
+        let store = InMemoryPairingStore()
+        let http = PairingIdentityHTTP()
+        let model = DemoModel(pairings: store, http: http, ownerKey: ownerKey)
+        model.baseURLText = "http://relay-a.example:8787"
+        model.pairingCodeText = "GOOD-CODE"
+        await model.pair()
+        let bound = try XCTUnwrap(store.load())
+        let requestCount = http.requests().count
+        model.apply(link: PairingLink(
+            relayURL: "HTTP://RELAY-A.EXAMPLE:8787/", pairingCode: "NEW-CODE"))
+        await model.pair()
+        XCTAssertEqual(store.load(), bound)
+        XCTAssertEqual(http.requests().count, requestCount)
+        XCTAssertTrue(model.pairingCodeText.isEmpty)
+        XCTAssertTrue(model.statusLine.contains("Already paired"))
     }
 }
 

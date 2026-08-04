@@ -81,35 +81,110 @@ public func pair(
     return try decodePairingResponse(data)
 }
 
-/// Custody of the device-scoped owner credential, beside the key custody stub.
-public protocol DeviceCredentialStore: Sendable {
-    func load() -> String?
-    func save(_ credential: String)
+public enum PairingStoreError: Error, Equatable, Sendable {
+    case invalidRecord
+    case storageFailed
+}
+
+/// The one authoritative persisted pairing identity. Endpoint and bearer are
+/// encoded in the same exact versioned value and can never be loaded apart.
+public struct PersistedPairing: Equatable, Sendable {
+    public static let version = 1
+    public let endpoint: DemoRelayEndpoint
+    public let credential: String
+    public let account: String?
+
+    public init(endpoint: DemoRelayEndpoint, credential: String, account: String?) throws {
+        guard !credential.isEmpty, credential.count <= 256 else {
+            throw PairingStoreError.invalidRecord
+        }
+        if let account, !isLowercaseAddress(account) { throw PairingStoreError.invalidRecord }
+        self.endpoint = endpoint
+        self.credential = credential
+        self.account = account
+    }
+
+    public func encoded() throws -> Data {
+        let encodedAccount: Any = account.map { $0 as Any } ?? NSNull()
+        return try JSONSerialization.data(
+            withJSONObject: [
+                "version": Self.version,
+                "endpoint": endpoint.baseURL.absoluteString,
+                "credential": credential,
+                "account": encodedAccount
+            ],
+            options: [.sortedKeys])
+    }
+
+    public static func decode(_ data: Data) throws -> PersistedPairing {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["version", "endpoint", "credential", "account"],
+              let version = object["version"] as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(),
+              version.doubleValue == Double(Self.version),
+              let endpointText = object["endpoint"] as? String,
+              let credential = object["credential"] as? String
+        else { throw PairingStoreError.invalidRecord }
+        let account: String?
+        if object["account"] is NSNull { account = nil }
+        else if let value = object["account"] as? String { account = value }
+        else { throw PairingStoreError.invalidRecord }
+        do {
+            let endpoint = try DemoRelayEndpoint(baseURLText: endpointText)
+            guard endpoint.baseURL.absoluteString == endpointText else {
+                throw PairingStoreError.invalidRecord
+            }
+            return try PersistedPairing(
+                endpoint: endpoint, credential: credential, account: account)
+        } catch {
+            throw PairingStoreError.invalidRecord
+        }
+    }
+}
+
+/// Atomic custody of the complete persisted pairing value.
+public protocol DevicePairingStore: Sendable {
+    func load() -> PersistedPairing?
+    func save(_ pairing: PersistedPairing) throws
     func clear()
 }
 
 /// Test double and simulator fallback.
-public final class InMemoryCredentialStore: DeviceCredentialStore, @unchecked Sendable {
-    private var credential: String?
+public final class InMemoryPairingStore: DevicePairingStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var pairing: PersistedPairing?
     public init() {}
-    public func load() -> String? { credential }
-    public func save(_ credential: String) { self.credential = credential }
-    public func clear() { credential = nil }
+    public func load() -> PersistedPairing? {
+        lock.lock()
+        defer { lock.unlock() }
+        return pairing
+    }
+    public func save(_ pairing: PersistedPairing) throws {
+        lock.lock()
+        self.pairing = pairing
+        lock.unlock()
+    }
+    public func clear() {
+        lock.lock()
+        pairing = nil
+        lock.unlock()
+    }
 }
 
 #if canImport(Security)
 import Security
 
-/// Keychain-backed store following the `KeychainKeyCustodyStub` pattern: one
-/// non-synchronizable generic-password item. Not production-qualified.
-public struct KeychainCredentialStore: DeviceCredentialStore {
+/// Keychain-backed store: endpoint, bearer, and account occupy one exact,
+/// non-synchronizable generic-password value. Old raw credential values are
+/// rejected rather than combined with another endpoint.
+public struct KeychainPairingStore: DevicePairingStore {
     public let service: String
 
-    public init(service: String = "org.oaath.owner-phone.device-credential") {
+    public init(service: String = "org.oaath.owner-phone.pairing-v1") {
         self.service = service
     }
 
-    public func load() -> String? {
+    public func load() -> PersistedPairing? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -120,18 +195,28 @@ public struct KeychainCredentialStore: DeviceCredentialStore {
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data
         else { return nil }
-        return String(data: data, encoding: .utf8)
+        return try? PersistedPairing.decode(data)
     }
 
-    public func save(_ credential: String) {
-        clear()
+    public func save(_ pairing: PersistedPairing) throws {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service
+        ]
+        let data = try pairing.encoded()
+        let update: [CFString: Any] = [kSecValueData: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw PairingStoreError.storageFailed }
         let attributes: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecValueData: Data(credential.utf8)
+            kSecValueData: data
         ]
-        SecItemAdd(attributes as CFDictionary, nil)
+        guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else {
+            throw PairingStoreError.storageFailed
+        }
     }
 
     public func clear() {

@@ -3,7 +3,7 @@
 
  Thin @main over the package: push registration (registration only — a
  notification tap opens the consent screen and never decides anything),
- keychain credential custody, and the demo screens. Everything testable lives
+ keychain-bound relay/credential custody, and the demo screens. Everything testable lives
  in the OwnerPhoneDemo target; this file only wires it.
 
  @author taek <leekt216@gmail.com>
@@ -15,13 +15,13 @@ import SwiftUI
 @main
 struct OwnerPhoneDemoApp: App {
     @UIApplicationDelegateAdaptor(PushRegistrationDelegate.self) private var pushDelegate
-    @StateObject private var model = DemoModel(credentials: KeychainCredentialStore())
+    @StateObject private var model = DemoModel(pairings: KeychainPairingStore())
 
     var body: some Scene {
         WindowGroup {
             DemoRootView(model: model)
-                // A scanned QR / tapped oaath-demo://pair link only FILLS the
-                // pairing screen; pairing stays an explicit button.
+                // Before pairing, a scanned QR / tapped link only FILLS the
+                // screen. While paired, links cannot replace the bound relay.
                 .onOpenURL { url in model.open(url: url) }
                 .task {
                     pushDelegate.onDeviceToken = { token in

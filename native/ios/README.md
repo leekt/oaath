@@ -38,8 +38,8 @@ and `POST /native/decisions/{operationId}`
 against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.
 Nothing in the `OwnerPhone` library reads configuration or holds credentials;
-the demo wiring (URLSession transport, pairing, credential custody, code
-delivery) lives in the `OwnerPhoneDemo` target.
+the demo wiring (URLSession transport, pairing, bound endpoint/credential
+custody, code delivery) lives in the `OwnerPhoneDemo` target.
 
 ## App wiring
 
@@ -55,7 +55,7 @@ import SwiftUI
 @main
 struct OwnerPhoneDemoApp: App {
     @UIApplicationDelegateAdaptor(PushRegistrationDelegate.self) private var pushDelegate
-    @StateObject private var model = DemoModel(credentials: KeychainCredentialStore())
+    @StateObject private var model = DemoModel(pairings: KeychainPairingStore())
 
     var body: some Scene {
         WindowGroup {

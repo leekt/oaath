@@ -39,6 +39,7 @@ import qrcode from "qrcode-terminal";
 import { createPublicClient, custom, hexToBytes, keccak256, parseEther, toHex } from "viem";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
 import {
+  AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
   canonicalDisplay,
@@ -128,6 +129,8 @@ let signingRequestId = null;
 const signatureRequests = new Map();
 const signatureRequestLane = new AtomicReservationLane();
 const permissionLane = new AtomicReservationLane();
+const permissionReservation = new AtomicPermissionReservation(permissionLane, signatureRequestLane);
+let relayCreates = 0;
 const operations = new Map();
 const operationLane = new OperationLane();
 let permission = null;
@@ -296,13 +299,27 @@ async function maybePush(projection) {
     session.close();
   }
 }
-async function createSignatureRequest(digest, display, purpose, simulationCommand = "approve") {
-  const reservationToken = randomBytes(18).toString("base64url");
-  signatureRequestLane.reserve(reservationToken, { purpose });
+async function createSignatureRequest(
+  digest,
+  display,
+  purpose,
+  simulationCommand = "approve",
+  reserved = null,
+) {
+  const reservationToken = reserved?.token ?? randomBytes(18).toString("base64url");
+  const ownsReservation = reserved === null;
+  if (ownsReservation) signatureRequestLane.reserve(reservationToken, { purpose });
+  else if (
+    signatureRequestLane.active?.token !== reservationToken ||
+    signatureRequestLane.active?.state !== "pre-submit" ||
+    signatureRequestLane.active?.purpose !== purpose
+  )
+    throw new Error("reservation_lane_mismatch");
   const verifier = randomBytes(32).toString("base64url");
   let created;
+  let mayHaveSubmitted = false;
   try {
-    created = await relayCall("POST", "/authorization/requests", CLIENT_TOKEN, {
+    const requestBody = {
       redirectUri,
       codeChallenge: deriveCodeChallenge(verifier),
       requestedScope: JSON.stringify({
@@ -311,11 +328,20 @@ async function createSignatureRequest(digest, display, purpose, simulationComman
         digest,
         display: captureCanonicalDisplay(display, digest),
       }),
-    });
+    };
+    relayCreates += 1;
+    const pendingCreate = relayCall("POST", "/authorization/requests", CLIENT_TOKEN, requestBody);
+    mayHaveSubmitted = true;
+    if (reserved?.markPossiblySubmitted) reserved.markPossiblySubmitted();
+    else signatureRequestLane.markPossiblySubmitted(reservationToken);
+    created = await pendingCreate;
   } catch (error) {
-    // The relay may have committed even when its response was lost. Retain the
-    // reservation permanently; retrying create could orphan duplicate consent.
-    signatureRequestLane.markPossiblySubmitted(reservationToken);
+    if (mayHaveSubmitted) {
+      // The relay may have committed even when its response was lost. Retain
+      // the reservation permanently; retrying create could orphan consent.
+      if (signatureRequestLane.active?.state === "pre-submit")
+        signatureRequestLane.markPossiblySubmitted(reservationToken);
+    } else if (ownsReservation) signatureRequestLane.release(reservationToken);
     throw error;
   }
   const record = {
@@ -613,7 +639,17 @@ async function handleDemo(method, path, body, outgoing) {
     )
       return refusal(outgoing, 400, "session_identity_invalid");
     const reservationToken = randomBytes(18).toString("base64url");
-    permissionLane.reserve(reservationToken, { sessionAddress: value.sessionAddress });
+    try {
+      // One synchronous owner checks and claims both lanes before bindAccount
+      // or any other await. A conflict therefore mutates neither lane.
+      permissionReservation.reserve(reservationToken, value.sessionAddress);
+    } catch (error) {
+      if (error.message === "permission_already_requested")
+        return refusal(outgoing, 409, "permission_already_requested");
+      if (error.message === "signature_request_lane_occupied")
+        return refusal(outgoing, 409, "signature_request_lane_occupied");
+      throw error;
+    }
     permission = {
       reservationToken,
       state: "pre-submit",
@@ -637,7 +673,6 @@ async function handleDemo(method, path, body, outgoing) {
         nonce: "0",
         packages: runtime.packages,
       });
-      permission.state = "possibly-submitted";
       const request = await createSignatureRequest(
         exactDigest,
         canonicalDisplay({
@@ -650,17 +685,25 @@ async function handleDemo(method, path, body, outgoing) {
           policies: runtime.operator?.policy ?? { call: { target, maximumValue: "10" } },
         }),
         "permission",
+        "approve",
+        {
+          token: reservationToken,
+          markPossiblySubmitted() {
+            permissionReservation.markPossiblySubmitted(reservationToken);
+            permission.state = "possibly-submitted";
+          },
+        },
       );
       Object.assign(permission, { runtime, descriptor, supplied, request, state: "active" });
-      permissionLane.activate(reservationToken, request.requestId);
+      permissionReservation.activatePermission(reservationToken, request.requestId);
       return jsonResponse(outgoing, 201, {
         requestId: request.requestId,
         digest: exactDigest,
         account: descriptor.account,
       });
     } catch (error) {
-      if (permission?.state === "pre-submit") {
-        permissionLane.release(reservationToken);
+      if (permission?.reservationToken === reservationToken && permission.state === "pre-submit") {
+        permissionReservation.releasePreSubmission(reservationToken);
         permission = null;
       }
       throw error;
@@ -804,8 +847,13 @@ async function handleDemo(method, path, body, outgoing) {
     if (!activeDevice || !exactKeys(value, []))
       return refusal(outgoing, 400, "owner_request_invalid");
     if (operationLane.active !== null) return refusal(outgoing, 409, "operation_lane_occupied");
+    if (signatureRequestLane.active !== null)
+      return refusal(outgoing, 409, "signature_request_lane_occupied");
     const preparingId = randomBytes(18).toString("base64url");
+    // These synchronous claims have no interleaving point: owner/permission
+    // ordering is decided before preparation starts and neither can overwrite.
     operationLane.claim(preparingId);
+    signatureRequestLane.reserve(preparingId, { purpose: "owner-operation" });
     try {
       const input = await withFreshSequence(
         {
@@ -832,6 +880,8 @@ async function handleDemo(method, path, body, outgoing) {
         prepared.userOperationHash,
         displayOperation(prepared, "owner-user-operation"),
         "owner-operation",
+        "approve",
+        { token: preparingId },
       );
       operationLane.replace(preparingId, request.requestId);
       operations.delete(preparingId);
@@ -851,8 +901,10 @@ async function handleDemo(method, path, body, outgoing) {
     } catch (error) {
       if (
         operationLane.active === preparingId &&
-        signatureRequestLane.active?.purpose !== "owner-operation"
+        signatureRequestLane.active?.token === preparingId &&
+        signatureRequestLane.active.state === "pre-submit"
       ) {
+        signatureRequestLane.release(preparingId);
         operationLane.cancel(preparingId);
         operations.delete(preparingId);
       }
@@ -1088,10 +1140,83 @@ async function simulate() {
   const sessionAddress = lower(
     `0x${keccak256(`0x${Buffer.from(sessionPublic.slice(1)).toString("hex")}`).slice(-40)}`,
   );
-  const requested = await relayCall("POST", "/demo/permission", null, {
+  const sessionIdentity = {
     sessionAddress,
     sessionPublicKey: `0x${Buffer.from(sessionPublic).toString("hex")}`,
-  });
+  };
+  const postDemo = (path, value) =>
+    fetch(`http://127.0.0.1:${relayPort}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(value),
+    });
+
+  // Actual HTTP-route interleaving, owner first: the owner synchronously owns
+  // the shared lane before preparation awaits. Permission must remain wholly
+  // absent/retryable and must not create or overwrite relay consent.
+  const ownerPending = postDemo("/demo/owner/prepare", {});
+  while (
+    signatureRequestLane.active?.purpose !== "owner-operation" ||
+    signatureRequestLane.active.requestId === null
+  )
+    await new Promise((resolve) => setImmediate(resolve));
+  const createsWithOwnerReserved = relayCreates;
+  const recordsWithOwnerReserved = signatureRequests.size;
+  const permissionConflict = await postDemo("/demo/permission", sessionIdentity);
+  expect(permissionConflict.status === 409, "owner-first permission conflict was not blocked");
+  expect(
+    (await permissionConflict.json()).error.code === "signature_request_lane_occupied",
+    "owner-first conflict code drifted",
+  );
+  const owner = await (await ownerPending).json();
+  const ownerFirstState = await relayCall("GET", "/demo/state", null);
+  expect(relayCreates === createsWithOwnerReserved, "permission conflict created relay consent");
+  expect(
+    signatureRequests.size === recordsWithOwnerReserved,
+    "permission conflict orphaned relay consent",
+  );
+  expect(permission === null && permissionLane.active === null, "permission conflict was orphaned");
+  expect(ownerFirstState.permission === null, "permission state projection disagreed");
+  expect(
+    ownerFirstState.signatureRequest?.requestId === owner.requestId &&
+      signatureRequestLane.active?.requestId === owner.requestId,
+    "owner request was overwritten or projected inconsistently",
+  );
+  const ownerSent = await relayCall("GET", `/demo/owner/${owner.requestId}`, null);
+  expect(ownerSent.status === "included", `owner operation ${ownerSent.status}`);
+
+  // Actual HTTP-route interleaving, permission first: its atomic two-lane claim
+  // prevents an owner preparation, relay create, operation orphan, or overwrite.
+  const permissionPending = postDemo("/demo/permission", sessionIdentity);
+  while (
+    signatureRequestLane.active?.purpose !== "permission" ||
+    signatureRequestLane.active.requestId === null
+  )
+    await new Promise((resolve) => setImmediate(resolve));
+  const createsWithPermissionReserved = relayCreates;
+  const recordsWithPermissionReserved = signatureRequests.size;
+  const ownerConflict = await postDemo("/demo/owner/prepare", {});
+  expect(ownerConflict.status === 409, "permission-first owner conflict was not blocked");
+  expect(
+    (await ownerConflict.json()).error.code === "signature_request_lane_occupied",
+    "permission-first conflict code drifted",
+  );
+  const requestedResponse = await permissionPending;
+  expect(requestedResponse.status === 201, "permission request failed after atomic reservation");
+  const requested = await requestedResponse.json();
+  const permissionFirstState = await relayCall("GET", "/demo/state", null);
+  expect(relayCreates === createsWithPermissionReserved, "owner conflict created relay consent");
+  expect(
+    signatureRequests.size === recordsWithPermissionReserved,
+    "owner conflict orphaned relay consent",
+  );
+  expect(operationLane.active === null, "owner conflict orphaned an operation");
+  expect(
+    permissionFirstState.permission?.requestId === requested.requestId &&
+      permissionFirstState.signatureRequest?.requestId === requested.requestId &&
+      permission?.request?.requestId === requested.requestId,
+    "permission/shared-lane representations diverged",
+  );
   const approved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
   expect(approved.status === "approved", "permission did not approve");
   for (let index = 0; index < 2; index += 1) {
@@ -1116,12 +1241,7 @@ async function simulate() {
     expect(sent.status === "included", `session operation ${sent.status}`);
     if (index === 0) expect(permission.materialized, "included install did not materialize");
   }
-  const owner = await relayCall("POST", "/demo/owner/prepare", null, {});
-  const ownerSent = await relayCall("GET", `/demo/owner/${owner.requestId}`, null);
-  expect(ownerSent.status === "included", `owner operation ${ownerSent.status}`);
-  say(
-    "simulate         all four buttons passed; session send repeated with getNonce-driven sequences",
-  );
+  say("simulate         all four buttons passed; atomic owner/permission interleavings passed");
 }
 
 try {

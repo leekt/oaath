@@ -66,16 +66,17 @@ reads the transaction and receipt, decodes exactly one matching EntryPoint
 and block. It also reads the finalized head and canonical inclusion block;
 outer transaction status and bundler `success` are never sufficient.
 
-The exact worst-case documented path is **45** requests: 12 paid reads across
-owner binding, session binding, and one post-deployment account-state refresh
-(the adapter caches only successful immutable chain/code/factory evidence),
-three fresh EntryPoint nonce reads, three sponsorships, three submissions, and
-three times (four receipt polls plus transaction, receipt, finalized-head, and
-canonical-block reads). One process-wide hard cap of **54** leaves nine requests
-of headroom. Every request has a **10 second** timeout; the
-viem custom transport sets `retryCount: 0`, observation concurrency is at most
-two evidence reads, and there is no hidden fallback. Credential values and RPC
-errors are never printed.
+The exact worst-case documented path for the three-operation sponsored sequence
+is **72** requests: 12 paid reads across owner binding, session binding, and one
+post-deployment account-state refresh (the adapter caches only successful
+immutable chain/code/factory evidence), three fresh EntryPoint nonce reads,
+three sponsorships, three submissions, and three times (at most **four** receipt
+polls, transaction and receipt reads, a finalized-head read, up to **8** ancestry
+parent reads, and **2** canonical endpoint rebounds per operation). One
+process-wide hard cap of **81** leaves **9** requests of headroom. Every request
+has a **10 second** timeout; the viem custom transport sets `retryCount: 0`, so
+there is no retry and no hidden fallback. Observation concurrency is at most
+two evidence reads. Credential values and RPC errors are never printed.
 
 ## Push and networking
 

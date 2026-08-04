@@ -221,6 +221,50 @@ export class AtomicReservationLane {
   }
 }
 
+/**
+ * Owns the permission route's indivisible local claim on both permission and
+ * shared signature-request lanes. All occupancy checks happen before either
+ * lane mutates, and cleanup is allowed only while both token-owned claims are
+ * definitely pre-submission.
+ */
+export class AtomicPermissionReservation {
+  #permissionLane;
+  #signatureLane;
+
+  constructor(permissionLane, signatureLane) {
+    this.#permissionLane = permissionLane;
+    this.#signatureLane = signatureLane;
+  }
+
+  reserve(token, sessionAddress) {
+    if (this.#permissionLane.active !== null) throw new Error("permission_already_requested");
+    if (this.#signatureLane.active !== null) throw new Error("signature_request_lane_occupied");
+    this.#permissionLane.reserve(token, { sessionAddress });
+    this.#signatureLane.reserve(token, { purpose: "permission" });
+  }
+
+  markPossiblySubmitted(token) {
+    this.#permissionLane.markPossiblySubmitted(token);
+    this.#signatureLane.markPossiblySubmitted(token);
+  }
+
+  activatePermission(token, requestId) {
+    this.#permissionLane.activate(token, requestId);
+  }
+
+  releasePreSubmission(token) {
+    if (this.#permissionLane.active?.token !== token || this.#signatureLane.active?.token !== token)
+      throw new Error("reservation_lane_mismatch");
+    if (
+      this.#permissionLane.active.state !== "pre-submit" ||
+      this.#signatureLane.active.state !== "pre-submit"
+    )
+      throw new Error("reservation_not_pre_submission");
+    this.#permissionLane.release(token);
+    this.#signatureLane.release(token);
+  }
+}
+
 /** One operation lane. Only terminal observation releases it. */
 export class OperationLane {
   #active = null;

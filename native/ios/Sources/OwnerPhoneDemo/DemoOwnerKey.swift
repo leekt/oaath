@@ -22,7 +22,13 @@ import Foundation
 import OwnerPhone
 
 #if canImport(Security)
-public struct DemoOwnerKey: Sendable {
+public protocol DemoOwnerSigning: Sendable {
+    var secureEnclave: Bool { get }
+    func publicMaterialHex() throws -> String
+    func signDigestHex(_ digestHex: String) throws -> String
+}
+
+public struct DemoOwnerKey: DemoOwnerSigning, Sendable {
     let custody: KeychainKeyCustodyStub
     /// True when the private key lives inside the Secure Enclave; false is the
     /// honest simulator/host fallback the UI must banner.
