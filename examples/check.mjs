@@ -24,6 +24,13 @@ function anvilAvailable() {
 const examples = [
   { label: "browser", script: "browser/run.mjs", env: {} },
   { label: "server", script: "server/run.mjs", env: { OAATH_SMOKE: "1", OAATH_PORT: "0" } },
+  {
+    // Simulate mode drives the phone's half over HTTP: no Apple contact, no
+    // LAN binding, and the APNS_*/APPLE_* opt-ins are never read as a gate.
+    label: "phone",
+    script: "phone/run.mjs",
+    env: { OAATH_PHONE_SIMULATE: "1", OAATH_PORT: "0", OAATH_CALLBACK_PORT: "0" },
+  },
 ];
 
 if (anvilAvailable()) {

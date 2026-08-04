@@ -32,7 +32,7 @@ import {
 } from "../src/apns/sender.js";
 import type { ApnsDeliveryOutcome, ApnsSession, ApnsStream } from "../src/apns/transport.js";
 import { sendApnsNotification } from "../src/apns/transport.js";
-import type { OwnerPhoneRequestProjection } from "../src/native/projection.js";
+import type { OwnerPhonePushProjection } from "../src/native/projection.js";
 import { createTestClock, expectRelayFailure, type TestClock } from "./support.js";
 
 /**
@@ -45,7 +45,9 @@ const DEVICE_TOKEN = "a".repeat(64);
 const TIMEOUT_MS = 5_000;
 const LEASE_MS = 30_000;
 
-const PROJECTION: OwnerPhoneRequestProjection = Object.freeze({
+// The opaque push subset: the sender exact-captures precisely these fields, so
+// the consent projection's client and scope detail can never transit Apple.
+const PROJECTION: OwnerPhonePushProjection = Object.freeze({
   operationId: "operation-1",
   displayPayload: "Qx7-mB2c",
   expiresAt: 1_700_000_300_000,
@@ -280,7 +282,7 @@ describe("experimental APNs payload", () => {
         }),
       "relay_apns_payload_too_large",
     );
-    const invalid: readonly OwnerPhoneRequestProjection[] = [
+    const invalid: readonly OwnerPhonePushProjection[] = [
       { ...PROJECTION, displayPayload: "" },
       { ...PROJECTION, operationId: "x".repeat(65) },
       { ...PROJECTION, expiresAt: -1 },

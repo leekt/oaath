@@ -160,17 +160,18 @@ into viem's shape for signing and submission.
 
 ## Examples
 
-Three runnable, narrated examples live in [examples/](examples). They import the
+Four runnable, narrated examples live in [examples/](examples). They import the
 published specifiers only.
 
 | Example | Shows |
 | --- | --- |
 | `examples/browser` | connect → one all-chain grant → execute → revoke, against injected chain facts or a real local chain |
 | `examples/server` | the Fetch relay over `node:http`, PostgreSQL, and the auth and KMS ports a deployment owns |
+| `examples/phone` | pair a real iPhone ([native/ios/Demo](native/ios/Demo)), APNs push, full consent screen, approve, one-time code delivery |
 | `examples/all-chain` | one owner approval, chain B introduced afterwards, the same signature materialized on it |
 
 ```sh
-pnpm examples:check # all three; skips all-chain when Anvil is absent
+pnpm examples:check # all four; skips all-chain when Anvil is absent
 ```
 
 They are documentation, not release evidence, and are deliberately not a CI gate;

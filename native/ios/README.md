@@ -13,10 +13,14 @@ published to npm.
   `{version, operationId, expiresAt}` under `oaath`. Nothing else exists in
   the payload by design, and nothing else is accepted — any unknown field at
   any level fails closed, so authority material can never ride a notification.
-- Fetches the full owner-phone projection
+- Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
-  relay sends it: match code, operation id, expiry. The push and the
-  authenticated projection must agree exactly or the review fails closed.
+  relay sends it: match code, the requesting client and its redirect target,
+  the structured scope (permitted calls with value limits, operation limit,
+  expiry) — or an explicit "unstructured scope, review the raw text" state.
+  The push and the authenticated projection must agree exactly or the review
+  fails closed. The push payload itself stays opaque; the consent detail
+  travels only the authenticated channel.
 - Submits approve/reject keyed by the stable `operationId` and renders the
   replayed-outcome semantics of `packages/server/src/native/decision.ts`
   honestly: a retry answers the **stored** outcome (which may differ from the
@@ -28,36 +32,39 @@ published to npm.
 
 ## Transport is deployment-wired
 
-The relay exposes `projectOwnerPhoneRequest` and `submitOwnerPhoneDecision`
-only as a programmatic composition (`@oaath/server/native`); **no HTTP route
-exists yet server-side**. `TransportRelayClient` is therefore defined against
-the documented projection/decision shapes, and a deployment injects one
-closure that moves bytes and carries the authenticated owner session. Nothing
-in this package reads configuration or holds credentials.
+The relay serves the preview routes `GET /native/projections/{operationId}`
+and `POST /native/decisions/{operationId}`
+(`packages/server/src/relay/handler.ts`). `TransportRelayClient` stays defined
+against the documented projection/decision shapes, and a deployment injects
+one closure that moves bytes and carries the authenticated owner credential.
+Nothing in the `OwnerPhone` library reads configuration or holds credentials;
+the demo wiring (URLSession transport, pairing, credential custody, code
+delivery) lives in the `OwnerPhoneDemo` target.
 
 ## App wiring
 
-The package builds headlessly as a plain SPM library. A deployment's thin app
-target (an Xcode project with APNs entitlements and Apple signing, outside
-this repository) wraps it:
+The package builds headlessly as plain SPM libraries. The runnable demo app —
+pairing screen, consent screen, push registration, ATS/dev-signing notes —
+lives in [Demo/](Demo) as a thin Xcode target over `OwnerPhoneDemo`:
 
 ```swift
 import OwnerPhone
+import OwnerPhoneDemo
 import SwiftUI
 
 @main
-struct OwnerPhoneApp: App {
-    // Deployment-owned: transport, owner session, and approval artifact.
-    @StateObject private var model = ApprovalModel(
-        relay: TransportRelayClient(transport: myDeploymentTransport),
-        approvalArtifact: myDeploymentArtifactSource
-    )
-    private let pushDelegate = PushRegistrationDelegate()
+struct OwnerPhoneDemoApp: App {
+    @UIApplicationDelegateAdaptor(PushRegistrationDelegate.self) private var pushDelegate
+    @StateObject private var model = DemoModel(credentials: KeychainCredentialStore())
 
     var body: some Scene {
         WindowGroup {
-            ApprovalView(model: model)
-                .task { pushDelegate.onPush = { push in Task { await model.receive(push: push) } } }
+            DemoRootView(model: model)
+                .task {
+                    pushDelegate.onDeviceToken = { token in Task { @MainActor in model.deviceToken = token } }
+                    // A tap only opens the consent screen; deciding stays an explicit button.
+                    pushDelegate.onPush = { push in Task { await model.receive(push: push) } }
+                }
         }
     }
 }
@@ -92,14 +99,17 @@ as the record of what was rejected on purpose.
 
 ```sh
 swift build   # macOS host, no simulator or device required
-swift test    # 36 unit tests over the pure parts
+swift test    # unit tests over the pure parts of both targets
 ```
 
-The tests cover the closed push decode, projection decode and match-code
-rendering, decision decode with one-shot/replay consistency, the review state
-machine including forbidden transitions, and the transport-injected client.
+The tests cover the closed push decode, the consent projection decode
+(structured and raw scope) and match-code rendering, decision decode with
+one-shot/replay consistency, the review state machine including forbidden
+transitions, the transport-injected client, and the demo wiring (routes,
+pairing, credential custody, code delivery). The relay pins the same
+envelopes from its side in `packages/server/test/native.test.ts`.
 
 Evidence explicitly **not** available from these gates: real APNs delivery,
 Apple provisioning and entitlements, physical Secure Enclave key creation and
 user-presence prompts, hosted relay interoperability, and any simulator or
-device run.
+device run (see [Demo/README.md](Demo/README.md) for the human-owned steps).

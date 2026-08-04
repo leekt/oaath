@@ -149,25 +149,15 @@ final class PushPayloadTests: XCTestCase {
 
     func testMatchesRequiresExactAgreementWithProjection() throws {
         let push = try OwnerPhonePush.decode(userInfo: payload())
-        let projection = OwnerPhoneRequestProjection(
-            operationId: "req-1.2~x_Y",
-            matchCode: try MatchCode("Ab1-_9Zz"),
-            expiresAt: 1_754_000_000_000
-        )
+        let projection = OwnerPhoneRequestProjection.fixture(operationId: "req-1.2~x_Y")
         XCTAssertTrue(push.matches(projection))
-        XCTAssertFalse(push.matches(OwnerPhoneRequestProjection(
+        XCTAssertFalse(push.matches(.fixture(
             operationId: projection.operationId,
-            matchCode: try MatchCode("AAAAAAAA"),
-            expiresAt: projection.expiresAt
+            matchCode: "AAAAAAAA"
         )))
-        XCTAssertFalse(push.matches(OwnerPhoneRequestProjection(
-            operationId: "req-other",
-            matchCode: projection.matchCode,
-            expiresAt: projection.expiresAt
-        )))
-        XCTAssertFalse(push.matches(OwnerPhoneRequestProjection(
+        XCTAssertFalse(push.matches(.fixture(operationId: "req-other")))
+        XCTAssertFalse(push.matches(.fixture(
             operationId: projection.operationId,
-            matchCode: projection.matchCode,
             expiresAt: projection.expiresAt + 1
         )))
     }

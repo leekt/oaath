@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  DEV-ONLY ATS EXCEPTION — DO NOT SHIP.
+	  The demo relay (examples/phone) serves plain http on the Mac's LAN
+	  address, so App Transport Security must be disabled for this demo build.
+	  A real deployment serves https and deletes this key entirely.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

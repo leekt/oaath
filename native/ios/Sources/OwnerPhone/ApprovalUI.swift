@@ -1,10 +1,16 @@
 /**
  EXPERIMENTAL PREVIEW — owner approval UI over the review state machine.
 
- The view renders the projection exactly as the relay sends it: the match code,
- the operation id, and the expiry. Nothing else exists in the projection by
- design, so nothing else is shown. The approve artifact is deployment-injected:
+ The view is the consent surface: it renders the projection exactly as the
+ relay sends it — the match code, the requesting client and its redirect
+ target, every permitted call with its value limit, the operation limit, and
+ the expiries — so the owner sees exactly the authority they grant before
+ tapping approve. An unstructured scope is rendered as an explicit "review the
+ raw text" state, never silently. The approve artifact is deployment-injected:
  composing what the client will claim is not this app's job.
+
+ Approval is always an explicit tap on this screen. A push notification only
+ opens the review; nothing decides on tap, foreground, or notification action.
 
  Replay honesty: when a settlement is `replayed`, the UI says the stored
  outcome answered — and says so louder when that stored outcome differs from
@@ -54,6 +60,19 @@ public final class ApprovalModel: ObservableObject {
                 phase = .failed("projection_mismatch")
                 return
             }
+            phase = .review(OwnerPhoneReview(projection: projection))
+        } catch {
+            phase = .failed("projection_unavailable")
+        }
+    }
+
+    /// Manual entry: opens a review from a pasted operation id when no push was
+    /// delivered. There is no push to cross-check, so the owner compares the
+    /// match code against the browser instead. Opening never decides anything.
+    public func open(operationId: String) async {
+        phase = .loading
+        do {
+            let projection = try await relay.projection(operationId: operationId)
             phase = .review(OwnerPhoneReview(projection: projection))
         } catch {
             phase = .failed("projection_unavailable")
@@ -132,16 +151,16 @@ public struct ApprovalView: View {
 
     @ViewBuilder
     private func reviewBody(_ review: OwnerPhoneReview) -> some View {
-        // The projection is opaque by design: match code, operation id, expiry.
         Text(review.projection.matchCode.display)
             .font(.system(.largeTitle, design: .monospaced))
             .bold()
         Text("Compare this code with the one your browser shows.")
             .font(.footnote)
+        consentBody(review.projection)
         Text(review.projection.operationId)
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
-        Text("Expires \(Date(timeIntervalSince1970: Double(review.projection.expiresAt) / 1000).formatted())")
+        Text("Request expires \(Date(timeIntervalSince1970: Double(review.projection.expiresAt) / 1000).formatted())")
             .font(.footnote)
             .foregroundStyle(.secondary)
 
@@ -160,6 +179,54 @@ public struct ApprovalView: View {
             ProgressView("Submitting…")
         case let .settled(decision):
             settledBody(decision, overridden: review.storedOutcomeOverrodeCommand)
+        }
+    }
+
+    /// The consent facts: who is asking, and exactly what they may do.
+    @ViewBuilder
+    private func consentBody(_ projection: OwnerPhoneRequestProjection) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(projection.client.clientId) requests authority")
+                    .font(.subheadline)
+                    .bold()
+                Text("Code delivery: \(projection.client.redirectUri)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                switch projection.scope {
+                case let .permissionRequest(scope):
+                    Text("Chain scope: \(scope.chainScope == "all" ? "all chains" : scope.chainScope)")
+                        .font(.footnote)
+                    ForEach(Array(scope.calls.enumerated()), id: \.offset) { _, call in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Call \(call.target)")
+                                .font(.caption.monospaced())
+                            Text("selector \(call.selector), value limit \(call.valueLimit) wei")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Up to \(scope.perChainOperationLimit) operations per chain")
+                        .font(.footnote)
+                    Text("Permission expires \(Date(timeIntervalSince1970: Double(scope.expiresAt)).formatted())")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                case let .raw(text):
+                    // Explicit unstructured state: the owner reviews the raw
+                    // text or rejects; nothing is summarized that was not parsed.
+                    Text("Unstructured scope — review the raw text:")
+                        .font(.footnote)
+                        .bold()
+                        .foregroundStyle(.orange)
+                    ScrollView {
+                        Text(text)
+                            .font(.caption2.monospaced())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

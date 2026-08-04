@@ -28,7 +28,10 @@ enum WireLimits {
     /// `apns-collapse-id` is limited to 64 bytes (`apns/sender.ts`).
     static let operationId = 64
     static let redirectUri = 2048
+    static let requestedScope = 8192
     static let artifactPlaintext = 32_768
+    /// A canonical decimal uint256 is at most 78 digits.
+    static let decimalUint = 78
 }
 
 enum Wire {
@@ -91,6 +94,41 @@ enum Wire {
             default:
                 throw OwnerPhoneWireError.invalidField(label)
             }
+        }
+        return text
+    }
+
+    /// Lowercase `0x`-prefixed hex of exactly `byteLength` bytes, mirroring the
+    /// protocol's address (20) and selector (4) shapes.
+    static func lowercaseHex(_ value: Any?, byteLength: Int, label: String) throws -> String {
+        let text = try self.text(value, maximum: 2 + byteLength * 2, label: label)
+        guard text.count == 2 + byteLength * 2, text.hasPrefix("0x") else {
+            throw OwnerPhoneWireError.invalidField(label)
+        }
+        for scalar in text.unicodeScalars.dropFirst(2) {
+            switch scalar {
+            case "0"..."9", "a"..."f":
+                continue
+            default:
+                throw OwnerPhoneWireError.invalidField(label)
+            }
+        }
+        return text
+    }
+
+    /// Canonical decimal uint256 string: `^(0|[1-9][0-9]*)$`, at most 78 digits.
+    static func decimalUint(_ value: Any?, label: String) throws -> String {
+        let text = try self.text(value, maximum: WireLimits.decimalUint, label: label)
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "0"..."9":
+                continue
+            default:
+                throw OwnerPhoneWireError.invalidField(label)
+            }
+        }
+        guard text == "0" || !text.hasPrefix("0") else {
+            throw OwnerPhoneWireError.invalidField(label)
         }
         return text
     }

@@ -13,6 +13,7 @@
     "check": "node check.mjs",
     "example:browser": "node --import ./support/workspace-typescript.mjs browser/run.mjs",
     "example:server": "node --import ./support/workspace-typescript.mjs server/run.mjs",
+    "example:phone": "node --import ./support/workspace-typescript.mjs phone/run.mjs",
     "example:all-chain": "node --import ./support/workspace-typescript.mjs all-chain/run.mjs"
   },
   "dependencies": {

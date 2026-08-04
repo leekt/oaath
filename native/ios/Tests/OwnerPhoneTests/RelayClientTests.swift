@@ -1,12 +1,23 @@
 /**
  EXPERIMENTAL PREVIEW — transport-injected relay client tests. The transport
- here is a fake byte mover; the real one is deployment-wired because no HTTP
- route exists yet server-side.
+ here is a fake byte mover; the real one is deployment-wired onto the relay's
+ preview routes (the demo app maps it with URLSession).
 
  @author taek <leekt216@gmail.com>
  */
 import XCTest
 @testable import OwnerPhone
+
+func projectionJson(operationId: String) -> [String: Any] {
+    [
+        "version": "oaath.native-projection/v1",
+        "operationId": operationId,
+        "displayPayload": "Ab1-_9Zz",
+        "expiresAt": 1_754_000_000_000,
+        "client": ["clientId": "demo-web-app", "redirectUri": "http://192.168.1.20:8788/callback"],
+        "scope": ["kind": "raw", "text": #"{"chainScope":"all"}"#]
+    ]
+}
 
 final class RelayClientTests: XCTestCase {
     private final class Recorder: @unchecked Sendable {
@@ -17,11 +28,7 @@ final class RelayClientTests: XCTestCase {
         let recorder = Recorder()
         let client = TransportRelayClient { call in
             recorder.calls.append(call)
-            return try JSONSerialization.data(withJSONObject: [
-                "operationId": "req-1",
-                "displayPayload": "Ab1-_9Zz",
-                "expiresAt": 1_754_000_000_000
-            ])
+            return try JSONSerialization.data(withJSONObject: projectionJson(operationId: "req-1"))
         }
         let projection = try await client.projection(operationId: "req-1")
         XCTAssertEqual(projection.operationId, "req-1")
@@ -32,11 +39,7 @@ final class RelayClientTests: XCTestCase {
 
     func testRejectsAProjectionForADifferentOperation() async {
         let client = TransportRelayClient { _ in
-            try JSONSerialization.data(withJSONObject: [
-                "operationId": "req-other",
-                "displayPayload": "Ab1-_9Zz",
-                "expiresAt": 1_754_000_000_000
-            ])
+            try JSONSerialization.data(withJSONObject: projectionJson(operationId: "req-other"))
         }
         do {
             _ = try await client.projection(operationId: "req-1")

@@ -7,7 +7,8 @@ The package entry is Fetch-standard and platform-neutral. PostgreSQL is only
 reachable through the explicit `@oaath/server/postgres` subpath.
 
 `@oaath/server/native` (phone approval) and `@oaath/server/apns` (Apple push)
-are **experimental previews**: unstable, unrouted, and not production qualified.
+are **experimental previews**: unstable and not production qualified. The phone
+approval preview is served by the relay handler under `/native/*`.
 
 ```ts
 import { createRelayHandler } from "@oaath/server";
@@ -30,6 +31,14 @@ POST /authorization/requests/{requestId}/decision  owner   approve or reject
 POST /authorization/codes/consume                  client  one-time code consume
 POST /authorization/artifacts/{artifactId}/claim   client  one-time artifact claim
 POST /authorization/resume                         client  fresh auth + recovery read
+```
+
+EXPERIMENTAL PREVIEW routes (owner-phone approval; wire shapes pinned by the
+strict Swift decoders in `native/ios/Sources/OwnerPhone/`):
+
+```text
+GET  /native/projections/{operationId}             owner   consent projection
+POST /native/decisions/{operationId}               owner   approve or reject saga
 ```
 
 Failures are `{"error":{"code":"relay_*"}}` with the status from
