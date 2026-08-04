@@ -107,6 +107,24 @@ deployment profile and is accepted only after its `UUPS()` binding and the
 EntryPoint, implementation, and factory runtime code hashes, plus the resulting
 account implementation, match that profile.
 
+### All-chain authority
+
+`chainScope: "all"` is one owner approval, not one approval per chain. Every
+module and account address in the runtime is CREATE2-derived, so one set of
+initial packages yields one account address on every supported chain. The owner
+signs Kernel v4's replayable enable digest once — a digest whose EIP-712 domain
+omits the chain id and binds only the account, Kernel's install nonce and the
+exact install packages — and `materializeKernelPermission` spends that one
+signature on each chain the session first touches, including a chain that was not
+configured when the owner approved. The session's first operation on a chain
+carries the enable envelope; every later one is an ordinary standard-mode
+operation against the installed permission.
+
+Authority is all-chain; evidence is not. The account state, Kernel's install
+nonce, the EntryPoint nonce, the operation identity, the submission route, and
+inclusion, finality and revocation evidence all stay chain-local, and no chain
+borrows another's. There is no global atomic install, execute, or revoke.
+
 Account descriptors are process-local evidence handles. After a process reload,
 call `bindKernelV4Account` again before preparing another operation; serialized
 or copied descriptors are deliberately rejected. A descriptor also freezes the

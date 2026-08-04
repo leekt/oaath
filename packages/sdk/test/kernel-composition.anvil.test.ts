@@ -1,47 +1,49 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:net";
-import { join } from "node:path";
-import {
-  concat,
-  createPublicClient,
-  createWalletClient,
-  decodeErrorResult,
-  encodeFunctionData,
-  type Hex,
-  http,
-  keccak256,
-  parseEther,
-} from "viem";
-import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
+import { keccak256, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   captureRoutingCapabilities,
   classifyBundlerAcceptance,
   createKernelRuntime,
-  createKernelV4Reads,
   decideExecution,
   deriveHandleOpsRequirement,
   ecdsaKey,
   encodeHandleOps,
   encodeKernelV4InstallModules,
-  KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
-  type KernelRuntime,
   kernelV4Deployment,
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
-  type PreparedUserOperation,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
 } from "../src/index.js";
+import {
+  type AnvilChain,
+  createHarness as createChainHarness,
+  deployKernelStack,
+  lower,
+  startAnvil,
+} from "./support/anvil.js";
 
-// ponytail: this anvil harness duplicates kernel-v4.anvil.test.ts; consolidate
-// into @oaath/testing anvil.ts when that package's chain fixtures land.
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
+/**
+ * The two refusals ZeroDev's pinned CallPolicy raises for the two scope axes it
+ * enforces, named from their Solidity signatures so each assertion is
+ * machine-checked against a distinct class instead of a shared bare revert:
+ *
+ * - `InvalidCallData()` — the operation named a (target, selector) pair the
+ *   installed permission holds no entry for at all.
+ * - `CallViolatesValueRule()` — the pair is permitted, but the call carries more
+ *   native value than the entry's ceiling.
+ *
+ * Both reach EntryPoint as `FailedOpWithRevert(0, "AA23 reverted", selector)`,
+ * because CallPolicy reverts inside Kernel's validation phase rather than
+ * returning Kernel's signature-failure sentinel.
+ */
+const CALL_POLICY_INVALID_CALL_DATA = toFunctionSelector("InvalidCallData()");
+const CALL_POLICY_VIOLATES_VALUE_RULE = toFunctionSelector("CallViolatesValueRule()");
 const chainId = 421_614;
 const deployment = kernelV4Deployment(chainId);
 const gas = Object.freeze({
@@ -52,275 +54,25 @@ const gas = Object.freeze({
   maxPriorityFeePerGas: "1000000000",
 });
 
-interface ModuleFixture {
-  repository: string;
-  commit: string;
-  source: string;
-  moduleType: 5 | 6;
-  expectedAddress: `0x${string}`;
-  runtimeCodeHash: `0x${string}`;
-  deploymentInput: Hex;
-}
-
-interface DeploymentFixture {
-  entryPoint: { deploymentSalt: Hex; artifact: string };
-  kernelUups: { deploymentInput: Hex };
-  kernelImmutableEcdsa: { deploymentInput: Hex };
-  kernelFactory: { deploymentInput: Hex };
-  ecdsaValidator: { bytecode: Hex };
-  ecdsaSigner: ModuleFixture;
-  webAuthnSigner: ModuleFixture;
-  callPolicy: ModuleFixture;
-  timestampPolicy: ModuleFixture;
-  rateLimitPolicy: ModuleFixture;
-}
-
-let anvil: ChildProcess | undefined;
-let url = "";
-
-function lower(value: string): `0x${string}` {
-  return value.toLowerCase() as `0x${string}`;
-}
-
-function quantity(value: bigint): `0x${string}` {
-  return `0x${value.toString(16)}`;
-}
-
-async function reservePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("loopback port unavailable");
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  return address.port;
-}
-
-function scrubbedEnvironment(): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => {
-      const canonical = name.toUpperCase();
-      return !(
-        canonical.startsWith("INFURA_") ||
-        canonical.startsWith("ALCHEMY_") ||
-        canonical === "PARITY_RPC_URL" ||
-        canonical === "ZERODEV_PROJECT_ID" ||
-        /(?:^|_)RPC(?:_URL)?$/u.test(canonical)
-      );
-    }),
-  );
-}
-
-async function waitForAnvil(): Promise<void> {
-  const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (anvil?.exitCode !== null) throw new Error("Anvil exited before readiness");
-    try {
-      if ((await client.getChainId()) === chainId) return;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("Anvil readiness deadline expired");
-}
+let anvil: AnvilChain | undefined;
 
 beforeAll(async () => {
   if (!requireAnvil) return;
-  const port = await reservePort();
-  url = `http://127.0.0.1:${port}`;
-  anvil = spawn(
-    process.env.ANVIL_PATH ?? "anvil",
-    [
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--chain-id",
-      String(chainId),
-      "--hardfork",
-      "prague",
-      "--accounts",
-      "0",
-      "--silent",
-    ],
-    { env: scrubbedEnvironment(), stdio: "ignore" },
-  );
-  await waitForAnvil();
+  anvil = await startAnvil(chainId);
 });
 
 afterAll(() => {
-  anvil?.kill("SIGTERM");
+  anvil?.stop();
 });
 
-async function readFixture(): Promise<DeploymentFixture> {
-  return JSON.parse(
-    await readFile(new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url), "utf8"),
-  ) as DeploymentFixture;
-}
-
-/**
- * One funded submitter over the local chain, with the CREATE2 deployments every
- * proof in this file shares. CREATE2 fixes each address, so a module or
- * implementation already deployed by an earlier proof is reused rather than
- * redeployed: the deployer reverts on a second deployment to the same address.
- */
 async function createHarness() {
-  const fixture = await readFixture();
-  const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
-  const submitter = privateKeyToAccount(generatePrivateKey());
-  const wallet = createWalletClient({
-    account: submitter,
-    transport: http(url, { retryCount: 0 }),
-  });
-  await client.request({
-    method: "anvil_setBalance" as "eth_chainId",
-    params: [submitter.address, quantity(parseEther("100"))] as never,
-  });
-
-  const deployCreate2 = async (deploymentInput: Hex) => {
-    const hash = await wallet.sendTransaction({
-      account: submitter,
-      chain: null,
-      to: KERNEL_V4_CREATE2_DEPLOYER,
-      data: deploymentInput,
-      gas: 10_000_000n,
-    });
-    expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
-  };
-
-  const deployModule = async (module: ModuleFixture) => {
-    if (!(await client.getCode({ address: module.expectedAddress }))) {
-      await deployCreate2(module.deploymentInput);
-    }
-  };
-
-  const deployValidator = async () => {
-    const hash = await wallet.deployContract({
-      account: submitter,
-      chain: null,
-      abi: [],
-      bytecode: fixture.ecdsaValidator.bytecode,
-      gas: 2_000_000n,
-    });
-    const receipt = await client.waitForTransactionReceipt({ hash });
-    if (!receipt.contractAddress || receipt.status !== "success") {
-      throw new Error("validator deployment failed");
-    }
-    return lower(receipt.contractAddress);
-  };
-
-  const packOperation = async (
-    runtime: Readonly<KernelRuntime>,
-    prepared: PreparedUserOperation,
-  ) => {
-    const operation = prepared.userOperation;
-    return toPackedUserOperation({
-      sender: operation.sender,
-      nonce: BigInt(operation.nonce),
-      callData: operation.callData,
-      callGasLimit: BigInt(operation.callGasLimit),
-      verificationGasLimit: BigInt(operation.verificationGasLimit),
-      preVerificationGas: BigInt(operation.preVerificationGas),
-      maxFeePerGas: BigInt(operation.maxFeePerGas),
-      maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
-      ...(operation.factory
-        ? { factory: operation.factory.address, factoryData: operation.factory.data }
-        : {}),
-      signature: await runtime.signOperation(prepared),
-    });
-  };
-
-  const handleOpsCalldata = (packed: Awaited<ReturnType<typeof packOperation>>) =>
-    encodeFunctionData({
-      abi: entryPoint07Abi,
-      functionName: "handleOps",
-      args: [[packed], submitter.address],
-    });
-
-  const send = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) => {
-    const hash = await wallet.sendTransaction({
-      account: submitter,
-      chain: null,
-      to: KERNEL_V4_ENTRY_POINT_V07,
-      data: handleOpsCalldata(await packOperation(runtime, prepared)),
-      gas: 8_000_000n,
-    });
-    return (await client.waitForTransactionReceipt({ hash })).status;
-  };
-
-  /**
-   * EntryPoint's own rejection for one operation, decoded. handleOps reverts
-   * during validation, so the class of the refusal — not just "the transaction
-   * failed" — is the evidence: `eth_call` carries the revert data back.
-   */
-  const rejection = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) => {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_call",
-        params: [
-          {
-            from: submitter.address,
-            to: KERNEL_V4_ENTRY_POINT_V07,
-            data: handleOpsCalldata(await packOperation(runtime, prepared)),
-            gas: quantity(8_000_000n),
-          },
-          "latest",
-        ],
-      }),
-    });
-    const body = (await response.json()) as {
-      readonly error?: { readonly data?: unknown };
-      readonly result?: Hex;
-    };
-    const data = body.error?.data;
-    if (typeof data !== "string" || !data.startsWith("0x") || data === "0x") {
-      throw new Error(`EntryPoint accepted an operation it must reject: ${JSON.stringify(body)}`);
-    }
-    return decodeErrorResult({ abi: entryPoint07Abi, data: data as Hex });
-  };
-
-  return {
-    fixture,
-    client,
-    wallet,
-    submitter,
-    reads: createKernelV4Reads(client),
-    deployCreate2,
-    deployModule,
-    deployValidator,
-    send,
-    rejection,
-  };
-}
-
-/** Deploys EntryPoint 0.7, the Kernel v4 implementations, and the factory. */
-async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarness>>) {
-  const entryPointArtifact = JSON.parse(
-    await readFile(
-      join(process.cwd(), "node_modules", harness.fixture.entryPoint.artifact),
-      "utf8",
-    ),
-  ) as { bytecode: Hex };
-  if (!(await harness.client.getCode({ address: KERNEL_V4_ENTRY_POINT_V07 }))) {
-    await harness.deployCreate2(
-      concat([harness.fixture.entryPoint.deploymentSalt, entryPointArtifact.bytecode]),
-    );
-    await harness.deployCreate2(harness.fixture.kernelUups.deploymentInput);
-    await harness.deployCreate2(harness.fixture.kernelImmutableEcdsa.deploymentInput);
-    await harness.deployCreate2(harness.fixture.kernelFactory.deploymentInput);
-  }
+  if (!anvil) throw new Error("Anvil is unavailable");
+  return createChainHarness(anvil);
 }
 
 (requireAnvil ? describe : describe.skip)("Kernel composition local proof", () => {
   it("deploys every pinned module at its chain-independent address", async () => {
-    const { fixture, client, wallet, submitter } = await createHarness();
+    const { fixture, client, wallet, submitter, deployCreate2 } = await createHarness();
 
     // A CREATE2 address is derived from deployer, salt and init code alone, so
     // code landing on the pinned address proves the registry names exactly this
@@ -338,14 +90,7 @@ async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarnes
       expect(pinned).toBe(module.expectedAddress);
       if (pinned === null) throw new Error("registry pins no module for a bound axis");
       if (!(await client.getCode({ address: pinned }))) {
-        const hash = await wallet.sendTransaction({
-          account: submitter,
-          chain: null,
-          to: KERNEL_V4_CREATE2_DEPLOYER,
-          data: module.deploymentInput,
-          gas: 10_000_000n,
-        });
-        expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
+        await deployCreate2(module.deploymentInput);
       }
       const code = await client.getCode({ address: pinned });
       if (!code) throw new Error("pinned module carries no code");
@@ -470,7 +215,11 @@ async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarnes
 
     // Scope tightening, proven on-chain by the same installed session: a target
     // the policy never named and a value above the ceiling are both rejected in
-    // Kernel's validation phase, so neither moves anything.
+    // Kernel's validation phase, so neither moves anything. Each refusal is
+    // decoded to its own class rather than observed as a bare revert, and the two
+    // classes differ: an unnamed target has no permission entry at all, while an
+    // excessive value violates the entry it does match. "The transaction failed"
+    // for any other reason would not satisfy either assertion.
     const uncoveredTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     const uncovered = sessionRuntime.prepareOperation({
       kind: "execution",
@@ -481,7 +230,10 @@ async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarnes
       calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
       gas,
     });
-    expect(await send(sessionRuntime, uncovered)).toBe("reverted");
+    expect(await harness.rejection(sessionRuntime, uncovered)).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", CALL_POLICY_INVALID_CALL_DATA],
+    });
     expect(await client.getBalance({ address: uncoveredTarget })).toBe(0n);
 
     const excessive = sessionRuntime.prepareOperation({
@@ -493,7 +245,10 @@ async function deployKernelStack(harness: Awaited<ReturnType<typeof createHarnes
       calls: [{ target: sessionTarget, value: "778", data: "0x" }],
       gas,
     });
-    expect(await send(sessionRuntime, excessive)).toBe("reverted");
+    expect(await harness.rejection(sessionRuntime, excessive)).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
+    });
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
     // Authorities never borrow one another's operations: the owner runtime refuses
