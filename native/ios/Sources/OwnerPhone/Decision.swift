@@ -111,6 +111,10 @@ public struct OwnerPhoneDecision: Equatable, Sendable {
             throw OwnerPhoneWireError.invalidField("settlement")
         }
         let decidedAt = try Wire.timestamp(object["decidedAt"], label: "decidedAt")
+        // release.decidedAt is required present by the exact-key check but its
+        // value is deliberately unused here: the server guarantees it equals the
+        // outer decidedAt, and the phone renders only the outer one. Nothing on
+        // this device decides anything from it.
         let release = try decodeRelease(object["release"])
 
         switch settlement {

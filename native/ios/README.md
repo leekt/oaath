@@ -72,6 +72,22 @@ test hosts prove nothing, and signature normalization belongs to the future
 consumer of the signature. Apple provisioning and physical-device
 qualification remain later work, per the program plan.
 
+## Provenance
+
+Reference material: `leekt/deployer` (master @ 3b732ff98b87),
+`experimental/smart-account-oauth/ios-demo/` — a dependency-free SwiftUI demo
+(~5,100 lines). It was mined for shape only; per AGENTS.md nothing from
+`leekt/deployer` is preserved. Rebuilt against oaath's live wire contracts
+(`packages/server/src/apns/sender.ts`, `native/{projection,decision}.ts`):
+the push/projection/decision codecs, the review state machine's
+ambiguous-submission discipline, and the custody seam. Deliberately discarded:
+the retired `wallet.oauth.*` wire names and `/v1/...` routes, the
+DER→P1363/low-S signature conversion (no oaath signature consumer exists yet),
+the UserDefaults inbox persistence, the blocklist-style payload parsing
+(replaced by closed exact-key capture), and the Xcode project (plain SPM
+builds headlessly). A future reader re-mining that demo should treat this list
+as the record of what was rejected on purpose.
+
 ## Gates
 
 ```sh

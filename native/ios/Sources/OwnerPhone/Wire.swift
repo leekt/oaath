@@ -64,6 +64,13 @@ enum Wire {
     }
 
     /// Bounded non-empty text with no control characters.
+    ///
+    /// Knowingly laxer than the TS source in two safe directions: `text.count`
+    /// counts grapheme clusters where TS `length` counts UTF-16 units
+    /// (graphemes <= units, so nothing TS accepts is rejected here), and the
+    /// timestamp check admits `-0` where TS rejects it (JSON encoders emit
+    /// `-0` as `0`, so the server can never send it). Do not "fix" either
+    /// into a stricter check — it would start rejecting valid server output.
     static func text(_ value: Any?, maximum: Int, label: String) throws -> String {
         guard let text = value as? String, !text.isEmpty, text.count <= maximum else {
             throw OwnerPhoneWireError.invalidField(label)
