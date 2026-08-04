@@ -46,6 +46,7 @@ import {
   captureCanonicalDisplay,
   captureSponsorship,
   createLiveUserOperationObserver,
+  createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   exactKeys,
   LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
@@ -142,6 +143,7 @@ let ownerRuntime = null;
 let accountDescriptor = null;
 let chain = null;
 let stack = null;
+let stackObserver = null;
 let simulatedOwnerSecret = null;
 const target = `0x${"71".repeat(20)}`;
 // Immutable successful binding reads are cached; account state is refreshed
@@ -549,7 +551,7 @@ function terminalize(operation, evidence) {
 function observeOperation(operation) {
   return observeOnce({
     operation,
-    observe: (current) => stack.observe(current),
+    observe: (current, captureTransactionHash) => stackObserver(current, captureTransactionHash),
     terminalize,
     ownsLane: (current) => operationLane.active === current.operationId,
   });
@@ -561,7 +563,7 @@ function submitOperation(operation, signature, terminateWithoutSubmission) {
     signature,
     send: (prepared, exactSignature, onTransactionHash) =>
       stack.sendSigned(prepared, exactSignature, onTransactionHash),
-    observe: (current) => stack.observe(current),
+    observe: (current, captureTransactionHash) => stackObserver(current, captureTransactionHash),
     terminalize,
     terminateWithoutSubmission,
     ownsLane: (current) => operationLane.active === current.operationId,
@@ -1072,8 +1074,9 @@ if (LIVE) {
   chain = await startAnvil(CHAIN_ID, "osaka");
   stack = await deployKernelStack(chain, { p256: true });
   stack.rpc = chain.rpc;
-  stack.observe = async (operation) => {
+  stack.observe = async (operation, _captureTransactionHash) => {
     if (!operation.transactionHash) return null;
+    // Anvil learns the hash during send, so it has no new identity to capture.
     // Let Anvil's real finalized tag advance beyond the inclusion block.
     await chain.rpc("anvil_mine", ["0x3"]);
     return validateFinalizedUserOperation({
@@ -1083,6 +1086,7 @@ if (LIVE) {
     });
   };
 }
+stackObserver = createStackOperationObserver(stack);
 const server = createServer(listener);
 await new Promise((resolve) => server.listen(PORT, HOST, resolve));
 relayPort = server.address().port;

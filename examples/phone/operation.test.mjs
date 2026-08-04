@@ -12,6 +12,7 @@ import {
   captureOperationTransactionHash,
   captureSponsorship,
   createLiveUserOperationObserver,
+  createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
   LIVE_FINALITY_MAX_ANCESTRY_DEPTH,
   LIVE_RECEIPT_POLL_ATTEMPTS,
@@ -559,7 +560,7 @@ test("discovered transaction hash survives later provider failure and conflicts 
   assert.equal(Object.getOwnPropertyDescriptor(operation, "transactionHash").writable, false);
 });
 
-test("production live observer retains discovered evidence across downstream failure and retry", async () => {
+test("production stack adapter retains discovered evidence across downstream failure and retry", async () => {
   const userOperationHash = `0x${"53".repeat(32)}`;
   const transactionHash = `0x${"54".repeat(32)}`;
   const conflictingHash = `0x${"55".repeat(32)}`;
@@ -587,7 +588,9 @@ test("production live observer retains discovered evidence across downstream fai
     if (method === "eth_getTransactionByHash") return null;
     assert.fail(`unexpected RPC method ${method}`);
   };
-  const observe = createLiveUserOperationObserver({ rpc });
+  const stack = { observe: createLiveUserOperationObserver({ rpc }) };
+  const observe = createStackOperationObserver(stack);
+  await assert.rejects(observe(operation), { message: "operation_capture_callback_required" });
   let sends = 0;
   const first = await submitOnce({
     operation,

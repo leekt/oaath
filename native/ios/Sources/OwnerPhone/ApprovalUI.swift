@@ -44,6 +44,16 @@ public final class ApprovalModel: ObservableObject {
     private let approvalArtifact: @Sendable (OwnerPhoneRequestProjection) async throws -> String
     private let now: @Sendable () -> Int
 
+    /// Immutable ownership for one exact authenticated projection. Async UI
+    /// actions may finish only while this token still owns the displayed review.
+    private struct ReviewToken: Equatable {
+        let id: UUID
+        let projection: OwnerPhoneRequestProjection
+    }
+
+    private var activeLoadToken: UUID?
+    private var currentReviewToken: ReviewToken?
+
     public init(
         relay: any OwnerPhoneRelayClient,
         approvalArtifact: @escaping @Sendable (OwnerPhoneRequestProjection) async throws -> String,
@@ -55,17 +65,19 @@ public final class ApprovalModel: ObservableObject {
     }
 
     public func receive(push: OwnerPhonePush) async {
-        phase = .loading
+        let loadToken = beginLoading()
         do {
             let projection = try await relay.projection(operationId: push.operationId)
+            guard activeLoadToken == loadToken else { return }
             // The push and the authenticated projection must agree exactly.
             guard push.matches(projection) else {
+                activeLoadToken = nil
                 phase = .failed("projection_mismatch")
                 return
             }
-            phase = .review(OwnerPhoneReview(projection: projection))
+            install(projection, loadToken: loadToken)
         } catch {
-            phase = .failed("projection_unavailable")
+            failLoading(loadToken, code: "projection_unavailable")
         }
     }
 
@@ -73,50 +85,105 @@ public final class ApprovalModel: ObservableObject {
     /// delivered. There is no push to cross-check, so the owner compares the
     /// match code against the browser instead. Opening never decides anything.
     public func open(operationId: String) async {
-        phase = .loading
+        let loadToken = beginLoading()
         do {
             let projection = try await relay.projection(operationId: operationId)
-            phase = .review(OwnerPhoneReview(projection: projection))
+            install(projection, loadToken: loadToken)
         } catch {
-            phase = .failed("projection_unavailable")
+            failLoading(loadToken, code: "projection_unavailable")
         }
     }
 
     public func approve() async {
-        guard case let .review(review) = phase else { return }
-        guard let artifact = try? await approvalArtifact(review.projection) else {
+        guard let (token, review) = capturedReview() else { return }
+        let request = review.projection
+        guard let artifact = try? await approvalArtifact(request) else {
             return // artifact composition failed before any submission; still pending
         }
-        await decide(.approved(artifact: artifact))
+        // Artifact generation suspended. It may be sent only if this exact
+        // pending review still owns the consent surface.
+        guard owns(token, displayedReview: review) else { return }
+        await decide(.approved(artifact: artifact), token: token, review: review)
     }
 
     public func reject() async {
-        await decide(.rejected)
+        guard let (token, review) = capturedReview() else { return }
+        await decide(.rejected, token: token, review: review)
     }
 
-    private func decide(_ command: OwnerPhoneDecisionCommand) async {
-        guard case var .review(review) = phase else { return }
+    private func beginLoading() -> UUID {
+        let token = UUID()
+        activeLoadToken = token
+        // Arrival of a newer request immediately revokes every action owner for
+        // the older consent surface, even while projection loading suspends.
+        currentReviewToken = nil
+        unresolvedNotice = false
+        phase = .loading
+        return token
+    }
+
+    private func install(_ projection: OwnerPhoneRequestProjection, loadToken: UUID) {
+        guard activeLoadToken == loadToken else { return }
+        activeLoadToken = nil
+        let token = ReviewToken(id: UUID(), projection: projection)
+        currentReviewToken = token
+        phase = .review(OwnerPhoneReview(projection: projection))
+    }
+
+    private func failLoading(_ loadToken: UUID, code: String) {
+        guard activeLoadToken == loadToken else { return }
+        activeLoadToken = nil
+        phase = .failed(code)
+    }
+
+    private func capturedReview() -> (ReviewToken, OwnerPhoneReview)? {
+        guard let token = currentReviewToken,
+              case let .review(review) = phase,
+              review.projection == token.projection
+        else { return nil }
+        return (token, review)
+    }
+
+    private func owns(_ token: ReviewToken, displayedReview: OwnerPhoneReview? = nil) -> Bool {
+        guard currentReviewToken == token,
+              case let .review(current) = phase,
+              current.projection == token.projection
+        else { return false }
+        return displayedReview == nil || current == displayedReview
+    }
+
+    private func decide(
+        _ command: OwnerPhoneDecisionCommand,
+        token: ReviewToken,
+        review capturedReview: OwnerPhoneReview
+    ) async {
+        guard owns(token, displayedReview: capturedReview) else { return }
+        var review = capturedReview
         do {
             try review.beginSubmission(command.outcome, now: now())
         } catch {
             return // forbidden transition; the current state already renders why
         }
         phase = .review(review)
+        let operationId = capturedReview.projection.operationId
         do {
-            let decision = try await relay.submit(
-                operationId: review.projection.operationId, command: command)
+            let decision = try await relay.submit(operationId: operationId, command: command)
+            guard owns(token) else { return }
             try review.settle(decision)
             unresolvedNotice = false
         } catch let error as OwnerPhoneWireError {
+            guard owns(token) else { return }
             // The command never encoded or the answer was unreadable. An
             // unreadable answer is still an ambiguous submission.
             let ambiguous = !isEncodingFailure(error)
             try? review.submissionFailed(ambiguous: ambiguous)
             unresolvedNotice = ambiguous
         } catch {
+            guard owns(token) else { return }
             try? review.submissionFailed(ambiguous: true)
             unresolvedNotice = true
         }
+        guard owns(token) else { return }
         phase = .review(review)
     }
 

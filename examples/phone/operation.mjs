@@ -546,6 +546,27 @@ export function observeOnce({ operation, observe, terminalize, ownsLane = () => 
 }
 
 /**
+ * @typedef {(operation: object, captureTransactionHash: (transactionHash: string) => string) => Promise<object | null>} OperationObserver
+ */
+
+/**
+ * The one observer contract used by both submit and observation-only routes.
+ * Requiring the capture callback here prevents a stack adapter from silently
+ * dropping newly discovered transaction identity.
+ *
+ * @param {{ observe: OperationObserver }} stack
+ * @returns {OperationObserver}
+ */
+export function createStackOperationObserver(stack) {
+  if (typeof stack?.observe !== "function") throw new Error("operation_observer_invalid");
+  return async (operation, captureTransactionHash) => {
+    if (typeof captureTransactionHash !== "function")
+      throw new Error("operation_capture_callback_required");
+    return stack.observe(operation, captureTransactionHash);
+  };
+}
+
+/**
  * Production live observer. Transaction identity is captured before any RPC
  * that validates the transaction, event, blocks, ancestry, or finality.
  */
