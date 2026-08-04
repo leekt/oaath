@@ -25,6 +25,7 @@ import {
   inputCapability,
   inputInvalid,
   runtimeFail,
+  sameInstall,
 } from "./internal.js";
 import { exactKernelDeployment } from "./modules.js";
 import type {
@@ -32,9 +33,26 @@ import type {
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimePrepareInput,
+  KernelRuntimeValidationMode,
   KeyProfile,
   OperatorProfile,
 } from "./types.js";
+
+/**
+ * The only validation modes a composed runtime prepares or signs. Kernel accepts
+ * six; the four omitted here are unreachable by construction rather than
+ * unsupported by accident, and kernel-v4.ts records why for each.
+ */
+const RUNTIME_MODES: readonly KernelRuntimeValidationMode[] = Object.freeze([
+  "standard",
+  "enable-replayable",
+]);
+
+function runtimeMode(value: unknown): KernelRuntimeValidationMode {
+  if (value === undefined) return "standard";
+  const mode = RUNTIME_MODES.find((candidate) => candidate === value);
+  return mode ?? inputInvalid("Kernel runtime validation mode is unsupported");
+}
 
 interface CapturedOperator {
   readonly authority: "owner" | "session";
@@ -88,15 +106,6 @@ function captureOperator(value: unknown, context: CaptureContext): CapturedOpera
   });
 }
 
-function sameInstall(left: Readonly<KernelV4Install>, right: Readonly<KernelV4Install>): boolean {
-  return (
-    left.moduleType === right.moduleType &&
-    left.module === right.module &&
-    left.moduleData === right.moduleData &&
-    left.internalData === right.internalData
-  );
-}
-
 /**
  * Composes one deployment profile, one operator authority, and one key into a
  * runtime that binds accounts, prepares exact operations, and signs them.
@@ -117,6 +126,13 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
   const packages = operator.resolvePackages(deployment);
   const rootPackage: Readonly<KernelV4Install> =
     packages[0] ?? inputInvalid("Kernel operator resolved no install packages");
+  // Kernel's ValidationManager forbids enable mode on root validation — a root
+  // authority is the account's own last-resort access path and has nothing to
+  // enable — so a root runtime's only reachable mode is standard. kernel-v4.ts
+  // owns that rule and fails closed on it; this set only keeps prepare and sign
+  // asking the same question.
+  const reachableModes: readonly KernelRuntimeValidationMode[] =
+    validation.kind === "root" ? Object.freeze(["standard" as const]) : RUNTIME_MODES;
 
   async function bindAccount(
     input: KernelRuntimeBindAccountInput,
@@ -151,7 +167,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       grantId: input.grantId,
       account: input.account,
       nonce: {
-        mode: "standard",
+        mode: runtimeMode(input.mode),
         validation,
         nonceKey: input.nonceKey,
         sequence: input.sequence,
@@ -185,12 +201,17 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     // recomputing the key for this runtime's own validation is an exact authority
     // check: a root runtime can never sign a permission operation, and a session
     // can never sign another permission's. The namespace is read back from the
-    // prepared nonce so only the validation binding is compared.
+    // prepared nonce so only the validation binding is compared. The mode is
+    // compared against exactly the modes prepareOperation can emit, so an
+    // operation carrying any of Kernel's four unreachable modes is refused here
+    // rather than signed.
     const nonce = BigInt(operation.userOperation.nonce);
-    const namespace = (nonce >> 64n) & 0xffffn;
+    const namespace = ((nonce >> 64n) & 0xffffn).toString(10);
+    const key = (nonce >> 64n).toString(10);
     if (
-      (nonce >> 64n).toString(10) !==
-      encodeKernelV4NonceKey({ mode: "standard", validation, nonceKey: namespace.toString(10) })
+      !reachableModes.some(
+        (mode) => encodeKernelV4NonceKey({ mode, validation, nonceKey: namespace }) === key,
+      )
     ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",

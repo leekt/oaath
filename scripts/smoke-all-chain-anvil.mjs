@@ -2,20 +2,24 @@
  * Owns: two local Anvil chains where the second is introduced after owner
  * consent.
  *
- * DELIBERATELY FAIL-CLOSED. The two-chain materialization suite this script
- * would drive does not exist yet: it belongs to the all-chain replayable
- * materialization stream, and `packages/sdk`'s current `test:anvil` suites are
- * single-chain Kernel v4 and composition proofs, not a chain B introduced after
- * approval. Wiring this to them would report an all-chain proof that never ran,
- * which is worse than no script.
+ * The suite this script was a fail-closed stub for has landed:
+ * `packages/sdk/test/all-chain.anvil.test.ts` spins two Anvil instances with
+ * different chain ids, takes one replayable owner approval, and materializes it
+ * on both — chain B being introduced only after the approval exists. This entry
+ * runs exactly that suite with `OAATH_REQUIRE_ANVIL` set, so the proof has one
+ * owner rather than a second copy here.
  *
- * Not wired into CI for the same reason. When the two-chain suite lands, its own
- * change replaces this body with the `OAATH_REQUIRE_ANVIL` invocation; nothing
- * else here needs to move.
+ * Still fail-closed: the suite skips itself without `OAATH_REQUIRE_ANVIL`, so
+ * this script always sets it, and a non-zero vitest status is this script's
+ * status. A missing proof is never a passing proof.
  *
  * @author taek <leekt216@gmail.com>
  */
+import { spawnSync } from "node:child_process";
 
-console.error("smoke-all-chain-anvil: fail-closed stub; the two-chain Anvil suite has not landed.");
-console.error("  A missing proof is never a passing proof. This exits 1 by design.");
-process.exit(1);
+const result = spawnSync(
+  "pnpm",
+  ["--filter", "@oaath/sdk", "exec", "vitest", "run", "test/all-chain.anvil.test.ts"],
+  { stdio: "inherit", env: { ...process.env, OAATH_REQUIRE_ANVIL: "1" } },
+);
+process.exit(result.status ?? 1);

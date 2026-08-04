@@ -14,6 +14,7 @@ import {
   exactCapturedRecord,
 } from "@oaath/protocol";
 import { getAddress } from "viem";
+import type { KernelV4Install } from "../kernel-v4.js";
 import { type KernelRuntimeErrorCode, type KeyProfile, OaathKernelRuntimeError } from "./types.js";
 
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
@@ -106,6 +107,19 @@ export function isBytes(value: unknown): value is `0x${string}` {
 
 export function isHash(value: unknown): value is `0x${string}` {
   return typeof value === "string" && BYTES32.test(value);
+}
+
+/** True when two ERC-7579 install packages are the same install in every field. */
+export function sameInstall(
+  left: Readonly<KernelV4Install>,
+  right: Readonly<KernelV4Install>,
+): boolean {
+  return (
+    left.moduleType === right.moduleType &&
+    left.module === right.module &&
+    left.moduleData === right.moduleData &&
+    left.internalData === right.internalData
+  );
 }
 
 /**

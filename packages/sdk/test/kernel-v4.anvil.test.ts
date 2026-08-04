@@ -16,6 +16,8 @@ import {
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+// One repo-owned deny list; this copy had already gone stale against it.
+import { scrubLiveProviderEnvironment } from "../../../scripts/live-provider-environment.mjs";
 import {
   bindKernelV4Account,
   createKernelV4Reads,
@@ -76,21 +78,6 @@ async function reservePort(): Promise<number> {
   return address.port;
 }
 
-function scrubbedEnvironment(): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => {
-      const canonical = name.toUpperCase();
-      return !(
-        canonical.startsWith("INFURA_") ||
-        canonical.startsWith("ALCHEMY_") ||
-        canonical === "PARITY_RPC_URL" ||
-        canonical === "ZERODEV_PROJECT_ID" ||
-        /(?:^|_)RPC(?:_URL)?$/u.test(canonical)
-      );
-    }),
-  );
-}
-
 async function waitForAnvil(): Promise<void> {
   const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -122,7 +109,7 @@ beforeAll(async () => {
       "0",
       "--silent",
     ],
-    { env: scrubbedEnvironment(), stdio: "ignore" },
+    { env: scrubLiveProviderEnvironment(process.env), stdio: "ignore" },
   );
   await waitForAnvil();
 });

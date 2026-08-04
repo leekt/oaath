@@ -44,3 +44,6 @@ jobs:
       - run: pnpm check:public-surface
       - run: pnpm smoke:browser
       - run: pnpm smoke:server
+      # Its own step, so a two-chain materialization failure names itself instead
+      # of hiding inside the single-chain anvil suites above.
+      - run: pnpm smoke:all-chain
