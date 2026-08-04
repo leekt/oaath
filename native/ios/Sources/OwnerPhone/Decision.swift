@@ -30,7 +30,9 @@ public enum OwnerPhoneSettlement: String, Equatable, Sendable {
     case replayed
 }
 
-/// Mirrors `AuthorizationDecisionCommand` in `authorization/decision.ts`.
+/// Mirrors the native phone body parsed by `phoneDecisionCommand` in
+/// `packages/server/src/relay/handler.ts`. This is deliberately not the
+/// authorization route's `{outcome}` envelope.
 public enum OwnerPhoneDecisionCommand: Equatable, Sendable {
     /// The owner approves and hands over the artifact the client will claim once.
     case approved(artifact: String)
@@ -49,11 +51,15 @@ public enum OwnerPhoneDecisionCommand: Equatable, Sendable {
         switch self {
         case let .approved(artifact):
             _ = try Wire.text(artifact, maximum: WireLimits.artifactPlaintext, label: "artifact")
-            object = ["outcome": "approved", "artifact": artifact]
+            object = ["command": "approve", "artifact": artifact]
         case .rejected:
-            object = ["outcome": "rejected"]
+            object = ["command": "reject"]
         }
-        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        guard data.count <= WireLimits.requestBody else {
+            throw OwnerPhoneWireError.invalidField("artifact")
+        }
+        return data
     }
 }
 

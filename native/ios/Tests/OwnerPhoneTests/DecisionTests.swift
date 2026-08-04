@@ -10,7 +10,10 @@ import XCTest
 
 final class DecisionTests: XCTestCase {
     private func json(_ object: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: object)
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else {
+            fatalError("test fixture must encode as JSON")
+        }
+        return data
     }
 
     private var decidedApproved: [String: Any] {
@@ -105,7 +108,9 @@ final class DecisionTests: XCTestCase {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("settlement"))
         }
         object = decidedApproved
-        var release = object["release"] as! [String: Any]
+        guard var release = object["release"] as? [String: Any] else {
+            return XCTFail("approved fixture must contain a release object")
+        }
         release["artifact"] = "never on this wire"
         object["release"] = release
         XCTAssertThrowsError(try OwnerPhoneDecision.decode(json(object))) {
@@ -121,17 +126,30 @@ final class DecisionTests: XCTestCase {
     func testCommandEncodingIsClosedAndBounded() throws {
         XCTAssertEqual(
             String(data: try OwnerPhoneDecisionCommand.rejected.encode(), encoding: .utf8),
-            #"{"outcome":"rejected"}"#
+            #"{"command":"reject"}"#
         )
         XCTAssertEqual(
             String(data: try OwnerPhoneDecisionCommand.approved(artifact: "artifact").encode(), encoding: .utf8),
-            #"{"artifact":"artifact","outcome":"approved"}"#
+            #"{"artifact":"artifact","command":"approve"}"#
         )
         XCTAssertThrowsError(try OwnerPhoneDecisionCommand.approved(artifact: "").encode()) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("artifact"))
         }
         let oversized = String(repeating: "a", count: 32_769)
         XCTAssertThrowsError(try OwnerPhoneDecisionCommand.approved(artifact: oversized).encode()) {
+            XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("artifact"))
+        }
+        // Swift grapheme count is one here, but the server's JavaScript bound
+        // counts every UTF-16 code unit.
+        let combiningMarks = "a" + String(repeating: "\u{0301}", count: 32_768)
+        XCTAssertEqual(combiningMarks.count, 1)
+        XCTAssertThrowsError(try OwnerPhoneDecisionCommand.approved(artifact: combiningMarks).encode()) {
+            XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("artifact"))
+        }
+        // A value may fit the UTF-16 field bound but exceed the relay's default
+        // UTF-8 request-body ceiling once encoded.
+        let oversizedBody = String(repeating: "한", count: 30_000)
+        XCTAssertThrowsError(try OwnerPhoneDecisionCommand.approved(artifact: oversizedBody).encode()) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("artifact"))
         }
     }

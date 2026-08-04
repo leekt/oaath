@@ -71,7 +71,7 @@ final class RelayClientTests: XCTestCase {
         XCTAssertEqual(recorder.calls[0].kind, .submitDecision)
         XCTAssertEqual(
             recorder.calls[0].body.flatMap { String(data: $0, encoding: .utf8) },
-            #"{"outcome":"rejected"}"#
+            #"{"command":"reject"}"#
         )
     }
 

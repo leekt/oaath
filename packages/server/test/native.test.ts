@@ -535,6 +535,10 @@ describe("experimental owner-phone preview routes", () => {
       { command: "approve" },
       { command: "reject", artifact: "x" },
       { command: "approve", artifact: "x", extra: 1 },
+      // The generic authorization route uses `{outcome}`; the native phone
+      // route deliberately owns a different exact `{command}` envelope.
+      { outcome: "approved", artifact: "x" },
+      { outcome: "rejected" },
       {},
     ]) {
       await expectFailure(

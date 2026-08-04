@@ -30,6 +30,8 @@ enum WireLimits {
     static let redirectUri = 2048
     static let requestedScope = 8192
     static let artifactPlaintext = 32_768
+    /// Default native route body ceiling in `relay/handler.ts`.
+    static let requestBody = 65_536
     /// A canonical decimal uint256 is at most 78 digits.
     static let decimalUint = 78
 }
@@ -66,16 +68,11 @@ enum Wire {
         }
     }
 
-    /// Bounded non-empty text with no control characters.
-    ///
-    /// Knowingly laxer than the TS source in two safe directions: `text.count`
-    /// counts grapheme clusters where TS `length` counts UTF-16 units
-    /// (graphemes <= units, so nothing TS accepts is rejected here), and the
-    /// timestamp check admits `-0` where TS rejects it (JSON encoders emit
-    /// `-0` as `0`, so the server can never send it). Do not "fix" either
-    /// into a stricter check — it would start rejecting valid server output.
+    /// Bounded non-empty text with no control characters. JavaScript `length`
+    /// counts UTF-16 code units, so Swift must use `utf16.count` rather than
+    /// grapheme-cluster `count` to mirror the server's hostile-input bound.
     static func text(_ value: Any?, maximum: Int, label: String) throws -> String {
-        guard let text = value as? String, !text.isEmpty, text.count <= maximum else {
+        guard let text = value as? String, !text.isEmpty, text.utf16.count <= maximum else {
             throw OwnerPhoneWireError.invalidField(label)
         }
         for scalar in text.unicodeScalars where scalar.value < 0x20 || scalar.value == 0x7f {
