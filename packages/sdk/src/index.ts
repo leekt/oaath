@@ -69,6 +69,17 @@ export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
 export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
 export type {
+  ApproveKernelPermissionAllChainInput,
+  KernelAllChainApproval,
+  KernelPermissionMaterialization,
+  MaterializeKernelPermissionInput,
+} from "./kernel/permission/materialize.js";
+export {
+  approveKernelPermissionAllChain,
+  materializeKernelPermission,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+} from "./kernel/permission/materialize.js";
+export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
   KernelCallPolicyProfile,
@@ -81,6 +92,7 @@ export type {
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,
   KernelRuntimePrepareInput,
+  KernelRuntimeValidationMode,
   KernelValuePolicyProfile,
   KeyProfile,
   OperatorProfile,
@@ -104,6 +116,7 @@ export type {
   KernelV4NonceKeyInput,
   KernelV4NonceReadInput,
   KernelV4ReadClient,
+  KernelV4ReplayableInstallDigestInput,
   KernelV4SignerDataInput,
   KernelV4SupportedChainId,
   KernelV4UserOperationGas,
@@ -139,6 +152,7 @@ export {
   KERNEL_V4_IMPLEMENTATION_SLOT,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
+  kernelV4ReplayableInstallDigest,
   OaathKernelV4Error,
   prepareKernelV4UserOperation,
 } from "./kernel-v4.js";

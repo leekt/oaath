@@ -12,6 +12,7 @@ import {
   encodeFunctionData,
   getAddress,
   type Hex,
+  hashTypedData,
   hexToBigInt,
   keccak256,
   pad,
@@ -177,6 +178,14 @@ export interface KernelV4EnableSignatureInput {
   readonly userOperationSignature: `0x${string}`;
 }
 
+export interface KernelV4ReplayableInstallDigestInput {
+  /** The Kernel account whose root validation authorizes the install. */
+  readonly account: `0x${string}`;
+  /** Kernel's own install nonce, `key << 64 | sequence`, as a decimal uint256. */
+  readonly nonce: string;
+  readonly packages: readonly KernelV4Install[];
+}
+
 export interface KernelV4ExecutionInput {
   readonly calls: readonly KernelV4Call[];
 }
@@ -316,6 +325,30 @@ const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
   type: "tuple[]",
   components: INSTALL_COMPONENTS,
+} as const;
+
+/**
+ * The EIP-712 struct Kernel v4 hashes an enable-mode install under. The encoded
+ * type strings reproduce the two constants pinned in src/types/Constants.sol at
+ * the vendored Kernel commit:
+ *
+ * - `INSTALL_PACKAGES_STRUCT_HASH` =
+ *   keccak256("InstallPackages(uint256 nonce,Install[] packages)Install(uint256
+ *   moduleType,address module,bytes moduleData,bytes internalData)")
+ *   = 0x633d6810f7f4053622dad4c187707d9c3cd7f57b8b68943473d3437060aefc6d
+ * - `INSTALL_STRUCT_HASH` = keccak256("Install(uint256 moduleType,address
+ *   module,bytes moduleData,bytes internalData)")
+ *   = 0x50c63c739a5f8d2e99954b3d4c7008fcdcef795a1b755ab9287372b01d6ac239
+ *
+ * `Install`'s member list is the same one the install ABI parameter carries, so
+ * the digest and the calldata can never describe different packages.
+ */
+const INSTALL_PACKAGES_TYPES = {
+  InstallPackages: [
+    { name: "nonce", type: "uint256" },
+    { name: "packages", type: "Install[]" },
+  ],
+  Install: INSTALL_COMPONENTS,
 } as const;
 
 const ENTRY_POINT_GET_NONCE_ABI = [
@@ -566,6 +599,16 @@ function installTuples(installs: readonly Readonly<KernelV4Install>[]): readonly
       }),
     ),
   );
+}
+
+/**
+ * Captures ERC-7579 install packages exactly, including Kernel's rule that every
+ * policy package is followed by the signer package of the same permission ID.
+ * Not part of the public surface: it exists so a caller-injected package list
+ * enters this SDK's owned representation once, wherever the boundary is.
+ */
+export function captureKernelV4Installs(value: unknown): readonly Readonly<KernelV4Install>[] {
+  return captureInstalls(value, new WeakSet(), "Kernel install packages");
 }
 
 export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deployment> {
@@ -1001,6 +1044,29 @@ function validationBytes(
   return fail("Kernel validation kind is invalid");
 }
 
+/**
+ * Kernel v4's validation mode byte, pinned against src/types/Types.sol: bit
+ * `0x08` enables inline installs, bit `0x04` makes the enable signature
+ * chain-agnostic, bit `0x40` makes the UserOperation signature chain-agnostic.
+ *
+ * Two of these six are reachable through a composed runtime, and both are proven
+ * on-chain by the local Anvil suites:
+ *
+ * - `standard` — every operation whose validation is already installed.
+ * - `enable-replayable` — the first operation of an all-chain materialization,
+ *   whose enable signature is the one chain-agnostic owner approval. The
+ *   two-chain proof replays a single owner signature onto a second chain.
+ *
+ * The other four stay unreachable by construction, because each would weaken an
+ * invariant this SDK owns rather than add a capability:
+ * - `enable` binds the owner approval to one chain, which is exactly the
+ *   per-chain re-approval an all-chain grant exists to avoid.
+ * - `replayable`, `enable-user-operation-replayable` and `enable-all-replayable`
+ *   all set bit `0x40`, which makes Kernel validate the *operation* against a
+ *   chain-agnostic hash. A prepared operation identity must stay bound to one
+ *   chain: a replayable operation signature could be included on every supported
+ *   chain from one submission, and no `(grantId, chainId)` lane could own it.
+ */
 const VALIDATION_MODES: Readonly<Record<KernelV4ValidationMode, Hex>> = Object.freeze({
   standard: "0x00",
   enable: "0x08",
@@ -1072,6 +1138,67 @@ export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[
     [{ name: "signatures", type: "bytes[]" }],
     [signatures.map((signature) => bytes(signature, "Kernel permission signature"))],
   );
+}
+
+/**
+ * The digest one owner signature must cover to authorize a replayable
+ * enable-mode install, computed the way Kernel v4 computes it.
+ *
+ * Derivation, against the vendored Kernel v4 source:
+ * `Kernel._processUserOp` reads the enable-signature-replayable flag from the
+ * validation mode byte (`isEnableReplayable`, bit `0x04`, src/types/Types.sol)
+ * and hands it to `ModuleManager._verifyInstallSignatureRaw`, which selects
+ * `_hashTypedDataSansChainId` over `_hashTypedData` for exactly that flag and
+ * hashes `keccak256(INSTALL_PACKAGES_STRUCT_HASH ‖ nonce ‖ _installHash(packages))`
+ * under it, then verifies the result against the account's *root* validation with
+ * the account itself as the requester.
+ *
+ * Solady's `_hashTypedDataSansChainId` builds its domain separator from
+ * `EIP712Domain(string name,string version,address verifyingContract)` — the
+ * chain ID is absent, and `verifyingContract` is `address(this)`, the account.
+ * Kernel's `_domainNameAndVersion` returns name "Kernel", version "0.4.0". The
+ * digest therefore binds the account, the install nonce and the exact packages,
+ * and nothing else: it is identical on every chain.
+ *
+ * That is what makes one owner approval an all-chain approval. Every module and
+ * account address in this SDK is CREATE2-derived and chain-independent, so the
+ * same initial packages yield the same account on every supported chain, so the
+ * same digest — and one signature over it — authorizes the same install on a
+ * chain that did not exist when the owner approved.
+ *
+ * The replayable flag covers the *enable* signature only. The UserOperation
+ * signature beside it stays chain-bound: `_processUserOp` only replaces the
+ * operation hash with a chain-agnostic one under the separate `isReplayable`
+ * flag (bit `0x40`), which this SDK never sets.
+ */
+export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
+  const context: CaptureContext = new WeakSet();
+  const record = exact(
+    value,
+    ["account", "nonce", "packages"],
+    "Kernel replayable install",
+    context,
+  );
+  return hashTypedData({
+    domain: {
+      name: "Kernel",
+      version: "0.4.0",
+      verifyingContract: address(record.account, "Kernel replayable install account"),
+    },
+    types: INSTALL_PACKAGES_TYPES,
+    primaryType: "InstallPackages",
+    message: {
+      nonce: uint(record.nonce, MAX_UINT256, "Kernel install nonce"),
+      packages: captureInstalls(record.packages, context, "Kernel enable packages").map(
+        (install) => ({
+          moduleType: BigInt(install.moduleType),
+          module: install.module,
+          moduleData: install.moduleData,
+          internalData: install.internalData,
+        }),
+      ),
+    },
+  });
 }
 
 /** ABI-encodes Kernel v4's EnableModeSignature struct. */

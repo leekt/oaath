@@ -19,6 +19,13 @@
  * signer axis is reported unsupported and composed as a structured failure, never
  * as unrelated ECDSA authority.
  *
+ * All-chain materialization deliberately adds no axis here. It installs exactly
+ * the packages the session's own credential and policy axes already resolve, and
+ * its authority is Kernel's own replayable enable mode rather than a module — so
+ * there is nothing extra whose deployment could be absent. A chain that supports
+ * a session's axes supports materializing that session on it, and an unsupported
+ * chain already fails in kernelV4Deployment.
+ *
  * @author taek <leekt216@gmail.com>
  */
 import { type KernelV4SupportedChainId, kernelV4Deployment } from "../kernel-v4.js";

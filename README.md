@@ -107,6 +107,24 @@ deployment profile and is accepted only after its `UUPS()` binding and the
 EntryPoint, implementation, and factory runtime code hashes, plus the resulting
 account implementation, match that profile.
 
+### All-chain authority
+
+`chainScope: "all"` is one owner approval, not one approval per chain. Every
+module and account address in the runtime is CREATE2-derived, so one set of
+initial packages yields one account address on every supported chain. The owner
+signs Kernel v4's replayable enable digest once — a digest whose EIP-712 domain
+omits the chain id and binds only the account, Kernel's install nonce and the
+exact install packages — and `materializeKernelPermission` spends that one
+signature on each chain the session first touches, including a chain that was not
+configured when the owner approved. The session's first operation on a chain
+carries the enable envelope; every later one is an ordinary standard-mode
+operation against the installed permission.
+
+Authority is all-chain; evidence is not. The account state, Kernel's install
+nonce, the EntryPoint nonce, the operation identity, the submission route, and
+inclusion, finality and revocation evidence all stay chain-local, and no chain
+borrows another's. There is no global atomic install, execute, or revoke.
+
 Account descriptors are process-local evidence handles. After a process reload,
 call `bindKernelV4Account` again before preparing another operation; serialized
 or copied descriptors are deliberately rejected. A descriptor also freezes the
@@ -150,12 +168,14 @@ workspace:
 pnpm check:public-surface # no node:/pg leakage into a browser graph; one-way deps
 pnpm smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
 pnpm smoke:server         # packed server, relay round-trip, ./postgres under node
+pnpm smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
-Each smoke builds, packs, and `npm install`s the tarballs into a throwaway
-consumer outside the workspace, so nothing resolves through a workspace link and
-no `src` path is reachable. `pnpm smoke:all-chain` is a fail-closed stub until
-the two-chain Anvil suite lands.
+The two packed smokes build, pack, and `npm install` the tarballs into a
+throwaway consumer outside the workspace, so nothing resolves through a workspace
+link and no `src` path is reachable. `smoke:all-chain` runs the two-chain
+materialization proof with `OAATH_REQUIRE_ANVIL` set, so it can never report an
+all-chain proof that skipped itself.
 
 ## Release
 

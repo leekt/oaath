@@ -154,6 +154,16 @@ export interface KernelRuntimeBindAccountInput {
   readonly initialPackages: readonly KernelV4Install[];
 }
 
+/**
+ * The two Kernel validation modes a composed runtime can reach. `standard`
+ * validates against an already installed validation; `enable-replayable` carries
+ * the install inline under one chain-agnostic owner enable signature, which is
+ * how an all-chain approval materializes on a chain. Kernel's four remaining
+ * modes stay unreachable — see the mode table in kernel-v4.ts for why each one
+ * would weaken an invariant rather than add a capability.
+ */
+export type KernelRuntimeValidationMode = "standard" | "enable-replayable";
+
 export interface KernelRuntimePrepareInput {
   readonly kind: "execution" | "revocation";
   readonly grantId: string;
@@ -162,6 +172,12 @@ export interface KernelRuntimePrepareInput {
   readonly sequence: string;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
+  /**
+   * Defaults to `standard`. Only kernel/permission/materialize.ts prepares
+   * `enable-replayable`, because only it holds the owner enable signature the
+   * resulting operation's signature envelope requires.
+   */
+  readonly mode?: KernelRuntimeValidationMode;
 }
 
 export interface CreateKernelRuntimeInput {
@@ -184,5 +200,13 @@ export interface KernelRuntime {
     input: KernelRuntimeBindAccountInput,
   ) => Promise<Readonly<KernelV4AccountDescriptor>>;
   readonly prepareOperation: (input: KernelRuntimePrepareInput) => PreparedUserOperation;
+  /**
+   * This authority's signature over one prepared operation. For an
+   * `enable-replayable` operation it is the inner UserOperation signature only:
+   * Kernel expects it wrapped in an EnableModeSignature envelope beside the owner
+   * approval, and kernel/permission/materialize.ts, which holds that approval, is
+   * what wraps it. Submitting the bare signature for an enable-mode operation
+   * fails closed in Kernel's validation phase.
+   */
   readonly signOperation: (prepared: unknown) => Promise<`0x${string}`>;
 }
