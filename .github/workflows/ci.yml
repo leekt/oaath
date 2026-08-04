@@ -16,7 +16,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The packaging gates add two clean `npm install`s from tarballs.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -29,9 +30,17 @@ jobs:
           version: v1.7.1
           cache: false
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
+      # Covers the root config files as well as every package.
+      - run: pnpm typecheck
       - run: pnpm -r test
       - run: pnpm -r build
       - run: pnpm -r lint
       - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm --filter @oaath/sdk test:anvil
+      # Packaging gates. Real gates, not advisory: each one fails the job. The
+      # smokes pack the workspace and install the tarballs into a clean consumer,
+      # so they prove the published artifacts rather than the workspace links.
+      - run: pnpm check:public-surface
+      - run: pnpm smoke:browser
+      - run: pnpm smoke:server

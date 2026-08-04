@@ -1,5 +1,7 @@
+// The deny list is repo-owned; this suite is the only vitest project that runs
+// with the scrub wired as a globalSetup, so the assertions live here.
 import { describe, expect, it } from "vitest";
-import { scrubLiveProviderEnvironment } from "../scripts/live-provider-environment.mjs";
+import { scrubLiveProviderEnvironment } from "../../../scripts/live-provider-environment.mjs";
 
 describe("normal gate environment", () => {
   it("removes live-provider and generic RPC variables", () => {
