@@ -1,4 +1,6 @@
-import { keccak256, parseEther, toFunctionSelector } from "viem";
+import { p256 } from "@noble/curves/nist.js";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import { bytesToHex, hexToBytes, keccak256, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -10,16 +12,21 @@ import {
   ecdsaKey,
   encodeHandleOps,
   encodeKernelV4InstallModules,
+  KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
   kernelV4Deployment,
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
+  p256Key,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
 } from "../src/index.js";
+// Internal on purpose: a consumer reads this fact through
+// diagnoseKernelCapability, so the pinned validator stays off the public surface.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   type AnvilChain,
   createHarness as createChainHarness,
@@ -84,6 +91,26 @@ function customKey(
   });
 }
 
+/**
+ * One raw P-256 credential and the caller-owned signing capability behind it: the
+ * exact shape the phone's Secure Enclave key takes, with the private scalar living
+ * outside the SDK and only compact low-s (r ‖ s) crossing the boundary.
+ */
+function p256Owner(secret: `0x${string}`) {
+  const secretKey = hexToBytes(secret);
+  return p256Key({
+    credential: Object.freeze({
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "p256" as const,
+      publicKey: bytesToHex(p256.getPublicKey(secretKey, false)),
+    }),
+    sign: ({ hash }) =>
+      Promise.resolve(
+        `0x${p256.sign(hexToBytes(hash), secretKey, { lowS: true, prehash: false }).toCompactHex()}`,
+      ),
+  });
+}
+
 beforeAll(async () => {
   if (!requireAnvil) return;
   anvil = await startAnvil(chainId);
@@ -128,7 +155,215 @@ async function createHarness() {
     // The reviewed module sets ship no raw P-256 signer, so that axis stays
     // unbound instead of borrowing the WebAuthn module.
     expect(pinnedSignerModule("p256")).toBeNull();
+
+    // The pinned raw P-256 validator is the one module whose dependency is a chain
+    // feature rather than another deployment: it verifies through the RIP-7212 /
+    // EIP-7951 precompile at 0x100 and its constructor reverts when that is
+    // absent. This chain is Prague, which does not carry it, so the module cannot
+    // exist here at all — the deployment is refused and the pinned address stays
+    // codeless, which is exactly what makes bindAccount fail closed on such a
+    // chain rather than deriving an account nothing can validate for.
+    expect(pinnedValidatorModule("p256")).toBe(fixture.p256Validator.expectedAddress);
+    const refused = await wallet.sendTransaction({
+      account: submitter,
+      chain: null,
+      to: KERNEL_V4_CREATE2_DEPLOYER,
+      data: fixture.p256Validator.deploymentInput,
+      gas: 2_000_000n,
+    });
+    expect((await client.waitForTransactionReceipt({ hash: refused })).status).toBe("reverted");
+    expect(
+      await client.getCode({ address: fixture.p256Validator.expectedAddress }),
+    ).toBeUndefined();
   }, 60_000);
+
+  it("executes a P-256 owner and an ECDSA session installed under it", async () => {
+    // Its own chain, at the hardfork that carries the P-256 precompile the pinned
+    // validator verifies through. The proof above shows the same module refusing to
+    // deploy on Prague, so this chain is not a convenience: it is the condition
+    // under which a raw P-256 owner exists at all.
+    const chain = await startAnvil(chainId, "osaka");
+    try {
+      const harness = await createChainHarness(chain);
+      const { fixture, client, reads, deployModule, deployValidator, fund, send } = harness;
+      await deployKernelStack(harness);
+
+      // The pinned address holds the reviewed artifact, and the deployment itself is
+      // the precompile evidence: this module's constructor probes 0x100 with a
+      // known-valid vector and reverts P256PrecompileNotAvailable otherwise.
+      const p256Validator = fixture.p256Validator;
+      expect(pinnedValidatorModule("p256")).toBe(p256Validator.expectedAddress);
+      await deployModule(p256Validator);
+      const validatorCode = await client.getCode({ address: p256Validator.expectedAddress });
+      if (!validatorCode) throw new Error("pinned P-256 validator carries no code");
+      expect(keccak256(validatorCode)).toBe(p256Validator.runtimeCodeHash);
+
+      // Root authority is the phone's key: the validator module the registry pins,
+      // installed with the account's own initial packages.
+      const ownerKey = p256Owner(`0x${"31".repeat(32)}`);
+      const ownerRuntime = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({ key: ownerKey }),
+        reads,
+      });
+      expect(ownerRuntime.keyKind).toBe("p256");
+      expect(ownerRuntime.authorityModule).toBe(p256Validator.expectedAddress);
+
+      const counterfactual = await ownerRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      });
+      expect(counterfactual).toMatchObject({ state: "counterfactual", chainId });
+      const account = counterfactual.account;
+      await fund(account, parseEther("1"));
+
+      // One covered call, deploying the account in the same operation: the P-256
+      // signature validates on-chain and the value moves.
+      const ownerTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+      const deployAndExecute = ownerRuntime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition-p256-owner",
+        account: counterfactual,
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target: ownerTarget, value: "12345", data: "0x" }],
+        gas,
+      });
+      expect(deployAndExecute.userOperation.factory?.address).toBe(deployment.factory);
+      expect(await send(ownerRuntime, deployAndExecute)).toBe("success");
+      expect(await client.getBalance({ address: ownerTarget })).toBe(12_345n);
+      const deployed = await ownerRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: ownerRuntime.packages,
+      });
+      expect(deployed).toMatchObject({ state: "deployed", account });
+
+      // A signature from another P-256 key is refused by the installed validator,
+      // not by this client: the SDK's own self-verification rejects it locally
+      // first, so the on-chain refusal is proven with a signature produced outside
+      // the runtime and handed straight to EntryPoint.
+      const wrongKeyOperation = ownerRuntime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition-p256-wrong-key",
+        account: deployed,
+        nonceKey: "0",
+        sequence: "1",
+        calls: [{ target: ownerTarget, value: "1", data: "0x" }],
+        gas,
+      });
+      const foreignSecret = hexToBytes(`0x${"32".repeat(32)}`);
+      const signWithForeignKey = (hash: `0x${string}`) =>
+        Promise.resolve(
+          `0x${p256.sign(hexToBytes(hash), foreignSecret, { lowS: true, prehash: false }).toCompactHex()}` as const,
+        );
+      expect(
+        await harness.rejectionOf(
+          wrongKeyOperation,
+          await signWithForeignKey(wrongKeyOperation.userOperationHash),
+        ),
+      ).toMatchObject({ errorName: "FailedOp", args: [0n, "AA24 signature error"] });
+      // The same signature never leaves this SDK: a profile bound to the owner's
+      // public key whose capability returns another key's signature fails its own
+      // verification before any submission exists.
+      await expect(
+        createKernelRuntime({
+          deployment,
+          operator: ownerOperator({
+            key: Object.freeze({ ...ownerKey, sign: signWithForeignKey }),
+          }),
+          reads,
+        }).signOperation(wrongKeyOperation),
+      ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
+      expect(await client.getBalance({ address: ownerTarget })).toBe(12_345n);
+
+      // The session under that owner: the reviewed plugin set ships no raw P-256
+      // permission signer, so the session key is ECDSA and its scope is policy
+      // bound. This is the shape the phone flow installs — a P-256 root owner
+      // approving an ECDSA session — and the owner signs the install.
+      expect(pinnedSignerModule("p256")).toBeNull();
+      await deployModule(fixture.callPolicy);
+      await deployModule(fixture.ecdsaSigner);
+      const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+      const sessionRuntime = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: privateKeyToAccount(generatePrivateKey()),
+            validator: await deployValidator(),
+          }),
+          policies: [
+            { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
+            { kind: "value", maximumValue: "777" },
+          ],
+        }),
+        reads,
+      });
+      expect(sessionRuntime.authorityModule).toBe(fixture.ecdsaSigner.expectedAddress);
+      await expect(
+        sessionRuntime.bindAccount({ accountIndex: "0", initialPackages: ownerRuntime.packages }),
+      ).resolves.toMatchObject({ state: "deployed", account });
+      expect(
+        await send(
+          ownerRuntime,
+          ownerRuntime.prepareOperation({
+            kind: "execution",
+            grantId: "kernel-composition-p256-install",
+            account: deployed,
+            nonceKey: "0",
+            sequence: "1",
+            calls: [
+              {
+                target: account,
+                value: "0",
+                data: encodeKernelV4InstallModules(sessionRuntime.packages),
+              },
+            ],
+            gas,
+          }),
+        ),
+      ).toBe("success");
+
+      expect(
+        await send(
+          sessionRuntime,
+          sessionRuntime.prepareOperation({
+            kind: "execution",
+            grantId: "kernel-composition-p256-session",
+            account: deployed,
+            nonceKey: "0",
+            sequence: "0",
+            calls: [{ target: sessionTarget, value: "777", data: "0x" }],
+            gas,
+          }),
+        ),
+      ).toBe("success");
+      expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+      // The scope still bounds the session installed by a P-256 owner: CallPolicy
+      // refuses a value above the installed ceiling inside Kernel's validation
+      // phase, so nothing moves.
+      expect(
+        await harness.rejection(
+          sessionRuntime,
+          sessionRuntime.prepareOperation({
+            kind: "execution",
+            grantId: "kernel-composition-p256-session-excessive",
+            account: deployed,
+            nonceKey: "0",
+            sequence: "1",
+            calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+            gas,
+          }),
+        ),
+      ).toMatchObject({
+        errorName: "FailedOpWithRevert",
+        args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
+      });
+      expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+    } finally {
+      chain.stop();
+    }
+  }, 90_000);
 
   it("executes owner and session authorities and falls back to handleOps without changing identity", async () => {
     const harness = await createHarness();

@@ -46,10 +46,16 @@ export interface ModuleFixture {
   repository: string;
   commit: string;
   source: string;
-  moduleType: 5 | 6;
+  moduleType: 1 | 5 | 6;
   expectedAddress: `0x${string}`;
   runtimeCodeHash: `0x${string}`;
   deploymentInput: Hex;
+}
+
+/** The pinned raw P-256 validator, which also names the precompile it needs. */
+export interface P256ValidatorFixture extends ModuleFixture {
+  moduleType: 1;
+  precompile: `0x${string}`;
 }
 
 export interface DeploymentFixture {
@@ -58,6 +64,7 @@ export interface DeploymentFixture {
   kernelImmutableEcdsa: { deploymentInput: Hex };
   kernelFactory: { deploymentInput: Hex };
   ecdsaValidator: { bytecode: Hex };
+  p256Validator: P256ValidatorFixture;
   ecdsaSigner: ModuleFixture;
   webAuthnSigner: ModuleFixture;
   callPolicy: ModuleFixture;
@@ -145,8 +152,19 @@ async function waitForAnvil(process_: ChildProcess, url: string, chainId: number
   throw new Error("Anvil readiness deadline expired");
 }
 
-/** Starts one loopback Anvil bound to the given chain ID. */
-export async function startAnvil(chainId: number): Promise<AnvilChain> {
+/**
+ * Starts one loopback Anvil bound to the given chain ID.
+ *
+ * The hardfork is an argument because one module's dependency is a chain feature
+ * rather than a deployment: the pinned raw P-256 validator staticcalls the
+ * RIP-7212 / EIP-7951 precompile at 0x100, which Prague does not carry and Osaka
+ * does, so its proof asks for a chain that has it. Every other proof keeps Prague,
+ * the floor its evidence was taken on.
+ */
+export async function startAnvil(
+  chainId: number,
+  hardfork: "prague" | "osaka" = "prague",
+): Promise<AnvilChain> {
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
   const process_ = spawn(
@@ -159,7 +177,7 @@ export async function startAnvil(chainId: number): Promise<AnvilChain> {
       "--chain-id",
       String(chainId),
       "--hardfork",
-      "prague",
+      hardfork,
       "--accounts",
       "0",
       "--silent",

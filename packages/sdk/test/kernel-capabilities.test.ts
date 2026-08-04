@@ -24,6 +24,9 @@ import {
   webauthnKey,
 } from "../src/index.js";
 import { kernelKeyCapability } from "../src/kernel/capabilities.js";
+// pinnedValidatorModule is internal on purpose: a consumer reads the same fact
+// through diagnoseKernelCapability, so the public surface stays unchanged.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 
 const chainIds: readonly KernelV4SupportedChainId[] = [46_630, 421_614, 11_155_111];
 const validator = `0x${"22".repeat(20)}` as const;
@@ -99,16 +102,15 @@ type Expectation =
 
 /**
  * The exact fact every capability carries on every supported chain: Kernel v4
- * pins no raw P-256 or WebAuthn validator module and no raw P-256 permission
- * signer, every policy axis has a reviewed module, and the ECDSA validator is
- * caller-bound and code-proven when an account binds.
+ * pins a reviewed raw P-256 validator module but no WebAuthn one and no raw P-256
+ * permission signer, every policy axis has a reviewed module, and the ECDSA
+ * validator is caller-bound and code-proven when an account binds.
  */
 const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.freeze({
   owner_ecdsa: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
-  owner_p256: Object.freeze({
-    status: "unsupported",
-    reason: "validator_module_deployment_unproven",
-  }),
+  // Root P-256 authority is the phone's Secure Enclave key holding the account:
+  // one pinned reviewed validator, chain-independent like every other pin.
+  owner_p256: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   owner_webauthn: Object.freeze({
     status: "unsupported",
     reason: "validator_module_deployment_unproven",
@@ -120,7 +122,8 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
   owner_custom: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
   session_custom: Object.freeze({ status: "available", evidence: "caller_bound_signer" }),
   // A session is a permission, so its axis is the pinned signer module: ECDSA and
-  // WebAuthn have one, raw P-256 does not.
+  // WebAuthn have one, raw P-256 does not — the reviewed plugin set ships no raw
+  // P-256 signer, so an owner-only P-256 credential is exactly what is bound.
   session_ecdsa: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   session_p256: Object.freeze({
     status: "unsupported",
@@ -289,8 +292,42 @@ describe("Kernel capability diagnosis", () => {
       const key = keyProfiles[kind]();
       expect(key.kind).toBe(kind);
       expect(key.publicMaterial).not.toBe(ecdsaAccount.address.toLowerCase());
-      // Neither kind has a reviewed validator module, so root authority fails
-      // closed for both.
+
+      // Raw P-256 has a reviewed validator module and WebAuthn does not, so root
+      // authority resolves this kind's own pinned module or fails closed. Either
+      // way it is never the ECDSA validator or the ECDSA signer.
+      if (kind === "p256") {
+        const pinned = pinnedValidatorModule("p256");
+        expect(pinned).toMatch(/^0x[0-9a-f]{40}$/u);
+        expect(pinned).not.toBe(validator);
+        expect(pinned).not.toBe(pinnedSignerModule("ecdsa"));
+        expect(key.resolveValidator(deployment)).toBe(pinned);
+        const owner = createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads });
+        expect(owner.keyKind).toBe("p256");
+        expect(owner.authorityModule).toBe(pinned);
+        expect(owner.validation).toEqual({ kind: "root" });
+        expect(owner.packages[0]?.moduleData).toBe(key.publicMaterial);
+        expect(diagnoseKernelCapability({ chainId, capability: "owner_p256" })).toEqual({
+          capability: "owner_p256",
+          chainId,
+          status: "available",
+          evidence: "pinned_reviewed_module",
+        });
+
+        // A session resolves the signer axis instead, and raw P-256 has no
+        // reviewed signer, so it fails closed there rather than borrowing one.
+        expect(() => sessionOperator({ key, policies: [scope] })).toThrowError(
+          expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }),
+        );
+        expect(diagnoseKernelCapability({ chainId, capability: "session_p256" })).toEqual({
+          capability: "session_p256",
+          chainId,
+          status: "unsupported",
+          reason: "signer_module_deployment_unproven",
+        });
+        return;
+      }
+
       expect(() => key.resolveValidator(deployment)).toThrowError(
         expect.objectContaining({ code: "kernel_runtime_validator_unavailable" }),
       );
@@ -307,28 +344,15 @@ describe("Kernel capability diagnosis", () => {
       }
       expect(runtime).toBeNull();
       expect(code).toBe("kernel_runtime_validator_unavailable");
-      expect(diagnoseKernelCapability({ chainId, capability: `owner_${kind}` })).toEqual({
-        capability: `owner_${kind}`,
+      expect(diagnoseKernelCapability({ chainId, capability: "owner_webauthn" })).toEqual({
+        capability: "owner_webauthn",
         chainId,
         status: "unsupported",
         reason: "validator_module_deployment_unproven",
       });
 
-      // A session resolves the signer axis instead. Raw P-256 has no reviewed
-      // signer and fails closed on that axis; WebAuthn has one, and it must be
-      // the WebAuthn module, never the ECDSA one.
-      if (kind === "p256") {
-        expect(() => sessionOperator({ key, policies: [scope] })).toThrowError(
-          expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }),
-        );
-        expect(diagnoseKernelCapability({ chainId, capability: "session_p256" })).toEqual({
-          capability: "session_p256",
-          chainId,
-          status: "unsupported",
-          reason: "signer_module_deployment_unproven",
-        });
-        return;
-      }
+      // WebAuthn has a reviewed signer, and it must be the WebAuthn module, never
+      // the ECDSA one.
       const session = createKernelRuntime({
         deployment,
         operator: sessionOperator({ key, policies: [scope] }),

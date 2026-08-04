@@ -19,14 +19,62 @@ import { inputInvalid, isBuiltInKeyKind, runtimeFail } from "./internal.js";
 import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from "./types.js";
 
 /**
- * Validator modules (moduleType 1) bound per key kind. Kernel v4 ships no reviewed
- * raw P-256 or WebAuthn validator deployment yet, so both kinds resolve to absent
- * and every composition using them fails closed. ECDSA carries no entry by design:
- * kernel/key/ecdsa.ts binds the caller's validator module and bindKernelV4Account
- * proves it has code before any account address depends on it.
+ * The reviewed raw P-256 validator (moduleType 1): leekt/P256Validator at commit
+ * 8f6a71992e297f2e7caa61df2c6eb0b6d9145d2d, src/P256Validator.sol, compiled with
+ * solc 0.8.26+commit.8a97fa7a (optimizer 200 runs, no via-IR) and deployed through
+ * KERNEL_V4_CREATE2_DEPLOYER with a zero salt, which fixes this address on every
+ * chain. test/fixtures/kernel-v4-v0.7-deployments.json carries the exact
+ * deployment input — taken from the module's own Ethereum Sepolia broadcast record,
+ * whose creation code a recompile of that source reproduces byte for byte — so both
+ * the address and the runtime code hash derive from it offline.
+ *
+ * Interface, checked against Kernel v4's own IERC7579Modules at the commit the
+ * deployment profile pins (zerodevapp/kernel f2a84a332ec5a722e7e95a0d64601905c3c87fe9):
+ *
+ * - `onInstall(bytes)` decodes `(uint256 x, uint256 y)`, exactly the public
+ *   material kernel/key/p256.ts publishes, and rejects an off-curve point.
+ * - `validateUserOp(PackedUserOperation, bytes32 userOpHash)` decodes
+ *   `(uint256 r, uint256 s)` from `userOp.signature` and verifies it against
+ *   `userOpHash` directly, hashing nothing further. That is exactly what
+ *   kernel/key/p256.ts signs: the raw 64-byte low-s r‖s over the 32-byte
+ *   operation hash, handed to the module unwrapped because root validation
+ *   carries no envelope. `_validateUserOpValidator` overwrites `op.signature`
+ *   with the stripped signature before the call, so the two encodings meet.
+ * - `isValidSignatureWithSender(address, bytes32, bytes)` is present with the
+ *   declared shape, so ERC-1271 verification resolves through the same key.
+ * - `isModuleType(1)` is true and nothing else is claimed.
+ *
+ * One interface gap, and why it is not a runtime gap: Kernel v4's IModule also
+ * declares `isInitialized(address)`, which this module does not implement. No
+ * Kernel v4 core path calls it — ModuleManager and ValidationManager reference it
+ * nowhere — so the install and validation flows are unaffected. `onInstall` does
+ * revert `AlreadyInitialized` for an account that already registered a key, and
+ * ValidationManager requires `onInstall` success, so reinstalling this validator
+ * on the same account fails until it is uninstalled.
+ *
+ * On-chain dependency, and the one fact that is genuinely per chain: the module
+ * verifies through OpenZeppelin's `P256.verifyNative`, which staticcalls the
+ * RIP-7212 / EIP-7951 precompile at 0x0000000000000000000000000000000000000100 and
+ * has no Solidity fallback. It delegates to no verifier contract, so there is
+ * nothing extra to vendor or deploy. Its constructor probes the precompile with a
+ * known-valid vector and reverts `P256PrecompileNotAvailable()` otherwise, so on a
+ * chain without it the pinned address simply cannot carry code — and
+ * createKernelRuntime's bindAccount reads that code before any account address
+ * depends on the module, failing closed with
+ * kernel_runtime_validator_unavailable. The Sepolia deployment receipt in the
+ * fixture is therefore also evidence that Ethereum Sepolia carried the precompile.
+ * Where a supported chain lacks it, this axis is unavailable in fact even though
+ * the registry entry is chain-independent, and no client-side list is kept.
+ *
+ * WebAuthn carries no entry: the reviewed plugin sets ship no v4 WebAuthn
+ * validator, so root WebAuthn authority still fails closed. ECDSA carries no entry
+ * by design: kernel/key/ecdsa.ts binds the caller's validator module and
+ * bindKernelV4Account proves it has code before any account address depends on it.
  */
 const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
-  Object.freeze({});
+  Object.freeze({
+    p256: "0x9906ab44ff795883c5a725687a2705be4118b0f3",
+  });
 
 /**
  * Permission signer modules (moduleType 6) bound per key kind. Both are reviewed
@@ -45,7 +93,13 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${stri
  *   kernel/key/webauthn.ts publishes.
  *
  * Raw P-256 carries no entry: the reviewed plugin set ships only the WebAuthn
- * assertion signer, so a raw P-256 permission signer fails closed.
+ * assertion signer, so a raw P-256 permission signer fails closed. Re-checked on
+ * 2026-08-04 against that repository's master at 332deed: src/signers holds
+ * ECDSASigner, WeightedECDSASigner and WebAuthnSigner only, and its P256Signer.sol
+ * still exists solely on the unmerged branch feat/batch2, which is not reviewed
+ * provenance. A raw P-256 owner therefore has root authority through the pinned
+ * validator above while a raw P-256 session key does not exist; a session under a
+ * P-256 owner uses an ECDSA session key, which is the iPhone flow's shape.
  */
 const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
   Object.freeze({

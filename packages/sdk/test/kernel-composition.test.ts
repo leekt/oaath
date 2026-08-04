@@ -43,6 +43,9 @@ import {
   sessionOperator,
   webauthnKey,
 } from "../src/index.js";
+// Internal on purpose: a consumer reads this fact through
+// diagnoseKernelCapability, so the pinned validator stays off the public surface.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 
 const chainId = 421_614;
 const deployment = kernelV4Deployment(chainId);
@@ -266,16 +269,16 @@ describe("Kernel composition matrix", () => {
       expect(key.kind).toBe(kind);
       const composeOperator = () => operatorProfiles[authority](key);
       // An owner needs a validator module for its key kind and a session needs a
-      // permission signer module: raw P-256 has neither, WebAuthn has only the
-      // signer, so each axis fails closed on its own module rather than borrowing
-      // the other's. A consumer-authored kind binds both itself, so both compose.
+      // permission signer module: raw P-256 has only the validator, WebAuthn only
+      // the signer, so each axis fails closed on its own module rather than
+      // borrowing the other's. A consumer-authored kind binds both itself.
       const callerBound = kind === "ecdsa" || kind === customKind;
       const unavailable =
         authority === "session"
           ? kind === "p256"
             ? "kernel_runtime_signer_unavailable"
             : null
-          : callerBound
+          : callerBound || kind === "p256"
             ? null
             : "kernel_runtime_validator_unavailable";
       if (authority === "session" && unavailable) {
@@ -298,13 +301,17 @@ describe("Kernel composition matrix", () => {
       const runtime = compose();
       expect(runtime).toMatchObject({ authority, keyKind: kind, deployment });
       if (authority === "owner") {
+        // A caller-bound kind installs the validator its own profile named; raw
+        // P-256 installs the pinned reviewed one, which is not that address.
+        const authorityModule = kind === "p256" ? pinnedValidatorModule("p256") : validator;
+        expect(kind === "p256" ? authorityModule !== validator : true).toBe(true);
         expect(operator.policy).toBeNull();
-        expect(runtime.authorityModule).toBe(validator);
+        expect(runtime.authorityModule).toBe(authorityModule);
         expect(runtime.validation).toEqual({ kind: "root" });
         expect(runtime.packages).toEqual([
           {
             moduleType: 1,
-            module: validator,
+            module: authorityModule,
             moduleData: key.publicMaterial,
             internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
           },
