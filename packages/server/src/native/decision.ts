@@ -35,6 +35,7 @@ import type {
 import { submitAuthorizationDecision } from "../authorization/decision.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
 import type { RelayClock } from "../clock.js";
+import { projectOwnerPhoneScope } from "./projection.js";
 import { OaathRelayError, relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
@@ -69,6 +70,21 @@ export async function submitOwnerPhoneDecision(
 ): Promise<OwnerPhoneDecision> {
   if (input.caller.role !== "owner") {
     return relayFailure("relay_forbidden", "caller may not act in the required role");
+  }
+  // A scope the projection could not read is reject-only: the phone never
+  // offers approval over it, and the relay enforces the same rule here so a
+  // bypassing client cannot approve authority nobody reviewed structurally.
+  if (input.command.outcome === "approved") {
+    const state = await fetchAuthorizationRequest({
+      store: input.store,
+      clock: input.clock,
+      caller: input.caller,
+      requestId: input.operationId,
+    });
+    const scope = await projectOwnerPhoneScope(state.requestedScope, state.requestId);
+    if (scope.decision === "reject-only") {
+      return relayFailure("relay_request_invalid", "an unrecognized scope is reject-only");
+    }
   }
   try {
     const release = await submitAuthorizationDecision({

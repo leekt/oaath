@@ -16,20 +16,46 @@ final class ProjectionTests: XCTestCase {
 
     private let rawScope: [String: Any] = [
         "kind": "raw",
+        "decision": "reject-only",
         "text": #"{"permission":"erc20-transfer","chainScope":"all"}"#
     ]
 
     private let permissionScope: [String: Any] = [
         "kind": "permission-request",
+        "decision": "approve-or-reject",
+        "application": [
+            "applicationId": "app-a",
+            "clientId": "demo-web-app",
+            "origin": "https://app.example",
+            "deviceFingerprint": "8sWHndmh"
+        ],
+        "account": [
+            "accountIndex": "7",
+            "kernelVersion": "0.4.0",
+            "factoryRoute": "meta_factory",
+            "entryPointVersion": "0.7",
+            "ownerCredential": [
+                "kind": "ecdsa",
+                "address": "0x" + String(repeating: "33", count: 20)
+            ]
+        ],
+        "operatorCredential": [
+            "kind": "ecdsa",
+            "address": "0x" + String(repeating: "44", count: 20)
+        ],
         "chainScope": "all",
         "calls": [
             [
                 "target": "0x" + String(repeating: "11", count: 20),
                 "selector": "0x12345678",
-                "valueLimit": "100"
+                "valueLimit": "100",
+                "argumentEquals": [["index": 0, "value": "0x" + String(repeating: "22", count: 32)]]
             ]
         ],
+        "requestedAt": 1_753_000_000,
         "expiresAt": 1_754_000_000,
+        "policyValidAfter": 1_753_000_000,
+        "policyValidUntil": NSNull(),
         "perChainOperationLimit": 10
     ]
 
@@ -61,15 +87,42 @@ final class ProjectionTests: XCTestCase {
         object["scope"] = permissionScope
         let projection = try OwnerPhoneRequestProjection.decode(json(object))
         XCTAssertEqual(projection.scope, .permissionRequest(OwnerPhonePermissionScope(
+            application: OwnerPhoneApplicationIdentity(
+                applicationId: "app-a",
+                clientId: "demo-web-app",
+                origin: "https://app.example",
+                deviceFingerprint: "8sWHndmh"
+            ),
+            account: OwnerPhoneAccountIdentity(
+                accountIndex: "7",
+                kernelVersion: "0.4.0",
+                factoryRoute: "meta_factory",
+                entryPointVersion: "0.7",
+                ownerCredential: .ecdsa(address: "0x" + String(repeating: "33", count: 20))
+            ),
+            operatorCredential: .ecdsa(address: "0x" + String(repeating: "44", count: 20)),
             chainScope: "all",
             calls: [OwnerPhonePermittedCall(
                 target: "0x" + String(repeating: "11", count: 20),
                 selector: "0x12345678",
-                valueLimit: "100"
+                valueLimit: "100",
+                argumentEquals: [OwnerPhoneArgumentEquality(
+                    index: 0,
+                    value: "0x" + String(repeating: "22", count: 32)
+                )]
             )],
+            requestedAt: 1_753_000_000,
             expiresAt: 1_754_000_000,
+            policyValidAfter: 1_753_000_000,
+            policyValidUntil: nil,
             perChainOperationLimit: 10
         )))
+        XCTAssertTrue(projection.scope.approvable)
+    }
+
+    func testARawScopeIsRejectOnly() throws {
+        let projection = try OwnerPhoneRequestProjection.decode(json(valid))
+        XCTAssertFalse(projection.scope.approvable)
     }
 
     func testRejectsAnUnknownScopeKindInsteadOfRenderingPartially() {
@@ -84,7 +137,7 @@ final class ProjectionTests: XCTestCase {
         let digest = "0x" + String(repeating: "4b", count: 32)
         let display = #"{"chainId":421614,"digest":"\#(digest)","kind":"user-operation"}"#
         var object = valid
-        object["scope"] = ["kind": "signature-request", "digest": digest, "display": display]
+        object["scope"] = ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": display]
         let projection = try OwnerPhoneRequestProjection.decode(json(object))
         XCTAssertEqual(
             projection.scope,
@@ -95,24 +148,24 @@ final class ProjectionTests: XCTestCase {
         let digest = "0x" + String(repeating: "4b", count: 32)
         let malformed: [[String: Any]] = [
             // short digest
-            ["kind": "signature-request", "digest": "0x4b", "display": "{}"],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": "0x4b", "display": "{}"],
             // uppercase digest
-            ["kind": "signature-request", "digest": digest.uppercased(), "display": "{}"],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest.uppercased(), "display": "{}"],
             // missing display
-            ["kind": "signature-request", "digest": digest],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest],
             // empty display
-            ["kind": "signature-request", "digest": digest, "display": ""],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": ""],
             // control character in display
-            ["kind": "signature-request", "digest": digest, "display": "line\nbreak"],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": "line\nbreak"],
             // extra field
-            ["kind": "signature-request", "digest": digest, "display": "{}", "extra": 1],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": "{}", "extra": 1],
             // valid JSON that omits the independently supplied digest
-            ["kind": "signature-request", "digest": digest, "display": #"{"kind":"user-operation"}"#],
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": #"{"kind":"user-operation"}"#],
             // duplicate key ambiguity must not collapse before consent
-            ["kind": "signature-request", "digest": digest,
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest,
              "display": #"{"digest":"\#(digest)","kind":"gone","kind":"user-operation"}"#],
             // same fields, different bytes/order
-            ["kind": "signature-request", "digest": digest,
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest,
              "display": #"{"kind":"user-operation","digest":"\#(digest)"}"#]
         ]
         for scope in malformed {
@@ -132,26 +185,40 @@ final class ProjectionTests: XCTestCase {
             permissionScope.merging(["calls": [[
                 "target": "0x" + String(repeating: "AA", count: 20),
                 "selector": "0x12345678",
-                "valueLimit": "100"
+                "valueLimit": "100",
+                "argumentEquals": [Any]()
             ]]]) { _, new in new },
             // short selector
             permissionScope.merging(["calls": [[
                 "target": "0x" + String(repeating: "11", count: 20),
                 "selector": "0x1234567",
-                "valueLimit": "100"
+                "valueLimit": "100",
+                "argumentEquals": [Any]()
             ]]]) { _, new in new },
             // non-canonical decimal value limit
             permissionScope.merging(["calls": [[
                 "target": "0x" + String(repeating: "11", count: 20),
                 "selector": "0x12345678",
-                "valueLimit": "0100"
+                "valueLimit": "0100",
+                "argumentEquals": [Any]()
             ]]]) { _, new in new },
+            // a raw decision on an approvable kind is contradictory evidence
+            permissionScope.merging(["decision": "reject-only"]) { _, new in new },
+            // an unknown owner credential kind never renders partially
+            permissionScope.merging(["account": [
+                "accountIndex": "7",
+                "kernelVersion": "0.4.0",
+                "factoryRoute": "meta_factory",
+                "entryPointVersion": "0.7",
+                "ownerCredential": ["kind": "quantum", "address": "0x"]
+            ]]) { _, new in new },
             // extra call field
             permissionScope.merging(["calls": [[
                 "target": "0x" + String(repeating: "11", count: 20),
                 "selector": "0x12345678",
                 "valueLimit": "100",
-                "argumentEquals": [Any]()
+                "argumentEquals": [Any](),
+                "extra": 1
             ]]]) { _, new in new }
         ]
         for scope in malformed {

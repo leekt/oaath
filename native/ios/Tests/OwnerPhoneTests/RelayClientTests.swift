@@ -18,7 +18,7 @@ func projectionJson(operationId: String) -> [String: Any] {
         "displayPayload": "Ab1-_9Zz",
         "expiresAt": 1_754_000_000_000,
         "client": ["clientId": "demo-web-app", "redirectUri": "http://192.168.1.20:8788/callback"],
-        "scope": ["kind": "raw", "text": #"{"chainScope":"all"}"#]
+        "scope": ["kind": "raw", "decision": "reject-only", "text": #"{"chainScope":"all"}"#]
     ]
 }
 
