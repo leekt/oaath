@@ -77,18 +77,20 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${stri
   });
 
 /**
- * Permission signer modules (moduleType 6) bound per key kind. Both are reviewed
- * modules from https://github.com/zerodevapp/kernel-7579-plugins at commit
- * 332deed6eeef3d6279cde50aa1d51eff53728bd4, compiled with solc
- * 0.8.30+commit.73712a01 (via-IR, optimizer 20000 runs, EVM prague) and deployed
- * through KERNEL_V4_CREATE2_DEPLOYER with a zero salt, which fixes each address on
- * every chain. test/fixtures/kernel-v4-v0.7-deployments.json carries the exact
- * deployment input, and the local Kernel composition proof deploys it and shows
- * the code landing on the address pinned here.
+ * Permission signer modules (moduleType 6) bound per key kind and deployed through
+ * KERNEL_V4_CREATE2_DEPLOYER with a zero salt, which fixes each address on every
+ * chain. test/fixtures/kernel-v4-v0.7-deployments.json carries each exact deployment
+ * input, and the local Kernel composition proof deploys it and shows the code
+ * landing on the address pinned here.
  *
- * - ecdsa: src/signers/ECDSASigner.sol — onInstall takes the 20-byte signer
- *   address, exactly the public material kernel/key/ecdsa.ts publishes.
- * - webauthn: src/signers/WebAuthnSigner.sol — onInstall decodes
+ * - ecdsa: ZeroDev's verified src/ECDSASigner.sol deployment on Arbitrum Sepolia.
+ *   The fixture payload was extracted from creation transaction 0x8e282e...7a197,
+ *   derives 0x6a6f...d4ff, and reproduces the deployed runtime code. onInstall takes
+ *   the 20-byte signer address, exactly the public material kernel/key/ecdsa.ts
+ *   publishes.
+ * - webauthn: the reviewed src/signers/WebAuthnSigner.sol from
+ *   zerodevapp/kernel-7579-plugins at commit 332deed6eeef3d6279cde50aa1d51eff53728bd4.
+ *   onInstall decodes
  *   (uint256 pubKeyX, uint256 pubKeyY, bytes32), exactly the public material
  *   kernel/key/webauthn.ts publishes.
  *
@@ -103,7 +105,7 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${stri
  */
 const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
   Object.freeze({
-    ecdsa: "0xd4c7dec43e67ffe3dcca0aeb71556123d3194e1d",
+    ecdsa: "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
     webauthn: "0x8b2df925aa16071fcdf0053768420e242935ac65",
   });
 
