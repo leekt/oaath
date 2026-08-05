@@ -6,9 +6,9 @@ coverage/
 *.log
 .DS_Store
 
-# Local env files (credentials, e.g. examples/.env) — never commit
-.env
-.env.*
-
 # Agent scratch state (worktrees, session files) — never commit
 .claude/
+
+# Environment files carry credentials — never commit any of them
+.env
+.env.*

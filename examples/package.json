@@ -23,6 +23,7 @@
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
     "@oaath/server": "workspace:*",
+    "@zerodev/sdk": "5.5.10",
     "esbuild": "0.25.12",
     "pg": "8.22.0",
     "qrcode": "1.5.4",

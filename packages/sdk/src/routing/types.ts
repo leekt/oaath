@@ -29,6 +29,7 @@ export type RoutingErrorCode =
   | "routing_input_invalid"
   | "routing_capability_invalid"
   | "routing_operation_invalid"
+  | "routing_sponsorship_invalid"
   | "routing_paymaster_unsupported"
   | "routing_prefund_out_of_bounds";
 

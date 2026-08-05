@@ -97,6 +97,7 @@ describe("package boundary", () => {
       "pinnedPolicyModule",
       "pinnedSignerModule",
       "prepareKernelV4UserOperation",
+      "prepareSponsoredKernelOperation",
       "prepareUserOperation",
       "probeBundlerCapability",
       "requireNonExtractableKey",

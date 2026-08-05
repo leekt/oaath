@@ -29,11 +29,13 @@ import {
   materializeKernelPermission,
   ownerOperator,
   p256Key,
+  prepareSponsoredKernelOperation,
   sessionOperator,
 } from "@oaath/sdk";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
 import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
+import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { build } from "esbuild";
 import QRCode from "qrcode";
 import qrcode from "qrcode-terminal";
@@ -46,7 +48,7 @@ import {
   cacheImmutableKernelReads,
   canonicalDisplay,
   captureCanonicalDisplay,
-  captureSponsorship,
+  captureZeroDevSponsorship,
   createLiveUserOperationObserver,
   createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
@@ -60,7 +62,6 @@ import {
   observeOnce,
   pairingSecretMayRender,
   permissionMaterializedAfter,
-  sessionPreparationRefusal,
   submitOnce,
   validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
@@ -69,6 +70,7 @@ import {
 const SIMULATE = process.env.OAATH_PHONE_SIMULATE === "1";
 const LIVE = process.env.OAATH_ZERODEV_LIVE === "1";
 const CHAIN_ID = 421_614;
+const CHAIN_NAME = "Arbitrum Sepolia";
 const GAS = Object.freeze({
   callGasLimit: "900000",
   verificationGasLimit: "3000000",
@@ -96,8 +98,46 @@ if (existsSync(ENV_FILE)) {
 }
 if (LIVE && !process.env.ZERODEV_PROJECT_ID)
   throw new Error("OAATH_ZERODEV_LIVE=1 requires ZERODEV_PROJECT_ID");
-const MODE = LIVE ? "zerodev-sponsored" : "anvil";
+const MODE = LIVE ? "zerodev-bundler-paymaster" : "anvil";
 const say = (...parts) => console.log(...parts);
+const event = (name, fields = {}) => {
+  const details = Object.entries(fields)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  say(`[${new Date().toISOString()}] ${name}${details ? ` ${details}` : ""}`);
+};
+const safeFailureCode = (error) => {
+  try {
+    for (const value of [error?.code, error?.message])
+      if (typeof value === "string" && /^[a-z][a-z0-9_]{2,80}$/u.test(value)) return value;
+  } catch {}
+  return "unexpected_failure";
+};
+const diagnosticRoute = (path) => {
+  for (const [pattern, label] of [
+    [/^\/demo\/permission\/[^/]+$/u, "/demo/permission/:requestId"],
+    [/^\/demo\/operations\/[^/]+$/u, "/demo/operations/:operationId"],
+    [/^\/demo\/owner\/[^/]+$/u, "/demo/owner/:requestId"],
+    [/^\/native\/decisions\/[^/]+$/u, "/native/decisions/:requestId"],
+  ])
+    if (pattern.test(path)) return label;
+  const known = new Set([
+    "/",
+    "/demo.js",
+    "/demo/account",
+    "/demo/inbox",
+    "/demo/owner/prepare",
+    "/demo/pairing-secret",
+    "/demo/permission",
+    "/demo/session/prepare",
+    "/demo/session/sponsor",
+    "/demo/session/submit",
+    "/demo/state",
+    "/native/pairings",
+  ]);
+  return known.has(path) ? path : "unclassified";
+};
 const expect = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -135,7 +175,13 @@ const permissionLane = new AtomicReservationLane();
 const permissionReservation = new AtomicPermissionReservation(permissionLane, signatureRequestLane);
 let relayCreates = 0;
 const operations = new Map();
+// Owner and session validations carry independent EntryPoint nonce keys. Each
+// lane remains same-hash/no-resubmission, but one unresolved authority no longer
+// blocks the other authority's distinct operation.
 const operationLane = new OperationLane();
+const ownerOperationLane = new OperationLane();
+const laneFor = (operation) => (operation.kind === "owner" ? ownerOperationLane : operationLane);
+let sessionPreparationPending = false;
 const simulationRouteVisits = new Map();
 const recordSimulationRouteVisit = (route, operationId) => {
   if (!SIMULATE) return;
@@ -274,7 +320,7 @@ async function handlePairing(body, outgoing) {
     account,
   };
   pairedDevices.set(credential, activeDevice);
-  say(`paired account   ${account}`);
+  event("phone.paired", { chain: CHAIN_NAME, chainId: CHAIN_ID, account });
   jsonResponse(outgoing, 200, { deviceCredential: credential, account });
 }
 
@@ -385,7 +431,7 @@ async function createSignatureRequest(
   } catch (error) {
     if (SIMULATE) throw error;
   }
-  say(`signature request ${created.requestId} (${purpose}); phone must explicitly Approve/Reject`);
+  event("signature.requested", { purpose, requestId: created.requestId });
   if (SIMULATE) {
     expect(projection.scope?.kind === "signature-request", "simulation projection was not signed");
     expect(projection.scope.digest === digest, "simulation projection digest drifted");
@@ -419,6 +465,7 @@ async function resolveSignature(record) {
     if (state.decision?.outcome === "rejected") {
       record.outcome = "rejected";
       signatureRequestLane.terminate(record.reservationToken, "rejected");
+      event("signature.rejected", { purpose: record.purpose, requestId: record.requestId });
     }
     return null;
   }
@@ -438,6 +485,7 @@ async function resolveSignature(record) {
   record.artifact = claimed.artifact;
   record.outcome = "approved";
   signatureRequestLane.terminate(record.reservationToken, "completed");
+  event("signature.approved", { purpose: record.purpose, requestId: record.requestId });
   return record.artifact;
 }
 async function sequence(runtime, mode) {
@@ -483,28 +531,50 @@ const rpcUserOperation = (prepared, signature = "0x") => {
     ]),
   );
 };
-async function sponsoredPrepare(runtime, input) {
-  const unsigned = runtime.prepareOperation(input);
+async function sponsoredPrepare(runtime, input, unsigned, signature = runtime.dummySignature) {
   if (!LIVE) return unsigned;
-  const result = await stack.rpc("zd_sponsorUserOperation", [
-    { ...rpcUserOperation(unsigned), signature: runtime.dummySignature },
-    unsigned.entryPoint.address,
-    { sponsorshipPolicyData: { policyId: "oaath-owner-phone-demo" } },
-  ]);
-  const sponsorship = captureSponsorship(result);
-  return runtime.prepareOperation({
-    ...input,
-    gas: {
-      ...input.gas,
-      callGasLimit: sponsorship.callGasLimit,
-      verificationGasLimit: sponsorship.verificationGasLimit,
-      preVerificationGas: sponsorship.preVerificationGas,
-    },
-    paymaster: {
-      address: sponsorship.paymaster,
-      verificationGasLimit: sponsorship.paymasterVerificationGasLimit,
-      postOpGasLimit: sponsorship.paymasterPostOpGasLimit,
-      data: sponsorship.paymasterData,
+  return prepareSponsoredKernelOperation({
+    runtime,
+    operation: input,
+    simulationSignature: signature,
+    sponsorship: {
+      async sponsor(request) {
+        expect(
+          request.prepared.userOperationHash === unsigned.userOperationHash,
+          "sponsorship changed unsigned operation identity",
+        );
+        const sponsorship = captureZeroDevSponsorship(
+          await sponsorZeroDevUserOperation(
+            {
+              chain: { id: CHAIN_ID },
+              request: ({ method, params }) => stack.rpc(method, params ?? []),
+            },
+            {
+              userOperation: {
+                ...asViemUserOperation(request.prepared.userOperation),
+                signature: request.simulationSignature,
+                chainId: CHAIN_ID,
+                entryPointAddress: request.prepared.entryPoint.address,
+              },
+            },
+          ),
+        );
+        return Object.freeze({
+          gas: Object.freeze({
+            callGasLimit: sponsorship.callGasLimit,
+            verificationGasLimit: sponsorship.verificationGasLimit,
+            preVerificationGas: sponsorship.preVerificationGas,
+            maxFeePerGas: sponsorship.maxFeePerGas,
+            maxPriorityFeePerGas: sponsorship.maxPriorityFeePerGas,
+          }),
+          paymaster: Object.freeze({
+            address: sponsorship.paymaster,
+            verificationGasLimit: sponsorship.paymasterVerificationGasLimit,
+            postOpGasLimit: sponsorship.paymasterPostOpGasLimit,
+            data: sponsorship.paymasterData,
+          }),
+        });
+      },
     },
   });
 }
@@ -549,13 +619,20 @@ function terminalize(operation, evidence) {
       installsPermission: true,
       status: evidence.status,
     });
-  operationLane.release(operation.operationId, evidence.status);
+  laneFor(operation).release(operation.operationId, evidence.status);
   operation.result = {
     status: evidence.status,
     operationId: operation.operationId,
     userOperationHash: evidence.userOperationHash,
     transactionHash: evidence.transactionHash,
   };
+  event("operation.terminal", {
+    kind: operation.kind,
+    operationId: operation.operationId,
+    status: evidence.status,
+    userOperationHash: evidence.userOperationHash,
+    transactionHash: evidence.transactionHash,
+  });
   return operation.result;
 }
 
@@ -564,20 +641,52 @@ function observeOperation(operation) {
     operation,
     observe: (current, captureTransactionHash) => stackObserver(current, captureTransactionHash),
     terminalize,
-    ownsLane: (current) => operationLane.active === current.operationId,
+    ownsLane: (current) => laneFor(current).active === current.operationId,
   });
 }
 
 function submitOperation(operation, signature, terminateWithoutSubmission) {
-  return submitOnce({
+  const joining = operation.transition?.promise !== undefined;
+  const pending = submitOnce({
     operation,
     signature,
-    send: (prepared, exactSignature, onTransactionHash) =>
-      stack.sendSigned(prepared, exactSignature, onTransactionHash),
+    send: async (prepared, exactSignature, onTransactionHash) => {
+      event("operation.submitting", {
+        kind: operation.kind,
+        operationId: operation.operationId,
+        userOperationHash: operation.prepared.userOperationHash,
+      });
+      let sent;
+      try {
+        sent = await stack.sendSigned(prepared, exactSignature, onTransactionHash);
+      } catch (error) {
+        operation.unresolvedCode = safeFailureCode(error);
+        throw error;
+      }
+      event("operation.accepted", {
+        kind: operation.kind,
+        operationId: operation.operationId,
+        userOperationHash: sent.userOperationHash,
+        transactionHash: sent.transactionHash,
+      });
+      return sent;
+    },
     observe: (current, captureTransactionHash) => stackObserver(current, captureTransactionHash),
     terminalize,
     terminateWithoutSubmission,
-    ownsLane: (current) => operationLane.active === current.operationId,
+    ownsLane: (current) => laneFor(current).active === current.operationId,
+  });
+  if (joining) return pending;
+  return pending.then((result) => {
+    if (result.status === "unresolved")
+      event("operation.unresolved", {
+        kind: operation.kind,
+        operationId: operation.operationId,
+        code: result.code ?? "evidence_unavailable",
+        userOperationHash: result.userOperationHash,
+        transactionHash: result.transactionHash,
+      });
+    return result;
   });
 }
 
@@ -591,8 +700,18 @@ async function handleDemo(method, path, body, outgoing) {
     });
   }
   if (method === "GET" && path === "/demo/state") {
-    const activeOperation =
-      operationLane.active === null ? null : (operations.get(operationLane.active) ?? null);
+    const operationProjection = (lane, kind) => {
+      if (lane.active === null) return null;
+      const active = operations.get(lane.active);
+      return active
+        ? {
+            operationId: active.operationId,
+            kind: active.kind,
+            status: active.status,
+            ...(active.prepared ? { userOperationHash: active.prepared.userOperationHash } : {}),
+          }
+        : { operationId: lane.active, kind, status: "preparing" };
+    };
     return jsonResponse(outgoing, 200, {
       permission:
         permission === null
@@ -612,19 +731,10 @@ async function handleDemo(method, path, body, outgoing) {
                 ? { requestId: signatureRequestLane.active.requestId }
                 : {}),
             },
-      operation:
-        operationLane.active === null
-          ? null
-          : activeOperation
-            ? {
-                operationId: activeOperation.operationId,
-                kind: activeOperation.kind,
-                status: activeOperation.status,
-                ...(activeOperation.prepared
-                  ? { userOperationHash: activeOperation.prepared.userOperationHash }
-                  : {}),
-              }
-            : { operationId: operationLane.active, kind: "preparing", status: "preparing" },
+      operations: {
+        owner: operationProjection(ownerOperationLane, "owner"),
+        session: operationProjection(operationLane, "session"),
+      },
     });
   }
   let value = {};
@@ -666,6 +776,7 @@ async function handleDemo(method, path, body, outgoing) {
       approval: null,
       materialized: false,
     };
+    event("permission.preparing", { sessionAddress: value.sessionAddress });
     try {
       const supplied = { hash: null, value: null };
       const runtime = sessionRuntimeFor(value.sessionAddress, supplied);
@@ -736,7 +847,7 @@ async function handleDemo(method, path, body, outgoing) {
         requestId: permission.request.requestId,
       });
     }
-    if (!permission.approval)
+    if (!permission.approval) {
       permission.approval = await approveKernelPermissionAllChain({
         owner: p256Profile(activeDevice.publicMaterial, async ({ hash }) => {
           expect(hash === permission.request.digest, "approval digest drifted");
@@ -746,6 +857,12 @@ async function handleDemo(method, path, body, outgoing) {
         installNonce: "0",
         packages: permission.runtime.packages,
       });
+      event("permission.approved", {
+        requestId: permission.request.requestId,
+        account: permission.descriptor.account,
+        sessionAddress: permission.sessionAddress,
+      });
+    }
     return jsonResponse(outgoing, 200, {
       status: "approved",
       account: permission.descriptor.account,
@@ -756,17 +873,30 @@ async function handleDemo(method, path, body, outgoing) {
     if (!permission?.approval) return refusal(outgoing, 409, "permission_not_approved");
     if (!exactKeys(value, ["sessionAddress"]) || value.sessionAddress !== permission.sessionAddress)
       return refusal(outgoing, 400, "session_identity_invalid");
+    if (sessionPreparationPending) return refusal(outgoing, 409, "session_preparation_in_progress");
     const activeOperation =
       operationLane.active === null ? null : (operations.get(operationLane.active) ?? null);
-    const preparationRefusal = sessionPreparationRefusal({
-      live: LIVE,
-      permissionMaterialized: permission.materialized,
-      activeOperation,
-    });
-    if (preparationRefusal) return refusal(outgoing, 409, preparationRefusal);
+    if (
+      activeOperation !== null &&
+      (activeOperation.status !== "unresolved" || activeOperation.transition?.promise)
+    )
+      return refusal(outgoing, 409, "operation_lane_occupied");
+    const replacedOperationId = activeOperation?.operationId ?? null;
     const operationId = randomBytes(18).toString("base64url");
-    operationLane.claim(operationId);
-    const mode = permission.materialized ? "standard" : "enable-replayable";
+    sessionPreparationPending = true;
+    if (replacedOperationId === null) operationLane.claim(operationId);
+    // A deployed account may already carry this exact persisted session
+    // permission, while its Kernel install nonce is not owned by this fresh
+    // in-memory relay. Validate the standard candidate through sponsorship;
+    // never guess or replay an enable nonce for deployed state.
+    const installsPermission =
+      activeOperation !== null
+        ? false
+        : LIVE
+          ? permission.descriptor.state === "counterfactual"
+          : !permission.materialized;
+    const mode = installsPermission ? "enable-replayable" : "standard";
+    event("operation.preparing", { kind: "session", operationId, mode, chainId: CHAIN_ID });
     let input;
     let prepared;
     try {
@@ -786,31 +916,125 @@ async function handleDemo(method, path, body, outgoing) {
           grantId: `phone-session-${Date.now()}`,
           account: permission.descriptor,
           nonceKey: "0",
-          calls: [{ target, value: "1", data: "0x" }],
+          calls: [{ target, value: LIVE ? "0" : "1", data: "0x" }],
           gas: GAS,
         },
         // A failed UserOperationEvent still consumes its sequence. Read the
         // EntryPoint immediately before every preparation, including enable.
         () => sequence(permission.runtime, mode),
       );
-      prepared = await sponsoredPrepare(permission.runtime, input);
+      if (activeOperation !== null && !activeOperation.installsPermission) {
+        const previousSequence =
+          BigInt(activeOperation.prepared.userOperation.nonce) & ((1n << 64n) - 1n);
+        if (BigInt(input.sequence) <= previousSequence) {
+          return refusal(outgoing, 409, "session_sequence_unresolved");
+        }
+      }
+      prepared = permission.runtime.prepareOperation(input);
     } catch (error) {
-      operationLane.cancel(operationId);
+      if (replacedOperationId === null && operationLane.active === operationId)
+        operationLane.cancel(operationId);
       throw error;
+    } finally {
+      sessionPreparationPending = false;
     }
     operations.set(operationId, {
       operationId,
       chainId: CHAIN_ID,
       kind: "session",
-      status: "prepared",
+      status: LIVE ? "awaiting-sponsorship-signature" : "prepared",
       prepared,
-      installsPermission: !permission.materialized,
+      installsPermission,
       input: operationInput(input, prepared),
+    });
+    if (replacedOperationId !== null) operationLane.replace(replacedOperationId, operationId);
+    event("operation.prepared", {
+      kind: "session",
+      operationId,
+      mode,
+      userOperationHash: prepared.userOperationHash,
     });
     return jsonResponse(outgoing, 201, {
       operationId,
       userOperationHash: prepared.userOperationHash,
+      sponsorshipRequired: LIVE,
     });
+  }
+  if (method === "POST" && path === "/demo/session/sponsor") {
+    if (
+      !exactKeys(value, ["operationId", "signature"]) ||
+      !/^0x[0-9a-f]{130}$/.test(value.signature)
+    )
+      return refusal(outgoing, 400, "session_sponsorship_invalid");
+    const operation = operations.get(value.operationId);
+    if (operation?.kind !== "session") return refusal(outgoing, 404, "operation_not_found");
+    if (operation.sponsorship?.promise)
+      return jsonResponse(outgoing, 200, await operation.sponsorship.promise);
+    if (operation.status === "prepared")
+      return jsonResponse(outgoing, 200, {
+        operationId: operation.operationId,
+        userOperationHash: operation.prepared.userOperationHash,
+      });
+    if (operation.status === "sponsorship-unresolved")
+      return refusal(outgoing, 409, "sponsorship_unresolved");
+    if (operation.status !== "awaiting-sponsorship-signature")
+      return refusal(outgoing, 409, "operation_not_sponsorable");
+
+    const attempt = { promise: null };
+    operation.sponsorship = attempt;
+    operation.status = "sponsoring";
+    attempt.promise = (async () => {
+      try {
+        permission.supplied.hash = operation.prepared.userOperationHash;
+        permission.supplied.value = value.signature;
+        let simulationSignature;
+        if (operation.installsPermission) {
+          const materialized = await materializeKernelPermission({
+            approval: permission.approval,
+            runtime: permission.runtime,
+            grantId: operation.input.grantId,
+            account: operation.input.account,
+            nonceKey: "0",
+            sequence: operation.input.sequence,
+            calls: operation.input.calls,
+            gas: operation.input.gas,
+            paymaster: null,
+          });
+          expect(
+            materialized.prepared.userOperationHash === operation.prepared.userOperationHash,
+            "sponsorship signature changed unsigned operation identity",
+          );
+          simulationSignature = materialized.signature;
+        } else {
+          simulationSignature = await permission.runtime.signOperation(operation.prepared);
+        }
+        const sponsored = await sponsoredPrepare(
+          permission.runtime,
+          operation.input,
+          operation.prepared,
+          simulationSignature,
+        );
+        operation.prepared = sponsored;
+        operation.input = operationInput(operation.input, sponsored);
+        operation.status = "prepared";
+        event("operation.sponsored", {
+          kind: operation.kind,
+          operationId: operation.operationId,
+          userOperationHash: sponsored.userOperationHash,
+        });
+        return Object.freeze({
+          operationId: operation.operationId,
+          userOperationHash: sponsored.userOperationHash,
+        });
+      } catch (error) {
+        operation.status = "sponsorship-unresolved";
+        operation.unresolvedCode = safeFailureCode(error);
+        throw error;
+      } finally {
+        if (operation.sponsorship === attempt) delete operation.sponsorship;
+      }
+    })();
+    return jsonResponse(outgoing, 200, await attempt.promise);
   }
   if (method === "POST" && path === "/demo/session/submit") {
     if (
@@ -828,7 +1052,7 @@ async function handleDemo(method, path, body, outgoing) {
         permission.supplied.hash = operation.prepared.userOperationHash;
         permission.supplied.value = value.signature;
         const prepared = operation.prepared;
-        if (!permission.materialized) {
+        if (operation.installsPermission) {
           const materialized = await materializeKernelPermission({
             approval: permission.approval,
             runtime: permission.runtime,
@@ -865,14 +1089,21 @@ async function handleDemo(method, path, body, outgoing) {
   if (method === "POST" && path === "/demo/owner/prepare") {
     if (!activeDevice || !exactKeys(value, []))
       return refusal(outgoing, 400, "owner_request_invalid");
-    if (operationLane.active !== null) return refusal(outgoing, 409, "operation_lane_occupied");
+    if (ownerOperationLane.active !== null)
+      return refusal(outgoing, 409, "operation_lane_occupied");
     if (signatureRequestLane.active !== null)
       return refusal(outgoing, 409, "signature_request_lane_occupied");
     const preparingId = randomBytes(18).toString("base64url");
     // These synchronous claims have no interleaving point: owner/permission
     // ordering is decided before preparation starts and neither can overwrite.
-    operationLane.claim(preparingId);
+    ownerOperationLane.claim(preparingId);
     signatureRequestLane.reserve(preparingId, { purpose: "owner-operation" });
+    event("operation.preparing", {
+      kind: "owner",
+      operationId: preparingId,
+      mode: "standard",
+      chainId: CHAIN_ID,
+    });
     try {
       const input = await withFreshSequence(
         {
@@ -880,12 +1111,13 @@ async function handleDemo(method, path, body, outgoing) {
           grantId: `phone-owner-${Date.now()}`,
           account: accountDescriptor,
           nonceKey: "0",
-          calls: [{ target, value: "2", data: "0x" }],
+          calls: [{ target, value: LIVE ? "0" : "2", data: "0x" }],
           gas: GAS,
         },
         () => sequence(ownerRuntime, "standard"),
       );
-      const prepared = await sponsoredPrepare(ownerRuntime, input);
+      const unsigned = ownerRuntime.prepareOperation(input);
+      const prepared = await sponsoredPrepare(ownerRuntime, input, unsigned);
       operations.set(preparingId, {
         operationId: preparingId,
         chainId: CHAIN_ID,
@@ -894,6 +1126,7 @@ async function handleDemo(method, path, body, outgoing) {
         prepared,
         installsPermission: false,
         request: null,
+        input: operationInput(input, prepared),
       });
       const request = await createSignatureRequest(
         prepared.userOperationHash,
@@ -902,7 +1135,7 @@ async function handleDemo(method, path, body, outgoing) {
         "approve",
         { token: preparingId },
       );
-      operationLane.replace(preparingId, request.requestId);
+      ownerOperationLane.replace(preparingId, request.requestId);
       operations.delete(preparingId);
       operations.set(request.requestId, {
         operationId: request.requestId,
@@ -912,6 +1145,13 @@ async function handleDemo(method, path, body, outgoing) {
         prepared,
         installsPermission: false,
         request,
+        input: operationInput(input, prepared),
+      });
+      event("operation.prepared", {
+        kind: "owner",
+        operationId: request.requestId,
+        mode: "standard",
+        userOperationHash: prepared.userOperationHash,
       });
       return jsonResponse(outgoing, 201, {
         requestId: request.requestId,
@@ -919,12 +1159,12 @@ async function handleDemo(method, path, body, outgoing) {
       });
     } catch (error) {
       if (
-        operationLane.active === preparingId &&
+        ownerOperationLane.active === preparingId &&
         signatureRequestLane.active?.token === preparingId &&
         signatureRequestLane.active.state === "pre-submit"
       ) {
         signatureRequestLane.release(preparingId);
-        operationLane.cancel(preparingId);
+        ownerOperationLane.cancel(preparingId);
         operations.delete(preparingId);
       }
       throw error;
@@ -981,7 +1221,7 @@ async function handleDemo(method, path, body, outgoing) {
         (current, terminal) => {
           expect(terminal.status === "rejected", "operation terminal transition invalid");
           current.status = "rejected";
-          operationLane.cancel(current.operationId);
+          ownerOperationLane.cancel(current.operationId);
           current.result = terminal.result;
         },
       );
@@ -1076,9 +1316,14 @@ function listener(incoming, outgoing) {
         markInboxTerminal(signatureRequests, decodeURIComponent(url.pathname.split("/").at(-1)));
       outgoing.writeHead(response.status, Object.fromEntries(response.headers));
       outgoing.end(responseBody);
-    } catch {
-      say("request failed", "demo_failed");
-      if (!outgoing.headersSent) refusal(outgoing, 500, "demo_failed");
+    } catch (error) {
+      const code = safeFailureCode(error);
+      event("request.failed", {
+        method: incoming.method ?? "UNKNOWN",
+        route: diagnosticRoute(url.pathname),
+        code,
+      });
+      if (!outgoing.headersSent) refusal(outgoing, 500, code);
       else outgoing.end();
     }
   });
@@ -1088,14 +1333,37 @@ if (LIVE) {
   const endpoint = `https://rpc.zerodev.app/api/v3/${encodeURIComponent(process.env.ZERODEV_PROJECT_ID)}/chain/${CHAIN_ID}`;
   const budgetedRpc = async (method, params) => {
     const requestId = liveRequestBudget.take(method);
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
-      signal: AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS),
-    });
-    const body = await response.json();
-    if (!response.ok || body.error || !("result" in body)) throw new Error("zerodev_rpc_failed");
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
+        signal: AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS),
+      });
+    } catch {
+      throw new Error("zerodev_transport_failed");
+    }
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error("zerodev_response_invalid");
+    }
+    if (!response.ok || body.error || !("result" in body)) {
+      const providerCode =
+        Number.isSafeInteger(body.error?.code) && body.error.code !== 0
+          ? body.error.code
+          : typeof body.error === "string"
+            ? (body.error.match(/\bAA\d{2}\b/u)?.[0] ?? "unavailable")
+            : "unavailable";
+      event("zerodev.rejected", {
+        method,
+        httpStatus: response.status,
+        providerCode,
+      });
+      throw new Error("zerodev_rpc_rejected");
+    }
     return body.result;
   };
   const publicClient = createPublicClient({
@@ -1152,6 +1420,7 @@ redirectUri = `${relayUrl}/demo/callback`;
 const pairingLink = `oaath-demo://pair?relay=${encodeURIComponent(relayUrl)}&code=${encodeURIComponent(PAIRING_CODE)}`;
 say("\nOAAth owner-phone demo");
 say(`mode             ${MODE}`);
+say(`chain            ${CHAIN_NAME} (${CHAIN_ID})`);
 say(`browser UI       http://127.0.0.1:${relayPort}`);
 if (pairingSecretMayRender({ simulate: SIMULATE, isTTY: process.stdout.isTTY })) {
   // This is transient interactive UI, never a log/captured-output path.
@@ -1517,6 +1786,29 @@ async function simulate() {
     stack.observe = async () => null;
     const unresolved = await relayCall("POST", "/demo/session/submit", null, observed.submission);
     expect(unresolved.status === "unresolved", "missing observation did not stay unresolved");
+    // Root and session validation use independent EntryPoint nonce domains. An
+    // unresolved session must retain its own lane without blocking one owner
+    // operation, and owner completion must not release the session lane.
+    stack.observe = originalObserve;
+    const ownerAlongsideSession = await relayCall("POST", "/demo/owner/prepare", null, {});
+    const ownerAlongsideSessionResult = await relayCall(
+      "GET",
+      `/demo/owner/${ownerAlongsideSession.requestId}`,
+      null,
+    );
+    expect(
+      ownerAlongsideSessionResult.status === "unresolved" &&
+        /^0x[0-9a-f]{64}$/.test(ownerAlongsideSessionResult.transactionHash),
+      "unresolved session blocked owner submission",
+    );
+    expect(
+      operationLane.active === observed.prepared.operationId,
+      "owner completion released unresolved session lane",
+    );
+    expect(
+      ownerOperationLane.active === ownerAlongsideSession.requestId,
+      "unresolved owner operation lost its independent lane",
+    );
     const entered = deferred();
     const release = deferred();
     stack.observe = async (...args) => {
@@ -1579,6 +1871,38 @@ async function simulate() {
       expect(retry.status === "included", "response-loss retry lost terminal result");
     } finally {
       stack.sendSigned = originalSend;
+    }
+  }
+
+  // A consumed nonce is positive safety evidence for the next operation even
+  // when the prior outcome remains unresolved. Advance to the fresh sequence;
+  // never replace the retained operation while EntryPoint reports the same one.
+  const advancing = await prepareSession();
+  {
+    const originalObserve = stack.observe;
+    stack.observe = async () => null;
+    try {
+      const unresolved = await relayCall(
+        "POST",
+        "/demo/session/submit",
+        null,
+        advancing.submission,
+      );
+      expect(unresolved.status === "unresolved", "advance fixture did not retain unresolved state");
+      stack.observe = originalObserve;
+      const next = await prepareSession();
+      expect(
+        next.prepared.operationId !== advancing.prepared.operationId,
+        "session lane did not advance",
+      );
+      expect(
+        next.prepared.userOperationHash !== advancing.prepared.userOperationHash,
+        "advanced session operation retained the old hash",
+      );
+      const included = await relayCall("POST", "/demo/session/submit", null, next.submission);
+      expect(included.status === "included", "advanced session operation did not submit");
+    } finally {
+      stack.observe = originalObserve;
     }
   }
   say(

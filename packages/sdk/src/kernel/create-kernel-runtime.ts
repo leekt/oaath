@@ -266,7 +266,9 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     authorityModule,
     validation,
     packages,
-    dummySignature: operator.key.dummySignature,
+    // Simulation must receive the same authority envelope shape as a real
+    // signature. Owner encoding is raw; session encoding adds policy/signer slices.
+    dummySignature: operator.encodeSignature(operator.key.dummySignature),
     bindAccount,
     prepareOperation,
     signOperation,

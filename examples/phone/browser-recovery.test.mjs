@@ -202,6 +202,40 @@ test("overlapping Pair clicks are latest-wins and leave no stale timers or secre
   }
 });
 
+test("missing retained session operation clears only the stale pointer", async () => {
+  const storage = new MemoryStorage();
+  const staleOperationId = "previous-relay-operation-id";
+  storage.setItem("oaath-demo-session-operation-v1", staleOperationId);
+  globalThis.localStorage = storage;
+  let prepares = 0;
+  globalThis.fetch = async (path) => {
+    if (path === "/demo/state")
+      return jsonResponse({
+        operations: { owner: null, session: null },
+        permission: {},
+        signatureRequest: null,
+      });
+    if (path === `/demo/operations/${staleOperationId}`)
+      return jsonResponse({ error: { code: "operation_not_found" } }, 404);
+    if (path === "/demo/session/prepare") {
+      if (operation?.status === "unresolved")
+        return jsonResponse({ error: { code: "session_sequence_unresolved" } }, 409);
+      prepares += 1;
+      throw new Error("stale recovery must not prepare in the same action");
+    }
+    throw new Error(`unexpected API call ${path}`);
+  };
+
+  const nodes = installDocument();
+  await import(`./browser.js?stale-operation=${Date.now()}`);
+  await nodes.get("session").onclick();
+
+  assert.equal(prepares, 0);
+  assert.equal(storage.getItem("oaath-demo-session-operation-v1"), null);
+  assert.match(nodes.get("status").textContent, /previous relay process/u);
+  assert.match(nodes.get("status").textContent, /no operation was prepared or submitted/u);
+});
+
 test("lost submit response plus browser reload resumes the exact API operation with zero resubmits", async () => {
   const storage = new MemoryStorage();
   globalThis.localStorage = storage;
@@ -214,8 +248,14 @@ test("lost submit response plus browser reload resumes the exact API operation w
   let observations = 0;
   globalThis.fetch = async (path, options = {}) => {
     if (path === "/demo/state")
-      return jsonResponse({ operation, permission: null, signatureRequest: null });
+      return jsonResponse({
+        operations: { owner: null, session: operation },
+        permission: null,
+        signatureRequest: null,
+      });
     if (path === "/demo/session/prepare") {
+      if (operation?.status === "unresolved")
+        return jsonResponse({ error: { code: "session_sequence_unresolved" } }, 409);
       prepares += 1;
       operation = { operationId, kind: "session", status: "prepared", userOperationHash };
       return jsonResponse({ operationId, userOperationHash }, 201);
@@ -255,5 +295,169 @@ test("lost submit response plus browser reload resumes the exact API operation w
   assert.equal(submissions, 1);
   assert.equal(observations, 1);
   assert.equal(storage.getItem("oaath-demo-session-operation-v1"), null);
+  assert.match(nodes.get("status").textContent, /included/u);
+});
+
+test("live session signs simulation and final hashes but submits only the final one", async () => {
+  globalThis.localStorage = new MemoryStorage();
+  const operationId = "sponsored-operation-id";
+  const initialHash = `0x${"41".repeat(32)}`;
+  const finalHash = `0x${"42".repeat(32)}`;
+  const transactionHash = `0x${"43".repeat(32)}`;
+  const signatures = [];
+  let sponsorships = 0;
+  let submissions = 0;
+  globalThis.fetch = async (path, options = {}) => {
+    if (path === "/demo/state")
+      return jsonResponse({
+        operations: { owner: null, session: null },
+        permission: {},
+        signatureRequest: null,
+      });
+    if (path === "/demo/session/prepare")
+      return jsonResponse(
+        { operationId, userOperationHash: initialHash, sponsorshipRequired: true },
+        201,
+      );
+    if (path === "/demo/session/sponsor") {
+      sponsorships += 1;
+      const body = JSON.parse(options.body);
+      assert.equal(body.operationId, operationId);
+      signatures.push(body.signature);
+      return jsonResponse({ operationId, userOperationHash: finalHash });
+    }
+    if (path === "/demo/session/submit") {
+      submissions += 1;
+      const body = JSON.parse(options.body);
+      assert.equal(body.operationId, operationId);
+      signatures.push(body.signature);
+      return jsonResponse({
+        status: "included",
+        operationId,
+        userOperationHash: finalHash,
+        transactionHash,
+      });
+    }
+    throw new Error(`unexpected API call ${path}`);
+  };
+
+  const nodes = installDocument();
+  await import(`./browser.js?sponsorship=${Date.now()}`);
+  await nodes.get("session").onclick();
+  assert.equal(sponsorships, 1);
+  assert.equal(submissions, 1);
+  assert.equal(signatures.length, 2);
+  assert.notEqual(signatures[0], signatures[1]);
+  assert.equal(globalThis.localStorage.getItem("oaath-demo-session-operation-v1"), null);
+  assert.match(nodes.get("status").textContent, /included/u);
+});
+
+test("consumed unresolved session nonce advances to a new sponsored operation", async () => {
+  const storage = new MemoryStorage();
+  globalThis.localStorage = storage;
+  const oldOperationId = "unresolved-session-operation";
+  const newOperationId = "next-session-operation";
+  const oldHash = `0x${"61".repeat(32)}`;
+  const candidateHash = `0x${"62".repeat(32)}`;
+  const finalHash = `0x${"63".repeat(32)}`;
+  const transactionHash = `0x${"64".repeat(32)}`;
+  let preparations = 0;
+  let sponsorships = 0;
+  let submissions = 0;
+  globalThis.fetch = async (path, options = {}) => {
+    if (path === "/demo/state")
+      return jsonResponse({
+        operations: {
+          owner: null,
+          session: {
+            operationId: oldOperationId,
+            kind: "session",
+            status: "unresolved",
+            userOperationHash: oldHash,
+          },
+        },
+        permission: {},
+        signatureRequest: null,
+      });
+    if (path === "/demo/session/prepare") {
+      preparations += 1;
+      return jsonResponse(
+        {
+          operationId: newOperationId,
+          userOperationHash: candidateHash,
+          sponsorshipRequired: true,
+        },
+        201,
+      );
+    }
+    if (path === "/demo/session/sponsor") {
+      sponsorships += 1;
+      assert.equal(JSON.parse(options.body).operationId, newOperationId);
+      return jsonResponse({ operationId: newOperationId, userOperationHash: finalHash });
+    }
+    if (path === "/demo/session/submit") {
+      submissions += 1;
+      assert.equal(JSON.parse(options.body).operationId, newOperationId);
+      return jsonResponse({
+        status: "included",
+        operationId: newOperationId,
+        userOperationHash: finalHash,
+        transactionHash,
+      });
+    }
+    throw new Error(`unexpected API call ${path}`);
+  };
+
+  const nodes = installDocument();
+  await import(`./browser.js?session-advance=${Date.now()}`);
+  await nodes.get("session").onclick();
+
+  assert.equal(preparations, 1);
+  assert.equal(sponsorships, 1);
+  assert.equal(submissions, 1);
+  assert.equal(storage.getItem("oaath-demo-session-operation-v1"), null);
+  assert.match(nodes.get("status").textContent, /included/u);
+  assert.match(nodes.get("status").textContent, new RegExp(finalHash, "u"));
+});
+
+test("live owner submits through one final sponsored phone request", async () => {
+  globalThis.localStorage = new MemoryStorage();
+  const operationId = "owner-sponsored-request-id";
+  const finalHash = `0x${"52".repeat(32)}`;
+  const transactionHash = `0x${"53".repeat(32)}`;
+  let prepares = 0;
+  let observations = 0;
+  globalThis.fetch = async (path, options = {}) => {
+    if (path === "/demo/state")
+      return jsonResponse({
+        operations: { owner: null, session: null },
+        permission: {},
+        signatureRequest: null,
+      });
+    if (path === "/demo/owner/prepare" && options.method === "POST") {
+      prepares += 1;
+      return jsonResponse(
+        { operationId, requestId: operationId, userOperationHash: finalHash },
+        201,
+      );
+    }
+    if (path === `/demo/owner/${operationId}`) {
+      observations += 1;
+      return jsonResponse({
+        status: "included",
+        operationId,
+        userOperationHash: finalHash,
+        transactionHash,
+      });
+    }
+    throw new Error(`unexpected API call ${path}`);
+  };
+
+  const nodes = installDocument();
+  await import(`./browser.js?owner-sponsored=${Date.now()}`);
+  await nodes.get("owner").onclick();
+
+  assert.equal(prepares, 1);
+  assert.equal(observations, 1);
   assert.match(nodes.get("status").textContent, /included/u);
 });

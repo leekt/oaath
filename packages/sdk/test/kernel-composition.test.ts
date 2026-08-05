@@ -20,6 +20,7 @@ import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
   ecdsaKey,
+  encodeKernelV4PermissionSignature,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
@@ -352,7 +353,12 @@ describe("Kernel composition matrix", () => {
           }),
         },
       ]);
-      expect(runtime.dummySignature).toBe(key.dummySignature);
+      expect(runtime.dummySignature).toBe(
+        encodeKernelV4PermissionSignature([
+          ...runtime.packages.filter(({ moduleType }) => moduleType === 5).map(() => "0x" as const),
+          key.dummySignature,
+        ]),
+      );
     },
   );
 
@@ -1090,7 +1096,7 @@ describe("Kernel module registry", () => {
     // chain, so the same fact holds wherever a supported deployment exists. The
     // local composition proof deploys these exact addresses through CREATE2.
     expect(kinds.map((kind) => pinnedSignerModule(kind))).toEqual([
-      "0xd4c7dec43e67ffe3dcca0aeb71556123d3194e1d",
+      "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
       null,
       "0x8b2df925aa16071fcdf0053768420e242935ac65",
     ]);

@@ -277,6 +277,14 @@ export {
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
 } from "./routing/handle-ops.js";
 export type {
+  OaathKernelSponsorshipCapability,
+  OaathKernelSponsorshipRequest,
+  OaathKernelSponsorshipResult,
+  OaathKernelSponsorshipRuntime,
+  PrepareSponsoredKernelOperationInput,
+} from "./routing/sponsorship.js";
+export { prepareSponsoredKernelOperation } from "./routing/sponsorship.js";
+export type {
   OaathExecutionDecision,
   OaathExecutionReason,
   OaathExecutionRoute,

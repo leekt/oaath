@@ -176,9 +176,12 @@ export async function approveKernelPermissionAllChain(
  * are checked before any signature exists: the approval installs exactly the
  * packages this runtime validates through, and it covers exactly this account.
  */
-export async function materializeKernelPermission(
-  value: MaterializeKernelPermissionInput,
-): Promise<Readonly<KernelPermissionMaterialization>> {
+function prepareKernelPermission(value: MaterializeKernelPermissionInput): Readonly<{
+  prepared: PreparedUserOperation;
+  installNonce: string;
+  packages: readonly Readonly<KernelV4Install>[];
+  enableSignature: `0x${string}`;
+}> {
   const approval = exactInput(
     value.approval,
     ["version", "account", "installNonce", "packages", "digest", "enableSignature"],
@@ -241,11 +244,23 @@ export async function materializeKernelPermission(
   }
   return Object.freeze({
     prepared,
+    installNonce: scope.installNonce,
+    packages: scope.packages,
+    enableSignature: approval.enableSignature,
+  });
+}
+
+export async function materializeKernelPermission(
+  value: MaterializeKernelPermissionInput,
+): Promise<Readonly<KernelPermissionMaterialization>> {
+  const materialization = prepareKernelPermission(value);
+  return Object.freeze({
+    prepared: materialization.prepared,
     signature: encodeKernelV4EnableSignature({
-      nonce: scope.installNonce,
-      packages: scope.packages,
-      enableSignature: approval.enableSignature,
-      userOperationSignature: await value.runtime.signOperation(prepared),
+      nonce: materialization.installNonce,
+      packages: materialization.packages,
+      enableSignature: materialization.enableSignature,
+      userOperationSignature: await value.runtime.signOperation(materialization.prepared),
     }),
   });
 }
