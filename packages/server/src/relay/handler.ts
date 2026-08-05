@@ -11,9 +11,16 @@
  * POST /authorization/requests                       client  create request
  * GET  /authorization/requests/{requestId}           owner   fetch request
  * POST /authorization/requests/{requestId}/decision  owner   approve or reject
+ * GET  /authorization/requests/{requestId}/code      client  released-code pickup
  * POST /authorization/codes/consume                  client  one-time code consume
  * POST /authorization/artifacts/{artifactId}/claim   client  one-time artifact claim
  * POST /authorization/resume                         client  fresh auth + recovery read
+ * GET  /bootstrap                                    client  URL-only service context
+ * POST /invalidations                                client  capability invalidation
+ * POST /chains/{chainId}/{port}                      client  chain execution relay,
+ *                                                            port in reads |
+ *                                                            observation | bundler |
+ *                                                            quote | submissions | usage
  * ```
  *
  * EXPERIMENTAL PREVIEW routes for the owner-phone approval surface. Preview
@@ -29,9 +36,17 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  captureRecord,
+  exactCapturedRecord,
+  OAATH_SERVICE_BOOTSTRAP_VERSION,
+  parseServiceBootstrap,
+  type ServiceBootstrap,
+} from "@oaath/protocol";
 import { claimEncryptedArtifact } from "../artifact/claim.js";
 import { consumeAuthorizationCode } from "../authorization/code.js";
+import { fetchAuthorizationCode } from "../authorization/pickup.js";
 import type { AuthorizationDecisionCommand } from "../authorization/decision.js";
 import { submitAuthorizationDecision } from "../authorization/decision.js";
 import {
@@ -40,7 +55,7 @@ import {
   fetchAuthorizationRequest,
 } from "../authorization/request.js";
 import { resumeAuthorization } from "../authorization/resume.js";
-import type { RelayClock } from "../clock.js";
+import { type RelayClock, relayNow } from "../clock.js";
 import { submitOwnerPhoneDecision } from "../native/decision.js";
 import { projectOwnerPhoneRequest } from "../native/projection.js";
 import {
@@ -64,6 +79,33 @@ const MAX_CODE_TTL_MS = 600_000;
 
 const INVALID = "relay_request_invalid" as const;
 
+/**
+ * One deployment-injected chain execution surface the relay serves to clients.
+ * Each port takes exactly one captured request value and answers with the
+ * evidence it owns; the relay never interprets the payload beyond exact wire
+ * hygiene, so port meaning stays with its SDK owner.
+ */
+export interface RelayChainPort {
+  readonly chainId: number;
+  readonly reads: (request: unknown) => Promise<unknown>;
+  readonly observation: (request: unknown) => Promise<unknown>;
+  readonly bundler: (request: unknown) => Promise<unknown>;
+  readonly quote: (request: unknown) => Promise<unknown>;
+  /** Opens, sends, and settles one submission in one call; never retried here. */
+  readonly submission: (request: unknown) => Promise<unknown>;
+  /** Finalized per-grant usage evidence, or null when this chain serves none. */
+  readonly usage: ((request: unknown) => Promise<unknown>) | null;
+  readonly feePayer: Readonly<{ address: `0x${string}`; balance: string }> | null;
+}
+
+/** The identity facts `GET /bootstrap` serves; chains derive from `chains`. */
+export interface RelayBootstrapConfiguration {
+  readonly application: unknown;
+  readonly userHandle: string;
+  readonly account: unknown;
+  readonly ownerValidator: `0x${string}` | null;
+}
+
 export interface RelayHandlerOptions {
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
@@ -74,6 +116,10 @@ export interface RelayHandlerOptions {
   readonly requestTtlMs?: number;
   readonly codeTtlMs?: number;
   readonly maxBodyBytes?: number;
+  /** Optional URL-only bootstrap surface; requires `chains` as well. */
+  readonly bootstrap?: Readonly<RelayBootstrapConfiguration>;
+  /** Optional chain execution relays; required when `bootstrap` is served. */
+  readonly chains?: readonly Readonly<RelayChainPort>[];
 }
 
 export type RelayHandler = (request: Request) => Promise<Response>;
@@ -87,7 +133,12 @@ const OPTION_KEYS: readonly string[] = [
   "requestTtlMs",
   "codeTtlMs",
   "maxBodyBytes",
+  "bootstrap",
+  "chains",
 ];
+
+const CHAIN_PORT_NAMES = ["reads", "observation", "bundler", "quote", "submission"] as const;
+type ChainPortName = (typeof CHAIN_PORT_NAMES)[number] | "usage";
 
 /**
  * Ports may be class instances, so only their required capabilities are checked.
@@ -123,6 +174,34 @@ interface CapturedOptions {
   readonly requestTtlMs: number;
   readonly codeTtlMs: number;
   readonly maxBodyBytes: number;
+  /** The exact parsed document `GET /bootstrap` serves, or null when unserved. */
+  readonly bootstrap: Readonly<ServiceBootstrap> | null;
+  readonly chains: ReadonlyMap<number, Readonly<RelayChainPort>>;
+}
+
+function captureChainPorts(value: unknown): ReadonlyMap<number, Readonly<RelayChainPort>> {
+  if (!Array.isArray(value)) {
+    return relayFailure("relay_internal", "chains must be an array of chain ports");
+  }
+  const chains = new Map<number, Readonly<RelayChainPort>>();
+  for (const entry of value) {
+    const port = requirePort<RelayChainPort>(entry, [...CHAIN_PORT_NAMES], "chain port");
+    if (
+      typeof port.chainId !== "number" ||
+      !Number.isSafeInteger(port.chainId) ||
+      port.chainId < 1
+    ) {
+      return relayFailure("relay_internal", "chain port chainId must be a positive integer");
+    }
+    if (port.usage !== null && typeof port.usage !== "function") {
+      return relayFailure("relay_internal", "chain port usage must be a function or null");
+    }
+    if (chains.has(port.chainId)) {
+      return relayFailure("relay_internal", "chain ports repeat a chainId");
+    }
+    chains.set(port.chainId, port);
+  }
+  return chains;
 }
 
 function captureOptions(value: unknown): CapturedOptions {
@@ -133,6 +212,40 @@ function captureOptions(value: unknown): CapturedOptions {
   for (const key of Object.keys(record)) {
     if (!OPTION_KEYS.includes(key)) {
       relayFailure("relay_internal", "relay handler options contain an unknown field");
+    }
+  }
+  const chains =
+    record.chains === undefined
+      ? new Map<number, Readonly<RelayChainPort>>()
+      : captureChainPorts(record.chains);
+  let bootstrap: Readonly<ServiceBootstrap> | null = null;
+  if (record.bootstrap !== undefined) {
+    if (chains.size === 0) {
+      relayFailure("relay_internal", "a bootstrap surface requires chain ports");
+    }
+    const identity = captureRecord(
+      record.bootstrap,
+      "relay bootstrap configuration",
+      context,
+      (message) => relayFailure("relay_internal", message),
+    );
+    // The exact protocol parser owns document meaning; a misconfigured
+    // deployment fails at construction, never at a client's request.
+    try {
+      bootstrap = parseServiceBootstrap({
+        version: OAATH_SERVICE_BOOTSTRAP_VERSION,
+        application: identity.application,
+        userHandle: identity.userHandle,
+        account: identity.account,
+        ownerValidator: identity.ownerValidator,
+        chains: [...chains.values()].map((port) => ({
+          chainId: port.chainId,
+          usage: port.usage !== null,
+          feePayer: port.feePayer,
+        })),
+      });
+    } catch {
+      relayFailure("relay_internal", "relay bootstrap configuration is invalid");
     }
   }
   return Object.freeze({
@@ -151,6 +264,8 @@ function captureOptions(value: unknown): CapturedOptions {
     requestTtlMs: duration(record.requestTtlMs, DEFAULT_REQUEST_TTL_MS, "requestTtlMs"),
     codeTtlMs: duration(record.codeTtlMs, DEFAULT_CODE_TTL_MS, "codeTtlMs", MAX_CODE_TTL_MS),
     maxBodyBytes: duration(record.maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes"),
+    bootstrap,
+    chains,
   });
 }
 
@@ -296,6 +411,85 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       return relayFailure("relay_not_found", "route does not exist");
     }
 
+    if (head === "bootstrap" && segments.length === 1) {
+      requireMethod(request, "GET");
+      await authenticate(request, "client", "bootstrap.fetch");
+      if (captured.bootstrap === null) {
+        return relayFailure("relay_not_found", "route does not exist");
+      }
+      return jsonResponse(200, captured.bootstrap);
+    }
+
+    if (head === "invalidations" && segments.length === 1) {
+      requireMethod(request, "POST");
+      const caller = await authenticate(request, "client", "invalidations.create");
+      const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), [
+        "grantId",
+        "capabilityHash",
+      ]);
+      const grantId = canonicalIdentifier(body.grantId, "grantId", INVALID);
+      const capabilityHash = boundedText(body.capabilityHash, 66, "capabilityHash", INVALID);
+      if (!/^0x[0-9a-f]{64}$/u.test(capabilityHash)) {
+        return relayFailure(INVALID, "capabilityHash must be a lowercase 32-byte hash");
+      }
+      // The evidence is protocol-facing, so it speaks the protocol's seconds
+      // domain rather than the relay's millisecond records.
+      const invalidatedAt = Math.floor(relayNow(captured.clock) / 1_000);
+      // Stateless acknowledgement: the evidence names exactly this caller's
+      // invalidation and nothing else. Durable capability records and their
+      // conclusive removal proof belong to the materialization lifecycle
+      // (issue #80); until then this endpoint cannot claim more than it did.
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(
+          `oaath-relay-invalidation:v1:${caller.clientId}:${grantId}:${capabilityHash}:${invalidatedAt}`,
+        ),
+      );
+      const evidenceHash = `0x${[...new Uint8Array(digest)]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("")}`;
+      return jsonResponse(200, { evidenceHash, invalidatedAt });
+    }
+
+    if (head === "chains") {
+      if (segments.length !== 3) return relayFailure("relay_not_found", "route does not exist");
+      requireMethod(request, "POST");
+      const port = captured.chains.get(Number(group));
+      const name: ChainPortName | null =
+        third === "submissions"
+          ? "submission"
+          : third === "reads" ||
+              third === "observation" ||
+              third === "bundler" ||
+              third === "quote" ||
+              third === "usage"
+            ? third
+            : null;
+      if (!port || name === null) {
+        return relayFailure("relay_not_found", "route does not exist");
+      }
+      await authenticate(request, "client", `chains.${name}`);
+      const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), ["request"]);
+      const capability = name === "usage" ? port.usage : port[name];
+      if (capability === null) {
+        return relayFailure("relay_not_found", "route does not exist");
+      }
+      let result: unknown;
+      try {
+        result = await capability(body.request);
+      } catch {
+        // Port meaning stays with its SDK owner; the relay reports only that
+        // this chain surface did not answer. Nothing here retries.
+        return relayFailure("relay_chain_unavailable", "chain port did not answer");
+      }
+      // JSON cannot carry `undefined`, and several ports mean it ("no such
+      // fact"), so the envelope states presence explicitly.
+      return jsonResponse(
+        200,
+        result === undefined ? { present: false, result: null } : { present: true, result },
+      );
+    }
+
     if (head !== "authorization") {
       relayFailure("relay_not_found", "route does not exist");
     }
@@ -361,6 +555,19 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         codeTtlMs: captured.codeTtlMs,
       });
       return jsonResponse(200, decided);
+    }
+
+    if (segments.length === 4 && group === "requests" && fourth === "code") {
+      requireMethod(request, "GET");
+      const caller = await authenticate(request, "client", "authorization.code");
+      const fetched = await fetchAuthorizationCode({
+        store: captured.store,
+        clock: captured.clock,
+        kms: captured.kms,
+        caller,
+        requestId: canonicalIdentifier(third, "requestId", INVALID),
+      });
+      return jsonResponse(200, fetched);
     }
 
     if (segments.length === 3 && group === "codes" && third === "consume") {

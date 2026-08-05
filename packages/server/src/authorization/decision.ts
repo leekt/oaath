@@ -67,24 +67,32 @@ export async function submitAuthorizationDecision(
   input: SubmitAuthorizationDecisionInput,
 ): Promise<SubmittedAuthorizationDecision> {
   const decidedAt = relayNow(input.clock);
+
+  // Seal before the transaction: the store only ever receives references, and
+  // an uncommitted decision leaves nothing but unreferenced ciphertexts. The
+  // code is sealed too so the authenticated client can pick it up later; PKCE
+  // still guards its consumption.
+  let approved:
+    | Readonly<{ code: string; artifactId: string; ciphertextRef: string; codeRef: string }>
+    | undefined;
+  if (input.command.outcome === "approved") {
+    const code = randomIdentifier();
+    approved = Object.freeze({
+      code,
+      artifactId: randomIdentifier(),
+      ciphertextRef: await sealArtifact(input.kms, input.command.artifact),
+      codeRef: await sealArtifact(input.kms, code),
+    });
+  }
+  const codeHash = approved ? await sha256Base64Url(approved.code) : undefined;
   const decision = Object.freeze({
     version: OAATH_AUTHORIZATION_DECISION_RECORD_VERSION,
     requestId: input.requestId,
     outcome: input.command.outcome,
     decidedAt,
+    codeRef: approved?.codeRef ?? null,
+    codeExpiresAt: approved ? decidedAt + input.codeTtlMs : null,
   } as const);
-
-  // Seal before the transaction: the store only ever receives the reference, and
-  // an uncommitted decision leaves nothing but an unreferenced ciphertext.
-  const approved =
-    input.command.outcome === "approved"
-      ? Object.freeze({
-          code: randomIdentifier(),
-          artifactId: randomIdentifier(),
-          ciphertextRef: await sealArtifact(input.kms, input.command.artifact),
-        })
-      : undefined;
-  const codeHash = approved ? await sha256Base64Url(approved.code) : undefined;
 
   const redirectUri = await withRelayTransaction(input.store, async (transaction) => {
     const request = await transaction.lockAuthorizationRequest(input.requestId);

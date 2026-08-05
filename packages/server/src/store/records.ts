@@ -67,6 +67,14 @@ export interface AuthorizationDecisionRecord {
   readonly requestId: string;
   readonly outcome: AuthorizationDecisionOutcome;
   readonly decidedAt: number;
+  /**
+   * KMS-sealed copy of the released code for authenticated client pickup, and
+   * its expiry. The relay mints the code itself, so holding a sealed copy adds
+   * no new trust; PKCE still guards consumption. Both are null exactly when
+   * the outcome is a rejection.
+   */
+  readonly codeRef: string | null;
+  readonly codeExpiresAt: number | null;
 }
 
 export interface AuthorizationCodeRecord {
@@ -201,11 +209,19 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
 export function parseAuthorizationDecisionRecord(value: unknown): AuthorizationDecisionRecord {
   const record = captured(
     value,
-    ["version", "requestId", "outcome", "decidedAt"],
+    ["version", "requestId", "outcome", "decidedAt", "codeRef", "codeExpiresAt"],
     "authorization decision record",
   );
   if (record.outcome !== "approved" && record.outcome !== "rejected") {
     return relayFailure(UNREADABLE, "decision outcome is unsupported");
+  }
+  // The sealed code exists exactly when a code was released: an approval with
+  // no pickup copy or a rejection carrying one is an unreadable record.
+  if ((record.outcome === "approved") !== (record.codeRef !== null)) {
+    return relayFailure(UNREADABLE, "decision code reference does not match the outcome");
+  }
+  if ((record.codeRef === null) !== (record.codeExpiresAt === null)) {
+    return relayFailure(UNREADABLE, "decision code expiry does not match its reference");
   }
   return Object.freeze({
     version: version(
@@ -216,6 +232,14 @@ export function parseAuthorizationDecisionRecord(value: unknown): AuthorizationD
     requestId: canonicalIdentifier(record.requestId, "requestId", UNREADABLE),
     outcome: record.outcome,
     decidedAt: timestamp(record.decidedAt, "decidedAt", UNREADABLE),
+    codeRef:
+      record.codeRef === null
+        ? null
+        : boundedText(record.codeRef, RELAY_LIMITS.ciphertextRef, "codeRef", UNREADABLE),
+    codeExpiresAt:
+      record.codeExpiresAt === null
+        ? null
+        : timestamp(record.codeExpiresAt, "codeExpiresAt", UNREADABLE),
   });
 }
 

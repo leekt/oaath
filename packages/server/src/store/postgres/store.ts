@@ -72,6 +72,8 @@ function decisionRecord(row: Row): AuthorizationDecisionRecord {
     requestId: row.request_id,
     outcome: row.outcome,
     decidedAt: sqlTimestamp(row.decided_at),
+    codeRef: row.code_ref,
+    codeExpiresAt: row.code_expires_at === null ? null : sqlTimestamp(row.code_expires_at),
   });
 }
 
@@ -163,6 +165,8 @@ function createTransaction(client: PoolClient): RelayTransaction {
         record.version,
         record.outcome,
         record.decidedAt,
+        record.codeRef,
+        record.codeExpiresAt,
       ]);
     },
     lockAuthorizationCode(codeHash) {

@@ -35,7 +35,11 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
       REFERENCES oaath_relay_authorization_request_v1 (request_id),
     record_version text NOT NULL,
     outcome text NOT NULL CHECK (outcome IN ('approved', 'rejected')),
-    decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= ${MAX_SAFE_INTEGER})
+    decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= ${MAX_SAFE_INTEGER}),
+    code_ref text,
+    code_expires_at bigint CHECK (code_expires_at >= 0 AND code_expires_at <= ${MAX_SAFE_INTEGER}),
+    CHECK ((outcome = 'approved') = (code_ref IS NOT NULL)),
+    CHECK ((code_ref IS NULL) = (code_expires_at IS NULL))
   )`,
   `CREATE TABLE oaath_relay_authorization_code_v1 (
     code_hash text PRIMARY KEY,

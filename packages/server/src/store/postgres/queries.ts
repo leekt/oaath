@@ -36,7 +36,7 @@ export const INSERT_AUTHORIZATION_REQUEST = `
 `;
 
 export const LOCK_AUTHORIZATION_DECISION = `
-  SELECT request_id, record_version, outcome, decided_at
+  SELECT request_id, record_version, outcome, decided_at, code_ref, code_expires_at
   FROM oaath_relay_authorization_decision_v1
   WHERE request_id = $1
   FOR UPDATE
@@ -44,8 +44,8 @@ export const LOCK_AUTHORIZATION_DECISION = `
 
 export const INSERT_AUTHORIZATION_DECISION = `
   INSERT INTO oaath_relay_authorization_decision_v1 (
-    request_id, record_version, outcome, decided_at
-  ) VALUES ($1, $2, $3, $4)
+    request_id, record_version, outcome, decided_at, code_ref, code_expires_at
+  ) VALUES ($1, $2, $3, $4, $5, $6)
   ON CONFLICT (request_id) DO NOTHING
 `;
 
