@@ -23,7 +23,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { type CaptureContext, captureDenseArray } from "@oaath/protocol";
+import { type CaptureContext, captureDenseArray, captureRecord } from "@oaath/protocol";
 import { type OaathCleanupResult, runOaathCleanup } from "./cleanup/coordinator.js";
 import {
   closeEffect,
@@ -45,8 +45,9 @@ import {
   type OaathConnection,
   type OaathIssuerCapability,
 } from "./client/connection.js";
-import { clientCapability, clientFail, exactClientRecord } from "./client/errors.js";
+import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
+import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
 import {
   captureChainCapability,
   type OaathCapabilityInvalidationCapability,
@@ -201,7 +202,38 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
   );
 }
 
-export function createOAAth(configuration: unknown): Readonly<Oaath> {
+/**
+ * The URL-only golden path, and the fully injected composition on the same
+ * constructor.
+ *
+ * ```ts
+ * const oaath = createOAAth({ url: "https://oaath.example" });
+ * const oaath = createOAAth(); // local development: http://localhost:8787
+ * ```
+ *
+ * A configuration carrying `binding` is the injected composition for
+ * deterministic tests and custom deployments; anything else is the URL mode,
+ * whose only normal production input is `url`.
+ */
+export function createOAAth(configuration: unknown = {}): Readonly<Oaath> {
+  const record = captureRecord(
+    configuration,
+    "OAAth configuration",
+    new WeakSet(),
+    clientFailure("oaath_client_input_invalid"),
+  );
+  if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
+  // Every URL-mode key is optional, so exactness here is only the closed key
+  // set: an unknown key fails instead of being silently ignored.
+  for (const key of Object.keys(record)) {
+    if (!SERVICE_REALM_KEYS.includes(key)) {
+      clientFail("oaath_client_input_invalid", "OAAth configuration contains an unknown field");
+    }
+  }
+  return createServiceRealm(record, composeInjectedRealm);
+}
+
+function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
   const record = exactClientRecord(
     configuration,

@@ -167,13 +167,44 @@ function relayKms(): RelayKms {
 }
 
 /** The relay's own clock is milliseconds; the SDK's protocol clock is seconds. */
-export function createRelay(clock: SecondsClock): (request: Request) => Promise<Response> {
+export function createRelay(
+  clock: SecondsClock,
+  options: Record<string, unknown> = {},
+): (request: Request) => Promise<Response> {
   return createRelayHandler({
     store: createMemoryRelayStore(),
     authentication: relayAuthentication(),
     kms: relayKms(),
     clock: { now: () => clock.now() * 1_000 },
+    ...options,
   });
+}
+
+/** Adapts one synthetic chain fixture into the relay's chain execution ports. */
+export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
+  const capability = fixture.capability;
+  return {
+    chainId: capability.chainId,
+    reads: (request: unknown) => capability.reads.read(request as never),
+    observation: (request: unknown) => capability.observation.read(request as never),
+    bundler: (request: unknown) => capability.bundler.probe(request as never),
+    quote: (request: unknown) => capability.quote(request as never),
+    // One submission settles per call: open, send once, close.
+    submission: async (request: unknown) => {
+      const session = (await capability.submission.open(request as never)) as {
+        readonly send: () => Promise<unknown>;
+        readonly close: () => Promise<void>;
+      };
+      try {
+        return await session.send();
+      } finally {
+        await session.close();
+      }
+    },
+    usage:
+      capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
+    feePayer: capability.feePayer,
+  };
 }
 
 function authorized(request: Request, token: string): Request {
@@ -517,6 +548,93 @@ export function signingProfiles() {
     owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
     session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
   };
+}
+
+export interface UrlRealmOptions {
+  readonly clock?: SecondsClock;
+  readonly chain?: ChainFixture;
+  readonly owner?: OwnerDecision;
+  /** Tampers with the served bootstrap document before the SDK parses it. */
+  readonly bootstrap?: (document: Record<string, unknown>) => unknown;
+}
+
+export interface UrlRealm {
+  readonly oaath: Readonly<Oaath>;
+  readonly clock: SecondsClock;
+  readonly chain: ChainFixture;
+  readonly stores: RealmStores;
+  readonly invalidations: () => number;
+  readonly fetched: readonly string[];
+}
+
+/**
+ * The URL-only realm against the real relay: the SDK receives one service URL
+ * and a client-authenticated transport; identity, account, chains, code
+ * pickup, and invalidation all ride the service. The owner console decides
+ * out of band as soon as a request is created, exactly like a phone would.
+ */
+export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
+  const clock = options.clock ?? createClock();
+  const chain = options.chain ?? createChainFixture();
+  const stores = createMemoryStores();
+  const relay = createRelay(clock, {
+    bootstrap: {
+      application: {
+        applicationId: "app-a",
+        applicationName: "OAAth Example",
+        clientId: "client-a",
+        redirectUris: [REDIRECT_URI],
+      },
+      userHandle: "user-1",
+      account: accountProfile,
+      ownerValidator: VALIDATOR,
+    },
+    chains: [relayChainPort(chain)],
+  });
+  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {});
+  let invalidations = 0;
+  const fetched: string[] = [];
+
+  // The owner decides as soon as the request exists; the SDK's default
+  // authorization then finds the released code through pickup polling.
+  const service = async (request: Request): Promise<Response> => {
+    fetched.push(`${request.method} ${new URL(request.url).pathname}`);
+    if (request.method === "POST" && new URL(request.url).pathname === "/invalidations") {
+      invalidations += 1;
+    }
+    if (
+      options.bootstrap &&
+      request.method === "GET" &&
+      new URL(request.url).pathname === "/bootstrap"
+    ) {
+      const response = await relay(authorized(request, CLIENT_TOKEN));
+      const document = (await response.json()) as Record<string, unknown>;
+      return new Response(JSON.stringify(options.bootstrap(document)), {
+        status: response.status,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const response = await relay(authorized(request, CLIENT_TOKEN));
+    if (
+      request.method === "POST" &&
+      new URL(request.url).pathname === "/authorization/requests" &&
+      response.status === 201
+    ) {
+      const created = (await response.clone().json()) as { readonly requestId: string };
+      await owner.capability.authorize({ requestId: created.requestId }).catch(() => undefined);
+    }
+    return response;
+  };
+
+  const oaath = createOAAth({
+    url: ISSUER_URL,
+    fetch: service,
+    origin: ORIGIN,
+    stores,
+    now: clock.now,
+  });
+
+  return { oaath, clock, chain, stores, invalidations: () => invalidations, fetched };
 }
 
 export interface RealmOptions {

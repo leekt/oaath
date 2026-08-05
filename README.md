@@ -56,24 +56,20 @@ as bounded, independently reviewed child PRs.
 
 ## Browser golden path
 
-`createOAAth` is the one supported composition. Every deployment-owned
-capability is injected: there is no preset system, no provider registry, and no
-hidden network default.
+`createOAAth` is the one supported constructor, and the OAAth service URL is
+the only deployment fact an application supplies. `connect()` bootstraps the
+authenticated, versioned service context — client identity, the logical
+account and owner credential, and the chains the service executes on — and
+the SDK derives the rest locally: the origin, a registered same-origin
+redirect target, a device identity, and a fresh session key. The application
+never holds an owner signer and cannot choose a different account, owner, or
+chain surface than the deployment registered.
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
 
-const oaath = createOAAth({
-  binding: { issuer, applicationId, applicationName, clientId, origin, redirectUri, deviceId, userHandle, account, operatorCredential },
-  issuer: { url: issuer, fetch, signOut },   // your fetch carries the credentials
-  authorization: { authorize },              // returns the code the owner released
-  invalidation: { invalidateCapability },    // proves the approval capability is dead
-  stores: { grants, operations, keys, cleanup, context },
-  chains: [{ chainId, reads, observation, bundler, submission, quote, usage, feePayer }],
-  signing: { owner, session },
-  localKeyIds: ["session-key"],
-  now: () => Math.floor(Date.now() / 1000),
-});
+const oaath = createOAAth({ url: process.env.OAATH_URL });
+// Local development: createOAAth() connects to http://localhost:8787.
 
 const connection = await oaath.connect();
 const grant =
@@ -91,11 +87,17 @@ await oaath.disconnect(grant); // revoke, signOut, forgetLocal, close
 ```
 
 Applications never handle permission ids, enable envelopes, operation journals,
-store revisions, or nonce recovery. Persistence is explicit: pass the in-memory
-backends or the IndexedDB ones from `openOaathDatabase`. IndexedDB keeps exactly
+store revisions, or nonce recovery. Persistence defaults to IndexedDB where it
+exists and memory elsewhere; both stay overridable. IndexedDB keeps exactly
 one current schema; a database that does not carry it is deleted and recreated
 rather than migrated, and key custody stores only non-extractable `CryptoKey`
 handles and exposes no export path.
+
+Every port the URL mode composes — the issuer transport, the owner-decision
+capability, the stores, the chain adapters, the signing profiles, the clock —
+remains an optional injected override on the same constructor for
+deterministic tests and custom deployments: pass a configuration carrying
+`binding` and the SDK composes exactly what you injected, fetching nothing.
 
 ## Kernel runtime
 

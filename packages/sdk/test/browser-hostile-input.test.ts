@@ -64,7 +64,9 @@ function expectClientError(action: () => unknown, code: string): void {
 
 describe("hostile input at the client boundary", () => {
   it("refuses a configuration that is not an exact record", () => {
-    for (const value of [null, undefined, 0, "config", [], () => undefined, new Map()]) {
+    // `undefined` is deliberately absent: no configuration at all is the
+    // URL-mode local development default, not hostile input.
+    for (const value of [null, 0, "config", [], () => undefined, new Map()]) {
       expectClientError(() => createOAAth(value), "oaath_client_input_invalid");
     }
     expectClientError(
