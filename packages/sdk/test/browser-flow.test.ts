@@ -57,9 +57,17 @@ describe("browser golden path", () => {
     expect(stored?.value.identity.userOperationHash).toBe(prepared.userOperationHash);
 
     await grant.revoke();
-    expect(grant.state).toBe("revoked");
+    // The replayable capability is dead, so nothing new can materialize, but
+    // the installed chain permission still needs owner-signed removal the
+    // application cannot mint: the Grant stays durably `revoking` rather than
+    // claiming a revocation no chain observed.
+    expect(grant.state).toBe("revoking");
     expect(realm.invalidations()).toBe(1);
     expect(realm.chain.sends).toHaveLength(1);
+    // A revoking Grant authorizes nothing new.
+    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_grant_inactive",
+    });
 
     await connection.close();
   });
@@ -82,7 +90,7 @@ describe("browser golden path", () => {
     await connection.close();
   });
 
-  it("executes covered calls with the session authority", async () => {
+  it("materializes on first use, then executes with the standard session authority", async () => {
     // With complete usage evidence the calls are covered and the decision
     // selects the session authority, which composes: every axis the approved
     // policy bounds — calls, value, the validity window, the per-chain operation
@@ -91,15 +99,29 @@ describe("browser golden path", () => {
     const covered = createRealm({ chain: createChainFixture({ usage: true }) });
     const sessionConnection = await covered.oaath.connect();
     const sessionGrant = await sessionConnection.requestPermission(permissionInput());
-    const sessionOperation = await sessionGrant.sendCalls(sendCallsInput());
-    expect((await sessionOperation.wait()).status).toBe("finalized");
-    expect(covered.chain.sends).toHaveLength(1);
-    const sessionPrepared = covered.chain.sends[0];
-    const envelope = covered.chain.signatures[0];
-    if (!sessionPrepared || !envelope) throw new Error("expected one session submission");
+
+    // First covered execution: the owner's replayable install approval is
+    // spent in Kernel's enable-replayable mode, so the permission installs and
+    // the call executes in one operation.
+    const first = await sessionGrant.sendCalls(sendCallsInput());
+    expect((await first.wait()).status).toBe("finalized");
+    const installOperation = covered.chain.sends[0];
+    if (!installOperation) throw new Error("expected the materializing submission");
+    expect((BigInt(installOperation.userOperation.nonce) >> 248n) & 0xffn).toBe(0x0cn);
+    expect((BigInt(installOperation.userOperation.nonce) >> 240n) & 0xffn).toBe(2n);
+
+    // Second execution: the chain is materialized, so the operation validates
+    // through the standard permission path.
+    const second = await sessionGrant.sendCalls(sendCallsInput());
+    expect((await second.wait()).status).toBe("finalized");
+    expect(covered.chain.sends).toHaveLength(2);
+    const sessionPrepared = covered.chain.sends[1];
+    const envelope = covered.chain.signatures[1];
+    if (!sessionPrepared || !envelope) throw new Error("expected one standard submission");
     // Kernel encodes the validation it must use in the nonce key: type 0x02 is a
     // permission, so the chain itself would refuse root authority for this
     // operation. Owner authority is never substituted for the approved session.
+    expect((BigInt(sessionPrepared.userOperation.nonce) >> 248n) & 0xffn).toBe(0n);
     expect((BigInt(sessionPrepared.userOperation.nonce) >> 240n) & 0xffn).toBe(2n);
     // The signature is Kernel's permission envelope: an empty slice per installed
     // policy, then the session key's signature last.

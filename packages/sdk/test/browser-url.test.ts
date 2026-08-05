@@ -42,7 +42,10 @@ describe("URL-only golden path", () => {
     ).toHaveLength(1);
 
     await grant.revoke();
-    expect(grant.state).toBe("revoked");
+    // The capability died through the service, but the installed chain
+    // permission awaits owner-signed removal: durably revoking, never a
+    // claimed revocation no chain observed.
+    expect(grant.state).toBe("revoking");
     expect(realm.invalidations()).toBe(1);
     await connection.close();
   });

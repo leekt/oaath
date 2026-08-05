@@ -34,6 +34,7 @@ export type {
   OaathSubmissionCapability,
   OaathSubmissionRequest,
 } from "./client/grant-handle.js";
+export { deriveSessionPolicyProfiles } from "./client/grant-handle.js";
 export type {
   OaathOperationHandle,
   OaathOperationOutcome,
@@ -76,8 +77,10 @@ export type {
 } from "./kernel/permission/materialize.js";
 export {
   approveKernelPermissionAllChain,
+  kernelAllChainCapabilityHash,
   materializeKernelPermission,
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+  parseKernelAllChainApproval,
 } from "./kernel/permission/materialize.js";
 export type {
   CompiledKernelPermissionPolicy,

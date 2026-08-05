@@ -82,6 +82,10 @@ import {
   type OperationStoreAdapter,
   type OperationStoreKey,
 } from "../store.js";
+import {
+  type KernelAllChainApproval,
+  materializeKernelPermission,
+} from "../kernel/permission/materialize.js";
 import type { OaathBinding } from "./binding.js";
 import { clientCapability, clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 import {
@@ -171,6 +175,13 @@ export interface CreateGrantHandleInput {
   readonly binding: Readonly<OaathBinding>;
   readonly request: Readonly<PermissionRequest>;
   readonly approvedPolicy: Readonly<GrantPolicy>;
+  /**
+   * The owner's replayable install approval the decision's capabilityHash
+   * binds, or null for a Grant persisted before approvals carried one. The
+   * first covered execution on a chain spends it in enable-replayable mode;
+   * without it no unmaterialized chain can execute.
+   */
+  readonly installApproval: Readonly<KernelAllChainApproval> | null;
   readonly record: GrantStoreRecord;
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
@@ -426,6 +437,8 @@ export function createGrantHandle(
   let closed = false;
   const observers = new Map<number, OperationObserver>();
   const handles: Readonly<OaathOperationHandle>[] = [];
+  /** Enable envelopes keyed by the exact operation hash each one authorizes. */
+  const enableSignatures = new Map<`0x${string}`, `0x${string}`>();
 
   function assertOpen(): void {
     if (closed) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -603,6 +616,14 @@ export function createGrantHandle(
     readonly calls: readonly Readonly<KernelV4Call>[];
     /** The proven authority; a denied decision never reaches a runner. */
     readonly signer: OaathExecutionSigner;
+    /**
+     * `enable-replayable` spends the owner's install approval on this chain:
+     * the prepared operation installs the permission and executes together,
+     * and its signature is Kernel's enable envelope rather than a plain
+     * session signature.
+     */
+    readonly mode: "standard" | "enable-replayable";
+    readonly installApproval: Readonly<KernelAllChainApproval> | null;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
@@ -636,30 +657,52 @@ export function createGrantHandle(
                 calls: spec.calls,
               }),
             );
-            return spec.runtime.prepareOperation({
-              kind: spec.kind,
+            const fields = {
               grantId: spec.grantId,
               account: spec.descriptor,
               nonceKey: quote.nonceKey,
               sequence: quote.sequence,
               calls: [...spec.calls],
               gas: quote.gas,
-            });
+            };
+            if (spec.mode === "enable-replayable") {
+              if (spec.installApproval === null) {
+                return unsupported("grant_capability_unavailable");
+              }
+              // Prepared identity and enable envelope are produced together;
+              // the envelope is held beside the hash it authorizes so the
+              // submission below can never pair it with another operation.
+              const materialized = await materializeKernelPermission({
+                ...fields,
+                approval: spec.installApproval,
+                runtime: spec.runtime,
+              });
+              enableSignatures.set(materialized.prepared.userOperationHash, materialized.signature);
+              return materialized.prepared;
+            }
+            return spec.runtime.prepareOperation({ kind: spec.kind, ...fields });
           },
           close: async () => undefined,
         },
         submission: {
-          openSubmission: async (prepared: PreparedUserOperation) =>
-            captureSubmissionSession(
+          openSubmission: async (prepared: PreparedUserOperation) => {
+            // The authority signs the already-durable snapshot; the route was
+            // decided before any signature existed and cannot change it. An
+            // enable-mode operation submits the envelope minted beside its
+            // exact hash and nothing else.
+            const envelope = enableSignatures.get(prepared.userOperationHash);
+            if (spec.mode === "enable-replayable" && envelope === undefined) {
+              return unsupported("materialization_signature_unavailable");
+            }
+            return captureSubmissionSession(
               await chain.submission.open({
                 prepared,
-                // The authority signs the already-durable snapshot; the route was
-                // decided before any signature existed and cannot change it.
-                signature: await spec.runtime.signOperation(prepared),
+                signature: envelope ?? (await spec.runtime.signOperation(prepared)),
                 route: spec.decision.route,
                 feePayer: spec.decision.feePayer,
               }),
-            ),
+            );
+          },
           close: async () => undefined,
         },
       });
@@ -749,6 +792,62 @@ export function createGrantHandle(
     const runtime = sessionRuntime(chainId);
     const descriptor = await accountDescriptor(chainId);
     const key = Object.freeze({ grantId: grant.identity.grantId, chainId });
+
+    // One approval, materialized independently per chain: the first covered
+    // execution on an unmaterialized chain spends the owner's replayable
+    // install approval in enable mode and executes together with it; every
+    // later operation validates through the standard permission path. The
+    // durable Grant record owns each chain's state, committed before any
+    // signature or send exists.
+    if (runtime.validation.kind !== "permission") {
+      return unsupported("session_validation_not_permission");
+    }
+    const binding = Object.freeze({
+      chainId,
+      account: descriptor.account,
+      permissionId: runtime.validation.permissionId,
+    });
+    const materialization = grant.materializations.find(
+      (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+    );
+    let mode: "standard" | "enable-replayable" = "standard";
+    let latest = grant;
+    if (materialization === undefined || materialization.state === "unmaterialized") {
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+      if (materialization === undefined) {
+        latest = await commit(
+          transition(latest, {
+            type: "record_unmaterialized",
+            identity: latest.identity,
+            binding,
+            recordedAt: input.now(),
+          }),
+        );
+      }
+      latest = await commit(
+        transition(latest, {
+          type: "begin_materialization",
+          identity: latest.identity,
+          binding,
+          startedAt: input.now(),
+        }),
+      );
+    } else if (materialization.state === "installing") {
+      // A prior materialization attempt exists; the lane below owns its exact
+      // identity and never submits twice. Re-entering enable mode can only
+      // observe or, on a terminal lane, mint an operation the chain refuses
+      // because the install nonce is spent — never a second authority.
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+    } else if (materialization.state !== "installed") {
+      return unsupported(`grant_materialization_${materialization.state}`);
+    }
+
     const shape = {
       chainId,
       kind: "execution" as const,
@@ -756,6 +855,8 @@ export function createGrantHandle(
       descriptor,
       calls,
       signer: "session" as const,
+      mode,
+      installApproval: input.installApproval,
       decision,
       grantId: grant.identity.grantId,
     };
@@ -772,6 +873,28 @@ export function createGrantHandle(
     }
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
+    if (mode === "enable-replayable" && result.status === "observed") {
+      const value = result.record.value;
+      if (value.state === "finalized" && value.inclusion.outcome === "success") {
+        // Inclusion and finality of the enable-mode operation prove the
+        // permission is installed on this chain; the chain is ready for
+        // standard validation from here on.
+        latest = await commit(
+          transition(latest, {
+            type: "record_installed",
+            identity: latest.identity,
+            binding,
+            installation: {
+              ...binding,
+              kind: "permission_present",
+              blockNumber: value.finality.blockNumber,
+              blockHash: value.finality.blockHash,
+              observedAt: value.finality.observedAt,
+            },
+          }),
+        );
+      }
+    }
     const handle = createOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
       key,
@@ -848,9 +971,16 @@ export function createGrantHandle(
         }),
       );
     }
-    // A chain-local installed permission must be removed on that chain first.
-    // Materialization and its revocation Operation are owned by the all-chain
-    // materialization path, not by this handle.
+    // The replayable capability dies first, so no new chain can materialize
+    // while installed permissions await removal.
+    if (grant.capabilityInvalidation === null) {
+      grant = await commit(await invalidateCapability(grant));
+    }
+    // A chain-local installed permission must be removed on that chain by an
+    // owner-signed revocation operation, which this handle cannot mint — the
+    // application never holds owner authority. The Grant stays durably
+    // `revoking`: it authorizes nothing new, and it completes only when every
+    // chain's removal is conclusively observed.
     if (
       grant.materializations.some(
         (entry) =>
@@ -859,10 +989,7 @@ export function createGrantHandle(
           entry.state !== "revoked",
       )
     ) {
-      unsupported("chain_permission_removal_unavailable");
-    }
-    if (grant.capabilityInvalidation === null) {
-      grant = await commit(await invalidateCapability(grant));
+      return;
     }
     await commit(
       transition(grant, {

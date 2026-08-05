@@ -156,7 +156,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toMatchObject({ status: "conflict" });
     // The loser wrote nothing: the winning terminal state stands.
     const latest = await otherStore.get(grantId);
-    expect(latest?.value.state).toBe("revoked");
+    expect(latest?.value.state).toBe("revoking");
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 

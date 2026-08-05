@@ -11,6 +11,7 @@
  */
 import {
   hashPermissionRequest,
+  parseGrantPolicy,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -25,7 +26,10 @@ import {
 } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
 import {
+  approveKernelPermissionAllChain,
+  createKernelRuntime,
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
@@ -33,6 +37,10 @@ import {
   createMemoryOperationStoreAdapter,
   createOAAth,
   ecdsaKey,
+  type KernelAllChainApproval,
+  kernelAllChainCapabilityHash,
+  ownerOperator,
+  sessionOperator,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
@@ -223,13 +231,58 @@ export interface OwnerDecision {
 }
 
 /**
- * The owner console: it reads the reviewed scope from the relay and posts the
- * terminal decision, exactly as a separate owner device would.
+ * Derives the owner's replayable install approval exactly as an owner device
+ * would: the account from the owner's own initial packages, the permission
+ * packages from the approved policy and the operator credential, and one
+ * owner signature over the chain-agnostic install digest.
+ */
+async function ownerInstallApproval(
+  reads: OaathChainCapability["reads"],
+  approvedPolicy: unknown,
+  operatorAddress: `0x${string}`,
+): Promise<Readonly<KernelAllChainApproval>> {
+  const owner = ecdsaKey({ account: ownerAccount, validator: VALIDATOR });
+  const ownerRuntime = createKernelRuntime({
+    deployment,
+    operator: ownerOperator({ key: owner }),
+    reads,
+  });
+  const descriptor = await ownerRuntime.bindAccount({
+    accountIndex: "0",
+    initialPackages: [...ownerRuntime.packages],
+  });
+  // The permission packages depend only on the operator's public identity —
+  // the credential the owner reviews — never on a signing capability, so the
+  // owner derives them independently from the reviewed scope.
+  const sessionRuntime = createKernelRuntime({
+    deployment,
+    operator: sessionOperator({
+      key: ecdsaKey({
+        account: { address: operatorAddress, sign: async () => "0x" },
+        validator: `0x${"01".repeat(20)}`,
+      }),
+      policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
+    }),
+    reads,
+  });
+  return approveKernelPermissionAllChain({
+    owner,
+    account: descriptor.account,
+    installNonce: "0",
+    packages: [...sessionRuntime.packages],
+  });
+}
+
+/**
+ * The owner console: it reads the reviewed scope from the relay, derives and
+ * signs the replayable install approval, and posts the terminal decision,
+ * exactly as a separate owner device would.
  */
 export function createOwnerAuthorization(
   relay: (request: Request) => Promise<Response>,
   clock: SecondsClock,
   options: OwnerDecision = {},
+  reads: OaathChainCapability["reads"] = createChainFixture().capability.reads,
 ) {
   const calls: string[] = [];
   return {
@@ -247,24 +300,34 @@ export function createOwnerAuthorization(
         ).json()) as { readonly requestedScope: string };
         const scope = JSON.parse(state.requestedScope) as Record<string, unknown>;
         const full = { ...scope, requestId: request.requestId };
-        const decision: Record<string, unknown> =
-          options.outcome === "reject"
-            ? {
-                version: OAATH_PERMISSION_DECISION_VERSION,
-                kind: "reject",
-                requestId: request.requestId,
-                requestHash: hashPermissionRequest(full),
-                decidedAt: clock.now(),
-              }
-            : {
-                version: OAATH_PERMISSION_DECISION_VERSION,
-                kind: "approve",
-                requestId: request.requestId,
-                requestHash: hashPermissionRequest(full),
-                decidedAt: clock.now(),
-                approvedPolicy: options.policy ? options.policy(scope.policy) : scope.policy,
-                capabilityHash: CAPABILITY_HASH,
-              };
+        let decision: Record<string, unknown>;
+        if (options.outcome === "reject") {
+          decision = {
+            version: OAATH_PERMISSION_DECISION_VERSION,
+            kind: "reject",
+            requestId: request.requestId,
+            requestHash: hashPermissionRequest(full),
+            decidedAt: clock.now(),
+          };
+        } else {
+          const approvedPolicy = options.policy ? options.policy(scope.policy) : scope.policy;
+          const operator = scope.operatorCredential as { readonly address: `0x${string}` };
+          const installApproval = await ownerInstallApproval(
+            reads,
+            approvedPolicy,
+            operator.address,
+          );
+          decision = {
+            version: OAATH_PERMISSION_DECISION_VERSION,
+            kind: "approve",
+            requestId: request.requestId,
+            requestHash: hashPermissionRequest(full),
+            decidedAt: clock.now(),
+            approvedPolicy,
+            capabilityHash: kernelAllChainCapabilityHash(installApproval),
+            installApproval,
+          };
+        }
         const body = {
           outcome: "approved",
           artifact: JSON.stringify(options.artifact ? options.artifact(decision) : decision),
@@ -591,7 +654,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
     },
     chains: [relayChainPort(chain)],
   });
-  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {});
+  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let invalidations = 0;
   const fetched: string[] = [];
 
@@ -668,7 +731,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
   const relay = options.relay ?? createRelay(clock);
   const stores = options.stores ?? createMemoryStores();
   const chain = options.chain ?? createChainFixture();
-  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {});
+  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let signOuts = 0;
   let invalidations = 0;
 
