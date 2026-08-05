@@ -525,6 +525,8 @@ export interface RealmOptions {
   readonly stores?: RealmStores;
   readonly chain?: ChainFixture;
   readonly owner?: OwnerDecision;
+  /** Overrides the signing keys, e.g. with keys the binding never approved. */
+  readonly signing?: ReturnType<typeof signingProfiles>;
   readonly issuerSignOut?: (() => Promise<unknown>) | null;
   readonly invalidate?: (
     request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
@@ -581,7 +583,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
     },
     stores,
     chains: [chain.capability],
-    signing: signingProfiles(),
+    signing: options.signing ?? signingProfiles(),
     localKeyIds: ["session-key"],
     now: clock.now,
   });

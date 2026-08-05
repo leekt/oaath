@@ -8,9 +8,11 @@
  * @author taek <leekt216@gmail.com>
  */
 import { IDBFactory } from "fake-indexeddb";
+import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
   captureOaathBinding,
+  ecdsaKey,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbOperationStoreAdapter,
   createMemoryCleanupStore,
@@ -38,6 +40,7 @@ import {
   permissionInput,
   sendCallsInput,
   signingProfiles,
+  VALIDATOR,
   TARGET,
 } from "./support/browser.js";
 
@@ -138,6 +141,73 @@ describe("hostile input at the client boundary", () => {
         expect.objectContaining({ name: "OaathClientError" }),
       );
     }
+  });
+
+  it("refuses signing keys that are not the approved credentials", () => {
+    // The binding carries the credential profiles the owner reviews; a realm
+    // whose executable keys are not exactly those credentials never composes,
+    // so approval and execution cannot name different authorities.
+    const stranger = ecdsaKey({
+      account: privateKeyToAccount(`0x${"77".repeat(32)}`),
+      validator: VALIDATOR,
+    });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: stranger, session: signingProfiles().session },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "owner_credential_mismatch",
+      }),
+    );
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: signingProfiles().owner, session: stranger },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "operator_credential_mismatch",
+      }),
+    );
+    // A consumer-authored kind has no approvable credential shape at all: it
+    // derives no profile, so it can never match a reviewed approval.
+    const approved = signingProfiles();
+    const custom = Object.freeze({
+      ...approved.owner,
+      kind: "custom:evil" as const,
+    });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: custom, session: approved.session },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "owner_credential_mismatch",
+      }),
+    );
+    // A key whose public material lies about its shape derives nothing either.
+    const malformed = Object.freeze({ ...approved.session, publicMaterial: "0x1234" as const });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: approved.owner, session: malformed },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "operator_credential_mismatch",
+      }),
+    );
   });
 
   it("refuses a binding whose parts do not agree", () => {

@@ -141,6 +141,9 @@ export {
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
+  sameKernelAccountProfile,
+  sameOperatorCredentialProfile,
+  sameOwnerCredentialProfile,
 } from "./identity-profile.js";
 export type {
   AccountId,

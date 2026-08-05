@@ -95,6 +95,9 @@ describe("package boundary", () => {
       "parseTimestamp",
       "protocolErrorStatus",
       "sameGrantIdentity",
+      "sameKernelAccountProfile",
+      "sameOperatorCredentialProfile",
+      "sameOwnerCredentialProfile",
       "serverErrorEnvelope",
     ]);
   });

@@ -46,6 +46,7 @@ import {
   type OaathIssuerCapability,
 } from "./client/connection.js";
 import { clientCapability, clientFail, exactClientRecord } from "./client/errors.js";
+import { requireApprovedKeyBinding } from "./client/key-credential.js";
 import {
   captureChainCapability,
   type OaathCapabilityInvalidationCapability,
@@ -272,6 +273,11 @@ export function createOAAth(configuration: unknown): Readonly<Oaath> {
   );
   const ownerKey = keyProfile(signing.owner, "owner key profile", context);
   const sessionKey = keyProfile(signing.session, "session key profile", context);
+  // One approved credential profile identifies one executable key: the realm
+  // refuses to compose at all when a signing key is not exactly the credential
+  // the binding carries, so approval and execution can never name different
+  // authorities.
+  requireApprovedKeyBinding({ binding, ownerKey, sessionKey });
   const keyIds = localKeyIds(record.localKeyIds, context);
   const now = clientCapability<() => number>(record.now, "clock");
 
