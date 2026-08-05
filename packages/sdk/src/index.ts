@@ -290,6 +290,7 @@ export type {
   OaathExecutionRoute,
   OaathExecutionRouteReason,
   OaathExecutionSigner,
+  OaathExecutionSignerDecision,
   OaathExecutionSignerReason,
   OaathFeePayerDescriptor,
   RoutingErrorCode,

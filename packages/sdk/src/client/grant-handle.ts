@@ -8,17 +8,21 @@
  * ```text
  * sendCalls  capability diagnosis
  *            -> session coverage from the approved policy
+ *            -> scope denial unless conclusively covered (before probe, quote,
+ *               journal, signature, and send; never an owner fallback)
  *            -> bundler probe
  *            -> decideExecution (pre-sign; no key, no prepared operation)
- *            -> createKernelRuntime for the decided authority
+ *            -> createKernelRuntime for the session authority
  *            -> prepareOperation through the runner (durable before any send)
  *            -> the caller-supplied submission capability
  *            -> observation
  * ```
  *
- * A decided session authority that cannot be composed fails closed. It is never
- * downgraded to owner authority, because owner authority is wider than the
- * session policy the owner approved.
+ * `sendCalls` composes only session authority. Owner authority is wider than
+ * the session policy the owner approved, so no coverage outcome — uncovered,
+ * unreadable, or missing usage evidence — may select it; those fail closed
+ * with `oaath_client_scope_denied`. The owner runtime remains only for account
+ * identity binding and explicit root lifecycle work.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -603,6 +607,8 @@ export function createGrantHandle(
     readonly runtime: Readonly<KernelRuntime>;
     readonly descriptor: Readonly<KernelV4AccountDescriptor>;
     readonly calls: readonly Readonly<KernelV4Call>[];
+    /** The proven authority; a denied decision never reaches a runner. */
+    readonly signer: OaathExecutionSigner;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
@@ -631,7 +637,7 @@ export function createGrantHandle(
               await chain.quote({
                 chainId: spec.chainId,
                 kind: spec.kind,
-                signer: spec.decision.signer,
+                signer: spec.signer,
                 account: spec.descriptor.account,
                 calls: spec.calls,
               }),
@@ -710,6 +716,19 @@ export function createGrantHandle(
 
     requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
     const coverage = await sessionCoverage(grant, chainId, calls);
+    // A Grant may authorize at most the owner-approved scope. Denial happens
+    // here — before the bundler probe, the quote, the durable journal, any
+    // signature, and any send — and it is conclusive: unreadable or missing
+    // usage evidence is not coverage.
+    if (coverage !== "covered") {
+      return clientFail(
+        "oaath_client_scope_denied",
+        coverage === "uncovered"
+          ? "the calls are outside the approved Grant scope"
+          : "Grant scope coverage could not be conclusively evaluated",
+        coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
+      );
+    }
     const bundler = await probeBundlerCapability({
       capability: chain.bundler,
       request: { chainId, entryPoint: deployment.entryPoint.address },
@@ -728,11 +747,12 @@ export function createGrantHandle(
         decision.reasons.join(","),
       );
     }
-    if (decision.signer === "session") {
-      requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
-      requireKernelCapability(chainId, "hook_call");
-    }
-    const runtime = decision.signer === "session" ? sessionRuntime(chainId) : ownerRuntime(chainId);
+    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
+    requireKernelCapability(chainId, "hook_call");
+    // Coverage was proven above and the decision table maps covered execution
+    // to the session signer, so this handle never composes owner authority for
+    // a send. `ownerRuntime` remains only for account identity binding.
+    const runtime = sessionRuntime(chainId);
     const descriptor = await accountDescriptor(chainId);
     const key = Object.freeze({ grantId: grant.identity.grantId, chainId });
     const shape = {
@@ -741,6 +761,7 @@ export function createGrantHandle(
       runtime,
       descriptor,
       calls,
+      signer: "session" as const,
       decision,
       grantId: grant.identity.grantId,
     };

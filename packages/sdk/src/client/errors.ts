@@ -38,6 +38,8 @@ export type OaathClientErrorCode =
   | "oaath_client_permission_rejected"
   /** The Grant is not active, or is expired, revoking, or revoked. */
   | "oaath_client_grant_inactive"
+  /** The calls are not conclusively covered by the approved Grant scope. */
+  | "oaath_client_scope_denied"
   /** Local durable state disagrees with itself, or another writer won. */
   | "oaath_client_state_conflict"
   /** Durable local storage is unavailable or its commit is unverifiable. */

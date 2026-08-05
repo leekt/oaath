@@ -80,22 +80,24 @@ const DECISION_TABLE: readonly string[] = [
   "execution/covered/unsupported/none -> session/none",
   "execution/covered/unreadable/payer -> session/bundler",
   "execution/covered/unreadable/none -> session/bundler",
-  "execution/uncovered/available/payer -> owner/bundler",
-  "execution/uncovered/available/none -> owner/bundler",
-  "execution/uncovered/absent/payer -> owner/entrypoint-handleops",
-  "execution/uncovered/absent/none -> owner/none",
-  "execution/uncovered/unsupported/payer -> owner/entrypoint-handleops",
-  "execution/uncovered/unsupported/none -> owner/none",
-  "execution/uncovered/unreadable/payer -> owner/bundler",
-  "execution/uncovered/unreadable/none -> owner/bundler",
-  "execution/unreadable/available/payer -> owner/bundler",
-  "execution/unreadable/available/none -> owner/bundler",
-  "execution/unreadable/absent/payer -> owner/entrypoint-handleops",
-  "execution/unreadable/absent/none -> owner/none",
-  "execution/unreadable/unsupported/payer -> owner/entrypoint-handleops",
-  "execution/unreadable/unsupported/none -> owner/none",
-  "execution/unreadable/unreadable/payer -> owner/bundler",
-  "execution/unreadable/unreadable/none -> owner/bundler",
+  // Owner authority is wider than the approved session scope, so uncovered or
+  // inconclusively covered execution selects no authority and no route at all.
+  "execution/uncovered/available/payer -> none/none",
+  "execution/uncovered/available/none -> none/none",
+  "execution/uncovered/absent/payer -> none/none",
+  "execution/uncovered/absent/none -> none/none",
+  "execution/uncovered/unsupported/payer -> none/none",
+  "execution/uncovered/unsupported/none -> none/none",
+  "execution/uncovered/unreadable/payer -> none/none",
+  "execution/uncovered/unreadable/none -> none/none",
+  "execution/unreadable/available/payer -> none/none",
+  "execution/unreadable/available/none -> none/none",
+  "execution/unreadable/absent/payer -> none/none",
+  "execution/unreadable/absent/none -> none/none",
+  "execution/unreadable/unsupported/payer -> none/none",
+  "execution/unreadable/unsupported/none -> none/none",
+  "execution/unreadable/unreadable/payer -> none/none",
+  "execution/unreadable/unreadable/none -> none/none",
   "revocation/covered/available/payer -> owner/bundler",
   "revocation/covered/available/none -> owner/bundler",
   "revocation/covered/absent/payer -> owner/entrypoint-handleops",
@@ -161,6 +163,12 @@ describe("routing decision", () => {
               ? "session_calls_uncovered"
               : "session_coverage_unreadable",
       );
+      if (input.operationKind === "execution" && input.sessionCoverage !== "covered") {
+        // A denied decision carries only the denial: no route reason, no fee
+        // payer reason, no submission surface to explain.
+        expect(decision.reasons).toHaveLength(1);
+        continue;
+      }
       expect(bundlerReason).toBe(`bundler_${input.bundler}`);
       if (input.bundler === "available" || input.bundler === "unreadable") {
         // An inconclusive or healthy bundler never consults the fee payer.
@@ -198,7 +206,11 @@ describe("routing decision", () => {
           bundler: "unreadable",
           feePayer,
         });
-        expect(decision.route).toBe("bundler");
+        // A denied signer denies the route; otherwise an unreadable bundler
+        // stays on the bundler route. Neither authorizes the fallback.
+        expect(decision.route).toBe(
+          operationKind === "execution" && sessionCoverage !== "covered" ? "none" : "bundler",
+        );
         expect(decision.feePayer).toBeNull();
         expect(decision.reasons).not.toContain("fee_payer_configured");
       }

@@ -276,7 +276,11 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
 }
 
 export interface ChainFixtureOptions {
-  /** Complete finalized usage evidence enables session coverage. */
+  /**
+   * Complete finalized usage evidence enables session coverage. Defaults to
+   * true — the golden path is session execution. `false` removes the usage
+   * capability, which makes coverage inconclusive and denies sendCalls.
+   */
   readonly usage?: boolean;
   readonly bundler?: "available" | "absent" | "unsupported" | "unreadable";
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
@@ -463,7 +467,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       };
     },
     usage:
-      options.usage === true
+      options.usage !== false
         ? async (request: Readonly<{ grantId: string; chainId: number }>) => ({
             version: "oaath.grant-policy-usage/v1",
             status: "complete",

@@ -64,18 +64,27 @@ describe("browser golden path", () => {
     await connection.close();
   });
 
-  it("routes an uncovered call to owner authority and a covered call to the session", async () => {
-    const uncovered = createRealm();
-    const connection = await uncovered.oaath.connect();
+  it("denies inconclusive coverage before any probe, quote, or send", async () => {
+    // No finalized usage evidence exists, so coverage is inconclusive. A Grant
+    // may authorize at most the approved scope, so the send fails closed with
+    // scope denial — it is never widened to owner authority — and nothing
+    // reaches the quote or submission transports.
+    const unreadable = createRealm({ chain: createChainFixture({ usage: false }) });
+    const connection = await unreadable.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
-    // No finalized usage evidence exists, so coverage is inconclusive and the
-    // decision table requires owner authority; the send still completes.
-    const operation = await grant.sendCalls(sendCallsInput());
-    expect((await operation.wait()).status).toBe("finalized");
+    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_scope_denied",
+      source: "session_coverage_unreadable",
+    });
+    expect(unreadable.chain.quotes).toBe(0);
+    expect(unreadable.chain.sends).toHaveLength(0);
     await connection.close();
+  });
 
-    // With complete usage evidence the same calls are covered and the decision
-    // selects the session authority, which now composes: every axis the approved
+  it("executes covered calls with the session authority", async () => {
+    // With complete usage evidence the calls are covered and the decision
+    // selects the session authority, which composes: every axis the approved
     // policy bounds — calls, value, the validity window, the per-chain operation
     // count — has a pinned reviewed policy module, so the permission expresses the
     // approved scope exactly and the session key signs the operation itself.
@@ -185,13 +194,21 @@ describe("browser golden path", () => {
     const realm = createRealm({ chain: createChainFixture({ usage: true }) });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
-    // A different target is uncovered, so the decision requires owner authority
-    // and the send proceeds under root authority the owner already holds.
-    const operation = await grant.sendCalls({
-      chain: CHAIN_ID,
-      calls: [{ target: `0x${"33".repeat(20)}`, value: "0", data: CALL_DATA }],
+    // A different target is conclusively outside the approved scope. The Grant
+    // never widens to root authority: the send is denied before any signature
+    // or submission exists.
+    await expect(
+      grant.sendCalls({
+        chain: CHAIN_ID,
+        calls: [{ target: `0x${"33".repeat(20)}`, value: "0", data: CALL_DATA }],
+      }),
+    ).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_scope_denied",
+      source: "session_calls_uncovered",
     });
-    expect((await operation.wait()).status).toBe("finalized");
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.sends).toHaveLength(0);
     await connection.close();
   });
 
