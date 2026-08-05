@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import {
@@ -14,7 +15,7 @@ import {
   canonicalDisplay,
   captureCanonicalDisplay,
   captureOperationTransactionHash,
-  captureSponsorship,
+  captureZeroDevSponsorship,
   createLiveUserOperationObserver,
   createStackOperationObserver,
   DOCUMENTED_LIVE_FLOW_REQUESTS,
@@ -29,7 +30,6 @@ import {
   operationAction,
   pairingSecretMayRender,
   permissionMaterializedAfter,
-  sessionPreparationRefusal,
   submitOnce,
   validateBundlerAcceptance,
   validateOwnedLocalFinalizedUserOperation,
@@ -37,13 +37,15 @@ import {
 } from "./operation.mjs";
 
 const validSponsorship = Object.freeze({
-  callGasLimit: "0x1",
-  verificationGasLimit: "0x2",
-  preVerificationGas: "0x3",
-  paymaster: `0x${"11".repeat(20)}`,
-  paymasterVerificationGasLimit: "0x4",
-  paymasterPostOpGasLimit: "0x5",
-  paymasterData: "0x1234",
+  callGasLimit: 1n,
+  verificationGasLimit: 2n,
+  preVerificationGas: 3n,
+  paymaster: `0x${"Ab".repeat(20)}`,
+  paymasterVerificationGasLimit: 4n,
+  paymasterPostOpGasLimit: 5n,
+  paymasterData: "0xABCD",
+  maxFeePerGas: 6n,
+  maxPriorityFeePerGas: 7n,
 });
 
 test("instruments the exact worst-case live RPC call graph under one hard budget", () => {
@@ -71,6 +73,10 @@ test("instruments the exact worst-case live RPC call graph under one hard budget
     call("eth_getUserOperationReceipt");
   assert.equal(budget.snapshot().count, DOCUMENTED_LIVE_FLOW_REQUESTS);
   assert.equal(DOCUMENTED_LIVE_FLOW_REQUESTS, 17);
+  assert.equal(
+    budget.snapshot().methods.some(([method]) => method === "zd_sponsorUserOperation"),
+    true,
+  );
   assert.equal(LOCAL_FINALITY_MAX_ANCESTRY_DEPTH, 8);
   while (budget.snapshot().count < LIVE_RPC_MAX_REQUESTS) call("headroom");
   assert.throws(() => call("one-too-many"), {
@@ -95,6 +101,8 @@ test("README documents the exported live budget without drift", () => {
     ),
   );
   assert.match(readme, /At most \*\*four\*\* one-second-spaced transaction-discovery/u);
+  assert.match(readme, /standard ZeroDev bundler and paymaster/u);
+  assert.doesNotMatch(readme, /provider=ULTRA_RELAY/u);
   assert.match(readme, /\*\*10 second\*\* timeout/u);
   assert.match(readme, /`retryCount: 0`/u);
   assert.match(readme, /no retry\s+and no\s+hidden fallback/u);
@@ -128,32 +136,67 @@ test("live transport disables hidden retries", () => {
   assert.ok(Object.isFrozen(LIVE_TRANSPORT_CONFIG));
 });
 
-test("captures canonical sponsorship quantities before BigInt conversion", () => {
-  const captured = captureSponsorship(validSponsorship);
+test("official ZeroDev SDK emits one structured v0.7 sponsorship request", async () => {
+  let request;
+  const entryPointAddress = "0x0000000071727de22e5e9d8baf0edac6f37da032";
+  await sponsorZeroDevUserOperation(
+    {
+      chain: { id: 421614 },
+      request: async (value) => {
+        request = value;
+        return {
+          callGasLimit: "0x1",
+          verificationGasLimit: "0x2",
+          preVerificationGas: "0x3",
+          paymaster: `0x${"11".repeat(20)}`,
+          paymasterVerificationGasLimit: "0x4",
+          paymasterPostOpGasLimit: "0x5",
+          paymasterData: "0x1234",
+          maxFeePerGas: "0x6",
+          maxPriorityFeePerGas: "0x7",
+        };
+      },
+    },
+    {
+      userOperation: {
+        sender: `0x${"22".repeat(20)}`,
+        nonce: 0n,
+        callData: "0x",
+        signature: `0x${"00".repeat(65)}`,
+        chainId: 421614,
+        entryPointAddress,
+      },
+    },
+  );
+  assert.equal(request.method, "zd_sponsorUserOperation");
+  assert.equal(request.params.length, 1);
+  assert.equal(request.params[0].chainId, 421614);
+  assert.equal(request.params[0].entryPointAddress, entryPointAddress);
+  assert.equal(request.params[0].shouldConsume, true);
+  assert.equal("sponsorshipPolicyData" in request.params[0], false);
+  assert.equal(request.params[0].userOp.signature, `0x${"00".repeat(65)}`);
+});
+
+test("captures the official SDK sponsorship result before hash binding", () => {
+  const captured = captureZeroDevSponsorship(validSponsorship);
   assert.equal(captured.callGasLimit, "1");
+  assert.equal(captured.maxFeePerGas, "6");
+  assert.equal(captured.paymaster, `0x${"ab".repeat(20)}`);
+  assert.equal(captured.paymasterData, "0xabcd");
   assert.ok(Object.isFrozen(captured));
 });
 
-test("rejects malformed or ambiguous sponsorship wire values", () => {
-  const malformed = [
-    { callGasLimit: true },
-    { callGasLimit: 1 },
+test("rejects malformed SDK sponsorship results", () => {
+  for (const change of [
     { callGasLimit: "1" },
-    { callGasLimit: " 0x1" },
-    { callGasLimit: "+0x1" },
-    { callGasLimit: "0x01" },
-    { callGasLimit: "0xA" },
-    { callGasLimit: "0x" },
-    { callGasLimit: `0x1${"0".repeat(64)}` },
-    { paymaster: `0x${"AA".repeat(20)}` },
+    { callGasLimit: -1n },
+    { callGasLimit: 1n << 256n },
     { paymaster: "0x11" },
     { paymasterData: "0x1" },
-    { paymasterData: "0xzz" },
-    { extra: "0x0" },
-  ];
-  for (const change of malformed)
-    assert.throws(() => captureSponsorship({ ...validSponsorship, ...change }), {
-      message: "zerodev_sponsorship_response_invalid",
+    { extra: 0n },
+  ])
+    assert.throws(() => captureZeroDevSponsorship({ ...validSponsorship, ...change }), {
+      message: "zerodev_sponsorship_invalid",
     });
 });
 
@@ -624,14 +667,6 @@ test("coherent forged live views remain proof-unavailable and retry never resubm
   assert.deepEqual(
     calls.map(([method]) => method),
     ["eth_getUserOperationReceipt", "eth_getUserOperationReceipt"],
-  );
-  assert.equal(
-    sessionPreparationRefusal({
-      live: true,
-      permissionMaterialized: false,
-      activeOperation: operation,
-    }),
-    "permission_unproved",
   );
 });
 

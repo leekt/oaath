@@ -23,7 +23,7 @@ export const LIVE_RECEIPT_POLL_INTERVAL_MS = 1_000;
 export const DOCUMENTED_LIVE_FLOW_REQUESTS =
   10 + // owner/session binding misses with immutable evidence cached
   1 + // one fresh EntryPoint nonce read
-  1 + // one sponsorship
+  1 + // one standard ZeroDev paymaster sponsorship
   1 + // one submission
   LIVE_RECEIPT_POLL_ATTEMPTS; // bounded same-hash transaction discovery only
 
@@ -69,8 +69,8 @@ export class LiveRequestBudget {
 }
 
 const UINT256_MAX = (1n << 256n) - 1n;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
-const DATA = /^0x(?:[0-9a-f]{2})*$/u;
+const ADDRESS = /^0x[0-9a-f]{40}$/iu;
+const DATA = /^0x(?:[0-9a-f]{2})*$/iu;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const lower = (value) => (typeof value === "string" ? value.toLowerCase() : "");
@@ -102,16 +102,14 @@ export const exactKeys = (value, keys) =>
   !Array.isArray(value) &&
   Object.keys(value).sort().join(",") === [...keys].sort().join(",");
 
-function quantity(value) {
-  if (typeof value !== "string" || !QUANTITY.test(value))
-    throw new Error("zerodev_sponsorship_response_invalid");
-  const parsed = BigInt(value);
-  if (parsed > UINT256_MAX) throw new Error("zerodev_sponsorship_response_invalid");
-  return parsed.toString();
-}
+const capturedUint = (value) => {
+  if (typeof value !== "bigint" || value < 0n || value > UINT256_MAX)
+    throw new Error("zerodev_sponsorship_invalid");
+  return value.toString();
+};
 
-/** Exact-captures the hostile ZeroDev sponsorship response before conversion. */
-export function captureSponsorship(value) {
+/** Captures the official SDK's parsed v0.7 paymaster response exactly once. */
+export function captureZeroDevSponsorship(value) {
   const keys = [
     "callGasLimit",
     "verificationGasLimit",
@@ -120,21 +118,24 @@ export function captureSponsorship(value) {
     "paymasterVerificationGasLimit",
     "paymasterPostOpGasLimit",
     "paymasterData",
+    "maxFeePerGas",
+    "maxPriorityFeePerGas",
   ];
-  if (!exactKeys(value, keys)) throw new Error("zerodev_sponsorship_response_invalid");
-  const record = value;
-  if (typeof record.paymaster !== "string" || !ADDRESS.test(record.paymaster))
-    throw new Error("zerodev_sponsorship_response_invalid");
-  if (typeof record.paymasterData !== "string" || !DATA.test(record.paymasterData))
-    throw new Error("zerodev_sponsorship_response_invalid");
+  if (!exactKeys(value, keys)) throw new Error("zerodev_sponsorship_invalid");
+  if (typeof value.paymaster !== "string" || !ADDRESS.test(value.paymaster))
+    throw new Error("zerodev_sponsorship_invalid");
+  if (typeof value.paymasterData !== "string" || !DATA.test(value.paymasterData))
+    throw new Error("zerodev_sponsorship_invalid");
   return Object.freeze({
-    callGasLimit: quantity(record.callGasLimit),
-    verificationGasLimit: quantity(record.verificationGasLimit),
-    preVerificationGas: quantity(record.preVerificationGas),
-    paymaster: record.paymaster,
-    paymasterVerificationGasLimit: quantity(record.paymasterVerificationGasLimit),
-    paymasterPostOpGasLimit: quantity(record.paymasterPostOpGasLimit),
-    paymasterData: record.paymasterData,
+    callGasLimit: capturedUint(value.callGasLimit),
+    verificationGasLimit: capturedUint(value.verificationGasLimit),
+    preVerificationGas: capturedUint(value.preVerificationGas),
+    paymaster: value.paymaster.toLowerCase(),
+    paymasterVerificationGasLimit: capturedUint(value.paymasterVerificationGasLimit),
+    paymasterPostOpGasLimit: capturedUint(value.paymasterPostOpGasLimit),
+    paymasterData: value.paymasterData.toLowerCase(),
+    maxFeePerGas: capturedUint(value.maxFeePerGas),
+    maxPriorityFeePerGas: capturedUint(value.maxPriorityFeePerGas),
   });
 }
 
@@ -616,18 +617,6 @@ export function createLiveUserOperationObserver({ rpc, sleep = setTimeout }) {
     }
     return null;
   };
-}
-
-/** Structured refusal for a second live session operation after unproved enablement. */
-export function sessionPreparationRefusal({ live, permissionMaterialized, activeOperation }) {
-  if (
-    live &&
-    !permissionMaterialized &&
-    activeOperation?.installsPermission === true &&
-    (activeOperation.status === "submitted" || activeOperation.status === "unresolved")
-  )
-    return "permission_unproved";
-  return activeOperation ? "operation_lane_occupied" : null;
 }
 
 /**
