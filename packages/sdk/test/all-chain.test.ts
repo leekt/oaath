@@ -90,8 +90,7 @@ function runtimes(chain: typeof chainId | typeof otherChainId) {
       operator: sessionOperator({
         key: ecdsaKey({ account: sessionAccount, validator }),
         policies: [
-          { kind: "call", calls: [{ target, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "500" },
+          { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "500" }] },
         ],
       }),
       reads: reads(),

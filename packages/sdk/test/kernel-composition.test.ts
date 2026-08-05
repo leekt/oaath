@@ -225,8 +225,8 @@ const keyProfiles: Readonly<Record<MatrixKeyKind, () => Readonly<KeyProfile>>> =
 /** One bounded scope every session composition in this file installs. */
 const sessionScope = Object.freeze({
   kind: "call" as const,
-  calls: Object.freeze([
-    Object.freeze({ target, selectors: Object.freeze([KERNEL_V4_EXECUTE_SELECTOR]) }),
+  permissions: Object.freeze([
+    Object.freeze({ target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "0" }),
   ]),
 });
 
@@ -1112,14 +1112,11 @@ describe("Kernel module registry", () => {
   });
 
   it("pins one reviewed policy module per bounded axis", () => {
-    // CallPolicy enforces the call and value axes from one configuration, so both
-    // resolve to one module and one installed package.
+    // CallPolicy enforces calls and their per-call value ceilings from one
+    // configuration; value is not a separate axis.
     expect(
-      (["call", "value", "expiry", "operation-limit"] as const).map((kind) =>
-        pinnedPolicyModule(kind),
-      ),
+      (["call", "expiry", "operation-limit"] as const).map((kind) => pinnedPolicyModule(kind)),
     ).toEqual([
-      "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
       "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
       "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f",
       "0xf63d4139b25c836334edd76641356c6b74c86873",
@@ -1139,9 +1136,10 @@ describe("Kernel module registry", () => {
 describe("Kernel permission policy compilation", () => {
   const spender = `0x${"55".repeat(20)}` as const;
   const transferSelector = "0xa9059cbb" as const;
-  const calls = [
-    { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
-    { target: spender, selectors: [transferSelector, "0x00000000" as const] },
+  const permissions = [
+    { target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "0" },
+    { target: spender, selector: transferSelector, valueLimit: "1000" },
+    { target: spender, selector: "0x00000000" as const, valueLimit: "25" },
   ] as const;
   const PERMISSIONS = [
     {
@@ -1165,26 +1163,24 @@ describe("Kernel permission policy compilation", () => {
     },
   ] as const;
 
-  it("compiles one CallPolicy permission per allowed target and selector", () => {
-    const policy = compileKernelPermissionPolicy([
-      { kind: "call", calls },
-      { kind: "value", maximumValue: "1000" },
-    ]);
+  it("compiles one CallPolicy permission per allowed call with its exact value limit", () => {
+    const policy = compileKernelPermissionPolicy([{ kind: "call", permissions }]);
     expect(policy).toMatchObject({
-      maximumValue: "1000",
       validUntil: null,
       maximumOperations: null,
     });
     expect(policy.packages.map((entry) => entry.module)).toEqual([pinnedPolicyModule("call")]);
-    expect(policy.calls).toEqual(calls);
+    expect(policy.permissions).toEqual(permissions);
     expect(Object.isFrozen(policy)).toBe(true);
-    // Every permitted (callType, target, selector) triple carries the value
-    // ceiling, which is how CallPolicy meters a call it is asked to authorize.
+    // Every permitted (callType, target, selector) entry carries exactly the
+    // value ceiling reviewed for that call: a zero-value call stays at zero
+    // even though another call in the same scope may spend 1000 wei. No global
+    // maximum widens a sibling entry.
     const callPackage = policy.packages[0];
     if (!callPackage) throw new Error("no call policy package");
-    const [permissions] = decodeAbiParameters(PERMISSIONS, callPackage.policyData);
+    const [decoded] = decodeAbiParameters(PERMISSIONS, callPackage.policyData);
     expect(
-      permissions.map((permission) => [
+      decoded.map((permission) => [
         permission.callType,
         permission.target,
         permission.selector,
@@ -1192,18 +1188,18 @@ describe("Kernel permission policy compilation", () => {
         permission.rules.length,
       ]),
     ).toEqual([
-      ["0x00", target, KERNEL_V4_EXECUTE_SELECTOR, 1000n, 0],
+      ["0x00", target, KERNEL_V4_EXECUTE_SELECTOR, 0n, 0],
       ["0x00", spender, transferSelector, 1000n, 0],
-      ["0x00", spender, "0x00000000", 1000n, 0],
+      ["0x00", spender, "0x00000000", 25n, 0],
     ]);
   });
 
-  it("compiles an absent value profile to a zero ceiling", () => {
-    // A session that never declared a spend may not move value: CallPolicy
+  it("compiles a call with no declared spend to a zero ceiling", () => {
+    // A call that never declared a spend may not move value: CallPolicy
     // reverts CallViolatesValueRule above the ceiling, so zero is the closed
     // default rather than an unlimited sentinel.
-    const policy = compileKernelPermissionPolicy([{ kind: "call", calls: [calls[0]] }]);
-    expect(policy.maximumValue).toBe("0");
+    const policy = compileKernelPermissionPolicy([{ kind: "call", permissions: [permissions[0]] }]);
+    expect(policy.permissions.map((one) => one.valueLimit)).toEqual(["0"]);
     const only = policy.packages[0];
     if (!only) throw new Error("no call policy package");
     expect(
@@ -1216,7 +1212,7 @@ describe("Kernel permission policy compilation", () => {
     // two uint48 words; checkUserOpPolicy returns them as the ERC-4337 packed
     // range, so EntryPoint refuses an expired session with AA22.
     const policy = compileKernelPermissionPolicy([
-      { kind: "call", calls },
+      { kind: "call", permissions },
       { kind: "expiry", validAfter: "1750000000", validUntil: "1750003600" },
     ]);
     expect(policy).toMatchObject({ validAfter: "1750000000", validUntil: "1750003600" });
@@ -1243,7 +1239,7 @@ describe("Kernel permission policy compilation", () => {
     // validated operation decrements count, and an exhausted count returns
     // Kernel's signature-failure sentinel.
     const policy = compileKernelPermissionPolicy([
-      { kind: "call", calls },
+      { kind: "call", permissions },
       { kind: "operation-limit", maximumOperations: "5" },
     ]);
     expect(policy.maximumOperations).toBe("5");
@@ -1263,7 +1259,7 @@ describe("Kernel permission policy compilation", () => {
           ? { kind, validAfter: "0", validUntil: "1750000000" }
           : { kind, maximumOperations: "5" };
       expect(
-        compileKernelPermissionPolicy([{ kind: "call", calls }, profile] as never).packages,
+        compileKernelPermissionPolicy([{ kind: "call", permissions }, profile] as never).packages,
       ).toHaveLength(2);
       expect(() => compileKernelPermissionPolicy([profile] as never)).toThrowError(
         expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
@@ -1276,36 +1272,43 @@ describe("Kernel permission policy compilation", () => {
     [
       "a duplicate kind",
       [
-        { kind: "value", maximumValue: "1" },
-        { kind: "value", maximumValue: "2" },
+        { kind: "call", permissions: [permissions[0]] },
+        { kind: "call", permissions: [permissions[1]] },
       ],
     ],
     ["an unsupported kind", [{ kind: "gas" }]],
-    ["a value bound with no call bound", [{ kind: "value", maximumValue: "1" }]],
-    ["a target with no selector", [{ kind: "call", calls: [{ target, selectors: [] }] }]],
+    // The retired global value axis widened every call to the largest approved
+    // allowance; it is no longer expressible at all.
+    ["the retired global value kind", [{ kind: "value", maximumValue: "1" }]],
     [
-      "a duplicate call target",
+      "a duplicate call",
       [
         {
           kind: "call",
-          calls: [
-            { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
-            { target, selectors: [KERNEL_V4_EXECUTE_SELECTOR] },
+          permissions: [
+            { target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "0" },
+            // The same (target, selector) with a different limit: one entry
+            // would silently shadow the other's ceiling.
+            { target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "5" },
           ],
         },
       ],
     ],
     [
-      "a duplicate selector",
+      "a permission with no value limit",
+      [{ kind: "call", permissions: [{ target, selector: KERNEL_V4_EXECUTE_SELECTOR }] }],
+    ],
+    [
+      "a non-decimal value limit",
       [
         {
           kind: "call",
-          calls: [{ target, selectors: [KERNEL_V4_EXECUTE_SELECTOR, KERNEL_V4_EXECUTE_SELECTOR] }],
+          permissions: [{ target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "0x01" }],
         },
       ],
     ],
-    ["an empty call set", [{ kind: "call", calls: [] }]],
-    ["a non-array profile set", { kind: "call", calls }],
+    ["an empty permission set", [{ kind: "call", permissions: [] }]],
+    ["a non-array profile set", { kind: "call", permissions }],
     ["a profile set with a hole", [undefined]],
   ] as const)("fails closed on %s", (_label, profiles) => {
     expect(() => compileKernelPermissionPolicy(profiles as never)).toThrowError(
@@ -1330,7 +1333,7 @@ describe("Kernel permission policy compilation", () => {
       if (validation.kind !== "permission") throw new Error("not a permission validation");
       return validation.permissionId;
     };
-    const scope = { kind: "call", calls } as const;
+    const scope = { kind: "call", permissions } as const;
     const key = keyProfiles.ecdsa();
     const first = permissionId(sessionOperator({ key, policies: [scope] }));
     // Same scope and same key material derive the same ID on every chain, so a
@@ -1338,14 +1341,31 @@ describe("Kernel permission policy compilation", () => {
     expect(permissionId(sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] }))).toBe(
       first,
     );
+    // Changing any single call's value limit is a different permission: the
+    // limit is part of the encoded CallPolicy payload, so the installed
+    // authority can never be addressed by an ID minted for another ceiling.
+    expect(
+      permissionId(
+        sessionOperator({
+          key,
+          policies: [
+            {
+              kind: "call",
+              permissions: [
+                permissions[0],
+                { ...permissions[1], valueLimit: "1001" },
+                permissions[2],
+              ],
+            },
+          ],
+        }),
+      ),
+    ).not.toBe(first);
     // A tighter scope is a different permission, never the same one widened.
     expect(
       permissionId(
-        sessionOperator({ key, policies: [scope, { kind: "value", maximumValue: "1" }] }),
+        sessionOperator({ key, policies: [{ kind: "call", permissions: [permissions[0]] }] }),
       ),
-    ).not.toBe(first);
-    expect(
-      permissionId(sessionOperator({ key, policies: [{ kind: "call", calls: [calls[0]] }] })),
     ).not.toBe(first);
   });
 });

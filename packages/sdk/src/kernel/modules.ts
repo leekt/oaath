@@ -191,7 +191,6 @@ const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
 const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x${string}`>>> =
   Object.freeze({
     call: CALL_POLICY,
-    value: CALL_POLICY,
     expiry: TIMESTAMP_POLICY,
     "operation-limit": RATE_LIMIT_POLICY,
   });

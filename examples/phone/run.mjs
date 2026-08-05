@@ -515,8 +515,7 @@ function sessionRuntimeFor(sessionAddress, supplied) {
         validator: stack.validator,
       }),
       policies: [
-        { kind: "call", calls: [{ target, selectors: ["0x00000000"] }] },
-        { kind: "value", maximumValue: "10" },
+        { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "10" }] },
       ],
     }),
     reads: stack.reads,
@@ -801,7 +800,7 @@ async function handleDemo(method, path, body, outgoing) {
           digest: exactDigest,
           installNonce: "0",
           sessionAddress: value.sessionAddress,
-          policies: runtime.operator?.policy ?? { call: { target, maximumValue: "10" } },
+          policies: runtime.operator?.policy ?? { call: { target, valueLimit: "10" } },
         }),
         "permission",
         "approve",

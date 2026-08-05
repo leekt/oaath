@@ -198,7 +198,24 @@ export async function createAnvilChain(chainId) {
         // deployment reads EntryPoint.getNonce for the account's canonical key.
         return { nonceKey: "0", sequence: "0", gas: GAS };
       },
-      usage: null,
+      // Complete usage evidence anchored to the node's own finalized tag: the
+      // finalized count is what this example actually submitted and saw
+      // included. Without it, coverage is inconclusive and sendCalls is denied.
+      async usage(request) {
+        const block = await chain.rpc("eth_getBlockByNumber", ["finalized", false]);
+        return {
+          version: "oaath.grant-policy-usage/v1",
+          status: "complete",
+          grantId: request.grantId,
+          chainId: request.chainId,
+          finalizedOperationCount: String(sends.length),
+          through: {
+            blockNumber: BigInt(block.number).toString(10),
+            blockHash: block.hash,
+            observedAt: Math.floor(Date.now() / 1000),
+          },
+        };
+      },
       feePayer: {
         address: stack.submitter.address.toLowerCase(),
         balance: feePayerBalance.toString(10),

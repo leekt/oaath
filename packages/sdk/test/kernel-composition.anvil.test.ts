@@ -138,7 +138,6 @@ async function createHarness() {
       [pinnedSignerModule("ecdsa"), fixture.ecdsaSigner],
       [pinnedSignerModule("webauthn"), fixture.webAuthnSigner],
       [pinnedPolicyModule("call"), fixture.callPolicy],
-      [pinnedPolicyModule("value"), fixture.callPolicy],
       [pinnedPolicyModule("expiry"), fixture.timestampPolicy],
       [pinnedPolicyModule("operation-limit"), fixture.rateLimitPolicy],
     ] as const) {
@@ -292,8 +291,10 @@ async function createHarness() {
             validator: await deployValidator(),
           }),
           policies: [
-            { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
-            { kind: "value", maximumValue: "777" },
+            {
+              kind: "call",
+              permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
+            },
           ],
         }),
         reads,
@@ -390,8 +391,10 @@ async function createHarness() {
       operator: sessionOperator({
         key: ecdsaKey({ account: sessionAccount, validator: await deployValidator() }),
         policies: [
-          { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "777" },
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
+          },
         ],
       }),
       reads,
@@ -534,6 +537,8 @@ async function createHarness() {
     // Routing fallback: a conclusive pre-acceptance rejection is the only
     // bundler evidence that authorizes EntryPoint.handleOps, and the fallback
     // submits the same signed operation identity the bundler would have taken.
+    // Only root work still selects owner authority — uncovered execution is
+    // denied outright — so the fallback decision is exercised as root work.
     const capabilities = captureRoutingCapabilities({
       chainId,
       bundler: classifyBundlerAcceptance({ outcome: "rejected", code: -32505 }),
@@ -544,8 +549,18 @@ async function createHarness() {
       },
     });
     expect(capabilities.bundler).toBe("unsupported");
+    // The retired escalation row: uncovered execution selects no authority and
+    // no route at all, never the owner.
+    expect(
+      decideExecution({
+        operationKind: "execution",
+        sessionCoverage: capabilities.sessionCoverage,
+        bundler: capabilities.bundler,
+        feePayer: capabilities.feePayer,
+      }),
+    ).toMatchObject({ signer: "none", route: "none", feePayer: null });
     const decision = decideExecution({
-      operationKind: "execution",
+      operationKind: "revocation",
       sessionCoverage: capabilities.sessionCoverage,
       bundler: capabilities.bundler,
       feePayer: capabilities.feePayer,
@@ -553,7 +568,7 @@ async function createHarness() {
     expect(decision).toMatchObject({
       signer: "owner",
       route: "entrypoint-handleops",
-      reasons: ["session_calls_uncovered", "bundler_unsupported", "fee_payer_configured"],
+      reasons: ["root_operation_requires_owner", "bundler_unsupported", "fee_payer_configured"],
     });
     const decidedFeePayer = decision.feePayer;
     if (decidedFeePayer === null) throw new Error("handleOps decision carries no fee payer");
@@ -674,8 +689,10 @@ async function createHarness() {
       operator: sessionOperator({
         key: sessionKey,
         policies: [
-          { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "777" },
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
+          },
         ],
       }),
       reads,
@@ -777,7 +794,12 @@ async function createHarness() {
           validator: ownerKey.resolveValidator(deployment),
           signerModule: null,
         }),
-        policies: [{ kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] }],
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "0" }],
+          },
+        ],
       }),
     ).toThrowError(expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }));
     expect(() => sessionOperator({ key: sessionKey, policies: [] })).toThrowError(
@@ -795,7 +817,12 @@ async function createHarness() {
           validator: ownerKey.resolveValidator(deployment),
           signerModule: lower(privateKeyToAccount(generatePrivateKey()).address),
         }),
-        policies: [{ kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] }],
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "0" }],
+          },
+        ],
       }),
       reads,
     });
@@ -875,8 +902,10 @@ async function createHarness() {
           validator: await deployValidator(),
         }),
         policies: [
-          { kind: "call", calls: [{ target: expiryTarget, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "500" },
+          {
+            kind: "call",
+            permissions: [{ target: expiryTarget, selector: "0x00000000", valueLimit: "500" }],
+          },
           { kind: "expiry", validAfter: "0", validUntil: validUntil.toString(10) },
         ],
       }),
@@ -960,8 +989,10 @@ async function createHarness() {
           validator: await deployValidator(),
         }),
         policies: [
-          { kind: "call", calls: [{ target: limitTarget, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "10" },
+          {
+            kind: "call",
+            permissions: [{ target: limitTarget, selector: "0x00000000", valueLimit: "10" }],
+          },
           { kind: "operation-limit", maximumOperations: "2" },
         ],
       }),

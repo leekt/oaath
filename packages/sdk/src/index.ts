@@ -83,6 +83,7 @@ export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
   KernelBuiltInKeyKind,
+  KernelCallPolicyPermission,
   KernelCallPolicyProfile,
   KernelCustomKeyKind,
   KernelExpiryPolicyProfile,
@@ -95,7 +96,6 @@ export type {
   KernelRuntimeErrorCode,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
-  KernelValuePolicyProfile,
   KeyProfile,
   OperatorProfile,
 } from "./kernel/types.js";

@@ -93,18 +93,22 @@ export interface KeyProfile {
   readonly verify: (hash: `0x${string}`, signature: `0x${string}`) => Promise<boolean>;
 }
 
-export interface KernelCallPolicyProfile {
-  readonly kind: "call";
-  readonly calls: readonly Readonly<{
-    readonly target: `0x${string}`;
-    readonly selectors: readonly `0x${string}`[];
-  }>[];
+/**
+ * One permitted (target, selector) call carrying its own exact native value
+ * ceiling. Value is not an independent policy axis: a global maximum would
+ * widen every other call to the largest approved allowance, so each permission
+ * compiles the limit the owner reviewed for exactly this call.
+ */
+export interface KernelCallPolicyPermission {
+  readonly target: `0x${string}`;
+  readonly selector: `0x${string}`;
+  /** Canonical decimal uint256 string; `"0"` permits no native value. */
+  readonly valueLimit: string;
 }
 
-export interface KernelValuePolicyProfile {
-  readonly kind: "value";
-  /** Canonical decimal uint256 string; the maximum total native value per call. */
-  readonly maximumValue: string;
+export interface KernelCallPolicyProfile {
+  readonly kind: "call";
+  readonly permissions: readonly Readonly<KernelCallPolicyPermission>[];
 }
 
 export interface KernelExpiryPolicyProfile {
@@ -123,7 +127,6 @@ export interface KernelOperationLimitPolicyProfile {
 
 export type KernelPolicyProfile =
   | KernelCallPolicyProfile
-  | KernelValuePolicyProfile
   | KernelExpiryPolicyProfile
   | KernelOperationLimitPolicyProfile;
 
@@ -140,9 +143,8 @@ export interface CompiledKernelPolicyPackage {
  */
 export interface CompiledKernelPermissionPolicy {
   readonly packages: readonly Readonly<CompiledKernelPolicyPackage>[];
-  readonly calls: KernelCallPolicyProfile["calls"];
-  /** Canonical decimal uint256 ceiling applied to every permitted call. */
-  readonly maximumValue: string;
+  /** The exact per-call permissions CallPolicy installs, in compile order. */
+  readonly permissions: readonly Readonly<KernelCallPolicyPermission>[];
   /** Canonical decimal uint48 seconds, or null when no window was requested. */
   readonly validAfter: string | null;
   readonly validUntil: string | null;

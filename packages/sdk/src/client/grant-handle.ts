@@ -324,30 +324,24 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
 export function deriveSessionPolicyProfiles(
   policy: Readonly<GrantPolicy>,
 ): readonly KernelPolicyProfile[] {
-  const byTarget = new Map<`0x${string}`, `0x${string}`[]>();
-  let maximumValue = 0n;
-  for (const call of policy.calls) {
+  // Every approved call maps to exactly one CallPolicy permission carrying that
+  // call's own value limit, in the Grant policy's canonical order. No aggregate
+  // is computed: a global maximum would install an on-chain allowance on one
+  // call that only another call's approval justified.
+  const permissions = policy.calls.map((call) => {
     if (call.argumentEquals.length > 0) {
       unsupported("policy_argument_constraint_unsupported");
     }
-    const selectors = byTarget.get(call.target) ?? [];
-    if (!selectors.includes(call.selector)) selectors.push(call.selector);
-    byTarget.set(call.target, selectors);
-    const limit = BigInt(call.valueLimit);
-    if (limit > maximumValue) maximumValue = limit;
-  }
-  if (byTarget.size === 0) unsupported("policy_has_no_calls");
+    return Object.freeze({
+      target: call.target,
+      selector: call.selector,
+      valueLimit: call.valueLimit,
+    });
+  });
+  if (permissions.length === 0) unsupported("policy_has_no_calls");
   if (policy.validUntil === null) unsupported("policy_expiry_unbounded");
   return Object.freeze([
-    Object.freeze({
-      kind: "call" as const,
-      calls: Object.freeze(
-        [...byTarget].map(([target, selectors]) =>
-          Object.freeze({ target, selectors: Object.freeze([...selectors]) }),
-        ),
-      ),
-    }),
-    Object.freeze({ kind: "value" as const, maximumValue: maximumValue.toString(10) }),
+    Object.freeze({ kind: "call" as const, permissions: Object.freeze(permissions) }),
     Object.freeze({
       kind: "expiry" as const,
       validAfter: policy.validAfter.toString(10),

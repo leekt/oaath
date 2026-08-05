@@ -95,8 +95,10 @@ async function bringUp(chainId) {
       key: ecdsaKey({ account: sessionKeyAccount, validator: stack.validator }),
       // The approved scope: this target with empty calldata, at most 500 wei.
       policies: [
-        { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
-        { kind: "value", maximumValue: TRANSFER },
+        {
+          kind: "call",
+          permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: TRANSFER }],
+        },
       ],
     }),
     reads: stack.reads,

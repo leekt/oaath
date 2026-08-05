@@ -58,7 +58,6 @@ export type KernelCapability =
   | "session_webauthn"
   | "session_custom"
   | "hook_call"
-  | "hook_value"
   | "hook_expiry"
   | "hook_operation_limit";
 
@@ -165,10 +164,10 @@ function capturedCapability(value: unknown): CapabilityAxis {
         axis: "signer" as const,
         kind: "webauthn" as const,
       });
+    // Value ceilings are enforced per permitted call inside CallPolicy, so
+    // hook_call is the whole call-and-value axis; no separate value hook exists.
     case "hook_call":
       return Object.freeze({ capability: value, axis: "policy" as const, kind: "call" as const });
-    case "hook_value":
-      return Object.freeze({ capability: value, axis: "policy" as const, kind: "value" as const });
     case "hook_expiry":
       return Object.freeze({ capability: value, axis: "policy" as const, kind: "expiry" as const });
     case "hook_operation_limit":
