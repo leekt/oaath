@@ -41,6 +41,12 @@ import {
 } from "../persistence/memory/stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability } from "./grant-handle.js";
+import {
+  loadServiceSession,
+  type PersistedServiceSession,
+  saveServiceSession,
+  serviceSessionKeyId,
+} from "./service-session.js";
 
 export const OAATH_DEFAULT_SERVICE_URL = "http://localhost:8787" as const;
 const POLL_INTERVAL_MS = 1_000;
@@ -299,8 +305,6 @@ function deviceIdentity(): string {
   if (!generator || typeof generator.randomUUID !== "function") {
     return clientFail("oaath_client_capability_invalid", "crypto.randomUUID is unavailable");
   }
-  // ponytail: a fresh device identity per realm. Persist it in the context
-  // store once the binding no longer needs the device id to derive its own key.
   return generator.randomUUID();
 }
 
@@ -314,6 +318,7 @@ function composeConfiguration(
   transport: (request: Request) => Promise<Response>,
   bootstrap: Readonly<ServiceBootstrap>,
   stores: unknown,
+  session: Readonly<PersistedServiceSession>,
 ): Record<string, unknown> {
   const origin = localOrigin(input);
   const redirectUri = bootstrap.application.redirectUris.find((registered) =>
@@ -326,11 +331,7 @@ function composeConfiguration(
     );
   }
   const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
-  // A fresh in-memory secp256k1 session key per realm: the pinned session
-  // signer module is ECDSA, which WebCrypto cannot hold non-extractably, so
-  // nothing private is ever persisted and a reload starts with no authority.
-  // Move to non-extractable custody when a P-256/WebAuthn session path lands.
-  const sessionAccount = privateKeyToAccount(generatePrivateKey());
+  const sessionAccount = privateKeyToAccount(session.privateKey);
   return {
     binding: {
       issuer: input.url,
@@ -339,7 +340,7 @@ function composeConfiguration(
       clientId: bootstrap.application.clientId,
       origin,
       redirectUri,
-      deviceId: deviceIdentity(),
+      deviceId: session.deviceId,
       userHandle: bootstrap.userHandle,
       account: bootstrap.account,
       operatorCredential: {
@@ -367,7 +368,9 @@ function composeConfiguration(
       }),
       session: ecdsaKey({ account: sessionAccount, validator: SESSION_VALIDATOR_PLACEHOLDER }),
     },
-    localKeyIds: [],
+    // Deleting the wrapping key on disconnect durably orphans the persisted
+    // session ciphertext, so `forgetLocal` forgets the session too.
+    localKeyIds: [serviceSessionKeyId(input.url, origin)],
     now,
   };
 }
@@ -404,8 +407,26 @@ export function createServiceRealm<Realm extends object>(
           );
         }
       });
-      const stores = input.stores ?? (await defaultStores());
-      inner = compose(composeConfiguration(input, transport, await bootstrap, stores));
+      const stores = (input.stores ?? (await defaultStores())) as {
+        readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
+        readonly keys: Parameters<typeof loadServiceSession>[0]["stores"]["keys"];
+      };
+      // Continuity, never authority: a persisted session keeps the device
+      // identity and the operator key stable across reloads so `resume()`
+      // finds a Grant this realm can still sign for. Anything unreadable
+      // starts fresh, and a save failure runs this realm ephemeral rather
+      // than refusing it — the approval flow re-establishes authority either
+      // way.
+      const origin = localOrigin(input);
+      let session = await loadServiceSession({ stores, url: input.url, origin });
+      if (session === null) {
+        session = Object.freeze({ deviceId: deviceIdentity(), privateKey: generatePrivateKey() });
+        const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
+        await saveServiceSession({ stores, url: input.url, origin, session, now }).catch(
+          () => undefined,
+        );
+      }
+      inner = compose(composeConfiguration(input, transport, await bootstrap, stores, session));
       return inner;
     })().catch((error: unknown) => {
       // A failed bootstrap leaves no realm behind; the next connect retries.

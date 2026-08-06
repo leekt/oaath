@@ -4,8 +4,29 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { createOAAth } from "../src/index.js";
+import {
+  createIndexedDbCleanupStore,
+  createIndexedDbContextStore,
+  createIndexedDbGrantStoreAdapter,
+  createIndexedDbKeyStore,
+  createIndexedDbOperationStoreAdapter,
+  type OaathDatabase,
+  openOaathDatabase,
+} from "../src/persistence.js";
+
+function idbStores(database: OaathDatabase) {
+  return {
+    grants: createIndexedDbGrantStoreAdapter(database),
+    operations: createIndexedDbOperationStoreAdapter(database),
+    keys: createIndexedDbKeyStore(database),
+    cleanup: createIndexedDbCleanupStore(database),
+    context: createIndexedDbContextStore(database),
+  };
+}
+
 import {
   CHAIN_ID,
   createChainFixture,
@@ -48,6 +69,47 @@ describe("URL-only golden path", () => {
     expect(grant.state).toBe("revoking");
     expect(realm.invalidations()).toBe(1);
     await connection.close();
+  });
+
+  it("survives a reload: a recreated realm resumes the Grant with the same session", async () => {
+    // Durable IndexedDB with fresh adapter handles per life, exactly like a
+    // browser reload: the data survives, the handles do not.
+    const factory = new IDBFactory();
+    const life = async () => idbStores(await openOaathDatabase({ factory }));
+
+    // First life: connect, get authority, execute (which materializes the
+    // permission on chain for exactly this session key).
+    const first = createUrlRealm({ stores: await life() });
+    const connection = await first.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    const operatorBefore = first.oaath.binding.operatorCredential;
+    const deviceBefore = first.oaath.binding.subject.deviceId;
+    await connection.close();
+
+    // Second life: same durable data and issuer, a brand-new realm — the
+    // reload. The persisted session keeps the device identity and operator
+    // key stable, so resume() finds a Grant this realm can still sign for,
+    // and the next operation validates through the already-installed
+    // permission instead of orphaning it.
+    const second = createUrlRealm({
+      clock: first.clock,
+      chain: first.chain,
+      stores: await life(),
+      relay: first.relay,
+    });
+    const reconnected = await second.oaath.connect();
+    expect(second.oaath.binding.operatorCredential).toEqual(operatorBefore);
+    expect(second.oaath.binding.subject.deviceId).toBe(deviceBefore);
+    const resumed = await reconnected.resume();
+    expect(resumed).not.toBeNull();
+    expect(resumed?.state).toBe("active");
+    const operation = await resumed?.sendCalls(sendCallsInput());
+    expect((await operation?.wait())?.status).toBe("finalized");
+    // Standard permission validation: the reload spent no second approval.
+    const nonce = BigInt(first.chain.sends[1]?.userOperation.nonce ?? 0n);
+    expect((nonce >> 248n) & 0xffn).toBe(0n);
+    await reconnected.close();
   });
 
   it("completes the golden path over the loopback development URL", async () => {

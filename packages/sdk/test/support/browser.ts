@@ -620,6 +620,10 @@ export interface UrlRealmOptions {
   readonly owner?: OwnerDecision;
   /** The service URL the realm connects to; loopback http is a legal default. */
   readonly url?: string;
+  /** Shared durable stores, so a second realm simulates a reload. */
+  readonly stores?: RealmStores;
+  /** Shared relay, so a second realm sees the first realm's issuer state. */
+  readonly relay?: (request: Request) => Promise<Response>;
   /** Tampers with the served bootstrap document before the SDK parses it. */
   readonly bootstrap?: (document: Record<string, unknown>) => unknown;
 }
@@ -629,6 +633,7 @@ export interface UrlRealm {
   readonly clock: SecondsClock;
   readonly chain: ChainFixture;
   readonly stores: RealmStores;
+  readonly relay: (request: Request) => Promise<Response>;
   readonly invalidations: () => number;
   readonly fetched: readonly string[];
 }
@@ -642,21 +647,23 @@ export interface UrlRealm {
 export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   const clock = options.clock ?? createClock();
   const chain = options.chain ?? createChainFixture();
-  const stores = createMemoryStores();
-  const relay = createRelay(clock, {
-    bootstrap: {
-      application: {
-        applicationId: "app-a",
-        applicationName: "OAAth Example",
-        clientId: "client-a",
-        redirectUris: [REDIRECT_URI],
+  const stores = options.stores ?? createMemoryStores();
+  const relay =
+    options.relay ??
+    createRelay(clock, {
+      bootstrap: {
+        application: {
+          applicationId: "app-a",
+          applicationName: "OAAth Example",
+          clientId: "client-a",
+          redirectUris: [REDIRECT_URI],
+        },
+        userHandle: "user-1",
+        account: accountProfile,
+        ownerValidator: VALIDATOR,
       },
-      userHandle: "user-1",
-      account: accountProfile,
-      ownerValidator: VALIDATOR,
-    },
-    chains: [relayChainPort(chain)],
-  });
+      chains: [relayChainPort(chain)],
+    });
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let invalidations = 0;
   const fetched: string[] = [];
@@ -700,7 +707,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
     now: clock.now,
   });
 
-  return { oaath, clock, chain, stores, invalidations: () => invalidations, fetched };
+  return { oaath, clock, chain, stores, relay, invalidations: () => invalidations, fetched };
 }
 
 export interface RealmOptions {
