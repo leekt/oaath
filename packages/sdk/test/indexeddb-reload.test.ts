@@ -97,9 +97,13 @@ describe("IndexedDB realm recreation", () => {
     const grant = await connection.requestPermission(permissionInput());
     const operation = await grant.sendCalls(sendCallsInput());
     expect((await operation.wait()).status).toBe("finalized");
-    const submittedHash = before.chain.sends[0]?.userOperationHash;
+    const archivedHash = before.chain.sends[0]?.userOperationHash;
     const grantId = before.chain.sends[0]?.grantId;
-    if (!submittedHash || !grantId) throw new Error("expected one submitted operation");
+    if (!archivedHash || !grantId) throw new Error("expected one submitted operation");
+    const replacement = await grant.sendCalls(sendCallsInput());
+    expect((await replacement.wait()).status).toBe("finalized");
+    const currentHash = before.chain.sends[1]?.userOperationHash;
+    if (!currentHash) throw new Error("expected one replacing operation");
 
     // Recreate the whole realm: connection, stores, adapters, and the database.
     await connection.close();
@@ -112,21 +116,27 @@ describe("IndexedDB realm recreation", () => {
       clock,
       relay,
       stores: secondStores,
-      // The account already executed once, so its on-chain sequence advanced.
-      chain: createChainFixture({ startSequence: 1 }),
+      // The account already executed twice, so its on-chain sequence advanced.
+      chain: createChainFixture({ startSequence: 2 }),
     });
     const restored = await (await after.oaath.connect()).resume();
     if (!restored) throw new Error("expected the persisted Grant to resume");
     expect(restored.state).toBe("active");
 
-    // The journal restored the exact submitted identity, still finalized.
+    // The journal restored the current identity and the exact terminal history.
     const journal = await new OperationStore(secondStores.operations).get({
       grantId,
       chainId: CHAIN_ID,
       kind: "execution",
     });
     expect(journal?.value.state).toBe("finalized");
-    expect(journal?.value.identity.userOperationHash).toBe(submittedHash);
+    expect(journal?.value.identity.userOperationHash).toBe(currentHash);
+    const archived = await new OperationStore(secondStores.operations).getExact(
+      { grantId, chainId: CHAIN_ID, kind: "execution" },
+      archivedHash,
+    );
+    expect(archived?.value.state).toBe("finalized");
+    expect(archived?.value.identity.userOperationHash).toBe(archivedHash);
 
     // Key custody survived as a non-extractable handle with no export path.
     const handle = await secondStores.keys.get("session-key");
@@ -138,7 +148,7 @@ describe("IndexedDB realm recreation", () => {
     const next = await restored.sendCalls(sendCallsInput());
     expect((await next.wait()).status).toBe("finalized");
     expect(after.chain.sends).toHaveLength(1);
-    expect(after.chain.sends[0]?.userOperationHash).not.toBe(submittedHash);
+    expect(after.chain.sends[0]?.userOperationHash).not.toBe(currentHash);
   });
 
   it("resumes a revoking Grant and completes its chain revocation after reload", async () => {
@@ -228,7 +238,7 @@ describe("IndexedDB realm recreation", () => {
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 
-  it("recreates a malformed v3 database with exactly the six current stores", async () => {
+  it("recreates a malformed v4 database with exactly the six current stores", async () => {
     const factory = new IDBFactory();
     // A partial same-version realm receives no upgrade event, so the explicit
     // schema check must discard it and recreate the complete current schema.
@@ -246,8 +256,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(3);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(3);
+    expect(database.version).toBe(4);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(4);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -286,7 +296,7 @@ describe("IndexedDB realm recreation", () => {
     }
 
     // The exact v2 schema held five stores. Every one receives a recognizable
-    // stale value so the v3 open proves wholesale deletion rather than a
+    // stale value so the v4 open proves wholesale deletion rather than a
     // migration or a selectively preserved store.
     await new Promise<void>((resolve, reject) => {
       const request = factory.open(OAATH_INDEXEDDB_NAME, 2);
@@ -314,7 +324,7 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(3);
+    expect(database.version).toBe(4);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
@@ -335,6 +345,36 @@ describe("IndexedDB realm recreation", () => {
         createIndexedDbWalletCallBundleStoreAdapter(database).get(staleBundleKey),
       ]),
     ).resolves.toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  it("wipes v3 operation lane keys instead of reading them through the v4 layout", async () => {
+    const factory = new IDBFactory();
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 3);
+      request.onupgradeneeded = () => {
+        for (const store of Object.values(OAATH_INDEXEDDB_STORES)) {
+          request.result.createObjectStore(store);
+        }
+        request.transaction
+          ?.objectStore(OAATH_INDEXEDDB_STORES.operations)
+          .put({ source: "v3" }, ["stale-grant", CHAIN_ID, "execution"]);
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const database = await openRealmDatabase(factory);
+    expect(database.version).toBe(4);
+    await expect(
+      createIndexedDbOperationStoreAdapter(database).get({
+        grantId: "stale-grant",
+        chainId: CHAIN_ID,
+        kind: "execution",
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("refuses an extractable key handle and a persisted value that is not a handle", async () => {

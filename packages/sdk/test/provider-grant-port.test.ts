@@ -44,8 +44,24 @@ async function activeGrant(chain?: ChainFixture): Promise<
 function countingChain(): Readonly<{ chain: ChainFixture; reads: () => number }> {
   const base = createChainFixture();
   let reads = 0;
+  let activeHash: string | undefined;
+  const operationReceipts = new Map<string, unknown>();
+  const transactionReceipts = new Map<string, unknown>();
   const read: OaathChainCapability["observation"]["read"] = async (request) => {
     reads += 1;
+    if (request.type === "user_operation_receipt") {
+      activeHash = request.userOperationHash;
+      if (operationReceipts.has(activeHash)) return operationReceipts.get(activeHash);
+      const receipt = await base.capability.observation.read(request);
+      operationReceipts.set(activeHash, receipt);
+      return receipt;
+    }
+    if (request.type === "transaction_receipt" && activeHash !== undefined) {
+      if (transactionReceipts.has(activeHash)) return transactionReceipts.get(activeHash);
+      const receipt = await base.capability.observation.read(request);
+      transactionReceipts.set(activeHash, receipt);
+      return receipt;
+    }
     return base.capability.observation.read(request);
   };
   const chain: ChainFixture = {
@@ -180,6 +196,7 @@ describe("private Grant provider port", () => {
 
     const finalized = await first.wait({ attempts: 1 });
     expect(finalized).toMatchObject({ status: "finalized", outcome: "success" });
+    const finalizedReceipt = await first.receipt();
     expect(realm.chain.sends).toHaveLength(1);
     expect(realm.chain.sends[0]?.userOperationHash).toBe(started.userOperationHash);
     expect(observed.reads()).toBeGreaterThan(0);
@@ -197,11 +214,9 @@ describe("private Grant provider port", () => {
     expect(secondPrepared.userOperationHash).not.toBe(started.userOperationHash);
 
     const readsBeforeOldObservation = observed.reads();
-    await expect(first.observe()).rejects.toMatchObject({
-      code: "oaath_client_state_conflict",
-      source: "operation_runner_identity_mismatch",
-    });
-    expect(observed.reads()).toBe(readsBeforeOldObservation);
+    await expect(first.observe()).resolves.toEqual(finalized);
+    await expect(first.receipt()).resolves.toEqual(finalizedReceipt);
+    expect(observed.reads()).toBeGreaterThan(readsBeforeOldObservation);
     expect(realm.chain.sends).toHaveLength(2);
     expect(first.outcome).toEqual(finalized);
 

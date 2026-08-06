@@ -679,6 +679,8 @@ export function createGrantHandle(
         // another that still has work.
         store: new OperationStore({
           get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
+          getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
+            input.operations.getArchived(value),
           compareAndSwap: (value: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
             input.operations.compareAndSwap(value),
           close: async () => undefined,
@@ -1219,6 +1221,8 @@ export function createGrantHandle(
       // cleanup forever.
       const journal = new OperationStore({
         get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
+        getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
+          input.operations.getArchived(value),
         compareAndSwap: (record: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
           input.operations.compareAndSwap(record),
         close: async () => undefined,

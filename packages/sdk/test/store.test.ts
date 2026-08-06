@@ -1,5 +1,7 @@
 import {
   advanceGrant,
+  advanceOperation,
+  applyVerifiedOperationObservation,
   createGrant,
   createOperation,
   type Grant,
@@ -12,10 +14,12 @@ import {
   GrantStore,
   type GrantStoreAdapter,
   OAATH_GRANT_STORE_RECORD_VERSION,
+  OAATH_OPERATION_STORE_RECORD_VERSION,
   OaathStoreError,
   OperationStore,
   type StoreRecord,
 } from "../src/advanced.js";
+import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 
 const grantIdentity: GrantIdentity = {
   grantId: "grant-store",
@@ -77,6 +81,54 @@ function operationIdentity(chainId = 31_337, seed = "6"): OperationIdentity {
 
 function preparedOperation(chainId = 31_337, seed = "6"): Operation {
   return createOperation({ identity: operationIdentity(chainId, seed), preparedAt: 10 });
+}
+
+function finalizedOperation(chainId = 31_337, seed = "6"): Operation {
+  const identity = operationIdentity(chainId, seed);
+  let operation = preparedOperation(chainId, seed);
+  operation = advanceOperation(operation, {
+    type: "mark_submission_attempted",
+    identity,
+    attemptedAt: 11,
+  });
+  operation = advanceOperation(operation, {
+    type: "mark_submitted",
+    identity,
+    returnedUserOperationHash: identity.userOperationHash,
+    submittedAt: 12,
+  });
+  operation = applyVerifiedOperationObservation(operation, {
+    type: "record_included",
+    identity,
+    inclusion: {
+      transactionHash: `0x${"77".repeat(32)}`,
+      blockNumber: "20",
+      blockHash: `0x${"88".repeat(32)}`,
+      outcome: "success",
+      observedAt: 13,
+    },
+  });
+  return applyVerifiedOperationObservation(operation, {
+    type: "record_finalized",
+    identity,
+    finality: {
+      blockNumber: "21",
+      blockHash: `0x${"99".repeat(32)}`,
+      observedAt: 14,
+    },
+  });
+}
+
+function operationEnvelope(
+  operation: Operation,
+  storeRevision = 0,
+): Readonly<StoreRecord<Operation, typeof OAATH_OPERATION_STORE_RECORD_VERSION>> {
+  return Object.freeze({
+    version: OAATH_OPERATION_STORE_RECORD_VERSION,
+    storeRevision,
+    updatedAt: operation.updatedAt,
+    value: operation,
+  });
 }
 
 function clone<Value>(value: Value): Value {
@@ -694,6 +746,9 @@ describe("aggregate store boundary", () => {
       async get() {
         calls += 1;
       },
+      async getArchived() {
+        calls += 1;
+      },
       async compareAndSwap() {
         calls += 1;
         return true;
@@ -721,6 +776,148 @@ describe("aggregate store boundary", () => {
       "store_key_mismatch",
     );
     expect(calls).toBe(0);
+  });
+
+  it("requires the current archive capability without legacy adapter shapes", () => {
+    expectStoreConstructorError(
+      () =>
+        new OperationStore({
+          async get() {},
+          async compareAndSwap() {
+            return false;
+          },
+          async close() {},
+        }),
+      "store_input_invalid",
+    );
+  });
+
+  it("archives only a successful distinct terminal replacement in memory", async () => {
+    const adapter = createMemoryOperationStoreAdapter();
+    const store = new OperationStore(adapter);
+    const key = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+    const firstIdentity = operationIdentity();
+    let first = preparedOperation();
+
+    const inserted = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: null,
+      next: first,
+    });
+    expect(inserted.status).toBe("committed");
+    await expect(
+      adapter.getArchived({ key, userOperationHash: firstIdentity.userOperationHash }),
+    ).resolves.toBeUndefined();
+
+    first = advanceOperation(first, {
+      type: "mark_submission_attempted",
+      identity: firstIdentity,
+      attemptedAt: 11,
+    });
+    const sameIdentity = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: 0,
+      next: first,
+    });
+    expect(sameIdentity.status).toBe("committed");
+    await expect(
+      adapter.getArchived({ key, userOperationHash: firstIdentity.userOperationHash }),
+    ).resolves.toBeUndefined();
+
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key,
+          expectedStoreRevision: 1,
+          next: preparedOperation(31_337, "7"),
+        }),
+      "store_lane_occupied",
+    );
+    await expect(
+      adapter.getArchived({ key, userOperationHash: firstIdentity.userOperationHash }),
+    ).resolves.toBeUndefined();
+
+    first = finalizedOperation();
+    const terminal = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: 1,
+      next: first,
+    });
+    expect(terminal.status).toBe("committed");
+    const failed = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: 1,
+      next: preparedOperation(31_337, "7"),
+    });
+    expect(failed).toMatchObject({ status: "conflict", current: { storeRevision: 2 } });
+    await expect(
+      adapter.getArchived({ key, userOperationHash: firstIdentity.userOperationHash }),
+    ).resolves.toBeUndefined();
+
+    const second = preparedOperation(31_337, "7");
+    const replaced = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: 2,
+      next: second,
+    });
+    expect(replaced).toMatchObject({
+      status: "committed",
+      record: { storeRevision: 3, value: { identity: second.identity } },
+    });
+    await expect(store.get(key)).resolves.toEqual(
+      expect.objectContaining({ value: expect.objectContaining({ identity: second.identity }) }),
+    );
+    await expect(store.getExact(key, firstIdentity.userOperationHash)).resolves.toEqual(
+      expect.objectContaining({ storeRevision: 2, value: first }),
+    );
+
+    const reopened = new OperationStore(adapter);
+    await expect(reopened.getExact(key, firstIdentity.userOperationHash)).resolves.toEqual(
+      expect.objectContaining({ storeRevision: 2, value: first }),
+    );
+    await expect(reopened.getExact(key, `0x${"aa".repeat(32)}`)).resolves.toBeUndefined();
+    await reopened.close();
+  });
+
+  it("fails closed on malformed, mismatched, and occupying archive evidence", async () => {
+    const key = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+    const current = operationEnvelope(preparedOperation(31_337, "7"), 5);
+    let archived: unknown;
+    let archiveReads = 0;
+    const store = new OperationStore({
+      async get() {
+        return current;
+      },
+      async getArchived() {
+        archiveReads += 1;
+        return archived;
+      },
+      async compareAndSwap() {
+        return false;
+      },
+      async close() {},
+    });
+    const expectedHash = operationIdentity().userOperationHash;
+
+    await expect(store.getExact(key, current.value.identity.userOperationHash)).resolves.toEqual(
+      expect.objectContaining({ storeRevision: 5 }),
+    );
+    expect(archiveReads).toBe(0);
+
+    archived = undefined;
+    await expect(store.getExact(key, expectedHash)).resolves.toBeUndefined();
+
+    archived = {};
+    await expectStoreError(() => store.getExact(key, expectedHash), "store_record_invalid");
+
+    archived = operationEnvelope(finalizedOperation(31_337, "8"), 4);
+    await expectStoreError(() => store.getExact(key, expectedHash), "store_identity_mismatch");
+
+    archived = operationEnvelope(finalizedOperation(2, "6"), 4);
+    await expectStoreError(() => store.getExact(key, expectedHash), "store_key_mismatch");
+
+    archived = operationEnvelope(preparedOperation(), 4);
+    await expectStoreError(() => store.getExact(key, expectedHash), "store_record_invalid");
   });
 
   it("keeps close retryable after failure and closes only after success", async () => {

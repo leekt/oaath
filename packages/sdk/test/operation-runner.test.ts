@@ -152,15 +152,20 @@ function terminalObserver(terminal: "finalized" | "dropped"): OperationObserver 
 
 interface MemoryControl {
   raw?: unknown;
+  archives?: Map<string, unknown>;
   fault?: (next: OperationStoreRecord) => boolean;
   closeFailures: number;
   closeCalls: number;
 }
 
 function memoryStore(control: MemoryControl): OperationStore {
+  control.archives ??= new Map<string, unknown>();
   const adapter: OperationStoreAdapter = {
     async get() {
       return control.raw;
+    },
+    async getArchived(input) {
+      return control.archives?.get(JSON.stringify([input.key, input.userOperationHash]));
     },
     async compareAndSwap(input) {
       const next = input.next as OperationStoreRecord;
@@ -172,6 +177,11 @@ function memoryStore(control: MemoryControl): OperationStore {
           current?.storeRevision !== input.expectedStoreRevision)
       ) {
         return false;
+      }
+      if (input.archive !== null) {
+        const archiveKey = JSON.stringify([input.key, input.archive.userOperationHash]);
+        if (control.archives?.has(archiveKey)) return false;
+        control.archives?.set(archiveKey, input.archive.record);
       }
       control.raw = next;
       return true;
@@ -421,6 +431,78 @@ describe("OperationRunner", () => {
     expect(observerReads).toBeGreaterThan(0);
     expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
     await operationRunner.close();
+  });
+
+  it("observes an archived terminal identity without preparing, opening, or sending", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const firstSnapshot = prepared("execution");
+    const first = runner({
+      store: memoryStore(control),
+      prepared: firstSnapshot,
+      counters: counters(),
+      observer: terminalObserver("finalized"),
+    });
+    await expect(first.runOperation(runInput("execution"))).resolves.toMatchObject({
+      status: "observed",
+      record: { value: { state: "finalized" } },
+    });
+
+    const secondSnapshot = prepared("execution", "8");
+    const second = runner({
+      store: memoryStore(control),
+      prepared: secondSnapshot,
+      counters: counters(),
+    });
+    await second.runOperation({
+      ...runInput("execution"),
+      preparedAt: 20,
+      attemptedAt: 21,
+      submittedAt: 22,
+      observedAt: 23,
+    });
+    expect(storedOperation(control)?.identity.userOperationHash).toBe(
+      secondSnapshot.userOperationHash,
+    );
+
+    const staleCounters = counters();
+    const stale = runner({
+      store: memoryStore(control),
+      prepared: firstSnapshot,
+      counters: staleCounters,
+      observer: {
+        async observeOperation(inputValue) {
+          const input = inputValue as { operation: Operation };
+          if (input.operation.state !== "finalized") {
+            throw new Error("expected archived finalized operation");
+          }
+          return { status: "finalized", operation: input.operation };
+        },
+        async close() {},
+      },
+    });
+    const observed = await stale.observeOperation({
+      ...runInput("execution"),
+      preparedAt: 30,
+      attemptedAt: 30,
+      submittedAt: 30,
+      observedAt: 30,
+      expectedUserOperationHash: firstSnapshot.userOperationHash,
+    });
+
+    expect(observed).toMatchObject({
+      status: "observed",
+      record: {
+        value: {
+          state: "finalized",
+          identity: { userOperationHash: firstSnapshot.userOperationHash },
+        },
+      },
+    });
+    expect(storedOperation(control)?.identity.userOperationHash).toBe(
+      secondSnapshot.userOperationHash,
+    );
+    expect(staleCounters).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    await Promise.all([first.close(), second.close(), stale.close()]);
   });
 
   it("rejects absent and wrong-hash observations before every external effect", async () => {
@@ -1030,15 +1112,20 @@ describe("OperationRunner", () => {
     // Kind is part of the lane key: owner-signed revocation work never queues
     // behind or replaces session-signed execution work on the same chain.
     const records = new Map<string, unknown>();
+    const archives = new Map<string, unknown>();
     const lanedStore = () =>
       new OperationStore({
         async get(laneKey: unknown) {
           return records.get(JSON.stringify(laneKey));
         },
+        async getArchived(input: { key: unknown; userOperationHash: string }) {
+          return archives.get(JSON.stringify([input.key, input.userOperationHash]));
+        },
         async compareAndSwap(input: {
           key: unknown;
           expectedStoreRevision: number | null;
           next: unknown;
+          archive: Readonly<{ userOperationHash: string; record: unknown }> | null;
         }) {
           const lane = JSON.stringify(input.key);
           const current = records.get(lane) as OperationStoreRecord | undefined;
@@ -1048,6 +1135,11 @@ describe("OperationRunner", () => {
               current?.storeRevision !== input.expectedStoreRevision)
           ) {
             return false;
+          }
+          if (input.archive !== null) {
+            const archiveKey = JSON.stringify([input.key, input.archive.userOperationHash]);
+            if (archives.has(archiveKey)) return false;
+            archives.set(archiveKey, input.archive.record);
           }
           records.set(lane, input.next);
           return true;
@@ -1227,18 +1319,27 @@ describe("OperationRunner", () => {
     const terminalRecord = seedControl.raw as OperationStoreRecord;
 
     let retained: OperationStoreRecord | undefined;
+    let archived: unknown;
     let injected = false;
     const store = new OperationStore({
       async get() {
         return retained;
       },
-      async compareAndSwap(input: { expectedStoreRevision: number | null; next: unknown }) {
+      async getArchived() {
+        return archived;
+      },
+      async compareAndSwap(input: {
+        expectedStoreRevision: number | null;
+        next: unknown;
+        archive: Readonly<{ record: unknown }> | null;
+      }) {
         if (!injected) {
           injected = true;
           retained = terminalRecord;
           return false;
         }
         if (retained?.storeRevision !== input.expectedStoreRevision) return false;
+        if (input.archive !== null) archived = input.archive.record;
         retained = input.next as OperationStoreRecord;
         return true;
       },

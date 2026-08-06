@@ -301,7 +301,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     ),
     operations: storePort<OperationStoreAdapter>(
       storeRecord.operations,
-      ["get", "compareAndSwap", "close"],
+      ["get", "getArchived", "compareAndSwap", "close"],
       "Operation store",
       context,
     ),

@@ -659,6 +659,17 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     }
   }
 
+  async function getExactRecord(
+    key: Readonly<OperationStoreKey>,
+    expectedUserOperationHash: `0x${string}`,
+  ): Promise<OperationStoreRecord | undefined> {
+    try {
+      return await configuration.store.getExact(key, expectedUserOperationHash);
+    } catch (error) {
+      return mapStoreError(error);
+    }
+  }
+
   async function commit(
     key: Readonly<OperationStoreKey>,
     expectedStoreRevision: number | null,
@@ -992,8 +1003,15 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
   async function observeOperation(inputValue: unknown): Promise<OperationObserveResult> {
     return withActiveRun(async () => {
       const input = parseObserveInput(inputValue);
-      const record = await getRecord(input.key);
+      const record = await getExactRecord(input.key, input.expectedUserOperationHash);
       if (!record) {
+        const current = await getRecord(input.key);
+        if (current) {
+          return runnerError(
+            "operation_runner_identity_mismatch",
+            "stored Operation does not match the expected UserOperation hash",
+          );
+        }
         return runnerError(
           "operation_runner_state_conflict",
           "expected Operation is absent from the requested lane",
