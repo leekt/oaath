@@ -7,21 +7,25 @@
  * refuses extractable handles, and compare-and-swap compares the stored
  * revision — so a test that passes here proves the contract, not the medium.
  *
- * ponytail: one file for five small backends; split when one grows past its
+ * ponytail: one file for six small backends; split when one grows past its
  * factory.
  *
  * @author taek <leekt216@gmail.com>
  */
 import type { GrantStoreAdapter, OperationStoreAdapter, StoreRecord } from "../../store.js";
+import { matchesExpectedRevision } from "../indexeddb/database.js";
 import {
   type OaathCleanupCheckpoint,
   type OaathCleanupCheckpointStore,
   type OaathClientContext,
   type OaathContextStore,
   type OaathKeyStore,
+  parseWalletCallBundleKey,
   persistenceFail,
   persistenceId,
   requireNonExtractableKey,
+  type WalletCallBundleKey,
+  type WalletCallBundleStoreAdapter,
 } from "../interfaces.js";
 
 function assertOpen(closed: boolean): void {
@@ -39,6 +43,11 @@ function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: 
   // The array form keeps a grantId containing a separator from colliding with
   // another lane, the same way the IndexedDB backend uses a composite key.
   return JSON.stringify([persistenceId(input.grantId, "memory grantId"), chainId, input.kind]);
+}
+
+function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
+  const key = parseWalletCallBundleKey(input);
+  return JSON.stringify([key.providerScopeId, key.account, key.id]);
 }
 
 function compareAndSwap(
@@ -99,6 +108,37 @@ export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
         input.expectedStoreRevision,
         input.next,
       );
+    },
+    async close() {
+      closed = true;
+    },
+  };
+  return Object.freeze(adapter);
+}
+
+export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStoreAdapter {
+  const records = new Map<string, Readonly<StoreRecord<unknown>>>();
+  let closed = false;
+  const adapter: WalletCallBundleStoreAdapter = {
+    async get(key: Readonly<WalletCallBundleKey>) {
+      assertOpen(closed);
+      return records.get(walletCallBundleKey(key));
+    },
+    async compareAndSwap(input) {
+      assertOpen(closed);
+      const key = walletCallBundleKey(input.key);
+      const current = records.get(key);
+      if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+      records.set(key, input.next);
+      return true;
+    },
+    async compareAndDelete(input) {
+      assertOpen(closed);
+      const key = walletCallBundleKey(input.key);
+      const current = records.get(key);
+      if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+      records.delete(key);
+      return true;
     },
     async close() {
       closed = true;

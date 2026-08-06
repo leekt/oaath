@@ -13,13 +13,16 @@
  * client context       the exact reviewed request and approved policy for the
  *                      realm's active Grant, so a reload can evaluate coverage
  *                      without asking the application for identifiers
+ * wallet-call bundles  the provider-scoped EIP-5792 id reservation and exact
+ *                      Operation binding used by reload-safe status lookup
  * ```
  *
  * Every store hands back `unknown`. The fact's owner captures it: `GrantStore`
- * and `OperationStore` for aggregates, `parseCleanupCheckpoint` and
- * `parseClientContext` here, `requireNonExtractableKey` for key handles. A
- * backend never validates domain meaning, and no reader accepts an older
- * version: an unsupported version is rejected, not migrated.
+ * and `OperationStore` for aggregates, `WalletCallBundleStore` for wallet-call
+ * ids, `parseCleanupCheckpoint` and `parseClientContext` here, and
+ * `requireNonExtractableKey` for key handles. A backend never validates domain
+ * meaning, and no reader accepts an older version: an unsupported version is
+ * rejected, not migrated.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -34,16 +37,23 @@ import {
   parseGrantPolicy,
   parsePermissionRequest,
 } from "@oaath/protocol";
+import type { Address, Hash } from "viem";
 import {
   type KernelAllChainApproval,
   parseKernelAllChainApproval,
 } from "../kernel/permission/materialize.js";
+import type { OperationStoreKey, StoreRecord } from "../store.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
+export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v1" as const;
+export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
+  "oaath.wallet-call-bundle-store-record/v1" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
+const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const MAX_ID_LENGTH = 256;
+const MAX_WALLET_CALL_BUNDLE_ID_UTF8_BYTES = 4_096;
 const MAX_EFFECTS = 4;
 
 export type PersistenceErrorCode =
@@ -105,6 +115,249 @@ function persistenceTime(value: unknown, label: string, code: PersistenceErrorCo
     return persistenceFail(code, `${label} must be a nonnegative safe integer`);
   }
   return value;
+}
+
+function walletCallBundleSafeInteger(
+  value: unknown,
+  label: string,
+  code: PersistenceErrorCode,
+  minimum: 0 | 1,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    Object.is(value, -0) ||
+    value < minimum
+  ) {
+    return persistenceFail(
+      code,
+      `${label} must be a ${minimum === 0 ? "nonnegative" : "positive"} safe integer`,
+    );
+  }
+  return value;
+}
+
+function walletCallBundleId(value: unknown, label: string, code: PersistenceErrorCode): string {
+  if (
+    typeof value !== "string" ||
+    value.length < 1 ||
+    value.length > MAX_WALLET_CALL_BUNDLE_ID_UTF8_BYTES ||
+    new TextEncoder().encode(value).byteLength > MAX_WALLET_CALL_BUNDLE_ID_UTF8_BYTES
+  ) {
+    return persistenceFail(code, `${label} must contain 1 to 4096 UTF-8 bytes`);
+  }
+  return value;
+}
+
+function walletCallBundleAddress(
+  value: unknown,
+  label: string,
+  code: PersistenceErrorCode,
+): Address {
+  if (typeof value !== "string" || !ADDRESS.test(value)) {
+    return persistenceFail(code, `${label} must be a lowercase 20-byte address`);
+  }
+  return value as Address;
+}
+
+function walletCallBundleOperationKey(
+  value: unknown,
+  chainId: number,
+  context: CaptureContext,
+  code: PersistenceErrorCode,
+): Readonly<OperationStoreKey> {
+  const record = exactRecord(
+    value,
+    ["grantId", "chainId", "kind"],
+    "wallet call bundle operation key",
+    context,
+    failFor(code),
+  );
+  const operationChainId = walletCallBundleSafeInteger(
+    record.chainId,
+    "wallet call bundle operation key chainId",
+    code,
+    1,
+  );
+  if (record.kind !== "execution") {
+    return persistenceFail(code, "wallet call bundle operation key must name an execution lane");
+  }
+  if (operationChainId !== chainId) {
+    return persistenceFail(
+      code,
+      "wallet call bundle operation key chainId does not match the bundle",
+    );
+  }
+  return Object.freeze({
+    grantId: persistenceId(
+      record.grantId,
+      "wallet call bundle operation key grantId",
+      failFor(code),
+    ),
+    chainId: operationChainId,
+    kind: "execution",
+  });
+}
+
+function walletCallBundleOperation(
+  value: unknown,
+  chainId: number,
+  context: CaptureContext,
+  code: PersistenceErrorCode,
+): Readonly<WalletCallBundleOperation> {
+  const record = exactRecord(
+    value,
+    ["key", "userOperationHash"],
+    "wallet call bundle operation binding",
+    context,
+    failFor(code),
+  );
+  return Object.freeze({
+    key: walletCallBundleOperationKey(record.key, chainId, context, code),
+    userOperationHash: persistenceHash(
+      record.userOperationHash,
+      "wallet call bundle userOperationHash",
+      code,
+    ),
+  });
+}
+
+/** The exact durable uniqueness key. Chain is deliberately not an axis. */
+export interface WalletCallBundleKey {
+  readonly providerScopeId: Hash;
+  readonly account: Address;
+  readonly id: string;
+}
+
+export interface WalletCallBundleOperation {
+  readonly key: Readonly<OperationStoreKey>;
+  readonly userOperationHash: Hash;
+}
+
+export interface WalletCallBundleRecord {
+  readonly version: typeof OAATH_WALLET_CALL_BUNDLE_VERSION;
+  readonly providerScopeId: Hash;
+  readonly id: string;
+  readonly account: Address;
+  readonly chainId: number;
+  readonly createdAt: number;
+  readonly requestHash: Hash;
+  readonly operation: Readonly<WalletCallBundleOperation> | null;
+  readonly state: "accepted" | "operation_bound" | "terminal";
+}
+
+export type WalletCallBundleStoreRecord = Readonly<
+  StoreRecord<
+    Readonly<WalletCallBundleRecord>,
+    typeof OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION
+  >
+>;
+
+/** Raw persistence capability. The fact owner, never the adapter, validates every result. */
+export interface WalletCallBundleStoreAdapter {
+  get(key: Readonly<WalletCallBundleKey>): Promise<unknown>;
+  compareAndSwap(input: {
+    readonly key: Readonly<WalletCallBundleKey>;
+    readonly expectedStoreRevision: number | null;
+    readonly next: Readonly<StoreRecord<unknown>>;
+  }): Promise<unknown>;
+  compareAndDelete(input: {
+    readonly key: Readonly<WalletCallBundleKey>;
+    readonly expectedStoreRevision: number;
+  }): Promise<unknown>;
+  close(): Promise<unknown>;
+}
+
+/** Captures one caller-supplied bundle key without normalizing any component. */
+export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBundleKey> {
+  const code: PersistenceErrorCode = "persistence_input_invalid";
+  const record = exactRecord(
+    value,
+    ["providerScopeId", "account", "id"],
+    "wallet call bundle key",
+    new WeakSet(),
+    failFor(code),
+  );
+  return Object.freeze({
+    providerScopeId: persistenceHash(
+      record.providerScopeId,
+      "wallet call bundle providerScopeId",
+      code,
+    ),
+    account: walletCallBundleAddress(record.account, "wallet call bundle account", code),
+    id: walletCallBundleId(record.id, "wallet call bundle id", code),
+  });
+}
+
+/** Captures the one current wallet-call bundle value schema. */
+export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
+  const code: PersistenceErrorCode = "persistence_record_invalid";
+  const context: CaptureContext = new WeakSet();
+  const record = exactRecord(
+    value,
+    [
+      "version",
+      "providerScopeId",
+      "id",
+      "account",
+      "chainId",
+      "createdAt",
+      "requestHash",
+      "operation",
+      "state",
+    ],
+    "wallet call bundle record",
+    context,
+    failFor(code),
+  );
+  if (record.version !== OAATH_WALLET_CALL_BUNDLE_VERSION) {
+    return persistenceFail(code, "wallet call bundle version is unsupported");
+  }
+
+  const chainId = walletCallBundleSafeInteger(
+    record.chainId,
+    "wallet call bundle chainId",
+    code,
+    1,
+  );
+  const operation =
+    record.operation === null
+      ? null
+      : walletCallBundleOperation(record.operation, chainId, context, code);
+  if (
+    record.state !== "accepted" &&
+    record.state !== "operation_bound" &&
+    record.state !== "terminal"
+  ) {
+    return persistenceFail(code, "wallet call bundle state is unsupported");
+  }
+  if (record.state === "accepted" && operation !== null) {
+    return persistenceFail(code, "an accepted wallet call bundle cannot bind an operation");
+  }
+  if (record.state === "operation_bound" && operation === null) {
+    return persistenceFail(code, "an operation-bound wallet call bundle requires an operation");
+  }
+
+  return Object.freeze({
+    version: OAATH_WALLET_CALL_BUNDLE_VERSION,
+    providerScopeId: persistenceHash(
+      record.providerScopeId,
+      "wallet call bundle providerScopeId",
+      code,
+    ),
+    id: walletCallBundleId(record.id, "wallet call bundle id", code),
+    account: walletCallBundleAddress(record.account, "wallet call bundle account", code),
+    chainId,
+    createdAt: walletCallBundleSafeInteger(
+      record.createdAt,
+      "wallet call bundle createdAt",
+      code,
+      0,
+    ),
+    requestHash: persistenceHash(record.requestHash, "wallet call bundle requestHash", code),
+    operation,
+    state: record.state,
+  });
 }
 
 /**

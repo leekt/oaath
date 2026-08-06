@@ -21,7 +21,10 @@ import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
   OAATH_INDEXEDDB_NAME,
+  OAATH_INDEXEDDB_STORES,
+  OAATH_INDEXEDDB_VERSION,
   type OaathDatabase,
   openOaathDatabase,
   requireNonExtractableKey,
@@ -65,6 +68,19 @@ async function nonExtractableKey(): Promise<CryptoKey> {
     "verify",
   ]);
   return pair.privateKey;
+}
+
+async function readStoreNames(factory: IDBFactory): Promise<readonly string[]> {
+  return new Promise<readonly string[]>((resolve, reject) => {
+    const request = factory.open(OAATH_INDEXEDDB_NAME, OAATH_INDEXEDDB_VERSION);
+    request.onsuccess = () => {
+      const database = request.result;
+      const names = Array.from(database.objectStoreNames);
+      database.close();
+      resolve(names);
+    };
+    request.onerror = () => reject(request.error);
+  });
 }
 
 describe("IndexedDB realm recreation", () => {
@@ -212,11 +228,12 @@ describe("IndexedDB realm recreation", () => {
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 
-  it("discards a database that does not carry the current schema instead of migrating it", async () => {
+  it("recreates a malformed v3 database with exactly the six current stores", async () => {
     const factory = new IDBFactory();
-    // An older build's realm: same name, a schema this version does not read.
+    // A partial same-version realm receives no upgrade event, so the explicit
+    // schema check must discard it and recreate the complete current schema.
     await new Promise<void>((resolve, reject) => {
-      const request = factory.open(OAATH_INDEXEDDB_NAME, 1);
+      const request = factory.open(OAATH_INDEXEDDB_NAME, OAATH_INDEXEDDB_VERSION);
       request.onupgradeneeded = () => {
         request.result.createObjectStore("legacy-grants").put({ legacy: true }, "old");
       };
@@ -229,6 +246,17 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
+    expect(database.version).toBe(3);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(3);
+    expect(await readStoreNames(factory)).toEqual([
+      "cleanup",
+      "context",
+      "grants",
+      "keys",
+      "operations",
+      "walletCallBundles",
+    ]);
+    expect(Object.values(OAATH_INDEXEDDB_STORES)).toHaveLength(6);
     // The legacy store is gone, not read and not migrated.
     await expect(
       database.transact(["grants"], "readonly", async ([store]) => store?.name),
@@ -240,13 +268,9 @@ describe("IndexedDB realm recreation", () => {
     expect(await grants.get("old")).toBeUndefined();
   });
 
-  it("wipes an older-shaped database in place and deletes retired-name siblings", async () => {
+  it("wipes every stale v2 store in place and deletes retired-name siblings", async () => {
     const factory = new IDBFactory();
-    // Pre-release there is no migration: an existing database at an older
-    // numeric version — e.g. one whose operation journals used two-part keys
-    // that would be silently invisible under the current key shape — is wiped
-    // by the upgrade handler, never read. Old versioned names are deleted.
-    for (const name of ["oaath.browser-state/v0", "oaath.browser-state/v2", OAATH_INDEXEDDB_NAME]) {
+    for (const name of ["oaath.browser-state/v0", "oaath.browser-state/v2"]) {
       await new Promise<void>((resolve, reject) => {
         const request = factory.open(name, 1);
         request.onupgradeneeded = () => {
@@ -260,11 +284,57 @@ describe("IndexedDB realm recreation", () => {
         request.onerror = () => reject(request.error);
       });
     }
+
+    // The exact v2 schema held five stores. Every one receives a recognizable
+    // stale value so the v3 open proves wholesale deletion rather than a
+    // migration or a selectively preserved store.
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 2);
+      request.onupgradeneeded = () => {
+        request.result
+          .createObjectStore("grants")
+          .put({ source: "v2", store: "grants" }, "stale-grant");
+        request.result
+          .createObjectStore("operations")
+          .put({ source: "v2", store: "operations" }, ["stale-grant", CHAIN_ID, "execution"]);
+        request.result.createObjectStore("keys").put({ source: "v2", store: "keys" }, "stale-key");
+        request.result
+          .createObjectStore("cleanup")
+          .put({ source: "v2", store: "cleanup" }, "stale-cleanup");
+        request.result
+          .createObjectStore("context")
+          .put({ source: "v2", store: "context" }, "stale-context");
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    // The stale record died with the upgrade.
-    const grants = new GrantStore(createIndexedDbGrantStoreAdapter(database));
-    expect(await grants.get("old")).toBeUndefined();
+    expect(database.version).toBe(3);
+
+    const staleBundleKey = {
+      providerScopeId: `0x${"51".repeat(32)}` as const,
+      account: `0x${"52".repeat(20)}` as const,
+      id: "stale-bundle",
+    };
+    await expect(
+      Promise.all([
+        createIndexedDbGrantStoreAdapter(database).get("stale-grant"),
+        createIndexedDbOperationStoreAdapter(database).get({
+          grantId: "stale-grant",
+          chainId: CHAIN_ID,
+          kind: "execution",
+        }),
+        createIndexedDbKeyStore(database).get("stale-key"),
+        createIndexedDbCleanupStore(database).read("stale-cleanup"),
+        createIndexedDbContextStore(database).read("stale-context"),
+        createIndexedDbWalletCallBundleStoreAdapter(database).get(staleBundleKey),
+      ]),
+    ).resolves.toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
   });
 
   it("refuses an extractable key handle and a persisted value that is not a handle", async () => {
