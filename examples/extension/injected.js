@@ -1,6 +1,10 @@
 /**
  * Page-world provider: the only thing a dapp ever sees.
  *
+ * Declared in the manifest with `"world": "MAIN"`, so Chrome itself runs it in
+ * the page's world — a page CSP that blocks `chrome-extension://` script
+ * elements cannot block it, the way it could a DOM-injected script tag.
+ *
  * It holds no keys, no Grant, and no transport — every request crosses
  * `window.postMessage` to the content script, which relays it to the
  * extension's service worker where the OAAth realm lives. The page can lie

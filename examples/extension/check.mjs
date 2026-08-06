@@ -27,9 +27,15 @@ expect(built.status === 0, "build.mjs failed");
 const manifest = JSON.parse(readFileSync(join(HERE, "dist", "manifest.json"), "utf8"));
 expect(manifest.manifest_version === 3, "manifest must be MV3");
 expect(manifest.background.service_worker === "worker.bundle.js", "worker entry mismatch");
+// Chrome injects the page-world provider itself, so a page CSP cannot block
+// it the way it could a DOM-appended chrome-extension:// script element.
+const pageWorld = manifest.content_scripts.find((entry) => entry.js.includes("injected.js"));
+expect(pageWorld?.world === "MAIN", "page-world provider must be a MAIN-world content script");
 expect(
-  manifest.web_accessible_resources[0].resources.includes("injected.js"),
-  "page-world provider must be web accessible",
+  manifest.content_scripts.some(
+    (entry) => entry.js.includes("content.js") && entry.world !== "MAIN",
+  ),
+  "the bridge must stay in the isolated world",
 );
 
 const bundle = readFileSync(join(HERE, "dist", "worker.bundle.js"), "utf8");
