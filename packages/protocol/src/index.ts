@@ -187,11 +187,13 @@ export type {
   OperationInclusion,
   OperationKind,
   OperationOutcome,
+  OperationSupersession,
   OperationTransition,
   OperationWeakObservation,
   PreparedOperation,
   SubmissionAttemptedOperation,
   SubmittedOperation,
+  SupersededOperation,
   UserOperationReference,
 } from "./operation.js";
 export {

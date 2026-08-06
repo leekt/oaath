@@ -92,6 +92,16 @@ function replacementDrop() {
   };
 }
 
+function supersession(observedNonce = "9", at = 13) {
+  return {
+    kind: "entry_point_nonce_advanced" as const,
+    observedNonce,
+    blockNumber: "25",
+    blockHash: inclusionBlockHash,
+    observedAt: at,
+  };
+}
+
 function expectOperationError(action: () => unknown, code: OaathOperationError["code"]): void {
   try {
     action();
@@ -102,6 +112,104 @@ function expectOperationError(action: () => unknown, code: OaathOperationError["
   }
   throw new Error(`Expected ${code}`);
 }
+
+describe("Operation supersession", () => {
+  it("frees the lane when the nonce provably advanced past a sent operation", () => {
+    // identity.nonce is 7 on key 0; a verified read of 9 proves this identity
+    // can never be included at its nonce. Whether it executed earlier stays
+    // deliberately unproven — the state claims exactly that and nothing more.
+    const stuck = submitted(attempted(prepared()));
+    const superseded = applyVerifiedOperationObservation(stuck, {
+      type: "record_superseded",
+      identity,
+      supersession: supersession(),
+    });
+    expect(superseded).toMatchObject({
+      state: "superseded",
+      submittedAt: 12,
+      supersession: { observedNonce: "9" },
+      observation: null,
+    });
+    expect(operationOccupiesLane(superseded)).toBe(false);
+    // The record round-trips through the exact parser.
+    expect(parseOperation(JSON.parse(JSON.stringify(superseded)))).toEqual(superseded);
+    // Terminal: weak observations answer it unchanged, stronger claims are
+    // forbidden — a superseded identity is never revived.
+    expect(
+      applyVerifiedOperationObservation(superseded, {
+        type: "record_pending",
+        identity,
+        observedAt: 14,
+        reason: "receipt_missing",
+      }),
+    ).toEqual(superseded);
+    expectOperationError(
+      () =>
+        applyVerifiedOperationObservation(superseded, {
+          type: "record_superseded",
+          identity,
+          supersession: supersession("10", 15),
+        }),
+      "operation_transition_forbidden",
+    );
+  });
+
+  it("supersedes an acknowledged-but-unproven submission attempt", () => {
+    const superseded = applyVerifiedOperationObservation(attempted(prepared()), {
+      type: "record_superseded",
+      identity,
+      supersession: supersession(),
+    });
+    expect(superseded).toMatchObject({ state: "superseded", submittedAt: null });
+  });
+
+  it("never supersedes prepared, included, or terminal operations", () => {
+    for (const operation of [
+      prepared(),
+      included(submitted(attempted(prepared()))),
+      applyVerifiedOperationObservation(included(submitted(attempted(prepared()))), {
+        type: "record_finalized",
+        identity,
+        finality: { blockNumber: "25", blockHash: finalityBlockHash, observedAt: 14 },
+      }),
+    ]) {
+      expectOperationError(
+        () =>
+          applyVerifiedOperationObservation(operation, {
+            type: "record_superseded",
+            identity,
+            supersession: supersession("9", 20),
+          }),
+        "operation_transition_forbidden",
+      );
+    }
+  });
+
+  it("refuses supersession evidence that proves no advance", () => {
+    const stuck = submitted(attempted(prepared()));
+    // Equal sequence: the operation itself may own that nonce.
+    expectOperationError(
+      () =>
+        applyVerifiedOperationObservation(stuck, {
+          type: "record_superseded",
+          identity,
+          supersession: supersession("7"),
+        }),
+      "operation_transition_invalid",
+    );
+    // A different 192-bit key says nothing about this lane.
+    const otherKey = ((1n << 64n) + 9n).toString(10);
+    expectOperationError(
+      () =>
+        applyVerifiedOperationObservation(stuck, {
+          type: "record_superseded",
+          identity,
+          supersession: supersession(otherKey),
+        }),
+      "operation_transition_invalid",
+    );
+  });
+});
 
 describe("Operation aggregate", () => {
   it("advances one exact acknowledged operation through finalized success", () => {

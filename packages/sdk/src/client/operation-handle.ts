@@ -32,7 +32,12 @@ const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 
-export type OaathOperationStatus = "finalized" | "dropped" | "pending" | "unreadable";
+export type OaathOperationStatus =
+  | "finalized"
+  | "dropped"
+  | "superseded"
+  | "pending"
+  | "unreadable";
 
 export interface OaathOperationOutcome {
   readonly status: OaathOperationStatus;
@@ -144,6 +149,11 @@ export function operationOutcome(result: OperationRunResult): Readonly<OaathOper
   }
   if (operation.state === "dropped") {
     return Object.freeze({ status: "dropped", ...base, reason: null });
+  }
+  if (operation.state === "superseded") {
+    // The lane is conclusively free — this identity can never be included at
+    // its nonce — while whether it executed earlier stays unproven.
+    return Object.freeze({ status: "superseded", ...base, reason: null });
   }
   return Object.freeze({
     status: "pending",
@@ -322,10 +332,12 @@ export function createOperationHandle(
     receipt,
     async wait(value?: unknown): Promise<Readonly<OaathOperationOutcome>> {
       const attempts = attemptCount(value);
-      if (latest.status === "finalized" || latest.status === "dropped") return latest;
+      const terminal = (status: OaathOperationStatus) =>
+        status === "finalized" || status === "dropped" || status === "superseded";
+      if (terminal(latest.status)) return latest;
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const outcome = await observeOnce();
-        if (outcome.status === "finalized" || outcome.status === "dropped") return outcome;
+        if (terminal(outcome.status)) return outcome;
       }
       // ponytail: no backoff scheduler; the caller decides when to poll again.
       return latest;

@@ -142,6 +142,43 @@ describe("browser golden path", () => {
     await sessionConnection.close();
   });
 
+  it("frees a starved lane once the nonce provably advanced, without resubmitting", async () => {
+    // The receipt for the first operation never becomes readable, but the
+    // chain's EntryPoint nonce for the session's own key reads past its
+    // sequence: that identity can never be included at its nonce, so the lane
+    // reopens. The stuck operation stays `superseded` — never falsified into
+    // dropped, never resubmitted — and the next operation proceeds.
+    let withhold = true;
+    const realm = createRealm({
+      chain: createChainFixture({
+        withholdReceipt: () => withhold,
+        entryPointNonce: (operationNonce) => (BigInt(operationNonce) + 1n).toString(10),
+      }),
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+
+    const stuck = await grant.sendCalls(sendCallsInput());
+    const outcome = await stuck.wait();
+    expect(outcome.status).toBe("superseded");
+    expect(outcome.transactionHash).toBeNull();
+    expect(realm.chain.sends).toHaveLength(1);
+
+    // The lane is free: the next operation starts, submits its own identity,
+    // and finalizes; the superseded one was never sent again.
+    withhold = false;
+    const next = await grant.sendCalls(sendCallsInput());
+    expect((await next.wait()).status).toBe("finalized");
+    expect(realm.chain.sends).toHaveLength(2);
+    expect(realm.chain.sends[1]?.userOperationHash).not.toBe(
+      realm.chain.sends[0]?.userOperationHash,
+    );
+    // The superseded outcome stands on its handle; the durable journal keeps
+    // one record per lane, now owned by the replacing operation.
+    expect(stuck.outcome.status).toBe("superseded");
+    await connection.close();
+  });
+
   it("fails closed when no submission route is available", async () => {
     const realm = createRealm({
       chain: createChainFixture({ bundler: "absent", feePayer: null }),

@@ -346,7 +346,8 @@ function deriveObservedOperation(
     if (sameOperation(current, observation.operation)) {
       return observation.status === "included" ||
         observation.status === "finalized" ||
-        observation.status === "dropped"
+        observation.status === "dropped" ||
+        observation.status === "superseded"
         ? current
         : null;
     }
@@ -385,6 +386,12 @@ function deriveObservedOperation(
         type: "record_finalized",
         identity: next.identity,
         finality: observation.operation.finality,
+      });
+    } else if (observation.status === "superseded") {
+      next = applyVerifiedOperationObservation(next, {
+        type: "record_superseded",
+        identity: next.identity,
+        supersession: observation.operation.supersession,
       });
     } else {
       next = applyVerifiedOperationObservation(next, {
@@ -513,6 +520,9 @@ function captureObservation(value: unknown): ObserveOperationResult | null {
       return Object.freeze({ status, operation });
     }
     if (status === "dropped" && operation.state === "dropped") {
+      return Object.freeze({ status, operation });
+    }
+    if (status === "superseded" && operation.state === "superseded") {
       return Object.freeze({ status, operation });
     }
     return null;
