@@ -19,7 +19,11 @@ import {
   type OperationStoreAdapter,
   type OperationStoreRecord,
 } from "../src/advanced.js";
-import { type PreparedUserOperation, prepareUserOperation } from "../src/kernel.js";
+import {
+  deriveOperationId,
+  type PreparedUserOperation,
+  prepareUserOperation,
+} from "../src/kernel.js";
 
 const key = { grantId: "runner-grant", chainId: 31_337, kind: "execution" } as const;
 const entryPoint = `0x${"11".repeat(20)}` as const;
@@ -67,9 +71,13 @@ function runInput(kind: OperationKind) {
   } as const;
 }
 
-function pendingObserver(close: () => Promise<void> = async () => {}) {
+function pendingObserver(
+  close: () => Promise<void> = async () => {},
+  onRead: () => void = () => {},
+) {
   return createOperationObserver({
     async read(request: { type: string }) {
+      onRead();
       if (request.type === "chain_id") return key.chainId;
       if (request.type === "user_operation_receipt") return null;
       if (request.type === "replacement_candidate") return null;
@@ -281,6 +289,292 @@ describe("OperationRunner", () => {
         },
       }),
     ).toThrowError(expect.objectContaining({ code: "operation_runner_capability_invalid" }));
+  });
+
+  it("starts one submitted identity without invoking the observer", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let observerReads = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          observerReads += 1;
+        },
+      ),
+    });
+
+    const result = await operationRunner.startOperation(runInput("execution"));
+
+    expect(result).toMatchObject({
+      status: "started",
+      record: {
+        value: {
+          state: "submitted",
+          observation: null,
+          identity: { userOperationHash: prepared("execution").userOperationHash },
+        },
+      },
+    });
+    expect(observerReads).toBe(0);
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await operationRunner.close();
+  });
+
+  it("keeps an ambiguous fresh start attempted without observing", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let observerReads = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          observerReads += 1;
+        },
+      ),
+      async submit() {
+        count.sends += 1;
+        throw new Error("private post-send ambiguity");
+      },
+    });
+
+    const result = await operationRunner.startOperation(runInput("execution"));
+
+    expect(result).toMatchObject({
+      status: "submission_uncertain",
+      reason: "send_ambiguous",
+      record: { value: { state: "submission_attempted", observation: null } },
+    });
+    expect(observerReads).toBe(0);
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await operationRunner.close();
+  });
+
+  it("rejects a fresh start on an occupied lane without another external effect", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let observerReads = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          observerReads += 1;
+        },
+      ),
+    });
+    await operationRunner.startOperation(runInput("execution"));
+
+    await expectRunnerError(
+      () => operationRunner.startOperation(runInput("execution")),
+      "operation_runner_state_conflict",
+    );
+
+    expect(observerReads).toBe(0);
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    expect(storedOperation(control)?.state).toBe("submitted");
+    await operationRunner.close();
+  });
+
+  it("observes and advances only the exact started identity", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const snapshot = prepared("execution");
+    let observerReads = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          observerReads += 1;
+        },
+      ),
+    });
+    await operationRunner.startOperation(runInput("execution"));
+
+    const result = await operationRunner.observeOperation({
+      ...runInput("execution"),
+      expectedUserOperationHash: snapshot.userOperationHash,
+    });
+
+    expect(result).toMatchObject({
+      status: "observed",
+      observation: { status: "pending", reason: "receipt_missing" },
+      record: {
+        value: {
+          state: "submitted",
+          identity: { userOperationHash: snapshot.userOperationHash },
+          observation: { status: "pending", reason: "receipt_missing" },
+        },
+      },
+    });
+    expect(observerReads).toBeGreaterThan(0);
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await operationRunner.close();
+  });
+
+  it("rejects absent and wrong-hash observations before every external effect", async () => {
+    const snapshot = prepared("execution");
+    const missingControl: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const missingCount = counters();
+    let missingObserverReads = 0;
+    const missing = runner({
+      store: memoryStore(missingControl),
+      prepared: snapshot,
+      counters: missingCount,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          missingObserverReads += 1;
+        },
+      ),
+    });
+    await expectRunnerError(
+      () =>
+        missing.observeOperation({
+          ...runInput("execution"),
+          expectedUserOperationHash: snapshot.userOperationHash,
+        }),
+      "operation_runner_state_conflict",
+    );
+    expect(missingObserverReads).toBe(0);
+    expect(missingCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+
+    const occupiedControl: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const occupiedCount = counters();
+    let occupiedObserverReads = 0;
+    const occupied = runner({
+      store: memoryStore(occupiedControl),
+      prepared: snapshot,
+      counters: occupiedCount,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          occupiedObserverReads += 1;
+        },
+      ),
+    });
+    await occupied.startOperation(runInput("execution"));
+    await expectRunnerError(
+      () =>
+        occupied.observeOperation({
+          ...runInput("execution"),
+          expectedUserOperationHash: `0x${"ff".repeat(32)}`,
+        }),
+      "operation_runner_identity_mismatch",
+    );
+    expect(occupiedObserverReads).toBe(0);
+    expect(occupiedCount).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await Promise.all([missing.close(), occupied.close()]);
+  });
+
+  it("captures the expected observation hash without invoking an accessor", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    let hashReads = 0;
+    let observerReads = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      observer: pendingObserver(
+        async () => {},
+        () => {
+          observerReads += 1;
+        },
+      ),
+    });
+    const hostile = Object.defineProperty(
+      { ...runInput("execution") },
+      "expectedUserOperationHash",
+      {
+        enumerable: true,
+        get() {
+          hashReads += 1;
+          return prepared("execution").userOperationHash;
+        },
+      },
+    );
+
+    await expectRunnerError(
+      () => operationRunner.observeOperation(hostile),
+      "operation_runner_input_invalid",
+    );
+
+    expect(hashReads).toBe(0);
+    expect(observerReads).toBe(0);
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    await operationRunner.close();
+  });
+
+  it("fails closed when the observed identity is replaced before its CAS", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const snapshot = prepared("execution");
+    const replacement = prepared("execution", "8");
+    let replaceDuringObservation = false;
+    let observerCalls = 0;
+    const observer: OperationObserver = {
+      async observeOperation(inputValue) {
+        observerCalls += 1;
+        const input = inputValue as { operation: Operation; observedAt: number };
+        const pending = applyVerifiedOperationObservation(input.operation, {
+          type: "record_pending",
+          identity: input.operation.identity,
+          observedAt: input.observedAt,
+          reason: "receipt_missing",
+        });
+        if (replaceDuringObservation) {
+          const retained = control.raw as OperationStoreRecord;
+          const replaced = createOperation({
+            identity: deriveOperationId(replacement),
+            preparedAt: input.observedAt,
+          });
+          control.raw = Object.freeze({
+            ...retained,
+            storeRevision: retained.storeRevision + 1,
+            updatedAt: replaced.updatedAt,
+            value: replaced,
+          });
+        }
+        return { status: "pending", reason: "receipt_missing", operation: pending };
+      },
+      async close() {},
+    };
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      observer,
+    });
+    await operationRunner.startOperation(runInput("execution"));
+    replaceDuringObservation = true;
+
+    await expectRunnerError(
+      () =>
+        operationRunner.observeOperation({
+          ...runInput("execution"),
+          expectedUserOperationHash: snapshot.userOperationHash,
+        }),
+      "operation_runner_state_conflict",
+    );
+
+    expect(observerCalls).toBe(1);
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    expect(storedOperation(control)?.identity.userOperationHash).toBe(
+      replacement.userOperationHash,
+    );
+    await operationRunner.close();
   });
 
   it.each<OperationKind>(["execution", "revocation"])(

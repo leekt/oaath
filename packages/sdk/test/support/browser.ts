@@ -73,6 +73,8 @@ const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"12".repeat(32)}`);
 const ZERO_ADDRESS = `0x${"00".repeat(20)}` as const;
 const EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" as const;
+const BEFORE_EXECUTION_TOPIC =
+  "0xbb47ee3e183a558b1a2ff0874b079f3fc5478b7454eacf2bfc5af2ff5878f972" as const;
 const INCLUSION_BLOCK = 20n;
 const BLOCK_HASH = `0x${"55".repeat(32)}` as const;
 const PARENT_HASH = `0x${"aa".repeat(32)}` as const;
@@ -488,6 +490,17 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           transactionHash: TRANSACTION_HASH,
           transactionIndex: "0x0",
           logIndex: "0x0",
+          removed: false,
+          topics: [BEFORE_EXECUTION_TOPIC],
+          data: "0x",
+        },
+        {
+          address: prepared.entryPoint.address,
+          blockNumber: quantity(blockNumber(currentIndex())),
+          blockHash: blockHash(currentIndex()),
+          transactionHash: TRANSACTION_HASH,
+          transactionIndex: "0x0",
+          logIndex: "0x1",
           removed: false,
           topics: [
             EVENT_TOPIC,

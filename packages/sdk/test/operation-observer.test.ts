@@ -15,6 +15,7 @@ import {
   OaathOperationObserverError,
   type OperationObserverBlockEvidence,
   type OperationObserverCapabilities,
+  type OperationObserverLogEvidence,
   type OperationObserverReadRequest,
   type OperationObserverTransactionEvidence,
   type OperationObserverTransactionReceiptEvidence,
@@ -38,6 +39,8 @@ const replacementTransactionHash = `0x${"88".repeat(32)}` as const;
 const replacementBlockHash = `0x${"99".repeat(32)}` as const;
 const parentHash = `0x${"aa".repeat(32)}` as const;
 const eventSelector = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" as const;
+const beforeExecutionSelector =
+  "0xbb47ee3e183a558b1a2ff0874b079f3fc5478b7454eacf2bfc5af2ff5878f972" as const;
 const zeroAddress = `0x${"00".repeat(20)}` as const;
 const temporaryDirectories: string[] = [];
 
@@ -77,6 +80,8 @@ interface Occurrence {
   transactionReceipt: OperationObserverTransactionReceiptEvidence;
   transaction: OperationObserverTransactionEvidence;
   block: OperationObserverBlockEvidence;
+  boundary: OperationObserverLogEvidence;
+  event: OperationObserverLogEvidence;
 }
 
 function occurrence(input: {
@@ -94,13 +99,24 @@ function occurrence(input: {
     `0x${"0".repeat(24)}${identity.account.slice(2)}` as const,
     `0x${"0".repeat(24)}${zeroAddress.slice(2)}` as const,
   ];
-  const log = {
+  const boundary = {
     address: identity.entryPoint,
     blockNumber,
     blockHash: input.blockHash,
     transactionHash: input.transactionHash,
     transactionIndex,
     logIndex: "0x0" as const,
+    removed: false,
+    topics: [beforeExecutionSelector],
+    data: "0x" as const,
+  };
+  const event = {
+    address: identity.entryPoint,
+    blockNumber,
+    blockHash: input.blockHash,
+    transactionHash: input.transactionHash,
+    transactionIndex,
+    logIndex: "0x1" as const,
     removed: false,
     topics,
     data: `0x${word(7)}${word(input.success ? 1 : 0)}${word(9)}${word(10)}` as const,
@@ -125,7 +141,7 @@ function occurrence(input: {
       blockHash: input.blockHash,
       transactionIndex,
       status: "0x1",
-      logs: [log],
+      logs: [boundary, event],
     },
     transaction: {
       hash: input.transactionHash,
@@ -140,6 +156,8 @@ function occurrence(input: {
       parentHash,
       transactions: [input.transactionHash],
     },
+    boundary,
+    event,
   };
 }
 
@@ -189,7 +207,6 @@ function finalityChain(
 
 const targetFinality = finalityChain(target, 1_000);
 const replacementFinality = finalityChain(replacement, 2_000);
-const finalizedBlock = targetFinality.finalized;
 
 type FixtureOptions = {
   targetReceipt?: unknown;
@@ -336,7 +353,11 @@ describe("OperationObserver", () => {
         if (request.type !== "transaction_receipt") return value;
         return {
           ...target.transactionReceipt,
-          logs: [other.transactionReceipt.logs[0], target.transactionReceipt.logs[0]],
+          logs: [
+            target.boundary,
+            { ...other.event, logIndex: "0x1" },
+            { ...target.event, logIndex: "0x2" },
+          ],
         };
       },
     });
@@ -488,14 +509,14 @@ describe("OperationObserver", () => {
       "duplicate event",
       (receipt: OperationObserverTransactionReceiptEvidence) => ({
         ...receipt,
-        logs: [receipt.logs[0], { ...receipt.logs[0], logIndex: "0x1" }],
+        logs: [target.boundary, target.event, { ...target.event, logIndex: "0x2" }],
       }),
     ],
     [
       "removed event",
       (receipt: OperationObserverTransactionReceiptEvidence) => ({
         ...receipt,
-        logs: [{ ...receipt.logs[0], removed: true }],
+        logs: [target.boundary, { ...target.event, removed: true }],
       }),
     ],
     [
@@ -506,7 +527,7 @@ describe("OperationObserver", () => {
       "trailing event data",
       (receipt: OperationObserverTransactionReceiptEvidence) => ({
         ...receipt,
-        logs: [{ ...receipt.logs[0], data: `${receipt.logs[0]?.data}${word(0)}` }],
+        logs: [target.boundary, { ...target.event, data: `${target.event.data}${word(0)}` }],
       }),
     ],
   ] as const)("rejects %s", async (_label, mutateReceipt) => {

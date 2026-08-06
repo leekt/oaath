@@ -47,14 +47,14 @@ import {
   kernelKeyCapability,
 } from "../kernel/capabilities.js";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
+import { sameInstall } from "../kernel/internal.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
-import {
-  type KernelAllChainApproval,
-  materializeKernelPermission,
-} from "../kernel/permission/materialize.js";
+import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
 import type { KernelPolicyProfile, KernelRuntime, KeyProfile } from "../kernel/types.js";
 import {
+  captureKernelV4Installs,
+  encodeKernelV4EnableSignature,
   encodeKernelV4PermissionUninstallCalls,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
@@ -69,7 +69,9 @@ import {
 } from "../operation-observer.js";
 import {
   createOperationRunner,
+  type OperationObserveResult,
   type OperationRunResult,
+  type OperationStartResult,
   type OperationSubmissionSession,
 } from "../operation-runner.js";
 import type { PreparedUserOperation } from "../prepared-user-operation.js";
@@ -99,6 +101,15 @@ import {
 
 const SUBMISSION_TIMEOUT_MS = 30_000;
 const MAX_CALLS = 64;
+
+type BindOperation = (
+  operation: Readonly<{
+    key: Readonly<OperationStoreKey>;
+    userOperationHash: `0x${string}`;
+  }>,
+) => Promise<void>;
+
+const GRANT_PROVIDER_PORTS = new WeakMap<object, Readonly<OaathGrantProviderPort>>();
 
 export interface OaathCallInput {
   readonly target: `0x${string}`;
@@ -179,6 +190,26 @@ export interface OaathGrantHandle {
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
   readonly revoke: () => Promise<void>;
   readonly close: () => Promise<void>;
+}
+
+/** Internal provider capability. It is deliberately absent from the package root. */
+export interface OaathGrantProviderPort {
+  readonly providerScopeId: string;
+  readonly account: OaathGrantHandle["account"];
+  readonly startCalls: (
+    input: unknown,
+    bindOperation: BindOperation,
+  ) => Promise<Readonly<OaathOperationHandle>>;
+}
+
+/** Resolves only handles minted by this module; structural lookalikes authorize nothing. */
+export function grantProviderPort(handle: unknown): Readonly<OaathGrantProviderPort> {
+  if (handle === null || typeof handle !== "object") {
+    return clientFail("oaath_client_capability_invalid", "Grant handle is not genuine");
+  }
+  const port = GRANT_PROVIDER_PORTS.get(handle);
+  if (!port) return clientFail("oaath_client_capability_invalid", "Grant handle is not genuine");
+  return port;
 }
 
 export interface CreateGrantHandleInput {
@@ -447,8 +478,6 @@ export function createGrantHandle(
   let closed = false;
   const observers = new Map<number, OperationObserver>();
   const handles: Readonly<OaathOperationHandle>[] = [];
-  /** Enable envelopes keyed by the exact operation hash each one authorizes. */
-  const enableSignatures = new Map<`0x${string}`, `0x${string}`>();
 
   function assertOpen(): void {
     if (closed) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -637,9 +666,11 @@ export function createGrantHandle(
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
+    readonly bindOperation?: BindOperation;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
+    let bindingInvoked = false;
     try {
       return createOperationRunner({
         terminalBehavior: spec.terminalBehavior,
@@ -657,7 +688,7 @@ export function createGrantHandle(
           close: async () => undefined,
         },
         preparation: {
-          prepare: async () => {
+          prepare: async (request: Readonly<{ key: Readonly<OperationStoreKey> }>) => {
             const quote = quoteFields(
               await chain.quote({
                 chainId: spec.chainId,
@@ -675,39 +706,75 @@ export function createGrantHandle(
               calls: [...spec.calls],
               gas: quote.gas,
             };
+            let prepared: PreparedUserOperation;
             if (spec.mode === "enable-replayable") {
-              if (spec.installApproval === null) {
-                return unsupported("grant_capability_unavailable");
+              const approval = spec.installApproval;
+              if (approval === null) return unsupported("grant_capability_unavailable");
+              const packages = captureKernelV4Installs(spec.runtime.packages);
+              if (
+                approval.account !== spec.descriptor.account ||
+                approval.packages.length !== packages.length ||
+                !packages.every((install, index) => {
+                  const approved = approval.packages[index];
+                  return approved !== undefined && sameInstall(install, approved);
+                })
+              ) {
+                return clientFail(
+                  "oaath_client_state_conflict",
+                  "the install approval does not bind this permission runtime",
+                  "kernel_runtime_binding_mismatch",
+                );
               }
-              // Prepared identity and enable envelope are produced together;
-              // the envelope is held beside the hash it authorizes so the
-              // submission below can never pair it with another operation.
-              const materialized = await materializeKernelPermission({
+              prepared = spec.runtime.prepareOperation({
                 ...fields,
-                approval: spec.installApproval,
-                runtime: spec.runtime,
+                kind: spec.kind,
+                mode: "enable-replayable",
               });
-              enableSignatures.set(materialized.prepared.userOperationHash, materialized.signature);
-              return materialized.prepared;
+            } else {
+              prepared = spec.runtime.prepareOperation({ kind: spec.kind, ...fields });
             }
-            return spec.runtime.prepareOperation({ kind: spec.kind, ...fields });
+            if (spec.bindOperation) {
+              if (bindingInvoked) {
+                return clientFail(
+                  "oaath_client_internal",
+                  "the provider operation binding was invoked more than once",
+                );
+              }
+              bindingInvoked = true;
+              await spec.bindOperation(
+                Object.freeze({
+                  key: Object.freeze({ ...request.key }),
+                  userOperationHash: prepared.userOperationHash,
+                }),
+              );
+            }
+            return prepared;
           },
           close: async () => undefined,
         },
         submission: {
           openSubmission: async (prepared: PreparedUserOperation) => {
             // The authority signs the already-durable snapshot; the route was
-            // decided before any signature existed and cannot change it. An
-            // enable-mode operation submits the envelope minted beside its
-            // exact hash and nothing else.
-            const envelope = enableSignatures.get(prepared.userOperationHash);
-            if (spec.mode === "enable-replayable" && envelope === undefined) {
-              return unsupported("materialization_signature_unavailable");
+            // decided before any signature existed and cannot change it. The
+            // enable envelope is minted here, after provider binding and the
+            // runner's durable submission-attempt transition, for this exact
+            // snapshot and nothing else.
+            const userOperationSignature = await spec.runtime.signOperation(prepared);
+            let signature = userOperationSignature;
+            if (spec.mode === "enable-replayable") {
+              const approval = spec.installApproval;
+              if (approval === null) return unsupported("grant_capability_unavailable");
+              signature = encodeKernelV4EnableSignature({
+                nonce: approval.installNonce,
+                packages: approval.packages,
+                enableSignature: approval.enableSignature,
+                userOperationSignature,
+              });
             }
             return captureSubmissionSession(
               await chain.submission.open({
                 prepared,
-                signature: envelope ?? (await spec.runtime.signOperation(prepared)),
+                signature,
                 route: spec.decision.route,
                 feePayer: spec.decision.feePayer,
               }),
@@ -742,7 +809,66 @@ export function createGrantHandle(
     }
   }
 
-  async function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
+  async function startOnce(
+    created: ReturnType<typeof createOperationRunner>,
+    kind: OperationKind,
+    key: Readonly<OperationStoreKey>,
+  ): Promise<OperationStartResult> {
+    const at = input.now();
+    try {
+      return await created.startOperation({
+        kind,
+        key,
+        preparedAt: at,
+        attemptedAt: at,
+        submittedAt: at,
+        observedAt: at,
+        timeoutMs: SUBMISSION_TIMEOUT_MS,
+      });
+    } catch (error) {
+      return mapClientFailure(error, "operation start failed");
+    }
+  }
+
+  async function recordSuccessfulMaterialization(
+    mode: "standard" | "enable-replayable",
+    binding: Readonly<{
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+    }>,
+    result: OperationRunResult | OperationStartResult,
+  ): Promise<void> {
+    if (mode !== "enable-replayable" || result.status !== "observed") return;
+    const value = result.record.value;
+    if (value.state !== "finalized" || value.inclusion.outcome !== "success") return;
+
+    const grant = await refresh();
+    const current = grant.materializations.find(
+      (entry) => entry.chainId === binding.chainId && entry.state !== "unsupported",
+    );
+    if (current?.state === "installed") return;
+    await commit(
+      transition(grant, {
+        type: "record_installed",
+        identity: grant.identity,
+        binding,
+        installation: {
+          ...binding,
+          kind: "permission_present",
+          blockNumber: value.finality.blockNumber,
+          blockHash: value.finality.blockHash,
+          observedAt: value.finality.observedAt,
+        },
+      }),
+    );
+  }
+
+  async function executeCalls(
+    value: unknown,
+    action: "run" | "start",
+    bindOperation?: BindOperation,
+  ): Promise<Readonly<OaathOperationHandle>> {
     assertOpen();
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -874,41 +1000,27 @@ export function createGrantHandle(
       decision,
       grantId: grant.identity.grantId,
     };
-    // Two runners over the same durable journal: `replace` may start a new
-    // operation once the lane is terminal, `reuse_same_kind` may only observe the
-    // one that exists. Neither can submit twice for one identity.
-    const sender = runner({ ...shape, terminalBehavior: "replace" });
-    let result: OperationRunResult;
+    // The sender may replace a terminal lane, while the returned handle receives
+    // a separate read-only runner and pins the exact hash below. Neither can
+    // submit twice for one identity.
+    const sender = runner({
+      ...shape,
+      terminalBehavior: "replace",
+      ...(bindOperation ? { bindOperation } : {}),
+    });
+    let result: OperationRunResult | OperationStartResult;
     try {
-      result = await runOnce(sender, "execution", key);
+      result =
+        action === "start"
+          ? await startOnce(sender, "execution", key)
+          : await runOnce(sender, "execution", key);
     } finally {
       // A cleanup failure never replaces the outcome of the send.
       await sender.close().catch(() => undefined);
     }
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
-    if (mode === "enable-replayable" && result.status === "observed") {
-      const value = result.record.value;
-      if (value.state === "finalized" && value.inclusion.outcome === "success") {
-        // Inclusion and finality of the enable-mode operation prove the
-        // permission is installed on this chain; the chain is ready for
-        // standard validation from here on.
-        latest = await commit(
-          transition(latest, {
-            type: "record_installed",
-            identity: latest.identity,
-            binding,
-            installation: {
-              ...binding,
-              kind: "permission_present",
-              blockNumber: value.finality.blockNumber,
-              blockHash: value.finality.blockHash,
-              observedAt: value.finality.observedAt,
-            },
-          }),
-        );
-      }
-    }
+    if (action === "run") await recordSuccessfulMaterialization(mode, binding, result);
     const handle = createOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
       key,
@@ -917,9 +1029,30 @@ export function createGrantHandle(
       now: input.now,
       initial: result,
       observation: (readRequest) => chain.observation.read(readRequest),
+      ...(mode === "enable-replayable"
+        ? {
+            onObserved: (observed: OperationObserveResult) =>
+              recordSuccessfulMaterialization(mode, binding, observed),
+          }
+        : {}),
     });
     handles.push(handle);
     return handle;
+  }
+
+  function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
+    return executeCalls(value, "run");
+  }
+
+  function startCalls(
+    value: unknown,
+    bindOperation: BindOperation,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    return executeCalls(
+      value,
+      "start",
+      clientCapability<BindOperation>(bindOperation, "provider operation binding"),
+    );
   }
 
   async function invalidateCapability(grant: Grant): Promise<Grant> {
@@ -1241,20 +1374,22 @@ export function createGrantHandle(
     );
   }
 
-  return Object.freeze({
+  async function account(chain: unknown): Promise<`0x${string}`> {
+    assertOpen();
+    if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1) {
+      return clientFail("oaath_client_input_invalid", "account chain is invalid");
+    }
+    return (await accountDescriptor(chain)).account;
+  }
+
+  const handle: Readonly<OaathGrantHandle> = Object.freeze({
     get state(): GrantState {
       return record.value.state;
     },
     get expiresAt(): number {
       return record.value.expiresAt;
     },
-    async account(chain: unknown): Promise<`0x${string}`> {
-      assertOpen();
-      if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1) {
-        return clientFail("oaath_client_input_invalid", "account chain is invalid");
-      }
-      return (await accountDescriptor(chain)).account;
-    },
+    account,
     sendCalls,
     revoke,
     async close(): Promise<void> {
@@ -1272,4 +1407,9 @@ export function createGrantHandle(
       if (failure !== undefined) mapClientFailure(failure, "Grant handle cleanup is incomplete");
     },
   });
+  GRANT_PROVIDER_PORTS.set(
+    handle,
+    Object.freeze({ providerScopeId: input.binding.bindingId, account, startCalls }),
+  );
+  return handle;
 }

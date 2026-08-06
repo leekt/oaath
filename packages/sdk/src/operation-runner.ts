@@ -92,33 +92,57 @@ export interface OperationRunInput {
   readonly timeoutMs: number;
 }
 
-export type OperationRunResult =
-  | Readonly<{
-      status: "observed";
-      observation: ObserveOperationResult;
-      record: OperationStoreRecord;
-    }>
-  | Readonly<{
-      status: "submission_uncertain";
-      reason:
-        | "session_unavailable"
-        | "session_invalid"
-        | "send_ambiguous"
-        | "result_invalid"
-        | "identity_mismatch";
-      record: OperationStoreRecord;
-    }>
-  | Readonly<{
-      status: "observation_unavailable";
-      reason: "observer_failed" | "result_invalid" | "identity_mismatch";
-      record: OperationStoreRecord;
-    }>
-  | Readonly<{
-      status: "state_conflict";
-      record: OperationStoreRecord;
-    }>;
+export interface OperationObserveInput extends OperationRunInput {
+  readonly expectedUserOperationHash: `0x${string}`;
+}
+
+type OperationStartedResult = Readonly<{
+  status: "started";
+  record: OperationStoreRecord;
+}>;
+
+type OperationSubmissionUncertainResult = Readonly<{
+  status: "submission_uncertain";
+  reason:
+    | "session_unavailable"
+    | "session_invalid"
+    | "send_ambiguous"
+    | "result_invalid"
+    | "identity_mismatch";
+  record: OperationStoreRecord;
+}>;
+
+type OperationObservedResult = Readonly<{
+  status: "observed";
+  observation: ObserveOperationResult;
+  record: OperationStoreRecord;
+}>;
+
+type OperationObservationUnavailableResult = Readonly<{
+  status: "observation_unavailable";
+  reason: "observer_failed" | "result_invalid" | "identity_mismatch";
+  record: OperationStoreRecord;
+}>;
+
+type OperationStateConflictResult = Readonly<{
+  status: "state_conflict";
+  record: OperationStoreRecord;
+}>;
+
+export type OperationStartResult = OperationStartedResult | OperationSubmissionUncertainResult;
+
+export type OperationObserveResult =
+  | OperationObservedResult
+  | OperationObservationUnavailableResult
+  | OperationStateConflictResult;
+
+export type OperationRunResult = OperationObserveResult | OperationSubmissionUncertainResult;
 
 export interface OperationRunner {
+  /** Starts one fresh operation through durable submission acknowledgement without observing it. */
+  readonly startOperation: (input: unknown) => Promise<OperationStartResult>;
+  /** Observes only the exact durable operation named by expectedUserOperationHash. */
+  readonly observeOperation: (input: unknown) => Promise<OperationObserveResult>;
   readonly runOperation: (input: unknown) => Promise<OperationRunResult>;
   readonly close: () => Promise<void>;
 }
@@ -286,53 +310,97 @@ function safeTime(value: unknown): number {
   return value;
 }
 
+const RUN_INPUT_KEYS = [
+  "kind",
+  "key",
+  "preparedAt",
+  "attemptedAt",
+  "submittedAt",
+  "observedAt",
+  "timeoutMs",
+] as const;
+
+function parseCapturedRunInput(record: ExactRecord, context: CaptureContext): OperationRunInput {
+  const preparedAt = safeTime(record.preparedAt);
+  const attemptedAt = safeTime(record.attemptedAt);
+  const submittedAt = safeTime(record.submittedAt);
+  const observedAt = safeTime(record.observedAt);
+  if (
+    preparedAt > attemptedAt ||
+    attemptedAt > submittedAt ||
+    submittedAt > observedAt ||
+    typeof record.timeoutMs !== "number" ||
+    !Number.isSafeInteger(record.timeoutMs) ||
+    record.timeoutMs < 1 ||
+    record.timeoutMs > 60_000
+  ) {
+    return runnerError("operation_runner_input_invalid", "runner ordering is invalid");
+  }
+  const kind = parseKind(record.kind);
+  const key = parseKey(record.key, context);
+  // The kind is part of the lane: a run can never prepare one kind of work
+  // under the other kind's durable journal.
+  if (key.kind !== kind) {
+    return runnerError("operation_runner_input_invalid", "runner key kind conflicts with run kind");
+  }
+  return Object.freeze({
+    kind,
+    key,
+    preparedAt,
+    attemptedAt,
+    submittedAt,
+    observedAt,
+    timeoutMs: record.timeoutMs,
+  });
+}
+
 function parseRunInput(value: unknown): OperationRunInput {
   try {
     const context: CaptureContext = new WeakSet();
     const record = exact(
       value,
-      ["kind", "key", "preparedAt", "attemptedAt", "submittedAt", "observedAt", "timeoutMs"],
+      RUN_INPUT_KEYS,
       "OperationRunner input",
       "operation_runner_input_invalid",
       context,
     );
-    const preparedAt = safeTime(record.preparedAt);
-    const attemptedAt = safeTime(record.attemptedAt);
-    const submittedAt = safeTime(record.submittedAt);
-    const observedAt = safeTime(record.observedAt);
-    if (
-      preparedAt > attemptedAt ||
-      attemptedAt > submittedAt ||
-      submittedAt > observedAt ||
-      typeof record.timeoutMs !== "number" ||
-      !Number.isSafeInteger(record.timeoutMs) ||
-      record.timeoutMs < 1 ||
-      record.timeoutMs > 60_000
-    ) {
-      return runnerError("operation_runner_input_invalid", "runner ordering is invalid");
-    }
-    const kind = parseKind(record.kind);
-    const key = parseKey(record.key, context);
-    // The kind is part of the lane: a run can never prepare one kind of work
-    // under the other kind's durable journal.
-    if (key.kind !== kind) {
-      return runnerError(
-        "operation_runner_input_invalid",
-        "runner key kind conflicts with run kind",
-      );
-    }
-    return Object.freeze({
-      kind,
-      key,
-      preparedAt,
-      attemptedAt,
-      submittedAt,
-      observedAt,
-      timeoutMs: record.timeoutMs,
-    });
+    return parseCapturedRunInput(record, context);
   } catch (error) {
     if (error instanceof OaathOperationRunnerError) throw error;
     return runnerError("operation_runner_input_invalid", "OperationRunner input is invalid");
+  }
+}
+
+function parseObserveInput(value: unknown): OperationObserveInput {
+  try {
+    const context: CaptureContext = new WeakSet();
+    const record = exact(
+      value,
+      [...RUN_INPUT_KEYS, "expectedUserOperationHash"],
+      "OperationRunner observation input",
+      "operation_runner_input_invalid",
+      context,
+    );
+    const input = parseCapturedRunInput(record, context);
+    if (
+      typeof record.expectedUserOperationHash !== "string" ||
+      !HASH.test(record.expectedUserOperationHash)
+    ) {
+      return runnerError(
+        "operation_runner_input_invalid",
+        "expected UserOperation hash is invalid",
+      );
+    }
+    return Object.freeze({
+      ...input,
+      expectedUserOperationHash: record.expectedUserOperationHash as `0x${string}`,
+    });
+  } catch (error) {
+    if (error instanceof OaathOperationRunnerError) throw error;
+    return runnerError(
+      "operation_runner_input_invalid",
+      "OperationRunner observation input is invalid",
+    );
   }
 }
 
@@ -545,7 +613,9 @@ function captureObservation(value: unknown): ObserveOperationResult | null {
   }
 }
 
-function frozenResult<Result extends OperationRunResult>(result: Result): Result {
+function frozenResult<Result extends OperationRunResult | OperationStartResult>(
+  result: Result,
+): Result {
   return Object.freeze(result);
 }
 
@@ -605,6 +675,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     input: OperationRunInput,
     current: OperationStoreRecord | undefined,
     prepared: PreparedUserOperation,
+    conflictBehavior: "resume" | "reject",
   ): Promise<OperationStoreRecord> {
     const operation = createOperation({
       identity: deriveOperationId(prepared),
@@ -618,7 +689,8 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     }
 
     let expectedStoreRevision = current?.storeRevision ?? null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const attempts = conflictBehavior === "resume" ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       const persisted = await commit(input.key, expectedStoreRevision, operation);
       if (persisted.status === "committed") return persisted.record;
       const conflict = persisted.current;
@@ -626,6 +698,12 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         return runnerError(
           "operation_runner_store_uncertain",
           "Operation store conflict has no durable record",
+        );
+      }
+      if (conflictBehavior === "reject") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "another Operation occupies the requested lane",
         );
       }
       if (sameIdentity(conflict.value.identity, operation.identity)) return conflict;
@@ -699,7 +777,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
   async function observe(
     record: OperationStoreRecord,
     input: OperationRunInput,
-  ): Promise<OperationRunResult> {
+  ): Promise<OperationObserveResult> {
     let raw: unknown;
     try {
       raw = await configuration.observer.observeOperation({
@@ -748,16 +826,43 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     return frozenResult({ status: "state_conflict", record: current });
   }
 
-  async function runOperation(inputValue: unknown): Promise<OperationRunResult> {
+  async function withActiveRun<Result>(action: () => Promise<Result>): Promise<Result> {
     if (closeRequested || closed || closing) {
       return runnerError("operation_runner_closed", "OperationRunner is closing or closed");
     }
     activeRuns += 1;
     try {
-      const input = parseRunInput(inputValue);
-      let record = await getRecord(input.key);
-      let prepared: PreparedUserOperation | undefined;
+      return await action();
+    } finally {
+      activeRuns -= 1;
+      if (activeRuns === 0 && drained) {
+        const resolve = drained;
+        drained = null;
+        resolve();
+      }
+    }
+  }
 
+  function executeOperation(inputValue: unknown, mode: "start"): Promise<OperationStartResult>;
+  function executeOperation(inputValue: unknown, mode: "run"): Promise<OperationRunResult>;
+  async function executeOperation(
+    inputValue: unknown,
+    mode: "start" | "run",
+  ): Promise<OperationStartResult | OperationRunResult> {
+    const input = parseRunInput(inputValue);
+    let record = await getRecord(input.key);
+    let prepared: PreparedUserOperation | undefined;
+
+    if (mode === "start") {
+      if (record && operationOccupiesLane(record.value)) {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "another Operation occupies the requested lane",
+        );
+      }
+      prepared = await prepareExact(input);
+      record = await publishPrepared(input, record, prepared, "reject");
+    } else {
       if (
         record &&
         !operationOccupiesLane(record.value) &&
@@ -770,99 +875,149 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
 
       if (!record || !operationOccupiesLane(record.value)) {
         prepared = await prepareExact(input);
-        record = await publishPrepared(input, record, prepared);
-      }
-
-      requireLane(record.value, input);
-      if (record.value.state !== "prepared") return observe(record, input);
-      prepared ??= await prepareExact(input, record.value.identity);
-
-      const attempted = advanceOperation(record.value, {
-        type: "mark_submission_attempted",
-        identity: record.value.identity,
-        attemptedAt: input.attemptedAt,
-      });
-      const attemptedCommit = await commit(input.key, record.storeRevision, attempted);
-      if (attemptedCommit.status === "conflict") {
-        const current = requireConflictIdentity(attemptedCommit.current, record.value.identity);
-        return current.value.state === "prepared"
-          ? frozenResult({ status: "state_conflict", record: current })
-          : observe(current, input);
-      }
-      record = attemptedCommit.record;
-
-      let sessionValue: unknown;
-      try {
-        sessionValue = await withTimeout(
-          () => configuration.submission.openSubmission(prepared),
-          input.timeoutMs,
-        );
-      } catch {
-        return frozenResult({
-          status: "submission_uncertain",
-          reason: "session_unavailable",
-          record,
-        });
-      }
-      let session: OperationSubmissionSession;
-      try {
-        session = parseSubmissionSession(sessionValue);
-      } catch {
-        return frozenResult({
-          status: "submission_uncertain",
-          reason: "session_invalid",
-          record,
-        });
-      }
-      const sessionResource: CloseResource = { close: session.close, closed: false };
-      sessions.push(sessionResource);
-
-      let submissionValue: unknown;
-      try {
-        submissionValue = await withTimeout(session.submit, input.timeoutMs);
-      } catch {
-        return frozenResult({
-          status: "submission_uncertain",
-          reason: "send_ambiguous",
-          record,
-        });
-      }
-      const returnedHash = parseReturnedHash(submissionValue);
-      if (!returnedHash) {
-        return frozenResult({
-          status: "submission_uncertain",
-          reason: "result_invalid",
-          record,
-        });
-      }
-      if (returnedHash !== record.value.identity.userOperationHash) {
-        return frozenResult({
-          status: "submission_uncertain",
-          reason: "identity_mismatch",
-          record,
-        });
-      }
-
-      const submitted = advanceOperation(record.value, {
-        type: "mark_submitted",
-        identity: record.value.identity,
-        returnedUserOperationHash: returnedHash,
-        submittedAt: input.submittedAt,
-      });
-      const submittedCommit = await commit(input.key, record.storeRevision, submitted);
-      if (submittedCommit.status === "conflict") {
-        const current = requireConflictIdentity(submittedCommit.current, record.value.identity);
-        return observe(current, input);
-      }
-      return observe(submittedCommit.record, input);
-    } finally {
-      activeRuns -= 1;
-      if (activeRuns === 0 && drained) {
-        const resolve = drained;
-        drained = null;
-        resolve();
+        record = await publishPrepared(input, record, prepared, "resume");
       }
     }
+
+    requireLane(record.value, input);
+    if (record.value.state !== "prepared") {
+      if (mode === "start") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "fresh Operation did not retain the requested lane",
+        );
+      }
+      return observe(record, input);
+    }
+    prepared ??= await prepareExact(input, record.value.identity);
+
+    const attempted = advanceOperation(record.value, {
+      type: "mark_submission_attempted",
+      identity: record.value.identity,
+      attemptedAt: input.attemptedAt,
+    });
+    const attemptedCommit = await commit(input.key, record.storeRevision, attempted);
+    if (attemptedCommit.status === "conflict") {
+      const current = requireConflictIdentity(attemptedCommit.current, record.value.identity);
+      if (mode === "start") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "fresh Operation lost the requested lane",
+        );
+      }
+      return current.value.state === "prepared"
+        ? frozenResult({ status: "state_conflict", record: current })
+        : observe(current, input);
+    }
+    record = attemptedCommit.record;
+
+    let sessionValue: unknown;
+    try {
+      sessionValue = await withTimeout(
+        () => configuration.submission.openSubmission(prepared),
+        input.timeoutMs,
+      );
+    } catch {
+      return frozenResult({
+        status: "submission_uncertain",
+        reason: "session_unavailable",
+        record,
+      });
+    }
+    let session: OperationSubmissionSession;
+    try {
+      session = parseSubmissionSession(sessionValue);
+    } catch {
+      return frozenResult({
+        status: "submission_uncertain",
+        reason: "session_invalid",
+        record,
+      });
+    }
+    const sessionResource: CloseResource = { close: session.close, closed: false };
+    sessions.push(sessionResource);
+
+    let submissionValue: unknown;
+    try {
+      submissionValue = await withTimeout(session.submit, input.timeoutMs);
+    } catch {
+      return frozenResult({
+        status: "submission_uncertain",
+        reason: "send_ambiguous",
+        record,
+      });
+    }
+    const returnedHash = parseReturnedHash(submissionValue);
+    if (!returnedHash) {
+      return frozenResult({
+        status: "submission_uncertain",
+        reason: "result_invalid",
+        record,
+      });
+    }
+    if (returnedHash !== record.value.identity.userOperationHash) {
+      return frozenResult({
+        status: "submission_uncertain",
+        reason: "identity_mismatch",
+        record,
+      });
+    }
+
+    const submitted = advanceOperation(record.value, {
+      type: "mark_submitted",
+      identity: record.value.identity,
+      returnedUserOperationHash: returnedHash,
+      submittedAt: input.submittedAt,
+    });
+    const submittedCommit = await commit(input.key, record.storeRevision, submitted);
+    if (submittedCommit.status === "conflict") {
+      const current = requireConflictIdentity(submittedCommit.current, record.value.identity);
+      if (mode === "start") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "fresh Operation submission conflicted with durable state",
+        );
+      }
+      return observe(current, input);
+    }
+    return mode === "start"
+      ? frozenResult({ status: "started", record: submittedCommit.record })
+      : observe(submittedCommit.record, input);
+  }
+
+  async function startOperation(inputValue: unknown): Promise<OperationStartResult> {
+    return withActiveRun(() => executeOperation(inputValue, "start"));
+  }
+
+  async function observeOperation(inputValue: unknown): Promise<OperationObserveResult> {
+    return withActiveRun(async () => {
+      const input = parseObserveInput(inputValue);
+      const record = await getRecord(input.key);
+      if (!record) {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "expected Operation is absent from the requested lane",
+        );
+      }
+      requireLane(record.value, input);
+      if (record.value.identity.userOperationHash !== input.expectedUserOperationHash) {
+        return runnerError(
+          "operation_runner_identity_mismatch",
+          "stored Operation does not match the expected UserOperation hash",
+        );
+      }
+      if (record.value.state === "prepared") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "prepared Operation has not entered submission",
+        );
+      }
+      return observe(record, input);
+    });
+  }
+
+  async function runOperation(inputValue: unknown): Promise<OperationRunResult> {
+    return withActiveRun(() => executeOperation(inputValue, "run"));
   }
 
   async function close(): Promise<void> {
@@ -901,5 +1056,5 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     return attempt;
   }
 
-  return Object.freeze({ runOperation, close });
+  return Object.freeze({ startOperation, observeOperation, runOperation, close });
 }

@@ -56,7 +56,7 @@ describe("viem provider over a Grant", () => {
         method: "eth_sendTransaction",
         params: [{ from: account, to: `0x${"33".repeat(20)}`, data: CALL_DATA }],
       }),
-    ).rejects.toMatchObject({ code: "oaath_client_scope_denied" });
+    ).rejects.toMatchObject({ code: 4100, message: "Unauthorized" });
     expect(realm.chain.sends).toHaveLength(0);
     await connection.close();
   });
@@ -96,10 +96,10 @@ describe("viem provider over a Grant", () => {
     const provider = oaathProvider({ grant, chain: CHAIN_ID });
     const account = await grant.account(CHAIN_ID);
 
-    const capabilities = (await provider.request({ method: "wallet_getCapabilities" })) as Record<
-      string,
-      unknown
-    >;
+    const capabilities = (await provider.request({
+      method: "wallet_getCapabilities",
+      params: [account],
+    })) as Record<string, unknown>;
     expect(capabilities[`0x${CHAIN_ID.toString(16)}`]).toEqual({
       atomic: { status: "supported" },
     });
@@ -116,7 +116,7 @@ describe("viem provider over a Grant", () => {
         },
       ],
     })) as { id: string };
-    expect(id).toMatch(/^0x[0-9a-f]{32}$/u);
+    expect(id).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(realm.chain.sends).toHaveLength(1);
 
     const status = (await provider.request({
@@ -142,7 +142,7 @@ describe("viem provider over a Grant", () => {
     // An unknown id is a refusal, not an empty success.
     await expect(
       provider.request({ method: "wallet_getCallsStatus", params: ["0xdeadbeef"] }),
-    ).rejects.toMatchObject({ code: -32602 });
+    ).rejects.toMatchObject({ code: 5730 });
     await connection.close();
   });
 

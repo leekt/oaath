@@ -10,27 +10,28 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import {
-  type CaptureContext,
-  captureDenseArray,
-  type Operation,
-  type OperationKind,
-  type OperationOutcome,
-} from "@oaath/protocol";
 import type {
-  OperationObserverCapabilities,
-  OperationObserverReadRequest,
+  Operation,
+  OperationIdentity,
+  OperationInclusion,
+  OperationKind,
+  OperationOutcome,
+} from "@oaath/protocol";
+import {
+  type OperationObserverCapabilities,
+  type OperationObserverReadRequest,
+  verifyOperationReceiptEvidence,
 } from "../operation-observer.js";
-import type { OperationRunner, OperationRunResult } from "../operation-runner.js";
+import type {
+  OperationObserveResult,
+  OperationRunner,
+  OperationRunResult,
+  OperationStartResult,
+} from "../operation-runner.js";
 import type { OperationStoreKey } from "../store.js";
 import { clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 
 const MAX_ATTEMPTS = 16;
-const MAX_LOGS = 10_000;
-const HASH = /^0x[0-9a-f]{64}$/u;
-const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
-const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 
 export type OaathOperationStatus =
   | "finalized"
@@ -57,10 +58,10 @@ export interface OaathOperationLog {
 }
 
 /**
- * The full inclusion receipt of a terminal operation, read from the chain and
- * bound to the exact transaction the operation's own inclusion evidence
- * names. This is what EIP-5792 status answers and event-driven applications
- * consume; the distilled outcome above stays the authority-relevant fact.
+ * The exact inclusion receipt of a terminal operation, read from the chain and
+ * bound to the operation's immutable identity and inclusion evidence. This is
+ * what EIP-5792 status answers and event-driven applications consume; the
+ * distilled outcome above stays the authority-relevant fact.
  */
 export interface OaathOperationReceipt {
   readonly transactionHash: `0x${string}`;
@@ -71,9 +72,8 @@ export interface OaathOperationReceipt {
   readonly gasUsed: string;
   readonly status: "success" | "reverted";
   /**
-   * The containing transaction's logs. A bundler may batch several operations
-   * into one transaction, so filter by address and topics; the gas and status
-   * above are already this operation's own.
+   * Call-relevant logs from this UserOperation's exact EntryPoint execution
+   * window, including nested-call logs and its terminal UserOperationEvent.
    */
   readonly logs: readonly Readonly<OaathOperationLog>[];
 }
@@ -86,7 +86,7 @@ export interface OaathOperationHandle {
   readonly observe: () => Promise<Readonly<OaathOperationOutcome>>;
   /** Observes until terminal or the attempt bound is reached. Submits nothing. */
   readonly wait: (input?: unknown) => Promise<Readonly<OaathOperationOutcome>>;
-  /** The terminal operation's full receipt, evidence-bound. Reads only. */
+  /** The terminal operation's exact call-relevant receipt. Reads only. */
   readonly receipt: () => Promise<Readonly<OaathOperationReceipt>>;
   readonly close: () => Promise<void>;
 }
@@ -97,38 +97,36 @@ export interface CreateOperationHandleInput {
   readonly kind: OperationKind;
   readonly timeoutMs: number;
   readonly now: () => number;
-  readonly initial: OperationRunResult;
+  readonly initial: OperationRunResult | OperationStartResult;
   /** The chain's observation read, for the receipt projection. */
   readonly observation: OperationObserverCapabilities["read"];
+  /** Internal Grant transition triggered only by an exact later observation. */
+  readonly onObserved?: (result: OperationObserveResult) => Promise<void>;
 }
 
 /**
- * The inclusion this operation claims: its own, or the inclusion a dropped
- * operation had before it was replaced. Both are chain-local evidence bound to
- * this exact identity by the aggregate that recorded them.
+ * The inclusion this exact identity owns. Replacement inclusion is never
+ * eligible: a dropped operation may expose only its own prior inclusion.
  */
-function evidence(operation: Operation): Readonly<{
-  transactionHash: `0x${string}` | null;
-  blockNumber: string | null;
-  outcome: OperationOutcome | null;
-}> {
-  const inclusion =
-    operation.state === "included" || operation.state === "finalized"
-      ? operation.inclusion
-      : operation.state === "dropped"
-        ? operation.priorInclusion
-        : null;
-  return Object.freeze({
-    transactionHash: inclusion?.transactionHash ?? null,
-    blockNumber: inclusion?.blockNumber ?? null,
-    outcome: inclusion?.outcome ?? null,
-  });
+function exactInclusion(operation: Operation): Readonly<OperationInclusion> | null {
+  if (operation.state === "included" || operation.state === "finalized") {
+    return operation.inclusion;
+  }
+  return operation.state === "dropped" ? operation.priorInclusion : null;
 }
 
 /** Projects one run result onto the application outcome, or fails closed. */
-export function operationOutcome(result: OperationRunResult): Readonly<OaathOperationOutcome> {
+export function operationOutcome(
+  result: OperationRunResult | OperationStartResult,
+): Readonly<OaathOperationOutcome> {
   const operation = result.record.value;
-  const base = { state: operation.state, ...evidence(operation) };
+  const inclusion = exactInclusion(operation);
+  const base = {
+    state: operation.state,
+    transactionHash: inclusion?.transactionHash ?? null,
+    blockNumber: inclusion?.blockNumber ?? null,
+    outcome: inclusion?.outcome ?? null,
+  };
   if (result.status === "state_conflict") {
     return clientFail(
       "oaath_client_state_conflict",
@@ -181,15 +179,16 @@ export function createOperationHandle(
   input: Readonly<CreateOperationHandleInput>,
 ): Readonly<OaathOperationHandle> {
   let latest = operationOutcome(input.initial);
-  let identity = input.initial.record.value.identity.userOperationHash;
+  const identity: Readonly<OperationIdentity> = input.initial.record.value.identity;
+  let current = input.initial.record.value;
   let closed = false;
 
   async function observeOnce(): Promise<Readonly<OaathOperationOutcome>> {
     if (closed) clientFail("oaath_client_closed", "operation handle is closed");
     const at = input.now();
-    let result: OperationRunResult;
+    let result: OperationObserveResult;
     try {
-      result = await input.runner.runOperation({
+      result = await input.runner.observeOperation({
         kind: input.kind,
         key: input.key,
         preparedAt: at,
@@ -197,24 +196,22 @@ export function createOperationHandle(
         submittedAt: at,
         observedAt: at,
         timeoutMs: input.timeoutMs,
+        expectedUserOperationHash: identity.userOperationHash,
       });
     } catch (error) {
       return mapClientFailure(error, "operation observation failed");
     }
-    latest = operationOutcome(result);
-    identity = result.record.value.identity.userOperationHash;
+    const observed = operationOutcome(result);
+    if (input.onObserved) await input.onObserved(result);
+    current = result.record.value;
+    latest = observed;
     return latest;
   }
 
   async function receipt(): Promise<Readonly<OaathOperationReceipt>> {
     if (closed) clientFail("oaath_client_closed", "operation handle is closed");
-    const transactionHash = latest.transactionHash;
-    const blockNumber = latest.blockNumber;
-    if (
-      (latest.status !== "finalized" && latest.status !== "dropped") ||
-      transactionHash === null ||
-      blockNumber === null
-    ) {
+    const inclusion = exactInclusion(current);
+    if ((latest.status !== "finalized" && latest.status !== "dropped") || inclusion === null) {
       return clientFail(
         "oaath_client_observation_unavailable",
         "no receipt exists before conclusive inclusion",
@@ -226,99 +223,49 @@ export function createOperationHandle(
     try {
       rawOperationReceipt = await input.observation({
         type: "user_operation_receipt",
-        chainId: input.key.chainId,
-        userOperationHash: identity,
+        chainId: identity.chainId,
+        userOperationHash: identity.userOperationHash,
       } satisfies OperationObserverReadRequest);
       rawTransactionReceipt = await input.observation({
         type: "transaction_receipt",
-        chainId: input.key.chainId,
-        transactionHash,
+        chainId: identity.chainId,
+        transactionHash: inclusion.transactionHash,
       } satisfies OperationObserverReadRequest);
-    } catch (error) {
-      return mapClientFailure(error, "the receipt could not be read");
+    } catch {
+      return clientFail(
+        "oaath_client_observation_unavailable",
+        "the receipt could not be read",
+        "provider_unavailable",
+      );
     }
-    const context: CaptureContext = new WeakSet();
-    const invalid = (): never =>
-      clientFail(
+    let verified: ReturnType<typeof verifyOperationReceiptEvidence>;
+    try {
+      verified = verifyOperationReceiptEvidence({
+        identity,
+        inclusion,
+        userOperationReceipt: rawOperationReceipt,
+        transactionReceipt: rawTransactionReceipt,
+      });
+    } catch {
+      return clientFail(
         "oaath_client_observation_unavailable",
         "the provider receipt does not match this operation's inclusion evidence",
+        "receipt_invalid",
       );
-    const operationReceipt = rawOperationReceipt as Record<string, unknown> | null;
-    const record = rawTransactionReceipt as Record<string, unknown> | null;
-    if (
-      operationReceipt === null ||
-      typeof operationReceipt !== "object" ||
-      record === null ||
-      typeof record !== "object"
-    ) {
-      return invalid();
     }
-    // Evidence binding: both receipts must be for exactly the operation,
-    // transaction, and block this operation's own inclusion recorded; anything
-    // else — another hash, another block, a reorged provider — is refused,
-    // never projected.
-    if (
-      operationReceipt.userOperationHash !== identity ||
-      operationReceipt.transactionHash !== transactionHash ||
-      record.transactionHash !== transactionHash ||
-      typeof record.blockHash !== "string" ||
-      !HASH.test(record.blockHash) ||
-      typeof record.blockNumber !== "string" ||
-      !QUANTITY.test(record.blockNumber) ||
-      BigInt(record.blockNumber) !== BigInt(blockNumber)
-    ) {
-      return invalid();
-    }
-    // Gas and status are the operation's own facts from its ERC-4337 receipt —
-    // a containing transaction may bundle other operations. The status must
-    // also agree with the inclusion outcome the aggregate already recorded.
-    const status =
-      operationReceipt.success === true
-        ? "success"
-        : operationReceipt.success === false
-          ? "reverted"
-          : null;
-    const gasUsed = operationReceipt.actualGasUsed;
-    if (
-      status === null ||
-      (latest.outcome !== null && (latest.outcome === "success") !== (status === "success")) ||
-      typeof gasUsed !== "string" ||
-      !QUANTITY.test(gasUsed)
-    ) {
-      return invalid();
-    }
-    const entries = captureDenseArray(record.logs, "receipt logs", context, invalid);
-    if (entries.length > MAX_LOGS) return invalid();
-    const logs = entries.map((entry) => {
-      const log = entry as Record<string, unknown>;
-      if (
-        log === null ||
-        typeof log !== "object" ||
-        typeof log.address !== "string" ||
-        !ADDRESS.test(log.address) ||
-        typeof log.data !== "string" ||
-        !BYTES.test(log.data)
-      ) {
-        return invalid();
-      }
-      const topics = captureDenseArray(log.topics, "receipt log topics", context, invalid).map(
-        (topic) => {
-          if (typeof topic !== "string" || !HASH.test(topic)) return invalid();
-          return topic as `0x${string}`;
-        },
-      );
-      return Object.freeze({
-        address: log.address as `0x${string}`,
-        topics: Object.freeze(topics),
-        data: log.data as `0x${string}`,
-      });
-    });
+    const logs = verified.logs.map((log) =>
+      Object.freeze({
+        address: log.address,
+        topics: log.topics,
+        data: log.data,
+      }),
+    );
     return Object.freeze({
-      transactionHash,
-      blockHash: record.blockHash as `0x${string}`,
-      blockNumber: BigInt(blockNumber).toString(10),
-      gasUsed: BigInt(gasUsed).toString(10),
-      status,
+      transactionHash: verified.transactionHash,
+      blockHash: verified.blockHash,
+      blockNumber: verified.blockNumber,
+      gasUsed: verified.gasUsed,
+      status: verified.outcome,
       logs: Object.freeze(logs),
     });
   }
