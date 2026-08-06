@@ -143,7 +143,7 @@ interface Fixture {
   readonly requestId: string;
 }
 
-async function fixture(requestedScope: string = RAW_SCOPE): Promise<Fixture> {
+async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixture> {
   const store = createMemoryRelayStore();
   const clock = createTestClock();
   const created = await createAuthorizationRequest({
@@ -217,9 +217,34 @@ describe("experimental owner-phone projection", () => {
 
     expect(projection.scope).toEqual({
       kind: "permission-request",
+      decision: "approve-or-reject",
+      application: {
+        applicationId: "oaath-native-tests",
+        clientId: "client-a",
+        origin: "https://app.example",
+        deviceFingerprint: "8sWHndmh",
+      },
+      account: {
+        accountIndex: "7",
+        kernelVersion: "0.4.0",
+        factoryRoute: "meta_factory",
+        entryPointVersion: "0.7",
+        ownerCredential: { kind: "ecdsa", address: `0x${"33".repeat(20)}` },
+      },
+      operatorCredential: { kind: "ecdsa", address: `0x${"44".repeat(20)}` },
       chainScope: "all",
-      calls: [{ target: `0x${"11".repeat(20)}`, selector: "0x12345678", valueLimit: "100" }],
+      calls: [
+        {
+          target: `0x${"11".repeat(20)}`,
+          selector: "0x12345678",
+          valueLimit: "100",
+          argumentEquals: [],
+        },
+      ],
+      requestedAt: 100,
       expiresAt: 200,
+      policyValidAfter: 100,
+      policyValidUntil: 190,
       perChainOperationLimit: 10,
     });
   });
@@ -229,6 +254,7 @@ describe("experimental owner-phone projection", () => {
     const projection = await project(fixed);
     expect(projection.scope).toEqual({
       kind: "signature-request",
+      decision: "approve-or-reject",
       digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
       display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
     });
@@ -314,7 +340,7 @@ describe("experimental owner-phone projection", () => {
     ]) {
       const fixed = await fixture(stored);
       const projection = await project(fixed);
-      expect(projection.scope).toEqual({ kind: "raw", text: stored });
+      expect(projection.scope).toEqual({ kind: "raw", decision: "reject-only", text: stored });
     }
   });
 
@@ -322,7 +348,7 @@ describe("experimental owner-phone projection", () => {
     for (const stored of [RAW_SCOPE, "not json at all", "[1,2,3]", '"quoted"']) {
       const fixed = await fixture(stored);
       const projection = await project(fixed);
-      expect(projection.scope).toEqual({ kind: "raw", text: stored });
+      expect(projection.scope).toEqual({ kind: "raw", decision: "reject-only", text: stored });
     }
   });
 
@@ -399,6 +425,15 @@ describe("experimental owner-phone decision saga", () => {
     expect(replayed.decidedAt).toBe(decided.decidedAt);
   });
 
+  it("refuses to approve a reject-only scope and still records its rejection", async () => {
+    // An unrecognized scope is inspectable but never approvable: the phone
+    // hides the Approve control and the relay refuses independently.
+    const fixed = await fixture(RAW_SCOPE);
+    await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
+    const rejected = await decide(fixed, "rejected");
+    expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });
+  });
+
   it("never decides for the wrong caller, an unknown operation, or after expiry", async () => {
     const fixed = await fixture();
     await expectRelayFailure(() => decide(fixed, "approved", CLIENT), "relay_forbidden");
@@ -458,7 +493,7 @@ describe("experimental owner-phone preview routes", () => {
 
   it("decides over the wire byte-for-byte from the shared golden fixture", async () => {
     const harness = createHarness();
-    const requestId = await createOverWire(harness, RAW_SCOPE);
+    const requestId = await createOverWire(harness, PERMISSION_SCOPE);
     const decidedGolden = GOLDEN.decision.decidedApproved as Record<string, unknown> & {
       release: Record<string, unknown>;
     };
@@ -551,7 +586,7 @@ describe("experimental owner-phone preview routes", () => {
       await harness.handler(get(`/native/projections/${requestId}`, OWNER_TOKEN)),
       200,
     );
-    expect(state.scope).toEqual({ kind: "raw", text: RAW_SCOPE });
+    expect(state.scope).toEqual({ kind: "raw", decision: "reject-only", text: RAW_SCOPE });
   });
 
   it("keeps the preview namespace closed: unknown routes and wrong methods", async () => {

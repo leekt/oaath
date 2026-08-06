@@ -14,8 +14,12 @@
  * signer
  *   revocation, any coverage          -> owner   (root_operation_requires_owner)
  *   execution,  covered               -> session (session_covers_calls)
- *   execution,  uncovered             -> owner   (session_calls_uncovered)
- *   execution,  unreadable            -> owner   (session_coverage_unreadable)
+ *   execution,  uncovered             -> none    (session_calls_uncovered)
+ *   execution,  unreadable            -> none    (session_coverage_unreadable)
+ *
+ * A denied signer denies the whole decision: owner authority is wider than the
+ * session policy the owner approved, so uncovered or inconclusively covered
+ * calls select no authority, no route, and no fee payer.
  *
  * route
  *   bundler available,  any fee payer -> bundler              (bundler_available)
@@ -46,7 +50,7 @@ import {
   type OaathExecutionDecision,
   type OaathExecutionReason,
   type OaathExecutionRoute,
-  type OaathExecutionSigner,
+  type OaathExecutionSignerDecision,
   type OaathExecutionSignerReason,
   type OaathFeePayerDescriptor,
 } from "./types.js";
@@ -69,13 +73,13 @@ function operationKind(value: unknown): OperationKind {
 function decideSigner(
   kind: OperationKind,
   coverage: OaathSessionCoverage,
-): Readonly<{ signer: OaathExecutionSigner; reason: OaathExecutionSignerReason }> {
+): Readonly<{ signer: OaathExecutionSignerDecision; reason: OaathExecutionSignerReason }> {
   if (kind === "revocation") {
     return { signer: "owner", reason: "root_operation_requires_owner" };
   }
   if (coverage === "covered") return { signer: "session", reason: "session_covers_calls" };
-  if (coverage === "uncovered") return { signer: "owner", reason: "session_calls_uncovered" };
-  return { signer: "owner", reason: "session_coverage_unreadable" };
+  if (coverage === "uncovered") return { signer: "none", reason: "session_calls_uncovered" };
+  return { signer: "none", reason: "session_coverage_unreadable" };
 }
 
 function decideRoute(
@@ -126,6 +130,16 @@ export function decideExecution(input: DecideExecutionInput): Readonly<OaathExec
     bundlerCapability(record.bundler, inputInvalid),
     feePayerDescriptor(record.feePayer, context, inputInvalid),
   );
+  if (signer.signer === "none") {
+    // Route facts were still captured and validated above, but a denied signer
+    // must not carry a usable route: nothing may be signed or submitted.
+    return Object.freeze({
+      signer: "none" as const,
+      route: "none" as const,
+      feePayer: null,
+      reasons: Object.freeze([signer.reason]),
+    });
+  }
   return Object.freeze({
     signer: signer.signer,
     route: route.route,

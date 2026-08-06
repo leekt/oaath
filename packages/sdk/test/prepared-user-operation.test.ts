@@ -5,7 +5,7 @@ import {
   OaathPreparedUserOperationError,
   parsePreparedUserOperation,
   prepareUserOperation,
-} from "../src/index.js";
+} from "../src/kernel.js";
 
 const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 const SENDER = `0x${"11".repeat(20)}`;

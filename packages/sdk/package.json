@@ -25,6 +25,26 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./kernel": {
+      "types": "./src/kernel.ts",
+      "default": "./src/kernel.ts"
+    },
+    "./advanced": {
+      "types": "./src/advanced.ts",
+      "default": "./src/advanced.ts"
+    },
+    "./persistence": {
+      "types": "./src/persistence.ts",
+      "default": "./src/persistence.ts"
+    },
+    "./testing": {
+      "types": "./src/testing.ts",
+      "default": "./src/testing.ts"
+    },
+    "./viem": {
+      "types": "./src/viem.ts",
+      "default": "./src/viem.ts"
     }
   },
   "publishConfig": {
@@ -35,6 +55,26 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./kernel": {
+        "types": "./dist/kernel.d.ts",
+        "default": "./dist/kernel.js"
+      },
+      "./advanced": {
+        "types": "./dist/advanced.d.ts",
+        "default": "./dist/advanced.js"
+      },
+      "./persistence": {
+        "types": "./dist/persistence.d.ts",
+        "default": "./dist/persistence.js"
+      },
+      "./testing": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "./viem": {
+        "types": "./dist/viem.d.ts",
+        "default": "./dist/viem.js"
       }
     }
   },

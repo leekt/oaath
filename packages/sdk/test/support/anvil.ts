@@ -40,7 +40,7 @@ import {
   type KernelRuntime,
   type KernelV4AccountReadCapability,
   type PreparedUserOperation,
-} from "../../src/index.js";
+} from "../../src/kernel.js";
 
 export interface ModuleFixture {
   repository: string;

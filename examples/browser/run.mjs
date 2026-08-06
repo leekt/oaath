@@ -22,16 +22,26 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
+  parseGrantPolicy,
 } from "@oaath/protocol";
+import { createOAAth } from "@oaath/sdk";
+import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
+import {
+  approveKernelPermissionAllChain,
+  createKernelRuntime,
+  ecdsaKey,
+  kernelAllChainCapabilityHash,
+  kernelV4Deployment,
+  ownerOperator,
+  sessionOperator,
+} from "@oaath/sdk/kernel";
 import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
-  createOAAth,
-  ecdsaKey,
-} from "@oaath/sdk";
+} from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -118,6 +128,39 @@ const authorization = {
     const state = await ownerFetch(`/authorization/requests/${requestId}`);
     const scope = JSON.parse(state.requestedScope);
     say(`  owner reviews    ${state.requestedScope.slice(0, 88)}…`);
+    // The owner device derives and signs the replayable install approval
+    // itself: the account from its own initial packages, the permission
+    // packages from the reviewed policy and operator credential. The
+    // decision's capabilityHash binds exactly this capability, and the first
+    // covered execution on any chain spends it.
+    const ownerKey = ecdsaKey({ account: ownerAccount, validator: chain.validator });
+    const deployment = kernelV4Deployment(CHAIN_ID);
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({ key: ownerKey }),
+      reads: chain.capability.reads,
+    });
+    const descriptor = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: [...ownerRuntime.packages],
+    });
+    const sessionRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: { address: scope.operatorCredential.address, sign: async () => "0x" },
+          validator: chain.validator,
+        }),
+        policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
+      }),
+      reads: chain.capability.reads,
+    });
+    const installApproval = await approveKernelPermissionAllChain({
+      owner: ownerKey,
+      account: descriptor.account,
+      installNonce: "0",
+      packages: [...sessionRuntime.packages],
+    });
     const decided = await ownerFetch(`/authorization/requests/${requestId}/decision`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -132,7 +175,8 @@ const authorization = {
           // Approving the requested policy unchanged. Narrowing it here is
           // allowed; widening it is refused by the client.
           approvedPolicy: scope.policy,
-          capabilityHash: keccak256(stringToBytes("oaath-example-capability")),
+          capabilityHash: kernelAllChainCapabilityHash(installApproval),
+          installApproval,
         }),
       }),
     });
@@ -247,10 +291,14 @@ try {
 
   step("revoke");
   await grant.revoke();
-  expect(grant.state === "revoked", `the Grant is ${grant.state}`);
+  // The replayable capability is dead, so nothing new can materialize; the
+  // installed chain permission still awaits owner-signed removal, so the
+  // Grant stays durably `revoking` instead of claiming a revocation no chain
+  // observed.
+  expect(grant.state === "revoking", `the Grant is ${grant.state}`);
   expect(invalidations === 1, `the capability was invalidated ${invalidations} times`);
   expect(chain.sends.length === 1, "revocation must not resubmit the execution");
-  say("  grant            revoked: the replayable approval can authorize nothing further");
+  say("  grant            revoking: the replayable approval can authorize nothing further");
 
   step("sign out and close");
   await connection.signOut();

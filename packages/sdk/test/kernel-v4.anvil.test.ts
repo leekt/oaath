@@ -30,7 +30,7 @@ import {
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   prepareKernelV4UserOperation,
-} from "../src/index.js";
+} from "../src/kernel.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 const chainId = 421_614;

@@ -18,9 +18,8 @@ import {
   OperationStore,
   type OperationStoreAdapter,
   type OperationStoreRecord,
-  type PreparedUserOperation,
-  prepareUserOperation,
-} from "../src/index.js";
+} from "../src/advanced.js";
+import { type PreparedUserOperation, prepareUserOperation } from "../src/kernel.js";
 
 const key = { grantId: "runner-grant", chainId: 31_337 } as const;
 const entryPoint = `0x${"11".repeat(20)}` as const;

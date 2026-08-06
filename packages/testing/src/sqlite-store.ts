@@ -6,7 +6,7 @@ import {
   OperationStore,
   type OperationStoreAdapter,
   type StoreRecord,
-} from "@oaath/sdk";
+} from "@oaath/sdk/advanced";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v1";

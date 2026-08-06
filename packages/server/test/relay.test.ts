@@ -585,3 +585,273 @@ describe("relay handler", () => {
     );
   });
 });
+
+describe("URL-only service surface", () => {
+  const ACCOUNT_PROFILE = Object.freeze({
+    version: "oaath.kernel-account-profile/v1",
+    kind: "kernel",
+    accountIndex: "0",
+    kernelVersion: "0.4.0",
+    factoryRoute: "kernel_factory",
+    entryPoint: { version: "0.7" },
+    ownerCredential: {
+      version: "oaath.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"11".repeat(20)}`,
+    },
+  });
+
+  function chainPort(overrides: Record<string, unknown> = {}) {
+    return {
+      chainId: 31_337,
+      reads: async (request: unknown) => ({ echoed: "reads", request }),
+      observation: async () => undefined,
+      bundler: async () => ({ accepting: true }),
+      quote: async () => ({ nonceKey: "0" }),
+      submission: async () => ({ userOperationHash: `0x${"aa".repeat(32)}` }),
+      usage: async () => ({ status: "complete" }),
+      feePayer: null,
+      ...overrides,
+    };
+  }
+
+  function bootstrapOptions(overrides: Record<string, unknown> = {}) {
+    return {
+      bootstrap: {
+        application: {
+          applicationId: "app-a",
+          applicationName: "OAAth Example",
+          clientId: "client-a",
+          redirectUris: [REDIRECT_URI],
+        },
+        userHandle: "user-1",
+        account: ACCOUNT_PROFILE,
+        ownerValidator: `0x${"22".repeat(20)}`,
+      },
+      chains: [chainPort()],
+      ...overrides,
+    } as Partial<RelayHandlerOptions>;
+  }
+
+  it("serves the exact versioned bootstrap document to a client", async () => {
+    const harness = createHarness(bootstrapOptions());
+    const document = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    expect(document).toMatchObject({
+      version: "oaath.service-bootstrap/v1",
+      userHandle: "user-1",
+      chains: [{ chainId: 31_337, usage: true, feePayer: null }],
+    });
+    await expectFailure(await harness.handler(get("/bootstrap", OWNER_TOKEN)), "relay_forbidden");
+    await expectFailure(await harness.handler(get("/bootstrap", null)), "relay_unauthenticated");
+  });
+
+  it("serves no bootstrap unless the deployment configured one", async () => {
+    const harness = createHarness();
+    await expectFailure(await harness.handler(get("/bootstrap", CLIENT_TOKEN)), "relay_not_found");
+  });
+
+  it("refuses to construct on a malformed bootstrap or bootstrap without chains", async () => {
+    expectConstructionFailure(
+      () => createHarness(bootstrapOptions({ chains: undefined })),
+      "relay_internal",
+    );
+    expectConstructionFailure(
+      () =>
+        createHarness(
+          bootstrapOptions({
+            bootstrap: { application: {}, userHandle: "", account: {}, ownerValidator: null },
+          }),
+        ),
+      "relay_internal",
+    );
+  });
+
+  it("relays each chain port and reports absence explicitly", async () => {
+    const harness = createHarness(bootstrapOptions());
+    const reads = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/chains/31337/reads", CLIENT_TOKEN, { request: { a: 1 } })),
+      200,
+    );
+    expect(reads).toEqual({ present: true, result: { echoed: "reads", request: { a: 1 } } });
+    // JSON cannot carry undefined; the envelope states presence explicitly.
+    const observation = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/chains/31337/observation", CLIENT_TOKEN, { request: {} })),
+      200,
+    );
+    expect(observation).toEqual({ present: false, result: null });
+    const submission = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/chains/31337/submissions", CLIENT_TOKEN, { request: {} })),
+      200,
+    );
+    expect(submission).toEqual({
+      present: true,
+      result: { userOperationHash: `0x${"aa".repeat(32)}` },
+    });
+  });
+
+  it("fails closed on unknown chains, ports, callers, and throwing ports", async () => {
+    const throwing = chainPort({
+      quote: async () => {
+        throw new Error("boom");
+      },
+      usage: null,
+    });
+    const harness = createHarness(bootstrapOptions({ chains: [throwing] }));
+    await expectFailure(
+      await harness.handler(post("/chains/1/reads", CLIENT_TOKEN, { request: {} })),
+      "relay_not_found",
+    );
+    await expectFailure(
+      await harness.handler(post("/chains/31337/paymaster", CLIENT_TOKEN, { request: {} })),
+      "relay_not_found",
+    );
+    // A chain that serves no usage evidence has no usage route at all.
+    await expectFailure(
+      await harness.handler(post("/chains/31337/usage", CLIENT_TOKEN, { request: {} })),
+      "relay_not_found",
+    );
+    await expectFailure(
+      await harness.handler(post("/chains/31337/reads", OWNER_TOKEN, { request: {} })),
+      "relay_forbidden",
+    );
+    await expectFailure(
+      await harness.handler(post("/chains/31337/quote", CLIENT_TOKEN, { request: {} })),
+      "relay_chain_unavailable",
+    );
+    await expectFailure(
+      await harness.handler(post("/chains/31337/reads", CLIENT_TOKEN, { extra: 1 })),
+      "relay_request_invalid",
+    );
+  });
+
+  it("records invalidations durably and enforces them on the chain routes", async () => {
+    const harness = createHarness(bootstrapOptions());
+    const capabilityHash = `0x${"ab".repeat(32)}`;
+    const submission = { request: { prepared: { grantId: "grant-1" } } };
+
+    // Before invalidation the ports serve the Grant.
+    await expectOk(
+      await harness.handler(post("/chains/31337/submissions", CLIENT_TOKEN, submission)),
+      200,
+    );
+
+    // Recording is durable and idempotent: a replay answers the stored record,
+    // so one Grant has exactly one invalidation time and one evidence hash.
+    const first = await expectOk<Record<string, unknown>>(
+      await harness.handler(
+        post("/invalidations", CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      200,
+    );
+    expect(first.evidenceHash).toMatch(/^0x[0-9a-f]{64}$/u);
+    harness.clock.advance(5_000);
+    const replay = await expectOk<Record<string, unknown>>(
+      await harness.handler(
+        post("/invalidations", CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      200,
+    );
+    expect(replay).toEqual(first);
+
+    // Another client reads absence, never existence.
+    await expectFailure(
+      await harness.handler(
+        post("/invalidations", OTHER_CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      "relay_not_found",
+    );
+
+    // Enforcement: the routes whose requests act for the Grant refuse it.
+    await expectFailure(
+      await harness.handler(post("/chains/31337/submissions", CLIENT_TOKEN, submission)),
+      "relay_capability_invalidated",
+    );
+    await expectFailure(
+      await harness.handler(
+        post("/chains/31337/usage", CLIENT_TOKEN, {
+          request: { grantId: "grant-1", chainId: 31_337 },
+        }),
+      ),
+      "relay_capability_invalidated",
+    );
+    // Chain reads grant nothing and keep serving.
+    await expectOk(
+      await harness.handler(post("/chains/31337/reads", CLIENT_TOKEN, { request: {} })),
+      200,
+    );
+    // A different Grant is untouched.
+    await expectOk(
+      await harness.handler(
+        post("/chains/31337/submissions", CLIENT_TOKEN, {
+          request: { prepared: { grantId: "grant-2" } },
+        }),
+      ),
+      200,
+    );
+  });
+
+  it("releases the decided code to exactly the creating client", async () => {
+    const harness = createHarness();
+    const created = await createRequest(harness);
+
+    // Undecided: pending, and only for the creating client.
+    expect(
+      await expectOk(
+        await harness.handler(
+          get(`/authorization/requests/${created.requestId}/code`, CLIENT_TOKEN),
+        ),
+        200,
+      ),
+    ).toEqual({ outcome: "pending" });
+    await expectFailure(
+      await harness.handler(
+        get(`/authorization/requests/${created.requestId}/code`, OTHER_CLIENT_TOKEN),
+      ),
+      "relay_not_found",
+    );
+
+    // Approved: the picked-up code is byte-identical to the released one and
+    // pickup is idempotent — consumption stays one-shot elsewhere.
+    const approved = await approve(harness, created.requestId);
+    const picked = await expectOk<Record<string, unknown>>(
+      await harness.handler(get(`/authorization/requests/${created.requestId}/code`, CLIENT_TOKEN)),
+      200,
+    );
+    expect(picked).toEqual({
+      outcome: "approved",
+      decidedAt: approved.decidedAt,
+      code: approved.code,
+      codeExpiresAt: approved.codeExpiresAt,
+    });
+    const again = await expectOk<Record<string, unknown>>(
+      await harness.handler(get(`/authorization/requests/${created.requestId}/code`, CLIENT_TOKEN)),
+      200,
+    );
+    expect(again).toEqual(picked);
+
+    // Past the code expiry the pickup is gone, like the code itself.
+    harness.clock.advance(120_000);
+    await expectFailure(
+      await harness.handler(get(`/authorization/requests/${created.requestId}/code`, CLIENT_TOKEN)),
+      "relay_expired",
+    );
+  });
+
+  it("reports a rejection through pickup without a code", async () => {
+    const harness = createHarness();
+    const created = await createRequest(harness);
+    await harness.handler(
+      post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+        outcome: "rejected",
+      }),
+    );
+    const picked = await expectOk<Record<string, unknown>>(
+      await harness.handler(get(`/authorization/requests/${created.requestId}/code`, CLIENT_TOKEN)),
+      200,
+    );
+    expect(picked).toMatchObject({ outcome: "rejected" });
+  });
+});

@@ -35,8 +35,9 @@ const examples = [
 
 if (anvilAvailable()) {
   examples.push({ label: "all-chain", script: "all-chain/run.mjs", env: {} });
+  examples.push({ label: "service", script: "service/run.mjs", env: {} });
 } else {
-  console.log("examples:check: skipping all-chain, Anvil is not installed");
+  console.log("examples:check: skipping all-chain and service, Anvil is not installed");
 }
 
 const failures = [];

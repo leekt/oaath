@@ -36,14 +36,21 @@ import {
   type Grant,
   type GrantPolicy,
   OAATH_GRANT_POLICY_VERSION,
+  OAATH_ISSUER_VERSION,
   OAATH_PERMISSION_REQUEST_VERSION,
   type PermissionDecision,
   type PermissionRequest,
   parseGrantPolicy,
+  parseIssuerIdentity,
   parsePermissionDecision,
   parsePermissionRequest,
   sameGrantIdentity,
 } from "@oaath/protocol";
+import {
+  type KernelAllChainApproval,
+  kernelAllChainCapabilityHash,
+  parseKernelAllChainApproval,
+} from "../kernel/permission/materialize.js";
 import type { KeyProfile } from "../kernel/types.js";
 import {
   OAATH_CLIENT_CONTEXT_VERSION,
@@ -330,11 +337,13 @@ export function createConnection(
     record: GrantStoreRecord,
     request: Readonly<PermissionRequest>,
     approvedPolicy: Readonly<GrantPolicy>,
+    installApproval: Readonly<KernelAllChainApproval> | null,
   ): Readonly<OaathGrantHandle> {
     const created = createGrantHandle({
       binding: input.binding,
       request,
       approvedPolicy,
+      installApproval,
       record,
       grants: input.grants,
       operations: input.operations,
@@ -351,6 +360,7 @@ export function createConnection(
   async function writeContext(
     request: Readonly<PermissionRequest>,
     approvedPolicy: Readonly<GrantPolicy>,
+    installApproval: Readonly<KernelAllChainApproval> | null,
   ): Promise<void> {
     const context: OaathClientContext = Object.freeze({
       version: OAATH_CLIENT_CONTEXT_VERSION,
@@ -358,6 +368,7 @@ export function createConnection(
       grantId: request.requestId,
       request,
       approvedPolicy,
+      installApproval,
       updatedAt: input.now(),
     });
     try {
@@ -471,8 +482,22 @@ export function createConnection(
     }
 
     let decision: Readonly<PermissionDecision>;
+    let installApproval: Readonly<KernelAllChainApproval> | null = null;
     try {
-      decision = parsePermissionDecision(JSON.parse(text(claimed, "artifact")) as unknown);
+      const artifact = JSON.parse(text(claimed, "artifact")) as unknown;
+      // An approval artifact carries the replayable Kernel install approval
+      // beside the decision; the decision's own capabilityHash binds it below,
+      // so the two cannot be mixed across requests or capabilities.
+      if (artifact !== null && typeof artifact === "object" && "installApproval" in artifact) {
+        const { installApproval: rawApproval, ...decisionValue } = artifact as Record<
+          string,
+          unknown
+        >;
+        installApproval = parseKernelAllChainApproval(rawApproval);
+        decision = parsePermissionDecision(decisionValue);
+      } else {
+        decision = parsePermissionDecision(artifact);
+      }
     } catch (error) {
       return mapClientFailure(error, "the owner decision artifact is invalid");
     }
@@ -518,6 +543,20 @@ export function createConnection(
         "permission_decision_conflict",
       );
     }
+    // An active Grant must be able to prove its permission is installable:
+    // the decision's capabilityHash must be exactly the hash of the replayable
+    // install approval delivered beside it. An approval with no capability, or
+    // one whose capability the owner never named, never activates.
+    if (
+      installApproval === null ||
+      kernelAllChainCapabilityHash(installApproval) !== decision.capabilityHash
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the decision does not bind its install capability",
+        "capability_binding_mismatch",
+      );
+    }
     const approvedPolicy = decision.approvedPolicy;
     let active: Grant;
     try {
@@ -530,8 +569,8 @@ export function createConnection(
       return mapClientFailure(error, "the Grant could not be activated");
     }
     const stored = await persistGrant(active, null);
-    await writeContext(request, approvedPolicy);
-    return handle(stored, request, approvedPolicy);
+    await writeContext(request, approvedPolicy, installApproval);
+    return handle(stored, request, approvedPolicy, installApproval);
   }
 
   async function resume(): Promise<Readonly<OaathGrantHandle> | null> {
@@ -601,7 +640,7 @@ export function createConnection(
     }
     if (record.value.state !== "active") return null;
     if (input.now() >= record.value.expiresAt) return null;
-    return handle(record, context.request, context.approvedPolicy);
+    return handle(record, context.request, context.approvedPolicy, context.installApproval);
   }
 
   async function signOut(): Promise<void> {
@@ -646,18 +685,20 @@ export function captureIssuerCapability(value: unknown): Readonly<OaathIssuerCap
     context,
     "oaath_client_capability_invalid",
   );
-  if (
-    typeof record.url !== "string" ||
-    !record.url.startsWith("https://") ||
-    record.url.endsWith("/")
-  ) {
-    return clientFail(
-      "oaath_client_capability_invalid",
-      "issuer url must be a canonical https URL",
-    );
+  // The protocol's canonical URL rule is the one owner of what an issuer URL
+  // may be, including the loopback development exception the URL-only mode
+  // relies on; restating https-only here would strand `http://localhost`.
+  let url: string;
+  try {
+    url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: record.url }).url;
+  } catch {
+    return clientFail("oaath_client_capability_invalid", "issuer url must be a canonical URL");
+  }
+  if (url !== record.url) {
+    return clientFail("oaath_client_capability_invalid", "issuer url must already be canonical");
   }
   return Object.freeze({
-    url: record.url,
+    url,
     fetch: clientCapability<OaathIssuerCapability["fetch"]>(record.fetch, "issuer fetch"),
     signOut:
       record.signOut === null

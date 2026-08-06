@@ -20,7 +20,7 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
-} from "@oaath/sdk";
+} from "@oaath/sdk/kernel";
 
 const ACCOUNT = `0x${"66".repeat(20)}`;
 const TRANSACTION_HASH = `0x${"44".repeat(32)}`;
@@ -188,10 +188,25 @@ export function createFakeChain(chainId) {
           },
         };
       },
-      // No finalized usage evidence exists, so per-chain policy coverage is
-      // inconclusive and the routing decision requires owner authority. Absent
-      // evidence is never read as "unused".
-      usage: null,
+      // Complete finalized usage evidence from this chain's own record of what
+      // it included: every send in this fake finalizes at the inclusion block,
+      // so the finalized count is the send count. Without this evidence,
+      // coverage is inconclusive and sendCalls is denied — absent evidence is
+      // never read as "unused", and it never widens to owner authority.
+      async usage(request) {
+        return {
+          version: "oaath.grant-policy-usage/v1",
+          status: "complete",
+          grantId: request.grantId,
+          chainId: request.chainId,
+          finalizedOperationCount: String(sends.length),
+          through: {
+            blockNumber: INCLUSION_BLOCK.toString(10),
+            blockHash: BLOCK_HASH,
+            observedAt: 1_800_000_000,
+          },
+        };
+      },
       feePayer: null,
     },
   };

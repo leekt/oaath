@@ -4,6 +4,9 @@
  * A canonical OAAth URL is `https`, has a lowercase host, no credentials, no
  * default port, no query, no fragment, and no trailing slash. Non-canonical
  * input is rejected, never rewritten, so one issuer has exactly one string.
+ * The single exception is local development: `http` is accepted for exactly
+ * the loopback hosts `localhost`, `127.0.0.1`, and `[::1]`, and for no other
+ * host, so a production deployment can never downgrade to plaintext.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -13,6 +16,8 @@ import { type CaptureContext, type CaptureFailure, exactRecord } from "../intern
 export const OAATH_ISSUER_VERSION = "oaath.issuer/v1" as const;
 
 const MAX_URL_LENGTH = 2_048;
+/** The only hosts allowed to serve plaintext http, for local development. */
+const LOOPBACK_HOSTS: readonly string[] = Object.freeze(["localhost", "127.0.0.1", "[::1]"]);
 
 export interface IssuerIdentity {
   readonly version: typeof OAATH_ISSUER_VERSION;
@@ -39,8 +44,11 @@ export function captureCanonicalHttpsUrl(
   } catch {
     return fail(`${label} must be a bounded canonical https URL`);
   }
+  const loopback =
+    parsed.protocol === "http:" &&
+    LOOPBACK_HOSTS.includes(parsed.hostname === "::1" ? "[::1]" : parsed.hostname);
   if (
-    parsed.protocol !== "https:" ||
+    (parsed.protocol !== "https:" && !loopback) ||
     parsed.username !== "" ||
     parsed.password !== "" ||
     parsed.search !== "" ||

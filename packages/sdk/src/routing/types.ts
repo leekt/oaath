@@ -47,6 +47,14 @@ export class OaathRoutingError extends Error {
 export type OaathExecutionSigner = "session" | "owner";
 
 /**
+ * The signer a decision selects. `none` denies execution: calls that are not
+ * conclusively covered by the approved session scope select no authority at
+ * all — owner authority is wider than the reviewed policy, so it is never a
+ * fallback for a session-scoped request.
+ */
+export type OaathExecutionSignerDecision = OaathExecutionSigner | "none";
+
+/**
  * The submission route for one prepared operation.
  *
  * - `bundler`: send the signed operation to the configured ERC-4337 bundler.
@@ -90,9 +98,12 @@ export interface OaathFeePayerDescriptor {
  * neither mutate nor re-derive an operation identity.
  *
  * `feePayer` is non-null exactly when `route` is `entrypoint-handleops`.
+ * `signer` is `none` exactly when the decision denies execution; a denied
+ * decision carries `route: "none"`, no fee payer, and only the signer reason,
+ * so it exposes no usable submission surface.
  */
 export interface OaathExecutionDecision {
-  readonly signer: OaathExecutionSigner;
+  readonly signer: OaathExecutionSignerDecision;
   readonly route: OaathExecutionRoute;
   readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
   /** One signer reason, one bundler reason, and one fee-payer reason when a fallback was considered. */

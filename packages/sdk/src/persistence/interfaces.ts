@@ -34,6 +34,10 @@ import {
   parseGrantPolicy,
   parsePermissionRequest,
 } from "@oaath/protocol";
+import {
+  type KernelAllChainApproval,
+  parseKernelAllChainApproval,
+} from "../kernel/permission/materialize.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
@@ -209,6 +213,12 @@ export interface OaathClientContext {
   readonly grantId: string;
   readonly request: Readonly<PermissionRequest>;
   readonly approvedPolicy: Readonly<GrantPolicy>;
+  /**
+   * The owner's replayable Kernel install approval, durable beside the Grant
+   * so any supported chain can materialize the permission later. Null only
+   * for contexts persisted before an approval carried one.
+   */
+  readonly installApproval: Readonly<KernelAllChainApproval> | null;
   readonly updatedAt: number;
 }
 
@@ -230,7 +240,15 @@ export function parseClientContext(value: unknown): Readonly<OaathClientContext>
   const context: CaptureContext = new WeakSet();
   const record = exactRecord(
     value,
-    ["version", "bindingId", "grantId", "request", "approvedPolicy", "updatedAt"],
+    [
+      "version",
+      "bindingId",
+      "grantId",
+      "request",
+      "approvedPolicy",
+      "installApproval",
+      "updatedAt",
+    ],
     "client context",
     context,
     failFor(code),
@@ -240,9 +258,12 @@ export function parseClientContext(value: unknown): Readonly<OaathClientContext>
   }
   let request: Readonly<PermissionRequest>;
   let approvedPolicy: Readonly<GrantPolicy>;
+  let installApproval: Readonly<KernelAllChainApproval> | null;
   try {
     request = parsePermissionRequest(record.request);
     approvedPolicy = parseGrantPolicy(record.approvedPolicy);
+    installApproval =
+      record.installApproval === null ? null : parseKernelAllChainApproval(record.installApproval);
   } catch {
     return persistenceFail(code, "client context permission request or policy is invalid");
   }
@@ -259,6 +280,7 @@ export function parseClientContext(value: unknown): Readonly<OaathClientContext>
     grantId,
     request,
     approvedPolicy,
+    installApproval,
     updatedAt: persistenceTime(record.updatedAt, "client context updatedAt", code),
   });
 }

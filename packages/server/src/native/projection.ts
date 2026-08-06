@@ -41,7 +41,7 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v2" as const;
 
 /**
  * The versioned scope envelope a client stores to ask the owner's phone for one
@@ -57,26 +57,67 @@ const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 const DIGEST = /^0x[0-9a-f]{64}$/u;
 
 /**
+ * Whether the phone may offer approval for one projected scope. A recognized,
+ * fully projected scope is approvable; an unknown or malformed one stays
+ * inspectable but is reject-only — a production consent surface never offers
+ * an Approve button over authority it could not read.
+ */
+export type OwnerPhoneDecisionCapability = "approve-or-reject" | "reject-only";
+
+/** One credential identity as the owner reviews it: public material only. */
+export type OwnerPhoneCredentialProjection =
+  | Readonly<{ kind: "ecdsa"; address: string }>
+  | Readonly<{ kind: "p256"; publicKey: string }>
+  | Readonly<{ kind: "webauthn"; publicKey: string; authenticatorIdHash: string }>;
+
+/**
  * The requested scope as the phone renders it. When the stored scope parses as
- * an `@oaath/protocol` permission request, its consent-relevant facts are
- * projected structurally; anything else is returned as an explicitly labeled
- * raw string for the owner to review. Neither shape is a failure.
- *
- * ponytail: per-call `argumentEquals` constraints are not projected, so the
- * structured view may show *broader* authority than is actually granted —
- * safe for consent. Project them when a consent UI renders argument rules.
+ * an `@oaath/protocol` permission request, every fact that determines who
+ * receives authority, over which account, and under what limits is projected
+ * structurally; anything else is returned as an explicitly labeled raw string
+ * for the owner to review. Neither shape is a failure, but only a recognized
+ * shape is approvable.
  */
 export type OwnerPhoneScopeProjection =
   | Readonly<{
       kind: "permission-request";
+      decision: "approve-or-reject";
+      /** The application identity the signed request binds, verbatim. */
+      application: Readonly<{
+        applicationId: string;
+        clientId: string;
+        origin: string;
+        /** Opaque device identity, fingerprinted: raw ids mean nothing to an owner. */
+        deviceFingerprint: string;
+      }>;
+      /** The logical account this authority acts for. */
+      account: Readonly<{
+        accountIndex: string;
+        kernelVersion: string;
+        factoryRoute: string;
+        entryPointVersion: string;
+        ownerCredential: OwnerPhoneCredentialProjection;
+      }>;
+      /** The session credential that receives the scoped authority. */
+      operatorCredential: OwnerPhoneCredentialProjection;
       chainScope: "all";
-      calls: readonly Readonly<{ target: string; selector: string; valueLimit: string }>[];
+      calls: readonly Readonly<{
+        target: string;
+        selector: string;
+        valueLimit: string;
+        argumentEquals: readonly Readonly<{ index: number; value: string }>[];
+      }>[];
+      requestedAt: number;
       /** The permission request's own expiry, as the requesting client stated it. */
       expiresAt: number;
+      /** The policy's on-chain validity window; inclusive, in Unix seconds. */
+      policyValidAfter: number;
+      policyValidUntil: number | null;
       perChainOperationLimit: number;
     }>
   | Readonly<{
       kind: "signature-request";
+      decision: "approve-or-reject";
       /** The exact 32-byte digest the owner's key is asked to sign. */
       digest: `0x${string}`;
       /**
@@ -87,7 +128,7 @@ export type OwnerPhoneScopeProjection =
        */
       display: string;
     }>
-  | Readonly<{ kind: "raw"; text: string }>;
+  | Readonly<{ kind: "raw"; decision: "reject-only"; text: string }>;
 
 export interface OwnerPhoneRequestProjection {
   readonly version: typeof OAATH_NATIVE_PROJECTION_VERSION;
@@ -130,17 +171,58 @@ export interface ProjectOwnerPhoneRequestInput {
  * request id is the binding). An unparseable scope is not a failure: the owner
  * still gets the raw text to review, never a silent omission.
  */
-function projectScope(requestedScope: string, operationId: string): OwnerPhoneScopeProjection {
+function projectCredential(
+  credential: Readonly<{
+    kind: "ecdsa" | "p256" | "webauthn";
+    address?: string;
+    publicKey?: string;
+    authenticatorIdHash?: string;
+  }>,
+): OwnerPhoneCredentialProjection {
+  if (credential.kind === "ecdsa") {
+    return Object.freeze({ kind: "ecdsa", address: credential.address ?? "" });
+  }
+  if (credential.kind === "p256") {
+    return Object.freeze({ kind: "p256", publicKey: credential.publicKey ?? "" });
+  }
+  return Object.freeze({
+    kind: "webauthn",
+    publicKey: credential.publicKey ?? "",
+    authenticatorIdHash: credential.authenticatorIdHash ?? "",
+  });
+}
+
+export async function projectOwnerPhoneScope(
+  requestedScope: string,
+  operationId: string,
+): Promise<OwnerPhoneScopeProjection> {
   try {
     const parsed: unknown = JSON.parse(requestedScope);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return Object.freeze({ kind: "raw", text: requestedScope });
+      return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
     }
     const signatureRequest = projectSignatureRequestScope(parsed);
     if (signatureRequest) return signatureRequest;
     const request = parsePermissionRequest({ ...parsed, requestId: operationId });
     return Object.freeze({
       kind: "permission-request",
+      decision: "approve-or-reject",
+      application: Object.freeze({
+        applicationId: request.application.applicationId,
+        clientId: request.application.clientId,
+        origin: request.application.origin,
+        deviceFingerprint: (
+          await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
+        ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+      }),
+      account: Object.freeze({
+        accountIndex: request.logicalAccount.accountIndex,
+        kernelVersion: request.logicalAccount.kernelVersion,
+        factoryRoute: request.logicalAccount.factoryRoute,
+        entryPointVersion: request.logicalAccount.entryPoint.version,
+        ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
+      }),
+      operatorCredential: projectCredential(request.operatorCredential),
       chainScope: request.chainScope,
       calls: Object.freeze(
         request.policy.calls.map((call) =>
@@ -148,14 +230,22 @@ function projectScope(requestedScope: string, operationId: string): OwnerPhoneSc
             target: call.target,
             selector: call.selector,
             valueLimit: call.valueLimit,
+            argumentEquals: Object.freeze(
+              call.argumentEquals.map((rule) =>
+                Object.freeze({ index: rule.index, value: rule.value }),
+              ),
+            ),
           }),
         ),
       ),
+      requestedAt: request.requestedAt,
       expiresAt: request.expiresAt,
+      policyValidAfter: request.policy.validAfter,
+      policyValidUntil: request.policy.validUntil,
       perChainOperationLimit: request.policy.perChainOperationLimit,
     });
   } catch {
-    return Object.freeze({ kind: "raw", text: requestedScope });
+    return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   }
 }
 
@@ -206,7 +296,12 @@ function projectSignatureRequestScope(parsed: object): OwnerPhoneScopeProjection
   } catch {
     return null;
   }
-  return Object.freeze({ kind: "signature-request", digest: digest as `0x${string}`, display });
+  return Object.freeze({
+    kind: "signature-request",
+    decision: "approve-or-reject",
+    digest: digest as `0x${string}`,
+    display,
+  });
 }
 
 /**
@@ -241,6 +336,6 @@ export async function projectOwnerPhoneRequest(
     displayPayload: digest.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
     expiresAt: state.expiresAt,
     client: Object.freeze({ clientId: state.clientId, redirectUri: state.redirectUri }),
-    scope: projectScope(state.requestedScope, state.requestId),
+    scope: await projectOwnerPhoneScope(state.requestedScope, state.requestId),
   });
 }

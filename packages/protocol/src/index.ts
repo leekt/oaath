@@ -141,6 +141,9 @@ export {
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
+  sameKernelAccountProfile,
+  sameOperatorCredentialProfile,
+  sameOwnerCredentialProfile,
 } from "./identity-profile.js";
 export type {
   AccountId,
@@ -225,6 +228,16 @@ export {
   parsePermissionDecision,
   parsePermissionRequest,
 } from "./permission-protocol.js";
+export type {
+  ServiceBootstrap,
+  ServiceBootstrapApplication,
+  ServiceBootstrapChain,
+} from "./service-bootstrap.js";
+export {
+  captureServiceBootstrap,
+  OAATH_SERVICE_BOOTSTRAP_VERSION,
+  parseServiceBootstrap,
+} from "./service-bootstrap.js";
 export type { Duration, Timestamp } from "./time.js";
 export {
   durationBetween,

@@ -5,7 +5,7 @@
  */
 import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { OperationStore } from "../src/index.js";
+import { OperationStore } from "../src/advanced.js";
 import {
   CALL_DATA,
   CHAIN_ID,
@@ -57,40 +57,71 @@ describe("browser golden path", () => {
     expect(stored?.value.identity.userOperationHash).toBe(prepared.userOperationHash);
 
     await grant.revoke();
-    expect(grant.state).toBe("revoked");
+    // The replayable capability is dead, so nothing new can materialize, but
+    // the installed chain permission still needs owner-signed removal the
+    // application cannot mint: the Grant stays durably `revoking` rather than
+    // claiming a revocation no chain observed.
+    expect(grant.state).toBe("revoking");
     expect(realm.invalidations()).toBe(1);
     expect(realm.chain.sends).toHaveLength(1);
+    // A revoking Grant authorizes nothing new.
+    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_grant_inactive",
+    });
 
     await connection.close();
   });
 
-  it("routes an uncovered call to owner authority and a covered call to the session", async () => {
-    const uncovered = createRealm();
-    const connection = await uncovered.oaath.connect();
+  it("denies inconclusive coverage before any probe, quote, or send", async () => {
+    // No finalized usage evidence exists, so coverage is inconclusive. A Grant
+    // may authorize at most the approved scope, so the send fails closed with
+    // scope denial — it is never widened to owner authority — and nothing
+    // reaches the quote or submission transports.
+    const unreadable = createRealm({ chain: createChainFixture({ usage: false }) });
+    const connection = await unreadable.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
-    // No finalized usage evidence exists, so coverage is inconclusive and the
-    // decision table requires owner authority; the send still completes.
-    const operation = await grant.sendCalls(sendCallsInput());
-    expect((await operation.wait()).status).toBe("finalized");
+    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_scope_denied",
+      source: "session_coverage_unreadable",
+    });
+    expect(unreadable.chain.quotes).toBe(0);
+    expect(unreadable.chain.sends).toHaveLength(0);
     await connection.close();
+  });
 
-    // With complete usage evidence the same calls are covered and the decision
-    // selects the session authority, which now composes: every axis the approved
+  it("materializes on first use, then executes with the standard session authority", async () => {
+    // With complete usage evidence the calls are covered and the decision
+    // selects the session authority, which composes: every axis the approved
     // policy bounds — calls, value, the validity window, the per-chain operation
     // count — has a pinned reviewed policy module, so the permission expresses the
     // approved scope exactly and the session key signs the operation itself.
     const covered = createRealm({ chain: createChainFixture({ usage: true }) });
     const sessionConnection = await covered.oaath.connect();
     const sessionGrant = await sessionConnection.requestPermission(permissionInput());
-    const sessionOperation = await sessionGrant.sendCalls(sendCallsInput());
-    expect((await sessionOperation.wait()).status).toBe("finalized");
-    expect(covered.chain.sends).toHaveLength(1);
-    const sessionPrepared = covered.chain.sends[0];
-    const envelope = covered.chain.signatures[0];
-    if (!sessionPrepared || !envelope) throw new Error("expected one session submission");
+
+    // First covered execution: the owner's replayable install approval is
+    // spent in Kernel's enable-replayable mode, so the permission installs and
+    // the call executes in one operation.
+    const first = await sessionGrant.sendCalls(sendCallsInput());
+    expect((await first.wait()).status).toBe("finalized");
+    const installOperation = covered.chain.sends[0];
+    if (!installOperation) throw new Error("expected the materializing submission");
+    expect((BigInt(installOperation.userOperation.nonce) >> 248n) & 0xffn).toBe(0x0cn);
+    expect((BigInt(installOperation.userOperation.nonce) >> 240n) & 0xffn).toBe(2n);
+
+    // Second execution: the chain is materialized, so the operation validates
+    // through the standard permission path.
+    const second = await sessionGrant.sendCalls(sendCallsInput());
+    expect((await second.wait()).status).toBe("finalized");
+    expect(covered.chain.sends).toHaveLength(2);
+    const sessionPrepared = covered.chain.sends[1];
+    const envelope = covered.chain.signatures[1];
+    if (!sessionPrepared || !envelope) throw new Error("expected one standard submission");
     // Kernel encodes the validation it must use in the nonce key: type 0x02 is a
     // permission, so the chain itself would refuse root authority for this
     // operation. Owner authority is never substituted for the approved session.
+    expect((BigInt(sessionPrepared.userOperation.nonce) >> 248n) & 0xffn).toBe(0n);
     expect((BigInt(sessionPrepared.userOperation.nonce) >> 240n) & 0xffn).toBe(2n);
     // The signature is Kernel's permission envelope: an empty slice per installed
     // policy, then the session key's signature last.
@@ -185,13 +216,21 @@ describe("browser golden path", () => {
     const realm = createRealm({ chain: createChainFixture({ usage: true }) });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
-    // A different target is uncovered, so the decision requires owner authority
-    // and the send proceeds under root authority the owner already holds.
-    const operation = await grant.sendCalls({
-      chain: CHAIN_ID,
-      calls: [{ target: `0x${"33".repeat(20)}`, value: "0", data: CALL_DATA }],
+    // A different target is conclusively outside the approved scope. The Grant
+    // never widens to root authority: the send is denied before any signature
+    // or submission exists.
+    await expect(
+      grant.sendCalls({
+        chain: CHAIN_ID,
+        calls: [{ target: `0x${"33".repeat(20)}`, value: "0", data: CALL_DATA }],
+      }),
+    ).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_scope_denied",
+      source: "session_calls_uncovered",
     });
-    expect((await operation.wait()).status).toBe("finalized");
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.sends).toHaveLength(0);
     await connection.close();
   });
 
@@ -210,6 +249,7 @@ describe("browser golden path", () => {
       "signOut",
     ]);
     expect(Object.keys(grant).sort()).toEqual([
+      "account",
       "close",
       "expiresAt",
       "revoke",
@@ -221,6 +261,7 @@ describe("browser golden path", () => {
       "close",
       "observe",
       "outcome",
+      "receipt",
       "wait",
     ]);
     // No permission id, enable envelope, journal, revision, or nonce surface.

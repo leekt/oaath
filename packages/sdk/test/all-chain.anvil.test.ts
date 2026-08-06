@@ -27,7 +27,7 @@ import {
   materializeKernelPermission,
   ownerOperator,
   sessionOperator,
-} from "../src/index.js";
+} from "../src/kernel.js";
 import {
   type AnvilChain,
   createHarness,
@@ -126,8 +126,10 @@ async function bringUp(
     operator: sessionOperator({
       key: ecdsaKey({ account: sessionKeyAccount, validator }),
       policies: [
-        { kind: "call", calls: [{ target: sessionTarget, selectors: ["0x00000000"] }] },
-        { kind: "value", maximumValue: "500" },
+        {
+          kind: "call",
+          permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "500" }],
+        },
       ],
     }),
     reads: harness.reads,

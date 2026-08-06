@@ -27,6 +27,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { encodeAbiParameters, keccak256 } from "viem";
 import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
@@ -176,14 +177,15 @@ export async function approveKernelPermissionAllChain(
  * are checked before any signature exists: the approval installs exactly the
  * packages this runtime validates through, and it covers exactly this account.
  */
-function prepareKernelPermission(value: MaterializeKernelPermissionInput): Readonly<{
-  prepared: PreparedUserOperation;
-  installNonce: string;
-  packages: readonly Readonly<KernelV4Install>[];
-  enableSignature: `0x${string}`;
-}> {
+/**
+ * Captures one stored or wire-delivered all-chain approval exactly. The digest
+ * is recomputed rather than trusted: an approval whose digest no longer matches
+ * its own account, nonce and packages is contradictory evidence, and the owner
+ * signature beside it covers something else.
+ */
+export function parseKernelAllChainApproval(value: unknown): Readonly<KernelAllChainApproval> {
   const approval = exactInput(
-    value.approval,
+    value,
     ["version", "account", "installNonce", "packages", "digest", "enableSignature"],
     "Kernel all-chain approval",
     new WeakSet(),
@@ -195,19 +197,57 @@ function prepareKernelPermission(value: MaterializeKernelPermissionInput): Reado
   if (!isBytes(approval.enableSignature) || approval.enableSignature === "0x") {
     return inputInvalid("Kernel all-chain approval enable signature is invalid");
   }
-  // The digest is recomputed rather than trusted: a stored approval whose digest
-  // no longer matches its own account, nonce and packages is contradictory
-  // evidence, and the owner signature beside it covers something else.
-  if (
-    approval.digest !==
-    kernelV4ReplayableInstallDigest({
-      account: scope.account,
-      nonce: scope.installNonce,
-      packages: scope.packages,
-    })
-  ) {
+  const digest = kernelV4ReplayableInstallDigest({
+    account: scope.account,
+    nonce: scope.installNonce,
+    packages: scope.packages,
+  });
+  if (approval.digest !== digest) {
     return inputInvalid("Kernel all-chain approval digest is contradictory");
   }
+  return Object.freeze({
+    version: OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+    ...scope,
+    digest,
+    enableSignature: approval.enableSignature as `0x${string}`,
+  });
+}
+
+/**
+ * The one capability identity a decision's `capabilityHash` binds. The digest
+ * already commits to the account, install nonce and packages, and the enable
+ * signature is the owner's release of exactly that digest, so hashing the two
+ * together identifies the whole replayable install capability. Invalidation
+ * and revocation reference this hash.
+ */
+export function kernelAllChainCapabilityHash(
+  value: Readonly<KernelAllChainApproval>,
+): `0x${string}` {
+  const approval = parseKernelAllChainApproval(value);
+  return keccak256(
+    encodeAbiParameters(
+      [
+        { type: "string", name: "domain" },
+        { type: "bytes32", name: "digest" },
+        { type: "bytes32", name: "enableSignatureHash" },
+      ],
+      [
+        "@oaath/sdk:kernel-all-chain-capability",
+        approval.digest,
+        keccak256(approval.enableSignature),
+      ],
+    ),
+  );
+}
+
+function prepareKernelPermission(value: MaterializeKernelPermissionInput): Readonly<{
+  prepared: PreparedUserOperation;
+  installNonce: string;
+  packages: readonly Readonly<KernelV4Install>[];
+  enableSignature: `0x${string}`;
+}> {
+  const approval = parseKernelAllChainApproval(value.approval);
+  const scope = approval;
 
   const runtimePackages = captureKernelV4Installs(value.runtime.packages);
   if (

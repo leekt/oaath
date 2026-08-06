@@ -8,25 +8,28 @@
  * @author taek <leekt216@gmail.com>
  */
 import { IDBFactory } from "fake-indexeddb";
+import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
+import { createOAAth } from "../src/index.js";
+import { ecdsaKey } from "../src/kernel.js";
 import {
-  captureOaathBinding,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbOperationStoreAdapter,
-  createMemoryCleanupStore,
-  createMemoryContextStore,
-  createMemoryGrantStoreAdapter,
-  createMemoryKeyStore,
-  createMemoryOperationStoreAdapter,
-  createOAAth,
   isCleanupEffectName,
   OAATH_CLEANUP_CHECKPOINT_VERSION,
   openOaathDatabase,
   parseCleanupCheckpoint,
   parseClientContext,
   requireNonExtractableKey,
-  runOaathCleanup,
-} from "../src/index.js";
+} from "../src/persistence.js";
+import {
+  createMemoryCleanupStore,
+  createMemoryContextStore,
+  createMemoryGrantStoreAdapter,
+  createMemoryKeyStore,
+  createMemoryOperationStoreAdapter,
+} from "../src/testing.js";
 import {
   bindingInput,
   CALL_DATA,
@@ -39,6 +42,7 @@ import {
   sendCallsInput,
   signingProfiles,
   TARGET,
+  VALIDATOR,
 } from "./support/browser.js";
 
 function baseConfiguration(): Record<string, unknown> {
@@ -61,7 +65,9 @@ function expectClientError(action: () => unknown, code: string): void {
 
 describe("hostile input at the client boundary", () => {
   it("refuses a configuration that is not an exact record", () => {
-    for (const value of [null, undefined, 0, "config", [], () => undefined, new Map()]) {
+    // `undefined` is deliberately absent: no configuration at all is the
+    // URL-mode local development default, not hostile input.
+    for (const value of [null, 0, "config", [], () => undefined, new Map()]) {
       expectClientError(() => createOAAth(value), "oaath_client_input_invalid");
     }
     expectClientError(
@@ -138,6 +144,73 @@ describe("hostile input at the client boundary", () => {
         expect.objectContaining({ name: "OaathClientError" }),
       );
     }
+  });
+
+  it("refuses signing keys that are not the approved credentials", () => {
+    // The binding carries the credential profiles the owner reviews; a realm
+    // whose executable keys are not exactly those credentials never composes,
+    // so approval and execution cannot name different authorities.
+    const stranger = ecdsaKey({
+      account: privateKeyToAccount(`0x${"77".repeat(32)}`),
+      validator: VALIDATOR,
+    });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: stranger, session: signingProfiles().session },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "owner_credential_mismatch",
+      }),
+    );
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: signingProfiles().owner, session: stranger },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "operator_credential_mismatch",
+      }),
+    );
+    // A consumer-authored kind has no approvable credential shape at all: it
+    // derives no profile, so it can never match a reviewed approval.
+    const approved = signingProfiles();
+    const custom = Object.freeze({
+      ...approved.owner,
+      kind: "custom:evil" as const,
+    });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: custom, session: approved.session },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "owner_credential_mismatch",
+      }),
+    );
+    // A key whose public material lies about its shape derives nothing either.
+    const malformed = Object.freeze({ ...approved.session, publicMaterial: "0x1234" as const });
+    expect(() =>
+      createOAAth({
+        ...baseConfiguration(),
+        signing: { owner: approved.owner, session: malformed },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "OaathClientError",
+        code: "oaath_client_capability_invalid",
+        source: "operator_credential_mismatch",
+      }),
+    );
   });
 
   it("refuses a binding whose parts do not agree", () => {

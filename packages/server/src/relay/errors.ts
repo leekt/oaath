@@ -57,6 +57,10 @@ export type RelayErrorCode =
    * capability is not a usable P-256 signing key, key id, team id, or topic.
    */
   | "relay_apns_credentials_invalid"
+  /** A deployment-injected chain execution port failed or answered unusably. */
+  | "relay_chain_unavailable"
+  /** The Grant's capability is durably invalidated; nothing more executes here. */
+  | "relay_capability_invalidated"
   /** An invariant the relay owns was violated. */
   | "relay_internal";
 
@@ -84,6 +88,8 @@ export const RELAY_ERROR_STATUS: Readonly<Record<RelayErrorCode, number>> = Obje
   // closed and one owner keeps every code's status.
   relay_apns_payload_too_large: 500,
   relay_apns_credentials_invalid: 500,
+  relay_chain_unavailable: 503,
+  relay_capability_invalidated: 409,
   relay_internal: 500,
 });
 

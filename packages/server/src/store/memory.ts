@@ -16,10 +16,12 @@ import {
   type AuthorizationCodeRecord,
   type AuthorizationDecisionRecord,
   type AuthorizationRequestRecord,
+  type CapabilityInvalidationRecord,
   type EncryptedArtifactRecord,
   parseAuthorizationCodeRecord,
   parseAuthorizationDecisionRecord,
   parseAuthorizationRequestRecord,
+  parseCapabilityInvalidationRecord,
   parseEncryptedArtifactRecord,
 } from "./records.js";
 
@@ -28,6 +30,7 @@ interface Tables {
   readonly decisions: Map<string, unknown>;
   readonly codes: Map<string, unknown>;
   readonly artifacts: Map<string, unknown>;
+  readonly invalidations: Map<string, unknown>;
 }
 
 function emptyTables(): Tables {
@@ -36,6 +39,7 @@ function emptyTables(): Tables {
     decisions: new Map(),
     codes: new Map(),
     artifacts: new Map(),
+    invalidations: new Map(),
   };
 }
 
@@ -45,6 +49,7 @@ function copyTables(tables: Tables): Tables {
     decisions: new Map(tables.decisions),
     codes: new Map(tables.codes),
     artifacts: new Map(tables.artifacts),
+    invalidations: new Map(tables.invalidations),
   };
 }
 
@@ -122,6 +127,12 @@ export function createMemoryRelayStore(): RelayStore {
           if (!record || record.consumedAt !== null) return false;
           codes.set(codeHash, Object.freeze({ ...record, consumedAt }));
           return true;
+        },
+        async lockCapabilityInvalidation(grantId) {
+          return read(open().invalidations, grantId, parseCapabilityInvalidationRecord);
+        },
+        async insertCapabilityInvalidation(record: CapabilityInvalidationRecord) {
+          return insert(open().invalidations, record.grantId, record);
         },
         async lockEncryptedArtifact(artifactId) {
           return read(open().artifacts, artifactId, parseEncryptedArtifactRecord);

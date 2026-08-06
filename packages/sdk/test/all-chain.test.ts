@@ -19,7 +19,7 @@ import {
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   ownerOperator,
   sessionOperator,
-} from "../src/index.js";
+} from "../src/kernel.js";
 
 const chainId = 421_614;
 const otherChainId = 11_155_111;
@@ -90,8 +90,7 @@ function runtimes(chain: typeof chainId | typeof otherChainId) {
       operator: sessionOperator({
         key: ecdsaKey({ account: sessionAccount, validator }),
         policies: [
-          { kind: "call", calls: [{ target, selectors: ["0x00000000"] }] },
-          { kind: "value", maximumValue: "500" },
+          { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "500" }] },
         ],
       }),
       reads: reads(),

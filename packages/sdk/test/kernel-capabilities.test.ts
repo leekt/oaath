@@ -3,6 +3,10 @@ import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { bytesToHex, hexToBytes, keccak256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { kernelKeyCapability } from "../src/kernel/capabilities.js";
+// pinnedValidatorModule is internal on purpose: a consumer reads the same fact
+// through diagnoseKernelCapability, so the public surface stays unchanged.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   createKernelRuntime,
   diagnoseKernelCapability,
@@ -22,11 +26,7 @@ import {
   pinnedSignerModule,
   sessionOperator,
   webauthnKey,
-} from "../src/index.js";
-import { kernelKeyCapability } from "../src/kernel/capabilities.js";
-// pinnedValidatorModule is internal on purpose: a consumer reads the same fact
-// through diagnoseKernelCapability, so the public surface stays unchanged.
-import { pinnedValidatorModule } from "../src/kernel/modules.js";
+} from "../src/kernel.js";
 
 const chainIds: readonly KernelV4SupportedChainId[] = [46_630, 421_614, 11_155_111];
 const validator = `0x${"22".repeat(20)}` as const;
@@ -91,8 +91,8 @@ const reads = Object.freeze({ read: () => Promise.resolve("0x") });
 /** The bounded scope every session capability composes; policies are required. */
 const scope = Object.freeze({
   kind: "call" as const,
-  calls: Object.freeze([
-    Object.freeze({ target, selectors: Object.freeze(["0xe9ae5c53" as const]) }),
+  permissions: Object.freeze([
+    Object.freeze({ target, selector: "0xe9ae5c53" as const, valueLimit: "0" }),
   ]),
 });
 
@@ -130,11 +130,11 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     reason: "signer_module_deployment_unproven",
   }),
   session_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  // CallPolicy enforces the call and value axes, TimestampPolicy the validity
-  // window, RateLimitPolicy the per-chain operation count: all four are pinned
-  // reviewed modules, so a session can express every axis the Grant policy holds.
+  // CallPolicy enforces calls and their per-call value ceilings, TimestampPolicy
+  // the validity window, RateLimitPolicy the per-chain operation count: all three
+  // are pinned reviewed modules, so a session can express every axis the Grant
+  // policy holds.
   hook_call: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  hook_value: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_expiry: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_operation_limit: Object.freeze({
     status: "available",
@@ -153,7 +153,6 @@ const capabilities = [
   "session_webauthn",
   "session_custom",
   "hook_call",
-  "hook_value",
   "hook_expiry",
   "hook_operation_limit",
 ] as const satisfies readonly KernelCapability[];
@@ -191,11 +190,6 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
       return sessionOperator({ key: keyProfiles.webauthn(), policies: [scope] });
     case "hook_call":
       return sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] });
-    case "hook_value":
-      return sessionOperator({
-        key: keyProfiles.ecdsa(),
-        policies: [scope, { kind: "value", maximumValue: "1000" }],
-      });
     case "hook_expiry":
       return sessionOperator({
         key: keyProfiles.ecdsa(),

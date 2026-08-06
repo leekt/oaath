@@ -21,11 +21,13 @@ import { type RelayErrorCode, relayFailure } from "../relay/errors.js";
 export const OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION =
   "oaath.authorization-request-record/v1" as const;
 export const OAATH_AUTHORIZATION_DECISION_RECORD_VERSION =
-  "oaath.authorization-decision-record/v1" as const;
+  "oaath.authorization-decision-record/v2" as const;
 export const OAATH_AUTHORIZATION_CODE_RECORD_VERSION =
   "oaath.authorization-code-record/v1" as const;
 export const OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION =
   "oaath.encrypted-artifact-record/v1" as const;
+export const OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION =
+  "oaath.capability-invalidation-record/v1" as const;
 
 /** Bounded field limits owned here and shared with wire capture. */
 export const RELAY_LIMITS = Object.freeze({
@@ -67,6 +69,14 @@ export interface AuthorizationDecisionRecord {
   readonly requestId: string;
   readonly outcome: AuthorizationDecisionOutcome;
   readonly decidedAt: number;
+  /**
+   * KMS-sealed copy of the released code for authenticated client pickup, and
+   * its expiry. The relay mints the code itself, so holding a sealed copy adds
+   * no new trust; PKCE still guards consumption. Both are null exactly when
+   * the outcome is a rejection.
+   */
+  readonly codeRef: string | null;
+  readonly codeExpiresAt: number | null;
 }
 
 export interface AuthorizationCodeRecord {
@@ -95,6 +105,23 @@ export interface EncryptedArtifactRecord {
   readonly createdAt: number;
   /** Set exactly once. A non-null value is terminal. */
   readonly claimedAt: number | null;
+}
+
+/**
+ * One durable capability invalidation: from the moment this record commits,
+ * the relay's chain execution routes refuse every submission and usage read
+ * for the Grant, so the recorded evidence states an enforced fact — "this
+ * service will no longer act for this capability" — not a bare digest.
+ * Consuming the on-chain install nonce is the chain-local revocation
+ * operation's job and stays separate evidence.
+ */
+export interface CapabilityInvalidationRecord {
+  readonly version: typeof OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION;
+  readonly grantId: string;
+  /** The authenticated client that recorded the invalidation. */
+  readonly clientId: string;
+  readonly capabilityHash: string;
+  readonly invalidatedAt: number;
 }
 
 export function boundedText(
@@ -155,6 +182,29 @@ function version<Value extends string>(value: unknown, expected: Value, label: s
   return expected;
 }
 
+export function parseCapabilityInvalidationRecord(value: unknown): CapabilityInvalidationRecord {
+  const record = captured(
+    value,
+    ["version", "grantId", "clientId", "capabilityHash", "invalidatedAt"],
+    "capability invalidation record",
+  );
+  const capabilityHash = boundedText(record.capabilityHash, 66, "capabilityHash", UNREADABLE);
+  if (!/^0x[0-9a-f]{64}$/u.test(capabilityHash)) {
+    return relayFailure(UNREADABLE, "capabilityHash must be a lowercase 32-byte hash");
+  }
+  return Object.freeze({
+    version: version(
+      record.version,
+      OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION,
+      "capability invalidation record",
+    ),
+    grantId: canonicalIdentifier(record.grantId, "grantId", UNREADABLE),
+    clientId: canonicalIdentifier(record.clientId, "clientId", UNREADABLE),
+    capabilityHash,
+    invalidatedAt: timestamp(record.invalidatedAt, "invalidatedAt", UNREADABLE),
+  });
+}
+
 export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRequestRecord {
   const record = captured(
     value,
@@ -201,11 +251,19 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
 export function parseAuthorizationDecisionRecord(value: unknown): AuthorizationDecisionRecord {
   const record = captured(
     value,
-    ["version", "requestId", "outcome", "decidedAt"],
+    ["version", "requestId", "outcome", "decidedAt", "codeRef", "codeExpiresAt"],
     "authorization decision record",
   );
   if (record.outcome !== "approved" && record.outcome !== "rejected") {
     return relayFailure(UNREADABLE, "decision outcome is unsupported");
+  }
+  // The sealed code exists exactly when a code was released: an approval with
+  // no pickup copy or a rejection carrying one is an unreadable record.
+  if ((record.outcome === "approved") !== (record.codeRef !== null)) {
+    return relayFailure(UNREADABLE, "decision code reference does not match the outcome");
+  }
+  if ((record.codeRef === null) !== (record.codeExpiresAt === null)) {
+    return relayFailure(UNREADABLE, "decision code expiry does not match its reference");
   }
   return Object.freeze({
     version: version(
@@ -216,6 +274,14 @@ export function parseAuthorizationDecisionRecord(value: unknown): AuthorizationD
     requestId: canonicalIdentifier(record.requestId, "requestId", UNREADABLE),
     outcome: record.outcome,
     decidedAt: timestamp(record.decidedAt, "decidedAt", UNREADABLE),
+    codeRef:
+      record.codeRef === null
+        ? null
+        : boundedText(record.codeRef, RELAY_LIMITS.ciphertextRef, "codeRef", UNREADABLE),
+    codeExpiresAt:
+      record.codeExpiresAt === null
+        ? null
+        : timestamp(record.codeExpiresAt, "codeExpiresAt", UNREADABLE),
   });
 }
 

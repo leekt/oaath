@@ -18,7 +18,7 @@ import {
   type OperationObserverTransactionEvidence,
   type OperationObserverTransactionReceiptEvidence,
   type OperationObserverUserOperationReceiptEvidence,
-} from "../src/index.js";
+} from "../src/advanced.js";
 
 const identity: OperationIdentity = {
   kind: "execution",

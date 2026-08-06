@@ -14,19 +14,18 @@
  */
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it } from "vitest";
+import { GrantStore, OperationStore } from "../src/advanced.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
-  GrantStore,
   OAATH_INDEXEDDB_NAME,
   type OaathDatabase,
-  OperationStore,
   openOaathDatabase,
   requireNonExtractableKey,
-} from "../src/index.js";
+} from "../src/persistence.js";
 import {
   CHAIN_ID,
   createChainFixture,
@@ -156,7 +155,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toMatchObject({ status: "conflict" });
     // The loser wrote nothing: the winning terminal state stands.
     const latest = await otherStore.get(grantId);
-    expect(latest?.value.state).toBe("revoked");
+    expect(latest?.value.state).toBe("revoking");
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 

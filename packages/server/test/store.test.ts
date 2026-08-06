@@ -62,6 +62,8 @@ const DECISION = Object.freeze({
   requestId: "request-1",
   outcome: "approved",
   decidedAt: 1_700_000_000_000,
+  codeRef: "sealed:code-1",
+  codeExpiresAt: 1_700_000_060_000,
 });
 
 function expectFailureCode(run: () => unknown, code: RelayErrorCode): void {
