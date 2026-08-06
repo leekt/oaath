@@ -54,6 +54,33 @@ export interface ServiceBootstrapChain {
   readonly feePayer: Readonly<{ address: `0x${string}`; balance: string }> | null;
 }
 
+/**
+ * Where the scoped session/operator key lives. Custody modes are different
+ * trust models, so the deployment declares one and every party fails closed on
+ * a mode it does not implement — a custody mode is never silently substituted.
+ *
+ * - `frontend` — the SDK generates and holds a non-extractable local key; the
+ *   service never sees session private material. The only mode this document
+ *   version's absence implies.
+ * - `application_backend` — the integrating application's backend holds the
+ *   key in its own KMS/HSM and signs through a registered, authenticated
+ *   signer capability.
+ * - `oaath_hosted` — the service holds a tightly scoped operator key in its
+ *   own KMS/HSM and signs server-side.
+ */
+export type ServiceBootstrapSessionSignerMode = "frontend" | "application_backend" | "oaath_hosted";
+
+export interface ServiceBootstrapSessionSigner {
+  readonly mode: ServiceBootstrapSessionSignerMode;
+  /** Deployment-registered signer provider identity; null exactly for frontend. */
+  readonly providerId: string | null;
+}
+
+const FRONTEND_SESSION_SIGNER: Readonly<ServiceBootstrapSessionSigner> = Object.freeze({
+  mode: "frontend",
+  providerId: null,
+});
+
 export interface ServiceBootstrap {
   readonly version: typeof OAATH_SERVICE_BOOTSTRAP_VERSION;
   readonly application: Readonly<ServiceBootstrapApplication>;
@@ -69,6 +96,12 @@ export interface ServiceBootstrap {
    */
   readonly ownerValidator: `0x${string}` | null;
   readonly chains: readonly Readonly<ServiceBootstrapChain>[];
+  /**
+   * The deployment's declared session-key custody. Absent in the document
+   * means `frontend` — the only custody this document version ever implied —
+   * and the parsed bootstrap always carries the canonical shape.
+   */
+  readonly sessionSigner: Readonly<ServiceBootstrapSessionSigner>;
 }
 
 function boundedText(value: unknown, max: number, label: string, fail: CaptureFailure): string {
@@ -117,14 +150,59 @@ function captureChain(
   return Object.freeze({ chainId, usage: record.usage, feePayer });
 }
 
+function captureSessionSigner(
+  value: unknown,
+  context: CaptureContext,
+  fail: CaptureFailure,
+): Readonly<ServiceBootstrapSessionSigner> {
+  const record = exactRecord(
+    value,
+    ["mode", "providerId"],
+    "service bootstrap session signer",
+    context,
+    fail,
+  );
+  const mode = record.mode;
+  if (mode !== "frontend" && mode !== "application_backend" && mode !== "oaath_hosted") {
+    return fail("service bootstrap session signer mode is unsupported");
+  }
+  if (mode === "frontend") {
+    if (record.providerId !== null) {
+      return fail("service bootstrap frontend session signer names no provider");
+    }
+    return FRONTEND_SESSION_SIGNER;
+  }
+  return Object.freeze({
+    mode,
+    providerId: boundedText(
+      record.providerId,
+      MAX_NAME_LENGTH,
+      "service bootstrap session signer provider",
+      fail,
+    ),
+  });
+}
+
 export function captureServiceBootstrap(
   value: unknown,
   context: CaptureContext,
   fail: CaptureFailure,
 ): Readonly<ServiceBootstrap> {
+  const declaresSessionSigner =
+    typeof value === "object" && value !== null && Object.hasOwn(value, "sessionSigner");
   const record = exactRecord(
     value,
-    ["version", "application", "userHandle", "account", "ownerValidator", "chains"],
+    declaresSessionSigner
+      ? [
+          "version",
+          "application",
+          "userHandle",
+          "account",
+          "ownerValidator",
+          "chains",
+          "sessionSigner",
+        ]
+      : ["version", "application", "userHandle", "account", "ownerValidator", "chains"],
     "service bootstrap",
     context,
     fail,
@@ -201,6 +279,9 @@ export function captureServiceBootstrap(
     account,
     ownerValidator,
     chains: Object.freeze(chains),
+    sessionSigner: declaresSessionSigner
+      ? captureSessionSigner(record.sessionSigner, context, fail)
+      : FRONTEND_SESSION_SIGNER,
   });
 }
 

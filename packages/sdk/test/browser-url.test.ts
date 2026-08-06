@@ -187,6 +187,35 @@ describe("URL-only golden path", () => {
     }
   });
 
+  it("refuses a custody mode this SDK does not implement, never substituting frontend", async () => {
+    // Custody modes are different trust models. A deployment declaring backend
+    // or hosted custody must not silently receive a locally minted session key
+    // — composition refuses before any key, store, or authority exists.
+    for (const mode of ["application_backend", "oaath_hosted"] as const) {
+      const realm = createUrlRealm({
+        bootstrap: (document) => ({
+          ...document,
+          sessionSigner: { mode, providerId: "kms-primary" },
+        }),
+      });
+      await expect(realm.oaath.connect()).rejects.toMatchObject({
+        name: "OaathClientError",
+        code: "oaath_client_capability_unsupported",
+        source: `session_signer_${mode}`,
+      });
+    }
+    // An explicit frontend declaration composes exactly like absence.
+    const frontend = createUrlRealm({
+      bootstrap: (document) => ({
+        ...document,
+        sessionSigner: { mode: "frontend", providerId: null },
+      }),
+    });
+    const connection = await frontend.oaath.connect();
+    expect(frontend.oaath.binding.operatorCredential.kind).toBe("ecdsa");
+    await connection.close();
+  });
+
   it("refuses a chain the service does not advertise", async () => {
     const realm = createUrlRealm();
     const connection = await realm.oaath.connect();

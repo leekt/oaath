@@ -320,6 +320,18 @@ function composeConfiguration(
   stores: unknown,
   session: Readonly<PersistedServiceSession>,
 ): Record<string, unknown> {
+  // Custody modes are different trust models and are never silently
+  // substituted: this SDK implements frontend custody — the local
+  // non-extractable session key below — so a deployment declaring backend or
+  // hosted custody refuses composition here rather than minting a local key
+  // the deployment never meant to exist.
+  if (bootstrap.sessionSigner.mode !== "frontend") {
+    return clientFail(
+      "oaath_client_capability_unsupported",
+      "the deployment's session signer custody mode is not supported by this SDK",
+      `session_signer_${bootstrap.sessionSigner.mode}`,
+    );
+  }
   const origin = localOrigin(input);
   const redirectUri = bootstrap.application.redirectUris.find((registered) =>
     registered.startsWith(`${origin}/`),
