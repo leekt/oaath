@@ -188,17 +188,21 @@ describe("IndexedDB realm recreation", () => {
     expect(await grants.get("old")).toBeUndefined();
   });
 
-  it("deletes a retired schema-family database", async () => {
+  it("deletes retired schema-family databases", async () => {
     const factory = new IDBFactory();
-    await new Promise<void>((resolve, reject) => {
-      const request = factory.open("oaath.browser-state/v0", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("grants");
-      request.onsuccess = () => {
-        request.result.close();
-        resolve();
-      };
-      request.onerror = () => reject(request.error);
-    });
+    // v1's two-part operation keys would make journals invisible under the
+    // current three-part key shape, so it is discarded wholesale, never read.
+    for (const retired of ["oaath.browser-state/v0", "oaath.browser-state/v1"]) {
+      await new Promise<void>((resolve, reject) => {
+        const request = factory.open(retired, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore("grants");
+        request.onsuccess = () => {
+          request.result.close();
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
     await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
   });
