@@ -43,6 +43,7 @@ final class ProjectionTests: XCTestCase {
             "kind": "ecdsa",
             "address": "0x" + String(repeating: "44", count: 20)
         ],
+        "sessionSigner": NSNull(),
         "chainScope": "all",
         "calls": [
             [
@@ -61,7 +62,7 @@ final class ProjectionTests: XCTestCase {
 
     private var valid: [String: Any] {
         [
-            "version": "oaath.native-projection/v2",
+            "version": "oaath.native-projection/v1",
             "operationId": "req-1",
             "displayPayload": "Ab1-_9Zz",
             "expiresAt": 1_754_000_000_000,
@@ -101,6 +102,7 @@ final class ProjectionTests: XCTestCase {
                 ownerCredential: .ecdsa(address: "0x" + String(repeating: "33", count: 20))
             ),
             operatorCredential: .ecdsa(address: "0x" + String(repeating: "44", count: 20)),
+            sessionSigner: nil,
             chainScope: "all",
             calls: [OwnerPhonePermittedCall(
                 target: "0x" + String(repeating: "11", count: 20),
@@ -118,6 +120,36 @@ final class ProjectionTests: XCTestCase {
             perChainOperationLimit: 10
         )))
         XCTAssertTrue(projection.scope.approvable)
+    }
+
+    func testDecodesRemoteSessionCustodyAndRejectsUnknownModes() throws {
+        // Remote custody is a consent fact: it decodes, displays, and stays
+        // approvable — the request hash the decision commits to binds it.
+        var custody = permissionScope
+        custody["sessionSigner"] = ["mode": "oaath_hosted", "providerId": "kms-primary"]
+        var object = valid
+        object["scope"] = custody
+        let projection = try OwnerPhoneRequestProjection.decode(json(object))
+        guard case .permissionRequest(let scope) = projection.scope else {
+            return XCTFail("expected a permission-request scope")
+        }
+        XCTAssertEqual(
+            scope.sessionSigner,
+            OwnerPhoneSessionSigner(mode: "oaath_hosted", providerId: "kms-primary"))
+        XCTAssertTrue(projection.scope.approvable)
+
+        // A custody model this decoder cannot name is never rendered partially.
+        for hostile: Any in [
+            ["mode": "owner_hosted", "providerId": "kms-primary"],
+            ["mode": "frontend", "providerId": NSNull()],
+            ["mode": "oaath_hosted"],
+            ["mode": "oaath_hosted", "providerId": "kms-primary", "extra": 1],
+            "oaath_hosted",
+        ] {
+            custody["sessionSigner"] = hostile
+            object["scope"] = custody
+            XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object)))
+        }
     }
 
     func testARawScopeIsRejectOnly() throws {
@@ -239,9 +271,9 @@ final class ProjectionTests: XCTestCase {
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .unexpectedFields("owner phone projection"))
         }
-        // The retired shape's version is rejected, never read as the new one.
+        // A foreign version is rejected, never read as this one.
         object = valid
-        object["version"] = "oaath.native-projection/v1"
+        object["version"] = "oaath.native-projection/v2"
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("version"))
         }

@@ -2,7 +2,7 @@
   "note": "One committed fixture consumed by both TypeScript and Swift. exactSignatureProjectionBytes is the authoritative exact UTF-8 projection string: both languages consume those same bytes first and then strictly decode them. The object variants cover the remaining closed union branches.",
   "projection": {
     "permissionRequest": {
-      "version": "oaath.native-projection/v2",
+      "version": "oaath.native-projection/v1",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -33,6 +33,7 @@
           "kind": "ecdsa",
           "address": "0x4444444444444444444444444444444444444444"
         },
+        "sessionSigner": null,
         "chainScope": "all",
         "calls": [
           {
@@ -50,7 +51,7 @@
       }
     },
     "signatureRequest": {
-      "version": "oaath.native-projection/v2",
+      "version": "oaath.native-projection/v1",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -66,7 +67,7 @@
       }
     },
     "raw": {
-      "version": "oaath.native-projection/v2",
+      "version": "oaath.native-projection/v1",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -114,5 +115,5 @@
       }
     }
   },
-  "exactSignatureProjectionBytes": "{\"version\":\"oaath.native-projection/v2\",\"operationId\":\"fixture-operation-id\",\"displayPayload\":\"Ab1-_9Zz\",\"expiresAt\":1700000300000,\"client\":{\"clientId\":\"client-a\",\"redirectUri\":\"https://app.example/callback\"},\"scope\":{\"kind\":\"signature-request\",\"decision\":\"approve-or-reject\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"display\":\"{\\\"account\\\":\\\"0x6666666666666666666666666666666666666666\\\",\\\"chainScope\\\":\\\"all supported chains\\\",\\\"digest\\\":\\\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\\\",\\\"installNonce\\\":\\\"0\\\",\\\"kind\\\":\\\"kernel-enable-digest\\\"}\"}}"
+  "exactSignatureProjectionBytes": "{\"version\":\"oaath.native-projection/v1\",\"operationId\":\"fixture-operation-id\",\"displayPayload\":\"Ab1-_9Zz\",\"expiresAt\":1700000300000,\"client\":{\"clientId\":\"client-a\",\"redirectUri\":\"https://app.example/callback\"},\"scope\":{\"kind\":\"signature-request\",\"decision\":\"approve-or-reject\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"display\":\"{\\\"account\\\":\\\"0x6666666666666666666666666666666666666666\\\",\\\"chainScope\\\":\\\"all supported chains\\\",\\\"digest\\\":\\\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\\\",\\\"installNonce\\\":\\\"0\\\",\\\"kind\\\":\\\"kernel-enable-digest\\\"}\"}}"
 }

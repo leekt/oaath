@@ -1,5 +1,5 @@
 {
-  "version": "kernel-v4-v0.7-local-fixture/v6",
+  "version": "kernel-v4-v0.7-local-fixture/v1",
   "entryPoint": {
     "deploymentSalt": "0x90d8084deab30c2a37c45e8d47f49f2f7965183cb6990a98943ef94940681de3",
     "packageVersion": "0.7.0",

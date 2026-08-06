@@ -233,7 +233,7 @@ describe("Grant current codec", () => {
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "oaath.grant/v3",
+      version: "oaath.grant/v1",
       state: "requested",
       revision: 0,
       identity: {

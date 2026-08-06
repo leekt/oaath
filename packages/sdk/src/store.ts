@@ -10,8 +10,8 @@ import {
   sameGrantIdentity as sameGrantIdentityValue,
 } from "@oaath/protocol";
 
-export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v3" as const;
-export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v2" as const;
+export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v1" as const;
+export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v1" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;

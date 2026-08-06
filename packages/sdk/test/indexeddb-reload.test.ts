@@ -240,14 +240,19 @@ describe("IndexedDB realm recreation", () => {
     expect(await grants.get("old")).toBeUndefined();
   });
 
-  it("deletes retired schema-family databases", async () => {
+  it("wipes an older-shaped database in place and deletes retired-name siblings", async () => {
     const factory = new IDBFactory();
-    // v1's two-part operation keys would make journals invisible under the
-    // current three-part key shape, so it is discarded wholesale, never read.
-    for (const retired of ["oaath.browser-state/v0", "oaath.browser-state/v1"]) {
+    // Pre-release there is no migration: an existing database at an older
+    // numeric version — e.g. one whose operation journals used two-part keys
+    // that would be silently invisible under the current key shape — is wiped
+    // by the upgrade handler, never read. Old versioned names are deleted.
+    for (const name of ["oaath.browser-state/v0", "oaath.browser-state/v2", OAATH_INDEXEDDB_NAME]) {
       await new Promise<void>((resolve, reject) => {
-        const request = factory.open(retired, 1);
-        request.onupgradeneeded = () => request.result.createObjectStore("grants");
+        const request = factory.open(name, 1);
+        request.onupgradeneeded = () => {
+          const grants = request.result.createObjectStore("grants");
+          grants.put({ stale: true }, "old");
+        };
         request.onsuccess = () => {
           request.result.close();
           resolve();
@@ -255,8 +260,11 @@ describe("IndexedDB realm recreation", () => {
         request.onerror = () => reject(request.error);
       });
     }
-    await openRealmDatabase(factory);
+    const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
+    // The stale record died with the upgrade.
+    const grants = new GrantStore(createIndexedDbGrantStoreAdapter(database));
+    expect(await grants.get("old")).toBeUndefined();
   });
 
   it("refuses an extractable key handle and a persisted value that is not a handle", async () => {

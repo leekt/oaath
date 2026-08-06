@@ -404,9 +404,9 @@ describe("test-only durable SQLite stores", () => {
     const database = new DatabaseSync(filePath);
     database.exec(`
       CREATE TRIGGER sqliteX_mutate_another_chain
-      AFTER UPDATE ON oaath_test_operation_store_v2
+      AFTER UPDATE ON oaath_test_operation_store_v1
       BEGIN
-        UPDATE oaath_test_operation_store_v2
+        UPDATE oaath_test_operation_store_v1
         SET payload = NEW.payload
         WHERE grant_id = NEW.grant_id AND chain_id <> NEW.chain_id;
       END

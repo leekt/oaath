@@ -41,7 +41,7 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v2" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
 
 /**
  * The versioned scope envelope a client stores to ask the owner's phone for one
@@ -100,6 +100,16 @@ export type OwnerPhoneScopeProjection =
       }>;
       /** The session credential that receives the scoped authority. */
       operatorCredential: OwnerPhoneCredentialProjection;
+      /**
+       * Where the session key lives: null for frontend custody (the page's
+       * own non-extractable key), or the remote trust model the owner is
+       * asked to approve — the request hash binds it, so approving this
+       * display approves exactly this custody.
+       */
+      sessionSigner: Readonly<{
+        mode: "application_backend" | "oaath_hosted";
+        providerId: string;
+      }> | null;
       chainScope: "all";
       calls: readonly Readonly<{
         target: string;
@@ -204,13 +214,6 @@ export async function projectOwnerPhoneScope(
     const signatureRequest = projectSignatureRequestScope(parsed);
     if (signatureRequest) return signatureRequest;
     const request = parsePermissionRequest({ ...parsed, requestId: operationId });
-    // This projection version displays no custody model, so a request naming
-    // remote session-key custody stays inspectable but reject-only: the owner
-    // never approves a trust model the consent surface cannot show.
-    // ponytail: projection v3 adds a custody section and lifts this.
-    if (request.sessionSigner !== null) {
-      return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
-    }
     return Object.freeze({
       kind: "permission-request",
       decision: "approve-or-reject",
@@ -230,6 +233,13 @@ export async function projectOwnerPhoneScope(
         ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
       }),
       operatorCredential: projectCredential(request.operatorCredential),
+      sessionSigner:
+        request.sessionSigner === null
+          ? null
+          : Object.freeze({
+              mode: request.sessionSigner.mode,
+              providerId: request.sessionSigner.providerId,
+            }),
       chainScope: request.chainScope,
       calls: Object.freeze(
         request.policy.calls.map((call) =>
