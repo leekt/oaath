@@ -791,6 +791,37 @@ describe("URL-only service surface", () => {
       ),
       200,
     );
+
+    // The owner-signed revocation operation passes the gate: it is what
+    // removes the installed chain permission, and its root-validation nonce
+    // (top two bytes zero) is a fact no gated session operation can carry.
+    await expectOk(
+      await harness.handler(
+        post("/chains/31337/submissions", CLIENT_TOKEN, {
+          request: {
+            prepared: { grantId: "grant-1", kind: "revocation", userOperation: { nonce: "7" } },
+          },
+        }),
+      ),
+      200,
+    );
+    // A relabeled session operation stays refused: its nonce still names the
+    // permission validation, which the bypass never accepts.
+    const permissionNonce = ((2n << 240n) | 7n).toString(10);
+    await expectFailure(
+      await harness.handler(
+        post("/chains/31337/submissions", CLIENT_TOKEN, {
+          request: {
+            prepared: {
+              grantId: "grant-1",
+              kind: "revocation",
+              userOperation: { nonce: permissionNonce },
+            },
+          },
+        }),
+      ),
+      "relay_capability_invalidated",
+    );
   });
 
   it("releases the decided code to exactly the creating client", async () => {

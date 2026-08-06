@@ -160,7 +160,26 @@ function chainRequestGrantId(name: ChainPortName, request: unknown): string | nu
     }
     if (name === "submission") {
       const prepared = (request as { readonly prepared?: unknown } | null)?.prepared;
-      const grantId = (prepared as { readonly grantId?: unknown } | null)?.grantId;
+      const record = prepared as {
+        readonly grantId?: unknown;
+        readonly kind?: unknown;
+        readonly userOperation?: { readonly nonce?: unknown };
+      } | null;
+      // An invalidated capability refuses session executions, but the
+      // owner-signed revocation operation is what REMOVES the installed chain
+      // permission — the gate must let it through or revocation could never
+      // complete. The declared kind alone is spoofable, so the bypass also
+      // requires the operation's nonce to name Kernel's root validation
+      // (validation-type and mode bytes zero): such an operation executes only
+      // with the owner's signature, which no gated session holds.
+      if (record?.kind === "revocation") {
+        const nonce = record.userOperation?.nonce;
+        if (typeof nonce === "string" && /^(0|[1-9][0-9]*)$/u.test(nonce)) {
+          const value = BigInt(nonce);
+          if (value < 1n << 256n && value >> 240n === 0n) return null;
+        }
+      }
+      const grantId = record?.grantId;
       return typeof grantId === "string" && grantId.length > 0 ? grantId : null;
     }
   } catch {

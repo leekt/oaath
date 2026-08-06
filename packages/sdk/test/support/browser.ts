@@ -418,6 +418,22 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     return sends[sends.length - 1];
   }
 
+  // One block per submission, so evidence ordering holds the way a real chain
+  // guarantees it: an operation's removal evidence always names a later block
+  // than the installation it removes.
+  function blockNumber(index: number): bigint {
+    return INCLUSION_BLOCK + BigInt(index);
+  }
+
+  function blockHash(index: number): `0x${string}` {
+    if (index < 0) return PARENT_HASH;
+    return `${BLOCK_HASH.slice(0, -2)}${(index % 256).toString(16).padStart(2, "0")}` as `0x${string}`;
+  }
+
+  function currentIndex(): number {
+    return Math.max(0, sends.length - 1);
+  }
+
   function receipt(hash: `0x${string}`): unknown {
     const prepared = submitted();
     if (!prepared || prepared.userOperationHash !== hash) return null;
@@ -433,8 +449,8 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       actualGasUsed: "0xa",
       success: true,
       transactionHash: TRANSACTION_HASH,
-      blockNumber: quantity(INCLUSION_BLOCK),
-      blockHash: BLOCK_HASH,
+      blockNumber: quantity(blockNumber(currentIndex())),
+      blockHash: blockHash(currentIndex()),
     };
   }
 
@@ -444,15 +460,15 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     const nonce = BigInt(prepared.userOperation.nonce);
     return {
       transactionHash: TRANSACTION_HASH,
-      blockNumber: quantity(INCLUSION_BLOCK),
-      blockHash: BLOCK_HASH,
+      blockNumber: quantity(blockNumber(currentIndex())),
+      blockHash: blockHash(currentIndex()),
       transactionIndex: "0x0",
       status: "0x1",
       logs: [
         {
           address: prepared.entryPoint.address,
-          blockNumber: quantity(INCLUSION_BLOCK),
-          blockHash: BLOCK_HASH,
+          blockNumber: quantity(blockNumber(currentIndex())),
+          blockHash: blockHash(currentIndex()),
           transactionHash: TRANSACTION_HASH,
           transactionIndex: "0x0",
           logIndex: "0x0",
@@ -469,12 +485,15 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     };
   }
 
-  const inclusionBlock = {
-    number: quantity(INCLUSION_BLOCK),
-    hash: BLOCK_HASH,
-    parentHash: PARENT_HASH,
-    transactions: [TRANSACTION_HASH],
-  };
+  function inclusionBlock() {
+    const index = currentIndex();
+    return {
+      number: quantity(blockNumber(index)),
+      hash: blockHash(index),
+      parentHash: blockHash(index - 1),
+      transactions: [TRANSACTION_HASH],
+    };
+  }
 
   const capability: Readonly<OaathChainCapability> = Object.freeze({
     chainId: CHAIN_ID,
@@ -512,17 +531,17 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             ? {
                 hash: TRANSACTION_HASH,
                 to: prepared.entryPoint.address,
-                blockNumber: quantity(INCLUSION_BLOCK),
-                blockHash: BLOCK_HASH,
+                blockNumber: quantity(blockNumber(currentIndex())),
+                blockHash: blockHash(currentIndex()),
                 transactionIndex: "0x0",
               }
             : null;
         }
         // Finality equals inclusion, so no ancestor walk is needed.
         if (request.type === "finalized_block" || request.type === "canonical_block") {
-          return inclusionBlock;
+          return inclusionBlock();
         }
-        if (request.type === "block_by_hash") return inclusionBlock;
+        if (request.type === "block_by_hash") return inclusionBlock();
         throw new Error(`unsupported observation read ${request.type}`);
       },
       async close() {},

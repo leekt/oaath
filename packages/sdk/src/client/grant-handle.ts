@@ -53,6 +53,7 @@ import {
 } from "../kernel/permission/materialize.js";
 import type { KernelPolicyProfile, KernelRuntime, KeyProfile } from "../kernel/types.js";
 import {
+  encodeKernelV4PermissionUninstallCalls,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
   type KernelV4Call,
@@ -798,7 +799,11 @@ export function createGrantHandle(
     // a send. `ownerRuntime` remains only for account identity binding.
     const runtime = sessionRuntime(chainId);
     const descriptor = await accountDescriptor(chainId);
-    const key = Object.freeze({ grantId: grant.identity.grantId, chainId });
+    const key = Object.freeze({
+      grantId: grant.identity.grantId,
+      chainId,
+      kind: "execution" as const,
+    });
 
     // One approval, materialized independently per chain: the first covered
     // execution on an unmaterialized chain spends the owner's replayable
@@ -959,6 +964,120 @@ export function createGrantHandle(
     });
   }
 
+  /**
+   * Owner-signed removal of one chain's installed permission: the exact
+   * reverse-ordered uninstall self-calls, derived from the same install
+   * packages the owner's approval bound, run on the chain's revocation lane.
+   *
+   * Returns the advanced Grant when removal is conclusively finalized, and the
+   * Grant unchanged whenever this realm cannot complete it — no owner signing
+   * capability (a URL-mode realm never holds one), no route, or no conclusive
+   * chain evidence yet. Either way the Grant stays durably `revoking`; only
+   * finalized success of the uninstall operation records the chain revoked.
+   */
+  async function revokeChainPermission(
+    grant: Grant,
+    entry: Grant["materializations"][number],
+  ): Promise<Grant> {
+    if (entry.state !== "installed" && entry.state !== "revoking") return grant;
+    // Without installation evidence there is nothing a removal can be proven
+    // against, and without the approval there are no install packages to
+    // derive the uninstall calls from.
+    if (entry.installation === null || input.installApproval === null) return grant;
+    const chainId = entry.chainId;
+    const binding = Object.freeze({
+      chainId,
+      account: entry.account,
+      permissionId: entry.permissionId,
+    });
+    let latest = grant;
+    // Durable intent precedes the probe, the quote, any signature, and any
+    // send; a `revoking` entry re-enters here without a second begin.
+    if (entry.state === "installed") {
+      latest = await commit(
+        transition(latest, {
+          type: "begin_chain_revocation",
+          identity: latest.identity,
+          binding,
+          startedAt: input.now(),
+        }),
+      );
+    }
+    let result: OperationRunResult;
+    try {
+      const chain = chainCapability(chainId);
+      const deployment = kernelV4Deployment(chainId);
+      requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
+      const calls = encodeKernelV4PermissionUninstallCalls({
+        account: entry.account,
+        packages: input.installApproval.packages,
+      });
+      const bundler = await probeBundlerCapability({
+        capability: chain.bundler,
+        request: { chainId, entryPoint: deployment.entryPoint.address },
+        timeoutMs: SUBMISSION_TIMEOUT_MS,
+      });
+      const decision = decideExecution({
+        operationKind: "revocation",
+        sessionCoverage: "uncovered",
+        bundler,
+        feePayer: chain.feePayer,
+      });
+      if (decision.route === "none") return latest;
+      const descriptor = await accountDescriptor(chainId);
+      if (descriptor.account !== entry.account) return latest;
+      // `reuse_same_kind`: re-entering after a crash observes the exact prior
+      // revocation attempt instead of minting a second one, so a finalized
+      // removal whose Grant commit was lost completes idempotently.
+      // ponytail: a dropped or superseded revocation attempt stays `revoking`
+      // in this realm; add terminal replacement if that ever matters.
+      const sender = runner({
+        chainId,
+        kind: "revocation",
+        runtime: ownerRuntime(chainId),
+        descriptor,
+        calls,
+        signer: "owner",
+        mode: "standard",
+        installApproval: null,
+        decision,
+        terminalBehavior: "reuse_same_kind",
+        grantId: latest.identity.grantId,
+      });
+      try {
+        result = await runOnce(
+          sender,
+          "revocation",
+          Object.freeze({ grantId: latest.identity.grantId, chainId, kind: "revocation" as const }),
+        );
+      } finally {
+        // A cleanup failure never replaces the outcome of the run.
+        await sender.close().catch(() => undefined);
+      }
+    } catch {
+      // The realm cannot mint or route the owner operation here; the removal
+      // stays pending and the Grant stays durably revoking.
+      return latest;
+    }
+    if (result.status !== "observed") return latest;
+    const value = result.record.value;
+    if (value.state !== "finalized" || value.inclusion.outcome !== "success") return latest;
+    return commit(
+      transition(latest, {
+        type: "record_chain_revoked",
+        identity: latest.identity,
+        binding,
+        removal: {
+          ...binding,
+          kind: "permission_absent",
+          blockNumber: value.finality.blockNumber,
+          blockHash: value.finality.blockHash,
+          observedAt: value.finality.observedAt,
+        },
+      }),
+    );
+  }
+
   async function revoke(): Promise<void> {
     assertOpen();
     let grant = await refresh();
@@ -984,11 +1103,14 @@ export function createGrantHandle(
     if (grant.capabilityInvalidation === null) {
       grant = await commit(await invalidateCapability(grant));
     }
-    // A chain-local installed permission must be removed on that chain by an
-    // owner-signed revocation operation, which this handle cannot mint — the
-    // application never holds owner authority. The Grant stays durably
-    // `revoking`: it authorizes nothing new, and it completes only when every
-    // chain's removal is conclusively observed.
+    // Each chain-local installed permission is removed on that chain by an
+    // owner-signed revocation operation. A realm holding the owner's signing
+    // capability completes it here; one that does not (URL mode never holds
+    // owner authority) leaves the chain pending. The Grant stays durably
+    // `revoking` until every chain's removal is conclusively observed.
+    for (const entry of [...grant.materializations]) {
+      grant = await revokeChainPermission(grant, entry);
+    }
     if (
       grant.materializations.some(
         (entry) =>

@@ -29,21 +29,22 @@ const GRANT_SCHEMA = `
 `;
 
 const OPERATION_SCHEMA = `
-  CREATE TABLE oaath_test_operation_store_v1 (
+  CREATE TABLE oaath_test_operation_store_v2 (
     grant_id TEXT NOT NULL,
     chain_id INTEGER NOT NULL CHECK (chain_id >= 1 AND chain_id <= ${MAX_SAFE_INTEGER}),
+    kind TEXT NOT NULL CHECK (kind IN ('execution', 'revocation')),
     record_version TEXT NOT NULL,
     store_revision INTEGER NOT NULL CHECK (store_revision >= 0 AND store_revision <= ${MAX_SAFE_INTEGER}),
     updated_at INTEGER NOT NULL CHECK (updated_at >= 0 AND updated_at <= ${MAX_SAFE_INTEGER}),
     payload TEXT NOT NULL,
-    PRIMARY KEY (grant_id, chain_id)
+    PRIMARY KEY (grant_id, chain_id, kind)
   ) STRICT, WITHOUT ROWID
 `;
 
 const EXPECTED_SCHEMAS = new Map([
   ["oaath_test_store_schema_v1", METADATA_SCHEMA],
   ["oaath_test_grant_store_v1", GRANT_SCHEMA],
-  ["oaath_test_operation_store_v1", OPERATION_SCHEMA],
+  ["oaath_test_operation_store_v2", OPERATION_SCHEMA],
 ]);
 
 type StoredRow = Readonly<{
@@ -244,23 +245,23 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
   return prepareStore(database, () => {
     const get = database.prepare(`
     SELECT record_version, store_revision, updated_at, payload
-    FROM oaath_test_operation_store_v1
-    WHERE grant_id = ? AND chain_id = ?
+    FROM oaath_test_operation_store_v2
+    WHERE grant_id = ? AND chain_id = ? AND kind = ?
   `);
     const insert = database.prepare(`
-    INSERT INTO oaath_test_operation_store_v1 (
-      grant_id, chain_id, record_version, store_revision, updated_at, payload
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT (grant_id, chain_id) DO NOTHING
+    INSERT INTO oaath_test_operation_store_v2 (
+      grant_id, chain_id, kind, record_version, store_revision, updated_at, payload
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (grant_id, chain_id, kind) DO NOTHING
   `);
     const update = database.prepare(`
-    UPDATE oaath_test_operation_store_v1
+    UPDATE oaath_test_operation_store_v2
     SET record_version = ?, store_revision = ?, updated_at = ?, payload = ?
-    WHERE grant_id = ? AND chain_id = ? AND store_revision = ?
+    WHERE grant_id = ? AND chain_id = ? AND kind = ? AND store_revision = ?
   `);
     const adapter: OperationStoreAdapter = {
       async get(key) {
-        return envelope(get.get(key.grantId, key.chainId) as StoredRow | undefined);
+        return envelope(get.get(key.grantId, key.chainId, key.kind) as StoredRow | undefined);
       },
       async compareAndSwap({ key, expectedStoreRevision, next }) {
         const payload = encode(next.value);
@@ -269,6 +270,7 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
             ? insert.run(
                 key.grantId,
                 key.chainId,
+                key.kind,
                 next.version,
                 next.storeRevision,
                 next.updatedAt,
@@ -281,6 +283,7 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
                 payload,
                 key.grantId,
                 key.chainId,
+                key.kind,
                 expectedStoreRevision,
               );
         return Number(result.changes) === 1;

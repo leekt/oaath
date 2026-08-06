@@ -21,7 +21,7 @@ import {
 } from "../src/advanced.js";
 import { type PreparedUserOperation, prepareUserOperation } from "../src/kernel.js";
 
-const key = { grantId: "runner-grant", chainId: 31_337 } as const;
+const key = { grantId: "runner-grant", chainId: 31_337, kind: "execution" } as const;
 const entryPoint = `0x${"11".repeat(20)}` as const;
 const account = `0x${"22".repeat(20)}` as const;
 const temporaryDirectories: string[] = [];
@@ -58,7 +58,7 @@ function prepared(kind: OperationKind, nonce = "7"): PreparedUserOperation {
 function runInput(kind: OperationKind) {
   return {
     kind,
-    key,
+    key: { ...key, kind },
     preparedAt: 10,
     attemptedAt: 11,
     submittedAt: 12,
@@ -298,7 +298,7 @@ describe("OperationRunner", () => {
         counters: count,
         async open() {
           const independent = createSqliteOperationStore(filePath);
-          expect((await independent.get(key))?.value).toMatchObject({
+          expect((await independent.get({ ...key, kind }))?.value).toMatchObject({
             state: "submission_attempted",
             identity: { kind, userOperationHash: snapshot.userOperationHash },
           });
@@ -306,7 +306,9 @@ describe("OperationRunner", () => {
           return {
             async submit() {
               const beforeSend = createSqliteOperationStore(filePath);
-              expect((await beforeSend.get(key))?.value.state).toBe("submission_attempted");
+              expect((await beforeSend.get({ ...key, kind }))?.value.state).toBe(
+                "submission_attempted",
+              );
               await beforeSend.close();
               count.sends += 1;
               return { userOperationHash: snapshot.userOperationHash };
@@ -730,50 +732,72 @@ describe("OperationRunner", () => {
     expect(count.sends).toBe(1);
   });
 
-  it.each(["finalized", "dropped"] as const)(
-    "publishes revocation after %s execution releases the durable lane",
-    async (terminal) => {
-      const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
-      const executionSnapshot = prepared("execution");
-      const executionCount = counters();
-      const executionRunner = runner({
-        store: memoryStore(control),
-        prepared: executionSnapshot,
-        counters: executionCount,
-        observer: terminalObserver(terminal),
-      });
-      const terminalResult = await executionRunner.runOperation(runInput("execution"));
-      expect(terminalResult).toMatchObject({
-        status: "observed",
-        record: { value: { state: terminal, identity: { kind: "execution" } } },
-      });
-      await executionRunner.close();
-
-      const revocationCount = counters();
-      const revocationRunner = runner({
-        store: memoryStore(control),
-        prepared: prepared("revocation", "8"),
-        counters: revocationCount,
-        terminalBehavior: "reuse_same_kind",
-      });
-      const result = await revocationRunner.runOperation({
-        kind: "revocation",
-        key,
-        preparedAt: 20,
-        attemptedAt: 21,
-        submittedAt: 22,
-        observedAt: 23,
-        timeoutMs: 1_000,
+  it("runs a revocation on its own lane while the execution lane is still occupied", async () => {
+    // Kind is part of the lane key: owner-signed revocation work never queues
+    // behind or replaces session-signed execution work on the same chain.
+    const records = new Map<string, unknown>();
+    const lanedStore = () =>
+      new OperationStore({
+        async get(laneKey: unknown) {
+          return records.get(JSON.stringify(laneKey));
+        },
+        async compareAndSwap(input: {
+          key: unknown;
+          expectedStoreRevision: number | null;
+          next: unknown;
+        }) {
+          const lane = JSON.stringify(input.key);
+          const current = records.get(lane) as OperationStoreRecord | undefined;
+          if (
+            (input.expectedStoreRevision === null && current !== undefined) ||
+            (input.expectedStoreRevision !== null &&
+              current?.storeRevision !== input.expectedStoreRevision)
+          ) {
+            return false;
+          }
+          records.set(lane, input.next);
+          return true;
+        },
+        async close() {},
       });
 
-      expect(result).toMatchObject({
-        status: "observed",
-        record: { value: { state: "submitted", identity: { kind: "revocation", nonce: "8" } } },
-      });
-      expect(revocationCount).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
-      await revocationRunner.close();
-    },
-  );
+    const executionCount = counters();
+    const executionRunner = runner({
+      store: lanedStore(),
+      prepared: prepared("execution"),
+      counters: executionCount,
+    });
+    const executionResult = await executionRunner.runOperation(runInput("execution"));
+    // Submitted and unobserved: the execution lane stays durably occupied.
+    expect(executionResult).toMatchObject({
+      status: "observed",
+      observation: { status: "pending" },
+      record: { value: { state: "submitted", identity: { kind: "execution" } } },
+    });
+    await executionRunner.close();
+
+    const revocationCount = counters();
+    const revocationRunner = runner({
+      store: lanedStore(),
+      prepared: prepared("revocation", "8"),
+      counters: revocationCount,
+    });
+    const result = await revocationRunner.runOperation({
+      ...runInput("revocation"),
+      preparedAt: 20,
+      attemptedAt: 21,
+      submittedAt: 22,
+      observedAt: 23,
+    });
+    expect(result).toMatchObject({
+      status: "observed",
+      record: { value: { state: "submitted", identity: { kind: "revocation", nonce: "8" } } },
+    });
+    expect(revocationCount).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    // Both lanes hold their own durable journal.
+    expect(records.size).toBe(2);
+    await revocationRunner.close();
+  });
 
   it("never restarts the same exact identity after it becomes terminal", async () => {
     const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
@@ -877,7 +901,7 @@ describe("OperationRunner", () => {
     });
     const nextInput = {
       kind: "revocation",
-      key,
+      key: { ...key, kind: "revocation" },
       preparedAt: 20,
       attemptedAt: 21,
       submittedAt: 22,
@@ -890,7 +914,7 @@ describe("OperationRunner", () => {
     expect(leftCount.sends + rightCount.sends).toBe(1);
     expect(leftCount.opens + rightCount.opens).toBe(1);
     const restored = createSqliteOperationStore(filePath);
-    expect(await restored.get(key)).toMatchObject({
+    expect(await restored.get({ ...key, kind: "revocation" })).toMatchObject({
       value: { identity: { kind: "revocation", nonce: "8" } },
     });
     await Promise.all([left.close(), right.close(), restored.close()]);
@@ -900,11 +924,11 @@ describe("OperationRunner", () => {
     const seedControl: MemoryControl = { closeFailures: 0, closeCalls: 0 };
     const seed = runner({
       store: memoryStore(seedControl),
-      prepared: prepared("execution"),
+      prepared: prepared("revocation"),
       counters: counters(),
       observer: terminalObserver("finalized"),
     });
-    await seed.runOperation(runInput("execution"));
+    await seed.runOperation(runInput("revocation"));
     await seed.close();
     const terminalRecord = seedControl.raw as OperationStoreRecord;
 
@@ -935,7 +959,7 @@ describe("OperationRunner", () => {
 
     const result = await operationRunner.runOperation({
       kind: "revocation",
-      key,
+      key: { ...key, kind: "revocation" },
       preparedAt: 20,
       attemptedAt: 21,
       submittedAt: 22,

@@ -80,7 +80,11 @@ describe("send/return crash recovery", () => {
     if (!identity) throw new Error("expected one submitted snapshot");
 
     const journal = new OperationStore(createIndexedDbOperationStoreAdapter(first.database));
-    const attempted = await journal.get({ grantId: identity.grantId, chainId: CHAIN_ID });
+    const attempted = await journal.get({
+      grantId: identity.grantId,
+      chainId: CHAIN_ID,
+      kind: "execution",
+    });
     expect(attempted?.value.state).toBe("submission_attempted");
     expect(attempted?.value.identity.userOperationHash).toBe(identity.userOperationHash);
 
@@ -104,7 +108,7 @@ describe("send/return crash recovery", () => {
 
     const finalized = await new OperationStore(
       createIndexedDbOperationStoreAdapter(second.database),
-    ).get({ grantId: identity.grantId, chainId: CHAIN_ID });
+    ).get({ grantId: identity.grantId, chainId: CHAIN_ID, kind: "execution" });
     expect(finalized?.value.state).toBe("finalized");
     expect(finalized?.value.identity.userOperationHash).toBe(identity.userOperationHash);
     expect(finalized?.value.identity.nonce).toBe(attempted?.value.identity.nonce);
