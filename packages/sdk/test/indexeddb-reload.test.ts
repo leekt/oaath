@@ -125,6 +125,58 @@ describe("IndexedDB realm recreation", () => {
     expect(after.chain.sends[0]?.userOperationHash).not.toBe(submittedHash);
   });
 
+  it("resumes a revoking Grant and completes its chain revocation after reload", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const relay = createRelay(clock);
+
+    // First life: pair and execute, then revoke against a chain that offers no
+    // submission route — the capability dies but the installed permission
+    // cannot be removed, so the Grant stays durably revoking.
+    const first = await openRealmDatabase(factory);
+    const before = createRealm({ clock, relay, stores: storesFor(first) });
+    const connection = await before.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    await connection.close();
+    first.close();
+    opened.splice(opened.indexOf(first), 1);
+
+    const second = await openRealmDatabase(factory);
+    const routeless = createRealm({
+      clock,
+      relay,
+      stores: storesFor(second),
+      chain: createChainFixture({ startSequence: 1, bundler: "absent" }),
+    });
+    const stalled = await (await routeless.oaath.connect()).resume();
+    if (!stalled) throw new Error("expected the persisted Grant to resume");
+    await stalled.revoke();
+    expect(stalled.state).toBe("revoking");
+    second.close();
+    opened.splice(opened.indexOf(second), 1);
+
+    // Second life: resume must return the revoking Grant — it authorizes
+    // nothing new, but its handle is the only path to finishing the removal.
+    const third = await openRealmDatabase(factory);
+    const recovered = createRealm({
+      clock,
+      relay,
+      stores: storesFor(third),
+      chain: createChainFixture({ startSequence: 1 }),
+    });
+    const revoking = await (await recovered.oaath.connect()).resume();
+    if (!revoking) throw new Error("expected the revoking Grant to resume");
+    expect(revoking.state).toBe("revoking");
+    await expect(revoking.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_grant_inactive",
+    });
+    await revoking.revoke();
+    expect(revoking.state).toBe("revoked");
+    expect(recovered.chain.sends).toHaveLength(1);
+    expect(recovered.chain.sends[0]?.kind).toBe("revocation");
+  });
+
   it("fails a compare-and-swap closed when another realm already advanced the record", async () => {
     const factory = new IDBFactory();
     const clock = createClock();

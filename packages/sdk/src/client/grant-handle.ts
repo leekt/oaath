@@ -31,6 +31,7 @@ import {
   type CaptureContext,
   captureDenseArray,
   evaluateGrantPolicyCoverage,
+  type FinalizedOperation,
   type Grant,
   type GrantPolicy,
   type GrantPolicyCoverageResult,
@@ -1003,65 +1004,91 @@ export function createGrantHandle(
         }),
       );
     }
-    let result: OperationRunResult;
+    const laneKey = Object.freeze({
+      grantId: latest.identity.grantId,
+      chainId,
+      kind: "revocation" as const,
+    });
+    let value: FinalizedOperation | null = null;
     try {
-      const chain = chainCapability(chainId);
-      const deployment = kernelV4Deployment(chainId);
-      requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
-      const calls = encodeKernelV4PermissionUninstallCalls({
-        account: entry.account,
-        packages: input.installApproval.packages,
-      });
-      const bundler = await probeBundlerCapability({
-        capability: chain.bundler,
-        request: { chainId, entryPoint: deployment.entryPoint.address },
-        timeoutMs: SUBMISSION_TIMEOUT_MS,
-      });
-      const decision = decideExecution({
-        operationKind: "revocation",
-        sessionCoverage: "uncovered",
-        bundler,
-        feePayer: chain.feePayer,
-      });
-      if (decision.route === "none") return latest;
-      const descriptor = await accountDescriptor(chainId);
-      if (descriptor.account !== entry.account) return latest;
-      // `reuse_same_kind`: re-entering after a crash observes the exact prior
-      // revocation attempt instead of minting a second one, so a finalized
-      // removal whose Grant commit was lost completes idempotently.
-      // ponytail: a dropped or superseded revocation attempt stays `revoking`
-      // in this realm; add terminal replacement if that ever matters.
-      const sender = runner({
-        chainId,
-        kind: "revocation",
-        runtime: ownerRuntime(chainId),
-        descriptor,
-        calls,
-        signer: "owner",
-        mode: "standard",
-        installApproval: null,
-        decision,
-        terminalBehavior: "reuse_same_kind",
-        grantId: latest.identity.grantId,
-      });
-      try {
-        result = await runOnce(
-          sender,
-          "revocation",
-          Object.freeze({ grantId: latest.identity.grantId, chainId, kind: "revocation" as const }),
-        );
-      } finally {
-        // A cleanup failure never replaces the outcome of the run.
-        await sender.close().catch(() => undefined);
+      // A prior removal that already finalized successfully completes
+      // directly — a Grant commit lost to a crash never mints a second
+      // uninstall. Any other terminal attempt (dropped, superseded, included
+      // but failed) is replaceable below, so one bad attempt cannot strand
+      // cleanup forever.
+      const journal = new OperationStore({
+        get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
+        compareAndSwap: (record: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
+          input.operations.compareAndSwap(record),
+        close: async () => undefined,
+      } satisfies OperationStoreAdapter);
+      const prior = await journal.get(laneKey);
+      if (
+        prior !== undefined &&
+        prior.value.state === "finalized" &&
+        prior.value.inclusion.outcome === "success" &&
+        prior.value.identity.account === entry.account
+      ) {
+        value = prior.value;
       }
     } catch {
-      // The realm cannot mint or route the owner operation here; the removal
-      // stays pending and the Grant stays durably revoking.
-      return latest;
+      // An unreadable journal decides nothing; the run below owns the lane.
     }
-    if (result.status !== "observed") return latest;
-    const value = result.record.value;
-    if (value.state !== "finalized" || value.inclusion.outcome !== "success") return latest;
+    if (value === null) {
+      let result: OperationRunResult;
+      try {
+        const chain = chainCapability(chainId);
+        const deployment = kernelV4Deployment(chainId);
+        requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
+        const calls = encodeKernelV4PermissionUninstallCalls({
+          account: entry.account,
+          packages: input.installApproval.packages,
+        });
+        const bundler = await probeBundlerCapability({
+          capability: chain.bundler,
+          request: { chainId, entryPoint: deployment.entryPoint.address },
+          timeoutMs: SUBMISSION_TIMEOUT_MS,
+        });
+        const decision = decideExecution({
+          operationKind: "revocation",
+          sessionCoverage: "uncovered",
+          bundler,
+          feePayer: chain.feePayer,
+        });
+        if (decision.route === "none") return latest;
+        const descriptor = await accountDescriptor(chainId);
+        if (descriptor.account !== entry.account) return latest;
+        const sender = runner({
+          chainId,
+          kind: "revocation",
+          runtime: ownerRuntime(chainId),
+          descriptor,
+          calls,
+          signer: "owner",
+          mode: "standard",
+          installApproval: null,
+          decision,
+          terminalBehavior: "replace",
+          grantId: latest.identity.grantId,
+        });
+        try {
+          result = await runOnce(sender, "revocation", laneKey);
+        } finally {
+          // A cleanup failure never replaces the outcome of the run.
+          await sender.close().catch(() => undefined);
+        }
+      } catch {
+        // The realm cannot mint or route the owner operation here; the removal
+        // stays pending and the Grant stays durably revoking.
+        return latest;
+      }
+      if (result.status !== "observed") return latest;
+      const observed = result.record.value;
+      if (observed.state !== "finalized" || observed.inclusion.outcome !== "success") {
+        return latest;
+      }
+      value = observed;
+    }
     return commit(
       transition(latest, {
         type: "record_chain_revoked",
