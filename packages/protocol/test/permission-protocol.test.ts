@@ -80,6 +80,7 @@ const request: PermissionRequest = {
   policy,
   requestedAt: 100,
   expiresAt: 200,
+  sessionSigner: null,
 };
 
 function clone<Value>(value: Value): Value {
@@ -386,6 +387,55 @@ describe("PermissionRequest current codec", () => {
     expect(keys.has("supportedchains")).toBe(false);
     expect(keys.has("default")).toBe(false);
     expect(keys.has("fallback")).toBe(false);
+  });
+});
+
+describe("PermissionRequest session-signer custody binding", () => {
+  it("keeps frontend hashes stable and binds remote custody into the request hash", () => {
+    // Absent field and explicit null are both frontend custody: same parse
+    // result, byte-identical encoding, so every pre-custody hash stays valid.
+    const { sessionSigner: _omitted, ...absent } = clone(request);
+    expect(parsePermissionRequest(absent)).toEqual(request);
+    expect(hashPermissionRequest(absent)).toBe(hashPermissionRequest(request));
+
+    const hosted = {
+      ...clone(request),
+      sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary" },
+    };
+    const parsed = parsePermissionRequest(hosted);
+    expect(parsed.sessionSigner).toEqual({ mode: "oaath_hosted", providerId: "kms-primary" });
+    expect(Object.isFrozen(parsed.sessionSigner)).toBe(true);
+    // The owner's approval binds the custody model: mode, provider, and
+    // presence each change the hash the decision commits to.
+    const hostedHash = hashPermissionRequest(hosted);
+    expect(hostedHash).not.toBe(hashPermissionRequest(request));
+    expect(
+      hashPermissionRequest({
+        ...clone(request),
+        sessionSigner: { mode: "application_backend", providerId: "kms-primary" },
+      }),
+    ).not.toBe(hostedHash);
+    expect(
+      hashPermissionRequest({
+        ...clone(request),
+        sessionSigner: { mode: "oaath_hosted", providerId: "kms-secondary" },
+      }),
+    ).not.toBe(hostedHash);
+  });
+
+  it.each([
+    // Frontend custody has exactly one non-null spelling: absence. An explicit
+    // frontend object would mint a second encoding of the same fact.
+    [{ mode: "frontend", providerId: null }],
+    [{ mode: "owner_hosted", providerId: "kms-primary" }],
+    [{ mode: "oaath_hosted", providerId: "" }],
+    [{ mode: "oaath_hosted" }],
+    [{ mode: "oaath_hosted", providerId: "kms-primary", extra: 1 }],
+    ["oaath_hosted"],
+  ])("refuses a malformed session-signer declaration", (sessionSigner) => {
+    expect(() => parsePermissionRequest({ ...clone(request), sessionSigner })).toThrowError(
+      expect.objectContaining({ code: "permission_request_invalid" }),
+    );
   });
 });
 

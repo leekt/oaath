@@ -60,6 +60,7 @@ describe("package boundary", () => {
       "claimEncryptedArtifact",
       "consumeAuthorizationCode",
       "createAuthorizationRequest",
+      "createKmsSessionSignerProvider",
       "createMemoryRelayStore",
       "createRelayHandler",
       "fetchAuthorizationRequest",

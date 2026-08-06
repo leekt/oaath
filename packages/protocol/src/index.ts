@@ -213,6 +213,7 @@ export type {
   PermissionDecisionObservation,
   PermissionProtocolErrorCode,
   PermissionRequest,
+  PermissionSessionSigner,
   RejectPermissionDecision,
 } from "./permission-protocol.js";
 export {

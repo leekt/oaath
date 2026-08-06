@@ -163,7 +163,7 @@ function relayAuthentication(): RelayAuthentication {
   };
 }
 
-function relayKms(): RelayKms {
+export function relayKms(): RelayKms {
   return {
     async encrypt(plaintext: string) {
       return `${KMS_PREFIX}${btoa(plaintext)}`;
@@ -677,6 +677,12 @@ export interface UrlRealmOptions {
   readonly relay?: (request: Request) => Promise<Response>;
   /** Tampers with the served bootstrap document before the SDK parses it. */
   readonly bootstrap?: (document: Record<string, unknown>) => unknown;
+  /** Remote session-key custody the relay declares and serves. */
+  readonly sessionSigner?: Readonly<{
+    mode: "application_backend" | "oaath_hosted";
+    providerId: string;
+    provider: unknown;
+  }>;
 }
 
 export interface UrlRealm {
@@ -714,6 +720,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
         ownerValidator: VALIDATOR,
       },
       chains: [relayChainPort(chain)],
+      ...(options.sessionSigner ? { sessionSigner: options.sessionSigner } : {}),
     });
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let invalidations = 0;

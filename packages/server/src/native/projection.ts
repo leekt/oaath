@@ -204,6 +204,13 @@ export async function projectOwnerPhoneScope(
     const signatureRequest = projectSignatureRequestScope(parsed);
     if (signatureRequest) return signatureRequest;
     const request = parsePermissionRequest({ ...parsed, requestId: operationId });
+    // This projection version displays no custody model, so a request naming
+    // remote session-key custody stays inspectable but reject-only: the owner
+    // never approves a trust model the consent surface cannot show.
+    // ponytail: projection v3 adds a custody section and lifts this.
+    if (request.sessionSigner !== null) {
+      return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
+    }
     return Object.freeze({
       kind: "permission-request",
       decision: "approve-or-reject",

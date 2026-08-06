@@ -122,6 +122,28 @@ const CONFIGURATION_KEYS: readonly string[] = Object.freeze([
   "now",
 ]);
 
+/** Remote session-key custody, declared by the composition when it exists. */
+function captureSessionSigner(
+  value: unknown,
+  context: CaptureContext,
+): Readonly<{ mode: "application_backend" | "oaath_hosted"; providerId: string }> | null {
+  if (value === undefined || value === null) return null;
+  const record = exactClientRecord(
+    value,
+    ["mode", "providerId"],
+    "OAAth session signer",
+    context,
+    "oaath_client_capability_invalid",
+  );
+  if (record.mode !== "application_backend" && record.mode !== "oaath_hosted") {
+    return clientFail("oaath_client_capability_invalid", "session signer mode is unsupported");
+  }
+  if (typeof record.providerId !== "string" || record.providerId.length < 1) {
+    return clientFail("oaath_client_capability_invalid", "session signer provider is invalid");
+  }
+  return Object.freeze({ mode: record.mode, providerId: record.providerId });
+}
+
 const STORE_KEYS: readonly string[] = Object.freeze([
   "grants",
   "operations",
@@ -235,12 +257,19 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath> {
 
 function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
+  const declaresSessionSigner =
+    typeof configuration === "object" &&
+    configuration !== null &&
+    Object.hasOwn(configuration, "sessionSigner");
   const record = exactClientRecord(
     configuration,
-    CONFIGURATION_KEYS,
+    declaresSessionSigner ? [...CONFIGURATION_KEYS, "sessionSigner"] : CONFIGURATION_KEYS,
     "OAAth configuration",
     context,
   );
+  const sessionSigner = declaresSessionSigner
+    ? captureSessionSigner(record.sessionSigner, context)
+    : null;
   const binding = captureOaathBinding(record.binding);
   const issuer = captureIssuerCapability(record.issuer);
   if (issuer.url !== binding.issuer.url) {
@@ -328,6 +357,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       ownerKey,
       sessionKey,
       invalidation,
+      sessionSigner,
       now,
     });
     connections.push(connection);

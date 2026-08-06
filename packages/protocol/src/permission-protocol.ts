@@ -1,4 +1,4 @@
-import { encodeAbiParameters, type Hex, keccak256 } from "viem";
+import { concatHex, encodeAbiParameters, type Hex, keccak256 } from "viem";
 import {
   type ApplicationBinding,
   advanceGrant,
@@ -59,6 +59,19 @@ export class OaathPermissionProtocolError extends Error {
   }
 }
 
+/**
+ * Remote session-key custody the owner is asked to approve. Frontend custody
+ * is expressed by the field's ABSENCE — the one canonical encoding every
+ * pre-custody request already carries — so declaring it explicitly names a
+ * remote trust model, and the request hash binds it: an approval for one
+ * custody model can never be replayed under another.
+ */
+export interface PermissionSessionSigner {
+  readonly mode: "application_backend" | "oaath_hosted";
+  /** Deployment-registered signer provider identity. */
+  readonly providerId: string;
+}
+
 export interface PermissionRequest {
   readonly version: typeof OAATH_PERMISSION_REQUEST_VERSION;
   /** The requested Grant uses this exact identifier as grantId. */
@@ -71,6 +84,8 @@ export interface PermissionRequest {
   readonly requestedAt: number;
   /** Exclusive Grant expiry. The inclusive policy expiry must be earlier. */
   readonly expiresAt: number;
+  /** Remote session-key custody, or null for frontend custody. */
+  readonly sessionSigner: Readonly<PermissionSessionSigner> | null;
 }
 
 interface PermissionDecisionCommon {
@@ -172,24 +187,66 @@ function hash(
   return value as `0x${string}`;
 }
 
+function captureSessionSigner(
+  value: unknown,
+  code: PermissionProtocolErrorCode,
+  context: CaptureContext,
+): Readonly<PermissionSessionSigner> {
+  const record = exactRecord(
+    value,
+    ["mode", "providerId"],
+    "permission session signer",
+    context,
+    failFor(code),
+  );
+  // Frontend custody is the field's absence; an explicit "frontend" here would
+  // create a second encoding of the same fact, so it is refused.
+  if (record.mode !== "application_backend" && record.mode !== "oaath_hosted") {
+    return invalid(code, "permission session signer mode is unsupported");
+  }
+  if (
+    typeof record.providerId !== "string" ||
+    record.providerId.length < 1 ||
+    record.providerId.length > MAX_REQUEST_ID_LENGTH
+  ) {
+    return invalid(code, "permission session signer provider is invalid");
+  }
+  return Object.freeze({ mode: record.mode, providerId: record.providerId });
+}
+
 function captureRequest(
   value: unknown,
   code: PermissionProtocolErrorCode,
   context: CaptureContext,
 ): Readonly<PermissionRequest> {
+  const declaresSessionSigner =
+    typeof value === "object" && value !== null && Object.hasOwn(value, "sessionSigner");
   const record = exactRecord(
     value,
-    [
-      "version",
-      "requestId",
-      "application",
-      "chainScope",
-      "logicalAccount",
-      "operatorCredential",
-      "policy",
-      "requestedAt",
-      "expiresAt",
-    ],
+    declaresSessionSigner
+      ? [
+          "version",
+          "requestId",
+          "application",
+          "chainScope",
+          "logicalAccount",
+          "operatorCredential",
+          "policy",
+          "requestedAt",
+          "expiresAt",
+          "sessionSigner",
+        ]
+      : [
+          "version",
+          "requestId",
+          "application",
+          "chainScope",
+          "logicalAccount",
+          "operatorCredential",
+          "policy",
+          "requestedAt",
+          "expiresAt",
+        ],
     "permission request",
     context,
     failFor(code),
@@ -238,6 +295,12 @@ function captureRequest(
     policy,
     requestedAt,
     expiresAt,
+    // Absent and explicit null both mean frontend custody (the parsed form
+    // carries null, so parse output must reparse); both hash identically.
+    sessionSigner:
+      declaresSessionSigner && record.sessionSigner !== null
+        ? captureSessionSigner(record.sessionSigner, code, context)
+        : null,
   });
 }
 
@@ -335,7 +398,7 @@ function hashOperatorCredential(profile: OperatorCredentialProfile): `0x${string
 }
 
 function encodeCapturedPermissionRequest(request: PermissionRequest): Hex {
-  return encodeAbiParameters(
+  const encoded = encodeAbiParameters(
     [
       { type: "string", name: "domain" },
       { type: "string", name: "version" },
@@ -370,6 +433,26 @@ function encodeCapturedPermissionRequest(request: PermissionRequest): Hex {
       request.expiresAt,
     ],
   );
+  // Frontend custody keeps the exact pre-custody encoding — every request
+  // hash ever produced stays valid. A remote custody declaration appends a
+  // domain-separated suffix, so the hash the owner approves binds the custody
+  // model and provider identity too.
+  if (request.sessionSigner === null) return encoded;
+  return concatHex([
+    encoded,
+    encodeAbiParameters(
+      [
+        { type: "string", name: "sessionSignerDomain" },
+        { type: "string", name: "mode" },
+        { type: "string", name: "providerId" },
+      ],
+      [
+        `${OAATH_PERMISSION_REQUEST_HASH_DOMAIN}:session-signer`,
+        request.sessionSigner.mode,
+        request.sessionSigner.providerId,
+      ],
+    ),
+  ]);
 }
 
 export function encodePermissionRequest(value: unknown): Hex {

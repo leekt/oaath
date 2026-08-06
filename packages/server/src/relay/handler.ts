@@ -66,6 +66,7 @@ import {
 } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
 import { assertWithinRateLimit, type RelayRateLimiter } from "../security/rate-limit.js";
+import type { RelaySessionSignerProvider } from "../session-signer/kms-provider.js";
 import { type RelayStore, withRelayTransaction } from "../store/interface.js";
 import {
   boundedText,
@@ -110,12 +111,20 @@ export interface RelayBootstrapConfiguration {
   readonly userHandle: string;
   readonly account: unknown;
   readonly ownerValidator: `0x${string}` | null;
-  /**
-   * Declared session-key custody (`{mode, providerId}`), or absent for
-   * frontend custody. The protocol parser owns the exact vocabulary; a
-   * misconfigured mode fails relay construction, never a client's request.
-   */
-  readonly sessionSigner?: unknown;
+}
+
+/**
+ * Remote session-key custody, declared once for the deployment: the mode and
+ * provider identity are served through the bootstrap document, and the same
+ * provider answers the `/session-signers` routes. For `oaath_hosted` the
+ * provider is typically `createKmsSessionSignerProvider`; for
+ * `application_backend` it is the deployment's own authenticated port to the
+ * integrating application's signer — never a client-supplied endpoint.
+ */
+export interface RelaySessionSignerConfiguration {
+  readonly mode: "application_backend" | "oaath_hosted";
+  readonly providerId: string;
+  readonly provider: Readonly<RelaySessionSignerProvider>;
 }
 
 export interface RelayHandlerOptions {
@@ -132,6 +141,8 @@ export interface RelayHandlerOptions {
   readonly bootstrap?: Readonly<RelayBootstrapConfiguration>;
   /** Optional chain execution relays; required when `bootstrap` is served. */
   readonly chains?: readonly Readonly<RelayChainPort>[];
+  /** Optional remote session-key custody; requires `bootstrap` as well. */
+  readonly sessionSigner?: Readonly<RelaySessionSignerConfiguration>;
 }
 
 export type RelayHandler = (request: Request) => Promise<Response>;
@@ -147,6 +158,7 @@ const OPTION_KEYS: readonly string[] = [
   "maxBodyBytes",
   "bootstrap",
   "chains",
+  "sessionSigner",
 ];
 
 const CHAIN_PORT_NAMES = ["reads", "observation", "bundler", "quote", "submission"] as const;
@@ -212,6 +224,7 @@ interface CapturedOptions {
   readonly maxBodyBytes: number;
   /** The exact parsed document `GET /bootstrap` serves, or null when unserved. */
   readonly bootstrap: Readonly<ServiceBootstrap> | null;
+  readonly sessionSigner: Readonly<RelaySessionSignerConfiguration> | null;
   readonly chains: ReadonlyMap<number, Readonly<RelayChainPort>>;
 }
 
@@ -254,6 +267,33 @@ function captureOptions(value: unknown): CapturedOptions {
     record.chains === undefined
       ? new Map<number, Readonly<RelayChainPort>>()
       : captureChainPorts(record.chains);
+  let sessionSigner: Readonly<RelaySessionSignerConfiguration> | null = null;
+  if (record.sessionSigner !== undefined) {
+    if (record.bootstrap === undefined) {
+      relayFailure("relay_internal", "a session signer requires a bootstrap surface");
+    }
+    const custody = captureRecord(
+      record.sessionSigner,
+      "relay session signer configuration",
+      context,
+      (message) => relayFailure("relay_internal", message),
+    );
+    if (custody.mode !== "application_backend" && custody.mode !== "oaath_hosted") {
+      relayFailure("relay_internal", "session signer mode is unsupported");
+    }
+    if (typeof custody.providerId !== "string" || custody.providerId.length < 1) {
+      relayFailure("relay_internal", "session signer providerId is invalid");
+    }
+    sessionSigner = Object.freeze({
+      mode: custody.mode as "application_backend" | "oaath_hosted",
+      providerId: custody.providerId,
+      provider: requirePort<RelaySessionSignerProvider>(
+        custody.provider,
+        ["credential", "sign"],
+        "session signer provider",
+      ),
+    });
+  }
   let bootstrap: Readonly<ServiceBootstrap> | null = null;
   if (record.bootstrap !== undefined) {
     if (chains.size === 0) {
@@ -279,7 +319,11 @@ function captureOptions(value: unknown): CapturedOptions {
           usage: port.usage !== null,
           feePayer: port.feePayer,
         })),
-        ...(identity.sessionSigner !== undefined ? { sessionSigner: identity.sessionSigner } : {}),
+        // The one custody declaration serves both the document and the
+        // signing routes; they can never disagree.
+        ...(sessionSigner !== null
+          ? { sessionSigner: { mode: sessionSigner.mode, providerId: sessionSigner.providerId } }
+          : {}),
       });
     } catch {
       relayFailure("relay_internal", "relay bootstrap configuration is invalid");
@@ -302,6 +346,7 @@ function captureOptions(value: unknown): CapturedOptions {
     codeTtlMs: duration(record.codeTtlMs, DEFAULT_CODE_TTL_MS, "codeTtlMs", MAX_CODE_TTL_MS),
     maxBodyBytes: duration(record.maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes"),
     bootstrap,
+    sessionSigner,
     chains,
   });
 }
@@ -455,6 +500,60 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         return relayFailure("relay_not_found", "route does not exist");
       }
       return jsonResponse(200, captured.bootstrap);
+    }
+
+    if (head === "session-signers") {
+      // Remote session-key custody routes, served exactly when the deployment
+      // declared it. The caller's authenticated identity — never anything the
+      // body claims — names the key: one (clientId, subject, deviceId)
+      // identity holds one credential, so a different credential can never
+      // sign under an approval that bound this one (the rotation invariant).
+      const custody = captured.sessionSigner;
+      if (custody === null) return relayFailure("relay_not_found", "route does not exist");
+      if (segments.length === 1) {
+        requireMethod(request, "POST");
+        const caller = await authenticate(request, "client", "session-signers.credential");
+        const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), ["deviceId"]);
+        const deviceId = boundedText(body.deviceId, 256, "session signer deviceId", INVALID);
+        let credential: unknown;
+        try {
+          credential = await custody.provider.credential({
+            clientId: caller.clientId,
+            subject: caller.subject,
+            deviceId,
+          });
+        } catch {
+          return relayFailure("relay_internal", "session signer provider did not answer");
+        }
+        return jsonResponse(200, { operatorCredential: credential });
+      }
+      if (segments.length === 2 && group === "signatures") {
+        requireMethod(request, "POST");
+        const caller = await authenticate(request, "client", "session-signers.sign");
+        const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), [
+          "deviceId",
+          "hash",
+        ]);
+        const deviceId = boundedText(body.deviceId, 256, "session signer deviceId", INVALID);
+        // One exact 32-byte hash; the provider signs an identity, never a
+        // message it interprets.
+        if (typeof body.hash !== "string" || !/^0x[0-9a-f]{64}$/u.test(body.hash)) {
+          return relayFailure(INVALID, "session signer hash must be one exact 32-byte hash");
+        }
+        let signature: unknown;
+        try {
+          signature = await custody.provider.sign({
+            clientId: caller.clientId,
+            subject: caller.subject,
+            deviceId,
+            hash: body.hash as `0x${string}`,
+          });
+        } catch {
+          return relayFailure("relay_internal", "session signer provider did not answer");
+        }
+        return jsonResponse(200, { signature });
+      }
+      return relayFailure("relay_not_found", "route does not exist");
     }
 
     if (head === "invalidations" && segments.length === 1) {
