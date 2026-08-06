@@ -30,6 +30,7 @@ import {
   advanceGrant,
   type CaptureContext,
   captureDenseArray,
+  type ChainPermissionEvidence,
   evaluateGrantPolicyCoverage,
   type FinalizedOperation,
   type Grant,
@@ -966,15 +967,82 @@ export function createGrantHandle(
   }
 
   /**
+   * Finalized-anchored observation that a chain's permission is no longer
+   * installed: Kernel's own `isModuleInstalled(6, signer, permissionId)` view
+   * turning false at a finalized block later than the installation. This is
+   * how a realm that cannot sign owner operations (URL mode never holds owner
+   * authority) still completes `revoking` once the owner's console removed the
+   * permission out-of-band.
+   *
+   * Fail closed everywhere: only an exact `false` at a block that rebinds to
+   * the same finalized hash counts; every other answer is inconclusive.
+   */
+  async function observeChainRemoval(
+    binding: Readonly<{ chainId: number; account: `0x${string}`; permissionId: `0x${string}` }>,
+    installedAtBlock: string,
+  ): Promise<Readonly<ChainPermissionEvidence> | null> {
+    if (input.installApproval === null) return null;
+    const signer = input.installApproval.packages.find((entry) => entry.moduleType === 6)?.module;
+    if (signer === undefined) return null;
+    try {
+      const chain = chainCapability(binding.chainId);
+      const finalized = await chain.observation.read({
+        type: "finalized_block",
+        chainId: binding.chainId,
+      });
+      const block = finalized as { readonly number?: unknown; readonly hash?: unknown } | null;
+      if (
+        !block ||
+        typeof block.number !== "string" ||
+        !/^0x[0-9a-f]+$/u.test(block.number) ||
+        typeof block.hash !== "string" ||
+        !/^0x[0-9a-f]{64}$/u.test(block.hash)
+      ) {
+        return null;
+      }
+      const blockNumber = BigInt(block.number).toString(10);
+      // The protocol requires removal evidence to follow the installation; a
+      // chain that has not advanced past the install block proves nothing yet.
+      if (BigInt(blockNumber) <= BigInt(installedAtBlock)) return null;
+      const installed = await chain.observation.read({
+        type: "kernel_permission_installed",
+        chainId: binding.chainId,
+        account: binding.account,
+        signer,
+        permissionId: binding.permissionId,
+        blockNumber,
+      });
+      if (installed !== false) return null;
+      // The read was answered by number alone, so rebind: the block at that
+      // number must still be the finalized block this evidence names.
+      const rebound = (await chain.observation.read({
+        type: "canonical_block",
+        chainId: binding.chainId,
+        blockNumber,
+      })) as { readonly number?: unknown; readonly hash?: unknown } | null;
+      if (rebound?.hash !== block.hash || rebound.number !== block.number) return null;
+      return Object.freeze({
+        ...binding,
+        kind: "permission_absent" as const,
+        blockNumber,
+        blockHash: block.hash as `0x${string}`,
+        observedAt: input.now(),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Owner-signed removal of one chain's installed permission: the exact
    * reverse-ordered uninstall self-calls, derived from the same install
    * packages the owner's approval bound, run on the chain's revocation lane.
    *
-   * Returns the advanced Grant when removal is conclusively finalized, and the
-   * Grant unchanged whenever this realm cannot complete it — no owner signing
-   * capability (a URL-mode realm never holds one), no route, or no conclusive
-   * chain evidence yet. Either way the Grant stays durably `revoking`; only
-   * finalized success of the uninstall operation records the chain revoked.
+   * A realm that cannot mint or route the owner operation falls back to
+   * observation: once the owner's own console has removed the permission, the
+   * chain itself proves it and the entry completes. Otherwise the Grant stays
+   * durably `revoking` — only finalized success of the uninstall operation or
+   * finalized-anchored absence evidence records the chain revoked.
    */
   async function revokeChainPermission(
     grant: Grant,
@@ -1035,7 +1103,7 @@ export function createGrantHandle(
       // An unreadable journal decides nothing; the run below owns the lane.
     }
     if (value === null) {
-      let result: OperationRunResult;
+      let result: OperationRunResult | null = null;
       try {
         const chain = chainCapability(chainId);
         const deployment = kernelV4Deployment(chainId);
@@ -1055,52 +1123,68 @@ export function createGrantHandle(
           bundler,
           feePayer: chain.feePayer,
         });
-        if (decision.route === "none") return latest;
-        const descriptor = await accountDescriptor(chainId);
-        if (descriptor.account !== entry.account) return latest;
-        const sender = runner({
-          chainId,
-          kind: "revocation",
-          runtime: ownerRuntime(chainId),
-          descriptor,
-          calls,
-          signer: "owner",
-          mode: "standard",
-          installApproval: null,
-          decision,
-          terminalBehavior: "replace",
-          grantId: latest.identity.grantId,
-        });
-        try {
-          result = await runOnce(sender, "revocation", laneKey);
-        } finally {
-          // A cleanup failure never replaces the outcome of the run.
-          await sender.close().catch(() => undefined);
+        const descriptor = decision.route === "none" ? null : await accountDescriptor(chainId);
+        if (descriptor !== null && descriptor.account === entry.account) {
+          const sender = runner({
+            chainId,
+            kind: "revocation",
+            runtime: ownerRuntime(chainId),
+            descriptor,
+            calls,
+            signer: "owner",
+            mode: "standard",
+            installApproval: null,
+            decision,
+            terminalBehavior: "replace",
+            grantId: latest.identity.grantId,
+          });
+          try {
+            result = await runOnce(sender, "revocation", laneKey);
+          } finally {
+            // A cleanup failure never replaces the outcome of the run.
+            await sender.close().catch(() => undefined);
+          }
         }
       } catch {
-        // The realm cannot mint or route the owner operation here; the removal
-        // stays pending and the Grant stays durably revoking.
-        return latest;
+        // The realm cannot mint or route the owner operation here; the
+        // observation fallback below is its only completion path.
+        result = null;
       }
-      if (result.status !== "observed") return latest;
-      const observed = result.record.value;
-      if (observed.state !== "finalized" || observed.inclusion.outcome !== "success") {
-        return latest;
+      if (
+        result !== null &&
+        result.status === "observed" &&
+        result.record.value.state === "finalized" &&
+        result.record.value.inclusion.outcome === "success"
+      ) {
+        value = result.record.value;
       }
-      value = observed;
     }
+    if (value !== null) {
+      return commit(
+        transition(latest, {
+          type: "record_chain_revoked",
+          identity: latest.identity,
+          binding,
+          removal: {
+            ...binding,
+            kind: "permission_absent",
+            blockNumber: value.finality.blockNumber,
+            blockHash: value.finality.blockHash,
+            observedAt: value.finality.observedAt,
+          },
+        }),
+      );
+    }
+    // No owner operation completed here. If the owner's console already
+    // removed the permission out-of-band, the chain proves it.
+    const removal = await observeChainRemoval(binding, entry.installation.blockNumber);
+    if (removal === null) return latest;
     return commit(
       transition(latest, {
         type: "record_chain_revoked",
         identity: latest.identity,
         binding,
-        removal: {
-          ...binding,
-          kind: "permission_absent",
-          blockNumber: value.finality.blockNumber,
-          blockHash: value.finality.blockHash,
-          observedAt: value.finality.observedAt,
-        },
+        removal,
       }),
     );
   }

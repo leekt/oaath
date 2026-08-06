@@ -37,7 +37,17 @@ import {
 
 describe("URL-only golden path", () => {
   it("connects, requests permission, sends calls, and revokes from one URL", async () => {
-    const realm = createUrlRealm();
+    // The chain's answer to "is the permission still installed", and how far
+    // the chain advanced beyond this realm's own submissions — both flip when
+    // the owner's console removes the permission out of band.
+    let permissionInstalled: boolean | null = null;
+    let blockOffset = 0;
+    const realm = createUrlRealm({
+      chain: createChainFixture({
+        permissionInstalled: () => permissionInstalled,
+        blockOffset: () => blockOffset,
+      }),
+    });
     // No binding exists before the service context does.
     expect(() => realm.oaath.binding).toThrowError(
       expect.objectContaining({ name: "OaathClientError" }),
@@ -65,9 +75,21 @@ describe("URL-only golden path", () => {
     await grant.revoke();
     // The capability died through the service, but the installed chain
     // permission awaits owner-signed removal: durably revoking, never a
-    // claimed revocation no chain observed.
+    // claimed revocation no chain observed. This realm holds no owner
+    // authority, so nothing rode the submission route a second time.
     expect(grant.state).toBe("revoking");
     expect(realm.invalidations()).toBe(1);
+    expect(realm.chain.sends).toHaveLength(1);
+
+    // The owner's console removes the permission out of band; the chain
+    // advances and the signer module reads conclusively absent. The next
+    // revoke completes from that finalized-anchored evidence alone — still
+    // without this realm ever signing owner work.
+    permissionInstalled = false;
+    blockOffset = 1;
+    await grant.revoke();
+    expect(grant.state).toBe("revoked");
+    expect(realm.chain.sends).toHaveLength(1);
     await connection.close();
   });
 
