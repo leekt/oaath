@@ -44,7 +44,13 @@ async function settings() {
 async function realmFor(origin) {
   const configured = await settings();
   const cached = realms.get(origin);
-  if (cached && cached.url === configured.url) return cached;
+  if (cached && cached.url === configured.url) {
+    // The realm is service-bound; the chain is only a provider parameter, so
+    // a saved chain change takes effect immediately (providers are keyed by
+    // chain, so stale ones are simply never consulted again).
+    cached.chain = configured.chain;
+    return cached;
+  }
   if (cached) await cached.connection.close().catch(() => undefined);
   const database = await openOaathDatabase({
     factory: indexedDB,
