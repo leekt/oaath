@@ -160,26 +160,7 @@ function chainRequestGrantId(name: ChainPortName, request: unknown): string | nu
     }
     if (name === "submission") {
       const prepared = (request as { readonly prepared?: unknown } | null)?.prepared;
-      const record = prepared as {
-        readonly grantId?: unknown;
-        readonly kind?: unknown;
-        readonly userOperation?: { readonly nonce?: unknown };
-      } | null;
-      // An invalidated capability refuses session executions, but the
-      // owner-signed revocation operation is what REMOVES the installed chain
-      // permission — the gate must let it through or revocation could never
-      // complete. The declared kind alone is spoofable, so the bypass also
-      // requires the operation's nonce to name Kernel's root validation
-      // (validation-type and mode bytes zero): such an operation executes only
-      // with the owner's signature, which no gated session holds.
-      if (record?.kind === "revocation") {
-        const nonce = record.userOperation?.nonce;
-        if (typeof nonce === "string" && /^(0|[1-9][0-9]*)$/u.test(nonce)) {
-          const value = BigInt(nonce);
-          if (value < 1n << 256n && value >> 240n === 0n) return null;
-        }
-      }
-      const grantId = record?.grantId;
+      const grantId = (prepared as { readonly grantId?: unknown } | null)?.grantId;
       return typeof grantId === "string" && grantId.length > 0 ? grantId : null;
     }
   } catch {
@@ -414,7 +395,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
 
   const authenticate = async (
     request: Request,
-    role: RelayCallerRole,
+    role: RelayCallerRole | readonly RelayCallerRole[],
     route: string,
   ): Promise<RelayCaller> => {
     const caller = await authenticateCaller(captured.authentication, request, role);
@@ -543,7 +524,14 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       if (!port || name === null) {
         return relayFailure("relay_not_found", "route does not exist");
       }
-      await authenticate(request, "client", `chains.${name}`);
+      // Submissions also accept the owner role: the owner-signed revocation
+      // operation is what removes an installed chain permission, so the
+      // owner's console must be able to submit it after the capability died.
+      const caller = await authenticate(
+        request,
+        name === "submission" ? ["client", "owner"] : "client",
+        `chains.${name}`,
+      );
       const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), ["request"]);
       const capability = name === "usage" ? port.usage : port[name];
       if (capability === null) {
@@ -555,7 +543,11 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       // grant nothing. This guards the honest capability; the on-chain install
       // nonce is what a hostile holder must still be cut off from, by the
       // chain-local revocation operation.
-      const grantId = chainRequestGrantId(name, body.request);
+      //
+      // The one pass through the gate is the caller's PROVEN owner role —
+      // never a payload claim, which any gated client could spoof to keep
+      // spending relay, RPC, and fee-payer budget after invalidation.
+      const grantId = caller.role === "owner" ? null : chainRequestGrantId(name, body.request);
       if (grantId !== null) {
         const invalidated = await withRelayTransaction(captured.store, (transaction) =>
           transaction.lockCapabilityInvalidation(grantId),
