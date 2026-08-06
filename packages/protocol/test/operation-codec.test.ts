@@ -64,6 +64,15 @@ function replacementDrop(observedAt = 13) {
   };
 }
 
+function abandonedOperation() {
+  return advanceOperation(createOperation({ identity, preparedAt: 10 }), {
+    type: "mark_abandoned",
+    identity,
+    abandonedAt: 11,
+    reason: "submission_not_attempted",
+  });
+}
+
 describe("Operation current codec", () => {
   it("round-trips the one current JSON-safe record", () => {
     const operation = advanceOperation(createOperation({ identity, preparedAt: 10 }), {
@@ -75,6 +84,36 @@ describe("Operation current codec", () => {
     expect(restored).toEqual(operation);
     expect(Object.isFrozen(restored)).toBe(true);
     expect(Object.isFrozen(restored.identity)).toBe(true);
+  });
+
+  it("accepts only the exact current abandoned record", () => {
+    const operation = abandonedOperation();
+    expect(parseOperation(clone(operation))).toEqual(operation);
+
+    for (const invalid of [
+      { ...operation, version: "oaath.operation/v0" },
+      { ...operation, state: "expired" },
+      { ...operation, revision: 0 },
+      { ...operation, revision: 2 },
+      { ...operation, abandonedAt: 9, updatedAt: 9 },
+      { ...operation, updatedAt: 12 },
+      {
+        ...operation,
+        identity: { ...operation.identity, userOperationHash: "0x1234" },
+      },
+      { ...operation, abandonment: { reason: "provider_unavailable" } },
+      {
+        ...operation,
+        abandonment: { reason: "submission_not_attempted", provider: "forbidden" },
+      },
+      {
+        ...operation,
+        observation: { status: "pending", observedAt: 12, reason: "receipt_missing" },
+      },
+      { ...operation, legacyState: "cancelled" },
+    ]) {
+      expectRecordInvalid(invalid);
+    }
   });
 
   it("rejects wrong versions, extra fields, missing fields, and symbols", () => {
@@ -195,6 +234,28 @@ describe("Operation current codec", () => {
       get() {
         calls += 1;
         return 11;
+      },
+    });
+    expectOperationError(
+      () => advanceOperation(operation, transition),
+      "operation_transition_invalid",
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("rejects an accessor-backed abandonment reason without invoking it", () => {
+    const operation = createOperation({ identity, preparedAt: 10 });
+    let calls = 0;
+    const transition: Record<string, unknown> = {
+      type: "mark_abandoned",
+      identity,
+      abandonedAt: 11,
+    };
+    Object.defineProperty(transition, "reason", {
+      enumerable: true,
+      get() {
+        calls += 1;
+        return "submission_not_attempted";
       },
     });
     expectOperationError(
@@ -413,6 +474,10 @@ describe("Operation current codec", () => {
     const prepared = createOperation({ identity, preparedAt: 10 });
     expectRecordInvalid({ ...prepared, revision: 1 });
     expectRecordInvalid({ ...prepared, revision: 999 });
+
+    const abandoned = abandonedOperation();
+    expectRecordInvalid({ ...abandoned, revision: 0 });
+    expectRecordInvalid({ ...abandoned, revision: 2 });
 
     const attempted = advanceOperation(prepared, {
       type: "mark_submission_attempted",

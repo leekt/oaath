@@ -37,6 +37,7 @@ export type OaathOperationStatus =
   | "finalized"
   | "dropped"
   | "superseded"
+  | "abandoned"
   | "pending"
   | "unreadable";
 
@@ -46,7 +47,7 @@ export interface OaathOperationOutcome {
   readonly transactionHash: `0x${string}` | null;
   readonly blockNumber: string | null;
   readonly outcome: OperationOutcome | null;
-  /** Structured reason when the operation is not terminal; never prose. */
+  /** Structured lifecycle reason when one exists; never prose. */
   readonly reason: string | null;
 }
 
@@ -152,6 +153,13 @@ export function operationOutcome(
     // The lane is conclusively free — this identity can never be included at
     // its nonce — while whether it executed earlier stays unproven.
     return Object.freeze({ status: "superseded", ...base, reason: null });
+  }
+  if (operation.state === "abandoned") {
+    return Object.freeze({
+      status: "abandoned",
+      ...base,
+      reason: operation.abandonment.reason,
+    });
   }
   return Object.freeze({
     status: "pending",
@@ -280,7 +288,10 @@ export function createOperationHandle(
     async wait(value?: unknown): Promise<Readonly<OaathOperationOutcome>> {
       const attempts = attemptCount(value);
       const terminal = (status: OaathOperationStatus) =>
-        status === "finalized" || status === "dropped" || status === "superseded";
+        status === "finalized" ||
+        status === "dropped" ||
+        status === "superseded" ||
+        status === "abandoned";
       if (terminal(latest.status)) return latest;
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const outcome = await observeOnce();

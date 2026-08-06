@@ -268,6 +268,9 @@ function inertRunner(result: OperationObserveResult): OperationRunner {
     async startOperation() {
       throw new Error("not used");
     },
+    async abandonPreparedOperation() {
+      throw new Error("not used");
+    },
     async observeOperation() {
       return result;
     },

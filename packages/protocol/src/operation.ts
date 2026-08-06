@@ -106,6 +106,10 @@ export interface OperationSupersession {
   readonly observedAt: number;
 }
 
+export interface OperationAbandonment {
+  readonly reason: "submission_not_attempted";
+}
+
 interface OperationCommon {
   readonly version: typeof OAATH_OPERATION_RECORD_VERSION;
   readonly identity: Readonly<OperationIdentity>;
@@ -117,6 +121,13 @@ interface OperationCommon {
 
 export interface PreparedOperation extends OperationCommon {
   readonly state: "prepared";
+}
+
+export interface AbandonedOperation extends OperationCommon {
+  readonly state: "abandoned";
+  readonly abandonedAt: number;
+  readonly abandonment: Readonly<OperationAbandonment>;
+  readonly observation: null;
 }
 
 export interface SubmissionAttemptedOperation extends OperationCommon {
@@ -166,6 +177,7 @@ export interface SupersededOperation extends OperationCommon {
 
 export type Operation =
   | PreparedOperation
+  | AbandonedOperation
   | SubmissionAttemptedOperation
   | SubmittedOperation
   | IncludedOperation
@@ -174,6 +186,12 @@ export type Operation =
   | SupersededOperation;
 
 export type OperationTransition =
+  | Readonly<{
+      type: "mark_abandoned";
+      identity: OperationIdentity;
+      abandonedAt: number;
+      reason: "submission_not_attempted";
+    }>
   | Readonly<{
       type: "mark_submission_attempted";
       identity: OperationIdentity;
@@ -588,6 +606,41 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
     return Object.freeze({ ...base, state });
   }
 
+  if (state === "abandoned") {
+    const record = exactCapturedRecord(
+      captured,
+      [...commonKeys, "abandonedAt", "abandonment"],
+      "abandoned operation record",
+      code,
+    );
+    const base = baseRecord(record, code, context);
+    const abandonedAt = safeInteger(record.abandonedAt, "operation abandonedAt", code);
+    const abandonmentRecord = exactRecord(
+      record.abandonment,
+      ["reason"],
+      "operation abandonment",
+      code,
+      context,
+    );
+    if (abandonmentRecord.reason !== "submission_not_attempted") {
+      return invalid(code, "operation abandonment reason is unsupported");
+    }
+    assertTimeOrder(base.revision === 1, "abandoned operation revision", code);
+    assertTimeOrder(
+      abandonedAt >= base.preparedAt && base.updatedAt === abandonedAt,
+      "abandoned operation time",
+      code,
+    );
+    assertTimeOrder(base.observation === null, "abandoned operation observation", code);
+    return Object.freeze({
+      ...base,
+      state,
+      abandonedAt,
+      abandonment: Object.freeze({ reason: abandonmentRecord.reason }),
+      observation: null,
+    });
+  }
+
   if (state === "submission_attempted") {
     const record = exactCapturedRecord(
       captured,
@@ -849,6 +902,7 @@ export function createOperation(value: unknown): PreparedOperation {
 export function operationOccupiesLane(value: unknown): boolean {
   const operation = parseOperation(value);
   return (
+    operation.state !== "abandoned" &&
     operation.state !== "finalized" &&
     operation.state !== "dropped" &&
     operation.state !== "superseded"
@@ -860,6 +914,24 @@ function parseTransition(value: unknown): InternalOperationTransition {
   const context: CaptureContext = new WeakSet();
   const captured = captureRecord(value, "operation transition", code, context);
   const type = captured.type;
+
+  if (type === "mark_abandoned") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "abandonedAt", "reason"],
+      "abandoned transition",
+      code,
+    );
+    if (record.reason !== "submission_not_attempted") {
+      return invalid(code, "abandoned transition reason is unsupported");
+    }
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      abandonedAt: safeInteger(record.abandonedAt, "transition abandonedAt", code),
+      reason: record.reason,
+    });
+  }
 
   if (type === "mark_submission_attempted") {
     const record = exactCapturedRecord(
@@ -1059,6 +1131,20 @@ function advanceParsedOperation(
 ): Operation {
   requireIdentity(operation, transition.identity);
 
+  if (transition.type === "mark_abandoned") {
+    if (operation.state !== "prepared") return forbidden(operation, transition);
+    requireTime(operation, transition.abandonedAt);
+    return Object.freeze({
+      ...operation,
+      revision: nextRevision(operation),
+      state: "abandoned",
+      abandonedAt: transition.abandonedAt,
+      abandonment: Object.freeze({ reason: transition.reason }),
+      updatedAt: transition.abandonedAt,
+      observation: null,
+    });
+  }
+
   if (transition.type === "mark_submission_attempted") {
     if (operation.state !== "prepared") return forbidden(operation, transition);
     requireTime(operation, transition.attemptedAt);
@@ -1096,7 +1182,8 @@ function advanceParsedOperation(
     if (
       operation.state === "finalized" ||
       operation.state === "dropped" ||
-      operation.state === "superseded"
+      operation.state === "superseded" ||
+      operation.state === "abandoned"
     ) {
       return operation;
     }
@@ -1178,6 +1265,7 @@ function advanceParsedOperation(
   if (transition.type === "record_dropped") {
     if (
       operation.state === "prepared" ||
+      operation.state === "abandoned" ||
       operation.state === "finalized" ||
       operation.state === "dropped"
     ) {
@@ -1242,7 +1330,11 @@ function advanceParsedOperation(
 export function advanceOperation(value: unknown, transitionValue: unknown): Operation {
   const operation = parseOperation(value);
   const transition = captureTransition(transitionValue);
-  if (transition.type !== "mark_submission_attempted" && transition.type !== "mark_submitted") {
+  if (
+    transition.type !== "mark_abandoned" &&
+    transition.type !== "mark_submission_attempted" &&
+    transition.type !== "mark_submitted"
+  ) {
     return invalid(
       "operation_transition_forbidden",
       "verified observation transitions are owned by OperationObserver",
@@ -1258,7 +1350,11 @@ export function applyVerifiedOperationObservation(
 ): Operation {
   const operation = parseOperation(value);
   const transition = captureTransition(transitionValue);
-  if (transition.type === "mark_submission_attempted" || transition.type === "mark_submitted") {
+  if (
+    transition.type === "mark_abandoned" ||
+    transition.type === "mark_submission_attempted" ||
+    transition.type === "mark_submitted"
+  ) {
     return invalid(
       "operation_transition_forbidden",
       "submission transitions are not verified observations",

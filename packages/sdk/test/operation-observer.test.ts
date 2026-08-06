@@ -692,6 +692,27 @@ describe("OperationObserver", () => {
     expect(adapter.requests).toHaveLength(reads);
   });
 
+  it("returns exact abandoned terminal evidence with zero provider reads", async () => {
+    const adapter = fixture();
+    const observer = createOperationObserver(adapter.capabilities);
+    const abandoned = advanceOperation(createOperation({ identity, preparedAt: 10 }), {
+      type: "mark_abandoned",
+      identity,
+      abandonedAt: 11,
+      reason: "submission_not_attempted",
+    });
+
+    const result = await observer.observeOperation({
+      operation: abandoned,
+      observedAt: 12,
+      timeoutMs: 1_000,
+    });
+
+    expect(result).toEqual({ status: "abandoned", operation: abandoned });
+    expect(adapter.requests).toEqual([]);
+    await observer.close();
+  });
+
   it("continues finality from a durable Operation after recreating store and observer", async () => {
     const directory = await mkdtemp(join(tmpdir(), "oaath-observer-reload-"));
     temporaryDirectories.push(directory);

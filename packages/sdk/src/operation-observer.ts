@@ -1,4 +1,5 @@
 import {
+  type AbandonedOperation,
   applyVerifiedOperationObservation,
   type CaptureContext,
   captureDenseArray,
@@ -182,7 +183,8 @@ export type ObserveOperationResult =
   | Readonly<{ status: "included"; operation: IncludedOperation }>
   | Readonly<{ status: "finalized"; operation: FinalizedOperation }>
   | Readonly<{ status: "dropped"; operation: DroppedOperation }>
-  | Readonly<{ status: "superseded"; operation: SupersededOperation }>;
+  | Readonly<{ status: "superseded"; operation: SupersededOperation }>
+  | Readonly<{ status: "abandoned"; operation: AbandonedOperation }>;
 
 export interface OperationObserver {
   readonly observeOperation: (input: unknown) => Promise<ObserveOperationResult>;
@@ -636,10 +638,11 @@ function frozenResult<Result extends ObserveOperationResult>(result: Result): Re
 }
 
 function terminalResult(
-  operation: FinalizedOperation | DroppedOperation | SupersededOperation,
+  operation: FinalizedOperation | DroppedOperation | SupersededOperation | AbandonedOperation,
 ): ObserveOperationResult {
   if (operation.state === "finalized") return frozenResult({ status: "finalized", operation });
   if (operation.state === "superseded") return frozenResult({ status: "superseded", operation });
+  if (operation.state === "abandoned") return frozenResult({ status: "abandoned", operation });
   return frozenResult({ status: "dropped", operation });
 }
 
@@ -663,7 +666,8 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
       if (
         operation.state === "finalized" ||
         operation.state === "dropped" ||
-        operation.state === "superseded"
+        operation.state === "superseded" ||
+        operation.state === "abandoned"
       ) {
         return terminalResult(operation);
       }

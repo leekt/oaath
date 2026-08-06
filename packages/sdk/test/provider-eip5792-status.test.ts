@@ -3,11 +3,13 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { advanceOperation, createOperation, type OperationIdentity } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
-import type {
-  OaathOperationLog,
-  OaathOperationOutcome,
-  OaathOperationReceipt,
+import {
+  type OaathOperationLog,
+  type OaathOperationOutcome,
+  type OaathOperationReceipt,
+  operationOutcome as projectOperationOutcome,
 } from "../src/client/operation-handle.js";
 import { type Eip5792CallsStatus, projectEip5792Status } from "../src/provider/status.js";
 
@@ -16,6 +18,15 @@ const OTHER_TRANSACTION_HASH = `0x${"12".repeat(32)}` as `0x${string}`;
 const BLOCK_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 const FIRST_TOPIC = `0x${"33".repeat(32)}` as `0x${string}`;
 const SECOND_TOPIC = `0x${"44".repeat(32)}` as `0x${string}`;
+const ABANDONED_IDENTITY: OperationIdentity = {
+  kind: "execution",
+  grantId: "abandoned-status",
+  chainId: 421_614,
+  entryPoint: `0x${"55".repeat(20)}`,
+  account: `0x${"66".repeat(20)}`,
+  nonce: "7",
+  userOperationHash: `0x${"77".repeat(32)}`,
+};
 
 function operationOutcome(overrides: Partial<OaathOperationOutcome> = {}): OaathOperationOutcome {
   return {
@@ -80,6 +91,39 @@ function project(
 }
 
 describe("Final EIP-5792 status projection", () => {
+  it("projects the operation handle outcome from exact abandonment evidence", () => {
+    const abandoned = advanceOperation(
+      createOperation({ identity: ABANDONED_IDENTITY, preparedAt: 10 }),
+      {
+        type: "mark_abandoned",
+        identity: ABANDONED_IDENTITY,
+        abandonedAt: 11,
+        reason: "submission_not_attempted",
+      },
+    );
+    if (abandoned.state !== "abandoned") throw new Error("expected abandoned operation");
+
+    const outcome = projectOperationOutcome({
+      status: "observed",
+      observation: { status: "abandoned", operation: abandoned },
+      record: {
+        version: "oaath.operation-store-record/v1",
+        storeRevision: 1,
+        updatedAt: abandoned.updatedAt,
+        value: abandoned,
+      },
+    });
+
+    expect(outcome).toEqual({
+      status: "abandoned",
+      state: "abandoned",
+      transactionHash: null,
+      blockNumber: null,
+      outcome: null,
+      reason: "submission_not_attempted",
+    });
+  });
+
   it.each(["prepared", "submission_attempted", "submitted", "included"] as const)(
     "maps nonterminal operation state %s to pending",
     (state) => {
@@ -168,6 +212,11 @@ describe("Final EIP-5792 status projection", () => {
       outcome: "success",
     }),
     operationOutcome({ status: "superseded", state: "superseded" }),
+    operationOutcome({
+      status: "abandoned",
+      state: "abandoned",
+      reason: "submission_not_attempted",
+    }),
   ])("maps terminal non-inclusion to 400 without receipts", (outcome) => {
     const result = project(outcome, operationReceipt());
 
@@ -250,9 +299,16 @@ describe("Final EIP-5792 status projection", () => {
       project(finalizedOutcome("reverted"), operationReceipt("reverted")).status,
       project(operationOutcome({ status: "dropped", state: "dropped" })).status,
       project(operationOutcome({ status: "superseded", state: "superseded" })).status,
+      project(
+        operationOutcome({
+          status: "abandoned",
+          state: "abandoned",
+          reason: "submission_not_attempted",
+        }),
+      ).status,
     ];
 
-    expect(statuses).toEqual([100, 200, 500, 400, 400]);
+    expect(statuses).toEqual([100, 200, 500, 400, 400, 400]);
     expect(statuses).not.toContain(600);
   });
 });

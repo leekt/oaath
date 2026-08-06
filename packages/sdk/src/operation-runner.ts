@@ -96,6 +96,13 @@ export interface OperationObserveInput extends OperationRunInput {
   readonly expectedUserOperationHash: `0x${string}`;
 }
 
+interface OperationAbandonPreparedInput {
+  readonly kind: OperationKind;
+  readonly key: Readonly<OperationStoreKey>;
+  readonly expectedUserOperationHash: `0x${string}`;
+  readonly abandonedAt: number;
+}
+
 type OperationStartedResult = Readonly<{
   status: "started";
   record: OperationStoreRecord;
@@ -143,6 +150,10 @@ export interface OperationRunner {
   readonly startOperation: (input: unknown) => Promise<OperationStartResult>;
   /** Observes only the exact durable operation named by expectedUserOperationHash. */
   readonly observeOperation: (input: unknown) => Promise<OperationObserveResult>;
+  /** Terminalizes one exact prepared identity without opening any submission capability. */
+  readonly abandonPreparedOperation: (
+    input: unknown,
+  ) => Promise<OperationStoreCompareAndSwapResult>;
   readonly runOperation: (input: unknown) => Promise<OperationRunResult>;
   readonly close: () => Promise<void>;
 }
@@ -404,6 +415,52 @@ function parseObserveInput(value: unknown): OperationObserveInput {
   }
 }
 
+function parseAbandonPreparedInput(value: unknown): OperationAbandonPreparedInput {
+  try {
+    const context: CaptureContext = new WeakSet();
+    const record = exact(
+      value,
+      ["kind", "key", "expectedUserOperationHash", "abandonedAt"],
+      "OperationRunner abandonment input",
+      "operation_runner_input_invalid",
+      context,
+    );
+    const kind = parseKind(record.kind);
+    const key = parseKey(record.key, context);
+    if (key.kind !== kind) {
+      return runnerError(
+        "operation_runner_input_invalid",
+        "runner key kind conflicts with abandonment kind",
+      );
+    }
+    if (
+      typeof record.expectedUserOperationHash !== "string" ||
+      !HASH.test(record.expectedUserOperationHash)
+    ) {
+      return runnerError(
+        "operation_runner_input_invalid",
+        "expected UserOperation hash is invalid",
+      );
+    }
+    const abandonedAt = safeTime(record.abandonedAt);
+    if (Object.is(abandonedAt, -0)) {
+      return runnerError("operation_runner_input_invalid", "runner abandonment time is invalid");
+    }
+    return Object.freeze({
+      kind,
+      key,
+      expectedUserOperationHash: record.expectedUserOperationHash as `0x${string}`,
+      abandonedAt,
+    });
+  } catch (error) {
+    if (error instanceof OaathOperationRunnerError) throw error;
+    return runnerError(
+      "operation_runner_input_invalid",
+      "OperationRunner abandonment input is invalid",
+    );
+  }
+}
+
 function sameIdentity(left: OperationIdentity, right: OperationIdentity): boolean {
   return (
     left.kind === right.kind &&
@@ -429,10 +486,13 @@ function deriveObservedOperation(
       return observation.status === "included" ||
         observation.status === "finalized" ||
         observation.status === "dropped" ||
-        observation.status === "superseded"
+        observation.status === "superseded" ||
+        observation.status === "abandoned"
         ? current
         : null;
     }
+
+    if (observation.status === "abandoned") return null;
 
     let next = current;
     if (
@@ -489,7 +549,7 @@ function deriveObservedOperation(
   }
 }
 
-function requireLane(operation: Operation, input: OperationRunInput): void {
+function requireLane(operation: Operation, input: Pick<OperationRunInput, "kind" | "key">): void {
   if (
     operation.identity.kind !== input.kind ||
     operation.identity.grantId !== input.key.grantId ||
@@ -605,6 +665,9 @@ function captureObservation(value: unknown): ObserveOperationResult | null {
       return Object.freeze({ status, operation });
     }
     if (status === "superseded" && operation.state === "superseded") {
+      return Object.freeze({ status, operation });
+    }
+    if (status === "abandoned" && operation.state === "abandoned") {
       return Object.freeze({ status, operation });
     }
     return null;
@@ -1034,6 +1097,41 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     });
   }
 
+  async function abandonPreparedOperation(
+    inputValue: unknown,
+  ): Promise<OperationStoreCompareAndSwapResult> {
+    return withActiveRun(async () => {
+      const input = parseAbandonPreparedInput(inputValue);
+      const record = await getRecord(input.key);
+      if (!record) {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "expected prepared Operation is absent from the requested lane",
+        );
+      }
+      requireLane(record.value, input);
+      if (record.value.identity.userOperationHash !== input.expectedUserOperationHash) {
+        return runnerError(
+          "operation_runner_identity_mismatch",
+          "stored Operation does not match the expected UserOperation hash",
+        );
+      }
+      if (record.value.state !== "prepared") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "expected Operation is no longer prepared",
+        );
+      }
+      const abandoned = advanceOperation(record.value, {
+        type: "mark_abandoned",
+        identity: record.value.identity,
+        abandonedAt: input.abandonedAt,
+        reason: "submission_not_attempted",
+      });
+      return commit(input.key, record.storeRevision, abandoned);
+    });
+  }
+
   async function runOperation(inputValue: unknown): Promise<OperationRunResult> {
     return withActiveRun(() => executeOperation(inputValue, "run"));
   }
@@ -1074,5 +1172,11 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     return attempt;
   }
 
-  return Object.freeze({ startOperation, observeOperation, runOperation, close });
+  return Object.freeze({
+    startOperation,
+    observeOperation,
+    abandonPreparedOperation,
+    runOperation,
+    close,
+  });
 }

@@ -154,6 +154,7 @@ interface MemoryControl {
   raw?: unknown;
   archives?: Map<string, unknown>;
   fault?: (next: OperationStoreRecord) => boolean;
+  archiveReads?: number;
   closeFailures: number;
   closeCalls: number;
 }
@@ -165,6 +166,7 @@ function memoryStore(control: MemoryControl): OperationStore {
       return control.raw;
     },
     async getArchived(input) {
+      control.archiveReads = (control.archiveReads ?? 0) + 1;
       return control.archives?.get(JSON.stringify([input.key, input.userOperationHash]));
     },
     async compareAndSwap(input) {
@@ -268,6 +270,20 @@ function storedOperation(control: MemoryControl): Operation | undefined {
   return (control.raw as OperationStoreRecord | undefined)?.value;
 }
 
+async function seedPreparedOperation(
+  store: OperationStore,
+  snapshot: PreparedUserOperation,
+  preparedAt = 10,
+): Promise<OperationStoreRecord> {
+  const seeded = await store.compareAndSwap({
+    key: { ...key, kind: snapshot.kind },
+    expectedStoreRevision: null,
+    next: createOperation({ identity: deriveOperationId(snapshot), preparedAt }),
+  });
+  if (seeded.status !== "committed") throw new Error("expected prepared seed commit");
+  return seeded.record;
+}
+
 function expectRunnerError(
   action: () => Promise<unknown>,
   code: OaathOperationRunnerError["code"],
@@ -299,6 +315,245 @@ describe("OperationRunner", () => {
         },
       }),
     ).toThrowError(expect.objectContaining({ code: "operation_runner_capability_invalid" }));
+  });
+
+  it("abandons only the exact current prepared identity with zero external effects", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    await seedPreparedOperation(store, snapshot);
+    const count = counters();
+    let observerCalls = 0;
+    let providerReads = 0;
+    const terminalObserver = pendingObserver(
+      async () => {},
+      () => {
+        providerReads += 1;
+      },
+    );
+    const operationRunner = runner({
+      store,
+      prepared: snapshot,
+      counters: count,
+      observer: {
+        async observeOperation(inputValue) {
+          observerCalls += 1;
+          return terminalObserver.observeOperation(inputValue);
+        },
+        close: () => terminalObserver.close(),
+      },
+    });
+
+    const result = await operationRunner.abandonPreparedOperation({
+      kind: "execution",
+      key,
+      expectedUserOperationHash: snapshot.userOperationHash,
+      abandonedAt: 11,
+    });
+
+    expect(result).toMatchObject({
+      status: "committed",
+      record: {
+        storeRevision: 1,
+        value: {
+          state: "abandoned",
+          revision: 1,
+          abandonedAt: 11,
+          abandonment: { reason: "submission_not_attempted" },
+          observation: null,
+          identity: { userOperationHash: snapshot.userOperationHash },
+        },
+      },
+    });
+    expect(result.status === "committed" && result.record).toEqual(control.raw);
+    expect(observerCalls).toBe(0);
+    expect(providerReads).toBe(0);
+    expect(control.archiveReads ?? 0).toBe(0);
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+
+    const observed = await operationRunner.observeOperation({
+      ...runInput("execution"),
+      expectedUserOperationHash: snapshot.userOperationHash,
+    });
+    expect(observed).toMatchObject({
+      status: "observed",
+      observation: { status: "abandoned", operation: { state: "abandoned" } },
+      record: { value: { state: "abandoned" } },
+    });
+    expect(observerCalls).toBe(1);
+    expect(providerReads).toBe(0);
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    await operationRunner.close();
+  });
+
+  it("exact-captures abandonment input without invoking hostile accessors", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    await seedPreparedOperation(store, snapshot);
+    const count = counters();
+    let observerCalls = 0;
+    let hashReads = 0;
+    const operationRunner = runner({
+      store,
+      prepared: snapshot,
+      counters: count,
+      observer: {
+        async observeOperation() {
+          observerCalls += 1;
+          throw new Error("unexpected observation");
+        },
+        async close() {},
+      },
+    });
+    const hostile = Object.defineProperty(
+      { kind: "execution", key, abandonedAt: 11 },
+      "expectedUserOperationHash",
+      {
+        enumerable: true,
+        get() {
+          hashReads += 1;
+          return snapshot.userOperationHash;
+        },
+      },
+    );
+
+    await expectRunnerError(
+      () => operationRunner.abandonPreparedOperation(hostile),
+      "operation_runner_input_invalid",
+    );
+    await expectRunnerError(
+      () =>
+        operationRunner.abandonPreparedOperation({
+          kind: "execution",
+          key,
+          expectedUserOperationHash: snapshot.userOperationHash,
+          abandonedAt: 11,
+          reason: "submission_not_attempted",
+        }),
+      "operation_runner_input_invalid",
+    );
+    for (const abandonedAt of [-0, -1, 1.5]) {
+      await expectRunnerError(
+        () =>
+          operationRunner.abandonPreparedOperation({
+            kind: "execution",
+            key,
+            expectedUserOperationHash: snapshot.userOperationHash,
+            abandonedAt,
+          }),
+        "operation_runner_input_invalid",
+      );
+    }
+
+    expect(hashReads).toBe(0);
+    expect(observerCalls).toBe(0);
+    expect(storedOperation(control)?.state).toBe("prepared");
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    await operationRunner.close();
+  });
+
+  it("fails closed when abandonment is missing, mismatched, or already attempted", async () => {
+    const missingControl: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const missingCount = counters();
+    const missing = runner({
+      store: memoryStore(missingControl),
+      prepared: prepared("execution"),
+      counters: missingCount,
+    });
+    await expectRunnerError(
+      () =>
+        missing.abandonPreparedOperation({
+          kind: "execution",
+          key,
+          expectedUserOperationHash: prepared("execution").userOperationHash,
+          abandonedAt: 11,
+        }),
+      "operation_runner_state_conflict",
+    );
+
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    const seeded = await seedPreparedOperation(store, snapshot);
+    const count = counters();
+    const operationRunner = runner({ store, prepared: snapshot, counters: count });
+    await expectRunnerError(
+      () =>
+        operationRunner.abandonPreparedOperation({
+          kind: "execution",
+          key,
+          expectedUserOperationHash: `0x${"ff".repeat(32)}`,
+          abandonedAt: 11,
+        }),
+      "operation_runner_identity_mismatch",
+    );
+    const attempted = advanceOperation(seeded.value, {
+      type: "mark_submission_attempted",
+      identity: seeded.value.identity,
+      attemptedAt: 11,
+    });
+    await expect(
+      store.compareAndSwap({ key, expectedStoreRevision: seeded.storeRevision, next: attempted }),
+    ).resolves.toMatchObject({ status: "committed" });
+    await expectRunnerError(
+      () =>
+        operationRunner.abandonPreparedOperation({
+          kind: "execution",
+          key,
+          expectedUserOperationHash: snapshot.userOperationHash,
+          abandonedAt: 12,
+        }),
+      "operation_runner_state_conflict",
+    );
+
+    expect(missingCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.state).toBe("submission_attempted");
+    await Promise.all([missing.close(), operationRunner.close()]);
+  });
+
+  it("returns a CAS conflict without abandoning a racing replacement identity", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    await seedPreparedOperation(store, snapshot);
+    const replacementSnapshot = prepared("execution", "8");
+    const replacement = createOperation({
+      identity: deriveOperationId(replacementSnapshot),
+      preparedAt: 11,
+    });
+    control.fault = (next) => {
+      control.raw = Object.freeze({
+        version: next.version,
+        storeRevision: next.storeRevision,
+        updatedAt: replacement.updatedAt,
+        value: replacement,
+      });
+      return false;
+    };
+    const count = counters();
+    const operationRunner = runner({ store, prepared: snapshot, counters: count });
+
+    const result = await operationRunner.abandonPreparedOperation({
+      kind: "execution",
+      key,
+      expectedUserOperationHash: snapshot.userOperationHash,
+      abandonedAt: 11,
+    });
+
+    expect(result).toMatchObject({
+      status: "conflict",
+      current: {
+        value: {
+          state: "prepared",
+          identity: { userOperationHash: replacementSnapshot.userOperationHash },
+        },
+      },
+    });
+    expect(storedOperation(control)).toEqual(replacement);
+    expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+    await operationRunner.close();
   });
 
   it("starts one submitted identity without invoking the observer", async () => {
@@ -1066,7 +1321,9 @@ describe("OperationRunner", () => {
     const observer: OperationObserver = {
       async observeOperation(inputValue) {
         const input = inputValue as { operation: Operation; observedAt: number };
-        if (input.operation.state === "prepared") throw new Error("unexpected prepared state");
+        if (input.operation.state === "prepared" || input.operation.state === "abandoned") {
+          throw new Error("unexpected pre-submission state");
+        }
         const reset = createOperation({
           identity: input.operation.identity,
           preparedAt: input.operation.preparedAt,

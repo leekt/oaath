@@ -94,6 +94,10 @@ export function projectEip5792Status(
     if (outcome.state !== "superseded") return invalidEvidence();
     return Object.freeze({ ...base, status: 400 });
   }
+  if (outcome.status === "abandoned") {
+    if (outcome.state !== "abandoned") return invalidEvidence();
+    return Object.freeze({ ...base, status: 400 });
+  }
 
   const receipt = input.receipt;
   const transactionHash = outcome.transactionHash;
