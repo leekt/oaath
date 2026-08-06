@@ -38,6 +38,7 @@ import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
   ecdsaKey,
+  encodeKernelV4PermissionUninstallCalls,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   ownerOperator,
@@ -177,6 +178,11 @@ say(`  service          ${url}`);
  * scope back from the relay, derives the account and the permission packages
  * independently — from its own key, the reviewed policy, and the operator
  * credential in the scope — and signs the replayable install approval.
+ *
+ * It also completes revocation: the client can kill the capability but never
+ * holds owner authority, so the console removes the installed chain
+ * permission with an owner-signed operation and submits it through the
+ * relay's owner lane — the one caller the invalidation gate lets through.
  */
 async function ownerConsole() {
   const ownerFetch = async (path, init) =>
@@ -186,17 +192,19 @@ async function ownerConsole() {
         headers: { ...init?.headers, authorization: `Bearer ${OWNER_TOKEN}` },
       })
     ).json();
+  const ownerKey = ecdsaKey({ account: ownerAccount, validator: chain.validator });
+  const deployment = kernelV4Deployment(CHAIN_ID);
+  const ownerRuntime = createKernelRuntime({
+    deployment,
+    operator: ownerOperator({ key: ownerKey }),
+    reads: chain.capability.reads,
+  });
+  /** requestId -> the exact packages the approval installed. */
+  const approvals = new Map();
   return {
     async approve(requestId) {
       const state = await ownerFetch(`/authorization/requests/${requestId}`);
       const scope = JSON.parse(state.requestedScope);
-      const ownerKey = ecdsaKey({ account: ownerAccount, validator: chain.validator });
-      const deployment = kernelV4Deployment(CHAIN_ID);
-      const ownerRuntime = createKernelRuntime({
-        deployment,
-        operator: ownerOperator({ key: ownerKey }),
-        reads: chain.capability.reads,
-      });
       const descriptor = await ownerRuntime.bindAccount({
         accountIndex: "0",
         initialPackages: [...ownerRuntime.packages],
@@ -218,6 +226,7 @@ async function ownerConsole() {
         installNonce: "0",
         packages: [...sessionRuntime.packages],
       });
+      approvals.set(requestId, installApproval);
       const decided = await ownerFetch(`/authorization/requests/${requestId}/decision`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -236,6 +245,57 @@ async function ownerConsole() {
         }),
       });
       expect(typeof decided.code === "string", "the owner console could not record a decision");
+    },
+    async removePermission(requestId) {
+      const approval = approvals.get(requestId);
+      expect(approval !== undefined, "the console never approved this request");
+      // The removal is derived from the same packages the approval installed;
+      // no second description of the permission exists to drift.
+      const bound = await ownerRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: [...ownerRuntime.packages],
+      });
+      const calls = encodeKernelV4PermissionUninstallCalls({
+        account: approval.account,
+        packages: approval.packages,
+      });
+      const quote = await chain.capability.quote({
+        chainId: CHAIN_ID,
+        kind: "revocation",
+        signer: "owner",
+        account: bound.account,
+        calls,
+      });
+      const prepared = ownerRuntime.prepareOperation({
+        kind: "revocation",
+        grantId: `owner-removal-${requestId}`,
+        account: bound,
+        nonceKey: quote.nonceKey,
+        sequence: quote.sequence,
+        calls,
+        gas: quote.gas,
+      });
+      const signature = await ownerRuntime.signOperation(prepared);
+      // Through the relay's own HTTP surface as the owner role: the exact
+      // lane the invalidation gate keeps open after the capability died.
+      const submitted = await ownerFetch(`/chains/${CHAIN_ID}/submissions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          request: {
+            prepared,
+            signature,
+            route: "entrypoint-handleops",
+            feePayer: chain.capability.feePayer,
+          },
+        }),
+      });
+      expect(
+        submitted.present === true &&
+          submitted.result?.userOperationHash === prepared.userOperationHash,
+        "the relay refused the owner removal",
+      );
+      return prepared.userOperationHash;
     },
   };
 }
@@ -303,6 +363,16 @@ expect(grant.state === "revoking", `the Grant is ${grant.state}`);
 say(
   "  grant            revoking: the capability is dead at the service; the chain permission awaits owner-signed removal",
 );
+
+step("owner console removes the chain permission through the relay owner lane");
+const removalRequestId = [...approvedRequests][0];
+const removalHash = await owner.removePermission(removalRequestId);
+say(`  removal          ${removalHash} (owner-signed uninstall, submitted as the owner role)`);
+
+step("the client observes the removal and completes revocation");
+await grant.revoke();
+expect(grant.state === "revoked", `the Grant is ${grant.state}`);
+say("  grant            revoked: the chain itself proved the permission absent");
 
 await connection.close();
 await oaath.close();
