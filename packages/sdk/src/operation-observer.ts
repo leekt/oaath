@@ -468,10 +468,12 @@ function frozenResult<Result extends ObserveOperationResult>(result: Result): Re
   return Object.freeze(result);
 }
 
-function terminalResult(operation: FinalizedOperation | DroppedOperation): ObserveOperationResult {
-  return operation.state === "finalized"
-    ? frozenResult({ status: "finalized", operation })
-    : frozenResult({ status: "dropped", operation });
+function terminalResult(
+  operation: FinalizedOperation | DroppedOperation | SupersededOperation,
+): ObserveOperationResult {
+  if (operation.state === "finalized") return frozenResult({ status: "finalized", operation });
+  if (operation.state === "superseded") return frozenResult({ status: "superseded", operation });
+  return frozenResult({ status: "dropped", operation });
 }
 
 export function createOperationObserver(capabilityValue: unknown): OperationObserver {
@@ -491,7 +493,11 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
     activeObservations += 1;
     try {
       const { operation, observedAt, timeoutMs } = captureObserveInput(inputValue);
-      if (operation.state === "finalized" || operation.state === "dropped") {
+      if (
+        operation.state === "finalized" ||
+        operation.state === "dropped" ||
+        operation.state === "superseded"
+      ) {
         return terminalResult(operation);
       }
       if (operation.state === "prepared") {

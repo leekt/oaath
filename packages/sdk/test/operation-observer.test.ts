@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   advanceOperation,
+  applyVerifiedOperationObservation,
   createOperation,
   type Operation,
   type OperationIdentity,
@@ -643,6 +644,31 @@ describe("OperationObserver", () => {
     expect(again.status).toBe("finalized");
     expect(adapter.requests).toHaveLength(reads);
     expect(Object.keys(observer).sort()).toEqual(["close", "observeOperation"]);
+
+    // A superseded record is terminal too: re-observation returns it directly
+    // instead of re-running the evidence path, which could only downgrade a
+    // conclusive lane release into an inconclusive read failure.
+    const superseded = applyVerifiedOperationObservation(submitted(), {
+      type: "record_superseded",
+      identity,
+      supersession: {
+        kind: "entry_point_nonce_advanced",
+        observedNonce: "8",
+        blockNumber: "32",
+        blockHash: finalityBlockHash,
+        observedAt: 13,
+      },
+    });
+    const supersededAgain = await observer.observeOperation({
+      operation: superseded,
+      observedAt: 14,
+      timeoutMs: 1_000,
+    });
+    expect(supersededAgain).toMatchObject({
+      status: "superseded",
+      operation: { state: "superseded" },
+    });
+    expect(adapter.requests).toHaveLength(reads);
   });
 
   it("continues finality from a durable Operation after recreating store and observer", async () => {
