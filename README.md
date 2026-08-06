@@ -106,6 +106,22 @@ the overridden composition), `@oaath/sdk/persistence` (IndexedDB adapters and
 record contracts), and `@oaath/sdk/testing` (deterministic memory stores,
 never a production dependency).
 
+For viem-based applications, `@oaath/sdk/viem` exposes an active Grant as a
+narrow EIP-1193 provider — `eth_accounts` answers the chain-read-derived smart
+account and `eth_sendTransaction` rides `grant.sendCalls` and returns the real
+inclusion transaction hash — so existing viem code executes through OAAth
+without learning its vocabulary:
+
+```ts
+import { createWalletClient, custom } from "viem";
+import { oaathProvider } from "@oaath/sdk/viem";
+
+const wallet = createWalletClient({
+  transport: custom(oaathProvider({ grant, chain })),
+});
+const hash = await wallet.sendTransaction({ account, to, value, data, chain: null });
+```
+
 ## Kernel runtime
 
 The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through

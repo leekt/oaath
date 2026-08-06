@@ -11,6 +11,7 @@ import * as root from "../src/index.js";
 import * as kernel from "../src/kernel.js";
 import * as persistence from "../src/persistence.js";
 import * as testing from "../src/testing.js";
+import * as viem from "../src/viem.js";
 
 describe("package boundary", () => {
   it("exposes only the adopter workflow on the root entry", () => {
@@ -140,8 +141,12 @@ describe("package boundary", () => {
     ]);
   });
 
+  it("exposes only the EIP-1193 adapter on /viem", () => {
+    expect(Object.keys(viem).sort()).toEqual(["oaathProvider"]);
+  });
+
   it("keeps every surface disjoint", () => {
-    const surfaces = [root, kernel, advanced, persistence, testing].map((entry) =>
+    const surfaces = [root, kernel, advanced, persistence, testing, viem].map((entry) =>
       Object.keys(entry),
     );
     const all = surfaces.flat();

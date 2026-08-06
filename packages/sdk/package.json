@@ -41,6 +41,10 @@
     "./testing": {
       "types": "./src/testing.ts",
       "default": "./src/testing.ts"
+    },
+    "./viem": {
+      "types": "./src/viem.ts",
+      "default": "./src/viem.ts"
     }
   },
   "publishConfig": {
@@ -67,6 +71,10 @@
       "./testing": {
         "types": "./dist/testing.d.ts",
         "default": "./dist/testing.js"
+      },
+      "./viem": {
+        "types": "./dist/viem.d.ts",
+        "default": "./dist/viem.js"
       }
     }
   },

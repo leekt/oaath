@@ -7,6 +7,7 @@ export default defineConfig({
     advanced: "src/advanced.ts",
     persistence: "src/persistence.ts",
     testing: "src/testing.ts",
+    viem: "src/viem.ts",
   },
   format: ["esm"],
   dts: true,

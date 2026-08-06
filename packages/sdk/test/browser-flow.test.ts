@@ -249,6 +249,7 @@ describe("browser golden path", () => {
       "signOut",
     ]);
     expect(Object.keys(grant).sort()).toEqual([
+      "account",
       "close",
       "expiresAt",
       "revoke",

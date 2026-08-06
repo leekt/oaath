@@ -376,7 +376,7 @@ export function relay(): RelayHandler {
 const EXPECTED_SURFACES = {
   oaath: ["binding", "close", "connect", "disconnect"],
   connection: ["binding", "close", "requestPermission", "resume", "signOut"],
-  grant: ["close", "expiresAt", "revoke", "sendCalls", "state"],
+  grant: ["account", "close", "expiresAt", "revoke", "sendCalls", "state"],
 };
 
 const consumer = await createConsumer({

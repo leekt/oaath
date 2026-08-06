@@ -166,6 +166,13 @@ export interface OaathCapabilityInvalidationCapability {
 export interface OaathGrantHandle {
   readonly state: GrantState;
   readonly expiresAt: number;
+  /**
+   * The Grant's smart account address on one supported chain. It is derived
+   * from the owner's initial packages through the chain's own factory reads —
+   * never asserted — and CREATE2 makes it the same address on every supported
+   * chain. Public identity only: holding it authorizes nothing.
+   */
+  readonly account: (chain: unknown) => Promise<`0x${string}`>;
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
   readonly revoke: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -1006,6 +1013,13 @@ export function createGrantHandle(
     },
     get expiresAt(): number {
       return record.value.expiresAt;
+    },
+    async account(chain: unknown): Promise<`0x${string}`> {
+      assertOpen();
+      if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1) {
+        return clientFail("oaath_client_input_invalid", "account chain is invalid");
+      }
+      return (await accountDescriptor(chain)).account;
     },
     sendCalls,
     revoke,
