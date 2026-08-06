@@ -5,7 +5,7 @@
  */
 import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { OperationStore } from "../src/index.js";
+import { OperationStore } from "../src/advanced.js";
 import {
   CALL_DATA,
   CHAIN_ID,

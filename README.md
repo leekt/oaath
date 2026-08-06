@@ -99,6 +99,13 @@ remains an optional injected override on the same constructor for
 deterministic tests and custom deployments: pass a configuration carrying
 `binding` and the SDK composes exactly what you injected, fetching nothing.
 
+The root import carries only this workflow. Infrastructure lives behind
+explicit subpaths: `@oaath/sdk/kernel` (the reviewed Kernel primitives, for
+owner devices and audits), `@oaath/sdk/advanced` (custom-deployment ports and
+the overridden composition), `@oaath/sdk/persistence` (IndexedDB adapters and
+record contracts), and `@oaath/sdk/testing` (deterministic memory stores,
+never a production dependency).
+
 ## Kernel runtime
 
 The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through

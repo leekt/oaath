@@ -2,7 +2,12 @@ import { encodeFunctionData, getAddress } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import {
-  asViemUserOperation,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
+  type OaathBundlerCapability,
+  type OaathBundlerProbeRequest,
+  type OaathFeePayerDescriptor,
+  type OaathSessionCoverage,
   captureRoutingCapabilities,
   classifyBundlerAcceptance,
   classifyBundlerProbe,
@@ -10,16 +15,13 @@ import {
   deriveHandleOpsRequirement,
   deriveOperationPrefund,
   encodeHandleOps,
-  KERNEL_V4_ENTRY_POINT_V07,
-  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
-  OAATH_HANDLE_OPS_OVERHEAD_GAS,
-  type OaathBundlerCapability,
-  type OaathBundlerProbeRequest,
-  type OaathFeePayerDescriptor,
-  type OaathSessionCoverage,
-  prepareUserOperation,
   probeBundlerCapability,
-} from "../src/index.js";
+} from "../src/advanced.js";
+import {
+  KERNEL_V4_ENTRY_POINT_V07,
+  asViemUserOperation,
+  prepareUserOperation,
+} from "../src/kernel.js";
 
 const chainId = 421_614;
 const account = "0x00000000000000000000000000000000000000a1" as const;

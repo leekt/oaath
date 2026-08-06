@@ -34,20 +34,33 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
 const SMOKE = String.raw`
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import {
+  createOAAth,
+} from "@oaath/sdk";
+import {
+  approveKernelPermissionAllChain,
+  createKernelRuntime,
+  ecdsaKey,
+  kernelAllChainCapabilityHash,
+  kernelV4Deployment,
+  sessionOperator,
+} from "@oaath/sdk/kernel";
+import {
+  deriveSessionPolicyProfiles,
+} from "@oaath/sdk/advanced";
+import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
-  createOAAth,
-  ecdsaKey,
-} from "@oaath/sdk";
+} from "@oaath/sdk/testing";
 import {
   hashPermissionRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
+  parseGrantPolicy,
 } from "@oaath/protocol";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -149,6 +162,23 @@ const authorization = {
     ownerRequests.push(request.requestId);
     const state = await relayJson("/authorization/requests/" + request.requestId, OWNER_TOKEN);
     const scope = JSON.parse(state.requestedScope);
+    // The owner device mints the replayable install approval itself, offline:
+    // package derivation is pure and the account address is the owner's own
+    // fact, so the smoke's throwing chain ports prove nothing was consulted.
+    const sessionRuntime = createKernelRuntime({
+      deployment: kernelV4Deployment(CHAIN_ID),
+      operator: sessionOperator({
+        key: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
+        policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
+      }),
+      reads: chain.reads,
+    });
+    const installApproval = await approveKernelPermissionAllChain({
+      owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
+      account: "0x" + "66".repeat(20),
+      installNonce: "0",
+      packages: [...sessionRuntime.packages],
+    });
     const decision = {
       version: OAATH_PERMISSION_DECISION_VERSION,
       kind: "approve",
@@ -156,7 +186,8 @@ const authorization = {
       requestHash: hashPermissionRequest({ ...scope, requestId: request.requestId }),
       decidedAt: now(),
       approvedPolicy: scope.policy,
-      capabilityHash: keccak256(stringToBytes("oaath-smoke-capability")),
+      capabilityHash: kernelAllChainCapabilityHash(installApproval),
+      installApproval,
     };
     const decided = await relayJson(
       "/authorization/requests/" + request.requestId + "/decision",
@@ -301,13 +332,17 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 /** The published types must resolve and compose under `nodenext` strict. */
 const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest } from "@oaath/protocol";
 import {
-  createMemoryGrantStoreAdapter,
-  createOAAth,
   type GrantStoreAdapter,
-  type Oaath,
   type OaathConfiguration,
+} from "@oaath/sdk/advanced";
+import {
+  type Oaath,
   type OaathGrantHandle,
+  createOAAth,
 } from "@oaath/sdk";
+import {
+  createMemoryGrantStoreAdapter,
+} from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler, type RelayHandler } from "@oaath/server";
 
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
@@ -366,8 +401,13 @@ try {
       JSON.stringify(actual) === JSON.stringify(expected),
       `${specifier}: packed exports differ from the built surface\n    packed: ${actual.join(",")}\n    built:  ${expected.join(",")}`,
     );
-    // A collapsed entry would satisfy the equality above vacuously.
-    assert(actual.length > 10, `${specifier}: only ${actual.length} runtime exports`);
+    // A collapsed entry would satisfy the equality above vacuously. The sdk
+    // root is deliberately minimal, so its guard is the constructor itself.
+    if (specifier === "@oaath/sdk") {
+      assert(actual.includes("createOAAth"), `${specifier}: the root entry lost createOAAth`);
+    } else {
+      assert(actual.length > 10, `${specifier}: only ${actual.length} runtime exports`);
+    }
   }
 
   for (const [name, expected] of Object.entries(EXPECTED_SURFACES)) {

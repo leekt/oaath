@@ -26,7 +26,7 @@ import {
   materializeKernelPermission,
   ownerOperator,
   sessionOperator,
-} from "@oaath/sdk";
+} from "@oaath/sdk/kernel";
 import { parseEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { anvilAvailable, deployKernelStack, startAnvil } from "../support/anvil.mjs";

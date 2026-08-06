@@ -17,13 +17,6 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
-  compileKernelPermissionPolicy,
-  createKernelRuntime,
-  ecdsaKey,
-  encodeKernelV4PermissionSignature,
-  encodeKernelV4PolicyData,
-  encodeKernelV4SignerData,
-  encodeKernelV4ValidatorData,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_EXECUTE_SELECTOR,
@@ -35,15 +28,22 @@ import {
   type KernelOperatorAuthority,
   type KernelV4AccountReadRequest,
   type KeyProfile,
-  kernelV4Deployment,
   type OperatorProfile,
+  compileKernelPermissionPolicy,
+  createKernelRuntime,
+  ecdsaKey,
+  encodeKernelV4PermissionSignature,
+  encodeKernelV4PolicyData,
+  encodeKernelV4SignerData,
+  encodeKernelV4ValidatorData,
+  kernelV4Deployment,
   ownerOperator,
   p256Key,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
   webauthnKey,
-} from "../src/index.js";
+} from "../src/kernel.js";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
 import { pinnedValidatorModule } from "../src/kernel/modules.js";

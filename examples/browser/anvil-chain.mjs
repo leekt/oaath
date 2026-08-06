@@ -16,7 +16,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
 import { decodeEventLog, parseEther, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";

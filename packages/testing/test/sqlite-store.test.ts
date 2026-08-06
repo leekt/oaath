@@ -13,7 +13,7 @@ import {
   type Operation,
   type OperationIdentity,
 } from "@oaath/protocol";
-import { type GrantStore, OaathStoreError, type OperationStore } from "@oaath/sdk";
+import { type GrantStore, OaathStoreError, type OperationStore } from "@oaath/sdk/advanced";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteGrantStore, createSqliteOperationStore } from "../src/index.js";
 

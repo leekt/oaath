@@ -10,7 +10,6 @@ import {
 import { createSqliteOperationStore } from "@oaath/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createOperationObserver,
   OaathOperationObserverError,
   type OperationObserverBlockEvidence,
   type OperationObserverCapabilities,
@@ -18,7 +17,8 @@ import {
   type OperationObserverTransactionEvidence,
   type OperationObserverTransactionReceiptEvidence,
   type OperationObserverUserOperationReceiptEvidence,
-} from "../src/index.js";
+  createOperationObserver,
+} from "../src/advanced.js";
 
 const identity: OperationIdentity = {
   kind: "execution",

@@ -24,22 +24,24 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   parseGrantPolicy,
 } from "@oaath/protocol";
+import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
+import { createOAAth } from "@oaath/sdk";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
-  createMemoryCleanupStore,
-  createMemoryContextStore,
-  createMemoryGrantStoreAdapter,
-  createMemoryKeyStore,
-  createMemoryOperationStoreAdapter,
-  createOAAth,
-  deriveSessionPolicyProfiles,
   ecdsaKey,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   ownerOperator,
   sessionOperator,
-} from "@oaath/sdk";
+} from "@oaath/sdk/kernel";
+import {
+  createMemoryCleanupStore,
+  createMemoryContextStore,
+  createMemoryGrantStoreAdapter,
+  createMemoryKeyStore,
+  createMemoryOperationStoreAdapter,
+} from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";

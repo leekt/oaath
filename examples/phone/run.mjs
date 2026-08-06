@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { p256 } from "@noble/curves/nist.js";
 import { deriveCodeChallenge, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import { prepareSponsoredKernelOperation } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
   asViemUserOperation,
@@ -29,9 +30,8 @@ import {
   materializeKernelPermission,
   ownerOperator,
   p256Key,
-  prepareSponsoredKernelOperation,
   sessionOperator,
-} from "@oaath/sdk";
+} from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
 import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
@@ -785,7 +785,7 @@ async function handleDemo(method, path, body, outgoing) {
       });
       expect(descriptor.account === accountDescriptor.account, "session bound another account");
       // Derive without signing; the SDK owner is authoritative for the digest formula.
-      const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk");
+      const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk/kernel");
       const exactDigest = kernelV4ReplayableInstallDigest({
         account: descriptor.account,
         nonce: "0",

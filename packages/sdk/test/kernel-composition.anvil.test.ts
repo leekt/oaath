@@ -4,26 +4,28 @@ import { bytesToHex, hexToBytes, keccak256, parseEther, toFunctionSelector } fro
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
   captureRoutingCapabilities,
   classifyBundlerAcceptance,
-  createKernelRuntime,
   decideExecution,
   deriveHandleOpsRequirement,
-  ecdsaKey,
   encodeHandleOps,
-  encodeKernelV4InstallModules,
+} from "../src/advanced.js";
+import {
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
+  createKernelRuntime,
+  ecdsaKey,
+  encodeKernelV4InstallModules,
   kernelV4Deployment,
-  OAATH_HANDLE_OPS_OVERHEAD_GAS,
   ownerOperator,
   p256Key,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
-} from "../src/index.js";
+} from "../src/kernel.js";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
 import { pinnedValidatorModule } from "../src/kernel/modules.js";

@@ -4,9 +4,6 @@ import { bytesToHex, hexToBytes, keccak256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
-  createKernelRuntime,
-  diagnoseKernelCapability,
-  ecdsaKey,
   type KernelBuiltInKeyKind,
   type KernelCapability,
   type KernelCapabilityEvidence,
@@ -15,14 +12,17 @@ import {
   type KernelRuntimeErrorCode,
   type KernelV4SupportedChainId,
   type KeyProfile,
-  kernelV4Deployment,
   type OperatorProfile,
+  createKernelRuntime,
+  diagnoseKernelCapability,
+  ecdsaKey,
+  kernelV4Deployment,
   ownerOperator,
   p256Key,
   pinnedSignerModule,
   sessionOperator,
   webauthnKey,
-} from "../src/index.js";
+} from "../src/kernel.js";
 import { kernelKeyCapability } from "../src/kernel/capabilities.js";
 // pinnedValidatorModule is internal on purpose: a consumer reads the same fact
 // through diagnoseKernelCapability, so the public surface stays unchanged.

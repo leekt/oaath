@@ -27,30 +27,31 @@ import {
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
+import { type OaathChainCapability } from "../../src/advanced.js";
+import { type Oaath, createOAAth } from "../../src/index.js";
 import {
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  type KernelAllChainApproval,
+  type KernelV4AccountReadRequest,
+  type PreparedUserOperation,
   approveKernelPermissionAllChain,
   createKernelRuntime,
+  ecdsaKey,
+  kernelAllChainCapabilityHash,
+  kernelV4Deployment,
+  ownerOperator,
+  sessionOperator,
+} from "../../src/kernel.js";
+import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
-  createOAAth,
-  ecdsaKey,
-  type KernelAllChainApproval,
-  kernelAllChainCapabilityHash,
-  ownerOperator,
-  sessionOperator,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  type KernelV4AccountReadRequest,
-  kernelV4Deployment,
-  type Oaath,
-  type OaathChainCapability,
-  type PreparedUserOperation,
-} from "../../src/index.js";
+} from "../../src/testing.js";
 
 export const CHAIN_ID = 421_614;
 export const ISSUER_URL = "https://issuer.example";

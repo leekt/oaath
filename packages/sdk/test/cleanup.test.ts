@@ -6,17 +6,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  closeEffect,
-  createMemoryCleanupStore,
-  forgetLocalEffect,
-  type OaathCleanupCheckpointStore,
   type OaathCleanupEffect,
+  closeEffect,
+  forgetLocalEffect,
+  runOaathCleanup,
+  signOutEffect,
+} from "../src/advanced.js";
+import {
+  type OaathCleanupCheckpointStore,
   type OaathCleanupEffectName,
   parseCleanupCheckpoint,
   requireNonExtractableKey,
-  runOaathCleanup,
-  signOutEffect,
-} from "../src/index.js";
+} from "../src/persistence.js";
+import { createMemoryCleanupStore } from "../src/testing.js";
 import {
   createClock,
   createMemoryStores,

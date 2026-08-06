@@ -15,7 +15,7 @@ import {
   OaathStoreError,
   OperationStore,
   type StoreRecord,
-} from "../src/index.js";
+} from "../src/advanced.js";
 
 const grantIdentity: GrantIdentity = {
   grantId: "grant-store",

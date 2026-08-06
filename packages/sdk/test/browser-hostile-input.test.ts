@@ -10,25 +10,26 @@
 import { IDBFactory } from "fake-indexeddb";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
+import { createOAAth } from "../src/index.js";
+import { ecdsaKey } from "../src/kernel.js";
 import {
-  captureOaathBinding,
-  ecdsaKey,
+  OAATH_CLEANUP_CHECKPOINT_VERSION,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbOperationStoreAdapter,
+  isCleanupEffectName,
+  openOaathDatabase,
+  parseCleanupCheckpoint,
+  parseClientContext,
+  requireNonExtractableKey,
+} from "../src/persistence.js";
+import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
-  createOAAth,
-  isCleanupEffectName,
-  OAATH_CLEANUP_CHECKPOINT_VERSION,
-  openOaathDatabase,
-  parseCleanupCheckpoint,
-  parseClientContext,
-  requireNonExtractableKey,
-  runOaathCleanup,
-} from "../src/index.js";
+} from "../src/testing.js";
 import {
   bindingInput,
   CALL_DATA,
