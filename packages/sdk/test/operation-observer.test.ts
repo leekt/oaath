@@ -755,6 +755,9 @@ describe("OperationObserver", () => {
       "chain_id",
       "user_operation_receipt",
       "replacement_candidate",
+      // The supersession upgrade attempts its anchor read; the unusable block
+      // falls the observation back to weak pending instead of failing it.
+      "finalized_block",
     ]);
     expect(readsAfterClose).toBe(0);
   });

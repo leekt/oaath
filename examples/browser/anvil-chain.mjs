@@ -17,7 +17,7 @@
  */
 
 import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
-import { decodeEventLog, parseEther, toEventSelector, toHex } from "viem";
+import { decodeEventLog, encodeFunctionData, parseEther, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
 
@@ -152,6 +152,19 @@ export async function createAnvilChain(chainId) {
           // A replacement search needs an indexer; this example submits one
           // operation per lane and never claims to have looked.
           if (request.type === "replacement_candidate") return null;
+          if (request.type === "entry_point_nonce") {
+            // The node's own EntryPoint.getNonce for the operation's 192-bit
+            // key, read at the anchored block the observer names.
+            const data = encodeFunctionData({
+              abi: entryPoint07Abi,
+              functionName: "getNonce",
+              args: [request.account, BigInt(request.nonce) >> 64n],
+            });
+            return await chain.rpc("eth_call", [
+              { to: request.entryPoint, data },
+              `0x${BigInt(request.blockNumber).toString(16)}`,
+            ]);
+          }
           throw new Error(`unsupported observation read ${request.type}`);
         },
         async close() {},

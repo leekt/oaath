@@ -383,6 +383,11 @@ export interface ChainFixtureOptions {
   readonly crashOnSend?: () => boolean;
   /** Withholds inclusion evidence, leaving the operation pending. */
   readonly withholdReceipt?: () => boolean;
+  /**
+   * Serves the EntryPoint nonce for the supersession read: given the
+   * operation's own nonce, return the observed one, or null for no answer.
+   */
+  readonly entryPointNonce?: (operationNonce: string) => string | null;
   /** The account's on-chain sequence when this fixture starts observing. */
   readonly startSequence?: number;
 }
@@ -486,12 +491,20 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       },
     }),
     observation: Object.freeze({
-      async read(request: { readonly type: string; readonly userOperationHash?: `0x${string}` }) {
+      async read(request: {
+        readonly type: string;
+        readonly userOperationHash?: `0x${string}`;
+        readonly nonce?: string;
+      }) {
         if (request.type === "chain_id") return CHAIN_ID;
         if (request.type === "user_operation_receipt") {
           return receipt(request.userOperationHash ?? `0x${"00".repeat(32)}`);
         }
         if (request.type === "replacement_candidate") return null;
+        if (request.type === "entry_point_nonce") {
+          const observed = options.entryPointNonce?.(request.nonce ?? "0") ?? null;
+          return observed === null ? null : `0x${BigInt(observed).toString(16)}`;
+        }
         if (request.type === "transaction_receipt") return transactionReceipt();
         if (request.type === "transaction") {
           const prepared = submitted();

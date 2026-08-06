@@ -13,6 +13,7 @@ import {
   type OperationIdentity,
   type OperationInclusion,
   parseOperation,
+  type SupersededOperation,
   type UserOperationReference,
 } from "@oaath/protocol";
 
@@ -51,6 +52,16 @@ export type OperationObserverReadRequest =
       type: "transaction_receipt";
       chainId: number;
       transactionHash: `0x${string}`;
+    }>
+  | Readonly<{
+      type: "entry_point_nonce";
+      chainId: number;
+      entryPoint: `0x${string}`;
+      account: `0x${string}`;
+      /** The operation's own nonce; the provider reads its 192-bit key. */
+      nonce: string;
+      /** Decimal block height the read must be answered at. */
+      blockNumber: string;
     }>
   | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
   | Readonly<{ type: "block_by_hash"; chainId: number; blockHash: `0x${string}` }>
@@ -136,7 +147,8 @@ export type ObserveOperationResult =
     }>
   | Readonly<{ status: "included"; operation: IncludedOperation }>
   | Readonly<{ status: "finalized"; operation: FinalizedOperation }>
-  | Readonly<{ status: "dropped"; operation: DroppedOperation }>;
+  | Readonly<{ status: "dropped"; operation: DroppedOperation }>
+  | Readonly<{ status: "superseded"; operation: SupersededOperation }>;
 
 export interface OperationObserver {
   readonly observeOperation: (input: unknown) => Promise<ObserveOperationResult>;
@@ -709,6 +721,58 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
         }
       }
 
+      /**
+       * The nonce-advance upgrade: with no receipt and no replacement, a
+       * finalized-anchored EntryPoint nonce read proving the operation's own
+       * key advanced past its sequence conclusively frees the lane. Purely an
+       * upgrade over "receipt_missing" — any failure here falls back to the
+       * weak pending observation, never to a new failure mode.
+       */
+      async function verifySupersession(): Promise<ObserveOperationResult | null> {
+        if (operation.state !== "submission_attempted" && operation.state !== "submitted") {
+          return null;
+        }
+        try {
+          const finalized = parseBlock(
+            await read({ type: "finalized_block", chainId: operation.identity.chainId }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          const blockNumber = decimal(parseQuantity(finalized.number));
+          const nonceValue = await read({
+            type: "entry_point_nonce",
+            chainId: operation.identity.chainId,
+            entryPoint: operation.identity.entryPoint,
+            account: operation.identity.account,
+            nonce: operation.identity.nonce,
+            blockNumber,
+          });
+          if (typeof nonceValue !== "string") return null;
+          const observedNonce = decimal(parseQuantity(nonceValue));
+          const mask = (1n << 64n) - 1n;
+          const observed = BigInt(observedNonce);
+          const own = BigInt(operation.identity.nonce);
+          if (observed >> 64n !== own >> 64n || (observed & mask) <= (own & mask)) {
+            return null;
+          }
+          const next = applyVerifiedOperationObservation(operation, {
+            type: "record_superseded",
+            identity: operation.identity,
+            supersession: {
+              kind: "entry_point_nonce_advanced",
+              observedNonce,
+              blockNumber,
+              blockHash: finalized.hash,
+              observedAt,
+            },
+          });
+          if (next.state !== "superseded") return null;
+          return frozenResult({ status: "superseded", operation: next });
+        } catch {
+          return null;
+        }
+      }
+
       try {
         const chainIdValue = await read({ type: "chain_id", chainId: operation.identity.chainId });
         if (chainIdValue !== operation.identity.chainId) {
@@ -727,7 +791,11 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
             nonce: operation.identity.nonce,
             excludedUserOperationHash: operation.identity.userOperationHash,
           });
-          if (candidateValue === null) return weakPending(operation, "receipt_missing");
+          if (candidateValue === null) {
+            const superseded = await verifySupersession();
+            if (superseded) return superseded;
+            return weakPending(operation, "receipt_missing");
+          }
           const candidate = exact(
             candidateValue,
             ["userOperationHash"],
