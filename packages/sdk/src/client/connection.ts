@@ -638,8 +638,12 @@ export function createConnection(
         );
       }
     }
-    if (record.value.state !== "active") return null;
-    if (input.now() >= record.value.expiresAt) return null;
+    // A revoking Grant resumes too: it authorizes nothing new (sendCalls
+    // requires an active Grant), but its handle is the only path to retrying
+    // `revoke()` until every chain's removal is conclusively observed —
+    // returning null here would strand cleanup forever after a reload.
+    if (record.value.state !== "active" && record.value.state !== "revoking") return null;
+    if (record.value.state === "active" && input.now() >= record.value.expiresAt) return null;
     return handle(record, context.request, context.approvedPolicy, context.installApproval);
   }
 

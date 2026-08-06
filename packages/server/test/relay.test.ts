@@ -792,10 +792,11 @@ describe("URL-only service surface", () => {
       200,
     );
 
-    // The owner-signed revocation operation passes the gate: it is what
-    // removes the installed chain permission, and its root-validation nonce
-    // (top two bytes zero) is a fact no gated session operation can carry.
-    await expectOk(
+    // The gate binds to the caller's proven role, never a payload claim: a
+    // gated client relabeling its operation as a revocation stays refused —
+    // otherwise any invalidated Grant could keep spending relay, RPC, and
+    // fee-payer budget.
+    await expectFailure(
       await harness.handler(
         post("/chains/31337/submissions", CLIENT_TOKEN, {
           request: {
@@ -803,24 +804,26 @@ describe("URL-only service surface", () => {
           },
         }),
       ),
-      200,
+      "relay_capability_invalidated",
     );
-    // A relabeled session operation stays refused: its nonce still names the
-    // permission validation, which the bypass never accepts.
-    const permissionNonce = ((2n << 240n) | 7n).toString(10);
-    await expectFailure(
+    // The owner's console passes: the owner-signed revocation operation is
+    // what removes the installed chain permission, and the owner role is an
+    // authentication fact this deployment verified.
+    await expectOk(
       await harness.handler(
-        post("/chains/31337/submissions", CLIENT_TOKEN, {
+        post("/chains/31337/submissions", OWNER_TOKEN, {
           request: {
-            prepared: {
-              grantId: "grant-1",
-              kind: "revocation",
-              userOperation: { nonce: permissionNonce },
-            },
+            prepared: { grantId: "grant-1", kind: "revocation", userOperation: { nonce: "7" } },
           },
         }),
       ),
-      "relay_capability_invalidated",
+      200,
+    );
+    // Owner authority is scoped to submissions; every other chain port keeps
+    // requiring the client role.
+    await expectFailure(
+      await harness.handler(post("/chains/31337/reads", OWNER_TOKEN, { request: {} })),
+      "relay_forbidden",
     );
   });
 

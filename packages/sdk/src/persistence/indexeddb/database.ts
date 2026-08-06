@@ -22,8 +22,15 @@
  */
 import { persistenceFail } from "../interfaces.js";
 
-/** The name binds the schema version; a new schema takes a new name. */
-export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
+/**
+ * The name binds the schema version; a new schema takes a new name.
+ *
+ * v2: the operation key gained a third `kind` component. A v1 database's
+ * journals would be invisible under three-part keys — an unresolved operation
+ * could be re-submitted instead of observed — so v1 is retired wholesale:
+ * discarded and recreated, never read through the new key shape.
+ */
+export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v2" as const;
 export const OAATH_INDEXEDDB_VERSION = 1;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({

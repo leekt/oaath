@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   advanceOperation,
+  applyVerifiedOperationObservation,
   createOperation,
   type Operation,
   type OperationIdentity,
@@ -643,6 +644,31 @@ describe("OperationObserver", () => {
     expect(again.status).toBe("finalized");
     expect(adapter.requests).toHaveLength(reads);
     expect(Object.keys(observer).sort()).toEqual(["close", "observeOperation"]);
+
+    // A superseded record is terminal too: re-observation returns it directly
+    // instead of re-running the evidence path, which could only downgrade a
+    // conclusive lane release into an inconclusive read failure.
+    const superseded = applyVerifiedOperationObservation(submitted(), {
+      type: "record_superseded",
+      identity,
+      supersession: {
+        kind: "entry_point_nonce_advanced",
+        observedNonce: "8",
+        blockNumber: "32",
+        blockHash: finalityBlockHash,
+        observedAt: 13,
+      },
+    });
+    const supersededAgain = await observer.observeOperation({
+      operation: superseded,
+      observedAt: 14,
+      timeoutMs: 1_000,
+    });
+    expect(supersededAgain).toMatchObject({
+      status: "superseded",
+      operation: { state: "superseded" },
+    });
+    expect(adapter.requests).toHaveLength(reads);
   });
 
   it("continues finality from a durable Operation after recreating store and observer", async () => {
@@ -761,6 +787,46 @@ describe("OperationObserver", () => {
     ]);
     expect(readsAfterClose).toBe(0);
   });
+
+  it.each([
+    ["matching", finalityBlockHash, "superseded"],
+    ["fork-swapped", replacementBlockHash, "pending"],
+  ] as const)(
+    "binds supersession to the finalized block hash (%s rebind)",
+    async (_label, reboundHash, expected) => {
+      // The nonce is read by block number alone, so the block at that number
+      // must still be the exact finalized block the supersession records. A
+      // provider answering the nonce from another fork frees no lane.
+      const finalizedBlock = {
+        number: quantity(0x20),
+        hash: finalityBlockHash,
+        parentHash,
+        transactions: [],
+      };
+      const observer = createOperationObserver({
+        async read(request: OperationObserverReadRequest) {
+          if (request.type === "chain_id") return identity.chainId;
+          if (request.type === "user_operation_receipt") return null;
+          if (request.type === "replacement_candidate") return null;
+          if (request.type === "finalized_block") return finalizedBlock;
+          if (request.type === "entry_point_nonce") return quantity(8);
+          if (request.type === "canonical_block") {
+            return { ...finalizedBlock, hash: reboundHash };
+          }
+          throw new Error(`unexpected read ${request.type}`);
+        },
+        async close() {},
+      });
+      await expect(
+        observer.observeOperation({ operation: submitted(), observedAt: 13, timeoutMs: 1_000 }),
+      ).resolves.toMatchObject(
+        expected === "superseded"
+          ? { status: "superseded", operation: { state: "superseded" } }
+          : { status: "pending", reason: "receipt_missing" },
+      );
+      await observer.close();
+    },
+  );
 
   it("coalesces close, stays closed after success, and retries after close failure", async () => {
     let release: (() => void) | undefined;

@@ -420,14 +420,16 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
 
   // One block per submission, so evidence ordering holds the way a real chain
   // guarantees it: an operation's removal evidence always names a later block
-  // than the installation it removes.
+  // than the installation it removes. `startSequence` shifts the base the same
+  // way it shifts the nonce — a chain resumed later has advanced.
   function blockNumber(index: number): bigint {
-    return INCLUSION_BLOCK + BigInt(index);
+    return INCLUSION_BLOCK + BigInt((options.startSequence ?? 0) + index);
   }
 
   function blockHash(index: number): `0x${string}` {
-    if (index < 0) return PARENT_HASH;
-    return `${BLOCK_HASH.slice(0, -2)}${(index % 256).toString(16).padStart(2, "0")}` as `0x${string}`;
+    const shifted = (options.startSequence ?? 0) + index;
+    if (shifted < 0) return PARENT_HASH;
+    return `${BLOCK_HASH.slice(0, -2)}${(shifted % 256).toString(16).padStart(2, "0")}` as `0x${string}`;
   }
 
   function currentIndex(): number {

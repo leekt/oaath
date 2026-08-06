@@ -468,10 +468,12 @@ function frozenResult<Result extends ObserveOperationResult>(result: Result): Re
   return Object.freeze(result);
 }
 
-function terminalResult(operation: FinalizedOperation | DroppedOperation): ObserveOperationResult {
-  return operation.state === "finalized"
-    ? frozenResult({ status: "finalized", operation })
-    : frozenResult({ status: "dropped", operation });
+function terminalResult(
+  operation: FinalizedOperation | DroppedOperation | SupersededOperation,
+): ObserveOperationResult {
+  if (operation.state === "finalized") return frozenResult({ status: "finalized", operation });
+  if (operation.state === "superseded") return frozenResult({ status: "superseded", operation });
+  return frozenResult({ status: "dropped", operation });
 }
 
 export function createOperationObserver(capabilityValue: unknown): OperationObserver {
@@ -491,7 +493,11 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
     activeObservations += 1;
     try {
       const { operation, observedAt, timeoutMs } = captureObserveInput(inputValue);
-      if (operation.state === "finalized" || operation.state === "dropped") {
+      if (
+        operation.state === "finalized" ||
+        operation.state === "dropped" ||
+        operation.state === "superseded"
+      ) {
         return terminalResult(operation);
       }
       if (operation.state === "prepared") {
@@ -753,6 +759,22 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           const observed = BigInt(observedNonce);
           const own = BigInt(operation.identity.nonce);
           if (observed >> 64n !== own >> 64n || (observed & mask) <= (own & mask)) {
+            return null;
+          }
+          // The nonce was read by number alone, so rebind: the block at that
+          // number must still be the exact finalized block whose hash the
+          // supersession records. A provider answering the nonce from another
+          // fork frees no lane.
+          const rebound = parseBlock(
+            await read({
+              type: "canonical_block",
+              chainId: operation.identity.chainId,
+              blockNumber,
+            }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          if (rebound.hash !== finalized.hash || rebound.number !== finalized.number) {
             return null;
           }
           const next = applyVerifiedOperationObservation(operation, {

@@ -71,7 +71,7 @@ function captureCaller(value: unknown): RelayCaller {
 export async function authenticateCaller(
   authentication: RelayAuthentication,
   request: Request,
-  required: RelayCallerRole,
+  required: RelayCallerRole | readonly RelayCallerRole[],
 ): Promise<RelayCaller> {
   let authenticated: unknown;
   try {
@@ -85,7 +85,8 @@ export async function authenticateCaller(
     return relayFailure("relay_unauthenticated", "caller is not authenticated");
   }
   const caller = captureCaller(authenticated);
-  if (caller.role !== required) {
+  const roles = typeof required === "string" ? [required] : required;
+  if (!roles.includes(caller.role)) {
     return relayFailure("relay_forbidden", "caller may not act in the required role");
   }
   return caller;
