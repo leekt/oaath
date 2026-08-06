@@ -755,6 +755,22 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           if (observed >> 64n !== own >> 64n || (observed & mask) <= (own & mask)) {
             return null;
           }
+          // The nonce was read by number alone, so rebind: the block at that
+          // number must still be the exact finalized block whose hash the
+          // supersession records. A provider answering the nonce from another
+          // fork frees no lane.
+          const rebound = parseBlock(
+            await read({
+              type: "canonical_block",
+              chainId: operation.identity.chainId,
+              blockNumber,
+            }),
+            new WeakSet(),
+            "finality_unproven",
+          );
+          if (rebound.hash !== finalized.hash || rebound.number !== finalized.number) {
+            return null;
+          }
           const next = applyVerifiedOperationObservation(operation, {
             type: "record_superseded",
             identity: operation.identity,

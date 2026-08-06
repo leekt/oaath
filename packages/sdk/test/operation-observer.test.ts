@@ -762,6 +762,46 @@ describe("OperationObserver", () => {
     expect(readsAfterClose).toBe(0);
   });
 
+  it.each([
+    ["matching", finalityBlockHash, "superseded"],
+    ["fork-swapped", replacementBlockHash, "pending"],
+  ] as const)(
+    "binds supersession to the finalized block hash (%s rebind)",
+    async (_label, reboundHash, expected) => {
+      // The nonce is read by block number alone, so the block at that number
+      // must still be the exact finalized block the supersession records. A
+      // provider answering the nonce from another fork frees no lane.
+      const finalizedBlock = {
+        number: quantity(0x20),
+        hash: finalityBlockHash,
+        parentHash,
+        transactions: [],
+      };
+      const observer = createOperationObserver({
+        async read(request: OperationObserverReadRequest) {
+          if (request.type === "chain_id") return identity.chainId;
+          if (request.type === "user_operation_receipt") return null;
+          if (request.type === "replacement_candidate") return null;
+          if (request.type === "finalized_block") return finalizedBlock;
+          if (request.type === "entry_point_nonce") return quantity(8);
+          if (request.type === "canonical_block") {
+            return { ...finalizedBlock, hash: reboundHash };
+          }
+          throw new Error(`unexpected read ${request.type}`);
+        },
+        async close() {},
+      });
+      await expect(
+        observer.observeOperation({ operation: submitted(), observedAt: 13, timeoutMs: 1_000 }),
+      ).resolves.toMatchObject(
+        expected === "superseded"
+          ? { status: "superseded", operation: { state: "superseded" } }
+          : { status: "pending", reason: "receipt_missing" },
+      );
+      await observer.close();
+    },
+  );
+
   it("coalesces close, stays closed after success, and retries after close failure", async () => {
     let release: (() => void) | undefined;
     let attempts = 0;
