@@ -434,7 +434,10 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   // than the installation it removes. `startSequence` shifts the base the same
   // way it shifts the nonce — a chain resumed later has advanced.
   function blockNumber(index: number): bigint {
-    return INCLUSION_BLOCK + BigInt((options.startSequence ?? 0) + (options.blockOffset?.() ?? 0) + index);
+    return (
+      INCLUSION_BLOCK +
+      BigInt((options.startSequence ?? 0) + (options.blockOffset?.() ?? 0) + index)
+    );
   }
 
   function blockHash(index: number): `0x${string}` {

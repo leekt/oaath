@@ -29,8 +29,8 @@
 import {
   advanceGrant,
   type CaptureContext,
-  captureDenseArray,
   type ChainPermissionEvidence,
+  captureDenseArray,
   evaluateGrantPolicyCoverage,
   type FinalizedOperation,
   type Grant,
