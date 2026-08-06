@@ -82,17 +82,84 @@ describe("viem provider over a Grant", () => {
       });
     }
     // Reads and signing are refused, never emulated.
-    for (const method of [
-      "eth_call",
-      "personal_sign",
-      "eth_signTypedData_v4",
-      "wallet_sendCalls",
-    ]) {
+    for (const method of ["eth_call", "personal_sign", "eth_signTypedData_v4"]) {
       await expect(provider.request({ method })).rejects.toMatchObject({
         name: "OaathProviderRpcError",
         code: 4200,
       });
     }
+    await connection.close();
+  });
+
+  it("executes an EIP-5792 bundle and answers status from evidence", async () => {
+    const { realm, connection, grant } = await activeGrant();
+    const provider = oaathProvider({ grant, chain: CHAIN_ID });
+    const account = await grant.account(CHAIN_ID);
+
+    const capabilities = (await provider.request({ method: "wallet_getCapabilities" })) as Record<
+      string,
+      unknown
+    >;
+    expect(capabilities[`0x${CHAIN_ID.toString(16)}`]).toEqual({
+      atomic: { status: "supported" },
+    });
+
+    const { id } = (await provider.request({
+      method: "wallet_sendCalls",
+      params: [
+        {
+          version: "2.0.0",
+          chainId: `0x${CHAIN_ID.toString(16)}`,
+          from: account,
+          atomicRequired: true,
+          calls: [{ to: TARGET, data: CALL_DATA }],
+        },
+      ],
+    })) as { id: string };
+    expect(id).toMatch(/^0x[0-9a-f]{32}$/u);
+    expect(realm.chain.sends).toHaveLength(1);
+
+    const status = (await provider.request({
+      method: "wallet_getCallsStatus",
+      params: [id],
+    })) as {
+      status: number;
+      atomic: boolean;
+      receipts: readonly Record<string, unknown>[];
+    };
+    expect(status.status).toBe(200);
+    expect(status.atomic).toBe(true);
+    const receipt = status.receipts[0];
+    if (!receipt) throw new Error("expected one receipt");
+    // The receipt is read from the chain and bound to the operation's own
+    // inclusion evidence — real transaction hash, real block, real logs.
+    expect(receipt.status).toBe("0x1");
+    expect(receipt.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(receipt.blockNumber).toBe("0x14");
+    expect(receipt.gasUsed).toBe("0xa");
+    expect(Array.isArray(receipt.logs)).toBe(true);
+
+    // An unknown id is a refusal, not an empty success.
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: ["0xdeadbeef"] }),
+    ).rejects.toMatchObject({ code: -32602 });
+    await connection.close();
+  });
+
+  it("exposes the terminal receipt on the operation handle, evidence-bound", async () => {
+    const { connection, grant } = await activeGrant();
+    const operation = await grant.sendCalls({
+      chain: CHAIN_ID,
+      calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+    });
+    await operation.wait();
+    const receipt = await operation.receipt();
+    expect(receipt.status).toBe("success");
+    expect(receipt.blockNumber).toBe("20");
+    expect(receipt.gasUsed).toBe("10");
+    expect(receipt.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(receipt.logs.length).toBeGreaterThan(0);
+    expect(receipt.logs[0]?.topics[0]).toMatch(/^0x[0-9a-f]{64}$/u);
     await connection.close();
   });
 

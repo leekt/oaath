@@ -23,7 +23,9 @@ export type {
 } from "./client/grant-handle.js";
 export type {
   OaathOperationHandle,
+  OaathOperationLog,
   OaathOperationOutcome,
+  OaathOperationReceipt,
   OaathOperationStatus,
 } from "./client/operation-handle.js";
 export type { Oaath } from "./create-oaath.js";

@@ -909,6 +909,7 @@ export function createGrantHandle(
       timeoutMs: SUBMISSION_TIMEOUT_MS,
       now: input.now,
       initial: result,
+      observation: (readRequest) => chain.observation.read(readRequest),
     });
     handles.push(handle);
     return handle;

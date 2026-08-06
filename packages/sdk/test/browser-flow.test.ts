@@ -261,6 +261,7 @@ describe("browser golden path", () => {
       "close",
       "observe",
       "outcome",
+      "receipt",
       "wait",
     ]);
     // No permission id, enable envelope, journal, revision, or nonce surface.
