@@ -77,6 +77,7 @@ const permission = {
   },
   requestedAt: 100,
   expiresAt: 200,
+  sessionSigner: null,
 };
 
 const authorizationRequest = {
