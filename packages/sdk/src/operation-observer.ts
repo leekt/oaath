@@ -63,6 +63,22 @@ export type OperationObserverReadRequest =
       /** Decimal block height the read must be answered at. */
       blockNumber: string;
     }>
+  | Readonly<{
+      /**
+       * Whether the permission's signer module is installed on the account —
+       * Kernel's `isModuleInstalled(6, signer, permissionId)`, true exactly
+       * while the permission validation is live. Grant revocation uses this to
+       * observe a completed removal it could not sign itself.
+       */
+      type: "kernel_permission_installed";
+      chainId: number;
+      account: `0x${string}`;
+      /** The permission's signer module address. */
+      signer: `0x${string}`;
+      permissionId: `0x${string}`;
+      /** Decimal block height the read must be answered at. */
+      blockNumber: string;
+    }>
   | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
   | Readonly<{ type: "block_by_hash"; chainId: number; blockHash: `0x${string}` }>
   | Readonly<{ type: "finalized_block"; chainId: number }>

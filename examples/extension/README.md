@@ -20,7 +20,9 @@ per origin, the owner approves the scope on their own device, and
 - **URL mode never holds owner authority.** Pairing routes the owner's review
   through the service's authorization flow (the phone); revocation from the
   extension invalidates the capability and leaves the Grant durably `revoking`
-  until an owner-signed removal completes it.
+  until the owner's console removes the chain permission (through the relay's
+  owner lane) — the extension then completes to `revoked` by observing the
+  chain's own evidence that the permission is absent.
 
 ## Build and load
 

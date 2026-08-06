@@ -381,6 +381,17 @@ export interface ChainFixtureOptions {
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
   /** Injected crash inside the send boundary, after the transport accepted it. */
   readonly crashOnSend?: () => boolean;
+  /**
+   * Answers the `kernel_permission_installed` observation read: `false` means
+   * the permission's signer module is conclusively absent (removed), `true`
+   * still installed, `null`/absent no conclusive answer.
+   */
+  readonly permissionInstalled?: () => boolean | null;
+  /**
+   * Extra blocks the chain advanced beyond its submissions — e.g. an owner
+   * console's out-of-band removal transaction.
+   */
+  readonly blockOffset?: () => number;
   /** Withholds inclusion evidence, leaving the operation pending. */
   readonly withholdReceipt?: () => boolean;
   /**
@@ -423,11 +434,14 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   // than the installation it removes. `startSequence` shifts the base the same
   // way it shifts the nonce — a chain resumed later has advanced.
   function blockNumber(index: number): bigint {
-    return INCLUSION_BLOCK + BigInt((options.startSequence ?? 0) + index);
+    return (
+      INCLUSION_BLOCK +
+      BigInt((options.startSequence ?? 0) + (options.blockOffset?.() ?? 0) + index)
+    );
   }
 
   function blockHash(index: number): `0x${string}` {
-    const shifted = (options.startSequence ?? 0) + index;
+    const shifted = (options.startSequence ?? 0) + (options.blockOffset?.() ?? 0) + index;
     if (shifted < 0) return PARENT_HASH;
     return `${BLOCK_HASH.slice(0, -2)}${(shifted % 256).toString(16).padStart(2, "0")}` as `0x${string}`;
   }
@@ -525,6 +539,9 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
         if (request.type === "entry_point_nonce") {
           const observed = options.entryPointNonce?.(request.nonce ?? "0") ?? null;
           return observed === null ? null : `0x${BigInt(observed).toString(16)}`;
+        }
+        if (request.type === "kernel_permission_installed") {
+          return options.permissionInstalled?.() ?? null;
         }
         if (request.type === "transaction_receipt") return transactionReceipt();
         if (request.type === "transaction") {

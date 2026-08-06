@@ -165,6 +165,31 @@ export async function createAnvilChain(chainId) {
               `0x${BigInt(request.blockNumber).toString(16)}`,
             ]);
           }
+          if (request.type === "kernel_permission_installed") {
+            // Kernel's own isModuleInstalled(6, signer, permissionId) at the
+            // anchored block: true exactly while the permission validation is
+            // live. Anything but a well-formed boolean is no answer.
+            const data = encodeFunctionData({
+              abi: [
+                {
+                  type: "function",
+                  name: "isModuleInstalled",
+                  stateMutability: "view",
+                  inputs: [{ type: "uint256" }, { type: "address" }, { type: "bytes" }],
+                  outputs: [{ type: "bool" }],
+                },
+              ],
+              functionName: "isModuleInstalled",
+              args: [6n, request.signer, request.permissionId],
+            });
+            const answer = await chain.rpc("eth_call", [
+              { to: request.account, data },
+              `0x${BigInt(request.blockNumber).toString(16)}`,
+            ]);
+            if (answer === `0x${"0".repeat(64)}`) return false;
+            if (answer === `0x${"0".repeat(63)}1`) return true;
+            return null;
+          }
           throw new Error(`unsupported observation read ${request.type}`);
         },
         async close() {},
