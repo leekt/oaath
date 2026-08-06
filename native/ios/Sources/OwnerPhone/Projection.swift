@@ -25,7 +25,7 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v2"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v1"
 
 /// The bounded 8-character base64url match code the phone renders.
 public struct MatchCode: Equatable, Sendable {
@@ -146,6 +146,20 @@ public struct OwnerPhoneAccountIdentity: Equatable, Sendable {
     }
 }
 
+/// Where the session key lives when it is not the page's own: the remote
+/// trust model the owner is asked to approve. The request hash binds it, so
+/// approving this display approves exactly this custody.
+public struct OwnerPhoneSessionSigner: Equatable, Sendable {
+    /// `application_backend` or `oaath_hosted`.
+    public let mode: String
+    public let providerId: String
+
+    public init(mode: String, providerId: String) {
+        self.mode = mode
+        self.providerId = providerId
+    }
+}
+
 /// The consent facts of an `@oaath/protocol` permission request: every fact
 /// that determines who receives authority, over which account, and under what
 /// limits.
@@ -154,6 +168,8 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     public let account: OwnerPhoneAccountIdentity
     /// The session credential that receives the scoped authority.
     public let operatorCredential: OwnerPhoneCredential
+    /// Remote session-key custody, or nil for frontend custody.
+    public let sessionSigner: OwnerPhoneSessionSigner?
     /// Pinned `"all"` — the only chain scope the protocol issues in 0.1.0.
     public let chainScope: String
     public let calls: [OwnerPhonePermittedCall]
@@ -169,6 +185,7 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
         application: OwnerPhoneApplicationIdentity,
         account: OwnerPhoneAccountIdentity,
         operatorCredential: OwnerPhoneCredential,
+        sessionSigner: OwnerPhoneSessionSigner?,
         chainScope: String,
         calls: [OwnerPhonePermittedCall],
         requestedAt: Int,
@@ -180,6 +197,7 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
         self.application = application
         self.account = account
         self.operatorCredential = operatorCredential
+        self.sessionSigner = sessionSigner
         self.chainScope = chainScope
         self.calls = calls
         self.requestedAt = requestedAt
@@ -287,6 +305,21 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         )
     }
 
+    private static func decodeSessionSigner(_ value: Any?) throws -> OwnerPhoneSessionSigner? {
+        if value is NSNull { return nil }
+        let object = try Wire.object(value, label: "sessionSigner")
+        try Wire.exactKeys(object, ["mode", "providerId"], label: "sessionSigner")
+        guard let mode = object["mode"] as? String,
+            mode == "application_backend" || mode == "oaath_hosted"
+        else {
+            throw OwnerPhoneWireError.invalidField("sessionSigner mode")
+        }
+        return OwnerPhoneSessionSigner(
+            mode: mode,
+            providerId: try Wire.text(
+                object["providerId"], maximum: WireLimits.identifier, label: "sessionSigner providerId"))
+    }
+
     private static func decodeScope(_ value: Any?) throws -> OwnerPhoneScope {
         let object = try Wire.object(value, label: "scope")
         switch object["kind"] as? String {
@@ -295,8 +328,8 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 object,
                 [
                     "kind", "decision", "application", "account", "operatorCredential",
-                    "chainScope", "calls", "requestedAt", "expiresAt", "policyValidAfter",
-                    "policyValidUntil", "perChainOperationLimit",
+                    "sessionSigner", "chainScope", "calls", "requestedAt", "expiresAt",
+                    "policyValidAfter", "policyValidUntil", "perChainOperationLimit",
                 ],
                 label: "scope")
             guard object["decision"] as? String == "approve-or-reject" else {
@@ -320,6 +353,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 account: try decodeAccount(object["account"]),
                 operatorCredential: try decodeCredential(
                     object["operatorCredential"], label: "operatorCredential"),
+                sessionSigner: try decodeSessionSigner(object["sessionSigner"]),
                 chainScope: "all",
                 calls: try entries.map(decodeCall),
                 requestedAt: try Wire.timestamp(object["requestedAt"], label: "requestedAt"),

@@ -232,6 +232,7 @@ describe("experimental owner-phone projection", () => {
         ownerCredential: { kind: "ecdsa", address: `0x${"33".repeat(20)}` },
       },
       operatorCredential: { kind: "ecdsa", address: `0x${"44".repeat(20)}` },
+      sessionSigner: null,
       chainScope: "all",
       calls: [
         {
@@ -246,6 +247,24 @@ describe("experimental owner-phone projection", () => {
       policyValidAfter: 100,
       policyValidUntil: 190,
       perChainOperationLimit: 10,
+    });
+  });
+
+  it("projects remote session custody as an approvable consent fact", async () => {
+    // The custody model rides the same request hash the decision commits to,
+    // so displaying it here is what makes approving it meaningful.
+    const scope = JSON.parse(PERMISSION_SCOPE) as Record<string, unknown>;
+    const fixed = await fixture(
+      JSON.stringify({
+        ...scope,
+        sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary" },
+      }),
+    );
+    const projection = await project(fixed);
+    expect(projection.scope).toMatchObject({
+      kind: "permission-request",
+      decision: "approve-or-reject",
+      sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary" },
     });
   });
 

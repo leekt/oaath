@@ -23,15 +23,15 @@
 import { persistenceFail } from "../interfaces.js";
 
 /**
- * The name binds the schema version; a new schema takes a new name.
- *
- * v2: the operation key gained a third `kind` component. A v1 database's
- * journals would be invisible under three-part keys — an unresolved operation
- * could be re-submitted instead of observed — so v1 is retired wholesale:
- * discarded and recreated, never read through the new key shape.
+ * One name, one current schema. Pre-release there is no migration story: a
+ * schema change bumps the numeric IndexedDB version below, and the upgrade
+ * handler wipes every store — stale data from an older shape is discarded
+ * wholesale, never read through the current one (an old-shape journal read
+ * through a new key would be silently invisible, which is worse than gone).
  */
-export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v2" as const;
-export const OAATH_INDEXEDDB_VERSION = 1;
+export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
+/** Bumped on any schema change; the upgrade wipes, it never migrates. */
+export const OAATH_INDEXEDDB_VERSION = 2;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({
   grants: "grants",

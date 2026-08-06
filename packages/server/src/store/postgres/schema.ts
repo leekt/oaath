@@ -8,7 +8,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v2" as const;
+export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v1" as const;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 

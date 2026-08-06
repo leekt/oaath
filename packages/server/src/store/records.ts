@@ -21,7 +21,7 @@ import { type RelayErrorCode, relayFailure } from "../relay/errors.js";
 export const OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION =
   "oaath.authorization-request-record/v1" as const;
 export const OAATH_AUTHORIZATION_DECISION_RECORD_VERSION =
-  "oaath.authorization-decision-record/v2" as const;
+  "oaath.authorization-decision-record/v1" as const;
 export const OAATH_AUTHORIZATION_CODE_RECORD_VERSION =
   "oaath.authorization-code-record/v1" as const;
 export const OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION =
