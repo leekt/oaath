@@ -106,6 +106,45 @@ describe("service bootstrap", () => {
     );
   });
 
+  it("defaults absent session-signer custody to frontend and captures declared custody exactly", () => {
+    // Absence means the one custody this document version ever implied.
+    expect(parseServiceBootstrap(document()).sessionSigner).toEqual({
+      mode: "frontend",
+      providerId: null,
+    });
+    expect(
+      parseServiceBootstrap({
+        ...document(),
+        sessionSigner: { mode: "frontend", providerId: null },
+      }).sessionSigner,
+    ).toEqual({ mode: "frontend", providerId: null });
+    for (const mode of ["application_backend", "oaath_hosted"] as const) {
+      const bootstrap = parseServiceBootstrap({
+        ...document(),
+        sessionSigner: { mode, providerId: "kms-primary" },
+      });
+      expect(bootstrap.sessionSigner).toEqual({ mode, providerId: "kms-primary" });
+      expect(Object.isFrozen(bootstrap.sessionSigner)).toBe(true);
+    }
+  });
+
+  it.each([
+    // Custody modes are different trust models; an unknown one rejects the
+    // whole document instead of composing a realm on a substituted model.
+    [{ mode: "owner_hosted", providerId: "kms-primary" }],
+    [{ mode: "frontend", providerId: "kms-primary" }],
+    [{ mode: "oaath_hosted", providerId: null }],
+    [{ mode: "oaath_hosted", providerId: "" }],
+    [{ mode: "oaath_hosted" }],
+    [{ mode: "oaath_hosted", providerId: "kms-primary", extra: true }],
+    [null],
+    ["frontend"],
+  ])("refuses a malformed or unknown session-signer declaration", (sessionSigner) => {
+    expect(() => parseServiceBootstrap({ ...document(), sessionSigner })).toThrowError(
+      expect.objectContaining({ code: "service_bootstrap_invalid" }),
+    );
+  });
+
   it("refuses a stray owner validator for a non-ecdsa owner credential", () => {
     const base = document();
     const account = base.account as Record<string, unknown>;

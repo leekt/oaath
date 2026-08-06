@@ -234,6 +234,8 @@ export type {
   ServiceBootstrap,
   ServiceBootstrapApplication,
   ServiceBootstrapChain,
+  ServiceBootstrapSessionSigner,
+  ServiceBootstrapSessionSignerMode,
 } from "./service-bootstrap.js";
 export {
   captureServiceBootstrap,

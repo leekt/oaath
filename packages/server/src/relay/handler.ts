@@ -110,6 +110,12 @@ export interface RelayBootstrapConfiguration {
   readonly userHandle: string;
   readonly account: unknown;
   readonly ownerValidator: `0x${string}` | null;
+  /**
+   * Declared session-key custody (`{mode, providerId}`), or absent for
+   * frontend custody. The protocol parser owns the exact vocabulary; a
+   * misconfigured mode fails relay construction, never a client's request.
+   */
+  readonly sessionSigner?: unknown;
 }
 
 export interface RelayHandlerOptions {
@@ -273,6 +279,7 @@ function captureOptions(value: unknown): CapturedOptions {
           usage: port.usage !== null,
           feePayer: port.feePayer,
         })),
+        ...(identity.sessionSigner !== undefined ? { sessionSigner: identity.sessionSigner } : {}),
       });
     } catch {
       relayFailure("relay_internal", "relay bootstrap configuration is invalid");

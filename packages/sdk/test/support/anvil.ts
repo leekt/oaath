@@ -58,6 +58,17 @@ export interface P256ValidatorFixture extends ModuleFixture {
   precompile: `0x${string}`;
 }
 
+/** Not an ERC-7579 module: a verifier singleton a pinned module staticcalls. */
+export interface VerifierFixture {
+  repository: string;
+  commit: string;
+  source: string;
+  note: string;
+  expectedAddress: `0x${string}`;
+  runtimeCodeHash: `0x${string}`;
+  deploymentInput: Hex;
+}
+
 export interface DeploymentFixture {
   entryPoint: { deploymentSalt: Hex; artifact: string };
   kernelUups: { deploymentInput: Hex };
@@ -67,6 +78,8 @@ export interface DeploymentFixture {
   p256Validator: P256ValidatorFixture;
   ecdsaSigner: ModuleFixture;
   webAuthnSigner: ModuleFixture;
+  /** The Daimo P-256 verifier the pinned WebAuthnSigner depends on. */
+  p256Verifier: VerifierFixture;
   callPolicy: ModuleFixture;
   timestampPolicy: ModuleFixture;
   rateLimitPolicy: ModuleFixture;
