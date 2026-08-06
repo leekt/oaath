@@ -89,6 +89,23 @@ export interface OperationDropEvidence {
   }>;
 }
 
+/**
+ * A verified EntryPoint nonce read proving the operation's own 192-bit nonce
+ * key advanced past its sequence. From that moment this identity can never be
+ * included at its nonce, so the lane it occupied is conclusively free — while
+ * whether it executed before the advance stays deliberately unproven: no
+ * receipt was readable, and no replacement was observed. Weaker than a drop,
+ * stronger than a timeout; it never authorizes resubmitting the identity.
+ */
+export interface OperationSupersession {
+  readonly kind: "entry_point_nonce_advanced";
+  /** The full nonce EntryPoint returned for the operation's own key. */
+  readonly observedNonce: string;
+  readonly blockNumber: string;
+  readonly blockHash: `0x${string}`;
+  readonly observedAt: number;
+}
+
 interface OperationCommon {
   readonly version: typeof OAATH_OPERATION_RECORD_VERSION;
   readonly identity: Readonly<OperationIdentity>;
@@ -139,13 +156,22 @@ export interface DroppedOperation extends OperationCommon {
   readonly observation: null;
 }
 
+export interface SupersededOperation extends OperationCommon {
+  readonly state: "superseded";
+  readonly attemptedAt: number;
+  readonly submittedAt: number | null;
+  readonly supersession: Readonly<OperationSupersession>;
+  readonly observation: null;
+}
+
 export type Operation =
   | PreparedOperation
   | SubmissionAttemptedOperation
   | SubmittedOperation
   | IncludedOperation
   | FinalizedOperation
-  | DroppedOperation;
+  | DroppedOperation
+  | SupersededOperation;
 
 export type OperationTransition =
   | Readonly<{
@@ -191,6 +217,11 @@ export type VerifiedOperationObservationTransition =
       type: "record_dropped";
       identity: OperationIdentity;
       drop: OperationDropEvidence;
+    }>
+  | Readonly<{
+      type: "record_superseded";
+      identity: OperationIdentity;
+      supersession: OperationSupersession;
     }>;
 
 type InternalOperationTransition = OperationTransition | VerifiedOperationObservationTransition;
@@ -399,6 +430,51 @@ function parseFinality(
     blockNumber: uint256(record.blockNumber, "operation finality blockNumber", code),
     blockHash: hash(record.blockHash, "operation finality blockHash", code),
     observedAt: safeInteger(record.observedAt, "operation finality observedAt", code),
+  });
+}
+
+const UINT64_MASK = (1n << 64n) - 1n;
+
+/** The nonce-advance rule: same 192-bit key, strictly greater sequence. */
+function requireNonceAdvance(
+  observedNonce: string,
+  identityNonce: string,
+  code: OperationErrorCode,
+): void {
+  const observed = BigInt(observedNonce);
+  const own = BigInt(identityNonce);
+  if (observed >> 64n !== own >> 64n) {
+    invalid(code, "operation supersession nonce is for another key");
+  }
+  if ((observed & UINT64_MASK) <= (own & UINT64_MASK)) {
+    invalid(code, "operation supersession nonce did not advance past the operation");
+  }
+}
+
+function parseSupersession(
+  value: unknown,
+  identity: Readonly<OperationIdentity>,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationSupersession> {
+  const record = exactRecord(
+    value,
+    ["kind", "observedNonce", "blockNumber", "blockHash", "observedAt"],
+    "operation supersession",
+    code,
+    context,
+  );
+  if (record.kind !== "entry_point_nonce_advanced") {
+    return invalid(code, "operation supersession kind is unsupported");
+  }
+  const observedNonce = uint256(record.observedNonce, "operation supersession nonce", code);
+  requireNonceAdvance(observedNonce, identity.nonce, code);
+  return Object.freeze({
+    kind: "entry_point_nonce_advanced",
+    observedNonce,
+    blockNumber: uint256(record.blockNumber, "operation supersession blockNumber", code),
+    blockHash: hash(record.blockHash, "operation supersession blockHash", code),
+    observedAt: safeInteger(record.observedAt, "operation supersession observedAt", code),
   });
 }
 
@@ -692,6 +768,38 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
     });
   }
 
+  if (state === "superseded") {
+    const record = exactCapturedRecord(
+      captured,
+      [...commonKeys, "attemptedAt", "submittedAt", "supersession"],
+      "superseded operation record",
+      code,
+    );
+    const base = baseRecord(record, code, context);
+    const attemptedAt = safeInteger(record.attemptedAt, "operation attemptedAt", code);
+    const submittedAt = parseNullableTime(record.submittedAt, "operation submittedAt", code);
+    const supersession = parseSupersession(record.supersession, base.identity, code, context);
+    const minimumRevision = 2 + (submittedAt === null ? 0 : 1);
+    assertTimeOrder(base.revision >= minimumRevision, "superseded operation revision", code);
+    assertTimeOrder(
+      attemptedAt >= base.preparedAt &&
+        (submittedAt === null || submittedAt >= attemptedAt) &&
+        supersession.observedAt >= (submittedAt ?? attemptedAt) &&
+        base.updatedAt === supersession.observedAt,
+      "superseded operation time",
+      code,
+    );
+    assertTimeOrder(base.observation === null, "superseded operation observation", code);
+    return Object.freeze({
+      ...base,
+      state,
+      attemptedAt,
+      submittedAt,
+      supersession,
+      observation: null,
+    });
+  }
+
   return invalid(code, "operation record state is unsupported");
 }
 
@@ -740,7 +848,11 @@ export function createOperation(value: unknown): PreparedOperation {
 
 export function operationOccupiesLane(value: unknown): boolean {
   const operation = parseOperation(value);
-  return operation.state !== "finalized" && operation.state !== "dropped";
+  return (
+    operation.state !== "finalized" &&
+    operation.state !== "dropped" &&
+    operation.state !== "superseded"
+  );
 }
 
 function parseTransition(value: unknown): InternalOperationTransition {
@@ -866,6 +978,21 @@ function parseTransition(value: unknown): InternalOperationTransition {
     });
   }
 
+  if (type === "record_superseded") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "supersession"],
+      "superseded transition",
+      code,
+    );
+    const identity = parseIdentity(record.identity, code, context);
+    return Object.freeze({
+      type,
+      identity,
+      supersession: parseSupersession(record.supersession, identity, code, context),
+    });
+  }
+
   return invalid(code, "operation transition type is unsupported");
 }
 
@@ -966,7 +1093,11 @@ function advanceParsedOperation(
 
   if (transition.type === "record_pending" || transition.type === "record_unreadable") {
     if (operation.state === "prepared") return forbidden(operation, transition);
-    if (operation.state === "finalized" || operation.state === "dropped") {
+    if (
+      operation.state === "finalized" ||
+      operation.state === "dropped" ||
+      operation.state === "superseded"
+    ) {
       return operation;
     }
     requireTime(operation, transition.observedAt);
@@ -1079,6 +1210,28 @@ function advanceParsedOperation(
       priorInclusion,
       drop: transition.drop,
       updatedAt: transition.drop.replacement.finality.observedAt,
+      observation: null,
+    });
+  }
+
+  if (transition.type === "record_superseded") {
+    // Only a sent-but-unproven operation can be superseded: a prepared one
+    // was never exposed, and included/terminal states carry stronger evidence
+    // this weaker fact may not override.
+    if (operation.state !== "submission_attempted" && operation.state !== "submitted") {
+      return forbidden(operation, transition);
+    }
+    requireTime(operation, transition.supersession.observedAt);
+    return Object.freeze({
+      version: operation.version,
+      identity: operation.identity,
+      revision: nextRevision(operation),
+      state: "superseded",
+      preparedAt: operation.preparedAt,
+      attemptedAt: operation.attemptedAt,
+      submittedAt: operation.state === "submitted" ? operation.submittedAt : null,
+      supersession: transition.supersession,
+      updatedAt: transition.supersession.observedAt,
       observation: null,
     });
   }
