@@ -649,7 +649,7 @@ describe("OperationObserver", () => {
     const directory = await mkdtemp(join(tmpdir(), "oaath-observer-reload-"));
     temporaryDirectories.push(directory);
     const filePath = join(directory, "store.db");
-    const key = { grantId: identity.grantId, chainId: identity.chainId };
+    const key = { grantId: identity.grantId, chainId: identity.chainId, kind: identity.kind };
     const firstStore = createSqliteOperationStore(filePath);
     await firstStore.compareAndSwap({
       key,

@@ -181,9 +181,9 @@ describe("cleanup coordinator", () => {
 
     const result = await realm.oaath.disconnect(grant);
     expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
-    // Installed chain permissions await owner-signed removal, so the Grant
-    // stays durably revoking; the capability itself is already dead.
-    expect(grant.state).toBe("revoking");
+    // This realm holds the owner's signing capability, so revoke removed the
+    // installed chain permission with an owner-signed operation and completed.
+    expect(grant.state).toBe("revoked");
     expect(realm.signOutCalls()).toBe(1);
     expect(tracked.deletedKeys).toEqual(["session-key"]);
     expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);

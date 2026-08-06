@@ -107,6 +107,7 @@ describe("IndexedDB realm recreation", () => {
     const journal = await new OperationStore(secondStores.operations).get({
       grantId,
       chainId: CHAIN_ID,
+      kind: "execution",
     });
     expect(journal?.value.state).toBe("finalized");
     expect(journal?.value.identity.userOperationHash).toBe(submittedHash);
@@ -155,7 +156,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toMatchObject({ status: "conflict" });
     // The loser wrote nothing: the winning terminal state stands.
     const latest = await otherStore.get(grantId);
-    expect(latest?.value.state).toBe("revoking");
+    expect(latest?.value.state).toBe("revoked");
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 

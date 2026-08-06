@@ -703,9 +703,20 @@ describe("aggregate store boundary", () => {
     await expectStoreError(
       () =>
         store.compareAndSwap({
-          key: { grantId: grantIdentity.grantId, chainId: 1 },
+          key: { grantId: grantIdentity.grantId, chainId: 1, kind: "execution" },
           expectedStoreRevision: null,
           next: preparedOperation(2),
+        }),
+      "store_key_mismatch",
+    );
+    // Kind is a lane axis too: a revocation-lane key never accepts an
+    // execution Operation.
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: { grantId: grantIdentity.grantId, chainId: 31_337, kind: "revocation" },
+          expectedStoreRevision: null,
+          next: preparedOperation(),
         }),
       "store_key_mismatch",
     );

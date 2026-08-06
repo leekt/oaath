@@ -1,10 +1,11 @@
 /**
  * Per-chain Operation records in IndexedDB.
  *
- * The key is the composite `[grantId, chainId]`, so no separator character in a
- * grantId can make two lanes collide, and one chain's journal can never be read
- * or written under another chain's key. Compare-and-swap on the stored revision
- * happens inside one `readwrite` transaction.
+ * The key is the composite `[grantId, chainId, kind]`, so no separator
+ * character in a grantId can make two lanes collide, one chain's journal can
+ * never be read or written under another chain's key, and execution and
+ * revocation work hold independent lanes. Compare-and-swap on the stored
+ * revision happens inside one `readwrite` transaction.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -23,7 +24,10 @@ function laneKey(value: Readonly<OperationStoreKey>): IDBValidKey {
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return persistenceFail("persistence_input_invalid", "IndexedDB chainId must be positive");
   }
-  return [persistenceId(value.grantId, "IndexedDB grantId"), chainId];
+  if (value.kind !== "execution" && value.kind !== "revocation") {
+    return persistenceFail("persistence_input_invalid", "IndexedDB kind must name a lane");
+  }
+  return [persistenceId(value.grantId, "IndexedDB grantId"), chainId, value.kind];
 }
 
 export function createIndexedDbOperationStoreAdapter(

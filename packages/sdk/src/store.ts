@@ -3,6 +3,7 @@ import {
   exactRecord as exactRecordValue,
   type Grant,
   type Operation,
+  type OperationKind,
   operationOccupiesLane,
   parseGrant,
   parseOperation,
@@ -10,7 +11,7 @@ import {
 } from "@oaath/protocol";
 
 export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v3" as const;
-export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v1" as const;
+export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v2" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
@@ -62,9 +63,16 @@ export interface GrantStoreAdapter {
   close(): Promise<unknown>;
 }
 
+/**
+ * One lane per authority: execution work is session-signed and revocation work
+ * is owner-signed, so the two kinds never queue behind or replace one another —
+ * a revocation can proceed while an execution is still in flight on the same
+ * chain.
+ */
 export interface OperationStoreKey {
   readonly grantId: string;
   readonly chainId: number;
+  readonly kind: OperationKind;
 }
 
 export interface OperationStoreAdapter {
@@ -167,16 +175,24 @@ function canonicalChainId(value: unknown): number {
   return value;
 }
 
+function canonicalOperationKind(value: unknown): OperationKind {
+  if (value !== "execution" && value !== "revocation") {
+    return invalid("store_input_invalid", "store kind must be execution or revocation");
+  }
+  return value;
+}
+
 function parseOperationKey(value: unknown): Readonly<OperationStoreKey> {
   const record = exactRecord(
     value,
-    ["grantId", "chainId"],
+    ["grantId", "chainId", "kind"],
     "Operation store key",
     "store_input_invalid",
   );
   return Object.freeze({
     grantId: canonicalGrantId(record.grantId),
     chainId: canonicalChainId(record.chainId),
+    kind: canonicalOperationKind(record.kind),
   });
 }
 
@@ -468,7 +484,9 @@ export class OperationStore {
         version: OAATH_OPERATION_STORE_RECORD_VERSION,
         parse: parseOperation,
         keyMatches: (operation, key) =>
-          operation.identity.grantId === key.grantId && operation.identity.chainId === key.chainId,
+          operation.identity.grantId === key.grantId &&
+          operation.identity.chainId === key.chainId &&
+          operation.identity.kind === key.kind,
         updatedAt: (operation) => operation.updatedAt,
         validateNext: (current, next) => {
           if (
@@ -504,7 +522,11 @@ export class OperationStore {
     } catch {
       return invalid("store_input_invalid", "next Operation record is invalid");
     }
-    if (next.identity.grantId !== key.grantId || next.identity.chainId !== key.chainId) {
+    if (
+      next.identity.grantId !== key.grantId ||
+      next.identity.chainId !== key.chainId ||
+      next.identity.kind !== key.kind
+    ) {
       return invalid("store_key_mismatch", "next Operation belongs to another key");
     }
     return this.#store.compareAndSwap(key, expected, next);

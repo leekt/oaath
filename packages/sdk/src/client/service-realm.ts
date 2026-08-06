@@ -407,6 +407,10 @@ export function createServiceRealm<Realm extends object>(
           );
         }
       });
+      // The fetch runs concurrently with session loading below; this keeps a
+      // rejection observed during that window. The real `await bootstrap`
+      // still throws to the caller.
+      bootstrap.catch(() => undefined);
       const stores = (input.stores ?? (await defaultStores())) as {
         readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
         readonly keys: Parameters<typeof loadServiceSession>[0]["stores"]["keys"];

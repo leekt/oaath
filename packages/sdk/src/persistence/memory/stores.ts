@@ -28,14 +28,17 @@ function assertOpen(closed: boolean): void {
   if (closed) persistenceFail("persistence_unavailable", "memory store is closed");
 }
 
-function operationKey(input: Readonly<{ grantId: string; chainId: number }>): string {
+function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: string }>): string {
   const chainId = input.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return persistenceFail("persistence_input_invalid", "memory chainId must be positive");
   }
+  if (input.kind !== "execution" && input.kind !== "revocation") {
+    return persistenceFail("persistence_input_invalid", "memory kind must name a lane");
+  }
   // The array form keeps a grantId containing a separator from colliding with
   // another lane, the same way the IndexedDB backend uses a composite key.
-  return JSON.stringify([persistenceId(input.grantId, "memory grantId"), chainId]);
+  return JSON.stringify([persistenceId(input.grantId, "memory grantId"), chainId, input.kind]);
 }
 
 function compareAndSwap(

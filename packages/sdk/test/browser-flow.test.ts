@@ -52,22 +52,43 @@ describe("browser golden path", () => {
     const stored = await new OperationStore(realm.stores.operations).get({
       grantId: prepared.grantId,
       chainId: CHAIN_ID,
+      kind: "execution",
     });
     expect(stored?.value.state).toBe("finalized");
     expect(stored?.value.identity.userOperationHash).toBe(prepared.userOperationHash);
 
     await grant.revoke();
-    // The replayable capability is dead, so nothing new can materialize, but
-    // the installed chain permission still needs owner-signed removal the
-    // application cannot mint: the Grant stays durably `revoking` rather than
-    // claiming a revocation no chain observed.
-    expect(grant.state).toBe("revoking");
+    // The replayable capability dies first, then this realm — which holds the
+    // owner's signing capability — removes the installed chain permission with
+    // an owner-signed revocation operation on its own lane, and only that
+    // operation's finalized success completes the Grant to `revoked`.
+    expect(grant.state).toBe("revoked");
     expect(realm.invalidations()).toBe(1);
-    expect(realm.chain.sends).toHaveLength(1);
-    // A revoking Grant authorizes nothing new.
+    expect(realm.chain.sends).toHaveLength(2);
+    const removal = realm.chain.sends[1];
+    if (!removal) throw new Error("expected a submitted removal snapshot");
+    expect(removal.kind).toBe("revocation");
+    // Root authority: the removal's nonce names Kernel's root validation, not
+    // the session permission it removes.
+    expect(BigInt(removal.userOperation.nonce) >> 240n).toBe(0n);
+    // The removal operation self-calls uninstallModule on the account.
+    expect(removal.userOperation.sender).toBe(prepared.userOperation.sender);
+    expect(removal.userOperation.callData).toContain("a71763a8");
+    // Its journal lives on the revocation lane, finalized.
+    const removalRecord = await new OperationStore(realm.stores.operations).get({
+      grantId: prepared.grantId,
+      chainId: CHAIN_ID,
+      kind: "revocation",
+    });
+    expect(removalRecord?.value.state).toBe("finalized");
+    // A revoked Grant authorizes nothing new.
     await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
       code: "oaath_client_grant_inactive",
     });
+    // Revoke is idempotent once complete.
+    await grant.revoke();
+    expect(grant.state).toBe("revoked");
+    expect(realm.chain.sends).toHaveLength(2);
 
     await connection.close();
   });

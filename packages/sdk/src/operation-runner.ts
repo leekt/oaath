@@ -256,7 +256,7 @@ function parseKind(value: unknown): OperationKind {
 function parseKey(value: unknown, context: CaptureContext): Readonly<OperationStoreKey> {
   const record = exact(
     value,
-    ["grantId", "chainId"],
+    ["grantId", "chainId", "kind"],
     "OperationRunner key",
     "operation_runner_input_invalid",
     context,
@@ -272,7 +272,11 @@ function parseKey(value: unknown, context: CaptureContext): Readonly<OperationSt
   ) {
     return runnerError("operation_runner_input_invalid", "runner key is invalid");
   }
-  return Object.freeze({ grantId: record.grantId, chainId: record.chainId });
+  return Object.freeze({
+    grantId: record.grantId,
+    chainId: record.chainId,
+    kind: parseKind(record.kind),
+  });
 }
 
 function safeTime(value: unknown): number {
@@ -307,9 +311,19 @@ function parseRunInput(value: unknown): OperationRunInput {
     ) {
       return runnerError("operation_runner_input_invalid", "runner ordering is invalid");
     }
+    const kind = parseKind(record.kind);
+    const key = parseKey(record.key, context);
+    // The kind is part of the lane: a run can never prepare one kind of work
+    // under the other kind's durable journal.
+    if (key.kind !== kind) {
+      return runnerError(
+        "operation_runner_input_invalid",
+        "runner key kind conflicts with run kind",
+      );
+    }
     return Object.freeze({
-      kind: parseKind(record.kind),
-      key: parseKey(record.key, context),
+      kind,
+      key,
       preparedAt,
       attemptedAt,
       submittedAt,

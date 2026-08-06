@@ -1,6 +1,14 @@
 import { p256 } from "@noble/curves/nist.js";
 import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
-import { bytesToHex, hexToBytes, keccak256, parseEther, toFunctionSelector } from "viem";
+import {
+  bytesToHex,
+  concat,
+  hexToBytes,
+  keccak256,
+  pad,
+  parseEther,
+  toFunctionSelector,
+} from "viem";
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -18,6 +26,7 @@ import {
   createKernelRuntime,
   ecdsaKey,
   encodeKernelV4InstallModules,
+  encodeKernelV4PermissionUninstallCalls,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
@@ -837,6 +846,165 @@ async function createHarness() {
       code: "kernel_runtime_signer_unavailable",
       message: "Kernel authority module carries no code on this chain",
     });
+  }, 90_000);
+
+  it("removes an installed permission with owner-signed uninstall calls", async () => {
+    const harness = await createHarness();
+    const { fixture, client, reads, deployModule, deployValidator, fund, send } = harness;
+    await deployKernelStack(harness);
+    await deployModule(fixture.callPolicy);
+    await deployModule(fixture.ecdsaSigner);
+
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+      }),
+      reads,
+    });
+    const counterfactual = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    const account = counterfactual.account;
+    await fund(account, parseEther("1"));
+
+    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const sessionRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
+          },
+        ],
+      }),
+      reads,
+    });
+
+    // Deploy the account and install the session in one owner operation.
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-uninstall-install",
+          account: counterfactual,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(sessionRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    const deployed = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(deployed).toMatchObject({ state: "deployed", account });
+
+    // The permission is live: the session's covered call executes on-chain.
+    expect(
+      await send(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-uninstall-session",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: sessionTarget, value: "777", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // The removal: the exact reverse-ordered self-calls this SDK derives from
+    // the same install packages, signed by the root owner as revocation work.
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "revocation",
+          grantId: "kernel-composition-uninstall-revoke",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: encodeKernelV4PermissionUninstallCalls({
+            account,
+            packages: sessionRuntime.packages,
+          }),
+          gas,
+        }),
+      ),
+    ).toBe("success");
+
+    // The chain itself now refuses the session: Kernel's validation phase
+    // requires the permission's validation to be installed and reverts
+    // InvalidVid(vId) for the exact uninstalled permission identifier, so the
+    // refusal names the removed authority rather than a generic failure.
+    if (sessionRuntime.validation.kind !== "permission") {
+      throw new Error("session runtime carries no permission validation");
+    }
+    const uninstalledVid = pad(concat(["0x02", sessionRuntime.validation.permissionId]), {
+      size: 32,
+      dir: "right",
+    });
+    expect(
+      await harness.rejection(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-uninstall-refused",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [{ target: sessionTarget, value: "1", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [
+        0n,
+        "AA23 reverted",
+        concat([toFunctionSelector("InvalidVid(bytes21)"), uninstalledVid]),
+      ],
+    });
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Root authority is untouched by the removal: the owner still executes.
+    const ownerTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-uninstall-owner-after",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "2",
+          calls: [{ target: ownerTarget, value: "55", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: ownerTarget })).toBe(55n);
   }, 90_000);
 
   it("enforces a multi-package session, its validity window, and its operation count", async () => {

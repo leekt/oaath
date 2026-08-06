@@ -40,12 +40,20 @@ export function createFakeChain(chainId) {
   const deployment = kernelV4Deployment(chainId);
   /** Every snapshot the transport was handed, newest last. */
   const sends = [];
-  const inclusionBlock = {
-    number: quantity(INCLUSION_BLOCK),
-    hash: BLOCK_HASH,
-    parentHash: PARENT_HASH,
+  // One block per submission, so removal evidence always names a later block
+  // than the installation it removes, the way a real chain guarantees it.
+  const blockNumber = (index) => INCLUSION_BLOCK + BigInt(index);
+  const blockHash = (index) =>
+    index < 0
+      ? PARENT_HASH
+      : `${BLOCK_HASH.slice(0, -2)}${(index % 256).toString(16).padStart(2, "0")}`;
+  const currentIndex = () => Math.max(0, sends.length - 1);
+  const inclusionBlock = () => ({
+    number: quantity(blockNumber(currentIndex())),
+    hash: blockHash(currentIndex()),
+    parentHash: blockHash(currentIndex() - 1),
     transactions: [TRANSACTION_HASH],
-  };
+  });
 
   const submitted = () => sends[sends.length - 1];
 
@@ -63,8 +71,8 @@ export function createFakeChain(chainId) {
       actualGasUsed: "0xa",
       success: true,
       transactionHash: TRANSACTION_HASH,
-      blockNumber: quantity(INCLUSION_BLOCK),
-      blockHash: BLOCK_HASH,
+      blockNumber: quantity(blockNumber(currentIndex())),
+      blockHash: blockHash(currentIndex()),
     };
   };
 
@@ -73,15 +81,15 @@ export function createFakeChain(chainId) {
     if (!prepared) return null;
     return {
       transactionHash: TRANSACTION_HASH,
-      blockNumber: quantity(INCLUSION_BLOCK),
-      blockHash: BLOCK_HASH,
+      blockNumber: quantity(blockNumber(currentIndex())),
+      blockHash: blockHash(currentIndex()),
       transactionIndex: "0x0",
       status: "0x1",
       logs: [
         {
           address: prepared.entryPoint.address,
-          blockNumber: quantity(INCLUSION_BLOCK),
-          blockHash: BLOCK_HASH,
+          blockNumber: quantity(blockNumber(currentIndex())),
+          blockHash: blockHash(currentIndex()),
           transactionHash: TRANSACTION_HASH,
           transactionIndex: "0x0",
           logIndex: "0x0",
@@ -135,8 +143,8 @@ export function createFakeChain(chainId) {
               : {
                   hash: TRANSACTION_HASH,
                   to: prepared.entryPoint.address,
-                  blockNumber: quantity(INCLUSION_BLOCK),
-                  blockHash: BLOCK_HASH,
+                  blockNumber: quantity(blockNumber(currentIndex())),
+                  blockHash: blockHash(currentIndex()),
                   transactionIndex: "0x0",
                 };
           }
@@ -146,7 +154,7 @@ export function createFakeChain(chainId) {
             request.type === "canonical_block" ||
             request.type === "block_by_hash"
           ) {
-            return inclusionBlock;
+            return inclusionBlock();
           }
           // A replacement search needs an indexer; this example submits one
           // operation per lane and never claims to have looked.
@@ -201,8 +209,8 @@ export function createFakeChain(chainId) {
           chainId: request.chainId,
           finalizedOperationCount: String(sends.length),
           through: {
-            blockNumber: INCLUSION_BLOCK.toString(10),
-            blockHash: BLOCK_HASH,
+            blockNumber: blockNumber(currentIndex()).toString(10),
+            blockHash: blockHash(currentIndex()),
             observedAt: 1_800_000_000,
           },
         };

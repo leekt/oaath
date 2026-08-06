@@ -104,7 +104,7 @@ function preparedOperation(chainId: number, seed: string): Operation {
 }
 
 function operationStoreKey(grantId: string, chainId: number) {
-  return { grantId, chainId } as const;
+  return { grantId, chainId, kind: "execution" } as const;
 }
 
 async function commitOperation(
@@ -404,9 +404,9 @@ describe("test-only durable SQLite stores", () => {
     const database = new DatabaseSync(filePath);
     database.exec(`
       CREATE TRIGGER sqliteX_mutate_another_chain
-      AFTER UPDATE ON oaath_test_operation_store_v1
+      AFTER UPDATE ON oaath_test_operation_store_v2
       BEGIN
-        UPDATE oaath_test_operation_store_v1
+        UPDATE oaath_test_operation_store_v2
         SET payload = NEW.payload
         WHERE grant_id = NEW.grant_id AND chain_id <> NEW.chain_id;
       END

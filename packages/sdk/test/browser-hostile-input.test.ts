@@ -400,7 +400,14 @@ describe("hostile input at the client boundary", () => {
     await expect(grants.get(" spaced ")).rejects.toMatchObject({
       code: "persistence_input_invalid",
     });
-    await expect(operations.get({ grantId: "", chainId: 1 })).rejects.toMatchObject({
+    await expect(
+      operations.get({ grantId: "", chainId: 1, kind: "execution" as const }),
+    ).rejects.toMatchObject({
+      code: "persistence_input_invalid",
+    });
+    await expect(
+      operations.get({ grantId: "g", chainId: 1, kind: "renewal" as never }),
+    ).rejects.toMatchObject({
       code: "persistence_input_invalid",
     });
     await expect(cleanup.read("")).rejects.toMatchObject({ code: "persistence_input_invalid" });
@@ -412,7 +419,18 @@ describe("hostile input at the client boundary", () => {
         code: "persistence_input_invalid",
       });
       await expect(
-        createIndexedDbOperationStoreAdapter(database).get({ grantId: "g", chainId: 0 }),
+        createIndexedDbOperationStoreAdapter(database).get({
+          grantId: "g",
+          chainId: 0,
+          kind: "execution" as const,
+        }),
+      ).rejects.toMatchObject({ code: "persistence_input_invalid" });
+      await expect(
+        createIndexedDbOperationStoreAdapter(database).get({
+          grantId: "g",
+          chainId: 1,
+          kind: "renewal" as never,
+        }),
       ).rejects.toMatchObject({ code: "persistence_input_invalid" });
     } finally {
       database.close();
