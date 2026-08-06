@@ -117,6 +117,7 @@ export {
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
   encodeKernelV4PermissionSignature,
+  encodeKernelV4PermissionUninstallCalls,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,

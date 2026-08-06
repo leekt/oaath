@@ -23,6 +23,7 @@ import {
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
   encodeKernelV4PermissionSignature,
+  encodeKernelV4PermissionUninstallCalls,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
@@ -124,6 +125,20 @@ const kernelAbi = [
     inputs: [
       { name: "mode", type: "bytes32" },
       { name: "executionData", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const uninstallAbi = [
+  {
+    type: "function",
+    name: "uninstallModule",
+    stateMutability: "payable",
+    inputs: [
+      { name: "moduleType", type: "uint256" },
+      { name: "module", type: "address" },
+      { name: "initData", type: "bytes" },
     ],
     outputs: [],
   },
@@ -336,6 +351,84 @@ describe("Kernel v4 module and account codecs", () => {
       internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
     };
     expect(encodeKernelV4InstallModules([policy, signer])).toMatch(/^0x/u);
+  });
+
+  it("derives reverse-ordered permission uninstall self-calls from the install packages", () => {
+    const permissionPrefix = pad(permissionId, { size: 32, dir: "right" });
+    const policyPackage = (module: `0x${string}`, policyData: `0x${string}`): KernelV4Install => ({
+      moduleType: 5,
+      module,
+      moduleData: concat([permissionPrefix, policyData]),
+      internalData: encodeKernelV4PolicyData(permissionId),
+    });
+    const policyA = policyPackage(`0x${"55".repeat(20)}`, "0x01");
+    const policyB = policyPackage(`0x${"77".repeat(20)}`, "0x02");
+    const signer: KernelV4Install = {
+      moduleType: 6,
+      module: `0x${"88".repeat(20)}`,
+      moduleData: concat([permissionPrefix, "0x99"]),
+      internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
+    };
+    const calls = encodeKernelV4PermissionUninstallCalls({
+      account,
+      packages: [policyA, policyB, signer],
+    });
+
+    // Policies leave in reverse install order, the signer last — the order
+    // Kernel's pop-last policy check and empty-policies signer check enforce.
+    expect(calls.map((call) => call.target)).toEqual([account, account, account]);
+    expect(calls.map((call) => call.value)).toEqual(["0", "0", "0"]);
+    const decoded = calls.map((call) => decodeFunctionData({ abi: uninstallAbi, data: call.data }));
+    expect(decoded.map((entry) => entry.args[1])).toEqual([
+      getAddress(policyB.module),
+      getAddress(policyA.module),
+      getAddress(signer.module),
+    ]);
+    expect(decoded.map((entry) => entry.args[0])).toEqual([5n, 5n, 6n]);
+    // initData is InstallModuleDataFormat(installData, internalData): the
+    // permission-scoped 32-byte prefix of the install data, and the exact
+    // internalData the install carried (permission ID in its first 4 bytes).
+    for (const [index, source] of [policyB, policyA, signer].entries()) {
+      const [installData, internalData] = decodeAbiParameters(
+        [{ type: "bytes" }, { type: "bytes" }],
+        decoded[index]?.args[2] as `0x${string}`,
+      );
+      expect(installData).toBe(permissionPrefix);
+      expect(internalData).toBe(source.internalData);
+      expect(internalData.slice(0, 10)).toBe(permissionId);
+    }
+  });
+
+  it.each([
+    [[baseInstall], "requires policy packages and exactly one signer"],
+    [
+      [
+        {
+          moduleType: 5,
+          module: validator,
+          moduleData: "0x1234",
+          internalData: encodeKernelV4PolicyData(permissionId),
+        },
+        {
+          moduleType: 6,
+          module: validator,
+          moduleData: concat([pad(permissionId, { size: 32, dir: "right" }), "0x99"]),
+          internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [] }),
+        },
+      ],
+      "must carry the permission prefix",
+    ],
+  ])("rejects uninstall inputs that cannot express a complete permission", (packages, reason) => {
+    expect(() =>
+      asHostile((value: never) =>
+        encodeKernelV4PermissionUninstallCalls({ account, packages: value }),
+      )(packages),
+    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    expect(() =>
+      asHostile((value: never) =>
+        encodeKernelV4PermissionUninstallCalls({ account, packages: value }),
+      )(packages),
+    ).toThrowError(new RegExp(reason, "u"));
   });
 });
 
