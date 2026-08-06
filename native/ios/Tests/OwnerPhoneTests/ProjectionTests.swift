@@ -61,7 +61,7 @@ final class ProjectionTests: XCTestCase {
 
     private var valid: [String: Any] {
         [
-            "version": "oaath.native-projection/v1",
+            "version": "oaath.native-projection/v2",
             "operationId": "req-1",
             "displayPayload": "Ab1-_9Zz",
             "expiresAt": 1_754_000_000_000,
@@ -239,8 +239,9 @@ final class ProjectionTests: XCTestCase {
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .unexpectedFields("owner phone projection"))
         }
+        // The retired shape's version is rejected, never read as the new one.
         object = valid
-        object["version"] = "oaath.native-projection/v2"
+        object["version"] = "oaath.native-projection/v1"
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("version"))
         }

@@ -727,6 +727,72 @@ describe("URL-only service surface", () => {
     );
   });
 
+  it("records invalidations durably and enforces them on the chain routes", async () => {
+    const harness = createHarness(bootstrapOptions());
+    const capabilityHash = `0x${"ab".repeat(32)}`;
+    const submission = { request: { prepared: { grantId: "grant-1" } } };
+
+    // Before invalidation the ports serve the Grant.
+    await expectOk(
+      await harness.handler(post("/chains/31337/submissions", CLIENT_TOKEN, submission)),
+      200,
+    );
+
+    // Recording is durable and idempotent: a replay answers the stored record,
+    // so one Grant has exactly one invalidation time and one evidence hash.
+    const first = await expectOk<Record<string, unknown>>(
+      await harness.handler(
+        post("/invalidations", CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      200,
+    );
+    expect(first.evidenceHash).toMatch(/^0x[0-9a-f]{64}$/u);
+    harness.clock.advance(5_000);
+    const replay = await expectOk<Record<string, unknown>>(
+      await harness.handler(
+        post("/invalidations", CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      200,
+    );
+    expect(replay).toEqual(first);
+
+    // Another client reads absence, never existence.
+    await expectFailure(
+      await harness.handler(
+        post("/invalidations", OTHER_CLIENT_TOKEN, { grantId: "grant-1", capabilityHash }),
+      ),
+      "relay_not_found",
+    );
+
+    // Enforcement: the routes whose requests act for the Grant refuse it.
+    await expectFailure(
+      await harness.handler(post("/chains/31337/submissions", CLIENT_TOKEN, submission)),
+      "relay_capability_invalidated",
+    );
+    await expectFailure(
+      await harness.handler(
+        post("/chains/31337/usage", CLIENT_TOKEN, {
+          request: { grantId: "grant-1", chainId: 31_337 },
+        }),
+      ),
+      "relay_capability_invalidated",
+    );
+    // Chain reads grant nothing and keep serving.
+    await expectOk(
+      await harness.handler(post("/chains/31337/reads", CLIENT_TOKEN, { request: {} })),
+      200,
+    );
+    // A different Grant is untouched.
+    await expectOk(
+      await harness.handler(
+        post("/chains/31337/submissions", CLIENT_TOKEN, {
+          request: { prepared: { grantId: "grant-2" } },
+        }),
+      ),
+      200,
+    );
+  });
+
   it("releases the decided code to exactly the creating client", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);

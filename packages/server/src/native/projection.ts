@@ -41,7 +41,7 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v2" as const;
 
 /**
  * The versioned scope envelope a client stores to ask the owner's phone for one

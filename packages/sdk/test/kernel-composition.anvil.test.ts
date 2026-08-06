@@ -4,21 +4,24 @@ import { bytesToHex, hexToBytes, keccak256, parseEther, toFunctionSelector } fro
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  OAATH_HANDLE_OPS_OVERHEAD_GAS,
   captureRoutingCapabilities,
   classifyBundlerAcceptance,
   decideExecution,
   deriveHandleOpsRequirement,
   encodeHandleOps,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
 } from "../src/advanced.js";
+// Internal on purpose: a consumer reads this fact through
+// diagnoseKernelCapability, so the pinned validator stays off the public surface.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
+  createKernelRuntime,
+  ecdsaKey,
+  encodeKernelV4InstallModules,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
-  createKernelRuntime,
-  ecdsaKey,
-  encodeKernelV4InstallModules,
   kernelV4Deployment,
   ownerOperator,
   p256Key,
@@ -26,9 +29,6 @@ import {
   pinnedSignerModule,
   sessionOperator,
 } from "../src/kernel.js";
-// Internal on purpose: a consumer reads this fact through
-// diagnoseKernelCapability, so the pinned validator stays off the public surface.
-import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   type AnvilChain,
   createHarness as createChainHarness,

@@ -46,9 +46,9 @@ import {
 } from "@oaath/protocol";
 import { claimEncryptedArtifact } from "../artifact/claim.js";
 import { consumeAuthorizationCode } from "../authorization/code.js";
-import { fetchAuthorizationCode } from "../authorization/pickup.js";
 import type { AuthorizationDecisionCommand } from "../authorization/decision.js";
 import { submitAuthorizationDecision } from "../authorization/decision.js";
+import { fetchAuthorizationCode } from "../authorization/pickup.js";
 import {
   type AuthorizationState,
   createAuthorizationRequest,
@@ -66,8 +66,14 @@ import {
 } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
 import { assertWithinRateLimit, type RelayRateLimiter } from "../security/rate-limit.js";
-import type { RelayStore } from "../store/interface.js";
-import { boundedText, canonicalIdentifier, RELAY_LIMITS, timestamp } from "../store/records.js";
+import { type RelayStore, withRelayTransaction } from "../store/interface.js";
+import {
+  boundedText,
+  canonicalIdentifier,
+  OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION,
+  RELAY_LIMITS,
+  timestamp,
+} from "../store/records.js";
 import { jsonResponse, relayErrorCode, relayErrorResponse, relayFailure } from "./errors.js";
 
 const DEFAULT_REQUEST_TTL_MS = 300_000;
@@ -139,6 +145,30 @@ const OPTION_KEYS: readonly string[] = [
 
 const CHAIN_PORT_NAMES = ["reads", "observation", "bundler", "quote", "submission"] as const;
 type ChainPortName = (typeof CHAIN_PORT_NAMES)[number] | "usage";
+
+/**
+ * The Grant a chain port request acts for, where the port's contract names
+ * one: a submission's prepared operation and a usage read both carry it.
+ * Reading it here is bounded extraction for the invalidation gate, not
+ * interpretation — the port's own owner still captures the payload exactly.
+ */
+function chainRequestGrantId(name: ChainPortName, request: unknown): string | null {
+  try {
+    if (name === "usage") {
+      const grantId = (request as { readonly grantId?: unknown } | null)?.grantId;
+      return typeof grantId === "string" && grantId.length > 0 ? grantId : null;
+    }
+    if (name === "submission") {
+      const prepared = (request as { readonly prepared?: unknown } | null)?.prepared;
+      const grantId = (prepared as { readonly grantId?: unknown } | null)?.grantId;
+      return typeof grantId === "string" && grantId.length > 0 ? grantId : null;
+    }
+  } catch {
+    // A hostile getter reads as absent; the port's exact capture still owns
+    // whether such a payload is usable at all.
+  }
+  return null;
+}
 
 /**
  * Ports may be class instances, so only their required capabilities are checked.
@@ -432,23 +462,49 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       if (!/^0x[0-9a-f]{64}$/u.test(capabilityHash)) {
         return relayFailure(INVALID, "capabilityHash must be a lowercase 32-byte hash");
       }
-      // The evidence is protocol-facing, so it speaks the protocol's seconds
-      // domain rather than the relay's millisecond records.
-      const invalidatedAt = Math.floor(relayNow(captured.clock) / 1_000);
-      // Stateless acknowledgement: the evidence names exactly this caller's
-      // invalidation and nothing else. Durable capability records and their
-      // conclusive removal proof belong to the materialization lifecycle
-      // (issue #80); until then this endpoint cannot claim more than it did.
+      // Durable and enforced: from the committed record on, every chain
+      // execution route below refuses this Grant, so the evidence states an
+      // enforced fact — this service will no longer act for the capability.
+      // Consuming the on-chain install nonce stays the chain-local revocation
+      // operation's separate evidence. Replays answer the stored record, so
+      // one Grant has exactly one invalidation time.
+      const record = await withRelayTransaction(captured.store, async (transaction) => {
+        const existing = await transaction.lockCapabilityInvalidation(grantId);
+        if (existing) {
+          if (existing.clientId !== caller.clientId) {
+            // Reported as absence: not an existence oracle for another
+            // client's Grant.
+            return relayFailure("relay_not_found", "grant does not exist");
+          }
+          return existing;
+        }
+        const created = Object.freeze({
+          version: OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION,
+          grantId,
+          clientId: caller.clientId,
+          capabilityHash,
+          invalidatedAt: relayNow(captured.clock),
+        });
+        if (!(await transaction.insertCapabilityInvalidation(created))) {
+          return relayFailure("relay_internal", "capability invalidation did not commit");
+        }
+        return created;
+      });
       const digest = await crypto.subtle.digest(
         "SHA-256",
         new TextEncoder().encode(
-          `oaath-relay-invalidation:v1:${caller.clientId}:${grantId}:${capabilityHash}:${invalidatedAt}`,
+          `oaath-relay-invalidation:v1:${record.clientId}:${record.grantId}:${record.capabilityHash}:${record.invalidatedAt}`,
         ),
       );
       const evidenceHash = `0x${[...new Uint8Array(digest)]
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join("")}`;
-      return jsonResponse(200, { evidenceHash, invalidatedAt });
+      // The evidence is protocol-facing, so it speaks the protocol's seconds
+      // domain rather than the relay's millisecond records.
+      return jsonResponse(200, {
+        evidenceHash,
+        invalidatedAt: Math.floor(record.invalidatedAt / 1_000),
+      });
     }
 
     if (head === "chains") {
@@ -473,6 +529,24 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       const capability = name === "usage" ? port.usage : port[name];
       if (capability === null) {
         return relayFailure("relay_not_found", "route does not exist");
+      }
+      // Recorded invalidations are enforced here: a submission or usage read
+      // that names an invalidated Grant is refused before its port runs. The
+      // ports whose requests carry no Grant identity are chain reads, which
+      // grant nothing. This guards the honest capability; the on-chain install
+      // nonce is what a hostile holder must still be cut off from, by the
+      // chain-local revocation operation.
+      const grantId = chainRequestGrantId(name, body.request);
+      if (grantId !== null) {
+        const invalidated = await withRelayTransaction(captured.store, (transaction) =>
+          transaction.lockCapabilityInvalidation(grantId),
+        );
+        if (invalidated !== undefined) {
+          return relayFailure(
+            "relay_capability_invalidated",
+            "the Grant's capability is invalidated",
+          );
+        }
       }
       let result: unknown;
       try {

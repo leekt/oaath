@@ -36,10 +36,12 @@ import {
   type Grant,
   type GrantPolicy,
   OAATH_GRANT_POLICY_VERSION,
+  OAATH_ISSUER_VERSION,
   OAATH_PERMISSION_REQUEST_VERSION,
   type PermissionDecision,
   type PermissionRequest,
   parseGrantPolicy,
+  parseIssuerIdentity,
   parsePermissionDecision,
   parsePermissionRequest,
   sameGrantIdentity,
@@ -683,18 +685,20 @@ export function captureIssuerCapability(value: unknown): Readonly<OaathIssuerCap
     context,
     "oaath_client_capability_invalid",
   );
-  if (
-    typeof record.url !== "string" ||
-    !record.url.startsWith("https://") ||
-    record.url.endsWith("/")
-  ) {
-    return clientFail(
-      "oaath_client_capability_invalid",
-      "issuer url must be a canonical https URL",
-    );
+  // The protocol's canonical URL rule is the one owner of what an issuer URL
+  // may be, including the loopback development exception the URL-only mode
+  // relies on; restating https-only here would strand `http://localhost`.
+  let url: string;
+  try {
+    url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: record.url }).url;
+  } catch {
+    return clientFail("oaath_client_capability_invalid", "issuer url must be a canonical URL");
+  }
+  if (url !== record.url) {
+    return clientFail("oaath_client_capability_invalid", "issuer url must already be canonical");
   }
   return Object.freeze({
-    url: record.url,
+    url,
     fetch: clientCapability<OaathIssuerCapability["fetch"]>(record.fetch, "issuer fetch"),
     signOut:
       record.signOut === null

@@ -34,12 +34,12 @@ import { expect } from "vitest";
 // is the other consumer. Importing it keeps one list rather than a stale copy.
 import { scrubLiveProviderEnvironment } from "../../../../scripts/live-provider-environment.mjs";
 import {
+  createKernelV4Reads,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   type KernelRuntime,
   type KernelV4AccountReadCapability,
   type PreparedUserOperation,
-  createKernelV4Reads,
 } from "../../src/kernel.js";
 
 export interface ModuleFixture {

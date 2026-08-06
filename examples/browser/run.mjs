@@ -24,8 +24,8 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   parseGrantPolicy,
 } from "@oaath/protocol";
-import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import { createOAAth } from "@oaath/sdk";
+import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,

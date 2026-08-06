@@ -8,7 +8,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v1" as const;
+export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v2" as const;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
@@ -40,6 +40,13 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     code_expires_at bigint CHECK (code_expires_at >= 0 AND code_expires_at <= ${MAX_SAFE_INTEGER}),
     CHECK ((outcome = 'approved') = (code_ref IS NOT NULL)),
     CHECK ((code_ref IS NULL) = (code_expires_at IS NULL))
+  )`,
+  `CREATE TABLE oaath_relay_capability_invalidation_v1 (
+    grant_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    client_id text NOT NULL,
+    capability_hash text NOT NULL,
+    invalidated_at bigint NOT NULL CHECK (invalidated_at >= 0 AND invalidated_at <= ${MAX_SAFE_INTEGER})
   )`,
   `CREATE TABLE oaath_relay_authorization_code_v1 (
     code_hash text PRIMARY KEY,

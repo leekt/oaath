@@ -14,12 +14,12 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
 import {
-  type OaathDatabase,
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  type OaathDatabase,
   openOaathDatabase,
 } from "../src/persistence.js";
 import {

@@ -25,7 +25,7 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v1"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v2"
 
 /// The bounded 8-character base64url match code the phone renders.
 public struct MatchCode: Equatable, Sendable {

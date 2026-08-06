@@ -46,14 +46,14 @@ import {
   type OaathIssuerCapability,
 } from "./client/connection.js";
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
-import { requireApprovedKeyBinding } from "./client/key-credential.js";
-import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
 import {
   captureChainCapability,
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
 } from "./client/grant-handle.js";
+import { requireApprovedKeyBinding } from "./client/key-credential.js";
+import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
 import type {

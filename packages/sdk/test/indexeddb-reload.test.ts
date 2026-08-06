@@ -16,13 +16,13 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it } from "vitest";
 import { GrantStore, OperationStore } from "../src/advanced.js";
 import {
-  OAATH_INDEXEDDB_NAME,
-  type OaathDatabase,
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  OAATH_INDEXEDDB_NAME,
+  type OaathDatabase,
   openOaathDatabase,
   requireNonExtractableKey,
 } from "../src/persistence.js";

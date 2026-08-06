@@ -11,11 +11,11 @@
  */
 import {
   hashPermissionRequest,
-  parseGrantPolicy,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
+  parseGrantPolicy,
 } from "@oaath/protocol";
 import {
   createMemoryRelayStore,
@@ -26,23 +26,23 @@ import {
 } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import type { OaathChainCapability } from "../../src/advanced.js";
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
-import { type OaathChainCapability } from "../../src/advanced.js";
-import { type Oaath, createOAAth } from "../../src/index.js";
+import { createOAAth, type Oaath } from "../../src/index.js";
 import {
+  approveKernelPermissionAllChain,
+  createKernelRuntime,
+  ecdsaKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelAllChainApproval,
   type KernelV4AccountReadRequest,
-  type PreparedUserOperation,
-  approveKernelPermissionAllChain,
-  createKernelRuntime,
-  ecdsaKey,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   ownerOperator,
+  type PreparedUserOperation,
   sessionOperator,
 } from "../../src/kernel.js";
 import {
@@ -618,6 +618,8 @@ export interface UrlRealmOptions {
   readonly clock?: SecondsClock;
   readonly chain?: ChainFixture;
   readonly owner?: OwnerDecision;
+  /** The service URL the realm connects to; loopback http is a legal default. */
+  readonly url?: string;
   /** Tampers with the served bootstrap document before the SDK parses it. */
   readonly bootstrap?: (document: Record<string, unknown>) => unknown;
 }
@@ -691,7 +693,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   };
 
   const oaath = createOAAth({
-    url: ISSUER_URL,
+    url: options.url ?? ISSUER_URL,
     fetch: service,
     origin: ORIGIN,
     stores,

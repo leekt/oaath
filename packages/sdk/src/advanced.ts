@@ -27,9 +27,9 @@ export type {
   OaathBindingInput,
 } from "./client/binding.js";
 export {
+  captureOaathBinding,
   OAATH_BINDING_HASH_DOMAIN,
   OAATH_BINDING_VERSION,
-  captureOaathBinding,
 } from "./client/binding.js";
 export type {
   OaathAuthorizationCapability,
@@ -62,23 +62,23 @@ export type {
   OperationObserverUserOperationReceiptEvidence,
 } from "./operation-observer.js";
 export {
-  OaathOperationObserverError,
   createOperationObserver,
+  OaathOperationObserverError,
 } from "./operation-observer.js";
 export type {
   OperationPreparationCapability,
   OperationRunInput,
-  OperationRunResult,
   OperationRunner,
   OperationRunnerConfiguration,
   OperationRunnerErrorCode,
+  OperationRunResult,
   OperationSubmissionCapability,
   OperationSubmissionSession,
   OperationTerminalBehavior,
 } from "./operation-runner.js";
 export {
-  OaathOperationRunnerError,
   createOperationRunner,
+  OaathOperationRunnerError,
 } from "./operation-runner.js";
 export type {
   OaathBundlerAcceptanceEvidence,
@@ -88,9 +88,9 @@ export type {
   OaathBundlerProbeRequest,
 } from "./routing/bundler.js";
 export {
-  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
   classifyBundlerAcceptance,
   classifyBundlerProbe,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
   probeBundlerCapability,
 } from "./routing/bundler.js";
 export type {
@@ -110,9 +110,9 @@ export type {
   OaathHandleOpsRequirementInput,
 } from "./routing/handle-ops.js";
 export {
-  OAATH_HANDLE_OPS_OVERHEAD_GAS,
   deriveHandleOpsRequirement,
   encodeHandleOps,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
 } from "./routing/handle-ops.js";
 export type {
   OaathKernelSponsorshipCapability,

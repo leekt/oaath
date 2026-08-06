@@ -11,13 +11,13 @@ import {
 import { createSqliteOperationStore } from "@oaath/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  createOperationObserver,
+  createOperationRunner,
   type OaathOperationRunnerError,
   type OperationObserver,
   OperationStore,
   type OperationStoreAdapter,
   type OperationStoreRecord,
-  createOperationObserver,
-  createOperationRunner,
 } from "../src/advanced.js";
 import { type PreparedUserOperation, prepareUserOperation } from "../src/kernel.js";
 

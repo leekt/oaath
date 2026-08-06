@@ -16,7 +16,17 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+// Internal on purpose: a consumer reads this fact through
+// diagnoseKernelCapability, so the pinned validator stays off the public surface.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
+  compileKernelPermissionPolicy,
+  createKernelRuntime,
+  ecdsaKey,
+  encodeKernelV4PermissionSignature,
+  encodeKernelV4PolicyData,
+  encodeKernelV4SignerData,
+  encodeKernelV4ValidatorData,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_EXECUTE_SELECTOR,
@@ -28,15 +38,8 @@ import {
   type KernelOperatorAuthority,
   type KernelV4AccountReadRequest,
   type KeyProfile,
-  type OperatorProfile,
-  compileKernelPermissionPolicy,
-  createKernelRuntime,
-  ecdsaKey,
-  encodeKernelV4PermissionSignature,
-  encodeKernelV4PolicyData,
-  encodeKernelV4SignerData,
-  encodeKernelV4ValidatorData,
   kernelV4Deployment,
+  type OperatorProfile,
   ownerOperator,
   p256Key,
   pinnedPolicyModule,
@@ -44,9 +47,6 @@ import {
   sessionOperator,
   webauthnKey,
 } from "../src/kernel.js";
-// Internal on purpose: a consumer reads this fact through
-// diagnoseKernelCapability, so the pinned validator stays off the public surface.
-import { pinnedValidatorModule } from "../src/kernel/modules.js";
 
 const chainId = 421_614;
 const deployment = kernelV4Deployment(chainId);

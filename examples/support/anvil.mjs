@@ -20,7 +20,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { encodeHandleOps } from "@oaath/sdk/advanced";
-import { KERNEL_V4_CREATE2_DEPLOYER, createKernelV4Reads } from "@oaath/sdk/kernel";
+import { createKernelV4Reads, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
 import {
   concat,
   createPublicClient,

@@ -31,6 +31,7 @@ import type {
   AuthorizationCodeRecord,
   AuthorizationDecisionRecord,
   AuthorizationRequestRecord,
+  CapabilityInvalidationRecord,
   EncryptedArtifactRecord,
 } from "./records.js";
 
@@ -47,6 +48,10 @@ export interface RelayTransaction {
   insertAuthorizationCode(record: AuthorizationCodeRecord): Promise<boolean>;
   /** Returns true only when this call set `consumed_at`. */
   consumeAuthorizationCode(codeHash: string, consumedAt: number): Promise<boolean>;
+
+  lockCapabilityInvalidation(grantId: string): Promise<CapabilityInvalidationRecord | undefined>;
+  /** Returns false when the Grant's capability is already invalidated. */
+  insertCapabilityInvalidation(record: CapabilityInvalidationRecord): Promise<boolean>;
 
   lockEncryptedArtifact(artifactId: string): Promise<EncryptedArtifactRecord | undefined>;
   insertEncryptedArtifact(record: EncryptedArtifactRecord): Promise<boolean>;

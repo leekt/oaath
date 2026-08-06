@@ -30,10 +30,10 @@ export type {
   PersistenceErrorCode,
 } from "./persistence/interfaces.js";
 export {
+  isCleanupEffectName,
   OAATH_CLEANUP_CHECKPOINT_VERSION,
   OAATH_CLIENT_CONTEXT_VERSION,
   OaathPersistenceError,
-  isCleanupEffectName,
   parseCleanupCheckpoint,
   parseClientContext,
   requireNonExtractableKey,

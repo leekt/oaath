@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OaathKernelSponsorshipRuntime } from "../src/advanced.js";
-import type { KernelRuntimePrepareInput, PreparedPaymaster } from "../src/kernel.js";
 import { type OaathRoutingError, prepareSponsoredKernelOperation } from "../src/advanced.js";
+import type { KernelRuntimePrepareInput, PreparedPaymaster } from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_FACTORY_V07,

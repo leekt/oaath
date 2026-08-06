@@ -10,7 +10,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type CaptureContext, type OwnerCredentialProfile } from "@oaath/protocol";
+import type { CaptureContext, OwnerCredentialProfile } from "@oaath/protocol";
 import { encodeAbiParameters } from "viem";
 import type { KernelV4Deployment } from "../../kernel-v4.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";

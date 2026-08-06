@@ -50,6 +50,20 @@ describe("URL-only golden path", () => {
     await connection.close();
   });
 
+  it("completes the golden path over the loopback development URL", async () => {
+    // The advertised default is `http://localhost:8787`; this proves a valid
+    // loopback bootstrap composes and executes, not merely that an invalid
+    // one fails there.
+    const realm = createUrlRealm({ url: "http://localhost:8787" });
+    const connection = await realm.oaath.connect();
+    expect(realm.oaath.binding.issuer.url).toBe("http://localhost:8787");
+    const grant = await connection.requestPermission(permissionInput());
+    const operation = await grant.sendCalls(sendCallsInput());
+    expect((await operation.wait()).status).toBe("finalized");
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
   it("defaults to the local development service URL", async () => {
     const seen: string[] = [];
     const oaath = createOAAth({

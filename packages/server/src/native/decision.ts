@@ -35,12 +35,12 @@ import type {
 import { submitAuthorizationDecision } from "../authorization/decision.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
 import type { RelayClock } from "../clock.js";
-import { projectOwnerPhoneScope } from "./projection.js";
 import { OaathRelayError, relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
 import type { RelayStore } from "../store/interface.js";
 import type { AuthorizationDecisionOutcome } from "../store/records.js";
+import { projectOwnerPhoneScope } from "./projection.js";
 
 export interface SubmitOwnerPhoneDecisionInput {
   readonly store: RelayStore;

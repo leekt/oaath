@@ -18,10 +18,12 @@ import {
   type AuthorizationCodeRecord,
   type AuthorizationDecisionRecord,
   type AuthorizationRequestRecord,
+  type CapabilityInvalidationRecord,
   type EncryptedArtifactRecord,
   parseAuthorizationCodeRecord,
   parseAuthorizationDecisionRecord,
   parseAuthorizationRequestRecord,
+  parseCapabilityInvalidationRecord,
   parseEncryptedArtifactRecord,
 } from "../records.js";
 import {
@@ -30,10 +32,12 @@ import {
   INSERT_AUTHORIZATION_CODE,
   INSERT_AUTHORIZATION_DECISION,
   INSERT_AUTHORIZATION_REQUEST,
+  INSERT_CAPABILITY_INVALIDATION,
   INSERT_ENCRYPTED_ARTIFACT,
   LOCK_AUTHORIZATION_CODE,
   LOCK_AUTHORIZATION_DECISION,
   LOCK_AUTHORIZATION_REQUEST,
+  LOCK_CAPABILITY_INVALIDATION,
   LOCK_ENCRYPTED_ARTIFACT,
 } from "./queries.js";
 
@@ -74,6 +78,16 @@ function decisionRecord(row: Row): AuthorizationDecisionRecord {
     decidedAt: sqlTimestamp(row.decided_at),
     codeRef: row.code_ref,
     codeExpiresAt: row.code_expires_at === null ? null : sqlTimestamp(row.code_expires_at),
+  });
+}
+
+function invalidationRecord(row: Row): CapabilityInvalidationRecord {
+  return parseCapabilityInvalidationRecord({
+    version: row.record_version,
+    grantId: row.grant_id,
+    clientId: row.client_id,
+    capabilityHash: row.capability_hash,
+    invalidatedAt: sqlTimestamp(row.invalidated_at),
   });
 }
 
@@ -167,6 +181,18 @@ function createTransaction(client: PoolClient): RelayTransaction {
         record.decidedAt,
         record.codeRef,
         record.codeExpiresAt,
+      ]);
+    },
+    lockCapabilityInvalidation(grantId) {
+      return first(LOCK_CAPABILITY_INVALIDATION, [grantId], invalidationRecord);
+    },
+    insertCapabilityInvalidation(record) {
+      return inserted(INSERT_CAPABILITY_INVALIDATION, [
+        record.grantId,
+        record.version,
+        record.clientId,
+        record.capabilityHash,
+        record.invalidatedAt,
       ]);
     },
     lockAuthorizationCode(codeHash) {

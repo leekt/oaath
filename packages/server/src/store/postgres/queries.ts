@@ -49,6 +49,20 @@ export const INSERT_AUTHORIZATION_DECISION = `
   ON CONFLICT (request_id) DO NOTHING
 `;
 
+export const LOCK_CAPABILITY_INVALIDATION = `
+  SELECT grant_id, record_version, client_id, capability_hash, invalidated_at
+  FROM oaath_relay_capability_invalidation_v1
+  WHERE grant_id = $1
+  FOR UPDATE
+`;
+
+export const INSERT_CAPABILITY_INVALIDATION = `
+  INSERT INTO oaath_relay_capability_invalidation_v1 (
+    grant_id, record_version, client_id, capability_hash, invalidated_at
+  ) VALUES ($1, $2, $3, $4, $5)
+  ON CONFLICT (grant_id) DO NOTHING
+`;
+
 export const LOCK_AUTHORIZATION_CODE = `
   SELECT ${CODE_COLUMNS}
   FROM oaath_relay_authorization_code_v1

@@ -21,11 +21,13 @@ import { type RelayErrorCode, relayFailure } from "../relay/errors.js";
 export const OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION =
   "oaath.authorization-request-record/v1" as const;
 export const OAATH_AUTHORIZATION_DECISION_RECORD_VERSION =
-  "oaath.authorization-decision-record/v1" as const;
+  "oaath.authorization-decision-record/v2" as const;
 export const OAATH_AUTHORIZATION_CODE_RECORD_VERSION =
   "oaath.authorization-code-record/v1" as const;
 export const OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION =
   "oaath.encrypted-artifact-record/v1" as const;
+export const OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION =
+  "oaath.capability-invalidation-record/v1" as const;
 
 /** Bounded field limits owned here and shared with wire capture. */
 export const RELAY_LIMITS = Object.freeze({
@@ -105,6 +107,23 @@ export interface EncryptedArtifactRecord {
   readonly claimedAt: number | null;
 }
 
+/**
+ * One durable capability invalidation: from the moment this record commits,
+ * the relay's chain execution routes refuse every submission and usage read
+ * for the Grant, so the recorded evidence states an enforced fact — "this
+ * service will no longer act for this capability" — not a bare digest.
+ * Consuming the on-chain install nonce is the chain-local revocation
+ * operation's job and stays separate evidence.
+ */
+export interface CapabilityInvalidationRecord {
+  readonly version: typeof OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION;
+  readonly grantId: string;
+  /** The authenticated client that recorded the invalidation. */
+  readonly clientId: string;
+  readonly capabilityHash: string;
+  readonly invalidatedAt: number;
+}
+
 export function boundedText(
   value: unknown,
   maximum: number,
@@ -161,6 +180,29 @@ function version<Value extends string>(value: unknown, expected: Value, label: s
     return relayFailure(UNREADABLE, `${label} version is unsupported`);
   }
   return expected;
+}
+
+export function parseCapabilityInvalidationRecord(value: unknown): CapabilityInvalidationRecord {
+  const record = captured(
+    value,
+    ["version", "grantId", "clientId", "capabilityHash", "invalidatedAt"],
+    "capability invalidation record",
+  );
+  const capabilityHash = boundedText(record.capabilityHash, 66, "capabilityHash", UNREADABLE);
+  if (!/^0x[0-9a-f]{64}$/u.test(capabilityHash)) {
+    return relayFailure(UNREADABLE, "capabilityHash must be a lowercase 32-byte hash");
+  }
+  return Object.freeze({
+    version: version(
+      record.version,
+      OAATH_CAPABILITY_INVALIDATION_RECORD_VERSION,
+      "capability invalidation record",
+    ),
+    grantId: canonicalIdentifier(record.grantId, "grantId", UNREADABLE),
+    clientId: canonicalIdentifier(record.clientId, "clientId", UNREADABLE),
+    capabilityHash,
+    invalidatedAt: timestamp(record.invalidatedAt, "invalidatedAt", UNREADABLE),
+  });
 }
 
 export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRequestRecord {

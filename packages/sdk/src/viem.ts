@@ -33,8 +33,8 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import type { OaathGrantHandle } from "./client/grant-handle.js";
 import { clientFail, exactClientRecord } from "./client/errors.js";
+import type { OaathGrantHandle } from "./client/grant-handle.js";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;

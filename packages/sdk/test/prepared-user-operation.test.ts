@@ -1,8 +1,8 @@
 import { createOperation } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import {
-  OaathPreparedUserOperationError,
   deriveOperationId,
+  OaathPreparedUserOperationError,
   parsePreparedUserOperation,
   prepareUserOperation,
 } from "../src/kernel.js";

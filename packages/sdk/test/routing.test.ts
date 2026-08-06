@@ -2,12 +2,6 @@ import { encodeFunctionData, getAddress } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import {
-  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
-  OAATH_HANDLE_OPS_OVERHEAD_GAS,
-  type OaathBundlerCapability,
-  type OaathBundlerProbeRequest,
-  type OaathFeePayerDescriptor,
-  type OaathSessionCoverage,
   captureRoutingCapabilities,
   classifyBundlerAcceptance,
   classifyBundlerProbe,
@@ -15,11 +9,17 @@ import {
   deriveHandleOpsRequirement,
   deriveOperationPrefund,
   encodeHandleOps,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+  OAATH_HANDLE_OPS_OVERHEAD_GAS,
+  type OaathBundlerCapability,
+  type OaathBundlerProbeRequest,
+  type OaathFeePayerDescriptor,
+  type OaathSessionCoverage,
   probeBundlerCapability,
 } from "../src/advanced.js";
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
   asViemUserOperation,
+  KERNEL_V4_ENTRY_POINT_V07,
   prepareUserOperation,
 } from "../src/kernel.js";
 

@@ -14,10 +14,10 @@ import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
 import { createOAAth } from "../src/index.js";
 import { ecdsaKey } from "../src/kernel.js";
 import {
-  OAATH_CLEANUP_CHECKPOINT_VERSION,
   createIndexedDbGrantStoreAdapter,
   createIndexedDbOperationStoreAdapter,
   isCleanupEffectName,
+  OAATH_CLEANUP_CHECKPOINT_VERSION,
   openOaathDatabase,
   parseCleanupCheckpoint,
   parseClientContext,
@@ -41,8 +41,8 @@ import {
   permissionInput,
   sendCallsInput,
   signingProfiles,
-  VALIDATOR,
   TARGET,
+  VALIDATOR,
 } from "./support/browser.js";
 
 function baseConfiguration(): Record<string, unknown> {

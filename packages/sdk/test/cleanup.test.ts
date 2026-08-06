@@ -6,9 +6,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  type OaathCleanupEffect,
   closeEffect,
   forgetLocalEffect,
+  type OaathCleanupEffect,
   runOaathCleanup,
   signOutEffect,
 } from "../src/advanced.js";

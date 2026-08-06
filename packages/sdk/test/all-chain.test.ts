@@ -2,6 +2,10 @@ import { concat, encodeAbiParameters, hashTypedData, keccak256, recoverAddress, 
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {
+  approveKernelPermissionAllChain,
+  createKernelRuntime,
+  ecdsaKey,
+  encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
@@ -9,14 +13,10 @@ import {
   type KernelAllChainApproval,
   type KernelV4AccountReadRequest,
   type KernelV4Install,
-  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
-  approveKernelPermissionAllChain,
-  createKernelRuntime,
-  ecdsaKey,
-  encodeKernelV4NonceKey,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   ownerOperator,
   sessionOperator,
 } from "../src/kernel.js";

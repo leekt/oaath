@@ -19,16 +19,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // One repo-owned deny list; this copy had already gone stale against it.
 import { scrubLiveProviderEnvironment } from "../../../scripts/live-provider-environment.mjs";
 import {
-  KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_EXECUTE_SELECTOR,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   bindKernelV4Account,
   createKernelV4Reads,
   encodeKernelV4FactoryAddressRead,
   encodeKernelV4InstallModules,
   encodeKernelV4ValidatorData,
+  KERNEL_V4_CREATE2_DEPLOYER,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_EXECUTE_SELECTOR,
+  KERNEL_V4_FACTORY_V07,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   prepareKernelV4UserOperation,
 } from "../src/kernel.js";
 

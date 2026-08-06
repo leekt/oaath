@@ -3,7 +3,14 @@ import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { bytesToHex, hexToBytes, keccak256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { kernelKeyCapability } from "../src/kernel/capabilities.js";
+// pinnedValidatorModule is internal on purpose: a consumer reads the same fact
+// through diagnoseKernelCapability, so the public surface stays unchanged.
+import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
+  createKernelRuntime,
+  diagnoseKernelCapability,
+  ecdsaKey,
   type KernelBuiltInKeyKind,
   type KernelCapability,
   type KernelCapabilityEvidence,
@@ -12,21 +19,14 @@ import {
   type KernelRuntimeErrorCode,
   type KernelV4SupportedChainId,
   type KeyProfile,
-  type OperatorProfile,
-  createKernelRuntime,
-  diagnoseKernelCapability,
-  ecdsaKey,
   kernelV4Deployment,
+  type OperatorProfile,
   ownerOperator,
   p256Key,
   pinnedSignerModule,
   sessionOperator,
   webauthnKey,
 } from "../src/kernel.js";
-import { kernelKeyCapability } from "../src/kernel/capabilities.js";
-// pinnedValidatorModule is internal on purpose: a consumer reads the same fact
-// through diagnoseKernelCapability, so the public surface stays unchanged.
-import { pinnedValidatorModule } from "../src/kernel/modules.js";
 
 const chainIds: readonly KernelV4SupportedChainId[] = [46_630, 421_614, 11_155_111];
 const validator = `0x${"22".repeat(20)}` as const;
