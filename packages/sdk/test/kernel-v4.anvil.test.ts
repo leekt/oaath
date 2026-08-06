@@ -40,7 +40,7 @@ const entryPointReads = parseAbi([
 ]);
 
 interface DeploymentFixture {
-  version: "kernel-v4-v0.7-local-fixture/v5";
+  version: "kernel-v4-v0.7-local-fixture/v6";
   entryPoint: { deploymentSalt: Hex; packageVersion: "0.7.0"; artifact: string };
   kernelUups: { transactionHash: Hex; deploymentInput: Hex };
   kernelImmutableEcdsa: { transactionHash: Hex; deploymentInput: Hex };
@@ -127,7 +127,7 @@ afterAll(() => {
       ),
     ) as DeploymentFixture;
     expect(fixture).toMatchObject({
-      version: "kernel-v4-v0.7-local-fixture/v5",
+      version: "kernel-v4-v0.7-local-fixture/v6",
       entryPoint: { packageVersion: "0.7.0" },
       ecdsaValidator: {
         repository: "https://github.com/zerodevapp/kernel",

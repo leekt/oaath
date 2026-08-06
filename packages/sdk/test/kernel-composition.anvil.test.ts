@@ -3,11 +3,16 @@ import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import {
   bytesToHex,
   concat,
+  decodeAbiParameters,
+  encodeAbiParameters,
   hexToBytes,
   keccak256,
   pad,
   parseEther,
+  sha256,
+  stringToBytes,
   toFunctionSelector,
+  toHex,
 } from "viem";
 import { generatePrivateKey, type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -37,6 +42,7 @@ import {
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
+  webauthnKey,
 } from "../src/kernel.js";
 import {
   type AnvilChain,
@@ -846,6 +852,223 @@ async function createHarness() {
       code: "kernel_runtime_signer_unavailable",
       message: "Kernel authority module carries no code on this chain",
     });
+  }, 90_000);
+
+  it("executes a WebAuthn session installed under an ECDSA owner", async () => {
+    const harness = await createHarness();
+    const { fixture, client, reads, deployCreate2, deployModule, deployValidator, fund, send } =
+      harness;
+    await deployKernelStack(harness);
+    await deployModule(fixture.callPolicy);
+    await deployModule(fixture.webAuthnSigner);
+    // The pinned WebAuthnSigner verifies P-256 by staticcalling the audited
+    // Daimo verifier singleton at its fixed cross-chain address (the envelope
+    // this SDK encodes always says usePrecompiled=false). Deploying it through
+    // the same deterministic CREATE2 proxy with the exact mainnet broadcast
+    // calldata proves the address the module hard-codes, on this chain too.
+    if (!(await client.getCode({ address: fixture.p256Verifier.expectedAddress }))) {
+      await deployCreate2(fixture.p256Verifier.deploymentInput);
+    }
+    const verifierCode = await client.getCode({ address: fixture.p256Verifier.expectedAddress });
+    if (!verifierCode) throw new Error("P-256 verifier carries no code");
+    expect(keccak256(verifierCode)).toBe(fixture.p256Verifier.runtimeCodeHash);
+
+    // One passkey: a raw P-256 scalar standing in for the authenticator's
+    // non-extractable key, bound to one relying party and one credential ID.
+    const passkeySecret = hexToBytes(`0x${"41".repeat(32)}`);
+    const foreignSecret = hexToBytes(`0x${"42".repeat(32)}`);
+    const rpId = "app.example";
+    const webauthnOrigin = "https://app.example";
+    const credentialId = "AAECAwQFBgcICQoLDA0ODw";
+    const credentialBytes = Uint8Array.from(atob(credentialId.replace(/-/gu, "+")), (character) =>
+      character.charCodeAt(0),
+    );
+    const credentialFor = (secret: Uint8Array) =>
+      Object.freeze({
+        version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+        kind: "webauthn" as const,
+        publicKey: bytesToHex(p256.getPublicKey(secret, false)),
+        authenticatorIdHash: keccak256(bytesToHex(credentialBytes)),
+      });
+    /** One WebAuthn assertion over the exact challenge, like a real authenticator. */
+    const authenticate =
+      (secret: Uint8Array) => async (request: { readonly challenge: string }) => {
+        const clientDataJSON = JSON.stringify({
+          type: "webauthn.get",
+          challenge: request.challenge,
+          origin: webauthnOrigin,
+          crossOrigin: false,
+        });
+        const authenticatorData = concat([
+          sha256(stringToBytes(rpId)),
+          toHex(0x05, { size: 1 }),
+          "0x00000001",
+        ]);
+        const message = sha256(concat([authenticatorData, sha256(stringToBytes(clientDataJSON))]));
+        const signature = p256.sign(hexToBytes(message), secret, { lowS: true, prehash: false });
+        return Object.freeze({
+          authenticatorData,
+          clientDataJSON,
+          responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+          r: toHex(signature.r, { size: 32 }),
+          s: toHex(signature.s, { size: 32 }),
+        });
+      };
+    const sessionKeyFor = (secret: Uint8Array) =>
+      webauthnKey({
+        credential: credentialFor(secret),
+        credentialId,
+        rpId,
+        origin: webauthnOrigin,
+        authenticate: authenticate(secret),
+      });
+
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+      }),
+      reads,
+    });
+    const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const sessionScope = {
+      kind: "call" as const,
+      permissions: [{ target: sessionTarget, selector: "0x00000000" as const, valueLimit: "777" }],
+    };
+    const sessionRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({ key: sessionKeyFor(passkeySecret), policies: [sessionScope] }),
+      reads,
+    });
+    // The session's authority is the pinned reviewed WebAuthn signer module.
+    expect(sessionRuntime.authorityModule).toBe(pinnedSignerModule("webauthn"));
+    expect(sessionRuntime.authorityModule).toBe(fixture.webAuthnSigner.expectedAddress);
+    expect(sessionRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 6]);
+
+    const counterfactual = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    const account = counterfactual.account;
+    await fund(account, parseEther("1"));
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-webauthn-install",
+          account: counterfactual,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(sessionRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    const deployed = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(deployed).toMatchObject({ state: "deployed", account });
+
+    // The proof: the passkey's assertion envelope validates on-chain inside
+    // Kernel's permission validation — the pinned WebAuthnSigner recomputes
+    // the signed message from authenticatorData and clientDataJSON, verifies
+    // the P-256 signature through the deployed verifier — and the value moves.
+    expect(
+      await send(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-webauthn-session",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: sessionTarget, value: "777", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // A foreign passkey's assertion never leaves this SDK: the profile's own
+    // verification refuses it against the bound credential before any
+    // submission exists.
+    const foreignRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: webauthnKey({
+          // The approved credential's public key with a foreign authenticator
+          // behind it: the assertion cannot verify against the bound key.
+          credential: credentialFor(passkeySecret),
+          credentialId,
+          rpId,
+          origin: webauthnOrigin,
+          authenticate: authenticate(foreignSecret),
+        }),
+        policies: [sessionScope],
+      }),
+      reads,
+    });
+    const foreign = foreignRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-webauthn-foreign",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: sessionTarget, value: "1", data: "0x" }],
+      gas,
+    });
+    await expect(foreignRuntime.signOperation(foreign)).rejects.toMatchObject({
+      code: "kernel_runtime_signature_invalid",
+    });
+
+    // The chain refuses it too, proven with an envelope assembled outside the
+    // SDK: the legit permission envelope with only its signer slot swapped for
+    // the foreign passkey's otherwise well-formed assertion.
+    const legitimate = await sessionRuntime.signOperation(foreign);
+    const foreignAssertion = await sessionKeyFor(foreignSecret).sign(foreign.userOperationHash);
+    const [slots] = decodeAbiParameters([{ type: "bytes[]" }], legitimate);
+    const swapped = encodeAbiParameters(
+      [{ type: "bytes[]" }],
+      [[...slots.slice(0, -1), foreignAssertion]],
+    );
+    expect(await harness.rejectionOf(foreign, swapped)).toMatchObject({
+      errorName: "FailedOp",
+      args: [0n, "AA24 signature error"],
+    });
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
+
+    // Bounded signing: the installed policy set bounds the WebAuthn session
+    // on-chain — a value above the ceiling is refused inside Kernel's
+    // validation phase, so nothing moves.
+    expect(
+      await harness.rejection(
+        sessionRuntime,
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-webauthn-excessive",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+          gas,
+        }),
+      ),
+    ).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
+    });
+    expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
   }, 90_000);
 
   it("removes an installed permission with owner-signed uninstall calls", async () => {
