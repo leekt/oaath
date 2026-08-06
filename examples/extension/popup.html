@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: ui-monospace, monospace;
+        width: 340px;
+        margin: 0;
+        padding: 12px;
+        background: #1a1a2e;
+        color: #e5e7eb;
+        font-size: 12px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+        color: #4ade80;
+      }
+      label {
+        display: block;
+        margin-top: 6px;
+        color: #9ca3af;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        background: #0f0f1a;
+        color: #e5e7eb;
+        border: 1px solid #374151;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-family: inherit;
+      }
+      button {
+        margin-top: 10px;
+        margin-right: 6px;
+        background: #4ade80;
+        color: #0f0f1a;
+        border: 0;
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-family: inherit;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #374151;
+        color: #e5e7eb;
+      }
+      #status {
+        margin: 8px 0;
+        padding: 8px;
+        background: #0f0f1a;
+        border-radius: 4px;
+        word-break: break-all;
+        white-space: pre-wrap;
+      }
+      details {
+        margin-top: 8px;
+      }
+      summary {
+        cursor: pointer;
+        color: #9ca3af;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>OAAth</h1>
+    <div id="status">reading…</div>
+    <details>
+      <summary>service</summary>
+      <label>service URL <input id="url" /></label>
+      <label>chain id <input id="chain" /></label>
+      <button type="button" id="save" class="secondary">save</button>
+    </details>
+    <details open>
+      <summary>pair this origin</summary>
+      <label>target <input id="target" placeholder="0x…" /></label>
+      <label>selector <input id="selector" placeholder="0xa9059cbb" /></label>
+      <label>value limit (wei) <input id="valueLimit" value="0" /></label>
+      <label>expires in (s) <input id="expiresIn" value="1800" /></label>
+      <label>per-chain operation limit <input id="operationLimit" value="10" /></label>
+      <button type="button" id="pair">request permission</button>
+      <button type="button" id="revoke" class="secondary">revoke</button>
+    </details>
+    <script src="popup.js"></script>
+  </body>
+</html>
