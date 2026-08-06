@@ -40,6 +40,7 @@ import {
   OAATH_PERMISSION_REQUEST_VERSION,
   type PermissionDecision,
   type PermissionRequest,
+  type PermissionSessionSigner,
   parseGrantPolicy,
   parseIssuerIdentity,
   parsePermissionDecision,
@@ -143,6 +144,12 @@ export interface CreateConnectionInput {
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
+  /**
+   * Remote session-key custody the deployment declared, or null for frontend
+   * custody. Named in every permission request so the owner's approval binds
+   * the custody model through the request hash.
+   */
+  readonly sessionSigner: Readonly<PermissionSessionSigner> | null;
   readonly now: () => number;
 }
 
@@ -408,6 +415,7 @@ export function createConnection(
       policy,
       requestedAt,
       expiresAt,
+      sessionSigner: input.sessionSigner,
     });
 
     const verifier = newCodeVerifier();

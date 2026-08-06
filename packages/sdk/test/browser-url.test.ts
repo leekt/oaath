@@ -4,6 +4,8 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
+import { createKmsSessionSignerProvider } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { createOAAth } from "../src/index.js";
@@ -32,6 +34,7 @@ import {
   createChainFixture,
   createUrlRealm,
   permissionInput,
+  relayKms,
   sendCallsInput,
 } from "./support/browser.js";
 
@@ -187,23 +190,58 @@ describe("URL-only golden path", () => {
     }
   });
 
-  it("refuses a custody mode this SDK does not implement, never substituting frontend", async () => {
-    // Custody modes are different trust models. A deployment declaring backend
-    // or hosted custody must not silently receive a locally minted session key
-    // — composition refuses before any key, store, or authority exists.
-    for (const mode of ["application_backend", "oaath_hosted"] as const) {
-      const realm = createUrlRealm({
-        bootstrap: (document) => ({
-          ...document,
-          sessionSigner: { mode, providerId: "kms-primary" },
-        }),
-      });
-      await expect(realm.oaath.connect()).rejects.toMatchObject({
-        name: "OaathClientError",
-        code: "oaath_client_capability_unsupported",
-        source: `session_signer_${mode}`,
-      });
-    }
+  it("runs hosted session custody end to end: the page never holds session key material", async () => {
+    const realm = createUrlRealm({
+      sessionSigner: {
+        mode: "oaath_hosted",
+        providerId: "kms-primary",
+        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+      },
+    });
+    const connection = await realm.oaath.connect();
+    // The operator credential is the one the deployment's provider served —
+    // never a locally minted key.
+    expect(realm.oaath.binding.operatorCredential.kind).toBe("ecdsa");
+    expect(realm.fetched).toContain("POST /session-signers");
+
+    const grant = await connection.requestPermission(permissionInput());
+    expect(grant.state).toBe("active");
+
+    // The execution signature came from the service's signing route; the
+    // profile's self-verification proved it matches the served credential —
+    // the rotation invariant, enforced per signature.
+    const operation = await grant.sendCalls(sendCallsInput());
+    expect((await operation.wait()).status).toBe("finalized");
+    expect(
+      realm.fetched.filter((entry) => entry === "POST /session-signers/signatures").length,
+    ).toBeGreaterThan(0);
+    await connection.close();
+  });
+
+  it("fails closed on custody the service declares but cannot or should not serve", async () => {
+    // Declared remote custody with no signing routes composes nothing — the
+    // SDK never substitutes a locally minted frontend key.
+    const unserved = createUrlRealm({
+      bootstrap: (document) => ({
+        ...document,
+        sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary" },
+      }),
+    });
+    await expect(unserved.oaath.connect()).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_issuer_rejected",
+    });
+    // An unknown custody mode rejects the whole bootstrap document.
+    const unknown = createUrlRealm({
+      bootstrap: (document) => ({
+        ...document,
+        sessionSigner: { mode: "owner_hosted", providerId: "kms-primary" },
+      }),
+    });
+    await expect(unknown.oaath.connect()).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_capability_invalid",
+    });
     // An explicit frontend declaration composes exactly like absence.
     const frontend = createUrlRealm({
       bootstrap: (document) => ({

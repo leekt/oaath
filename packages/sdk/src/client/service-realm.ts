@@ -26,6 +26,7 @@ import { parseServiceBootstrap, type ServiceBootstrap } from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { credentialOwnerKey } from "../kernel/key/credential-owner.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
+import type { KeyProfile } from "../kernel/types.js";
 import { createIndexedDbCleanupStore } from "../persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../persistence/indexeddb/context-store.js";
 import { openOaathDatabase } from "../persistence/indexeddb/database.js";
@@ -313,25 +314,70 @@ function deviceIdentity(): string {
  * separate from the fetch so hostile context is refused before any key or
  * store exists, and so tests can exercise it deterministically.
  */
-function composeConfiguration(
+/**
+ * The remote session key: the deployment declared backend or hosted custody,
+ * so the operator credential comes from the service's registered provider and
+ * every signature is one authenticated call for one exact hash. The local
+ * profile still self-verifies each returned signature against the served
+ * credential, so a provider signing with any other key — a silent rotation —
+ * fails closed before a submission exists.
+ */
+async function remoteSessionKey(
+  input: Readonly<ServiceRealmInput>,
+  transport: (request: Request) => Promise<Response>,
+  deviceId: string,
+): Promise<Readonly<{ key: Readonly<KeyProfile>; credential: Readonly<Record<string, unknown>> }>> {
+  const served = await fetchJson(
+    transport,
+    jsonRequest(`${input.url}/session-signers`, { deviceId }),
+    "session signer credential",
+  );
+  const record = exactClientRecord(
+    served,
+    ["operatorCredential"],
+    "session signer credential",
+    new WeakSet(),
+    "oaath_client_capability_invalid",
+  );
+  const credential = record.operatorCredential as Record<string, unknown> | null;
+  if (
+    !credential ||
+    credential.kind !== "ecdsa" ||
+    typeof credential.address !== "string" ||
+    !/^0x[0-9a-f]{40}$/u.test(credential.address)
+  ) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "the service served an unusable session signer credential",
+    );
+  }
+  const address = credential.address as `0x${string}`;
+  return Object.freeze({
+    credential: Object.freeze({ ...credential }),
+    key: ecdsaKey({
+      account: {
+        address,
+        sign: async ({ hash }: { readonly hash: `0x${string}` }) => {
+          const answer = await fetchJson(
+            transport,
+            jsonRequest(`${input.url}/session-signers/signatures`, { deviceId, hash }),
+            "session signer signature",
+          );
+          return (answer as { readonly signature?: unknown } | null)?.signature;
+        },
+      },
+      validator: SESSION_VALIDATOR_PLACEHOLDER,
+    }),
+  });
+}
+
+async function composeConfiguration(
   input: Readonly<ServiceRealmInput>,
   transport: (request: Request) => Promise<Response>,
   bootstrap: Readonly<ServiceBootstrap>,
   stores: unknown,
   session: Readonly<PersistedServiceSession>,
-): Record<string, unknown> {
-  // Custody modes are different trust models and are never silently
-  // substituted: this SDK implements frontend custody — the local
-  // non-extractable session key below — so a deployment declaring backend or
-  // hosted custody refuses composition here rather than minting a local key
-  // the deployment never meant to exist.
-  if (bootstrap.sessionSigner.mode !== "frontend") {
-    return clientFail(
-      "oaath_client_capability_unsupported",
-      "the deployment's session signer custody mode is not supported by this SDK",
-      `session_signer_${bootstrap.sessionSigner.mode}`,
-    );
-  }
+): Promise<Record<string, unknown>> {
   const origin = localOrigin(input);
   const redirectUri = bootstrap.application.redirectUris.find((registered) =>
     registered.startsWith(`${origin}/`),
@@ -343,7 +389,28 @@ function composeConfiguration(
     );
   }
   const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
+  // Custody modes are different trust models and are never silently
+  // substituted. Frontend custody is the local non-extractable session key;
+  // backend and hosted custody bind the credential the deployment's registered
+  // provider serves and route every signature through it. The vocabulary is
+  // closed at the bootstrap parser, so no other mode can reach here.
   const sessionAccount = privateKeyToAccount(session.privateKey);
+  const remote =
+    bootstrap.sessionSigner.mode === "frontend"
+      ? null
+      : await remoteSessionKey(input, transport, session.deviceId);
+  const sessionKey =
+    remote === null
+      ? ecdsaKey({ account: sessionAccount, validator: SESSION_VALIDATOR_PLACEHOLDER })
+      : remote.key;
+  const operatorCredential =
+    remote === null
+      ? {
+          version: "oaath.operator-credential-profile/v1",
+          kind: "ecdsa",
+          address: sessionAccount.address.toLowerCase(),
+        }
+      : remote.credential;
   return {
     binding: {
       issuer: input.url,
@@ -355,11 +422,7 @@ function composeConfiguration(
       deviceId: session.deviceId,
       userHandle: bootstrap.userHandle,
       account: bootstrap.account,
-      operatorCredential: {
-        version: "oaath.operator-credential-profile/v1",
-        kind: "ecdsa",
-        address: sessionAccount.address.toLowerCase(),
-      },
+      operatorCredential,
     },
     issuer: { url: input.url, fetch: transport, signOut: null },
     authorization: input.authorization ?? pollingAuthorization(transport, input.url, now),
@@ -378,8 +441,18 @@ function composeConfiguration(
         credential: bootstrap.account.ownerCredential,
         validator: bootstrap.ownerValidator,
       }),
-      session: ecdsaKey({ account: sessionAccount, validator: SESSION_VALIDATOR_PLACEHOLDER }),
+      session: sessionKey,
     },
+    // The owner approves the custody model with the scope: remote custody is
+    // named in every permission request this realm creates.
+    ...(remote === null
+      ? {}
+      : {
+          sessionSigner: {
+            mode: bootstrap.sessionSigner.mode,
+            providerId: bootstrap.sessionSigner.providerId,
+          },
+        }),
     // Deleting the wrapping key on disconnect durably orphans the persisted
     // session ciphertext, so `forgetLocal` forgets the session too.
     localKeyIds: [serviceSessionKeyId(input.url, origin)],
@@ -442,7 +515,9 @@ export function createServiceRealm<Realm extends object>(
           () => undefined,
         );
       }
-      inner = compose(composeConfiguration(input, transport, await bootstrap, stores, session));
+      inner = compose(
+        await composeConfiguration(input, transport, await bootstrap, stores, session),
+      );
       return inner;
     })().catch((error: unknown) => {
       // A failed bootstrap leaves no realm behind; the next connect retries.
