@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { OaathRelayError, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";
+import { createKmsSessionSignerProvider } from "../src/session-signer/kms-provider.js";
 import type { RelayStore, RelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
@@ -632,6 +633,88 @@ describe("URL-only service surface", () => {
       ...overrides,
     } as Partial<RelayHandlerOptions>;
   }
+
+  it("serves hosted session-signer custody: one credential per identity, signatures on exact hashes", async () => {
+    const provider = createKmsSessionSignerProvider({ kms: createTestKms() });
+    const harness = createHarness(
+      bootstrapOptions({
+        sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary", provider },
+      }),
+    );
+
+    // The one custody declaration serves the bootstrap document too.
+    const document = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    expect(document.sessionSigner).toEqual({ mode: "oaath_hosted", providerId: "kms-primary" });
+
+    // One identity, one credential — idempotent across calls (the rotation
+    // invariant: nothing can swap the public key under an existing approval).
+    const first = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      200,
+    );
+    const credential = first.operatorCredential as Record<string, unknown>;
+    expect(credential).toMatchObject({ kind: "ecdsa" });
+    expect(credential.address).toMatch(/^0x[0-9a-f]{40}$/u);
+    const again = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      200,
+    );
+    expect(again.operatorCredential).toEqual(credential);
+    // A different device is a different identity and a different key.
+    const other = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-2" })),
+      200,
+    );
+    expect((other.operatorCredential as Record<string, unknown>).address).not.toBe(
+      credential.address,
+    );
+
+    // A signature over one exact 32-byte hash, in the local-account shape.
+    const hash = `0x${"7a".repeat(32)}`;
+    const signed = await expectOk<Record<string, unknown>>(
+      await harness.handler(
+        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-1", hash }),
+      ),
+      200,
+    );
+    expect(signed.signature).toMatch(/^0x[0-9a-f]{130}$/u);
+
+    // Wire hygiene and authorization: a malformed hash, a foreign role, and
+    // an unauthenticated caller are refused.
+    await expectFailure(
+      await harness.handler(
+        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-1", hash: "0x01" }),
+      ),
+      "relay_request_invalid",
+    );
+    await expectFailure(
+      await harness.handler(post("/session-signers", OWNER_TOKEN, { deviceId: "device-1" })),
+      "relay_forbidden",
+    );
+    await expectFailure(
+      await harness.handler(post("/session-signers", "wrong-token", { deviceId: "device-1" })),
+      "relay_unauthenticated",
+    );
+    // Signing never creates a key: an identity that never fetched its
+    // credential holds no approval that could authorize a signature.
+    await expectFailure(
+      await harness.handler(
+        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-3", hash }),
+      ),
+      "relay_internal",
+    );
+  });
+
+  it("serves no session-signer routes when the deployment declared no custody", async () => {
+    const harness = createHarness(bootstrapOptions());
+    await expectFailure(
+      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      "relay_not_found",
+    );
+  });
 
   it("serves the exact versioned bootstrap document to a client", async () => {
     const harness = createHarness(bootstrapOptions());

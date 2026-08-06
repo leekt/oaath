@@ -35,7 +35,11 @@ export { resumeAuthorization } from "./authorization/resume.js";
 export type { RelayClock } from "./clock.js";
 export type { RelayErrorCode } from "./relay/errors.js";
 export { OaathRelayError, RELAY_ERROR_STATUS } from "./relay/errors.js";
-export type { RelayHandler, RelayHandlerOptions } from "./relay/handler.js";
+export type {
+  RelayHandler,
+  RelayHandlerOptions,
+  RelaySessionSignerConfiguration,
+} from "./relay/handler.js";
 export { createRelayHandler } from "./relay/handler.js";
 export type {
   RelayAuthentication,
@@ -45,6 +49,12 @@ export type {
 export type { RelayKms } from "./security/kms.js";
 export type { RelayRateLimiter, RelayRateLimitInput } from "./security/rate-limit.js";
 export { REDACTED, redactForLog, redactUrl } from "./security/redact.js";
+export type {
+  RelaySessionSignerProvider,
+  SessionSignerIdentity,
+  SessionSignerSignRequest,
+} from "./session-signer/kms-provider.js";
+export { createKmsSessionSignerProvider } from "./session-signer/kms-provider.js";
 export type { RelayStore, RelayTransaction } from "./store/interface.js";
 export { createMemoryRelayStore } from "./store/memory.js";
 export type {
