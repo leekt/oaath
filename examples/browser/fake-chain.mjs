@@ -86,6 +86,7 @@ export function createFakeChain(chainId) {
       blockHash: blockHash(currentIndex()),
       transactionIndex: "0x0",
       status: "0x1",
+      gasUsed: "0x2a",
       logs: [
         {
           address: prepared.entryPoint.address,

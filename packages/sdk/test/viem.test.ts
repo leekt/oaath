@@ -136,7 +136,7 @@ describe("viem provider over a Grant", () => {
     expect(receipt.status).toBe("0x1");
     expect(receipt.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(receipt.blockNumber).toBe("0x14");
-    expect(receipt.gasUsed).toBe("0xa");
+    expect(receipt.gasUsed).toBe("0x2a");
     expect(Array.isArray(receipt.logs)).toBe(true);
 
     // An unknown id is a refusal, not an empty success.
@@ -156,7 +156,7 @@ describe("viem provider over a Grant", () => {
     const receipt = await operation.receipt();
     expect(receipt.status).toBe("success");
     expect(receipt.blockNumber).toBe("20");
-    expect(receipt.gasUsed).toBe("10");
+    expect(receipt.gasUsed).toBe("42");
     expect(receipt.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
     expect(receipt.logs.length).toBeGreaterThan(0);
     expect(receipt.logs[0]?.topics[0]).toMatch(/^0x[0-9a-f]{64}$/u);

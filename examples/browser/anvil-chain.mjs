@@ -121,6 +121,7 @@ export async function createAnvilChain(chainId) {
                   blockHash: receipt.blockHash,
                   transactionIndex: receipt.transactionIndex,
                   status: receipt.status,
+                  gasUsed: receipt.gasUsed,
                   logs: receipt.logs.map(logEvidence),
                 };
           }

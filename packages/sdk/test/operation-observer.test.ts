@@ -142,6 +142,7 @@ function occurrence(input: {
       blockHash: input.blockHash,
       transactionIndex,
       status: "0x1",
+      gasUsed: "0x2a",
       logs: [boundary, event],
     },
     transaction: {
