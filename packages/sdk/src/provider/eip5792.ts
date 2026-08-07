@@ -561,7 +561,8 @@ export function createEip5792Orchestrator(
 
   async function getCapabilities(params: unknown): Promise<Readonly<Record<string, unknown>>> {
     const captured = captureWalletGetCapabilitiesParams(params);
-    const accountAddress = await account();
+    const accountAddress = (await input.port.authorizedAccount(input.chain)).toLowerCase();
+    if (!isWalletAddress(accountAddress)) return rpcFail(INTERNAL_ERROR);
     if (captured.address !== accountAddress) return rpcFail(UNAUTHORIZED);
 
     const requested = captured.chainIds ?? Object.freeze([chainId]);
