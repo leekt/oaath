@@ -5,8 +5,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  captureWalletGetCapabilitiesParams,
   captureWalletSendCallsParams,
   EIP5792_CAPTURE_LIMITS,
+  hashCapturedWalletSendCallsRequest,
   isCanonicalChainId,
   isCanonicalQuantity,
   isHexBytes,
@@ -287,13 +289,24 @@ describe("canonical fields and identifiers", () => {
     expect(isCanonicalQuantity("0x00")).toBe(false);
     expect(isCanonicalChainId("0x1")).toBe(true);
     expect(isCanonicalChainId("0xabc")).toBe(true);
+    expect(isCanonicalChainId("0xAbC")).toBe(true);
     expect(isCanonicalChainId("0x0")).toBe(false);
   });
 
-  it("accepts only lowercase positive no-leading-zero chain ids", () => {
+  it("accepts compact positive chain ids and normalizes mixed-case digits once", () => {
     expect(captureBundle(baseBundle({ chainId: "0x1" }), 1).chainId).toBe("0x1");
-    expect(captureBundle(baseBundle({ chainId: "0xabcdef" }), 0xab_cdef).chainId).toBe("0xabcdef");
-    for (const chainId of ["0x0", "0x00", "0x01", "0xA", "0X1", "1", "0x", "0x-1", 1]) {
+    const lowercase = captureBundle(baseBundle({ chainId: "0xabcdef" }), 0xab_cdef);
+    const mixedCase = captureBundle(baseBundle({ chainId: "0xAbCdEf" }), 0xab_cdef);
+    expect(lowercase.chainId).toBe("0xabcdef");
+    expect(mixedCase.chainId).toBe("0xabcdef");
+    expect(hashCapturedWalletSendCallsRequest(mixedCase, "same-id")).toBe(
+      hashCapturedWalletSendCallsRequest(lowercase, "same-id"),
+    );
+    expect(captureWalletGetCapabilitiesParams([TARGET_A, ["0xA", "0xAbCdEf"]]).chainIds).toEqual([
+      "0xa",
+      "0xabcdef",
+    ]);
+    for (const chainId of ["0x0", "0x00", "0x01", "0x0A", "0X1", "1", "0x", "0x-1", 1]) {
       expectRpcError(() => captureBundle(baseBundle({ chainId }), 1), INVALID_PARAMS);
     }
   });
@@ -627,7 +640,7 @@ describe("hostile object rejection", () => {
 
 describe("semantic EIP-5792 refusals", () => {
   it("classifies a valid configured-chain mismatch as 5710", () => {
-    expectRpcError(() => captureBundle(baseBundle({ chainId: "0x1" }), 2), UNSUPPORTED_CHAIN);
+    expectRpcError(() => captureBundle(baseBundle({ chainId: "0xA" }), 11), UNSUPPORTED_CHAIN);
   });
 
   it("uses the generic execution refusal for syntactically valid contract creation", () => {
