@@ -50,6 +50,8 @@ Then `chrome://extensions` → Developer mode → **Load unpacked** →
 
 Exactly `@oaath/sdk/viem`: `eth_chainId`, `eth_accounts`,
 `eth_requestAccounts`, `eth_sendTransaction`, and EIP-5792
-`wallet_sendCalls` / `wallet_getCallsStatus` / `wallet_getCapabilities`.
+`wallet_sendCalls` / `wallet_getCallsStatus` / `wallet_showCallsStatus` /
+`wallet_getCapabilities`. `wallet_showCallsStatus` opens a read-only extension
+page backed by the same durable bundle lookup as `wallet_getCallsStatus`.
 Everything else is refused with code 4200 — this provider is a Grant, not a
 general-purpose RPC node.
