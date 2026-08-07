@@ -26,7 +26,7 @@ import {
   exactRecord,
 } from "./internal/exact-record.js";
 
-export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v1" as const;
+export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v2" as const;
 
 const MAX_REDIRECT_URIS = 8;
 const MAX_CHAINS = 32;
@@ -52,6 +52,16 @@ export interface ServiceBootstrapChain {
   readonly usage: boolean;
   /** EOA fee payer snapshot for the handleOps fallback, or null. */
   readonly feePayer: Readonly<{ address: `0x${string}`; balance: string }> | null;
+  /**
+   * Deployment-registered ERC-7677 provider for this chain, or null. The SDK
+   * derives its same-service proxy URL from the connected OAAth service URL;
+   * this identifier is configuration evidence, never an application endpoint.
+   */
+  readonly paymasterService: Readonly<ServiceBootstrapPaymasterService> | null;
+}
+
+export interface ServiceBootstrapPaymasterService {
+  readonly providerId: string;
 }
 
 /**
@@ -60,8 +70,7 @@ export interface ServiceBootstrapChain {
  * a mode it does not implement — a custody mode is never silently substituted.
  *
  * - `frontend` — the SDK generates and holds a non-extractable local key; the
- *   service never sees session private material. The only mode this document
- *   version's absence implies.
+ *   service never sees session private material.
  * - `application_backend` — the integrating application's backend holds the
  *   key in its own KMS/HSM and signs through a registered, authenticated
  *   signer capability.
@@ -96,11 +105,7 @@ export interface ServiceBootstrap {
    */
   readonly ownerValidator: `0x${string}` | null;
   readonly chains: readonly Readonly<ServiceBootstrapChain>[];
-  /**
-   * The deployment's declared session-key custody. Absent in the document
-   * means `frontend` — the only custody this document version ever implied —
-   * and the parsed bootstrap always carries the canonical shape.
-   */
+  /** The deployment's explicitly declared session-key custody. */
   readonly sessionSigner: Readonly<ServiceBootstrapSessionSigner>;
 }
 
@@ -118,7 +123,7 @@ function captureChain(
 ): Readonly<ServiceBootstrapChain> {
   const record = exactRecord(
     value,
-    ["chainId", "usage", "feePayer"],
+    ["chainId", "usage", "feePayer", "paymasterService"],
     "service bootstrap chain",
     context,
     fail,
@@ -147,7 +152,25 @@ function captureChain(
     }
     feePayer = Object.freeze({ address: payer.address as `0x${string}`, balance: payer.balance });
   }
-  return Object.freeze({ chainId, usage: record.usage, feePayer });
+  let paymasterService: Readonly<ServiceBootstrapPaymasterService> | null = null;
+  if (record.paymasterService !== null) {
+    const service = exactRecord(
+      record.paymasterService,
+      ["providerId"],
+      "service bootstrap paymaster service",
+      context,
+      fail,
+    );
+    paymasterService = Object.freeze({
+      providerId: boundedText(
+        service.providerId,
+        MAX_NAME_LENGTH,
+        "service bootstrap paymaster provider",
+        fail,
+      ),
+    });
+  }
+  return Object.freeze({ chainId, usage: record.usage, feePayer, paymasterService });
 }
 
 function captureSessionSigner(
@@ -188,21 +211,17 @@ export function captureServiceBootstrap(
   context: CaptureContext,
   fail: CaptureFailure,
 ): Readonly<ServiceBootstrap> {
-  const declaresSessionSigner =
-    typeof value === "object" && value !== null && Object.hasOwn(value, "sessionSigner");
   const record = exactRecord(
     value,
-    declaresSessionSigner
-      ? [
-          "version",
-          "application",
-          "userHandle",
-          "account",
-          "ownerValidator",
-          "chains",
-          "sessionSigner",
-        ]
-      : ["version", "application", "userHandle", "account", "ownerValidator", "chains"],
+    [
+      "version",
+      "application",
+      "userHandle",
+      "account",
+      "ownerValidator",
+      "chains",
+      "sessionSigner",
+    ],
     "service bootstrap",
     context,
     fail,
@@ -279,9 +298,7 @@ export function captureServiceBootstrap(
     account,
     ownerValidator,
     chains: Object.freeze(chains),
-    sessionSigner: declaresSessionSigner
-      ? captureSessionSigner(record.sessionSigner, context, fail)
-      : FRONTEND_SESSION_SIGNER,
+    sessionSigner: captureSessionSigner(record.sessionSigner, context, fail),
   });
 }
 
