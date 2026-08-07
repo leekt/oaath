@@ -116,6 +116,22 @@ final class SigningTests: XCTestCase {
             }
         }
     }
+
+    func testRawSignatureHexCodecIsStrict() throws {
+        let signature = "0x" + String(repeating: "2a", count: 64)
+        XCTAssertEqual(hexEncode(try decodeP256RawSignatureHex(signature)), signature)
+        for bad in [
+            "",
+            String(repeating: "2a", count: 64),
+            "0x" + String(repeating: "2a", count: 63),
+            "0x" + String(repeating: "2A", count: 64),
+            "0x" + String(repeating: "zz", count: 64)
+        ] {
+            XCTAssertThrowsError(try decodeP256RawSignatureHex(bad)) {
+                XCTAssertEqual($0 as? OwnerPhoneSigningError, .malformedRawSignature)
+            }
+        }
+    }
 }
 
 /// Big-endian compare, duplicated here so the test does not trust the code

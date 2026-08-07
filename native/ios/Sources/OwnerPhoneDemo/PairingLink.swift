@@ -2,9 +2,9 @@
  EXPERIMENTAL PREVIEW — the pairing link the web half prints as a QR code.
 
  `examples/phone` renders `oaath-demo://pair?relay=<url>&code=<pairing code>`
- in the terminal (QR + copyable text). Scanning it with the system camera or
- tapping it opens this app (the Demo target registers the `oaath-demo` URL
- scheme), and pasting it into the pairing-code field works too. Parsing only
+ in the terminal (QR + copyable text). The in-app scanner reads it directly;
+ the system Camera can also open it through the Demo target's `oaath-demo` URL
+ scheme, and pasting it into the pairing-code field works too. Parsing only
  FILLS the pairing screen; pairing itself stays an explicit button, exactly
  like deciding stays an explicit Approve/Reject.
 
@@ -25,10 +25,16 @@ public struct PairingLink: Equatable, Sendable {
 /// Strict parse of `oaath-demo://pair?relay=…&code=…`; anything else is nil.
 /// The relay URL must itself satisfy the demo endpoint rule (http/https+host).
 public func parsePairingLink(_ text: String) -> PairingLink? {
+    guard !text.isEmpty, text.utf8.count <= 2_048 else { return nil }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let components = URLComponents(string: trimmed),
-          components.scheme?.lowercased() == "oaath-demo",
-          components.host == "pair" || components.path == "pair"
+          components.scheme == "oaath-demo",
+          components.host == "pair",
+          components.user == nil,
+          components.password == nil,
+          components.port == nil,
+          components.path.isEmpty,
+          components.fragment == nil
     else {
         return nil
     }
@@ -43,10 +49,10 @@ public func parsePairingLink(_ text: String) -> PairingLink? {
         default: return nil
         }
     }
-    guard let relay, let code, !code.isEmpty,
+    guard let relay, let code = code.flatMap(PairingCode.init),
           (try? DemoRelayEndpoint(baseURLText: relay)) != nil
     else {
         return nil
     }
-    return PairingLink(relayURL: relay, pairingCode: code)
+    return PairingLink(relayURL: relay, pairingCode: code.value)
 }

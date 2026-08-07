@@ -108,18 +108,32 @@ public func hexEncode(_ data: Data) -> String {
 
 /// Strict decode of a lowercase `0x`-prefixed 32-byte digest.
 public func decodeDigestHex(_ text: String) throws -> Data {
-    guard text.count == 66, text.hasPrefix("0x") else {
+    guard let data = decodeLowercaseHex(text, byteCount: 32) else {
         throw OwnerPhoneSigningError.malformedDigest
     }
+    return data
+}
+
+/// Strict decode of the SDK/on-chain raw low-S signature envelope. Component
+/// range and low-S canonicality remain owned by `p256LowSNormalized`.
+public func decodeP256RawSignatureHex(_ text: String) throws -> Data {
+    guard let data = decodeLowercaseHex(text, byteCount: 64) else {
+        throw OwnerPhoneSigningError.malformedRawSignature
+    }
+    return data
+}
+
+private func decodeLowercaseHex(_ text: String, byteCount: Int) -> Data? {
+    guard text.count == 2 + byteCount * 2, text.hasPrefix("0x") else { return nil }
     var bytes = [UInt8]()
-    bytes.reserveCapacity(32)
+    bytes.reserveCapacity(byteCount)
     var iterator = text.dropFirst(2).makeIterator()
     while let high = iterator.next() {
         guard let low = iterator.next(),
               let highValue = high.hexDigitValue, let lowValue = low.hexDigitValue,
               !high.isUppercase, !low.isUppercase
         else {
-            throw OwnerPhoneSigningError.malformedDigest
+            return nil
         }
         bytes.append(UInt8(highValue << 4 | lowValue))
     }

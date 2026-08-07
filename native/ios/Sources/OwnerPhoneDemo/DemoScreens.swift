@@ -19,6 +19,10 @@ import Foundation
 import OwnerPhone
 import SwiftUI
 
+private enum DemoOwnerKeyBindingError: Error {
+    case mismatch
+}
+
 @MainActor
 public final class DemoModel: ObservableObject {
     /// Transient candidate before pairing; while paired this mirrors the bound
@@ -44,44 +48,101 @@ public final class DemoModel: ObservableObject {
     /// The smart account address the relay derived from this key at pairing.
     @Published public private(set) var account: String?
 
-    /// Set by APNs registration; until then a random placeholder keeps pairing
-    /// usable (pushes to it go nowhere — manual operation-id entry still works).
-    public var deviceToken: String
+    /// Set only through the exact APNs-token boundary; until then a random
+    /// valid placeholder keeps pairing usable (pushes to it go nowhere —
+    /// manual operation-id entry still works).
+    public private(set) var deviceToken: String
 
-    /// The on-device owner P-256 key: Secure Enclave when available, honest
-    /// keychain fallback otherwise. Nil only when key creation itself failed.
+    /// The platform-authorized owner P-256 key: Secure Enclave on physical
+    /// iOS, and the explicit keychain fallback only on simulator/host builds.
     public let ownerKey: (any DemoOwnerSigning)?
+    /// Preserved unreadable or key-mismatched authority requires an explicit
+    /// local forget; it may never be treated as an absent first launch.
+    @Published public private(set) var storedPairingBlocked = false
 
     private let pairings: any DevicePairingStore
+    private let pairingAttempts: any PairingAttemptStore
     private let http: any DemoHTTP
     /// Latest-wins attempt ownership: a second explicit pair, candidate edit,
     /// link application, or unpair invalidates every older completion.
     private var pairingAttempt: UUID?
+    /// A one-shot code may have only one request in flight for its relay, even
+    /// if UI edits invalidate that request's completion ownership.
+    private var inFlightPairingAttempts: Set<PairingAttemptIdentity> = []
     private var pairingIdentity: PersistedPairing?
     private var inboxRefreshToken: UUID?
     private var phaseSink: AnyCancellable?
     private var delivered: Set<String> = []
 
-    public init(
+    public convenience init(
+        pairings: any DevicePairingStore,
+        http: any DemoHTTP = URLSession.shared
+    ) {
+        let pairingLoad = pairings.load()
+        let ownerKey: (any DemoOwnerSigning)?
+        switch pairingLoad {
+        case .absent:
+            ownerKey = resolveDemoOwnerKey(createIfMissing: true)
+        case .stored:
+            ownerKey = resolveDemoOwnerKey(createIfMissing: false)
+        case .unreadable:
+            ownerKey = nil
+        }
+        self.init(
+            pairings: pairings,
+            pairingAttempts: KeychainPairingAttemptStore(),
+            http: http,
+            ownerKey: ownerKey,
+            pairingLoad: pairingLoad)
+    }
+
+    convenience init(
         pairings: any DevicePairingStore,
         http: any DemoHTTP = URLSession.shared,
-        ownerKey: (any DemoOwnerSigning)? = resolveDemoOwnerKey()
+        ownerKey: (any DemoOwnerSigning)?,
+        pairingAttempts: any PairingAttemptStore = InMemoryPairingAttemptStore()
+    ) {
+        self.init(
+            pairings: pairings,
+            pairingAttempts: pairingAttempts,
+            http: http,
+            ownerKey: ownerKey,
+            pairingLoad: pairings.load())
+    }
+
+    private init(
+        pairings: any DevicePairingStore,
+        pairingAttempts: any PairingAttemptStore,
+        http: any DemoHTTP,
+        ownerKey: (any DemoOwnerSigning)?,
+        pairingLoad: PairingLoadResult
     ) {
         self.pairings = pairings
+        self.pairingAttempts = pairingAttempts
         self.http = http
         self.ownerKey = ownerKey
         self.deviceToken = Self.placeholderDeviceToken()
-        if let pairing = pairings.load() {
-            pairingIdentity = pairing
-            baseURLText = pairing.endpoint.baseURL.absoluteString
-            account = pairing.account
-            paired = true
+        switch pairingLoad {
+        case .absent:
+            break
+        case .stored(let pairing):
             rebuildApproval(pairing)
+        case .unreadable:
+            blockStoredPairing(
+                "Stored pairing data is unreadable. Forget it explicitly before pairing again.")
         }
     }
 
     static func placeholderDeviceToken() -> String {
         (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+    }
+
+    /// Captures APNs output once as the exact relay-owned token shape.
+    @discardableResult
+    public func updateDeviceToken(_ text: String) -> Bool {
+        guard let token = PairingDeviceToken(text) else { return false }
+        deviceToken = token.value
+        return true
     }
 
     /// Fills the pairing screen from a scanned/tapped/pasted
@@ -97,6 +158,18 @@ public final class DemoModel: ObservableObject {
         statusLine = "Pairing link read. Review and tap \"Pair this device\"."
     }
 
+    /// Camera boundary: scanned bytes may only become the exact PairingLink
+    /// representation. A successful scan fills candidates but never pairs.
+    @discardableResult
+    public func applyScannedPairingPayload(_ payload: String) -> Bool {
+        guard let link = parsePairingLink(payload) else {
+            statusLine = "That QR code is not a valid OAAth pairing link."
+            return false
+        }
+        apply(link: link)
+        return true
+    }
+
     /// `onOpenURL` entry: a tapped or camera-scanned pairing link.
     public func open(url: URL) {
         if let link = parsePairingLink(url.absoluteString) {
@@ -105,6 +178,10 @@ public final class DemoModel: ObservableObject {
     }
 
     public func pair() async {
+        guard !storedPairingBlocked else {
+            statusLine = "Forget the blocked pairing before creating another one."
+            return
+        }
         guard !paired else {
             statusLine = "Already paired. Clear the bound relay before pairing again."
             return
@@ -118,55 +195,122 @@ public final class DemoModel: ObservableObject {
             statusLine = "Owner key unavailable: this device could not create a P-256 key."
             return
         }
-        // Capture the complete candidate and install latest-wins ownership
-        // before the first suspension point. Response order has no authority.
-        let candidateURL = baseURLText
-        let code = pairingCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint: DemoRelayEndpoint
+        do {
+            endpoint = try DemoRelayEndpoint(baseURLText: baseURLText)
+        } catch {
+            statusLine = "Pairing failed: the relay URL is invalid."
+            return
+        }
+        guard let code = PairingCode(pairingCodeText) else {
+            statusLine = "Pairing failed: the one-shot code is invalid."
+            return
+        }
+        let attemptIdentity = PairingAttemptIdentity(code: code)
+        guard !inFlightPairingAttempts.contains(attemptIdentity) else {
+            statusLine = "Pairing is already in progress for this code."
+            return
+        }
+        guard pairings.load() == .absent else {
+            blockStoredPairing(
+                "Stored pairing state appeared before this request. Forget it explicitly before pairing again.")
+            return
+        }
+        let ownerPublicMaterial: OwnerPublicMaterial
+        do {
+            guard let captured = OwnerPublicMaterial(try ownerKey.publicMaterialHex()) else {
+                throw DemoOwnerKeyBindingError.mismatch
+            }
+            ownerPublicMaterial = captured
+        } catch {
+            statusLine = "Owner key unavailable: its public material is invalid or unreadable."
+            return
+        }
+        guard pairings.load() == .absent else {
+            blockStoredPairing(
+                "Stored pairing state changed while reading the owner key. Forget it explicitly before pairing again.")
+            return
+        }
+        // Capture the complete candidate before the first suspension point.
+        // A duplicate tap cannot spend the same one-shot code twice; editing
+        // the candidate still installs a newer completion owner.
         let capturedDeviceToken = deviceToken
         let token = UUID()
+        inFlightPairingAttempts.insert(attemptIdentity)
+        defer { inFlightPairingAttempts.remove(attemptIdentity) }
         pairingAttempt = token
         do {
-            let endpoint = try DemoRelayEndpoint(baseURLText: candidateURL)
-            let publicKey = try ownerKey.publicMaterialHex()
             let device = try await OwnerPhoneDemo.pair(
                 endpoint: endpoint,
                 pairingCode: code,
                 deviceToken: capturedDeviceToken,
-                publicKey: publicKey,
+                publicKey: ownerPublicMaterial,
+                pairingAttempts: pairingAttempts,
                 http: http)
-            guard pairingAttempt == token, !paired, pairings.load() == nil else { return }
+            guard pairingAttempt == token, !paired else { return }
             let pairing = try PersistedPairing(
                 endpoint: endpoint,
                 credential: device.deviceCredential,
-                account: device.account)
-            // The response must succeed before the single bound value is stored;
-            // model state changes only after that atomic store operation succeeds.
-            try pairings.save(pairing)
+                account: device.account,
+                ownerPublicMaterial: ownerPublicMaterial)
+            // The store owns the absent→stored transition. An intervening
+            // record or unreadable evidence is preserved, never overwritten.
+            guard try pairings.installIfAbsent(pairing) else {
+                pairingAttempt = nil
+                blockStoredPairing(
+                    "Pairing state changed while the request was in flight. Forget it explicitly before pairing again.")
+                return
+            }
             pairingAttempt = nil
-            pairingIdentity = pairing
-            account = pairing.account
-            baseURLText = pairing.endpoint.baseURL.absoluteString
             pairingCodeText = ""
-            paired = true
             pollingIdentity = UUID()
             rebuildApproval(pairing)
-            statusLine = "Paired. Relay and owner credential are now bound together."
+            if paired {
+                statusLine = "Paired. Relay and owner credential are now bound together."
+            }
+        } catch PairingAttemptStoreError.alreadyAttempted {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
+            statusLine = "This pairing code was already attempted. Request a fresh code."
         } catch DemoPairingError.refused {
             guard pairingAttempt == token, !paired else { return }
             pairingAttempt = nil
             statusLine = "Pairing refused: the code is unknown, already used, or expired."
+        } catch DemoPairingError.invalidDeviceToken {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
+            statusLine = "Push token unavailable. No pairing request was sent."
+        } catch PairingStoreError.storageFailed {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
+            blockStoredPairing(
+                "Pairing was issued but its storage result is unavailable. Forget local state before using a fresh code.")
+        } catch is PairingAttemptStoreError {
+            guard pairingAttempt == token, !paired else { return }
+            pairingAttempt = nil
+            statusLine = "Pairing attempt history is unavailable. No request was sent."
         } catch {
             guard pairingAttempt == token, !paired else { return }
             pairingAttempt = nil
-            statusLine = "Pairing failed: check the relay URL (same network as the Mac?)."
+            statusLine = "Pairing outcome is unavailable. Do not retry this code; request a fresh code."
         }
     }
 
     public func unpair() {
+        let wasBlocked = storedPairingBlocked
         invalidatePairingAttempt()
-        pairings.clear()
+        guard pairings.clear() else {
+            statusLine = "The stored pairing could not be cleared. Try Forget again."
+            return
+        }
         resetPairingUI()
-        statusLine = "Bound relay and credential cleared. Pair again with a fresh code."
+        if wasBlocked, ownerKey == nil {
+            statusLine = "Blocked pairing cleared. Restart the app to provision or reload the owner key."
+        } else if wasBlocked {
+            statusLine = "Blocked pairing cleared. Pair again with a fresh code."
+        } else {
+            statusLine = "Bound relay and credential cleared. Pair again with a fresh code."
+        }
     }
 
     public func openManually() async {
@@ -238,9 +382,35 @@ public final class DemoModel: ObservableObject {
     }
 
     private func rebuildApproval(_ pairing: PersistedPairing? = nil) {
-        guard let boundPairing = pairing ?? pairings.load() else {
-            approval = nil
-            paired = false
+        let boundPairing: PersistedPairing
+        if let pairing {
+            boundPairing = pairing
+        } else {
+            switch pairings.load() {
+            case .stored(let stored):
+                boundPairing = stored
+            case .unreadable:
+                blockStoredPairing(
+                    "Stored pairing data is unreadable. Forget it explicitly before pairing again.")
+                return
+            case .absent:
+                approval = nil
+                paired = false
+                return
+            }
+        }
+        guard let ownerKey,
+              let publicMaterialText = try? ownerKey.publicMaterialHex(),
+              let publicMaterial = OwnerPublicMaterial(publicMaterialText),
+              publicMaterial == boundPairing.ownerPublicMaterial
+        else {
+            blockStoredPairing(
+                "Stored pairing does not match an available owner key. Forget it before pairing again.")
+            return
+        }
+        guard pairings.load() == .stored(boundPairing) else {
+            blockStoredPairing(
+                "Stored pairing changed before authorization. Forget local state before pairing again.")
             return
         }
         pairingIdentity = boundPairing
@@ -253,17 +423,27 @@ public final class DemoModel: ObservableObject {
                 await self?.rejectIfCurrent(rejectedPairing)
             })
         // The signing boundary: a signature-request approval signs the
-        // projected digest with the on-device owner key (Secure Enclave when
-        // available) — the artifact IS the signature. Every other scope keeps
+        // projected digest with the platform-authorized owner key (Secure
+        // Enclave on physical iOS) — the artifact IS the signature. Other scopes keep
         // the demo's opaque placeholder artifact.
-        let ownerKey = self.ownerKey
+        let pairings = self.pairings
         let model = ApprovalModel(relay: client, approvalArtifact: { projection in
-            if case let .signatureRequest(scope) = projection.scope, let ownerKey {
-                return try ownerKey.signDigestHex(scope.digest)
+            guard pairings.load() == .stored(boundPairing),
+                  let publicMaterial = OwnerPublicMaterial(try ownerKey.publicMaterialHex()),
+                  publicMaterial == boundPairing.ownerPublicMaterial
+            else {
+                throw DemoOwnerKeyBindingError.mismatch
+            }
+            if case let .signatureRequest(scope) = projection.scope {
+                return try verifiedDemoOwnerSignature(
+                    ownerKey.signDigestHex(scope.digest),
+                    digestHex: scope.digest,
+                    ownerPublicMaterial: boundPairing.ownerPublicMaterial)
             }
             return demoApprovalArtifact()
         })
         approval = model
+        paired = true
         phaseSink = model.$phase
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in self?.observe(phase: phase) }
@@ -290,15 +470,19 @@ public final class DemoModel: ObservableObject {
     /// Compare-and-clear both authority owners. A delayed request made by A
     /// cannot change persistence or UI after A was replaced by B.
     private func rejectIfCurrent(_ rejectedPairing: PersistedPairing) {
-        guard pairingIdentity == rejectedPairing,
-              pairings.clear(ifCurrent: rejectedPairing)
-        else { return }
+        guard pairingIdentity == rejectedPairing else { return }
+        guard pairings.clear(ifCurrent: rejectedPairing) else {
+            blockStoredPairing(
+                "The relay refused this credential, but its stored pairing could not be cleared. Try Forget again.")
+            return
+        }
         resetPairingUI()
         statusLine = "The relay refused this device's credential. Pair again."
     }
 
     private func resetPairingUI() {
         pairingIdentity = nil
+        storedPairingBlocked = false
         inboxRefreshToken = nil
         inbox = []
         inboxStatusLine = ""
@@ -309,6 +493,20 @@ public final class DemoModel: ObservableObject {
         account = nil
         baseURLText = ""
         pairingCodeText = ""
+    }
+
+    private func blockStoredPairing(_ message: String) {
+        pairingIdentity = nil
+        inboxRefreshToken = nil
+        inbox = []
+        inboxStatusLine = ""
+        pollingIdentity = UUID()
+        approval = nil
+        phaseSink = nil
+        paired = false
+        account = nil
+        storedPairingBlocked = true
+        statusLine = message
     }
 
     /// Delivers the released code exactly once per decided approval, the OAuth
@@ -346,6 +544,10 @@ public final class DemoModel: ObservableObject {
 
 public struct DemoRootView: View {
     @ObservedObject private var model: DemoModel
+    #if os(iOS)
+    @State private var showingPairingScanner = false
+    @State private var scannerMessage = ""
+    #endif
 
     public init(model: DemoModel) {
         self.model = model
@@ -370,15 +572,27 @@ public struct DemoRootView: View {
                     .font(.body.monospaced())
             }
             Section("Pairing code (shown by the browser Pair action)") {
-                TextField("ABCD-EFGH-IJ or oaath-demo:// link", text: $model.pairingCodeText)
+                TextField("ABCD-EFGH-JK or oaath-demo:// link", text: $model.pairingCodeText)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
-                Button("Pair this device") { Task { await model.pair() } }
+                #if os(iOS)
+                Button {
+                    scannerMessage = ""
+                    showingPairingScanner = true
+                } label: {
+                    Label("Scan pairing QR", systemImage: "qrcode.viewfinder")
+                }
+                #endif
+                if model.storedPairingBlocked {
+                    Button("Forget blocked pairing", role: .destructive) { model.unpair() }
+                } else {
+                    Button("Pair this device") { Task { await model.pair() } }
+                }
             }
             Section {
                 Text(
                     "On the Mac, open the printed loopback browser URL and choose Pair phone. "
-                    + "Scan its transient QR (system camera), tap the oaath-demo:// link, or paste "
+                    + "Scan its transient QR here, tap the oaath-demo:// link, or paste "
                     + "it above — pairing is still this button.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -397,6 +611,43 @@ public struct DemoRootView: View {
             }
         }
         .navigationTitle("Pair with the relay")
+        #if os(iOS)
+        .sheet(isPresented: $showingPairingScanner) {
+            NavigationStack {
+                ZStack(alignment: .bottom) {
+                    PairingQRCodeScanner { payload in
+                        if model.applyScannedPairingPayload(payload) {
+                            showingPairingScanner = false
+                            return true
+                        } else {
+                            scannerMessage = "This QR code is not an OAAth pairing link."
+                            return false
+                        }
+                    } onFailure: { failure in
+                        scannerMessage = failure.message
+                    }
+                    .ignoresSafeArea()
+
+                    Text(scannerMessage.isEmpty
+                        ? "Point the camera at the pairing QR shown in the browser."
+                        : scannerMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+                        .padding()
+                }
+                .navigationTitle("Scan pairing QR")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingPairingScanner = false }
+                    }
+                }
+            }
+        }
+        #endif
     }
 
     /// The custody truth, said out loud: Enclave, honest fallback, or failure.
