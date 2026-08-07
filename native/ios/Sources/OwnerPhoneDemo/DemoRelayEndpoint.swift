@@ -27,6 +27,9 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
     /// Plain http is tolerated because this is a LAN demo; see the Demo README
     /// for the dev-only ATS exception it requires.
     public init(baseURLText: String) throws {
+        guard !baseURLText.isEmpty, baseURLText.utf8.count <= 512 else {
+            throw DemoRelayError.invalidBaseURL
+        }
         let trimmed = baseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(),
@@ -36,12 +39,19 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
               components.user == nil,
               components.password == nil,
               components.query == nil,
-              components.fragment == nil
+              components.fragment == nil,
+              !components.path.split(separator: "/", omittingEmptySubsequences: false)
+                .contains(where: { $0 == "." || $0 == ".." })
         else {
             throw DemoRelayError.invalidBaseURL
         }
         components.scheme = scheme
         components.host = host.lowercased()
+        if (scheme == "http" && components.port == 80)
+            || (scheme == "https" && components.port == 443)
+        {
+            components.port = nil
+        }
         while components.path.hasSuffix("/") { components.path.removeLast() }
         guard let url = components.url else { throw DemoRelayError.invalidBaseURL }
         self.baseURL = url
@@ -78,19 +88,19 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
     /// `POST /native/pairings` — the pairing code IS the authentication for
     /// this one call, so no bearer is attached. The body registers the APNs
     /// device token and the owner key's public material together.
-    public func pairingRequest(
-        pairingCode: String,
-        deviceToken: String,
-        publicKey: String
+    func pairingRequest(
+        pairingCode: PairingCode,
+        deviceToken: PairingDeviceToken,
+        publicKey: OwnerPublicMaterial
     ) throws -> URLRequest {
         var request = URLRequest(url: baseURL.appendingPathComponent("native/pairings"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(
             withJSONObject: [
-                "pairingCode": pairingCode,
-                "deviceToken": deviceToken,
-                "publicKey": publicKey
+                "pairingCode": pairingCode.value,
+                "deviceToken": deviceToken.value,
+                "publicKey": publicKey.hex
             ],
             options: [.sortedKeys])
         return request

@@ -111,31 +111,108 @@ final class RelayClientTests: XCTestCase {
 
 #if canImport(Security)
 final class KeyCustodyTests: XCTestCase {
-    func testSoftwareFallbackPinsNonExtractableDeviceOnlyUnlockedAttributes() {
+    func testSoftwareFallbackPinsDeviceOnlyUnlockedAttributes() {
         let attributes = KeychainKeyCustodyStub.softwarePrivateKeyAttributes(
             applicationTag: Data("test".utf8))
-        XCTAssertEqual(attributes[kSecAttrIsExtractable] as? Bool, false)
+        XCTAssertNil(attributes[kSecAttrIsExtractable])
         XCTAssertEqual(
             attributes[kSecAttrAccessible] as? String,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
     }
 
-    func testReloadRejectsSoftwareKeyForSecureEnclaveClaim() {
-        let base: [CFString: Any] = [
-            kSecAttrIsExtractable: false,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    func testEnclaveLookupPinsIdentityWithoutFilteringOnReturnedToken() {
+        let tag = Data("test".utf8)
+        let query = KeychainKeyCustodyStub.privateKeyQuery(applicationTag: tag)
+
+        XCTAssertEqual(query[kSecAttrKeyType] as? String, kSecAttrKeyTypeECSECPrimeRandom as String)
+        XCTAssertEqual(query[kSecAttrKeyClass] as? String, kSecAttrKeyClassPrivate as String)
+        XCTAssertEqual(query[kSecAttrApplicationTag] as? Data, tag)
+        XCTAssertEqual(query[kSecMatchLimit] as? String, kSecMatchLimitAll as String)
+        XCTAssertNil(query[kSecAttrTokenID])
+    }
+
+    func testSecureEnclaveClaimRequiresAnExactPrivateSigningP256Key() {
+        let enclaveKey: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrKeySizeInBits: 256,
+            kSecAttrCanSign: true,
+            kSecAttrTokenID: kSecAttrTokenIDSecureEnclave
         ]
-        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
-            base, useSecureEnclave: true))
-        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
-            base.merging([kSecAttrTokenID: "software"] as [CFString: Any]) { _, new in new },
-            useSecureEnclave: true))
-        XCTAssertTrue(KeychainKeyCustodyStub.storedAttributesMatchClaim(
-            base.merging([kSecAttrTokenID: kSecAttrTokenIDSecureEnclave]) { _, new in new },
-            useSecureEnclave: true))
-        XCTAssertFalse(KeychainKeyCustodyStub.storedAttributesMatchClaim(
-            base.merging([kSecAttrTokenID: kSecAttrTokenIDSecureEnclave]) { _, new in new },
+
+        XCTAssertTrue(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+            enclaveKey, useSecureEnclave: true))
+        for mutation: (inout [CFString: Any]) -> Void in [
+            { $0.removeValue(forKey: kSecAttrTokenID) },
+            { $0[kSecAttrTokenID] = "software" },
+            { $0[kSecAttrKeyType] = kSecAttrKeyTypeRSA },
+            { $0[kSecAttrKeyClass] = kSecAttrKeyClassPublic },
+            { $0[kSecAttrKeySizeInBits] = 384 },
+            { $0[kSecAttrCanSign] = false }
+        ] {
+            var invalid = enclaveKey
+            mutation(&invalid)
+            XCTAssertFalse(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+                invalid, useSecureEnclave: true))
+        }
+    }
+
+    func testSoftwareClaimRejectsOnlyTheSecureEnclaveToken() {
+        let software: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrKeySizeInBits: 256,
+            kSecAttrCanSign: true
+        ]
+
+        XCTAssertTrue(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+            software, useSecureEnclave: false))
+        var otherToken = software
+        otherToken[kSecAttrTokenID] = "software-token"
+        XCTAssertTrue(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+            otherToken,
             useSecureEnclave: false))
+        var enclave = software
+        enclave[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
+        XCTAssertFalse(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+            enclave,
+            useSecureEnclave: false))
+        var malformed = software
+        malformed[kSecAttrTokenID] = NSNull()
+        XCTAssertFalse(KeychainKeyCustodyStub.keyAttributesMatchClaim(
+            malformed,
+            useSecureEnclave: false))
+    }
+
+    func testLoadOnlyCustodyDoesNotCreateAMissingKey() {
+        let custody = KeychainKeyCustodyStub(
+            applicationTag: "org.oaath.tests.missing.\(UUID().uuidString)",
+            createIfMissing: false)
+        XCTAssertThrowsError(try custody.publicKey()) {
+            XCTAssertEqual($0 as? OwnerPhoneKeyCustodyError, .keyUnavailable)
+        }
+    }
+
+    func testAProvisionedSoftwareKeyReloadsWithTheSamePublicMaterial() throws {
+        let tag = "org.oaath.tests.reload.\(UUID().uuidString)"
+        let applicationTag = Data(tag.utf8)
+        defer {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassKey,
+                kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                kSecAttrApplicationTag: applicationTag
+            ]
+            XCTAssertEqual(SecItemDelete(query as CFDictionary), errSecSuccess)
+        }
+
+        let provisioned = KeychainKeyCustodyStub(applicationTag: tag)
+        let originalPublicKey = try provisioned.publicKey()
+        let reloaded = KeychainKeyCustodyStub(
+            applicationTag: tag,
+            createIfMissing: false)
+
+        XCTAssertEqual(try reloaded.publicKey(), originalPublicKey)
     }
 
     func testANonDigestInputFailsBeforeAnyKeychainAccess() {

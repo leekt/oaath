@@ -13,11 +13,15 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the one-time OAAth pairing QR code shown by your browser.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to the OAAth demo relay running on your Mac.</string>
 	<!--
 	  The pairing deep link: examples/phone prints
 	  oaath-demo://pair?relay=...&code=... as a QR code and copyable text.
-	  Scanning with the system camera or tapping it opens this app and fills
-	  the pairing screen; pairing itself stays an explicit button.
+	  Scanning in-app, using the system Camera, or tapping it fills the pairing
+	  screen; pairing itself stays an explicit button.
 	-->
 	<key>CFBundleURLTypes</key>
 	<array>

@@ -1,12 +1,12 @@
 /**
  EXPERIMENTAL PREVIEW — the demo's owner P-256 key: real custody, real bytes.
 
- First use creates the key once and keeps it; the private key never leaves its
- store. On a physical iPhone the key is created INSIDE the Secure Enclave
+ First use creates the key once and keeps it. On a physical iPhone the key is
+ created INSIDE the Secure Enclave
  (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry requirement
  for the demo — the explicit Approve tap is the consent gate). Where the
- Enclave is unavailable (simulator, macOS test host) the same code falls back
- to an ordinary non-synchronizable keychain P-256 key and says so honestly:
+ simulator and macOS host builds use an ordinary, separately tagged keychain
+ P-256 key and say so honestly:
  `secureEnclave` drives the app's banner, never a silent downgrade.
 
  The public key is exposed as the SDK's `publicMaterial` encoding —
@@ -18,14 +18,56 @@
 
  @author taek <leekt216@gmail.com>
  */
+import CryptoKit
 import Foundation
 import OwnerPhone
+import Security
 
 #if canImport(Security)
 public protocol DemoOwnerSigning: Sendable {
     var secureEnclave: Bool { get }
     func publicMaterialHex() throws -> String
     func signDigestHex(_ digestHex: String) throws -> String
+}
+
+enum DemoOwnerSignatureVerificationError: Error, Equatable {
+    case invalidPublicKey
+    case invalidSignature
+}
+
+/// Verifies the caller-injected signer at the trust boundary before a decision
+/// can move. The returned artifact must be the exact canonical raw low-S P-256
+/// signature for the captured digest and persisted owner public key.
+func verifiedDemoOwnerSignature(
+    _ signatureHex: String,
+    digestHex: String,
+    ownerPublicMaterial: OwnerPublicMaterial
+) throws -> String {
+    let digest = try decodeDigestHex(digestHex)
+    let raw = try decodeP256RawSignatureHex(signatureHex)
+    guard try p256LowSNormalized(raw: raw) == raw,
+          let signature = try? P256.Signing.ECDSASignature(rawRepresentation: raw)
+    else { throw DemoOwnerSignatureVerificationError.invalidSignature }
+    let attributes: [CFString: Any] = [
+        kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+        kSecAttrKeyClass: kSecAttrKeyClassPublic,
+        kSecAttrKeySizeInBits: 256
+    ]
+    var createError: Unmanaged<CFError>?
+    guard let publicKey = SecKeyCreateWithData(
+        ownerPublicMaterial.x963Representation as CFData,
+        attributes as CFDictionary,
+        &createError)
+    else { throw DemoOwnerSignatureVerificationError.invalidPublicKey }
+    var verifyError: Unmanaged<CFError>?
+    guard SecKeyVerifySignature(
+        publicKey,
+        .ecdsaSignatureDigestX962SHA256,
+        digest as CFData,
+        signature.derRepresentation as CFData,
+        &verifyError)
+    else { throw DemoOwnerSignatureVerificationError.invalidSignature }
+    return signatureHex
 }
 
 public struct DemoOwnerKey: DemoOwnerSigning, Sendable {
@@ -53,22 +95,71 @@ public struct DemoOwnerKey: DemoOwnerSigning, Sendable {
     }
 }
 
-/// Resolves the demo owner key once per launch: try the Secure Enclave first,
-/// fall back to a plain keychain key under a distinct tag. The probe is a real
-/// key load/creation, so "enclave" is evidence, not a capability guess.
-public func resolveDemoOwnerKey() -> DemoOwnerKey? {
-    let enclave = KeychainKeyCustodyStub(
-        applicationTag: "org.oaath.owner-phone.p256",
-        useSecureEnclave: true)
-    if (try? enclave.publicKey()) != nil {
-        return DemoOwnerKey(custody: enclave, secureEnclave: true)
+enum DemoOwnerKeyEnvironment: Equatable {
+    case physicalIOS
+    case simulatorOrHost
+
+    static var current: Self {
+        #if os(iOS) && !targetEnvironment(simulator)
+        return .physicalIOS
+        #else
+        return .simulatorOrHost
+        #endif
     }
-    let fallback = KeychainKeyCustodyStub(
-        applicationTag: "org.oaath.owner-phone.p256.fallback",
-        useSecureEnclave: false)
-    if (try? fallback.publicKey()) != nil {
-        return DemoOwnerKey(custody: fallback, secureEnclave: false)
+}
+
+enum DemoOwnerKeyStorage: Equatable {
+    case secureEnclave
+    case softwareFallback
+}
+
+/// Pure policy seam: physical iOS has no transition from an Enclave failure
+/// to software custody. Simulator/macOS use the explicitly separate fallback.
+func resolveDemoOwnerKey<Value>(
+    environment: DemoOwnerKeyEnvironment,
+    createIfMissing: Bool,
+    load: (DemoOwnerKeyStorage, Bool) -> Value?
+) -> Value? {
+    switch environment {
+    case .physicalIOS:
+        return load(.secureEnclave, createIfMissing)
+    case .simulatorOrHost:
+        return load(.softwareFallback, createIfMissing)
     }
-    return nil
+}
+
+/// Resolves the one platform-authorized owner key once per launch. Each
+/// persisted security artifact has a versioned, custody-specific tag.
+public func resolveDemoOwnerKey(createIfMissing: Bool = true) -> DemoOwnerKey? {
+    resolveDemoOwnerKey(
+        environment: .current,
+        createIfMissing: createIfMissing
+    ) { storage, mayCreate in
+        let applicationTag: String
+        let useSecureEnclave: Bool
+        let secureEnclave: Bool
+        switch storage {
+        case .secureEnclave:
+            applicationTag = "org.oaath.owner-phone.p256.v2.enclave"
+            useSecureEnclave = true
+            secureEnclave = true
+        case .softwareFallback:
+            applicationTag = "org.oaath.owner-phone.p256.v2.software"
+            useSecureEnclave = false
+            secureEnclave = false
+        }
+        let probe = KeychainKeyCustodyStub(
+            applicationTag: applicationTag,
+            useSecureEnclave: useSecureEnclave,
+            createIfMissing: mayCreate)
+        guard (try? probe.publicKey()) != nil else { return nil }
+        // Once resolved, every later public-key read and signature is
+        // load-only. Deletion or unreadability fails instead of rotating keys.
+        let loadOnly = KeychainKeyCustodyStub(
+            applicationTag: applicationTag,
+            useSecureEnclave: useSecureEnclave,
+            createIfMissing: false)
+        return DemoOwnerKey(custody: loadOnly, secureEnclave: secureEnclave)
+    }
 }
 #endif

@@ -22,12 +22,16 @@ guarantee and no production qualification.
 4. Select your iPhone as the destination. On iOS 16+ enable Developer Mode
    first: Settings → Privacy & Security → Developer Mode, then reboot.
 5. Run. The app ships with an **empty** relay field: a phone can never use the
-   Mac's loopback address. Scan/tap the browser's transient QR/link (it carries
-   both the reachable LAN relay URL and pairing code), review the filled fields,
-   then tap "Pair this device". The phone and Mac must be on the same network.
+   Mac's loopback address. Tap **Scan pairing QR** and scan the browser's
+   transient QR (or use the system Camera/tap/paste path). It carries both the
+   reachable LAN relay URL and pairing code. Review the filled fields, then tap
+   "Pair this device". The phone and Mac must be on the same network; allow the
+   app's Local Network prompt so it can connect to the relay on the Mac.
 
 The device keeps the normalized relay endpoint and its issued credential as one
 versioned Keychain value after pairing; neither can be loaded or used apart.
+Installs paired before the v2 custody fix must pair once again; the app rejects
+the old software-fallback-bound pairing instead of reusing contradictory state.
 While paired, new pairing links are ignored until **Clear pairing** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
 bound relay refuses the credential (after an example restart — its state is
@@ -64,10 +68,11 @@ Any iOS simulator runs the app without signing (Xcode → Demo scheme → a
 simulator destination). Tests may fill a loopback relay URL. The simulator
 receives no APNs pushes and uses the authenticated pull inbox (with manual
 operation-id entry as fallback). It cannot create a
-Secure Enclave key, so the app uses a distinct non-extractable keychain P-256
-key available only while this device is unlocked
+Secure Enclave key, so the app uses a distinctly tagged keychain P-256 key
+available only while this device is unlocked
 (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`) and shows an explicit
-**SIMULATOR FALLBACK** banner.
+**SIMULATOR FALLBACK** banner. A simulator without a camera reports that the
+camera is unavailable; paste or open the pairing link instead.
 
 ## Dev-only ATS exception
 
@@ -99,8 +104,8 @@ is intentional so the project cannot imply a second provenance authority.
 `swift build` + `swift test` (macOS host) cover every testable part:
 `OwnerPhone` (wire decoders, review machine) and `OwnerPhoneDemo` (routes,
 pairing, credential store, code delivery, screens compile). The Demo app also
-builds unsigned for the generic iOS Simulator with `xcodebuild -sdk
-iphonesimulator -destination 'generic/platform=iOS Simulator'
-CODE_SIGNING_ALLOWED=NO build`. Not proven headlessly: a physical-device build,
-APNs delivery, provisioning, and physical Secure Enclave/keychain behavior — a
-human with Xcode and an iPhone owns those steps above.
+builds unsigned for generic iPhoneOS and iOS Simulator destinations with
+`xcodebuild ... CODE_SIGNING_ALLOWED=NO build`. Not proven headlessly: a signed
+physical-device install/run, APNs delivery, provisioning, camera behavior, or
+physical Secure Enclave/keychain behavior — a human with Xcode and an iPhone
+owns those steps above.

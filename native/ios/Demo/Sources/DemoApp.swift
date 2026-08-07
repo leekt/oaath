@@ -26,7 +26,7 @@ struct OwnerPhoneDemoApp: App {
                 .task {
                     pushDelegate.onDeviceToken = { token in
                         // Pairing registers this token with the relay.
-                        Task { @MainActor in model.deviceToken = token }
+                        Task { @MainActor in model.updateDeviceToken(token) }
                     }
                     pushDelegate.onPush = { push in
                         // Opens the review only; approving stays an explicit tap.

@@ -79,15 +79,17 @@ struct OwnerPhoneDemoApp: App {
 
 ## Key custody
 
-The demo first probes a persistent P-256 Secure Enclave key created with
-`kSecAttrTokenIDSecureEnclave` and `.privateKeyUsage` (the explicit approval tap
-is the consent gate; no extra biometry prompt). It registers 64-byte `x ‖ y`
-public material and returns DER signatures as raw low-S `r ‖ s`. If the Enclave
-is unavailable, it uses a distinct non-synchronizable, non-extractable keychain
-P-256 key with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and displays an
-explicit simulator/fallback banner. Both modes intentionally omit a
-user-presence/biometry requirement because Approve is the consent gate. Host
-tests pin the fallback attributes and prove the
+On physical iOS, the demo exclusively creates or loads a persistent P-256
+Secure Enclave key with `kSecAttrTokenIDSecureEnclave` and `.privateKeyUsage`.
+An Enclave failure leaves the owner key unavailable; it never authorizes
+software custody. Simulator and macOS host builds instead select a separately
+tagged, non-synchronizable keychain P-256 key with
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
+simulator/fallback banner. Both modes intentionally omit a
+user-presence/biometry requirement because Approve is the consent gate. The app
+registers 64-byte `x ‖ y` public material and returns DER signatures as raw
+low-S `r ‖ s`. Host tests pin the software attributes and platform-selection
+policy and prove the
 pure DER conversion, low-S arithmetic and real CryptoKit verification; they do
 not prove physical Enclave custody.
 
@@ -126,5 +128,5 @@ envelopes from its side in `packages/server/test/native.test.ts`.
 Evidence explicitly **not** available from these gates: real APNs delivery,
 Apple provisioning and entitlements, physical Secure Enclave key creation,
 hosted relay interoperability, a simulator run, or any
-physical-device build/run (see [Demo/README.md](Demo/README.md)). The unsigned
+signed physical-device install/run (see [Demo/README.md](Demo/README.md)). The unsigned
 generic simulator build is a compile/link proof only.
