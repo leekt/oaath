@@ -81,6 +81,19 @@ export {
   OaathOperationRunnerError,
 } from "./operation-runner.js";
 export type {
+  CreateErc7677SponsorshipCapabilityInput,
+  Erc7677EstimationUserOperationV07,
+  Erc7677GasEstimationRequest,
+  Erc7677GasEstimator,
+  Erc7677JsonObject,
+  Erc7677JsonValue,
+  Erc7677PaymasterMethod,
+  Erc7677PaymasterServiceRequest,
+  Erc7677RegisteredPaymasterService,
+  Erc7677UnsignedUserOperationV07,
+} from "./provider/erc7677.js";
+export { createErc7677SponsorshipCapability } from "./provider/erc7677.js";
+export type {
   OaathBundlerAcceptanceEvidence,
   OaathBundlerProbeCapability,
   OaathBundlerProbeEvidence,

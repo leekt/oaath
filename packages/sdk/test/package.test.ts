@@ -95,6 +95,7 @@ describe("package boundary", () => {
       "classifyBundlerAcceptance",
       "classifyBundlerProbe",
       "closeEffect",
+      "createErc7677SponsorshipCapability",
       "createOperationObserver",
       "createOperationRunner",
       "decideExecution",
