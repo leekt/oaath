@@ -259,6 +259,7 @@ export async function createAnvilChain(chainId) {
         address: stack.submitter.address.toLowerCase(),
         balance: feePayerBalance.toString(10),
       },
+      paymasterService: null,
     },
   };
 }

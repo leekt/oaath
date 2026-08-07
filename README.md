@@ -61,10 +61,11 @@ experiments:
 | --- | --- | --- |
 | EIP-5792 `wallet_sendCalls` / status / capabilities | Final (`2.0.0`) | Implemented PoC path |
 | ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; opaque five-minute context, approved secp256k1 or WebAuthn operator, one-time durable consumption |
+| ERC-7677 `paymasterService` | Review | Experimental `wallet_sendCalls` path for a deployment-registered same-service proxy and bundler estimator |
 
 The Draft profile is not advertised as stable or as generic ERC-7836
-conformance. Sponsorship adapters and ERC-7902 capability fields remain later,
-independent work.
+conformance. ERC-7677 sponsorship for prepared calls and ERC-7902 capability
+fields remain later, independent work.
 
 ## Browser golden path
 
@@ -197,11 +198,12 @@ account state observed at bind time: after a counterfactual account's first
 operation deploys it, rebind before preparing the next operation, or EntryPoint
 rejects the stale factory evidence (`AA10 sender already constructed`).
 
-Gas values are caller-supplied decimal strings. Gas and fee estimation is an
-explicit non-goal of this package; bring values from your own estimation
-source. `createKernelV4Reads` adapts any viem-style public client into the
-account read capability, and `asViemUserOperation` maps a prepared operation
-into viem's shape for signing and submission.
+Gas values in the low-level Kernel helpers are caller-supplied decimal strings;
+bring them from your own estimation source. The experimental URL-mode ERC-7677
+path makes one post-stub estimate through the deployment's registered bundler
+port. `createKernelV4Reads` adapts any viem-style public client into the account
+read capability, and `asViemUserOperation` maps a prepared operation into viem's
+shape for signing and submission.
 
 ## Examples
 

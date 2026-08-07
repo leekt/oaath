@@ -439,6 +439,104 @@ describe("owned capture limits", () => {
 });
 
 describe("capability semantics", () => {
+  it("captures one exact bundle paymaster selection and retains its request hash material", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    const context = { policy: "sponsored", nested: { quota: 2 } };
+    const captured = captureBundle(
+      baseBundle({
+        capabilities: {
+          paymasterService: { url, context, optional: true },
+        },
+      }),
+    );
+
+    expect(captured.capabilities).toEqual({
+      values: {
+        paymasterService: { url, context, optional: true },
+      },
+      ignored: [],
+      paymasterService: { url, context, optional: true },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const hash = hashCapturedWalletSendCallsRequest(captured, "paymaster-request");
+    const changedContext = captureBundle(
+      baseBundle({
+        capabilities: {
+          paymasterService: { url, context: { policy: "self-funded" }, optional: true },
+        },
+      }),
+    );
+    const required = captureBundle(
+      baseBundle({ capabilities: { paymasterService: { url, context } } }),
+    );
+    expect(hashCapturedWalletSendCallsRequest(changedContext, "paymaster-request")).not.toBe(hash);
+    expect(hashCapturedWalletSendCallsRequest(required, "paymaster-request")).not.toBe(hash);
+
+    expect(
+      captureBundle(
+        baseBundle({
+          capabilities: {
+            paymasterService: {
+              url: "http://localhost:8787/chains/421614/paymaster",
+              context: {},
+            },
+          },
+        }),
+      ).capabilities?.paymasterService?.url,
+    ).toBe("http://localhost:8787/chains/421614/paymaster");
+  });
+
+  it("rejects malformed handled paymaster selections at the bundle boundary", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    for (const paymasterService of [
+      { context: {} },
+      { url },
+      { url, context: {}, extra: true },
+      { url: `${url}/`, context: {} },
+      { url: "https://Relay.example/chains/421614/paymaster", context: {} },
+      { url: "http://relay.example/chains/421614/paymaster", context: {} },
+      { url: `${url}?mode=test`, context: {} },
+      { url, context: null },
+      { url, context: [] },
+      { url, context: "opaque" },
+    ]) {
+      expectRpcError(
+        () => captureBundle(baseBundle({ capabilities: { paymasterService } })),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps paymasterService unsupported at call scope", () => {
+    const paymasterService = {
+      url: "https://relay.example/chains/421614/paymaster",
+      context: {},
+    };
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({ calls: [{ to: TARGET_A, capabilities: { paymasterService } }] }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+
+    const captured = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { paymasterService: { ...paymasterService, optional: true } },
+          },
+        ],
+      }),
+    );
+    expect(captured.calls[0]?.capabilities).toEqual({
+      values: { paymasterService: { ...paymasterService, optional: true } },
+      ignored: ["paymasterService"],
+    });
+  });
+
   it("retains unknown optional top-level and call capabilities explicitly as ignored", () => {
     const captured = captureBundle(
       baseBundle({

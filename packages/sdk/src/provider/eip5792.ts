@@ -264,6 +264,8 @@ export function createEip5792Orchestrator(
       calls: captured.calls,
       chainId: input.chain,
       atomicExecution: true,
+      ...(captured.capabilities === undefined ? {} : { capabilities: captured.capabilities }),
+      registeredPaymasterServiceUrl: input.port.registeredPaymasterServiceUrl(input.chain),
     });
     if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
     const accountAddress = await account();
@@ -293,7 +295,12 @@ export function createEip5792Orchestrator(
         ),
       );
       const operation = await input.port.startCalls(
-        Object.freeze({ chain: input.chain, calls, requestHash: accepted.operationRequestHash }),
+        Object.freeze({
+          chain: input.chain,
+          calls,
+          requestHash: accepted.operationRequestHash,
+          paymasterService: capabilityEffect.paymasterService,
+        }),
         Object.freeze({
           reserve: async (exact: OaathProviderOperationPointer) => {
             const identity = exact.identity;
@@ -573,7 +580,10 @@ export function createEip5792Orchestrator(
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);
     if (requested.includes(chainId)) {
-      result[chainId] = advertiseWalletCapabilities({ atomicExecution: true });
+      result[chainId] = advertiseWalletCapabilities({
+        atomicExecution: true,
+        paymasterService: input.port.registeredPaymasterServiceUrl(input.chain) !== null,
+      });
     }
     return Object.freeze(result);
   }

@@ -26,7 +26,11 @@ import {
 } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { OaathChainCapability } from "../../src/advanced.js";
+import type {
+  Erc7677GasEstimationRequest,
+  OaathChainCapability,
+  OaathRegisteredPaymasterService,
+} from "../../src/advanced.js";
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
 import {
@@ -204,7 +208,27 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     chainId: capability.chainId,
     reads: (request: unknown) => capability.reads.read(request as never),
     observation: (request: unknown) => capability.observation.read(request as never),
-    bundler: (request: unknown) => capability.bundler.probe(request as never),
+    bundler: (request: unknown) => {
+      if (
+        request !== null &&
+        typeof request === "object" &&
+        (request as { readonly version?: unknown }).version === "oaath.erc7677-gas-estimation/v1"
+      ) {
+        const paymasterService = capability.paymasterService ?? null;
+        if (paymasterService === null) throw new Error("paymaster estimator is unavailable");
+        const captured = request as Readonly<{
+          prepared: Erc7677GasEstimationRequest["prepared"];
+          userOperation: Erc7677GasEstimationRequest["userOperation"];
+        }>;
+        return paymasterService.estimate(
+          Object.freeze({
+            prepared: captured.prepared,
+            userOperation: captured.userOperation,
+          }),
+        );
+      }
+      return capability.bundler.probe(request as never);
+    },
     quote: (request: unknown) => capability.quote(request as never),
     // One submission settles per call: open, send once, close.
     submission: async (request: unknown) => {
@@ -390,6 +414,7 @@ export interface ChainFixtureOptions {
   readonly usage?: boolean;
   readonly bundler?: "available" | "absent" | "unsupported" | "unreadable";
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
+  readonly paymasterService?: Readonly<OaathRegisteredPaymasterService> | null;
   /** Injected crash inside the send boundary, after the transport accepted it. */
   readonly crashOnSend?: () => boolean;
   /**
@@ -477,7 +502,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       entryPoint: prepared.entryPoint.address,
       sender: prepared.userOperation.sender,
       nonce: quantity(nonce),
-      paymaster: ZERO_ADDRESS,
+      paymaster: prepared.userOperation.paymaster?.address ?? ZERO_ADDRESS,
       actualGasCost: "0x9",
       actualGasUsed: "0xa",
       success,
@@ -523,7 +548,9 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             EVENT_TOPIC,
             prepared.userOperationHash,
             `0x${"0".repeat(24)}${prepared.userOperation.sender.slice(2)}`,
-            `0x${"0".repeat(24)}${ZERO_ADDRESS.slice(2)}`,
+            `0x${"0".repeat(24)}${(prepared.userOperation.paymaster?.address ?? ZERO_ADDRESS).slice(
+              2,
+            )}`,
           ],
           data: `0x${word(nonce)}${word(success ? 1n : 0n)}${word(9n)}${word(10n)}`,
         },
@@ -660,6 +687,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           })
         : null,
     feePayer: options.feePayer ?? null,
+    paymasterService: options.paymasterService ?? null,
   });
 
   return Object.freeze({
@@ -731,6 +759,14 @@ export interface UrlRealmOptions {
     providerId: string;
     provider: unknown;
   }>;
+  readonly paymasterService?: Readonly<{
+    providerId: string;
+    requestTimeoutMs: number;
+    provider: Readonly<{
+      getPaymasterStubData: (request: unknown) => Promise<unknown>;
+      getPaymasterData: (request: unknown) => Promise<unknown>;
+    }>;
+  }>;
 }
 
 export interface UrlRealm {
@@ -769,6 +805,23 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
       },
       chains: [relayChainPort(chain)],
       ...(options.sessionSigner ? { sessionSigner: options.sessionSigner } : {}),
+      ...(options.paymasterService
+        ? {
+            rateLimit: {
+              async check() {
+                return "allowed" as const;
+              },
+            },
+            paymasterServices: [
+              {
+                chainId: chain.capability.chainId,
+                providerId: options.paymasterService.providerId,
+                requestTimeoutMs: options.paymasterService.requestTimeoutMs,
+                provider: options.paymasterService.provider,
+              },
+            ],
+          }
+        : {}),
     });
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let invalidations = 0;

@@ -45,7 +45,7 @@ import {
   createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
-import type { OaathChainCapability } from "./grant-handle.js";
+import type { OaathChainCapability, OaathRegisteredPaymasterService } from "./grant-handle.js";
 import {
   loadServiceSession,
   type PersistedServiceSession,
@@ -183,6 +183,44 @@ function serviceChainCapability(
   const port = (name: Parameters<typeof chainPort>[3]) =>
     chainPort(transport, url, chain.chainId, name);
   const submissions = port("submissions");
+  const bundler = port("bundler");
+  const paymasterService: Readonly<OaathRegisteredPaymasterService> | null =
+    chain.paymasterService === null
+      ? null
+      : Object.freeze({
+          url: `${url}/chains/${chain.chainId}/paymaster`,
+          async request(request: Parameters<OaathRegisteredPaymasterService["request"]>[0]) {
+            const path = request.method === "pm_getPaymasterStubData" ? "stub-data" : "data";
+            const envelope = exactClientRecord(
+              await fetchJson(
+                transport,
+                jsonRequest(`${url}/chains/${chain.chainId}/paymaster/${path}`, {
+                  params: request.params,
+                }),
+                `chain ${chain.chainId} paymaster ${path}`,
+              ),
+              ["present", "result"],
+              "paymaster service envelope",
+              new WeakSet(),
+              "oaath_client_capability_invalid",
+            );
+            if (typeof envelope.present !== "boolean") {
+              return clientFail(
+                "oaath_client_capability_invalid",
+                "paymaster service envelope is invalid",
+              );
+            }
+            return envelope.present ? envelope.result : undefined;
+          },
+          estimate: (request: Parameters<OaathRegisteredPaymasterService["estimate"]>[0]) =>
+            bundler(
+              Object.freeze({
+                version: "oaath.erc7677-gas-estimation/v1",
+                prepared: request.prepared,
+                userOperation: request.userOperation,
+              }),
+            ),
+        });
   return Object.freeze({
     chainId: chain.chainId,
     reads: Object.freeze({ read: port("reads") }),
@@ -200,6 +238,7 @@ function serviceChainCapability(
     quote: port("quote"),
     usage: chain.usage ? port("usage") : null,
     feePayer: chain.feePayer,
+    paymasterService,
   }) as Readonly<OaathChainCapability>;
 }
 

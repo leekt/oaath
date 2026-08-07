@@ -17,7 +17,9 @@ import {
 import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
 import {
   captureAtomicCapability,
+  capturePaymasterServiceCapability,
   isHandledWalletCapability,
+  type WalletCapabilityMethod,
   type WalletCapabilityScope,
 } from "./capabilities.js";
 import {
@@ -99,14 +101,23 @@ export interface CapturedJsonObject {
   readonly [key: string]: CapturedJsonValue;
 }
 
+/** Exact handled ERC-7677 selection derived from retained capability values. */
+export interface CapturedWalletPaymasterService {
+  readonly url: string;
+  readonly context: CapturedJsonObject;
+  /** Missing `optional` is normalized to required. */
+  readonly optional: boolean;
+}
+
 /**
- * Capability input and its explicit disposition. No named handlers exist in
- * this slice, so every accepted capability name appears in `ignored` and has no
- * execution effect. The exact JSON-compatible values remain in `values`.
+ * Capability input, retained hash material, and explicit disposition. Unknown
+ * optional names remain in `ignored`; handled selections are derived once from
+ * the exact JSON-compatible `values` captured at this boundary.
  */
 export interface CapturedWalletCapabilities {
   readonly values: Readonly<Record<string, CapturedJsonObject>>;
   readonly ignored: readonly string[];
+  readonly paymasterService?: CapturedWalletPaymasterService;
 }
 
 export interface CapturedWalletCall {
@@ -596,6 +607,7 @@ function jsonByteLength(value: CapturedJsonValue): number {
 function captureCapabilities(
   value: unknown,
   scope: WalletCapabilityScope,
+  method: WalletCapabilityMethod,
   context: CaptureContext,
   budget: CaptureBudget,
 ): CapturedWalletCapabilities {
@@ -607,6 +619,7 @@ function captureCapabilities(
   );
   const values: Record<string, CapturedJsonObject> = Object.create(null);
   const ignored: string[] = [];
+  let paymasterService: CapturedWalletPaymasterService | undefined;
 
   for (const name of Object.keys(capabilityMap)) {
     const capability = captureJsonObject(
@@ -623,9 +636,11 @@ function captureCapabilities(
       return invalidProviderParams();
     }
     values[name] = capability;
-    if (!isHandledWalletCapability(name, scope)) {
+    if (!isHandledWalletCapability(name, method, scope)) {
       ignored.push(name);
       if (optional !== true) budget.hasUnsupportedRequiredCapability = true;
+    } else if (name === "paymasterService") {
+      paymasterService = capturePaymasterServiceCapability(capability);
     }
   }
 
@@ -637,6 +652,7 @@ function captureCapabilities(
   const captured = {
     values: capturedValues,
     ignored: Object.freeze(ignored),
+    ...(paymasterService === undefined ? {} : { paymasterService }),
   };
   Object.setPrototypeOf(captured, null);
   return Object.freeze(captured);
@@ -731,6 +747,7 @@ function capturePreparedCallsContext(
 
 function captureCall(
   value: unknown,
+  method: WalletCapabilityMethod,
   context: CaptureContext,
   budget: CaptureBudget,
 ): CapturedWalletCallDraft {
@@ -756,7 +773,7 @@ function captureCall(
   }
 
   const capabilities = Object.hasOwn(record, "capabilities")
-    ? captureCapabilities(record.capabilities, "call", context, budget)
+    ? captureCapabilities(record.capabilities, "call", method, context, budget)
     : undefined;
 
   const wire: Record<string, CapturedJsonValue> = Object.create(null);
@@ -848,12 +865,12 @@ export function captureWalletSendCallsParams(
   const drafts: CapturedWalletCallDraft[] = [];
   const wireCalls: CapturedJsonValue[] = [];
   for (const entry of callEntries) {
-    const draft = captureCall(entry, context, budget);
+    const draft = captureCall(entry, "wallet_sendCalls", context, budget);
     drafts.push(draft);
     wireCalls.push(draft.wire);
   }
   const capabilities = Object.hasOwn(bundle, "capabilities")
-    ? captureCapabilities(bundle.capabilities, "bundle", context, budget)
+    ? captureCapabilities(bundle.capabilities, "bundle", "wallet_sendCalls", context, budget)
     : undefined;
 
   const wire: Record<string, CapturedJsonValue> = Object.create(null);
@@ -944,12 +961,12 @@ export function captureWalletPrepareCallsParams(
   const drafts: CapturedWalletCallDraft[] = [];
   const wireCalls: CapturedJsonValue[] = [];
   for (const entry of callEntries) {
-    const draft = captureCall(entry, context, budget);
+    const draft = captureCall(entry, "wallet_prepareCalls", context, budget);
     drafts.push(draft);
     wireCalls.push(draft.wire);
   }
   const capabilities = Object.hasOwn(bundle, "capabilities")
-    ? captureCapabilities(bundle.capabilities, "bundle", context, budget)
+    ? captureCapabilities(bundle.capabilities, "bundle", "wallet_prepareCalls", context, budget)
     : undefined;
 
   const wireKey: CapturedJsonObject = Object.freeze({
@@ -1017,7 +1034,13 @@ export function captureWalletSendPreparedCallsParams(
     capabilityJsonBytes: 0,
     hasUnsupportedRequiredCapability: false,
   };
-  const capabilities = captureCapabilities(request.capabilities, "bundle", context, budget);
+  const capabilities = captureCapabilities(
+    request.capabilities,
+    "bundle",
+    "wallet_sendPreparedCalls",
+    context,
+    budget,
+  );
   const preparedContext = capturePreparedCallsContext(request.context, context);
   const key = capturePreparedCallsKey(request.key, context);
   const signature = exactLowercaseBytes(

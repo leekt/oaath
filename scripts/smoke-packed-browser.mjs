@@ -16,8 +16,10 @@
  *   - the packed runtime exports are exactly what the workspace build produced;
  *   - `createOAAth` composes and `requestPermission` returns an active Grant
  *     while every chain port stays untouched;
+ *   - registered ERC-7677 sponsorship finalizes one exact UserOperation before
+ *     signing and submission;
  *   - a recreated realm resumes the Grant and observes the exact durable
- *     EIP-5792 bundle without another submission;
+ *     sponsored EIP-5792 bundle without another paymaster call or submission;
  *   - replaying its app-provided ID after recreation returns `5720` without
  *     opening another submission;
  *   - the public surface carries no protocol mechanics;
@@ -94,6 +96,7 @@ const EXPIRES_IN = 1800;
 const VALIDATOR = "0x" + "22".repeat(20);
 const TARGET = "0x" + "44".repeat(20);
 const ACCOUNT = "0x" + "66".repeat(20);
+const PAYMASTER = "0x" + "33".repeat(20);
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
 const deployment = kernelV4Deployment(CHAIN_ID);
 
@@ -225,6 +228,7 @@ const authorization = {
 let chainEnabled = false;
 let chainTouches = 0;
 const sends = [];
+const sponsorshipStages = [];
 function requireChain(port) {
   if (!chainEnabled) fail("requestPermission reached the chain " + port + " port");
   chainTouches += 1;
@@ -315,6 +319,30 @@ const chain = {
     };
   },
   feePayer: null,
+  paymasterService: {
+    url: ISSUER_URL + "/chains/" + CHAIN_ID + "/paymaster",
+    async request(request) {
+      if (request.method === "pm_getPaymasterStubData") {
+        sponsorshipStages.push("stub");
+        return {
+          paymaster: PAYMASTER,
+          paymasterData: "0x01020304",
+          paymasterPostOpGasLimit: "0x3c",
+        };
+      }
+      sponsorshipStages.push("final");
+      return { paymaster: PAYMASTER, paymasterData: "0x01020305" };
+    },
+    async estimate() {
+      sponsorshipStages.push("estimate");
+      return {
+        callGasLimit: "100000",
+        verificationGasLimit: "200000",
+        preVerificationGas: "50000",
+        paymasterVerificationGasLimit: "50000",
+      };
+    },
+  },
 };
 
 // A new database connection and new adapters are composed after the first realm
@@ -426,6 +454,12 @@ const appBundle = {
   chainId: "0x" + CHAIN_ID.toString(16),
   atomicRequired: true,
   calls: [{ to: TARGET, data: "0xa9059cbb" }],
+  capabilities: {
+    paymasterService: {
+      url: ISSUER_URL + "/chains/" + CHAIN_ID + "/paymaster",
+      context: { policyId: "packed-sponsor" },
+    },
+  },
 };
 const sent = await firstProvider.request({
   method: "wallet_sendCalls",
@@ -433,6 +467,12 @@ const sent = await firstProvider.request({
 });
 if (sent.id !== "packed-reload") fail("wallet_sendCalls returned another id");
 if (sends.length !== 1) fail("wallet_sendCalls submitted " + sends.length + " operations");
+if (sponsorshipStages.join(",") !== "stub,estimate,final") {
+  fail("ERC-7677 ran unexpected stages: " + sponsorshipStages.join(","));
+}
+if (sends[0].userOperation.paymaster?.address !== PAYMASTER) {
+  fail("wallet_sendCalls did not submit the final sponsored operation");
+}
 const exactHash = sends[0].userOperationHash;
 await connection.close();
 await oaath.close();
@@ -470,6 +510,9 @@ if (recovered.id !== "packed-reload" || recovered.status !== 100) {
 }
 if (sends.length !== 1 || sends[0].userOperationHash !== exactHash) {
   fail("status recovery resubmitted or changed the exact operation");
+}
+if (sponsorshipStages.join(",") !== "stub,estimate,final") {
+  fail("reload repeated ERC-7677 sponsorship");
 }
 
 await recreatedConnection.signOut();
@@ -578,7 +621,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      connect, consent, wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
+    "  golden path      connect, consent, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

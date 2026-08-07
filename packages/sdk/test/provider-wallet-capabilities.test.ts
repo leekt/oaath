@@ -26,23 +26,35 @@ describe("closed wallet capability registry", () => {
       calls,
       chainId: 421_614,
       atomicExecution: true,
+      registeredPaymasterServiceUrl: null,
     });
 
     expect(atomic).toEqual({ atomicRequired: true });
     expect(Object.isFrozen(atomic)).toBe(true);
-    expect(effect).toEqual({ atomic: true, calls });
+    expect(effect).toEqual({ atomic: true, calls, paymasterService: null });
     expect(effect.calls).toBe(calls);
     expect(Object.isFrozen(effect)).toBe(true);
     expect(advertiseWalletCapabilities({ atomicExecution: true })).toEqual({
       atomic: { status: "supported" },
     });
+    expect(advertiseWalletCapabilities({ atomicExecution: true, paymasterService: true })).toEqual({
+      atomic: { status: "supported" },
+      paymasterService: { supported: true },
+    });
     expect(advertiseWalletCapabilities({ atomicExecution: false })).toEqual({});
   });
 
-  it("does not reinterpret atomicRequired as arbitrary capability metadata", () => {
-    expect(isHandledWalletCapability("atomic", "bundle")).toBe(false);
-    expect(isHandledWalletCapability("atomic", "call")).toBe(false);
-    expect(isHandledWalletCapability("paymasterService", "bundle")).toBe(false);
+  it("scopes metadata handlers to one wallet method and location", () => {
+    expect(isHandledWalletCapability("atomic", "wallet_sendCalls", "bundle")).toBe(false);
+    expect(isHandledWalletCapability("atomic", "wallet_sendCalls", "call")).toBe(false);
+    expect(isHandledWalletCapability("paymasterService", "wallet_sendCalls", "bundle")).toBe(true);
+    expect(isHandledWalletCapability("paymasterService", "wallet_sendCalls", "call")).toBe(false);
+    expect(isHandledWalletCapability("paymasterService", "wallet_prepareCalls", "bundle")).toBe(
+      false,
+    );
+    expect(
+      isHandledWalletCapability("paymasterService", "wallet_sendPreparedCalls", "bundle"),
+    ).toBe(false);
   });
 
   it("rejects invalid atomic input and unsupported required execution", () => {
@@ -58,6 +70,7 @@ describe("closed wallet capability registry", () => {
         calls: Object.freeze([CALL]),
         chainId: 421_614,
         atomicExecution: false,
+        registeredPaymasterServiceUrl: null,
       }),
     ).toThrowError(expect.objectContaining({ code: ATOMICITY_UNSUPPORTED }));
     try {
@@ -66,9 +79,61 @@ describe("closed wallet capability registry", () => {
         calls: Object.freeze([CALL]),
         chainId: 421_614,
         atomicExecution: false,
+        registeredPaymasterServiceUrl: null,
       });
     } catch (error) {
       expect(error).toBeInstanceOf(OaathProviderRpcError);
+    }
+  });
+
+  it("selects only the registered paymaster URL and fails closed for required mismatches", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    const context = Object.freeze({ policy: "sponsored" });
+    const capabilities = Object.freeze({
+      values: Object.freeze({}),
+      ignored: Object.freeze([]),
+      paymasterService: Object.freeze({ url, context, optional: false }),
+    });
+    const selected = applyWalletCapabilities({
+      atomic: captureAtomicCapability(false),
+      calls: Object.freeze([CALL]),
+      chainId: 421_614,
+      atomicExecution: true,
+      capabilities,
+      registeredPaymasterServiceUrl: url,
+    });
+    expect(selected.paymasterService).toEqual({ url, context });
+    expect(selected.paymasterService?.context).toBe(context);
+    expect(Object.isFrozen(selected.paymasterService)).toBe(true);
+
+    for (const registeredPaymasterServiceUrl of [null, "https://other.example/paymaster"]) {
+      expect(() =>
+        applyWalletCapabilities({
+          atomic: captureAtomicCapability(false),
+          calls: Object.freeze([CALL]),
+          chainId: 421_614,
+          atomicExecution: true,
+          capabilities,
+          registeredPaymasterServiceUrl,
+        }),
+      ).toThrowError(expect.objectContaining({ code: 5700 }));
+
+      expect(
+        applyWalletCapabilities({
+          atomic: captureAtomicCapability(false),
+          calls: Object.freeze([CALL]),
+          chainId: 421_614,
+          atomicExecution: true,
+          capabilities: Object.freeze({
+            ...capabilities,
+            paymasterService: Object.freeze({
+              ...capabilities.paymasterService,
+              optional: true,
+            }),
+          }),
+          registeredPaymasterServiceUrl,
+        }).paymasterService,
+      ).toBeNull();
     }
   });
 });

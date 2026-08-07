@@ -156,6 +156,7 @@ describe("wallet_prepareCalls experimental capture", () => {
       calls: captured.calls,
       chainId: CHAIN,
       atomicExecution: true,
+      registeredPaymasterServiceUrl: null,
     });
     expect(applied.calls).toBe(captured.calls);
   });
@@ -237,6 +238,42 @@ describe("wallet_prepareCalls experimental capture", () => {
       () => capturePrepare(basePrepare({ capabilities: { required: {} } })),
       UNSUPPORTED_CAPABILITY,
     );
+  });
+
+  it("does not enable paymasterService for experimental prepared calls", () => {
+    const paymasterService = {
+      url: "https://relay.example/chains/421614/paymaster",
+      context: {},
+    };
+    expectRpcError(
+      () => capturePrepare(basePrepare({ capabilities: { paymasterService } })),
+      UNSUPPORTED_CAPABILITY,
+    );
+    expect(
+      capturePrepare(
+        basePrepare({
+          capabilities: { paymasterService: { ...paymasterService, optional: true } },
+        }),
+      ).capabilities,
+    ).toEqual({
+      values: { paymasterService: { ...paymasterService, optional: true } },
+      ignored: ["paymasterService"],
+    });
+
+    expectRpcError(
+      () => captureSend(baseSend({ capabilities: { paymasterService } })),
+      UNSUPPORTED_CAPABILITY,
+    );
+    expect(
+      captureSend(
+        baseSend({
+          capabilities: { paymasterService: { ...paymasterService, optional: true } },
+        }),
+      ).capabilities,
+    ).toEqual({
+      values: { paymasterService: { ...paymasterService, optional: true } },
+      ignored: ["paymasterService"],
+    });
   });
 });
 
