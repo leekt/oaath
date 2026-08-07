@@ -27,6 +27,7 @@ import type { RelayStore } from "../src/store/interface.js";
 import { withRelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
+  APPROVABLE_PERMISSION_SCOPE,
   CLIENT_TOKEN,
   codeChallenge,
   createHarness,
@@ -45,54 +46,7 @@ import {
 
 /** An opaque scope string: projected as the labeled raw text, never dropped. */
 const RAW_SCOPE = '{"permission":"erc20-transfer","token":"0xdeadbeefcafe","chainScope":"all"}';
-/**
- * A real `@oaath/protocol` permission scope, exactly as `@oaath/sdk` serializes
- * it into `requestedScope` (a permission request without its `requestId`).
- */
-const PERMISSION_SCOPE = JSON.stringify({
-  version: "oaath.permission-request/v1",
-  application: {
-    applicationId: "oaath-native-tests",
-    clientId: "client-a",
-    origin: "https://app.example",
-    deviceId: "device-1",
-  },
-  chainScope: "all",
-  logicalAccount: {
-    version: "oaath.kernel-account-profile/v1",
-    kind: "kernel",
-    accountIndex: "7",
-    kernelVersion: "0.4.0",
-    factoryRoute: "meta_factory",
-    entryPoint: { version: "0.7" },
-    ownerCredential: {
-      version: "oaath.owner-credential-profile/v1",
-      kind: "ecdsa",
-      address: `0x${"33".repeat(20)}`,
-    },
-  },
-  operatorCredential: {
-    version: "oaath.operator-credential-profile/v1",
-    kind: "ecdsa",
-    address: `0x${"44".repeat(20)}`,
-  },
-  policy: {
-    version: "oaath.grant-policy/v1",
-    calls: [
-      {
-        target: `0x${"11".repeat(20)}`,
-        selector: "0x12345678",
-        valueLimit: "100",
-        argumentEquals: [],
-      },
-    ],
-    validAfter: 100,
-    validUntil: 190,
-    perChainOperationLimit: 10,
-  },
-  requestedAt: 100,
-  expiresAt: 200,
-});
+const PERMISSION_SCOPE = APPROVABLE_PERMISSION_SCOPE;
 const REQUEST_TTL_MS = 300_000;
 const CODE_TTL_MS = 60_000;
 
@@ -140,12 +94,22 @@ interface Fixture {
   readonly store: RelayStore;
   readonly clock: TestClock;
   readonly kms: RelayKms;
+  readonly kmsEncryptions: () => number;
   readonly requestId: string;
 }
 
 async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixture> {
   const store = createMemoryRelayStore();
   const clock = createTestClock();
+  const baseKms = createTestKms();
+  let encryptions = 0;
+  const kms: RelayKms = {
+    async encrypt(plaintext) {
+      encryptions += 1;
+      return baseKms.encrypt(plaintext);
+    },
+    decrypt: (ciphertextRef) => baseKms.decrypt(ciphertextRef),
+  };
   const created = await createAuthorizationRequest({
     store,
     clock,
@@ -155,7 +119,7 @@ async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixtu
     requestedScope,
     requestTtlMs: REQUEST_TTL_MS,
   });
-  return { store, clock, kms: createTestKms(), requestId: created.requestId };
+  return { store, clock, kms, kmsEncryptions: () => encryptions, requestId: created.requestId };
 }
 
 function project(
@@ -444,14 +408,26 @@ describe("experimental owner-phone decision saga", () => {
     expect(replayed.decidedAt).toBe(decided.decidedAt);
   });
 
-  it("refuses to approve a reject-only scope and still records its rejection", async () => {
-    // An unrecognized scope is inspectable but never approvable: the phone
-    // hides the Approve control and the relay refuses independently.
-    const fixed = await fixture(RAW_SCOPE);
-    await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
-    const rejected = await decide(fixed, "rejected");
-    expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });
-  });
+  it.each([
+    ["raw", RAW_SCOPE],
+    ["legacy digest", SIGNATURE_SCOPE],
+  ])(
+    "refuses to approve a reject-only %s scope and still records its rejection",
+    async (_label, requestedScope) => {
+      const fixed = await fixture(requestedScope);
+      await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
+      expect(fixed.kmsEncryptions()).toBe(0);
+
+      const rejected = await decide(fixed, "rejected");
+      expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });
+      expect(fixed.kmsEncryptions()).toBe(0);
+
+      const replayed = await decide(fixed, "approved");
+      expect(replayed).toMatchObject({ settlement: "replayed", outcome: "rejected" });
+      expect(replayed.release).toBeNull();
+      expect(fixed.kmsEncryptions()).toBe(0);
+    },
+  );
 
   it("never decides for the wrong caller, an unknown operation, or after expiry", async () => {
     const fixed = await fixture();
@@ -560,6 +536,43 @@ describe("experimental owner-phone preview routes", () => {
     expect(rejected.operationId).toBe(rejectedId);
     rejected.operationId = GOLDEN.decision.decidedRejected?.operationId;
     expect(rejected).toEqual(GOLDEN.decision.decidedRejected);
+  });
+
+  it.each([
+    ["raw", RAW_SCOPE],
+    ["legacy digest", SIGNATURE_SCOPE],
+  ])("keeps a %s scope reject-only over the native HTTP route", async (_label, requestedScope) => {
+    const baseKms = createTestKms();
+    let encryptions = 0;
+    const harness = createHarness({
+      kms: {
+        async encrypt(plaintext) {
+          encryptions += 1;
+          return baseKms.encrypt(plaintext);
+        },
+        decrypt: (ciphertextRef) => baseKms.decrypt(ciphertextRef),
+      },
+    });
+    const requestId = await createOverWire(harness, requestedScope);
+
+    await expectFailure(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
+          command: "approve",
+          artifact: "must-not-be-sealed",
+        }),
+      ),
+      "relay_request_invalid",
+    );
+    expect(encryptions).toBe(0);
+
+    await expectOk(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, { command: "reject" }),
+      ),
+      200,
+    );
+    expect(encryptions).toBe(0);
   });
 
   it("enforces the owner role on both preview routes", async () => {

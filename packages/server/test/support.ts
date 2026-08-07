@@ -25,6 +25,57 @@ export const OWNER_TOKEN = "owner-token";
 export const OTHER_CLIENT_TOKEN = "other-client-token";
 export const OTHER_OWNER_TOKEN = "other-owner-token";
 
+/**
+ * A real `@oaath/protocol` permission scope, exactly as `@oaath/sdk` stores it
+ * in `requestedScope` (the permission request without its relay request id).
+ * Generic authorization tests use an actually approvable scope instead of a
+ * permissive placeholder, so rejection tests exercise the production gate.
+ */
+export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
+  version: "oaath.permission-request/v1",
+  application: {
+    applicationId: "oaath-native-tests",
+    clientId: "client-a",
+    origin: "https://app.example",
+    deviceId: "device-1",
+  },
+  chainScope: "all",
+  logicalAccount: {
+    version: "oaath.kernel-account-profile/v1",
+    kind: "kernel",
+    accountIndex: "7",
+    kernelVersion: "0.4.0",
+    factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
+    ownerCredential: {
+      version: "oaath.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"33".repeat(20)}`,
+    },
+  },
+  operatorCredential: {
+    version: "oaath.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"44".repeat(20)}`,
+  },
+  policy: {
+    version: "oaath.grant-policy/v1",
+    calls: [
+      {
+        target: `0x${"11".repeat(20)}`,
+        selector: "0x12345678",
+        valueLimit: "100",
+        argumentEquals: [],
+      },
+    ],
+    validAfter: 100,
+    validUntil: 190,
+    perChainOperationLimit: 10,
+  },
+  requestedAt: 100,
+  expiresAt: 200,
+});
+
 export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
   [
     CLIENT_TOKEN,
@@ -192,12 +243,15 @@ export interface ApprovedDecision {
   readonly codeExpiresAt: number;
 }
 
-export async function createRequest(harness: Harness): Promise<CreatedRequest> {
+export async function createRequest(
+  harness: Harness,
+  requestedScope = APPROVABLE_PERMISSION_SCOPE,
+): Promise<CreatedRequest> {
   const response = await harness.handler(
     post("/authorization/requests", CLIENT_TOKEN, {
       redirectUri: REDIRECT_URI,
       codeChallenge: await codeChallenge(),
-      requestedScope: '{"chainScope":"all"}',
+      requestedScope,
     }),
   );
   return expectOk<CreatedRequest>(response, 201);

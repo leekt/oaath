@@ -21,16 +21,16 @@ The page has one **Pair phone** action plus four account actions:
    address. It asks for no owner authorization.
 2. **Request permission** creates a secp256k1 session private key in the page
    (`crypto.getRandomValues` through noble), retains it in `localStorage`, and
-   sends only its public key/address. The relay asks the phone to sign the SDK's
-   replayable Kernel enable digest after displaying the full JSON.
+   sends only its public key/address. The relay may project the legacy Kernel
+   enable digest for inspection, but every server decision API refuses to
+   approve or release that network-supplied digest.
 3. **Send tx with session key** gets the validation nonce from EntryPoint,
    prepares the CallPolicy/value-bounded operation server-side, signs its exact
    UserOperation hash in the page, and submits. In default local mode it is
    repeatable.
-4. **Send tx with owner key** prepares a UserOperation, projects its full JSON
-   and exact hash to the phone, and submits only the signature released after
-   explicit approval. Live ZeroDev mode obtains and hash-binds sponsorship
-   before it creates this single phone request.
+4. **Send tx with owner key** prepares a UserOperation and may project its full
+   JSON and exact hash for inspection. It cannot submit through owner consent
+   until a closed request lets the device derive and verify that hash itself.
 
 The demo owns independent in-memory owner and session operation lanes for its
 paired account and chain. Each retains the exact prepared hash, bundler
@@ -57,10 +57,12 @@ Its owned transport and local chain
 provide the complete strict four-account-action evidence path: transaction membership
 and index, the exact EntryPoint event, ancestry, endpoint rebound, and finality.
 This is owned local evidence, not Byzantine RPC verification.
-`OAATH_PHONE_SIMULATE=1` pairs a noble P-256 phone, signs both phone requests,
-exercises Pair plus all four account actions, sends the session action twice with getNonce-derived
-sequences, and contacts neither Apple nor ZeroDev. `pnpm examples:check` owns
-this unattended path.
+`OAATH_PHONE_SIMULATE=1` pairs a noble P-256 test fixture and exercises Pair
+plus all four account actions, sending the session action twice with
+getNonce-derived sequences, while contacting neither Apple nor ZeroDev. The
+fixture supplies owner signatures locally to preserve chain and race evidence;
+it does not approve a relay request and is not phone-consent or clear-signing
+evidence. `pnpm examples:check` owns this unattended path.
 
 ## ZeroDev Arbitrum Sepolia mode (explicit live opt-in)
 

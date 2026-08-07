@@ -4,12 +4,19 @@
  * ```text
  * state and owner        the decision record owns "decided"; the request record
  *                        never mutates
- * transitions            undecided -> approved | rejected, exactly once
+ * persisted evidence     the immutable requestedScope is reclassified from the
+ *                        durable request before every approval attempt
+ * resource occupied?     a refused approval occupies nothing and performs no KMS
+ *                        sealing; a rejection occupies only its decision row
+ * retry positively safe? refused approval is read-only; a terminal outcome is
+ *                        replayed by the native saga and rejected by this owner
+ * transitions            verified permission: undecided -> approved | rejected;
+ *                        unverified scope: undecided -> rejected, exactly once
  * terminal               both outcomes; a second decide fails relay_already_decided
- * retry positively safe? no
  * crash/reload           the decision, the code, and the sealed artifact commit in
  *                        one transaction on the row-locked request, so a crash
  *                        leaves the request undecided and nothing released
+ * cleanup owner          the relay transaction; refused approvals allocate nothing
  * ```
  *
  * Subject binding: the authoritative subject is recovered from the stored
@@ -35,6 +42,8 @@ import {
   OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION,
 } from "../store/records.js";
 import { randomIdentifier, sha256Base64Url } from "./challenge.js";
+import { fetchAuthorizationRequest } from "./request.js";
+import { classifyStoredAuthorizationScope } from "./scope.js";
 
 export type AuthorizationDecisionCommand =
   /** The owner approves and hands over the artifact the client will claim once. */
@@ -67,6 +76,30 @@ export async function submitAuthorizationDecision(
   input: SubmitAuthorizationDecisionInput,
 ): Promise<SubmittedAuthorizationDecision> {
   const decidedAt = relayNow(input.clock);
+
+  // Approval is the artifact-creating transition, so the shared decision owner
+  // admits it only for an exact scope this server currently knows how to verify.
+  // Refusal happens before KMS sealing or any durable decision/code/artifact.
+  if (input.command.outcome === "approved") {
+    const state = await fetchAuthorizationRequest({
+      store: input.store,
+      clock: input.clock,
+      caller: input.caller,
+      requestId: input.requestId,
+    });
+    // Preserve the transaction owner's existing precedence: the native saga
+    // must recover an earlier terminal outcome without reclassifying its scope.
+    if (state.decision !== null) {
+      return relayFailure("relay_already_decided", "authorization request is already decided");
+    }
+    if (state.expired) {
+      return relayFailure("relay_expired", "authorization request expired");
+    }
+    const scope = classifyStoredAuthorizationScope(state.requestedScope, state.requestId);
+    if (scope.decision !== "approve-or-reject") {
+      return relayFailure("relay_request_invalid", "the authorization scope is reject-only");
+    }
+  }
 
   // Seal before the transaction: the store only ever receives references, and
   // an uncommitted decision leaves nothing but unreferenced ciphertexts. The
