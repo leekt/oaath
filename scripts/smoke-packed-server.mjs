@@ -38,7 +38,14 @@ const SUBPATHS = {
 const PG_VERSION = "8.22.0";
 
 const SMOKE = String.raw`
-import { deriveCodeChallenge } from "@oaath/protocol";
+import {
+  deriveCodeChallenge,
+  OAATH_GRANT_POLICY_VERSION,
+  OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+  OAATH_PERMISSION_REQUEST_VERSION,
+} from "@oaath/protocol";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { APNS_PAYLOAD_MAX_BYTES, createApnsSender } from "@oaath/server/apns";
 import { NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest } from "@oaath/server/native";
@@ -85,6 +92,51 @@ for (const specifier of ENTRIES) {
 }
 
 const clock = 1800000000000;
+const requestedAt = clock / 1000;
+const requestedScope = JSON.stringify({
+  version: OAATH_PERMISSION_REQUEST_VERSION,
+  application: {
+    applicationId: "oaath-packed-server-smoke",
+    clientId: "client-a",
+    origin: "https://app.example",
+    deviceId: "packed-server-device",
+  },
+  chainScope: "all",
+  logicalAccount: {
+    version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+    kind: "kernel",
+    accountIndex: "0",
+    kernelVersion: "0.4.0",
+    factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
+    ownerCredential: {
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "ecdsa",
+      address: "0x" + "33".repeat(20),
+    },
+  },
+  operatorCredential: {
+    version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+    kind: "ecdsa",
+    address: "0x" + "44".repeat(20),
+  },
+  policy: {
+    version: OAATH_GRANT_POLICY_VERSION,
+    calls: [
+      {
+        target: "0x" + "11".repeat(20),
+        selector: "0x12345678",
+        valueLimit: "0",
+        argumentEquals: [],
+      },
+    ],
+    validAfter: requestedAt,
+    validUntil: requestedAt + 599,
+    perChainOperationLimit: 1,
+  },
+  requestedAt,
+  expiresAt: requestedAt + 600,
+});
 
 const callers = new Map([
   [
@@ -141,7 +193,7 @@ const created = await ok(
     request("POST", "/authorization/requests", CLIENT_TOKEN, {
       redirectUri: REDIRECT_URI,
       codeChallenge: deriveCodeChallenge(CODE_VERIFIER),
-      requestedScope: JSON.stringify({ chainScope: "all" }),
+      requestedScope,
     }),
   ),
   201,
