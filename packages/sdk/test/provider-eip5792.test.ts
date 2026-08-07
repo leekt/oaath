@@ -552,4 +552,39 @@ describe("wallet_getCapabilities authorization and parsing", () => {
     );
     await connection.close();
   });
+
+  it("does not advertise capabilities for expired or revoked Grants", async () => {
+    const expired = await activeProvider();
+    expired.realm.clock.advance(expired.grant.expiresAt - expired.realm.clock.now());
+
+    await providerError(
+      expired.provider.request({
+        method: "wallet_getCapabilities",
+        params: [expired.account],
+      }),
+      4100,
+    );
+    expect(expired.realm.chain.quotes).toBe(0);
+    expect(expired.realm.chain.signatures).toHaveLength(0);
+    expect(expired.realm.chain.sends).toHaveLength(0);
+    await expired.connection.close();
+
+    const revoked = await activeProvider();
+    await revoked.grant.revoke();
+    const quotes = revoked.realm.chain.quotes;
+    const signatures = revoked.realm.chain.signatures.length;
+    const sends = revoked.realm.chain.sends.length;
+
+    await providerError(
+      revoked.provider.request({
+        method: "wallet_getCapabilities",
+        params: [revoked.account],
+      }),
+      4100,
+    );
+    expect(revoked.realm.chain.quotes).toBe(quotes);
+    expect(revoked.realm.chain.signatures).toHaveLength(signatures);
+    expect(revoked.realm.chain.sends).toHaveLength(sends);
+    await revoked.connection.close();
+  });
 });

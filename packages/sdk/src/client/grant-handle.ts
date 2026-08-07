@@ -224,6 +224,7 @@ export interface OaathGrantProviderPort {
   readonly walletCallBundles: WalletCallBundleStore;
   readonly now: () => number;
   readonly account: OaathGrantHandle["account"];
+  readonly authorizedAccount: OaathGrantHandle["account"];
   readonly startCalls: (
     input: unknown,
     publication: OaathProviderOperationPublication,
@@ -2261,6 +2262,19 @@ export function createGrantHandle(
     return (await accountDescriptor(chain)).account;
   }
 
+  async function authorizedAccount(chain: unknown): Promise<`0x${string}`> {
+    assertOpen();
+    if (revocationRequested) {
+      return clientFail(
+        "oaath_client_grant_inactive",
+        "the Grant is being revoked",
+        "grant_revocation_requested",
+      );
+    }
+    await requireActive();
+    return account(chain);
+  }
+
   const handle: Readonly<OaathGrantHandle> = Object.freeze({
     get state(): GrantState {
       return record.value.state;
@@ -2314,6 +2328,7 @@ export function createGrantHandle(
       walletCallBundles: input.walletCallBundles,
       now: input.now,
       account,
+      authorizedAccount,
       startCalls,
       recoverOperation,
       abandonPreparedOperation,
