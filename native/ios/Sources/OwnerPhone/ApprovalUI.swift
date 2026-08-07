@@ -23,10 +23,35 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
+/// Closed provenance/assurance vocabulary for the existing permission review.
+/// This projection carries no materialization, installation, or simulation
+/// evidence, so there is deliberately no `onchainEnforced`/`guaranteed` case.
+enum PermissionConsentEvidence: Equatable, Sendable {
+    /// The relay bound this fact to the authenticated authorization request.
+    case relayBound
+    /// The fact is part of the application's requested permission scope.
+    case requestedScope
+    /// The application requested this constraint, but this projection does not
+    /// prove that it has been materialized or installed onchain.
+    case requestedConstraint
+
+    var display: String {
+        switch self {
+        case .relayBound:
+            return "Relay-bound"
+        case .requestedScope:
+            return "Requested scope"
+        case .requestedConstraint:
+            return "Requested constraint · enforcement unproven"
+        }
+    }
+}
+
 /// One immutable fact rendered from an already-decoded permission projection.
 /// The value remains typed until the view formats it, so tests can prove that
 /// every authority-defining field reaches the consent surface without relying
-/// on locale-specific rendered date strings.
+/// on locale-specific rendered date strings. `evidence` is non-optional so no
+/// rendered fact can silently omit its provenance/assurance state.
 struct PermissionConsentFact: Equatable, Identifiable, Sendable {
     enum Value: Equatable, Sendable {
         case text(String)
@@ -45,6 +70,7 @@ struct PermissionConsentFact: Equatable, Identifiable, Sendable {
 
     let id: String
     let label: String
+    let evidence: PermissionConsentEvidence
     let value: Value
 }
 
@@ -60,6 +86,11 @@ struct PermissionConsentSection: Equatable, Identifiable, Sendable {
 /// pure projection of authenticated wire facts: it derives labels and ordering,
 /// but never adds authority, drops constraints, or rewrites credential bytes.
 struct PermissionConsentPresentation: Equatable, Sendable {
+    static let evidenceNotice =
+        "Evidence labels distinguish relay-bound facts from the requested scope. "
+        + "This review has no materialization, onchain-install, or simulation evidence; "
+        + "requested constraints are not guaranteed."
+
     let sections: [PermissionConsentSection]
 
     init(client: OwnerPhoneClientIdentity, scope: OwnerPhonePermissionScope) {
@@ -71,26 +102,32 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     .init(
                         id: "application.applicationId",
                         label: "Application ID",
+                        evidence: .requestedScope,
                         value: .text(scope.application.applicationId)),
                     .init(
                         id: "application.permissionClientId",
                         label: "Permission client ID",
+                        evidence: .requestedScope,
                         value: .text(scope.application.clientId)),
                     .init(
                         id: "application.authenticatedClientId",
                         label: "Authenticated client ID",
+                        evidence: .relayBound,
                         value: .text(client.clientId)),
                     .init(
                         id: "application.origin",
                         label: "Origin",
+                        evidence: .requestedScope,
                         value: .text(scope.application.origin)),
                     .init(
                         id: "application.redirectUri",
                         label: "Code delivery",
+                        evidence: .relayBound,
                         value: .text(client.redirectUri)),
                     .init(
                         id: "application.deviceFingerprint",
                         label: "Device fingerprint",
+                        evidence: .requestedScope,
                         value: .text(scope.application.deviceFingerprint)),
                 ]),
             PermissionConsentSection(
@@ -100,18 +137,22 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     .init(
                         id: "account.accountIndex",
                         label: "Account index",
+                        evidence: .requestedScope,
                         value: .text(scope.account.accountIndex)),
                     .init(
                         id: "account.kernelVersion",
                         label: "Kernel version",
+                        evidence: .requestedScope,
                         value: .text(scope.account.kernelVersion)),
                     .init(
                         id: "account.factoryRoute",
                         label: "Factory route",
+                        evidence: .requestedScope,
                         value: .text(scope.account.factoryRoute)),
                     .init(
                         id: "account.entryPointVersion",
                         label: "EntryPoint version",
+                        evidence: .requestedScope,
                         value: .text(scope.account.entryPointVersion)),
                 ] + Self.credentialFacts(
                     prefix: "account.ownerCredential",
@@ -128,14 +169,17 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     .init(
                         id: "authority.custody",
                         label: "Session custody",
+                        evidence: .requestedScope,
                         value: .text(scope.sessionSigner?.mode ?? "frontend")),
                     .init(
                         id: "authority.providerId",
                         label: "Session provider",
+                        evidence: .requestedScope,
                         value: .text(scope.sessionSigner?.providerId ?? "none")),
                     .init(
                         id: "authority.chainScope",
                         label: "Chain scope",
+                        evidence: .requestedConstraint,
                         value: .text(scope.chainScope)),
                 ]),
         ]
@@ -145,14 +189,17 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                 PermissionConsentFact(
                     id: "call.\(callIndex).target",
                     label: "Target",
+                    evidence: .requestedConstraint,
                     value: .text(call.target)),
                 PermissionConsentFact(
                     id: "call.\(callIndex).selector",
                     label: "Selector",
+                    evidence: .requestedConstraint,
                     value: .text(call.selector)),
                 PermissionConsentFact(
                     id: "call.\(callIndex).valueLimit",
                     label: "Value limit (wei)",
+                    evidence: .requestedConstraint,
                     value: .text(call.valueLimit)),
             ]
             for (ruleIndex, rule) in call.argumentEquals.enumerated() {
@@ -160,10 +207,12 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     PermissionConsentFact(
                         id: "call.\(callIndex).argument.\(ruleIndex).index",
                         label: "Argument constraint \(ruleIndex + 1) word index",
+                        evidence: .requestedConstraint,
                         value: .text(String(rule.index))),
                     PermissionConsentFact(
                         id: "call.\(callIndex).argument.\(ruleIndex).value",
                         label: "Argument constraint \(ruleIndex + 1) equals",
+                        evidence: .requestedConstraint,
                         value: .text(rule.value)),
                 ])
             }
@@ -180,23 +229,28 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                 .init(
                     id: "validity.requestedAt",
                     label: "Requested at",
+                    evidence: .requestedScope,
                     value: .unixSeconds(scope.requestedAt)),
                 .init(
                     id: "validity.expiresAt",
                     label: "Permission request expires",
+                    evidence: .requestedScope,
                     value: .unixSeconds(scope.expiresAt)),
                 .init(
                     id: "validity.policyValidAfter",
                     label: "Policy valid after",
+                    evidence: .requestedConstraint,
                     value: .unixSeconds(scope.policyValidAfter)),
                 .init(
                     id: "validity.policyValidUntil",
                     label: "Policy valid until",
+                    evidence: .requestedConstraint,
                     value: scope.policyValidUntil.map(PermissionConsentFact.Value.unixSeconds)
                         ?? .text("no upper bound")),
                 .init(
                     id: "validity.perChainOperationLimit",
                     label: "Operations per chain",
+                    evidence: .requestedConstraint,
                     value: .text(String(scope.perChainOperationLimit))),
             ]))
 
@@ -211,27 +265,46 @@ struct PermissionConsentPresentation: Equatable, Sendable {
         switch credential {
         case let .ecdsa(address):
             return [
-                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("ECDSA")),
-                .init(id: "\(prefix).address", label: "\(label) address", value: .text(address)),
+                .init(
+                    id: "\(prefix).kind",
+                    label: "\(label) kind",
+                    evidence: .requestedScope,
+                    value: .text("ECDSA")),
+                .init(
+                    id: "\(prefix).address",
+                    label: "\(label) address",
+                    evidence: .requestedScope,
+                    value: .text(address)),
             ]
         case let .p256(publicKey):
             return [
-                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("P-256")),
+                .init(
+                    id: "\(prefix).kind",
+                    label: "\(label) kind",
+                    evidence: .requestedScope,
+                    value: .text("P-256")),
                 .init(
                     id: "\(prefix).publicKey",
                     label: "\(label) public key",
+                    evidence: .requestedScope,
                     value: .text(publicKey)),
             ]
         case let .webauthn(publicKey, authenticatorIdHash):
             return [
-                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("WebAuthn")),
+                .init(
+                    id: "\(prefix).kind",
+                    label: "\(label) kind",
+                    evidence: .requestedScope,
+                    value: .text("WebAuthn")),
                 .init(
                     id: "\(prefix).publicKey",
                     label: "\(label) public key",
+                    evidence: .requestedScope,
                     value: .text(publicKey)),
                 .init(
                     id: "\(prefix).authenticatorIdHash",
                     label: "Authenticator ID hash",
+                    evidence: .requestedScope,
                     value: .text(authenticatorIdHash)),
             ]
         }
@@ -774,6 +847,9 @@ public struct ApprovalView: View {
     private func permissionBody(_ presentation: PermissionConsentPresentation) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                Text(PermissionConsentPresentation.evidenceNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
                 ForEach(presentation.sections) { section in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(section.title)
@@ -784,6 +860,11 @@ public struct ApprovalView: View {
                                 Text(fact.label)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                Text(fact.evidence.display)
+                                    .font(.caption2)
+                                    .bold()
+                                    .foregroundStyle(
+                                        fact.evidence == .relayBound ? Color.blue : Color.orange)
                                 Text(fact.value.display)
                                     .font(.caption.monospaced())
                                     .textSelection(.enabled)

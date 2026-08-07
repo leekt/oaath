@@ -68,6 +68,14 @@ final class PermissionConsentPresentationTests: XCTestCase {
         })
     }
 
+    private func evidence(
+        _ presentation: PermissionConsentPresentation
+    ) -> [String: PermissionConsentEvidence] {
+        Dictionary(uniqueKeysWithValues: presentation.sections.flatMap { section in
+            section.facts.map { ($0.id, $0.evidence) }
+        })
+    }
+
     func testPresentsEveryAuthorityDefiningPermissionFact() {
         let presentation = PermissionConsentPresentation(
             client: OwnerPhoneClientIdentity(
@@ -88,7 +96,9 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.sections.allSatisfy { !$0.title.isEmpty })
         XCTAssertTrue(presentation.sections.flatMap(\.facts).allSatisfy { !$0.label.isEmpty })
         let values = facts(presentation)
+        let evidenceByFact = evidence(presentation)
         XCTAssertEqual(values.count, 33)
+        XCTAssertEqual(evidenceByFact.count, values.count)
 
         XCTAssertEqual(values["application.applicationId"], .text("app-a"))
         XCTAssertEqual(values["application.permissionClientId"], .text("permission-client"))
@@ -131,6 +141,44 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertEqual(values["validity.policyValidAfter"], .unixSeconds(1_753_000_100))
         XCTAssertEqual(values["validity.policyValidUntil"], .unixSeconds(1_753_003_600))
         XCTAssertEqual(values["validity.perChainOperationLimit"], .text("10"))
+
+        XCTAssertEqual(
+            Set(evidenceByFact.compactMap { $0.value == .relayBound ? $0.key : nil }),
+            Set([
+                "application.authenticatedClientId",
+                "application.redirectUri",
+            ]))
+        XCTAssertEqual(
+            Set(evidenceByFact.compactMap { $0.value == .requestedConstraint ? $0.key : nil }),
+            Set([
+                "authority.chainScope",
+                "call.0.target",
+                "call.0.selector",
+                "call.0.valueLimit",
+                "call.0.argument.0.index",
+                "call.0.argument.0.value",
+                "call.0.argument.1.index",
+                "call.0.argument.1.value",
+                "call.1.target",
+                "call.1.selector",
+                "call.1.valueLimit",
+                "validity.policyValidAfter",
+                "validity.policyValidUntil",
+                "validity.perChainOperationLimit",
+            ]))
+        XCTAssertEqual(
+            evidenceByFact.values.filter { $0 == .requestedScope }.count,
+            values.count - 16)
+        XCTAssertEqual(PermissionConsentEvidence.relayBound.display, "Relay-bound")
+        XCTAssertEqual(PermissionConsentEvidence.requestedScope.display, "Requested scope")
+        XCTAssertEqual(
+            PermissionConsentEvidence.requestedConstraint.display,
+            "Requested constraint · enforcement unproven")
+        XCTAssertTrue(PermissionConsentPresentation.evidenceNotice.contains("not guaranteed"))
+        XCTAssertFalse(evidenceByFact.values.contains { evidence in
+            let label = evidence.display.lowercased()
+            return label.contains("guaranteed") || label.contains("onchain-enforced")
+        })
     }
 
     func testKeepsFrontendCustodyAndUnboundedPolicyExplicit() {

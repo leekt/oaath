@@ -23,7 +23,11 @@ published to npm.
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
   the structured permission scope, or the full current-version owner-signing
-  request. Structured permission requests expose explicit Approve/Reject
+  request. Every structured-permission fact carries one closed evidence label:
+  relay-bound client/redirect facts are visually distinct from requested scope
+  and requested constraints. The projection contains no materialization,
+  onchain-install, or simulation evidence, so it labels no constraint
+  guaranteed. Structured permission requests expose explicit Approve/Reject
   actions. Owner-signing requests expose every captured purpose, signer,
   versioned credential, typed-data, expected digest, replay, and request-hash
   fact, but remain reject-only.
