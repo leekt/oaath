@@ -422,7 +422,7 @@ public final class DemoModel: ObservableObject {
             onUnauthorized: { [weak self] rejectedPairing in
                 await self?.rejectIfCurrent(rejectedPairing)
             })
-        // Legacy digest projections are reject-only before this closure can
+        // Owner-signing projections are reject-only before this closure can
         // run. The only current approvable branch is structured permission
         // consent, whose demo artifact is deliberately not a signature.
         let pairings = self.pairings

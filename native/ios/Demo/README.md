@@ -3,7 +3,7 @@
 A runnable SwiftUI app over the `OwnerPhone` + `OwnerPhoneDemo` package
 targets. It pairs with the demo relay (`examples/phone`), receives the real
 APNs review push, and shows the full consent screen. Structured permission
-requests may release a one-time approval; legacy digest requests are
+requests may release a one-time approval; owner-signing requests are
 reject-only. Preview means: no stability guarantee and no production
 qualification.
 
@@ -62,7 +62,7 @@ With a paid membership:
    the classic silent failure.
 5. Tapping the notification only **opens** the consent screen. Nothing is ever
    decided by a tap. Structured permission requests show explicit Approve and
-   Reject buttons; legacy digest requests are reject-only.
+   Reject buttons; owner-signing requests are reject-only.
 
 ## Simulator fallback
 

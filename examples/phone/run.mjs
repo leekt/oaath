@@ -16,7 +16,12 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { p256 } from "@noble/curves/nist.js";
-import { deriveCodeChallenge, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  deriveCodeChallenge,
+  hashOwnerSigningRequest,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_SIGNING_REQUEST_VERSION,
+} from "@oaath/protocol";
 import { prepareSponsoredKernelOperation } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
@@ -34,7 +39,6 @@ import {
 } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
-import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
 import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { build } from "esbuild";
 import QRCode from "qrcode";
@@ -46,8 +50,6 @@ import {
   AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
-  canonicalDisplay,
-  captureCanonicalDisplay,
   captureZeroDevSponsorship,
   createLiveUserOperationObserver,
   createStackOperationObserver,
@@ -360,7 +362,7 @@ async function maybePush(projection) {
 }
 async function createSignatureRequest(
   digest,
-  display,
+  reason,
   purpose,
   simulationCommand = "approve",
   reserved = null,
@@ -375,18 +377,20 @@ async function createSignatureRequest(
   )
     throw new Error("reservation_lane_mismatch");
   const verifier = randomBytes(32).toString("base64url");
+  const ownerSigningRequest = Object.freeze({
+    version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+    kind: "raw-digest",
+    digest,
+    reason,
+    decision: "reject-only",
+  });
   let created;
   let mayHaveSubmitted = false;
   try {
     const requestBody = {
       redirectUri,
       codeChallenge: deriveCodeChallenge(verifier),
-      requestedScope: JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: captureCanonicalDisplay(display, digest),
-      }),
+      requestedScope: JSON.stringify(ownerSigningRequest),
     };
     relayCreates += 1;
     const pendingCreate = relayCall("POST", "/authorization/requests", CLIENT_TOKEN, requestBody);
@@ -437,18 +441,25 @@ async function createSignatureRequest(
   event("signature.requested", { purpose, requestId: created.requestId });
   if (SIMULATE) {
     expect(
-      projection.scope?.kind === "signature-request" && projection.scope.decision === "reject-only",
-      "simulation legacy digest was not reject-only",
+      projection.scope?.kind === "owner-signing-request" &&
+        projection.scope.decision === "reject-only",
+      "simulation owner signing request was not reject-only",
     );
-    expect(projection.scope.digest === digest, "simulation projection digest drifted");
-    expect(projection.scope.display === display, "simulation projection display bytes drifted");
+    expect(
+      projection.scope.requestHash === hashOwnerSigningRequest(ownerSigningRequest),
+      "simulation owner signing request hash drifted",
+    );
+    expect(
+      JSON.stringify(projection.scope.request) === JSON.stringify(ownerSigningRequest),
+      "simulation owner signing request drifted",
+    );
     if (simulationCommand === "reject") {
       await relayCall("POST", `/native/decisions/${created.requestId}`, activeDevice.credential, {
         command: "reject",
       });
     } else if (simulationCommand === "approve") {
       // Test-only chain evidence: the synthetic phone key signs locally and no
-      // server decision API is asked to approve or release this legacy digest.
+      // server decision API is asked to approve or release this raw digest.
       // This preserves operation/race coverage without claiming consent or
       // clear-signing evidence from the production path.
       const signature = `0x${p256.sign(hexToBytes(digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
@@ -606,16 +617,6 @@ const operationInput = (input, prepared) => ({
   },
   paymaster: prepared.userOperation.paymaster,
 });
-const displayOperation = (prepared, kind) =>
-  canonicalDisplay({
-    kind,
-    chainId: CHAIN_ID,
-    account: prepared.userOperation.sender,
-    digest: prepared.userOperationHash,
-    userOperationHash: prepared.userOperationHash,
-    userOperation: prepared.userOperation,
-  });
-
 function terminalize(operation, evidence) {
   expect(evidence.chainId === CHAIN_ID, "observation chain mismatch");
   expect(
@@ -811,15 +812,7 @@ async function handleDemo(method, path, body, outgoing) {
       });
       const request = await createSignatureRequest(
         exactDigest,
-        canonicalDisplay({
-          kind: "kernel-enable-digest",
-          chainScope: "all",
-          account: descriptor.account,
-          digest: exactDigest,
-          installNonce: "0",
-          sessionAddress: value.sessionAddress,
-          policies: runtime.operator?.policy ?? { call: { target, valueLimit: "10" } },
-        }),
+        "Kernel permission installation digest is not device-derivable",
         "permission",
         "approve",
         {
@@ -1147,7 +1140,7 @@ async function handleDemo(method, path, body, outgoing) {
       });
       const request = await createSignatureRequest(
         prepared.userOperationHash,
-        displayOperation(prepared, "owner-user-operation"),
+        "Kernel user operation digest is not device-derivable",
         "owner-operation",
         "approve",
         { token: preparingId },
@@ -1476,7 +1469,7 @@ async function simulate() {
   const inboxDigest = `0x${"59".repeat(32)}`;
   const inboxRequest = await createSignatureRequest(
     inboxDigest,
-    canonicalDisplay({ digest: inboxDigest, kind: "inbox-regression" }),
+    "Inbox regression digest is not device-derivable",
     "inbox-regression",
     "pending",
   );
@@ -1548,7 +1541,7 @@ async function simulate() {
   const rejectedDigest = `0x${"5a".repeat(32)}`;
   const rejectedRequest = await createSignatureRequest(
     rejectedDigest,
-    canonicalDisplay({ digest: rejectedDigest, kind: "reject-regression" }),
+    "Rejection regression digest is not device-derivable",
     "reject-regression",
     "reject",
   );

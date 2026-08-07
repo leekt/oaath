@@ -139,45 +139,6 @@ export function captureZeroDevSponsorship(value) {
   });
 }
 
-function sortedJsonValue(value) {
-  if (Array.isArray(value)) return value.map(sortedJsonValue);
-  if (value !== null && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortedJsonValue(value[key])]),
-    );
-  return value;
-}
-
-/** Canonical compact UTF-8 consent JSON: recursively sorted object keys. */
-export function canonicalDisplay(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    throw new Error("signature_display_invalid");
-  return JSON.stringify(sortedJsonValue(value));
-}
-
-/** Rejects whitespace, duplicate-key collapse, noncanonical escapes, and drift. */
-export function captureCanonicalDisplay(display, digest) {
-  if (typeof display !== "string" || typeof digest !== "string" || !HASH.test(digest))
-    throw new Error("signature_display_invalid");
-  let parsed;
-  try {
-    parsed = JSON.parse(display);
-  } catch {
-    throw new Error("signature_display_invalid");
-  }
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed) ||
-    parsed.digest !== digest ||
-    canonicalDisplay(parsed) !== display
-  )
-    throw new Error("signature_display_invalid");
-  return display;
-}
-
 /** Synchronous reservation owner for consent/authority request lanes. */
 export class AtomicReservationLane {
   #active = null;

@@ -5,9 +5,9 @@
  relay sends it — application, client, origin, redirect target, device,
  account, credentials, custody, every permitted call and argument constraint,
  validity window, and operation limit — so the owner sees exactly the
- authority they grant before tapping approve. Unstructured and legacy
- signature scopes are rendered for explicit rejection, never silently, and
- expose no approval action. The
+ authority they grant before tapping approve. Unstructured and owner-signing
+ scopes are rendered for explicit rejection, never silently, and expose no
+ approval action. The
  permission approval artifact is deployment-injected: composing what the
  client will claim is not this app's job.
 
@@ -234,6 +234,261 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     label: "Authenticator ID hash",
                     value: .text(authenticatorIdHash)),
             ]
+        }
+    }
+}
+
+/// One exact, immutable fact from the captured owner-signing request. Strings
+/// are rendered with quotes so control characters cannot masquerade as UI.
+struct OwnerSigningConsentFact: Equatable, Identifiable, Sendable {
+    let id: String
+    let label: String
+    let value: String
+}
+
+struct OwnerSigningConsentSection: Equatable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let facts: [OwnerSigningConsentFact]
+}
+
+/// Pure presentation of every captured owner-signing fact. It does not derive
+/// requestHash, authorize, sign, predict an outcome, or create an artifact.
+struct OwnerSigningConsentPresentation: Equatable, Sendable {
+    let sections: [OwnerSigningConsentSection]
+
+    init(scope: OwnerPhoneSigningRequestScope) {
+        var sections = [OwnerSigningConsentSection(
+            id: "request",
+            title: "Reject-only owner-signing request",
+            facts: [
+                .init(
+                    id: "request.decision",
+                    label: "Decision capability",
+                    value: "reject only"),
+                .init(
+                    id: "request.requestHash",
+                    label: "Server/protocol request hash (not device-derived)",
+                    value: scope.requestHash),
+            ])]
+
+        switch scope.request {
+        case let .eip712(request):
+            sections.append(contentsOf: Self.eip712Sections(request))
+        case let .rawDigest(request):
+            sections.append(OwnerSigningConsentSection(
+                id: "rawDigest",
+                title: "Raw digest — cannot be independently derived",
+                facts: [
+                    .init(
+                        id: "rawDigest.version",
+                        label: "Protocol version",
+                        value: request.version),
+                    .init(id: "rawDigest.kind", label: "Request kind", value: "raw-digest"),
+                    .init(id: "rawDigest.digest", label: "Supplied digest", value: request.digest),
+                    .init(
+                        id: "rawDigest.reason",
+                        label: "Reject-only reason",
+                        value: String(reflecting: request.reason)),
+                ]))
+        }
+        self.sections = sections
+    }
+
+    private static func eip712Sections(
+        _ request: OwnerPhoneEIP712SigningRequest
+    ) -> [OwnerSigningConsentSection] {
+        let derived: String
+        let comparison: String
+        switch request.digestComparison {
+        case let .matches(value):
+            derived = value.canonicalHex
+            comparison = "matches expected digest"
+        case let .mismatch(_, value):
+            derived = value.canonicalHex
+            comparison = "MISMATCH — reject"
+        }
+
+        var result = [
+            OwnerSigningConsentSection(
+                id: "identity",
+                title: "Request and signer",
+                facts: [
+                    .init(
+                        id: "identity.version",
+                        label: "Protocol version",
+                        value: request.version),
+                    .init(id: "identity.kind", label: "Request kind", value: "eip712"),
+                    .init(
+                        id: "identity.purpose",
+                        label: "Purpose",
+                        value: request.purpose.rawValue),
+                    .init(
+                        id: "identity.account",
+                        label: "Signer account",
+                        value: request.signer.account),
+                ] + credentialFacts(request.signer.ownerCredential)),
+            OwnerSigningConsentSection(
+                id: "digest",
+                title: "Device-derived EIP-712 comparison",
+                facts: [
+                    .init(
+                        id: "digest.expected",
+                        label: "Expected digest",
+                        value: request.expectedDigest),
+                    .init(
+                        id: "digest.derived",
+                        label: "Device-derived digest",
+                        value: derived),
+                    .init(id: "digest.comparison", label: "Comparison", value: comparison),
+                ]),
+            OwnerSigningConsentSection(
+                id: "replay",
+                title: "Replay facts (request metadata)",
+                facts: [
+                    .init(
+                        id: "replay.nonce",
+                        label: "Nonce",
+                        value: request.replay.nonce ?? "absent"),
+                    .init(
+                        id: "replay.deadline",
+                        label: "Deadline",
+                        value: request.replay.deadline ?? "absent"),
+                ]),
+            OwnerSigningConsentSection(
+                id: "typedData",
+                title: "EIP-712 typed data",
+                facts: [
+                    .init(
+                        id: "typedData.primaryType",
+                        label: "Primary type",
+                        value: request.typedData.primaryType)
+                ]),
+        ]
+
+        for typeName in request.typedData.types.keys.sorted() {
+            let fields = request.typedData.types[typeName] ?? []
+            var facts = [OwnerSigningConsentFact(
+                id: "type.\(typeName).fieldCount",
+                label: "Field count",
+                value: String(fields.count))]
+            for (index, field) in fields.enumerated() {
+                facts.append(contentsOf: [
+                    .init(
+                        id: "type.\(typeName).field.\(index).name",
+                        label: "Field \(index + 1) name",
+                        value: field.name),
+                    .init(
+                        id: "type.\(typeName).field.\(index).type",
+                        label: "Field \(index + 1) type",
+                        value: field.type),
+                ])
+            }
+            result.append(OwnerSigningConsentSection(
+                id: "type.\(typeName)",
+                title: "Type \(typeName)",
+                facts: facts))
+        }
+
+        result.append(OwnerSigningConsentSection(
+            id: "domain",
+            title: "Domain values",
+            facts: valueFacts(
+                id: "domain",
+                label: "domain",
+                value: .object(request.typedData.domain))))
+        result.append(OwnerSigningConsentSection(
+            id: "message",
+            title: "Message values",
+            facts: valueFacts(
+                id: "message",
+                label: "message",
+                value: .object(request.typedData.message))))
+        return result
+    }
+
+    private static func credentialFacts(
+        _ profile: OwnerPhoneSigningCredential
+    ) -> [OwnerSigningConsentFact] {
+        var facts = [OwnerSigningConsentFact(
+            id: "identity.credential.version",
+            label: "Owner credential version",
+            value: profile.version)]
+        switch profile.credential {
+        case let .ecdsa(address):
+            facts.append(contentsOf: [
+                .init(
+                    id: "identity.credential.kind",
+                    label: "Owner credential kind",
+                    value: "ecdsa"),
+                .init(
+                    id: "identity.credential.address",
+                    label: "Owner credential address",
+                    value: address),
+            ])
+        case let .p256(publicKey):
+            facts.append(contentsOf: [
+                .init(
+                    id: "identity.credential.kind",
+                    label: "Owner credential kind",
+                    value: "p256"),
+                .init(
+                    id: "identity.credential.publicKey",
+                    label: "Owner credential public key",
+                    value: publicKey),
+            ])
+        case let .webauthn(publicKey, authenticatorIdHash):
+            facts.append(contentsOf: [
+                .init(
+                    id: "identity.credential.kind",
+                    label: "Owner credential kind",
+                    value: "webauthn"),
+                .init(
+                    id: "identity.credential.publicKey",
+                    label: "Owner credential public key",
+                    value: publicKey),
+                .init(
+                    id: "identity.credential.authenticatorIdHash",
+                    label: "Authenticator ID hash",
+                    value: authenticatorIdHash),
+            ])
+        }
+        return facts
+    }
+
+    private static func valueFacts(
+        id: String,
+        label: String,
+        value: CanonicalEIP712Value
+    ) -> [OwnerSigningConsentFact] {
+        switch value {
+        case let .string(text):
+            return [.init(id: id, label: label, value: String(reflecting: text))]
+        case let .boolean(flag):
+            return [.init(id: id, label: label, value: flag ? "true" : "false")]
+        case let .array(entries):
+            var facts = [OwnerSigningConsentFact(
+                id: "\(id).meta.count", label: "\(label) count", value: String(entries.count))]
+            for (index, entry) in entries.enumerated() {
+                facts.append(contentsOf: valueFacts(
+                    id: "\(id).index.\(index)",
+                    label: "\(label)[\(index)]",
+                    value: entry))
+            }
+            return facts
+        case let .object(entries):
+            var facts = [OwnerSigningConsentFact(
+                id: "\(id).meta.fieldCount",
+                label: "\(label) field count",
+                value: String(entries.count))]
+            for key in entries.keys.sorted() {
+                guard let entry = entries[key] else { continue }
+                facts.append(contentsOf: valueFacts(
+                    id: "\(id).field.\(key)",
+                    label: "\(label).\(key)",
+                    value: entry))
+            }
+            return facts
         }
     }
 }
@@ -490,24 +745,12 @@ public struct ApprovalView: View {
                     permissionBody(PermissionConsentPresentation(
                         client: projection.client,
                         scope: scope))
-                case let .signatureRequest(scope):
-                    // Legacy raw-digest requests remain inspectable so the
-                    // owner can reject them, but never become signable.
-                    Text("Legacy signature request — reject only. This device will not sign a network-supplied digest:")
+                case let .ownerSigningRequest(scope):
+                    Text("Owner-signing request — reject only. This build can inspect structured input and derive EIP-712 digests, but it cannot sign, approve, or guarantee an outcome.")
                         .font(.footnote)
                         .bold()
                         .foregroundStyle(.orange)
-                    ScrollView {
-                        // Render the exact authenticated canonical UTF-8 text.
-                        // Parse/reserialize would create a second consent surface.
-                        Text(scope.display)
-                            .font(.caption2.monospaced())
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 180)
-                    Text("digest \(scope.digest)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                    ownerSigningBody(OwnerSigningConsentPresentation(scope: scope))
                 case let .raw(text):
                     // Explicit unstructured state: the owner reviews the raw
                     // text or rejects; nothing is summarized that was not parsed.
@@ -553,6 +796,34 @@ public struct ApprovalView: View {
             }
         }
         .frame(maxHeight: 320)
+    }
+
+    @ViewBuilder
+    private func ownerSigningBody(_ presentation: OwnerSigningConsentPresentation) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(presentation.sections) { section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(section.title)
+                            .font(.footnote)
+                            .bold()
+                        ForEach(section.facts) { fact in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(fact.label)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(fact.value)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxHeight: 360)
     }
 
     @ViewBuilder

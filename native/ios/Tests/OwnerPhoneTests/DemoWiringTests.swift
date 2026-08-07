@@ -224,31 +224,39 @@ private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
     }
 }
 
-private final class SignatureRecordingHTTP: DemoHTTP, @unchecked Sendable {
+private final class OwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [URLRequest] = []
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
         lock.withLock { recorded.append(request) }
         guard request.httpMethod == "GET" else { return (Data(), 500) }
-        let operationId = request.url?.lastPathComponent ?? "signature-request"
-        let digest = "0x" + String(repeating: "4b", count: 32)
-        return (try JSONSerialization.data(withJSONObject: [
-            "version": "oaath.native-projection/v2",
-            "operationId": operationId,
-            "displayPayload": "Ab1-_9Zz",
-            "expiresAt": 2_000_000_000_000,
-            "client": [
-                "clientId": "demo-web-app",
-                "redirectUri": "https://app.example/callback"
-            ],
-            "scope": [
-                "kind": "signature-request",
-                "decision": "reject-only",
-                "digest": digest,
-                "display": #"{"digest":"\#(digest)","kind":"user-operation"}"#
-            ]
-        ]), 200)
+        let operationId = request.url?.lastPathComponent ?? "owner-signing-request"
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: fixtureURL)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            var projection = projections["ownerSigningRequest"] as? [String: Any],
+            var scope = projection["scope"] as? [String: Any],
+            var signingRequest = scope["request"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("owner signing test fixture")
+        }
+        // The typed data remains the accepted Mail vector, while the expected
+        // digest is substituted. The phone must display the mismatch but keep
+        // artifact generation and the decision POST unreachable.
+        signingRequest["expectedDigest"] = "0x" + String(repeating: "55", count: 32)
+        scope["request"] = signingRequest
+        projection["scope"] = scope
+        projection["operationId"] = operationId
+        projection["expiresAt"] = 2_000_000_000_000
+        return (try JSONSerialization.data(withJSONObject: projection), 200)
     }
 
     func requests() -> [URLRequest] {
@@ -987,18 +995,18 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(store.load(), .stored(pairingB))
     }
 
-    func testLegacyDigestApprovalNeverReachesTheDemoArtifactOrDecisionRoute() async throws {
+    func testMismatchedEIP712ApprovalNeverReachesTheDemoArtifactOrDecisionRoute() async throws {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
             account: nil,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
-        let http = SignatureRecordingHTTP()
+        let http = OwnerSigningRecordingHTTP()
         let model = DemoModel(
             pairings: InMemoryPairingStore(result: .stored(pairing)),
             http: http,
             ownerKey: FakeOwnerSigning())
-        model.operationIdText = "signature-request"
+        model.operationIdText = "owner-signing-request"
         await model.openManually()
         let approval = try XCTUnwrap(model.approval)
 
@@ -1007,12 +1015,22 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(
             http.requests().map { $0.httpMethod ?? "" },
             ["GET"],
-            "a reject-only digest must not submit an approval")
+            "a mismatched reject-only request must not submit an approval")
         guard case let .review(review) = approval.phase else {
-            return XCTFail("reject-only digest must remain reviewable")
+            return XCTFail("mismatched request must remain reviewable")
         }
         XCTAssertEqual(review.state, .pending)
         XCTAssertFalse(review.projection.scope.approvable)
+        guard case let .ownerSigningRequest(scope) = review.projection.scope,
+              case let .eip712(request) = scope.request,
+              case let .mismatch(expected, derived) = request.digestComparison
+        else {
+            return XCTFail("expected a locally derived digest mismatch")
+        }
+        XCTAssertEqual(expected, "0x" + String(repeating: "55", count: 32))
+        XCTAssertEqual(
+            derived.canonicalHex,
+            "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2")
     }
 
     func testPairingAttemptSurvivesFullStateRecreationAndBlocksResubmission() async throws {

@@ -88,7 +88,6 @@ describe("package boundary", () => {
     expect(Object.keys(native).sort()).toEqual([
       "NATIVE_DISPLAY_PAYLOAD_LENGTH",
       "OAATH_NATIVE_PROJECTION_VERSION",
-      "OAATH_SIGNATURE_REQUEST_SCOPE_VERSION",
       "projectOwnerPhoneRequest",
       "submitOwnerPhoneDecision",
     ]);

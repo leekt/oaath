@@ -10,8 +10,8 @@
  *                        sealing; a rejection occupies only its decision row
  * retry positively safe? refused approval is read-only; a terminal outcome is
  *                        replayed by the native saga and rejected by this owner
- * transitions            verified permission: undecided -> approved | rejected;
- *                        unverified scope: undecided -> rejected, exactly once
+ * transitions            permission: undecided -> approved | rejected;
+ *                        every reject-only scope: undecided -> rejected once
  * terminal               both outcomes; a second decide fails relay_already_decided
  * crash/reload           the decision, the code, and the sealed artifact commit in
  *                        one transaction on the row-locked request, so a crash
@@ -78,7 +78,7 @@ export async function submitAuthorizationDecision(
   const decidedAt = relayNow(input.clock);
 
   // Approval is the artifact-creating transition, so the shared decision owner
-  // admits it only for an exact scope this server currently knows how to verify.
+  // admits it only for an exact scope this server currently permits to release.
   // Refusal happens before KMS sealing or any durable decision/code/artifact.
   if (input.command.outcome === "approved") {
     const state = await fetchAuthorizationRequest({

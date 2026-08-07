@@ -11,6 +11,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { hashOwnerSigningRequest } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { createAuthorizationRequest } from "../src/authorization/request.js";
 import type { RelayClock } from "../src/clock.js";
@@ -18,7 +19,6 @@ import { submitOwnerPhoneDecision } from "../src/native/decision.js";
 import {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
-  OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
   projectOwnerPhoneRequest,
 } from "../src/native/projection.js";
 import type { RelayCaller } from "../src/security/authentication.js";
@@ -53,7 +53,7 @@ const CODE_TTL_MS = 60_000;
 /**
  * The ONE golden wire fixture shared with the strict Swift decoders
  * (`native/ios/Tests/OwnerPhoneTests/GoldenFixtureTests.swift` reads the same
- * file). Its exact signature projection string is consumed as UTF-8 by both
+ * file). Its exact owner-signing projection string is consumed as UTF-8 by both
  * languages; object entries cover the other union/decision variants.
  */
 const GOLDEN = JSON.parse(
@@ -61,19 +61,26 @@ const GOLDEN = JSON.parse(
 ) as {
   readonly projection: Record<string, Record<string, unknown>>;
   readonly decision: Record<string, Record<string, unknown>>;
-  readonly exactSignatureProjectionBytes: string;
+  readonly exactOwnerSigningProjectionBytes: string;
 };
 
-const GOLDEN_SIGNATURE_SCOPE_FIELDS = GOLDEN.projection.signatureRequest?.scope as {
-  readonly digest: string;
-  readonly display: string;
+const GOLDEN_OWNER_SIGNING_SCOPE = GOLDEN.projection.ownerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
+};
+const GOLDEN_RAW_DIGEST_SCOPE = GOLDEN.projection.rawDigestOwnerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
 };
 /** Serialized exactly as a requesting client stores it into requestedScope. */
-const SIGNATURE_SCOPE = JSON.stringify({
-  version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
+const OWNER_SIGNING_SCOPE = JSON.stringify(GOLDEN_OWNER_SIGNING_SCOPE.request);
+const RAW_DIGEST_REQUEST = GOLDEN_RAW_DIGEST_SCOPE.request;
+const RAW_DIGEST_SCOPE = JSON.stringify(RAW_DIGEST_REQUEST);
+const LEGACY_SIGNATURE_SCOPE = JSON.stringify({
+  version: "oaath.signature-request/v1",
   kind: "signature-request",
-  digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
-  display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
+  digest: `0x${"4b".repeat(32)}`,
+  display: "{}",
 });
 
 const CLIENT: RelayCaller = Object.freeze({
@@ -232,94 +239,34 @@ describe("experimental owner-phone projection", () => {
     });
   });
 
-  it("projects a signature-request scope structurally", async () => {
-    const fixed = await fixture(SIGNATURE_SCOPE);
-    const projection = await project(fixed);
-    expect(projection.scope).toEqual({
-      kind: "signature-request",
-      decision: "reject-only",
-      digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
-      display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
-    });
-  });
+  it.each([
+    ["EIP-712", OWNER_SIGNING_SCOPE, GOLDEN_OWNER_SIGNING_SCOPE.request],
+    ["raw digest", RAW_DIGEST_SCOPE, RAW_DIGEST_REQUEST],
+  ])(
+    "projects a complete %s owner-signing request and its exact hash",
+    async (_, stored, request) => {
+      const fixed = await fixture(stored);
+      const projection = await project(fixed);
+      expect(projection.scope).toEqual({
+        kind: "owner-signing-request",
+        decision: "reject-only",
+        requestHash: hashOwnerSigningRequest(request),
+        request,
+      });
+    },
+  );
 
-  it("fails a malformed signature-request scope closed to labeled raw text", async () => {
-    const digest = `0x${"4b".repeat(32)}`;
+  it("fails malformed and legacy signing scopes closed to labeled raw text", async () => {
+    const wrongVersion = JSON.parse(OWNER_SIGNING_SCOPE) as Record<string, unknown>;
+    wrongVersion.version = "oaath.owner-signing-request/v2";
+    const extraField = JSON.parse(OWNER_SIGNING_SCOPE) as Record<string, unknown>;
+    extraField.extra = true;
+    const wrongDecision = { ...RAW_DIGEST_REQUEST, decision: "approve-or-reject" };
     for (const stored of [
-      // Wrong version/kind, extra field, missing field, malformed digest, and a
-      // display whose control characters would brick the strict phone capture.
-      JSON.stringify({
-        version: "oaath.signature-request/v2",
-        kind: "signature-request",
-        digest,
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "other",
-        digest,
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "{}",
-        extra: 1,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest: digest.toUpperCase(),
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest: "0x4b4b",
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: 7,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "line\nbreak",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: '{"kind":"owner-user-operation"}',
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: `{"digest":"${digest}","kind":"gone","kind":"owner-user-operation"}`,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: `{"kind":"owner-user-operation","digest":"${digest}"}`,
-      }),
+      JSON.stringify(wrongVersion),
+      JSON.stringify(extraField),
+      JSON.stringify(wrongDecision),
+      LEGACY_SIGNATURE_SCOPE,
     ]) {
       const fixed = await fixture(stored);
       const projection = await project(fixed);
@@ -410,7 +357,9 @@ describe("experimental owner-phone decision saga", () => {
 
   it.each([
     ["raw", RAW_SCOPE],
-    ["legacy digest", SIGNATURE_SCOPE],
+    ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
+    ["raw-digest owner signing", RAW_DIGEST_SCOPE],
+    ["legacy digest", LEGACY_SIGNATURE_SCOPE],
   ])(
     "refuses to approve a reject-only %s scope and still records its rejection",
     async (_label, requestedScope) => {
@@ -457,13 +406,14 @@ async function createOverWire(harness: Harness, requestedScope: string): Promise
 }
 
 describe("experimental owner-phone preview routes", () => {
-  it("serves every projection shape and pins shared signature bytes", async () => {
-    // The exact signature bytes are shared with Swift. Other variants compare
+  it("serves every projection shape and pins shared owner-signing bytes", async () => {
+    // The exact owner-signing bytes are shared with Swift. Other variants compare
     // closed decoded shapes after normalizing only the two store-random fields.
     const harness = createHarness();
     for (const [variant, requestedScope] of [
       ["permissionRequest", PERMISSION_SCOPE],
-      ["signatureRequest", SIGNATURE_SCOPE],
+      ["ownerSigningRequest", OWNER_SIGNING_SCOPE],
+      ["rawDigestOwnerSigningRequest", RAW_DIGEST_SCOPE],
       ["raw", RAW_SCOPE],
     ] as const) {
       const golden = GOLDEN.projection[variant];
@@ -479,8 +429,8 @@ describe("experimental owner-phone preview routes", () => {
       body.operationId = golden.operationId;
       body.displayPayload = golden.displayPayload;
       expect(body).toEqual(golden);
-      if (variant === "signatureRequest") {
-        const exactBytes = new TextEncoder().encode(GOLDEN.exactSignatureProjectionBytes);
+      if (variant === "ownerSigningRequest") {
+        const exactBytes = new TextEncoder().encode(GOLDEN.exactOwnerSigningProjectionBytes);
         expect(new TextDecoder().decode(exactBytes)).toBe(JSON.stringify(body));
         expect(JSON.parse(new TextDecoder().decode(exactBytes))).toEqual(golden);
       }
@@ -541,7 +491,9 @@ describe("experimental owner-phone preview routes", () => {
 
   it.each([
     ["raw", RAW_SCOPE],
-    ["legacy digest", SIGNATURE_SCOPE],
+    ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
+    ["raw-digest owner signing", RAW_DIGEST_SCOPE],
+    ["legacy digest", LEGACY_SIGNATURE_SCOPE],
   ])("keeps a %s scope reject-only over the native HTTP route", async (_label, requestedScope) => {
     const baseKms = createTestKms();
     let encryptions = 0;
@@ -567,12 +519,23 @@ describe("experimental owner-phone preview routes", () => {
     );
     expect(encryptions).toBe(0);
 
-    await expectOk(
+    const rejected = await expectOk<{ outcome: string; settlement: string }>(
       await harness.handler(
         post(`/native/decisions/${requestId}`, OWNER_TOKEN, { command: "reject" }),
       ),
       200,
     );
+    expect(rejected).toMatchObject({ outcome: "rejected", settlement: "decided" });
+    const replayed = await expectOk<{ outcome: string; settlement: string; release: unknown }>(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
+          command: "approve",
+          artifact: "must-not-be-sealed",
+        }),
+      ),
+      200,
+    );
+    expect(replayed).toMatchObject({ outcome: "rejected", settlement: "replayed", release: null });
     expect(encryptions).toBe(0);
   });
 

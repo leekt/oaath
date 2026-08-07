@@ -5,6 +5,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { OAATH_OWNER_SIGNING_REQUEST_VERSION } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { verifyPkceS256 } from "../src/authorization/challenge.js";
 import type { RelayKms } from "../src/security/kms.js";
@@ -45,6 +46,43 @@ describe("authorization decision", () => {
   it.each([
     ["raw", '{"permission":"opaque"}'],
     [
+      "EIP-712 owner signing",
+      JSON.stringify({
+        version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+        kind: "eip712",
+        purpose: "application",
+        signer: {
+          account: `0x${"11".repeat(20)}`,
+          ownerCredential: {
+            version: "oaath.owner-credential-profile/v1",
+            kind: "ecdsa",
+            address: `0x${"22".repeat(20)}`,
+          },
+        },
+        typedData: {
+          types: {
+            EIP712Domain: [{ name: "chainId", type: "uint256" }],
+            Message: [{ name: "value", type: "uint256" }],
+          },
+          primaryType: "Message",
+          domain: { chainId: "1" },
+          message: { value: "7" },
+        },
+        expectedDigest: `0x${"33".repeat(32)}`,
+        replay: { nonce: null, deadline: null },
+      }),
+    ],
+    [
+      "raw-digest owner signing",
+      JSON.stringify({
+        version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+        kind: "raw-digest",
+        digest: `0x${"44".repeat(32)}`,
+        reason: "The device cannot derive this digest",
+        decision: "reject-only",
+      }),
+    ],
+    [
       "legacy digest",
       JSON.stringify({
         version: "oaath.signature-request/v1",
@@ -62,48 +100,45 @@ describe("authorization decision", () => {
         display: "{}",
       }),
     ],
-  ])(
-    "keeps an unverified %s scope reject-only before artifact sealing",
-    async (_label, requestedScope) => {
-      const base = createTestKms();
-      let encryptions = 0;
-      const kms: RelayKms = {
-        async encrypt(plaintext) {
-          encryptions += 1;
-          return base.encrypt(plaintext);
-        },
-        decrypt: (ciphertextRef) => base.decrypt(ciphertextRef),
-      };
-      const harness = createHarness({ kms });
-      const created = await createRequest(harness, requestedScope);
+  ])("keeps a %s scope reject-only before artifact sealing", async (_label, requestedScope) => {
+    const base = createTestKms();
+    let encryptions = 0;
+    const kms: RelayKms = {
+      async encrypt(plaintext) {
+        encryptions += 1;
+        return base.encrypt(plaintext);
+      },
+      decrypt: (ciphertextRef) => base.decrypt(ciphertextRef),
+    };
+    const harness = createHarness({ kms });
+    const created = await createRequest(harness, requestedScope);
 
-      await expectFailure(
-        await harness.handler(
-          post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
-            outcome: "approved",
-            artifact: "must-not-be-sealed",
-          }),
-        ),
-        "relay_request_invalid",
-      );
-      expect(encryptions).toBe(0);
-      const pending = await expectOk<{ decision: unknown }>(
-        await harness.handler(get(`/authorization/requests/${created.requestId}`, OWNER_TOKEN)),
-        200,
-      );
-      expect(pending.decision).toBeNull();
+    await expectFailure(
+      await harness.handler(
+        post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: "must-not-be-sealed",
+        }),
+      ),
+      "relay_request_invalid",
+    );
+    expect(encryptions).toBe(0);
+    const pending = await expectOk<{ decision: unknown }>(
+      await harness.handler(get(`/authorization/requests/${created.requestId}`, OWNER_TOKEN)),
+      200,
+    );
+    expect(pending.decision).toBeNull();
 
-      await expectOk(
-        await harness.handler(
-          post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
-            outcome: "rejected",
-          }),
-        ),
-        200,
-      );
-      expect(encryptions).toBe(0);
-    },
-  );
+    await expectOk(
+      await harness.handler(
+        post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "rejected",
+        }),
+      ),
+      200,
+    );
+    expect(encryptions).toBe(0);
+  });
 
   it("is terminal: a second decide fails and releases no second code", async () => {
     const harness = createHarness();

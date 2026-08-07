@@ -12,8 +12,6 @@ import {
   AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
-  canonicalDisplay,
-  captureCanonicalDisplay,
   captureOperationTransactionHash,
   captureZeroDevSponsorship,
   createLiveUserOperationObserver,
@@ -197,22 +195,6 @@ test("rejects malformed SDK sponsorship results", () => {
   ])
     assert.throws(() => captureZeroDevSponsorship({ ...validSponsorship, ...change }), {
       message: "zerodev_sponsorship_invalid",
-    });
-});
-
-test("canonical display pins every exact byte and binds the digest", () => {
-  const digest = `0x${"4b".repeat(32)}`;
-  const display = canonicalDisplay({ z: "last", digest, nested: { b: 2, a: 1 } });
-  assert.equal(display, `{"digest":"${digest}","nested":{"a":1,"b":2},"z":"last"}`);
-  assert.equal(captureCanonicalDisplay(display, digest), display);
-  for (const drift of [
-    ` ${display}`,
-    display.replace('"z":"last"', '"z":"gone","z":"last"'),
-    display.replace(digest, `0x${"4c".repeat(32)}`),
-    display.replace('"a":1,"b":2', '"b":2,"a":1'),
-  ])
-    assert.throws(() => captureCanonicalDisplay(drift, digest), {
-      message: "signature_display_invalid",
     });
 });
 

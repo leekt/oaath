@@ -22,11 +22,11 @@ published to npm.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
-  the structured permission scope, or a legacy signature request's exact
-  digest and full display JSON. Structured permission requests expose explicit
-  Approve/Reject actions; network-supplied digest requests are readable but
-  reject-only until the phone can derive and verify a closed signing payload
-  itself.
+  the structured permission scope, or the full current-version owner-signing
+  request. Structured permission requests expose explicit Approve/Reject
+  actions. Owner-signing requests expose every captured purpose, signer,
+  versioned credential, typed-data, expected digest, replay, and request-hash
+  fact, but remain reject-only.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
@@ -41,20 +41,20 @@ published to npm.
 
 ## EIP-712 derivation prerequisite
 
-`OwnerPhone` contains a package-internal, non-authorizing EIP-712 primitive
-for the canonical typed-data subset owned by `@oaath/protocol`. It captures an
-already-parsed semantic value, derives Ethereum's Keccak-256 digest, and can
-compare that result with an expected digest. Shared protocol/viem/Swift vectors
-cover the official Mail example, nested fixed and dynamic arrays, signed and
-unsigned integers, fixed and dynamic bytes, strings, booleans, addresses, and
-domain subsets.
+`OwnerPhone` uses a package-internal, non-authorizing EIP-712 primitive to
+capture the projection's already-parsed canonical typed-data value and compare
+its device-derived Ethereum Keccak-256 digest with the request's expected
+digest. The UI renders a match or mismatch from that same immutable capture.
+Shared protocol/viem/Swift vectors cover the official Mail example, nested
+fixed and dynamic arrays, signed and unsigned integers, fixed and dynamic
+bytes, strings, booleans, addresses, and domain subsets.
 
-This primitive is deliberately not connected to the relay projection,
-approval state machine, key custody, or artifact creation. It does not create
-a `VerifiedSignableDigest`, and EIP-712 requests remain reject-only until a
-later reviewed owner binds the full request, signer/account, freshness, live
-review, and hardware user presence. Its input is an already-parsed value; it
-does not claim exact raw-JSON decoding or duplicate-key detection.
+The comparison remains disconnected from approval, key custody, and artifact
+creation. It does not create a `VerifiedSignableDigest`; requestHash is shown
+as authenticated server/protocol evidence and is not independently re-derived
+by this build. EIP-712 and protocol raw-digest requests are both reject-only.
+The semantic decoder does not claim preservation of raw JSON bytes; the relay
+owns canonical protocol capture before projection.
 
 ## Transport is deployment-wired
 
@@ -107,8 +107,9 @@ tagged, non-synchronizable keychain P-256 key with
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
 simulator/fallback banner. Both modes intentionally omit a
 user-presence/biometry requirement. The app registers 64-byte `x ‖ y` public
-material, but it exposes no network-digest signing path: legacy signature
-requests cannot reach artifact generation, key custody, or an approval POST.
+material, but it exposes no network-digest signing path: owner-signing
+requests cannot reach artifact generation, key custody, or an
+approval POST.
 The low-level custody and DER-to-raw-low-S primitives remain scaffolding for a
 future device-derived verified signing request. Host tests pin the software
 attributes and platform-selection policy and prove the pure DER conversion,

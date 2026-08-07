@@ -21,9 +21,9 @@ The page has one **Pair phone** action plus four account actions:
    address. It asks for no owner authorization.
 2. **Request permission** creates a secp256k1 session private key in the page
    (`crypto.getRandomValues` through noble), retains it in `localStorage`, and
-   sends only its public key/address. The relay may project the legacy Kernel
-   enable digest for inspection, but every server decision API refuses to
-   approve or release that network-supplied digest.
+   sends only its public key/address. The relay projects the closed protocol
+   raw-digest request and its exact request hash for inspection, but every
+   server decision API refuses to approve or release it.
 3. **Send tx with session key** gets the validation nonce from EntryPoint,
    prepares the CallPolicy/value-bounded operation server-side, signs its exact
    UserOperation hash in the page, and submits. In default local mode it is
@@ -127,13 +127,14 @@ offers Refresh. The endpoint accepts only the exact active paired-device bearer
 and returns at most 20 sorted, undecided, unexpired opaque summaries (operation
 id, match code, expiry). Selecting one only fetches the existing full
 authenticated projection. Structured permission approvals and all rejections
-remain explicit; legacy digest requests have no Approve action. Listing never
-creates, decides, submits, observes, or releases anything.
+remain explicit; owner-signing requests remain reject-only and have no Approve
+action. Listing never creates, decides, submits, observes, or releases
+anything.
 
 APNs is an optional physical-device enhancement: set `APNS_KEY_PEM` (or
 `APNS_KEY_PEM_PATH`), `APNS_KEY_ID`, `APPLE_TEAM_ID`, and `APNS_TOPIC`. Exactly
-one opaque notification is attempted per legacy signature request against
-Apple's sandbox host with a 10-second timeout. Without those values, use the
+one opaque notification is attempted per owner-signing request against Apple's
+sandbox host with a 10-second timeout. Without those values, use the
 pull inbox (or manual operation-id fallback). Full review detail still travels
 over the authenticated projection, never through push, and those requests
 remain reject-only.

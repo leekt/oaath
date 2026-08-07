@@ -171,10 +171,7 @@ final class DecisionTests: XCTestCase {
         let digest = "0x" + String(repeating: "4b", count: 32)
         let scopes: [OwnerPhoneScope] = [
             .raw(#"{"chainScope":"all"}"#),
-            .signatureRequest(OwnerPhoneSignatureRequestScope(
-                digest: digest,
-                display: #"{"digest":"\#(digest)","kind":"user-operation"}"#
-            ))
+            .rawDigestSigningFixture(digest: digest)
         ]
         for scope in scopes {
             var review = OwnerPhoneReview(projection: .fixture(scope: scope))

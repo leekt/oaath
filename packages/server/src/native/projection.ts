@@ -29,6 +29,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { hashOwnerSigningRequest, type OwnerSigningRequest } from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
 import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
@@ -41,24 +42,14 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v2" as const;
-
-/**
- * Legacy versioned scope carrying one caller-supplied 32-byte digest. The
- * native projection keeps it readable for diagnosis and rejection, but never
- * treats it as an approvable signing object. A future native signing scope must
- * instead carry closed inputs that the device can derive and verify.
- */
-export const OAATH_SIGNATURE_REQUEST_SCOPE_VERSION = "oaath.signature-request/v1" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v3" as const;
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
-const DIGEST = /^0x[0-9a-f]{64}$/u;
 
 /**
- * Whether the phone may offer approval for one projected scope. A recognized,
- * fully projected scope is approvable; an unknown or malformed one stays
- * inspectable but is reject-only — a production consent surface never offers
- * an Approve button over authority it could not read.
+ * Whether the phone may offer approval for one projected scope. Permission
+ * requests are currently approvable; owner-signing, unknown, and malformed
+ * scopes remain inspectable but reject-only.
  */
 export type OwnerPhoneDecisionCapability = "approve-or-reject" | "reject-only";
 
@@ -72,9 +63,9 @@ export type OwnerPhoneCredentialProjection =
  * The requested scope as the phone renders it. When the stored scope parses as
  * an `@oaath/protocol` permission request, every fact that determines who
  * receives authority, over which account, and under what limits is projected
- * structurally; anything else is returned as an explicitly labeled raw string
- * for the owner to review. Neither shape is a failure, but only a recognized
- * shape is approvable.
+ * structurally. A valid owner-signing request is also projected in full with
+ * its protocol-owned hash, but remains reject-only. Anything else is returned
+ * as explicitly labeled raw text.
  */
 export type OwnerPhoneScopeProjection =
   | Readonly<{
@@ -124,18 +115,12 @@ export type OwnerPhoneScopeProjection =
       perChainOperationLimit: number;
     }>
   | Readonly<{
-      kind: "signature-request";
+      kind: "owner-signing-request";
       decision: "reject-only";
-      /** The exact caller-supplied 32-byte digest shown for rejection review. */
-      digest: `0x${string}`;
-      /**
-       * The full display JSON as one recursively key-sorted compact canonical
-       * string. Ambiguous/noncanonical bytes fail closed to `raw`. The phone
-       * renders these exact bytes, including the independently supplied digest,
-       * before the owner rejects it. A network-supplied digest is never an
-       * approvable signing object.
-       */
-      display: string;
+      /** Canonical hash binding every captured request fact. */
+      requestHash: `0x${string}`;
+      /** Full immutable protocol request for independent device review. */
+      request: Readonly<OwnerSigningRequest>;
     }>
   | Readonly<{ kind: "raw"; decision: "reject-only"; text: string }>;
 
@@ -257,71 +242,18 @@ export async function projectOwnerPhoneScope(
         perChainOperationLimit: request.policy.perChainOperationLimit,
       });
     }
-    const parsed: unknown = JSON.parse(requestedScope);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
+    if (classified.kind === "owner-signing-request") {
+      return Object.freeze({
+        kind: "owner-signing-request",
+        decision: "reject-only",
+        requestHash: hashOwnerSigningRequest(classified.request),
+        request: classified.request,
+      });
     }
-    const signatureRequest = projectSignatureRequestScope(parsed);
-    if (signatureRequest) return signatureRequest;
     return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   } catch {
     return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   }
-}
-
-/**
- * Projects a stored signature-request scope structurally, or returns null so a
- * malformed one falls through to the labeled raw text: the owner still reviews
- * exactly what was stored, and the phone simply has no digest to sign.
- */
-function sortedJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortedJsonValue);
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.keys(record)
-        .sort()
-        .map((key) => [key, sortedJsonValue(record[key])]),
-    );
-  }
-  return value;
-}
-
-function projectSignatureRequestScope(parsed: object): OwnerPhoneScopeProjection | null {
-  const record = parsed as Record<string, unknown>;
-  if (
-    record.version !== OAATH_SIGNATURE_REQUEST_SCOPE_VERSION ||
-    record.kind !== "signature-request"
-  )
-    return null;
-  if (Object.keys(record).sort().join(",") !== "digest,display,kind,version") return null;
-  const digest = record.digest;
-  const display = record.display;
-  if (typeof digest !== "string" || !DIGEST.test(digest)) return null;
-  if (typeof display !== "string" || display.length < 1) return null;
-  // Parse and re-encode the actual consent bytes using the same recursively
-  // sorted compact codec the Swift decoder pins. This rejects whitespace,
-  // duplicate-key collapse, noncanonical escapes, and any display that does
-  // not visibly bind the independently supplied digest.
-  try {
-    const displayed: unknown = JSON.parse(display);
-    if (
-      displayed === null ||
-      typeof displayed !== "object" ||
-      Array.isArray(displayed) ||
-      (displayed as Record<string, unknown>).digest !== digest ||
-      JSON.stringify(sortedJsonValue(displayed)) !== display
-    )
-      return null;
-  } catch {
-    return null;
-  }
-  return Object.freeze({
-    kind: "signature-request",
-    decision: "reject-only",
-    digest: digest as `0x${string}`,
-    display,
-  });
 }
 
 /**

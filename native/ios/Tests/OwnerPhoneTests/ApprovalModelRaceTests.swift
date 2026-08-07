@@ -177,14 +177,36 @@ final class ApprovalModelRaceTests: XCTestCase {
         return review
     }
 
+    private func mismatchedEIP712Scope() throws -> OwnerPhoneScope {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            var projection = projections["ownerSigningRequest"] as? [String: Any],
+            var scope = projection["scope"] as? [String: Any],
+            var request = scope["request"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("owner signing test fixture")
+        }
+        request["expectedDigest"] = "0x" + String(repeating: "55", count: 32)
+        scope["request"] = request
+        projection["scope"] = scope
+        return try OwnerPhoneRequestProjection.decode(
+            JSONSerialization.data(withJSONObject: projection)).scope
+    }
+
     func testRejectOnlyScopesGenerateNoArtifactAndSendOnlyExplicitRejection() async throws {
         let digest = "0x" + String(repeating: "a1", count: 32)
         let scopes: [OwnerPhoneScope] = [
             .raw(#"{"chainScope":"all"}"#),
-            .signatureRequest(OwnerPhoneSignatureRequestScope(
-                digest: digest,
-                display: #"{"digest":"\#(digest)","kind":"owner-operation"}"#
-            ))
+            .rawDigestSigningFixture(digest: digest),
+            try mismatchedEIP712Scope(),
         ]
 
         for (index, scope) in scopes.enumerated() {

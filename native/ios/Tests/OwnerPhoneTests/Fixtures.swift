@@ -58,3 +58,18 @@ extension OwnerPhoneRequestProjection {
         )
     }
 }
+
+extension OwnerPhoneScope {
+    static func rawDigestSigningFixture(
+        digest: String = "0x" + String(repeating: "44", count: 32)
+    ) -> OwnerPhoneScope {
+        .ownerSigningRequest(OwnerPhoneSigningRequestScope(
+            requestHash: "0x" + String(repeating: "55", count: 32),
+            request: .rawDigest(OwnerPhoneRawDigestSigningRequest(
+                version: ownerPhoneSigningRequestVersion,
+                digest: digest,
+                reason: "No device-side derivation is available"
+            ))
+        ))
+    }
+}
