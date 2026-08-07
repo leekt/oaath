@@ -237,7 +237,7 @@ describe("experimental owner-phone projection", () => {
     const projection = await project(fixed);
     expect(projection.scope).toEqual({
       kind: "signature-request",
-      decision: "approve-or-reject",
+      decision: "reject-only",
       digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
       display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
     });
@@ -417,6 +417,7 @@ describe("experimental owner-phone decision saga", () => {
       const fixed = await fixture(requestedScope);
       await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
       expect(fixed.kmsEncryptions()).toBe(0);
+      expect((await project(fixed)).scope).toMatchObject({ decision: "reject-only" });
 
       const rejected = await decide(fixed, "rejected");
       expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });

@@ -101,6 +101,9 @@ if (LIVE && !process.env.ZERODEV_PROJECT_ID)
 const MODE = LIVE ? "zerodev-bundler-paymaster" : "anvil";
 const say = (...parts) => console.log(...parts);
 const event = (name, fields = {}) => {
+  if (SIMULATE && (name === "signature.approved" || name === "permission.approved")) {
+    throw new Error("simulation emitted a phone-consent approval claim");
+  }
   const details = Object.entries(fields)
     .filter(([, value]) => value !== undefined && value !== null)
     .map(([key, value]) => `${key}=${value}`)
@@ -433,7 +436,10 @@ async function createSignatureRequest(
   }
   event("signature.requested", { purpose, requestId: created.requestId });
   if (SIMULATE) {
-    expect(projection.scope?.kind === "signature-request", "simulation projection was not signed");
+    expect(
+      projection.scope?.kind === "signature-request" && projection.scope.decision === "reject-only",
+      "simulation legacy digest was not reject-only",
+    );
     expect(projection.scope.digest === digest, "simulation projection digest drifted");
     expect(projection.scope.display === display, "simulation projection display bytes drifted");
     if (simulationCommand === "reject") {
@@ -457,7 +463,10 @@ async function resolveSignature(record) {
     if (record.outcome !== "approved") {
       record.outcome = "approved";
       signatureRequestLane.terminate(record.reservationToken, "completed");
-      event("signature.approved", { purpose: record.purpose, requestId: record.requestId });
+      event(SIMULATE ? "signature.fixture_provided" : "signature.approved", {
+        purpose: record.purpose,
+        requestId: record.requestId,
+      });
     }
     return record.artifact;
   }
@@ -491,7 +500,10 @@ async function resolveSignature(record) {
   record.artifact = claimed.artifact;
   record.outcome = "approved";
   signatureRequestLane.terminate(record.reservationToken, "completed");
-  event("signature.approved", { purpose: record.purpose, requestId: record.requestId });
+  event(SIMULATE ? "signature.fixture_provided" : "signature.approved", {
+    purpose: record.purpose,
+    requestId: record.requestId,
+  });
   return record.artifact;
 }
 async function sequence(runtime, mode) {
@@ -862,7 +874,7 @@ async function handleDemo(method, path, body, outgoing) {
         installNonce: "0",
         packages: permission.runtime.packages,
       });
-      event("permission.approved", {
+      event(SIMULATE ? "permission.fixture_derived" : "permission.approved", {
         requestId: permission.request.requestId,
         account: permission.descriptor.account,
         sessionAddress: permission.sessionAddress,
@@ -1525,13 +1537,13 @@ async function simulate() {
   markInboxTerminal(signatureRequests, inboxRequest.requestId);
   expect(
     (await (await inboxFetch(activeDevice.credential)).json()).requests.length === 0,
-    "approved request remained in inbox",
+    "fixture-resolved request remained in inbox",
   );
   expect(
     inboxRequest.artifact === inboxSignature && inboxRequest.code === null,
     "inbox terminal marker changed the local fixture",
   );
-  expect((await resolveSignature(inboxRequest)) !== null, "approved inbox request did not deliver");
+  expect((await resolveSignature(inboxRequest)) !== null, "inbox fixture did not deliver");
 
   const rejectedDigest = `0x${"5a".repeat(32)}`;
   const rejectedRequest = await createSignatureRequest(
@@ -1670,8 +1682,8 @@ async function simulate() {
       permission?.request?.requestId === requested.requestId,
     "permission/shared-lane representations diverged",
   );
-  const approved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
-  expect(approved.status === "approved", "permission did not approve");
+  const resolved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
+  expect(resolved.status === "approved", "permission fixture did not resolve");
   const prepareSession = async () => {
     const prepared = await relayCall("POST", "/demo/session/prepare", null, { sessionAddress });
     const signed = secp256k1.sign(hexToBytes(prepared.userOperationHash), sessionSecret, {

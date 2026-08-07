@@ -85,11 +85,12 @@ simulation without valid session evidence (`AA23`). Core SDK sponsorship
 preparation then re-prepares so every returned field is hash-bound; the browser
 signs that distinct final hash, and the relay sends only the final operation through
 `eth_sendUserOperation([signedUserOp, entryPoint])`. Acceptance must return the
-prepared hash exactly. The owner path applies the same two-hash rule with two
-preparation phases internally: a validation-shaped dummy signature obtains the
-sponsorship, then the phone sees and signs only the final sponsored hash. Live
-calls transfer zero ETH because the paymaster sponsors gas, not call value;
-local Anvil mode retains its small value transfers.
+prepared hash exactly. The owner path can prepare the same two-hash sequence
+internally, but the native phone will not sign the final network-supplied
+sponsored hash. A future live owner flow must first supply a closed request that
+the device can derive and verify. Live calls transfer zero ETH because the
+paymaster sponsors gas, not call value; local Anvil mode retains its small value
+transfers.
 At most **four** one-second-spaced transaction-discovery polls may retain the first canonical
 transaction hash.
 
@@ -125,12 +126,14 @@ path. While paired, the app polls `GET /demo/inbox` about every two seconds and
 offers Refresh. The endpoint accepts only the exact active paired-device bearer
 and returns at most 20 sorted, undecided, unexpired opaque summaries (operation
 id, match code, expiry). Selecting one only fetches the existing full
-authenticated projection; Approve/Reject remain explicit. Listing never creates,
-decides, submits, observes, or releases anything.
+authenticated projection. Structured permission approvals and all rejections
+remain explicit; legacy digest requests have no Approve action. Listing never
+creates, decides, submits, observes, or releases anything.
 
 APNs is an optional physical-device enhancement: set `APNS_KEY_PEM` (or
 `APNS_KEY_PEM_PATH`), `APNS_KEY_ID`, `APPLE_TEAM_ID`, and `APNS_TOPIC`. Exactly
-one opaque notification is attempted per signature request against Apple's
-sandbox host with a 10-second timeout. Without those values, use the pull inbox
-(or manual operation-id fallback); full consent still travels over the
-authenticated projection, never through push.
+one opaque notification is attempted per legacy signature request against
+Apple's sandbox host with a 10-second timeout. Without those values, use the
+pull inbox (or manual operation-id fallback). Full review detail still travels
+over the authenticated projection, never through push, and those requests
+remain reject-only.

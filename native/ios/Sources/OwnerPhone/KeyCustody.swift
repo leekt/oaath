@@ -15,8 +15,10 @@
    (raw r‖s, low-S) is owned by `Signing.swift`, mirroring the SDK's
    `kernel/key/p256.ts` rule; the demo key applies it before any byte leaves
    the device.
- - Nothing here composes an operation, account, or chain; the custody boundary
-   signs only a caller-supplied, already-domain-separated 32-byte digest.
+ - Nothing here composes an operation, account, or chain. This low-level
+   scaffold is not reachable from the native network-request approval path;
+   legacy caller-supplied digests are reject-only until a device-derived
+   verified-signable type owns that boundary.
 
  @author taek <leekt216@gmail.com>
  */
@@ -34,7 +36,8 @@ public enum OwnerPhoneKeyCustodyError: Error, Equatable, Sendable {
 
 /// Custody of the owner's persistent platform P-256 credential. Secure Enclave
 /// instances are non-exportable; the simulator/host key is only a device-local
-/// keychain development fallback. WebAuthn-style verification comes later.
+/// keychain development fallback. This low-level primitive is not authority to
+/// sign a network-supplied digest; the app has no such approval path.
 public protocol OwnerPhoneKeyCustody: Sendable {
     /// X9.63 uncompressed public key (65 bytes, leading 0x04).
     func publicKey() throws -> Data

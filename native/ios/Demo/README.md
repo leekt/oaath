@@ -2,9 +2,10 @@
 
 A runnable SwiftUI app over the `OwnerPhone` + `OwnerPhoneDemo` package
 targets. It pairs with the demo relay (`examples/phone`), receives the real
-APNs approval push, shows the full consent screen, and delivers the released
-one-time code back to the waiting web example. Preview means: no stability
-guarantee and no production qualification.
+APNs review push, and shows the full consent screen. Structured permission
+requests may release a one-time approval; legacy digest requests are
+reject-only. Preview means: no stability guarantee and no production
+qualification.
 
 ## Run on a physical iPhone (primary target)
 
@@ -60,7 +61,8 @@ With a paid membership:
    receive SANDBOX device tokens, and pushing the production host instead is
    the classic silent failure.
 5. Tapping the notification only **opens** the consent screen. Nothing is ever
-   decided by a tap: Approve and Reject are explicit buttons, always.
+   decided by a tap. Structured permission requests show explicit Approve and
+   Reject buttons; legacy digest requests are reject-only.
 
 ## Simulator fallback
 
@@ -84,13 +86,16 @@ deployment serves https and deletes the key.
 
 First launch generates a persistent P-256 key in the Secure Enclave on a
 physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry
-requirement because Approve is already the explicit consent gate). Pairing
-registers its `x ‖ y` public material. The web half derives the chain-independent
-CREATE2 account and returns it; the phone labels the server-side derivation
-honestly. For both the replayable enable digest and owner UserOperation hash,
-Approve signs the exact projected 32 bytes, converts platform DER to raw
-`r ‖ s`, low-S normalizes, and releases that signature once. Reject signs
-nothing. Push/tap only opens review.
+requirement in this experimental scaffold). Pairing registers its `x ‖ y`
+public material. The web half derives the chain-independent CREATE2 account and
+returns it; the phone labels the server-side derivation honestly.
+
+The native app does not sign a digest supplied by the relay. Legacy replayable
+enable and owner-UserOperation requests remain visible for diagnosis and
+rejection, but expose no Approve button and cannot reach artifact generation,
+key custody, or an approval POST. Retaining those signing flows requires a
+closed structured request whose digest the device independently derives and
+binds before custody can be invoked; that work is deliberately deferred.
 
 ## Provenance
 

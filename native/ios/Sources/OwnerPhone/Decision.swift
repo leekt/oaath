@@ -180,6 +180,7 @@ public struct OwnerPhoneReview: Equatable, Sendable {
 
     public enum TransitionError: Error, Equatable, Sendable {
         case expired
+        case notApprovable
         case notPending
         case notSubmitting
         /// An unresolved intent exists for the opposite outcome; the stored
@@ -208,6 +209,9 @@ public struct OwnerPhoneReview: Equatable, Sendable {
     public mutating func beginSubmission(_ outcome: OwnerPhoneOutcome, now: Int) throws {
         guard case .pending = state else { throw TransitionError.notPending }
         guard now < projection.expiresAt else { throw TransitionError.expired }
+        guard outcome != .approved || projection.scope.approvable else {
+            throw TransitionError.notApprovable
+        }
         if let unresolvedIntent, unresolvedIntent != outcome {
             throw TransitionError.conflictingUnresolvedIntent
         }

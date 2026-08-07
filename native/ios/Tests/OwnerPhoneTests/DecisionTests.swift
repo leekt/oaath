@@ -167,6 +167,26 @@ final class DecisionTests: XCTestCase {
         XCTAssertNil(review.unresolvedIntent)
     }
 
+    func testRejectOnlyScopesCannotBeginApprovalButCanBeginRejection() throws {
+        let digest = "0x" + String(repeating: "4b", count: 32)
+        let scopes: [OwnerPhoneScope] = [
+            .raw(#"{"chainScope":"all"}"#),
+            .signatureRequest(OwnerPhoneSignatureRequestScope(
+                digest: digest,
+                display: #"{"digest":"\#(digest)","kind":"user-operation"}"#
+            ))
+        ]
+        for scope in scopes {
+            var review = OwnerPhoneReview(projection: .fixture(scope: scope))
+            XCTAssertThrowsError(try review.beginSubmission(.approved, now: 0)) {
+                XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notApprovable)
+            }
+            XCTAssertEqual(review.state, .pending)
+            try review.beginSubmission(.rejected, now: 0)
+            XCTAssertEqual(review.state, .submitting(.rejected))
+        }
+    }
+
     func testExpiredRequestCannotStartASubmission() {
         var review = OwnerPhoneReview(projection: projection)
         XCTAssertThrowsError(try review.beginSubmission(.approved, now: projection.expiresAt)) {

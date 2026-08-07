@@ -187,16 +187,18 @@ const poll = async (path, label, id, activityToken) => {
     if (answer.status !== "pending") return answer;
     if (answer.requestId && answer.requestId !== currentRequestId) {
       currentRequestId = answer.requestId;
-      say(`Sponsorship completed. Approve the final phone request.\nExact id: ${currentRequestId}`);
+      say(
+        `Sponsorship completed. Waiting for the final owner request.\nExact id: ${currentRequestId}`,
+      );
     }
     updateActivity(
       activityToken,
       label,
-      `Waiting for iPhone approval (${attempt + 1}s). Exact id: ${currentRequestId}`,
+      `Waiting for the request outcome (${attempt + 1}s). Exact id: ${currentRequestId}`,
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  throw new Error("phone decision timed out");
+  throw new Error("request decision timed out");
 };
 const finishSession = (answer) => {
   if (answer.status === "unresolved") {
@@ -288,7 +290,7 @@ $("permission").onclick = async () => {
       remember(permissionRequestKey, state.permission.requestId);
       updateActivity(
         activityToken,
-        "Resuming iPhone permission approval",
+        "Resuming permission request",
         `Exact request: ${state.permission.requestId}`,
       );
       const resumed = await poll(
@@ -300,15 +302,15 @@ $("permission").onclick = async () => {
       if (resumed.status === "rejected") forget(permissionRequestKey);
       say(
         resumed.status === "rejected"
-          ? "Permission rejected on the phone. No signature or permission was created."
-          : `Permission signature approved for ${resumed.account}.\nThe phone signed ${resumed.digest}. Onchain permission is not materialized yet.`,
+          ? "Permission request rejected. No signature or permission was created."
+          : `Permission authorization completed for ${resumed.account}.\nExact digest: ${resumed.digest}. Onchain permission is not materialized yet.`,
       );
       return;
     }
     updateActivity(
       activityToken,
-      "Preparing permission approval",
-      "Binding the browser session key and creating one phone signature request.",
+      "Preparing permission request",
+      "Binding the browser session key and creating one owner request.",
     );
     const created = await json("/demo/permission", {
       method: "POST",
@@ -321,8 +323,8 @@ $("permission").onclick = async () => {
     remember(permissionRequestKey, created.requestId);
     updateActivity(
       activityToken,
-      "Waiting for iPhone permission approval",
-      `Open the request in the app. Exact request: ${created.requestId}`,
+      "Waiting for permission request outcome",
+      `Exact request: ${created.requestId}`,
     );
     const approved = await poll(
       `/demo/permission/${created.requestId}`,
@@ -332,11 +334,11 @@ $("permission").onclick = async () => {
     );
     if (approved.status === "rejected") {
       forget(permissionRequestKey);
-      say("Permission rejected on the phone. No signature or permission was created.");
+      say("Permission request rejected. No signature or permission was created.");
       return;
     }
     say(
-      `Permission signature approved for ${approved.account}.\nThe phone signed ${approved.digest}. Onchain permission is not materialized yet.`,
+      `Permission authorization completed for ${approved.account}.\nExact digest: ${approved.digest}. Onchain permission is not materialized yet.`,
     );
   } catch (error) {
     say(`Permission failed: ${error.message}`);
@@ -475,7 +477,7 @@ $("owner").onclick = async () => {
       updateActivity(
         activityToken,
         "Preparing owner operation",
-        "Reading the EntryPoint nonce and creating one iPhone signature request.",
+        "Reading the EntryPoint nonce and creating one owner request.",
       );
       const prepared = await json("/demo/owner/prepare", { method: "POST", body: "{}" });
       requestId = prepared.requestId;
@@ -484,8 +486,8 @@ $("owner").onclick = async () => {
     remember(ownerRequestKey, requestId);
     updateActivity(
       activityToken,
-      "Waiting for iPhone owner approval",
-      `Approve in the app; the exact request is ${requestId}. Submission follows approval.`,
+      "Waiting for owner request outcome",
+      `Exact request: ${requestId}. Submission follows only an accepted result.`,
     );
     const sent = await poll(
       `/demo/owner/${requestId}`,
@@ -495,14 +497,14 @@ $("owner").onclick = async () => {
     );
     if (sent.status === "rejected") {
       forget(ownerRequestKey);
-      say("Owner operation rejected on the phone. No signature or operation was submitted.");
+      say("Owner operation request rejected. No signature or operation was submitted.");
       return;
     }
     forget(ownerRequestKey);
     say(
       sent.status === "unresolved"
-        ? `Owner operation remains unresolved (${sent.code ?? "evidence_unavailable"}) after phone approval. Observation is same-hash only.\nUserOperation: ${sent.userOperationHash}${sent.transactionHash ? `\nDiscovered transaction: ${sent.transactionHash}` : ""}`
-        : `Owner operation ${sent.status} after phone approval.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
+        ? `Owner operation remains unresolved (${sent.code ?? "evidence_unavailable"}) after request resolution. Observation is same-hash only.\nUserOperation: ${sent.userOperationHash}${sent.transactionHash ? `\nDiscovered transaction: ${sent.transactionHash}` : ""}`
+        : `Owner operation ${sent.status} after request resolution.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
     );
   } catch (error) {
     if (error.message === "operation_not_found") {

@@ -422,10 +422,9 @@ public final class DemoModel: ObservableObject {
             onUnauthorized: { [weak self] rejectedPairing in
                 await self?.rejectIfCurrent(rejectedPairing)
             })
-        // The signing boundary: a signature-request approval signs the
-        // projected digest with the platform-authorized owner key (Secure
-        // Enclave on physical iOS) — the artifact IS the signature. Other scopes keep
-        // the demo's opaque placeholder artifact.
+        // Legacy digest projections are reject-only before this closure can
+        // run. The only current approvable branch is structured permission
+        // consent, whose demo artifact is deliberately not a signature.
         let pairings = self.pairings
         let model = ApprovalModel(relay: client, approvalArtifact: { projection in
             guard pairings.load() == .stored(boundPairing),
@@ -433,12 +432,6 @@ public final class DemoModel: ObservableObject {
                   publicMaterial == boundPairing.ownerPublicMaterial
             else {
                 throw DemoOwnerKeyBindingError.mismatch
-            }
-            if case let .signatureRequest(scope) = projection.scope {
-                return try verifiedDemoOwnerSignature(
-                    ownerKey.signDigestHex(scope.digest),
-                    digestHex: scope.digest,
-                    ownerPublicMaterial: boundPairing.ownerPublicMaterial)
             }
             return demoApprovalArtifact()
         })

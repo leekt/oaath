@@ -62,7 +62,7 @@ final class ProjectionTests: XCTestCase {
 
     private var valid: [String: Any] {
         [
-            "version": "oaath.native-projection/v1",
+            "version": "oaath.native-projection/v2",
             "operationId": "req-1",
             "displayPayload": "Ab1-_9Zz",
             "expiresAt": 1_754_000_000_000,
@@ -169,35 +169,38 @@ final class ProjectionTests: XCTestCase {
         let digest = "0x" + String(repeating: "4b", count: 32)
         let display = #"{"chainId":421614,"digest":"\#(digest)","kind":"user-operation"}"#
         var object = valid
-        object["scope"] = ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": display]
+        object["scope"] = ["kind": "signature-request", "decision": "reject-only", "digest": digest, "display": display]
         let projection = try OwnerPhoneRequestProjection.decode(json(object))
         XCTAssertEqual(
             projection.scope,
             .signatureRequest(OwnerPhoneSignatureRequestScope(digest: digest, display: display)))
+        XCTAssertFalse(projection.scope.approvable)
     }
 
     func testRejectsMalformedSignatureRequestScopes() {
         let digest = "0x" + String(repeating: "4b", count: 32)
         let malformed: [[String: Any]] = [
+            // a legacy digest can be reviewed but never claim approval capability
+            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": #"{"digest":"\#(digest)","kind":"user-operation"}"#],
             // short digest
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": "0x4b", "display": "{}"],
+            ["kind": "signature-request", "decision": "reject-only", "digest": "0x4b", "display": "{}"],
             // uppercase digest
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest.uppercased(), "display": "{}"],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest.uppercased(), "display": "{}"],
             // missing display
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest],
             // empty display
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": ""],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest, "display": ""],
             // control character in display
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": "line\nbreak"],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest, "display": "line\nbreak"],
             // extra field
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": "{}", "extra": 1],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest, "display": "{}", "extra": 1],
             // valid JSON that omits the independently supplied digest
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest, "display": #"{"kind":"user-operation"}"#],
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest, "display": #"{"kind":"user-operation"}"#],
             // duplicate key ambiguity must not collapse before consent
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest,
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest,
              "display": #"{"digest":"\#(digest)","kind":"gone","kind":"user-operation"}"#],
             // same fields, different bytes/order
-            ["kind": "signature-request", "decision": "approve-or-reject", "digest": digest,
+            ["kind": "signature-request", "decision": "reject-only", "digest": digest,
              "display": #"{"kind":"user-operation","digest":"\#(digest)"}"#]
         ]
         for scope in malformed {
@@ -273,7 +276,7 @@ final class ProjectionTests: XCTestCase {
         }
         // A foreign version is rejected, never read as this one.
         object = valid
-        object["version"] = "oaath.native-projection/v2"
+        object["version"] = "oaath.native-projection/v1"
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("version"))
         }

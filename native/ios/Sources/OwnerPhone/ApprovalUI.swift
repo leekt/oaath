@@ -5,10 +5,11 @@
  relay sends it — application, client, origin, redirect target, device,
  account, credentials, custody, every permitted call and argument constraint,
  validity window, and operation limit — so the owner sees exactly the
- authority they grant before tapping approve. An unstructured scope is
- rendered as an explicit "review the raw text" state, never silently. The
- approve artifact is deployment-injected: composing what the client will claim
- is not this app's job.
+ authority they grant before tapping approve. Unstructured and legacy
+ signature scopes are rendered for explicit rejection, never silently, and
+ expose no approval action. The
+ permission approval artifact is deployment-injected: composing what the
+ client will claim is not this app's job.
 
  Approval is always an explicit tap on this screen. A push notification only
  opens the review; nothing decides on tap, foreground, or notification action.
@@ -253,10 +254,9 @@ public final class ApprovalModel: ObservableObject {
     @Published public private(set) var unresolvedNotice = false
 
     private let relay: any OwnerPhoneRelayClient
-    /// Produces the artifact an approval hands over for the reviewed
-    /// projection; deployment-injected. For a signature-request scope the demo
-    /// signs the projected digest with the on-device owner key — the artifact
-    /// IS the signature.
+    /// Produces the artifact an approval hands over for the reviewed structured
+    /// permission projection. Reject-only scopes are gated before this
+    /// deployment-injected boundary.
     private let approvalArtifact: @Sendable (OwnerPhoneRequestProjection) async throws -> String
     private let now: @Sendable () -> Int
 
@@ -313,6 +313,10 @@ public final class ApprovalModel: ObservableObject {
     public func approve() async {
         guard let (token, review) = capturedReview() else { return }
         let request = review.projection
+        // Eligibility is checked before the deployment-injected artifact
+        // boundary. Reject-only scopes therefore cannot sign or even begin
+        // composing an approval artifact through a programmatic call.
+        guard request.scope.approvable else { return }
         guard let artifact = try? await approvalArtifact(request) else {
             return // artifact composition failed before any submission; still pending
         }
@@ -458,8 +462,10 @@ public struct ApprovalView: View {
             }
             HStack(spacing: 24) {
                 Button("Reject", role: .destructive) { Task { await model.reject() } }
-                Button("Approve") { Task { await model.approve() } }
-                    .buttonStyle(.borderedProminent)
+                if review.projection.scope.approvable {
+                    Button("Approve") { Task { await model.approve() } }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         case .submitting:
             ProgressView("Submitting…")
@@ -485,12 +491,12 @@ public struct ApprovalView: View {
                         client: projection.client,
                         scope: scope))
                 case let .signatureRequest(scope):
-                    // The signing consent: the FULL authenticated canonical
-                    // display bytes plus the exact digest the owner key signs. Approve
-                    // signs; Reject signs nothing. Nothing decides on tap.
-                    Text("Signature request — Approve signs this with the owner key on this device:")
+                    // Legacy raw-digest requests remain inspectable so the
+                    // owner can reject them, but never become signable.
+                    Text("Legacy signature request — reject only. This device will not sign a network-supplied digest:")
                         .font(.footnote)
                         .bold()
+                        .foregroundStyle(.orange)
                     ScrollView {
                         // Render the exact authenticated canonical UTF-8 text.
                         // Parse/reserialize would create a second consent surface.

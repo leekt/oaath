@@ -22,8 +22,11 @@ published to npm.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
-  the structured permission scope, or a signature request's exact digest and
-  full display JSON — with explicit Approve/Reject for both signature flows.
+  the structured permission scope, or a legacy signature request's exact
+  digest and full display JSON. Structured permission requests expose explicit
+  Approve/Reject actions; network-supplied digest requests are readable but
+  reject-only until the phone can derive and verify a closed signing payload
+  itself.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
@@ -86,12 +89,14 @@ software custody. Simulator and macOS host builds instead select a separately
 tagged, non-synchronizable keychain P-256 key with
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
 simulator/fallback banner. Both modes intentionally omit a
-user-presence/biometry requirement because Approve is the consent gate. The app
-registers 64-byte `x ‖ y` public material and returns DER signatures as raw
-low-S `r ‖ s`. Host tests pin the software attributes and platform-selection
-policy and prove the
-pure DER conversion, low-S arithmetic and real CryptoKit verification; they do
-not prove physical Enclave custody.
+user-presence/biometry requirement. The app registers 64-byte `x ‖ y` public
+material, but it exposes no network-digest signing path: legacy signature
+requests cannot reach artifact generation, key custody, or an approval POST.
+The low-level custody and DER-to-raw-low-S primitives remain scaffolding for a
+future device-derived verified signing request. Host tests pin the software
+attributes and platform-selection policy and prove the pure DER conversion,
+low-S arithmetic and real CryptoKit verification; they do not prove physical
+Enclave custody or clear signing.
 
 ## Provenance
 

@@ -25,7 +25,7 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v1"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v2"
 
 /// The bounded 8-character base64url match code the phone renders.
 public struct MatchCode: Equatable, Sendable {
@@ -208,13 +208,12 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     }
 }
 
-/// One signature request: the relay asks this device's owner key to sign one
-/// 32-byte digest. `display` is the server-validated canonical display JSON;
-/// the UI renders its exact authenticated bytes before the owner decides. Approving
-/// returns the signature as the decision artifact — the artifact IS the
-/// signature, released to the client through the one-shot code/artifact flow.
+/// One legacy signature request retained only so the owner can inspect and
+/// reject it. A network-supplied 32-byte digest is not an approvable signing
+/// object. `display` is the server-validated canonical display JSON rendered
+/// exactly; no artifact or signature may be produced from this branch.
 public struct OwnerPhoneSignatureRequestScope: Equatable, Sendable {
-    /// Lowercase `0x`-prefixed 32-byte digest the owner key signs on approval.
+    /// Lowercase `0x`-prefixed 32-byte digest shown only for rejection review.
     public let digest: String
     /// The full display JSON, exactly as the requesting client stored it.
     public let display: String
@@ -234,14 +233,14 @@ public enum OwnerPhoneScope: Equatable, Sendable {
     case signatureRequest(OwnerPhoneSignatureRequestScope)
     case raw(String)
 
-    /// Whether this scope may be approved at all. A raw scope is reject-only:
-    /// the UI never renders an Approve control for authority it could not
-    /// read, and the relay refuses such an approval independently.
+    /// Whether this scope may be approved at all. Raw and legacy-digest scopes
+    /// are reject-only: the UI never renders Approve and the relay refuses an
+    /// approval independently.
     public var approvable: Bool {
         switch self {
-        case .permissionRequest, .signatureRequest:
+        case .permissionRequest:
             return true
-        case .raw:
+        case .signatureRequest, .raw:
             return false
         }
     }
@@ -366,7 +365,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
             ))
         case "signature-request":
             try Wire.exactKeys(object, ["kind", "decision", "digest", "display"], label: "scope")
-            guard object["decision"] as? String == "approve-or-reject" else {
+            guard object["decision"] as? String == "reject-only" else {
                 throw OwnerPhoneWireError.invalidField("scope decision")
             }
             let digest = try Wire.lowercaseHex(

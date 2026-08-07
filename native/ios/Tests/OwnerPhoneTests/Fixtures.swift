@@ -13,7 +13,8 @@ extension OwnerPhoneRequestProjection {
     static func fixture(
         operationId: String = "req-1",
         matchCode: String = "Ab1-_9Zz",
-        expiresAt: Int = 1_754_000_000_000
+        expiresAt: Int = 1_754_000_000_000,
+        scope: OwnerPhoneScope? = nil
     ) -> OwnerPhoneRequestProjection {
         OwnerPhoneRequestProjection(
             operationId: operationId,
@@ -23,7 +24,37 @@ extension OwnerPhoneRequestProjection {
                 clientId: "demo-web-app",
                 redirectUri: "http://192.168.1.20:8788/callback"
             ),
-            scope: .raw(#"{"chainScope":"all"}"#)
+            scope: scope ?? .permissionRequest(OwnerPhonePermissionScope(
+                application: OwnerPhoneApplicationIdentity(
+                    applicationId: "app-a",
+                    clientId: "demo-web-app",
+                    origin: "https://app.example",
+                    deviceFingerprint: "8sWHndmh"
+                ),
+                account: OwnerPhoneAccountIdentity(
+                    accountIndex: "7",
+                    kernelVersion: "0.4.0",
+                    factoryRoute: "meta_factory",
+                    entryPointVersion: "0.7",
+                    ownerCredential: .ecdsa(
+                        address: "0x" + String(repeating: "33", count: 20))
+                ),
+                operatorCredential: .ecdsa(
+                    address: "0x" + String(repeating: "44", count: 20)),
+                sessionSigner: nil,
+                chainScope: "all",
+                calls: [OwnerPhonePermittedCall(
+                    target: "0x" + String(repeating: "11", count: 20),
+                    selector: "0x12345678",
+                    valueLimit: "100",
+                    argumentEquals: []
+                )],
+                requestedAt: 1_753_000_000,
+                expiresAt: 1_754_000_000,
+                policyValidAfter: 1_753_000_000,
+                policyValidUntil: nil,
+                perChainOperationLimit: 10
+            ))
         )
     }
 }

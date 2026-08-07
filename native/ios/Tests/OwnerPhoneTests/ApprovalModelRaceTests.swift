@@ -84,8 +84,7 @@ private actor RecordingArtifact {
 
     func generate(_ projection: OwnerPhoneRequestProjection) -> String {
         projections.append(projection)
-        guard case let .signatureRequest(scope) = projection.scope else { return "unexpected" }
-        return "signature-for-\(scope.digest)"
+        return "artifact-for-\(projection.operationId)"
     }
 
     func recordedProjections() -> [OwnerPhoneRequestProjection] {
@@ -93,27 +92,63 @@ private actor RecordingArtifact {
     }
 }
 
+private actor ImmediateDecisionRelay: OwnerPhoneRelayClient {
+    private let projectionValue: OwnerPhoneRequestProjection
+    private var submissions: [DeferredApprovalRelay.Submission] = []
+
+    init(_ projection: OwnerPhoneRequestProjection) {
+        projectionValue = projection
+    }
+
+    func projection(operationId: String) async throws -> OwnerPhoneRequestProjection {
+        guard operationId == projectionValue.operationId else { throw DeferredFailure.endpoint }
+        return projectionValue
+    }
+
+    func submit(
+        operationId: String,
+        command: OwnerPhoneDecisionCommand
+    ) async throws -> OwnerPhoneDecision {
+        submissions.append(.init(operationId: operationId, command: command))
+        return OwnerPhoneDecision(
+            operationId: operationId,
+            outcome: command.outcome,
+            decidedAt: 1_900_000_000_000,
+            settlement: .decided,
+            release: command.outcome == .approved
+                ? .approved(
+                    code: "code-\(operationId)",
+                    artifactId: "artifact-\(operationId)",
+                    redirectUri: "https://app.example/\(operationId)",
+                    codeExpiresAt: 1_900_000_010_000
+                )
+                : .rejected
+        )
+    }
+
+    func recordedSubmissions() -> [DeferredApprovalRelay.Submission] {
+        submissions
+    }
+}
+
+private actor CountingArtifact {
+    private var calls = 0
+
+    func generate(_ projection: OwnerPhoneRequestProjection) -> String {
+        calls += 1
+        return "artifact-for-\(projection.operationId)"
+    }
+
+    func count() -> Int { calls }
+}
+
 @MainActor
 final class ApprovalModelRaceTests: XCTestCase {
-    private let digestA = "0x" + String(repeating: "a1", count: 32)
-    private let digestB = "0x" + String(repeating: "b2", count: 32)
-
-    private func projection(
-        _ operationId: String,
-        digest: String
-    ) throws -> OwnerPhoneRequestProjection {
-        OwnerPhoneRequestProjection(
+    private func projection(_ operationId: String) -> OwnerPhoneRequestProjection {
+        .fixture(
             operationId: operationId,
-            matchCode: try MatchCode(operationId == "request-A" ? "AAAA1111" : "BBBB2222"),
-            expiresAt: 2_000_000_000_000,
-            client: OwnerPhoneClientIdentity(
-                clientId: "exact-client-\(operationId)",
-                redirectUri: "https://app.example/\(operationId)"
-            ),
-            scope: .signatureRequest(OwnerPhoneSignatureRequestScope(
-                digest: digest,
-                display: #"{"digest":"\#(digest)","kind":"owner-operation"}"#
-            ))
+            matchCode: operationId == "request-A" ? "AAAA1111" : "BBBB2222",
+            expiresAt: 2_000_000_000_000
         )
     }
 
@@ -142,9 +177,63 @@ final class ApprovalModelRaceTests: XCTestCase {
         return review
     }
 
+    func testRejectOnlyScopesGenerateNoArtifactAndSendOnlyExplicitRejection() async throws {
+        let digest = "0x" + String(repeating: "a1", count: 32)
+        let scopes: [OwnerPhoneScope] = [
+            .raw(#"{"chainScope":"all"}"#),
+            .signatureRequest(OwnerPhoneSignatureRequestScope(
+                digest: digest,
+                display: #"{"digest":"\#(digest)","kind":"owner-operation"}"#
+            ))
+        ]
+
+        for (index, scope) in scopes.enumerated() {
+            let request = OwnerPhoneRequestProjection.fixture(
+                operationId: "reject-only-\(index)",
+                matchCode: index == 0 ? "AAAA1111" : "BBBB2222",
+                expiresAt: 2_000_000_000_000,
+                scope: scope
+            )
+            let relay = ImmediateDecisionRelay(request)
+            let artifact = CountingArtifact()
+            let model = ApprovalModel(
+                relay: relay,
+                approvalArtifact: { await artifact.generate($0) },
+                now: { 1_800_000_000_000 }
+            )
+
+            await model.open(operationId: request.operationId)
+            await model.approve()
+            let artifactCallsAfterApproval = await artifact.count()
+            let submissionsAfterApproval = await relay.recordedSubmissions()
+            XCTAssertEqual(artifactCallsAfterApproval, 0)
+            XCTAssertEqual(submissionsAfterApproval, [])
+            XCTAssertEqual(displayedReview(model)?.state, .pending)
+
+            await model.reject()
+            let artifactCallsAfterRejection = await artifact.count()
+            let submissionsAfterRejection = await relay.recordedSubmissions()
+            XCTAssertEqual(artifactCallsAfterRejection, 0)
+            XCTAssertEqual(
+                submissionsAfterRejection,
+                [.init(operationId: request.operationId, command: .rejected)]
+            )
+            XCTAssertEqual(
+                displayedReview(model)?.state,
+                .settled(OwnerPhoneDecision(
+                    operationId: request.operationId,
+                    outcome: .rejected,
+                    decidedAt: 1_900_000_000_000,
+                    settlement: .decided,
+                    release: .rejected
+                ))
+            )
+        }
+    }
+
     func testApproveArtifactForAIsDiscardedWhenBReplacesItsReview() async throws {
-        let requestA = try projection("request-A", digest: digestA)
-        let requestB = try projection("request-B", digest: digestB)
+        let requestA = projection("request-A")
+        let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
         let artifact = DeferredArtifact()
         let model = ApprovalModel(
@@ -157,16 +246,12 @@ final class ApprovalModelRaceTests: XCTestCase {
         let staleApproval = Task { await model.approve() }
         await artifact.waitForGeneration()
         await model.open(operationId: requestB.operationId)
-        await artifact.complete(with: "signature-for-\(digestA)")
+        await artifact.complete(with: "artifact-for-request-A")
         await staleApproval.value
 
         let generated = await artifact.recordedProjections()
         let submissions = await relay.recordedSubmissions()
         XCTAssertEqual(generated.map(\.operationId), [requestA.operationId])
-        XCTAssertEqual(generated.compactMap { projection in
-            guard case let .signatureRequest(scope) = projection.scope else { return nil }
-            return scope.digest
-        }, [digestA])
         XCTAssertEqual(submissions, [])
         XCTAssertEqual(displayedReview(model)?.projection, requestB)
         XCTAssertEqual(displayedReview(model)?.state, .pending)
@@ -174,8 +259,8 @@ final class ApprovalModelRaceTests: XCTestCase {
     }
 
     func testACompletedSubmissionCannotOverwriteBReview() async throws {
-        let requestA = try projection("request-A", digest: digestA)
-        let requestB = try projection("request-B", digest: digestB)
+        let requestA = projection("request-A")
+        let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
         let artifact = RecordingArtifact()
         let model = ApprovalModel(
@@ -195,7 +280,7 @@ final class ApprovalModelRaceTests: XCTestCase {
         XCTAssertEqual(submissions, [
             .init(
                 operationId: requestA.operationId,
-                command: .approved(artifact: "signature-for-\(digestA)")
+                command: .approved(artifact: "artifact-for-request-A")
             )
         ])
         XCTAssertEqual(displayedReview(model)?.projection, requestB)
@@ -204,8 +289,8 @@ final class ApprovalModelRaceTests: XCTestCase {
     }
 
     func testAFailedSubmissionCannotSetErrorOrUnresolvedStatusOnB() async throws {
-        let requestA = try projection("request-A", digest: digestA)
-        let requestB = try projection("request-B", digest: digestB)
+        let requestA = projection("request-A")
+        let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
         let artifact = RecordingArtifact()
         let model = ApprovalModel(
@@ -226,8 +311,8 @@ final class ApprovalModelRaceTests: XCTestCase {
         XCTAssertFalse(model.unresolvedNotice)
     }
 
-    func testExplicitBApprovalSignsAndSubmitsOnlyB() async throws {
-        let requestB = try projection("request-B", digest: digestB)
+    func testExplicitBApprovalGeneratesAndSubmitsOnlyB() async throws {
+        let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestB])
         let artifact = RecordingArtifact()
         let model = ApprovalModel(
@@ -246,7 +331,7 @@ final class ApprovalModelRaceTests: XCTestCase {
         XCTAssertEqual(submissions, [
             .init(
                 operationId: requestB.operationId,
-                command: .approved(artifact: "signature-for-\(digestB)")
+                command: .approved(artifact: "artifact-for-request-B")
             )
         ])
         await relay.complete(decision(requestB.operationId))
@@ -255,8 +340,8 @@ final class ApprovalModelRaceTests: XCTestCase {
     }
 
     func testStaleRejectCompletionCannotClearB() async throws {
-        let requestA = try projection("request-A", digest: digestA)
-        let requestB = try projection("request-B", digest: digestB)
+        let requestA = projection("request-A")
+        let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
         let model = ApprovalModel(
             relay: relay,

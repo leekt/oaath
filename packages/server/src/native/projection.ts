@@ -41,15 +41,13 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v2" as const;
 
 /**
- * The versioned scope envelope a client stores to ask the owner's phone for one
- * signature over one 32-byte digest. It rides the existing kind-agnostic
- * authorization routes: `requestedScope` carries this JSON, the phone approves
- * with the signature as the decision artifact, and the one-time code/artifact
- * machinery releases it to the client exactly once. The relay never verifies or
- * interprets the signature; the requesting client's own key profile does.
+ * Legacy versioned scope carrying one caller-supplied 32-byte digest. The
+ * native projection keeps it readable for diagnosis and rejection, but never
+ * treats it as an approvable signing object. A future native signing scope must
+ * instead carry closed inputs that the device can derive and verify.
  */
 export const OAATH_SIGNATURE_REQUEST_SCOPE_VERSION = "oaath.signature-request/v1" as const;
 
@@ -127,14 +125,15 @@ export type OwnerPhoneScopeProjection =
     }>
   | Readonly<{
       kind: "signature-request";
-      decision: "approve-or-reject";
-      /** The exact 32-byte digest the owner's key is asked to sign. */
+      decision: "reject-only";
+      /** The exact caller-supplied 32-byte digest shown for rejection review. */
       digest: `0x${string}`;
       /**
        * The full display JSON as one recursively key-sorted compact canonical
        * string. Ambiguous/noncanonical bytes fail closed to `raw`. The phone
        * renders these exact bytes, including the independently supplied digest,
-       * before the owner decides.
+       * before the owner rejects it. A network-supplied digest is never an
+       * approvable signing object.
        */
       display: string;
     }>
@@ -319,7 +318,7 @@ function projectSignatureRequestScope(parsed: object): OwnerPhoneScopeProjection
   }
   return Object.freeze({
     kind: "signature-request",
-    decision: "approve-or-reject",
+    decision: "reject-only",
     digest: digest as `0x${string}`,
     display,
   });
