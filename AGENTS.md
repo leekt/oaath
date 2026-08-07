@@ -5,6 +5,10 @@ point here but must not redefine them.
 
 ## Non-negotiable principles
 
+- OAAth is a proof of concept until an explicit release-candidate decision.
+  Optimize for learning and proving the core workflow, not production
+  hardening. Defer dedicated threat modeling, security audits, penetration
+  testing, and speculative abuse-case handling to the release review.
 - OAAth never depends on Moesi. Consumers use a released package or an exact
   local tarball, never git dependencies or cross-repository source imports.
 - Kernel/ZeroDev is the opinionated first runtime. Do not build a generic
@@ -32,6 +36,12 @@ point here but must not redefine them.
 - Choose the simplest implementation that fully meets current requirements, and
   prefer established, well-maintained libraries over custom implementations.
 - Keep default APIs focused on the adopter workflow, not speculative failures.
+- Implement the literal requested outcome. Do not add adjacent refactors,
+  abstractions, configurability, extensibility, or future-proofing unless they
+  are required to make that outcome correct now.
+- Stop when the stated outcome and its smallest proof are complete. Record
+  unrelated improvements as deferred work; do not implement or investigate
+  them in the current change.
 
 ## Roles and merge authority
 
@@ -41,12 +51,24 @@ Every non-trivial PR has separate roles:
 - **Independent reviewer:** uses fresh context and is read-only; it must not
   edit, commit, push, or merge the candidate.
 
-The implementer may merge only after an independent reviewer accepts the exact
-current head. Any code or test change invalidates the review. If no independent
-reviewer is available, an explicit repository-owner override is required.
-Use a second read-only reviewer for cryptography, authority, durable state,
-submission or retry safety, release authorization, or destructive lifecycle
-changes.
+The implementer may merge after an independent reviewer accepts the requested
+behavior and its focused proof. Re-review is required only when a later change
+materially affects that behavior, its owning invariant, or the evidence used to
+accept it. Mechanical, documentation-only, and unrelated edits do not
+invalidate acceptance. If no independent reviewer is available, an explicit
+repository-owner override is required.
+A second reviewer is not required for PoC changes. At the release-candidate
+boundary, use a dedicated security review and a second read-only reviewer for
+cryptography, authority, durable state, submission or retry safety, release
+authorization, and destructive lifecycle behavior.
+
+One focused independent review pass is the default. Review only the stated
+outcome, changed lines, directly affected invariants, and evidence needed to
+merge. Do not extend review into style preferences, speculative edge cases,
+unrelated existing code, optional cleanup, future architecture, threat
+modeling, or production hardening. Request another pass only after a material
+change to the accepted behavior or proof, or when the reviewer identifies a
+concrete unresolved blocker.
 
 Allowed verdicts:
 
@@ -55,7 +77,11 @@ ACCEPTED
 CHANGES_REQUIRED
 ```
 
-Non-blocking follow-ups must not expand the current PR.
+Before the release-candidate boundary, `CHANGES_REQUIRED` is reserved for a
+problem that blocks the stated happy path or invalidates its focused proof.
+For every other finding, return `ACCEPTED`, merge first, and file a separate
+issue afterward. Non-blocking follow-ups must not expand or delay the current
+PR, and filing them is not a prerequisite to merge.
 
 ## Start with the invariant owner
 
@@ -128,7 +154,7 @@ Machine decisions use structured codes, statuses, and discriminants, never
 One PR proves one primary outcome or invariant. Split independent browser,
 server, database, native, contract, protocol, release, and UI hypotheses.
 More than 25 non-generated files, 2,000 non-generated added lines, or two major
-trust boundaries requires an exact-head repository-owner exception.
+trust boundaries requires a repository-owner exception.
 
 Stacked PRs remain independent review units. Merge the accepted parent before
 treating it as proven behavior. Do not merge first and review afterward. Do not
@@ -136,7 +162,8 @@ implement a later program stream inside an earlier PR.
 
 ## Tests and evidence
 
-Use the smallest evidence that proves the change:
+Use only the applicable parts of the smallest evidence tier that proves the
+change; the lists below are menus, not mandatory checklists:
 
 - **Tier 1:** focused tests, typecheck/build, lint, generated output, and diff
   checks.
@@ -151,6 +178,10 @@ Protocol claims use the accepted contract path. Cleanup tests fail effects
 independently and together. Persistence tests use independent connections.
 Observation retry submits zero new operations. Property and fuzz tests stay
 pure and local.
+
+Do not run extra tests, audits, reviewers, or exploratory investigations after
+the requested outcome is proved unless a concrete risk in the changed behavior
+requires them. Prefer one focused test command over a broad suite.
 
 A demo runtime, permissive fake, source import, direct storage injection, or
 finalizing before recreation does not prove the claimed path.
@@ -200,6 +231,11 @@ provider loop is a blocker.
 
 ## Security
 
+During the PoC, apply the rules in this section only to behavior directly
+touched by the change. They do not authorize a broader security review or
+hardening work. Perform the comprehensive security review at the explicit
+release-candidate boundary.
+
 Never put private keys, signatures, session material, bearer tokens, approval
 artifacts, credential-bearing URLs, request bodies, or raw provider errors in
 logs, fixtures, diagnostics, PR text, or retained evidence.
@@ -211,9 +247,11 @@ transaction, block, and finality evidence at the owner that claims it.
 
 ## Merge protocol
 
-The implementer may merge when the exact head is independently accepted, no
-blocker remains, Tier 1 and applicable Tier 2 evidence passed, evidence limits
-are accurate, and no unreviewed conflict resolution is introduced.
+The implementer may merge when the stated happy path and focused proof are
+independently accepted, no happy-path blocker remains, applicable Tier 1 and
+Tier 2 evidence passed, evidence limits are accurate, and no later change
+materially alters what was accepted. Non-blocking findings are filed as issues
+after merge and never hold a PoC PR open.
 
 PR bodies stay concise: outcome, invariant owner, state model when applicable,
 smallest change, focused proof, and evidence limits.
