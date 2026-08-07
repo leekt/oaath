@@ -175,6 +175,7 @@ describe("durable provider recreation", () => {
     const port = grantProviderPort(secondGrant);
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "memory-reload",
     });
     expect(retained?.value.operation?.identity.userOperationHash).toBe(exactHash);
@@ -227,6 +228,7 @@ describe("durable provider recreation", () => {
     const port = grantProviderPort(secondGrant);
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "indexeddb-reload",
     });
     expect(retained?.value.operation?.identity.userOperationHash).toBe(exactHash);
@@ -416,7 +418,11 @@ describe("durable ID uniqueness", () => {
     if (rejectedId === undefined) throw new Error("expected one rejected bundle ID");
     const port = grantProviderPort(grant);
     await expect(
-      port.walletCallBundles.get({ providerScopeId: port.providerScopeId, id: rejectedId }),
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id: rejectedId,
+      }),
     ).resolves.toMatchObject({
       value: {
         state: "terminal",
@@ -492,7 +498,7 @@ describe("durable ID uniqueness", () => {
     await connection.close();
   });
 
-  it("keeps historical IDs stable across permanent account rebinding", async () => {
+  it("does not expose historical IDs after permanent account rebinding", async () => {
     const base = createChainFixture();
     let rebound = false;
     let factoryReads = 0;
@@ -515,22 +521,44 @@ describe("durable ID uniqueness", () => {
     rebound = true;
     const readsBeforeStatus = factoryReads;
 
-    await expect(
+    await providerError(
       provider.request({ method: "wallet_getCallsStatus", params: ["stable-account-history"] }),
-    ).resolves.toMatchObject({ status: 200 });
-    expect(factoryReads).toBe(readsBeforeStatus);
+      5730,
+    );
+    expect(factoryReads).toBe(readsBeforeStatus + 1);
     await providerError(
       provider.request({
         method: "wallet_sendCalls",
         params: [bundle(account, "stable-account-history")],
       }),
-      5720,
+      4100,
     );
     await providerError(
       provider.request({ method: "wallet_getCallsStatus", params: ["unknown-after-rebind"] }),
       5730,
     );
-    expect(factoryReads).toBe(readsBeforeStatus);
+    expect(factoryReads).toBe(readsBeforeStatus + 3);
+    expect(chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("validates a foreign sender before revealing an occupied ID", async () => {
+    const chain = createChainFixture();
+    const { connection, provider, account } = await activeProvider({ chain });
+    await provider.request({
+      method: "wallet_sendCalls",
+      params: [bundle(account, "sender-private-id")],
+    });
+    const quotes = chain.quotes;
+
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(OTHER_ACCOUNT, "sender-private-id")],
+      }),
+      4100,
+    );
+    expect(chain.quotes).toBe(quotes);
     expect(chain.sends).toHaveLength(1);
     await connection.close();
   });
@@ -568,7 +596,7 @@ describe("durable ID uniqueness", () => {
     await connection.close();
   });
 
-  it("allows the same ID across bindings but not across Grants or accounts in one scope", async () => {
+  it("isolates the same ID by provider binding and sender account", async () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
     const relay = createRelay(clock);
@@ -623,16 +651,21 @@ describe("durable ID uniqueness", () => {
         params: [bundle(accounts[1] ?? ACCOUNT, "isolated-id")],
       }),
     ).resolves.toEqual({ id: "isolated-id" });
-    await providerError(
+    await expect(
       otherAccountProvider.request({
         method: "wallet_sendCalls",
         params: [bundle(accounts[2] ?? OTHER_ACCOUNT, "isolated-id")],
       }),
-      5720,
-    );
+    ).resolves.toEqual({ id: "isolated-id" });
+    await expect(
+      otherAccountProvider.request({
+        method: "wallet_getCallsStatus",
+        params: ["isolated-id"],
+      }),
+    ).resolves.toMatchObject({ id: "isolated-id", status: 200 });
     expect(firstChain.sends).toHaveLength(1);
     expect(otherBindingChain.sends).toHaveLength(1);
-    expect(otherAccountChain.sends).toHaveLength(0);
+    expect(otherAccountChain.sends).toHaveLength(1);
     for (const connection of connections) await connection.close();
   });
 
@@ -1266,6 +1299,7 @@ describe("terminal retention and exact history", () => {
     const port = grantProviderPort(grant);
     const firstRecord = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "pointer-reuse",
     });
     if (firstRecord === undefined) throw new Error("expected the first bundle record");
@@ -1282,6 +1316,7 @@ describe("terminal retention and exact history", () => {
     );
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "pointer-reuse",
     });
     expect(retained?.value.generation).toBe(firstRecord.value.generation);

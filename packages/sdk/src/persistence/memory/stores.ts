@@ -67,7 +67,7 @@ function operationArchiveKey(
 
 function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
   const key = parseWalletCallBundleKey(input);
-  return JSON.stringify([key.providerScopeId, key.id]);
+  return JSON.stringify([key.providerScopeId, key.account, key.id]);
 }
 
 function compareAndSwap(
