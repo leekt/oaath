@@ -17,6 +17,7 @@ import type {
   WalletCallBundleStoreRecord,
 } from "../persistence/interfaces.js";
 import { WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS } from "./bundle-store.js";
+import { advertiseWalletCapabilities, applyWalletCapabilities } from "./capabilities.js";
 import {
   captureWalletCallsStatusParams,
   captureWalletGetCapabilitiesParams,
@@ -256,6 +257,13 @@ export function createEip5792Orchestrator(
 
   async function sendCalls(params: unknown): Promise<Readonly<{ id: string }>> {
     const captured = captureWalletSendCallsParams(params, input.chain);
+    const capabilityEffect = applyWalletCapabilities({
+      atomic: Object.freeze({ atomicRequired: captured.atomicRequired }),
+      calls: captured.calls,
+      chainId: input.chain,
+      atomicExecution: true,
+    });
+    if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
     if (captured.id !== undefined && (await store.get(key(captured.id))) !== undefined) {
       return rpcFail(DUPLICATE_ID);
     }
@@ -271,7 +279,7 @@ export function createEip5792Orchestrator(
 
     try {
       const calls = Object.freeze(
-        captured.calls.map((call) =>
+        capabilityEffect.calls.map((call) =>
           Object.freeze({
             target: call.to,
             value: BigInt(call.value ?? "0x0").toString(10),
@@ -559,9 +567,7 @@ export function createEip5792Orchestrator(
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);
     if (requested.includes(chainId)) {
-      result[chainId] = Object.freeze({
-        atomic: Object.freeze({ status: "supported" as const }),
-      });
+      result[chainId] = advertiseWalletCapabilities({ atomicExecution: true });
     }
     return Object.freeze(result);
   }

@@ -15,6 +15,11 @@ import {
 } from "@oaath/protocol";
 import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
 import {
+  captureAtomicCapability,
+  isHandledWalletCapability,
+  type WalletCapabilityScope,
+} from "./capabilities.js";
+import {
   INTERNAL_ERROR,
   invalidProviderParams,
   refuseProviderExecution,
@@ -455,6 +460,7 @@ function jsonByteLength(value: CapturedJsonValue): number {
 
 function captureCapabilities(
   value: unknown,
+  scope: WalletCapabilityScope,
   context: CaptureContext,
   budget: CaptureBudget,
 ): CapturedWalletCapabilities {
@@ -482,8 +488,10 @@ function captureCapabilities(
       return invalidProviderParams();
     }
     values[name] = capability;
-    ignored.push(name);
-    if (optional !== true) budget.hasUnsupportedRequiredCapability = true;
+    if (!isHandledWalletCapability(name, scope)) {
+      ignored.push(name);
+      if (optional !== true) budget.hasUnsupportedRequiredCapability = true;
+    }
   }
 
   const capturedValues = Object.freeze(values);
@@ -548,7 +556,7 @@ function captureCall(
   }
 
   const capabilities = Object.hasOwn(record, "capabilities")
-    ? captureCapabilities(record.capabilities, context, budget)
+    ? captureCapabilities(record.capabilities, "call", context, budget)
     : undefined;
 
   const wire: Record<string, CapturedJsonValue> = Object.create(null);
@@ -621,8 +629,8 @@ export function captureWalletSendCallsParams(
   if (!isCanonicalChainId(bundle.chainId)) return invalidProviderParams();
   const chainId = bundle.chainId;
   if (chainId !== expectedChainId) return rpcFail(5710);
-  if (typeof bundle.atomicRequired !== "boolean") return invalidProviderParams();
-  const atomicRequired = bundle.atomicRequired;
+  const atomic = captureAtomicCapability(bundle.atomicRequired);
+  const atomicRequired = atomic.atomicRequired;
 
   const budget: CaptureBudget = {
     calldataBytes: 0,
@@ -646,7 +654,7 @@ export function captureWalletSendCallsParams(
     wireCalls.push(draft.wire);
   }
   const capabilities = Object.hasOwn(bundle, "capabilities")
-    ? captureCapabilities(bundle.capabilities, context, budget)
+    ? captureCapabilities(bundle.capabilities, "bundle", context, budget)
     : undefined;
 
   const wire: Record<string, CapturedJsonValue> = Object.create(null);
