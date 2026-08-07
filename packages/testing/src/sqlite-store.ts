@@ -182,6 +182,20 @@ function decode(value: string): unknown {
   }
 }
 
+function operationLaneId(grantId: string): string {
+  return encode(["lane", grantId]);
+}
+
+function operationArchiveId(grantId: string, userOperationHash: string): string {
+  if (!/^0x[0-9a-f]{64}$/u.test(userOperationHash)) {
+    throw new OaathStoreError(
+      "store_input_invalid",
+      "SQLite UserOperation hash must be a lowercase 32-byte hash",
+    );
+  }
+  return encode(["archive", grantId, userOperationHash]);
+}
+
 function envelope(row: StoredRow | undefined): Readonly<StoreRecord<unknown>> | undefined {
   if (!row) return undefined;
   return Object.freeze({
@@ -261,32 +275,113 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
   `);
     const adapter: OperationStoreAdapter = {
       async get(key) {
-        return envelope(get.get(key.grantId, key.chainId, key.kind) as StoredRow | undefined);
+        return envelope(
+          get.get(operationLaneId(key.grantId), key.chainId, key.kind) as StoredRow | undefined,
+        );
       },
-      async compareAndSwap({ key, expectedStoreRevision, next }) {
+      async getArchived({ key, userOperationHash }) {
+        return envelope(
+          get.get(operationArchiveId(key.grantId, userOperationHash), key.chainId, key.kind) as
+            | StoredRow
+            | undefined,
+        );
+      },
+      async compareAndSwap({
+        key,
+        expectedStoreRevision,
+        next,
+        expectedArchiveAbsentUserOperationHash,
+        archive,
+      }) {
+        const laneId = operationLaneId(key.grantId);
+        const expectedAbsentArchiveId = operationArchiveId(
+          key.grantId,
+          expectedArchiveAbsentUserOperationHash,
+        );
         const payload = encode(next.value);
-        const result =
-          expectedStoreRevision === null
-            ? insert.run(
-                key.grantId,
-                key.chainId,
-                key.kind,
-                next.version,
-                next.storeRevision,
-                next.updatedAt,
-                payload,
-              )
-            : update.run(
-                next.version,
-                next.storeRevision,
-                next.updatedAt,
-                payload,
-                key.grantId,
-                key.chainId,
-                key.kind,
-                expectedStoreRevision,
-              );
-        return Number(result.changes) === 1;
+        database.exec("BEGIN IMMEDIATE");
+        let transactionOpen = true;
+        try {
+          const current = envelope(get.get(laneId, key.chainId, key.kind) as StoredRow | undefined);
+          if (
+            expectedStoreRevision === null
+              ? current !== undefined
+              : current?.storeRevision !== expectedStoreRevision
+          ) {
+            database.exec("ROLLBACK");
+            transactionOpen = false;
+            return false;
+          }
+          if (get.get(expectedAbsentArchiveId, key.chainId, key.kind) !== undefined) {
+            database.exec("ROLLBACK");
+            transactionOpen = false;
+            return false;
+          }
+          if (archive !== null) {
+            if (archive.userOperationHash === expectedArchiveAbsentUserOperationHash) {
+              database.exec("ROLLBACK");
+              transactionOpen = false;
+              return false;
+            }
+            if (current === undefined || encode(current) !== encode(archive.record)) {
+              database.exec("ROLLBACK");
+              transactionOpen = false;
+              return false;
+            }
+            const archived = insert.run(
+              operationArchiveId(key.grantId, archive.userOperationHash),
+              key.chainId,
+              key.kind,
+              archive.record.version,
+              archive.record.storeRevision,
+              archive.record.updatedAt,
+              encode(archive.record.value),
+            );
+            if (Number(archived.changes) !== 1) {
+              database.exec("ROLLBACK");
+              transactionOpen = false;
+              return false;
+            }
+          }
+          const result =
+            expectedStoreRevision === null
+              ? insert.run(
+                  laneId,
+                  key.chainId,
+                  key.kind,
+                  next.version,
+                  next.storeRevision,
+                  next.updatedAt,
+                  payload,
+                )
+              : update.run(
+                  next.version,
+                  next.storeRevision,
+                  next.updatedAt,
+                  payload,
+                  laneId,
+                  key.chainId,
+                  key.kind,
+                  expectedStoreRevision,
+                );
+          if (Number(result.changes) !== 1) {
+            database.exec("ROLLBACK");
+            transactionOpen = false;
+            return false;
+          }
+          database.exec("COMMIT");
+          transactionOpen = false;
+          return true;
+        } catch (error) {
+          if (transactionOpen) {
+            try {
+              database.exec("ROLLBACK");
+            } catch {
+              // Cleanup is secondary to the canonical transaction failure.
+            }
+          }
+          throw error;
+        }
       },
       async close() {
         database.close();

@@ -13,7 +13,7 @@ import {
   type Operation,
   type OperationIdentity,
 } from "@oaath/protocol";
-import { type GrantStore, OaathStoreError, type OperationStore } from "@oaath/sdk/advanced";
+import { OaathStoreError, type OperationStore } from "@oaath/sdk/advanced";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteGrantStore, createSqliteOperationStore } from "../src/index.js";
 
@@ -87,7 +87,11 @@ function rejectedGrant(): Grant {
   });
 }
 
-function operationIdentity(chainId: number, seed: string): OperationIdentity {
+function operationIdentity(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): OperationIdentity {
   return {
     kind: "execution",
     grantId: grantIdentity.grantId,
@@ -96,11 +100,59 @@ function operationIdentity(chainId: number, seed: string): OperationIdentity {
     account: `0x${"22".repeat(20)}`,
     nonce: seed,
     userOperationHash: `0x${seed.repeat(64)}`,
+    requestHash,
   };
 }
 
-function preparedOperation(chainId: number, seed: string): Operation {
-  return createOperation({ identity: operationIdentity(chainId, seed), preparedAt: 10 });
+function preparedOperation(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): Operation {
+  return createOperation({
+    identity: operationIdentity(chainId, seed, requestHash),
+    preparedAt: 10,
+  });
+}
+
+function finalizedOperation(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): Operation {
+  const identity = operationIdentity(chainId, seed, requestHash);
+  let operation = preparedOperation(chainId, seed, requestHash);
+  operation = advanceOperation(operation, {
+    type: "mark_submission_attempted",
+    identity,
+    attemptedAt: 11,
+  });
+  operation = advanceOperation(operation, {
+    type: "mark_submitted",
+    identity,
+    returnedUserOperationHash: identity.userOperationHash,
+    submittedAt: 12,
+  });
+  operation = applyVerifiedOperationObservation(operation, {
+    type: "record_included",
+    identity,
+    inclusion: {
+      transactionHash: `0x${"44".repeat(32)}`,
+      blockNumber: "20",
+      blockHash: `0x${"55".repeat(32)}`,
+      outcome: "success",
+      observedAt: 13,
+    },
+  });
+  return applyVerifiedOperationObservation(operation, {
+    type: "record_finalized",
+    identity,
+    finality: {
+      blockNumber: "25",
+      blockHash: `0x${"66".repeat(32)}`,
+      observedAt: 14,
+    },
+  });
 }
 
 function operationStoreKey(grantId: string, chainId: number) {
@@ -216,7 +268,7 @@ describe("test-only durable SQLite stores", () => {
       "store_lane_occupied",
     );
     const winner = sameLane.find((result) => result.status === "committed");
-    if (!winner || winner.status !== "committed") throw new Error("Expected one lane winner");
+    if (winner?.status !== "committed") throw new Error("Expected one lane winner");
     expect((await left.get(operationStoreKey(grantIdentity.grantId, 1)))?.value).toEqual(
       winner.record.value,
     );
@@ -287,21 +339,148 @@ describe("test-only durable SQLite stores", () => {
     const secondRevision = await commitOperation(store, second, storeRevision);
     expect(secondRevision).toBe(5);
     expect(second.revision).toBe(0);
-
-    const stale = await store.compareAndSwap({
-      key: operationStoreKey(grantIdentity.grantId, identity.chainId),
-      expectedStoreRevision: storeRevision,
-      next: first,
+    await expect(
+      store.getExact(
+        operationStoreKey(grantIdentity.grantId, identity.chainId),
+        identity.userOperationHash,
+      ),
+    ).resolves.toMatchObject({
+      storeRevision,
+      value: first,
     });
-    expect(stale).toMatchObject({
-      status: "conflict",
-      current: {
-        storeRevision: 5,
-        value: { identity: { userOperationHash: second.identity.userOperationHash } },
-      },
+
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: operationStoreKey(grantIdentity.grantId, identity.chainId),
+          expectedStoreRevision: storeRevision,
+          next: first,
+        }),
+      "store_identity_mismatch",
+    );
+    await expect(
+      store.get(operationStoreKey(grantIdentity.grantId, identity.chainId)),
+    ).resolves.toMatchObject({
+      storeRevision: 5,
+      value: { identity: { userOperationHash: second.identity.userOperationHash } },
     });
 
     await store.close();
+    const restored = createSqliteOperationStore(filePath);
+    await expect(
+      restored.getExact(
+        operationStoreKey(grantIdentity.grantId, identity.chainId),
+        identity.userOperationHash,
+      ),
+    ).resolves.toMatchObject({ storeRevision, value: first });
+    await expect(
+      restored.get(operationStoreKey(grantIdentity.grantId, identity.chainId)),
+    ).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await restored.close();
+  });
+
+  it("atomically rejects archived hash reuse without changing SQLite history", async () => {
+    const filePath = await databasePath();
+    const key = operationStoreKey(grantIdentity.grantId, 31_337);
+    const firstRequestHash = `0x${"aa".repeat(32)}` as const;
+    const secondRequestHash = `0x${"bb".repeat(32)}` as const;
+    const thirdRequestHash = `0x${"cc".repeat(32)}` as const;
+    const first = finalizedOperation(31_337, "6", firstRequestHash);
+    const second = finalizedOperation(31_337, "7", secondRequestHash);
+    const thirdIdentity = operationIdentity(31_337, "6", thirdRequestHash);
+    const third = advanceOperation(preparedOperation(31_337, "6", thirdRequestHash), {
+      type: "mark_submission_attempted",
+      identity: thirdIdentity,
+      attemptedAt: 11,
+    });
+    const store = createSqliteOperationStore(filePath);
+    const firstRevision = await commitOperation(store, first, null);
+    const secondRevision = await commitOperation(store, second, firstRevision);
+
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key,
+          expectedStoreRevision: secondRevision,
+          next: third,
+        }),
+      "store_identity_mismatch",
+    );
+    await expect(store.get(key)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await expect(store.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: firstRevision,
+      value: first,
+    });
+    await expect(store.getExact(key, second.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+
+    await store.close();
+    const restored = createSqliteOperationStore(filePath);
+    await expect(restored.get(key)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await expect(restored.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: firstRevision,
+      value: first,
+    });
+    await expect(restored.getExact(key, second.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await restored.close();
+  });
+
+  it("atomically archives one terminal identity under concurrent replacement", async () => {
+    const filePath = await databasePath();
+    const seed = createSqliteOperationStore(filePath);
+    const key = operationStoreKey(grantIdentity.grantId, 31_337);
+    const first = finalizedOperation(31_337, "6");
+    await commitOperation(seed, first, null);
+    await seed.close();
+
+    const left = createSqliteOperationStore(filePath);
+    const right = createSqliteOperationStore(filePath);
+    const candidates = [preparedOperation(31_337, "7"), preparedOperation(31_337, "8")] as const;
+    const results = await Promise.all([
+      left.compareAndSwap({ key, expectedStoreRevision: 0, next: candidates[0] }),
+      right.compareAndSwap({ key, expectedStoreRevision: 0, next: candidates[1] }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(["committed", "conflict"]);
+    const committedIndex = results.findIndex((result) => result.status === "committed");
+    const winner = candidates[committedIndex];
+    const loser = candidates[committedIndex === 0 ? 1 : 0];
+    if (!winner || !loser) throw new Error("expected one replacement winner");
+
+    await expect(left.get(key)).resolves.toMatchObject({
+      storeRevision: 1,
+      value: { identity: winner.identity },
+    });
+    await expect(left.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: 0,
+      value: first,
+    });
+    await expect(left.getExact(key, loser.identity.userOperationHash)).resolves.toBeUndefined();
+
+    await Promise.all([left.close(), right.close()]);
+    const restored = createSqliteOperationStore(filePath);
+    await expect(restored.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: 0,
+      value: first,
+    });
+    await expect(restored.get(key)).resolves.toMatchObject({
+      storeRevision: 1,
+      value: { identity: winner.identity },
+    });
+    await restored.close();
   });
 
   it("survives complete instance recreation", async () => {

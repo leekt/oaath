@@ -11,10 +11,11 @@ import {
 } from "@oaath/protocol";
 
 export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v1" as const;
-export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v1" as const;
+export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v2" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
+const HASH = /^0x[0-9a-f]{64}$/u;
 
 export type StoreErrorCode =
   | "store_input_invalid"
@@ -75,12 +76,24 @@ export interface OperationStoreKey {
   readonly kind: OperationKind;
 }
 
+export interface OperationStoreArchive {
+  readonly userOperationHash: `0x${string}`;
+  readonly record: Readonly<StoreRecord<unknown>>;
+}
+
 export interface OperationStoreAdapter {
   get(key: Readonly<OperationStoreKey>): Promise<unknown>;
+  getArchived(input: {
+    readonly key: Readonly<OperationStoreKey>;
+    readonly userOperationHash: `0x${string}`;
+  }): Promise<unknown>;
   compareAndSwap(input: {
     readonly key: Readonly<OperationStoreKey>;
     readonly expectedStoreRevision: number | null;
     readonly next: Readonly<StoreRecord<unknown>>;
+    /** Must remain absent from this lane's archive for the whole atomic write. */
+    readonly expectedArchiveAbsentUserOperationHash: `0x${string}`;
+    readonly archive: Readonly<OperationStoreArchive> | null;
   }): Promise<unknown>;
   close(): Promise<unknown>;
 }
@@ -93,13 +106,19 @@ export type OperationStoreCompareAndSwapResult =
   | Readonly<{ status: "committed"; record: OperationStoreRecord }>
   | Readonly<{ status: "conflict"; current?: OperationStoreRecord }>;
 
-type AdapterCapabilities<Key> = Readonly<{
+type AdapterCapabilities<Value, Key, Version extends string> = Readonly<{
   get: (key: Key) => Promise<unknown>;
   compareAndSwap: (
     key: Key,
     expectedStoreRevision: number | null,
-    next: Readonly<StoreRecord<unknown>>,
+    next: Readonly<StoreRecord<Value, Version>>,
+    current: Readonly<StoreRecord<Value, Version>> | undefined,
   ) => Promise<unknown>;
+  verifyCommitted?: (
+    key: Key,
+    current: Readonly<StoreRecord<Value, Version>> | undefined,
+    next: Readonly<StoreRecord<Value, Version>>,
+  ) => Promise<void>;
   close: () => Promise<unknown>;
 }>;
 
@@ -140,17 +159,20 @@ function captureAdapter(
   kind: "Grant" | "Operation",
 ): {
   readonly get: (...arguments_: readonly unknown[]) => Promise<unknown>;
+  readonly getArchived?: (...arguments_: readonly unknown[]) => Promise<unknown>;
   readonly compareAndSwap: (...arguments_: readonly unknown[]) => Promise<unknown>;
   readonly close: (...arguments_: readonly unknown[]) => Promise<unknown>;
 } {
-  const record = exactRecord(
-    value,
-    ["get", "compareAndSwap", "close"],
-    `${kind} store adapter`,
-    "store_input_invalid",
-  );
+  const keys =
+    kind === "Operation"
+      ? ["get", "getArchived", "compareAndSwap", "close"]
+      : ["get", "compareAndSwap", "close"];
+  const record = exactRecord(value, keys, `${kind} store adapter`, "store_input_invalid");
   return Object.freeze({
     get: capability(record.get, `${kind} store get`),
+    ...(kind === "Operation"
+      ? { getArchived: capability(record.getArchived, "Operation store getArchived") }
+      : {}),
     compareAndSwap: capability(record.compareAndSwap, `${kind} store compareAndSwap`),
     close: capability(record.close, `${kind} store close`),
   });
@@ -180,6 +202,16 @@ function canonicalOperationKind(value: unknown): OperationKind {
     return invalid("store_input_invalid", "store kind must be execution or revocation");
   }
   return value;
+}
+
+function canonicalUserOperationHash(value: unknown): `0x${string}` {
+  if (typeof value !== "string" || !HASH.test(value)) {
+    return invalid(
+      "store_input_invalid",
+      "store UserOperation hash must be a lowercase 32-byte hash",
+    );
+  }
+  return value as `0x${string}`;
 }
 
 function parseOperationKey(value: unknown): Readonly<OperationStoreKey> {
@@ -266,14 +298,21 @@ function sameStoreRecord<Value>(
 }
 
 class AggregateStore<Value, Key, Version extends string> {
-  readonly #adapter: AdapterCapabilities<Key>;
+  readonly #adapter: AdapterCapabilities<Value, Key, Version>;
   readonly #access: AggregateAccess<Value, Key, Version>;
   #closed = false;
   #closing: Promise<void> | undefined;
 
-  constructor(adapter: AdapterCapabilities<Key>, access: AggregateAccess<Value, Key, Version>) {
+  constructor(
+    adapter: AdapterCapabilities<Value, Key, Version>,
+    access: AggregateAccess<Value, Key, Version>,
+  ) {
     this.#adapter = adapter;
     this.#access = access;
+  }
+
+  assertOpen(): void {
+    this.#assertOpen();
   }
 
   async get(key: Key): Promise<Readonly<StoreRecord<Value, Version>> | undefined> {
@@ -313,7 +352,7 @@ class AggregateStore<Value, Key, Version extends string> {
     });
     let swapped: unknown;
     try {
-      swapped = await this.#adapter.compareAndSwap(key, expectedStoreRevision, next);
+      swapped = await this.#adapter.compareAndSwap(key, expectedStoreRevision, next, current);
     } catch {
       return invalid(
         "store_commit_indeterminate",
@@ -335,6 +374,11 @@ class AggregateStore<Value, Key, Version extends string> {
     }
     if (swapped) {
       if (retained && sameStoreRecord(retained, next)) {
+        try {
+          await this.#adapter.verifyCommitted?.(key, current, next);
+        } catch {
+          return invalid("store_commit_unverified", "store commit evidence could not be verified");
+        }
         return Object.freeze({ status: "committed", record: retained });
       }
       return invalid("store_commit_unverified", "store did not retain the committed record");
@@ -365,6 +409,11 @@ class AggregateStore<Value, Key, Version extends string> {
     } finally {
       if (!this.#closed) this.#closing = undefined;
     }
+  }
+
+  parse(raw: unknown, key: Key): Readonly<StoreRecord<Value, Version>> | undefined {
+    this.#assertOpen();
+    return this.#parseRead(raw, key);
   }
 
   #parseRead(raw: unknown, key: Key): Readonly<StoreRecord<Value, Version>> | undefined {
@@ -470,14 +519,62 @@ export class OperationStore {
     Readonly<OperationStoreKey>,
     typeof OAATH_OPERATION_STORE_RECORD_VERSION
   >;
+  readonly #getArchived: (
+    input: Readonly<{
+      key: Readonly<OperationStoreKey>;
+      userOperationHash: `0x${string}`;
+    }>,
+  ) => Promise<unknown>;
 
   constructor(adapter: unknown) {
     const captured = captureAdapter(adapter, "Operation");
-    this.#store = new AggregateStore(
+    const getArchived = captured.getArchived;
+    if (!getArchived) invalid("store_input_invalid", "Operation store getArchived is unavailable");
+    let store: AggregateStore<
+      Operation,
+      Readonly<OperationStoreKey>,
+      typeof OAATH_OPERATION_STORE_RECORD_VERSION
+    >;
+    const archiveFor = (
+      current: OperationStoreRecord | undefined,
+      next: OperationStoreRecord,
+    ): Readonly<OperationStoreArchive> | null => {
+      if (current === undefined || sameOperationIdentity(current.value, next.value)) return null;
+      return Object.freeze({
+        userOperationHash: current.value.identity.userOperationHash,
+        record: current,
+      });
+    };
+    store = new AggregateStore(
       {
         get: (key) => captured.get(key),
-        compareAndSwap: (key, expectedStoreRevision, next) =>
-          captured.compareAndSwap(Object.freeze({ key, expectedStoreRevision, next })),
+        compareAndSwap: (key, expectedStoreRevision, next, current) =>
+          captured.compareAndSwap(
+            Object.freeze({
+              key,
+              expectedStoreRevision,
+              next,
+              expectedArchiveAbsentUserOperationHash: next.value.identity.userOperationHash,
+              archive: archiveFor(current, next),
+            }),
+          ),
+        verifyCommitted: async (key, current, next) => {
+          const archive = archiveFor(current, next);
+          if (archive === null) return;
+          const raw = await getArchived(
+            Object.freeze({ key, userOperationHash: archive.userOperationHash }),
+          );
+          const retained = store.parse(raw, key);
+          if (
+            current === undefined ||
+            retained === undefined ||
+            !sameStoreRecord(retained, current) ||
+            retained.value.identity.userOperationHash !== archive.userOperationHash ||
+            operationOccupiesLane(retained.value)
+          ) {
+            throw new Error("Operation archive does not retain the exact terminal record");
+          }
+        },
         close: () => captured.close(),
       },
       {
@@ -491,6 +588,16 @@ export class OperationStore {
         validateNext: (current, next) => {
           if (
             current !== undefined &&
+            current.identity.userOperationHash === next.identity.userOperationHash &&
+            !sameOperationIdentity(current, next)
+          ) {
+            invalid(
+              "store_identity_mismatch",
+              "same UserOperation hash cannot change Operation identity or request provenance",
+            );
+          }
+          if (
+            current !== undefined &&
             !sameOperationIdentity(current, next) &&
             operationOccupiesLane(current)
           ) {
@@ -499,13 +606,68 @@ export class OperationStore {
         },
       },
     );
+    this.#store = store;
+    this.#getArchived = (input) => getArchived(input);
   }
 
   get(key: unknown): Promise<OperationStoreRecord | undefined> {
     return this.#store.get(parseOperationKey(key));
   }
 
-  compareAndSwap(value: unknown): Promise<OperationStoreCompareAndSwapResult> {
+  async #readArchived(
+    key: Readonly<OperationStoreKey>,
+    expectedUserOperationHash: `0x${string}`,
+  ): Promise<OperationStoreRecord | undefined> {
+    this.#store.assertOpen();
+    let raw: unknown;
+    try {
+      raw = await this.#getArchived(
+        Object.freeze({ key, userOperationHash: expectedUserOperationHash }),
+      );
+    } catch {
+      return invalid("store_unavailable", "Operation archive read is unavailable");
+    }
+    const archived = this.#store.parse(raw, key);
+    if (archived === undefined) return undefined;
+    if (archived.value.identity.userOperationHash !== expectedUserOperationHash) {
+      return invalid("store_identity_mismatch", "archived Operation has another identity");
+    }
+    if (operationOccupiesLane(archived.value)) {
+      return invalid("store_record_invalid", "archived Operation is not terminal");
+    }
+    return archived;
+  }
+
+  async getExact(
+    keyValue: unknown,
+    expectedUserOperationHashValue: unknown,
+  ): Promise<OperationStoreRecord | undefined> {
+    const key = parseOperationKey(keyValue);
+    const expectedUserOperationHash = canonicalUserOperationHash(expectedUserOperationHashValue);
+    const current = await this.#store.get(key);
+    const archived = await this.#readArchived(key, expectedUserOperationHash);
+    if (
+      archived !== undefined &&
+      (current === undefined || archived.storeRevision >= current.storeRevision)
+    ) {
+      return invalid(
+        "store_record_invalid",
+        "archived Operation is not older than a retained current lane record",
+      );
+    }
+    if (current?.value.identity.userOperationHash === expectedUserOperationHash) {
+      if (archived !== undefined) {
+        return invalid(
+          "store_identity_mismatch",
+          "UserOperation hash exists as both current and archived history",
+        );
+      }
+      return current;
+    }
+    return archived;
+  }
+
+  async compareAndSwap(value: unknown): Promise<OperationStoreCompareAndSwapResult> {
     const context: CaptureContext = new WeakSet();
     const record = exactRecord(
       value,
@@ -528,6 +690,12 @@ export class OperationStore {
       next.identity.kind !== key.kind
     ) {
       return invalid("store_key_mismatch", "next Operation belongs to another key");
+    }
+    if ((await this.#readArchived(key, next.identity.userOperationHash)) !== undefined) {
+      return invalid(
+        "store_identity_mismatch",
+        "UserOperation hash already belongs to archived Operation history",
+      );
     }
     return this.#store.compareAndSwap(key, expected, next);
   }

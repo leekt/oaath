@@ -176,10 +176,12 @@ export {
   exactRecord,
 } from "./internal/exact-record.js";
 export type {
+  AbandonedOperation,
   DroppedOperation,
   FinalizedOperation,
   IncludedOperation,
   Operation,
+  OperationAbandonment,
   OperationDropEvidence,
   OperationErrorCode,
   OperationFinality,
@@ -204,6 +206,7 @@ export {
   OaathOperationError,
   operationOccupiesLane,
   parseOperation,
+  parseOperationIdentity,
 } from "./operation.js";
 export type {
   ApplyPermissionDecisionInput,

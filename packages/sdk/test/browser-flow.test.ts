@@ -10,7 +10,10 @@ import {
   CALL_DATA,
   CHAIN_ID,
   createChainFixture,
+  createClock,
+  createMemoryStores,
   createRealm,
+  createRelay,
   operatorCredential,
   permissionInput,
   sendCallsInput,
@@ -18,6 +21,102 @@ import {
 } from "./support/browser.js";
 
 describe("browser golden path", () => {
+  it("drains a permission handle created while its Connection closes", async () => {
+    const clock = createClock();
+    const relay = createRelay(clock);
+    let enterClaim!: () => void;
+    let releaseClaim!: () => void;
+    const claimEntered = new Promise<void>((resolve) => {
+      enterClaim = resolve;
+    });
+    const claimReleased = new Promise<void>((resolve) => {
+      releaseClaim = resolve;
+    });
+    const realm = createRealm({
+      clock,
+      relay: async (request) => {
+        const response = await relay(request);
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/claim")) {
+          enterClaim();
+          await claimReleased;
+        }
+        return response;
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const requesting = connection.requestPermission(permissionInput());
+    await claimEntered;
+    let closeSettled = false;
+    const closing = connection.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+
+    releaseClaim();
+    const grant = await requesting;
+    await closing;
+    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_closed",
+    });
+
+    // Closing one Connection does not destroy realm-owned stores for a sibling.
+    const sibling = await realm.oaath.connect();
+    await expect(sibling.resume()).resolves.not.toBeNull();
+    await realm.oaath.close();
+  });
+
+  it("drains a resumed Grant handle created while its Connection closes", async () => {
+    const memory = createMemoryStores();
+    let gateRead = false;
+    let readBlocked = false;
+    let enterRead!: () => void;
+    let releaseRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enterRead = resolve;
+    });
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const realm = createRealm({
+      stores: {
+        ...memory,
+        context: {
+          read: async (bindingId: Parameters<typeof memory.context.read>[0]) => {
+            const value = await memory.context.read(bindingId);
+            if (gateRead && !readBlocked) {
+              readBlocked = true;
+              enterRead();
+              await readReleased;
+            }
+            return value;
+          },
+          write: (value: Parameters<typeof memory.context.write>[0]) => memory.context.write(value),
+          clear: (bindingId: Parameters<typeof memory.context.clear>[0]) =>
+            memory.context.clear(bindingId),
+          close: () => memory.context.close(),
+        },
+      },
+    });
+    const creator = await realm.oaath.connect();
+    await creator.requestPermission(permissionInput());
+    await creator.close();
+
+    const connection = await realm.oaath.connect();
+    gateRead = true;
+    const resuming = connection.resume();
+    await readEntered;
+    const closing = connection.close();
+    releaseRead();
+    const resumed = await resuming;
+    if (resumed === null) throw new Error("expected the Grant to resume");
+    await closing;
+    await expect(resumed.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_closed",
+    });
+    await realm.oaath.close();
+  });
+
   it("connects, requests permission, sends calls, finalizes, and revokes", async () => {
     const realm = createRealm();
     const connection = await realm.oaath.connect();
@@ -164,12 +263,13 @@ describe("browser golden path", () => {
   });
 
   it("frees a starved lane once the nonce provably advanced, without resubmitting", async () => {
-    // The receipt for the first operation never becomes readable, but the
+    // After permission installation, one standard operation's receipt never
+    // becomes readable, but the
     // chain's EntryPoint nonce for the session's own key reads past its
     // sequence: that identity can never be included at its nonce, so the lane
     // reopens. The stuck operation stays `superseded` — never falsified into
     // dropped, never resubmitted — and the next operation proceeds.
-    let withhold = true;
+    let withhold = false;
     const realm = createRealm({
       chain: createChainFixture({
         withholdReceipt: () => withhold,
@@ -179,20 +279,24 @@ describe("browser golden path", () => {
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
 
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+    withhold = true;
+
     const stuck = await grant.sendCalls(sendCallsInput());
     const outcome = await stuck.wait();
     expect(outcome.status).toBe("superseded");
     expect(outcome.transactionHash).toBeNull();
-    expect(realm.chain.sends).toHaveLength(1);
+    expect(realm.chain.sends).toHaveLength(2);
 
     // The lane is free: the next operation starts, submits its own identity,
     // and finalizes; the superseded one was never sent again.
     withhold = false;
     const next = await grant.sendCalls(sendCallsInput());
     expect((await next.wait()).status).toBe("finalized");
-    expect(realm.chain.sends).toHaveLength(2);
-    expect(realm.chain.sends[1]?.userOperationHash).not.toBe(
-      realm.chain.sends[0]?.userOperationHash,
+    expect(realm.chain.sends).toHaveLength(3);
+    expect(realm.chain.sends[2]?.userOperationHash).not.toBe(
+      realm.chain.sends[1]?.userOperationHash,
     );
     // The superseded outcome stands on its handle; the durable journal keeps
     // one record per lane, now owned by the replacing operation.

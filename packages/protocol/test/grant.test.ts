@@ -86,6 +86,10 @@ function binding(chainId: number): {
   };
 }
 
+function operationId(chainId: number): `0x${string}` {
+  return `0x${chainId.toString(16).padStart(64, "0")}`;
+}
+
 function present(chainId: number, blockNumber: number, observedAt: number) {
   return {
     kind: "permission_present" as const,
@@ -110,12 +114,25 @@ function activeChildren(): Record<string, unknown>[] {
   return [
     { state: "unsupported", chainId: 1, updatedAt: 31, reason: "runtime_unsupported" },
     { state: "unmaterialized", ...binding(2), updatedAt: 32 },
-    { state: "installing", ...binding(3), updatedAt: 33, startedAt: 33 },
-    { state: "installed", ...binding(4), updatedAt: 34, installation: present(4, 10, 34) },
+    {
+      state: "installing",
+      ...binding(3),
+      updatedAt: 33,
+      operationId: operationId(3),
+      startedAt: 33,
+    },
+    {
+      state: "installed",
+      ...binding(4),
+      updatedAt: 34,
+      operationId: operationId(4),
+      installation: present(4, 10, 34),
+    },
     {
       state: "unreadable",
       ...binding(5),
       updatedAt: 35,
+      operationId: operationId(5),
       priorState: "installed",
       installation: present(5, 10, 34),
       reason: "provider_unavailable",
@@ -131,6 +148,7 @@ function revokingChildren(): Record<string, unknown>[] {
       state: "revoking",
       ...binding(3),
       updatedAt: 42,
+      operationId: operationId(3),
       installation: null,
       startedAt: 42,
     },
@@ -138,6 +156,7 @@ function revokingChildren(): Record<string, unknown>[] {
       state: "revoked",
       ...binding(4),
       updatedAt: 45,
+      operationId: operationId(4),
       installation: present(4, 10, 34),
       removal: absent(4, 11, 45),
     },
@@ -145,6 +164,7 @@ function revokingChildren(): Record<string, unknown>[] {
       state: "unreadable",
       ...binding(5),
       updatedAt: 46,
+      operationId: operationId(5),
       priorState: "revoking",
       installation: present(5, 10, 35),
       reason: "canonicality_unproven",
@@ -184,6 +204,7 @@ function revokedRecord(): Record<string, unknown> {
         state: "revoked",
         ...binding(3),
         updatedAt: 50,
+        operationId: operationId(3),
         installation: present(3, 10, 34),
         removal: absent(3, 12, 50),
       },
@@ -191,6 +212,7 @@ function revokedRecord(): Record<string, unknown> {
         state: "revoked",
         ...binding(4),
         updatedAt: 51,
+        operationId: operationId(4),
         installation: present(4, 10, 34),
         removal: absent(4, 11, 51),
       },
@@ -233,7 +255,7 @@ describe("Grant current codec", () => {
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "oaath.grant/v1",
+      version: "oaath.grant/v2",
       state: "requested",
       revision: 0,
       identity: {
@@ -338,6 +360,7 @@ describe("Grant current codec", () => {
             state: "installed",
             ...binding(4),
             updatedAt: 34,
+            operationId: operationId(4),
             installation: present(4, 10, 34),
           },
         ],
@@ -385,6 +408,7 @@ describe("Grant current codec", () => {
       state: "revoking",
       ...binding(3),
       updatedAt: 50,
+      operationId: operationId(3),
       installation: null,
       startedAt: 40,
     };
@@ -395,6 +419,7 @@ describe("Grant current codec", () => {
       state: "unreadable",
       ...binding(3),
       updatedAt: 50,
+      operationId: operationId(3),
       priorState: "revoking",
       installation: null,
       reason: "state_invalid",
@@ -473,7 +498,7 @@ describe("Grant current codec", () => {
 
   it("rejects non-current, inexact, aliased, and non-dense record graphs", () => {
     const active = activeRecord(activeChildren(), 13, 35);
-    expectRecordInvalid({ ...active, version: "oaath.grant/v2" });
+    expectRecordInvalid({ ...active, version: "oaath.grant/v1" });
     expectRecordInvalid({ ...active, operationId: "forbidden" });
     const missing = { ...active };
     delete missing.updatedAt;

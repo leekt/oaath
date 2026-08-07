@@ -20,6 +20,7 @@ const identity: OperationIdentity = {
   account: `0x${"22".repeat(20)}`,
   nonce: "7",
   userOperationHash: `0x${"33".repeat(32)}`,
+  requestHash: null,
 };
 
 const transactionHash = `0x${"44".repeat(32)}` as const;
@@ -48,6 +49,15 @@ function submitted(operation: Operation, at = 12): Operation {
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: at,
+  });
+}
+
+function abandoned(operation: Operation, at = 11): Operation {
+  return advanceOperation(operation, {
+    type: "mark_abandoned",
+    identity,
+    abandonedAt: at,
+    reason: "submission_not_attempted",
   });
 }
 
@@ -112,6 +122,198 @@ function expectOperationError(action: () => unknown, code: OaathOperationError["
   }
   throw new Error(`Expected ${code}`);
 }
+
+describe("Operation abandonment", () => {
+  it("terminalizes one exact prepared identity, round-trips it, and frees its lane", () => {
+    const operation = abandoned(prepared());
+
+    expect(operation).toEqual({
+      version: "oaath.operation/v2",
+      identity,
+      revision: 1,
+      state: "abandoned",
+      preparedAt: 10,
+      abandonedAt: 11,
+      abandonment: { reason: "submission_not_attempted" },
+      updatedAt: 11,
+      observation: null,
+    });
+    expect(operationOccupiesLane(operation)).toBe(false);
+    expect(Object.isFrozen(operation)).toBe(true);
+    expect(Object.isFrozen(operation.identity)).toBe(true);
+    if (operation.state !== "abandoned") throw new Error("Expected abandoned operation");
+    expect(Object.isFrozen(operation.abandonment)).toBe(true);
+    expect(parseOperation(JSON.parse(JSON.stringify(operation)))).toEqual(operation);
+  });
+
+  it("allows abandonment only from prepared and not through verified observation", () => {
+    const waiting = attempted(prepared());
+    const sent = submitted(waiting);
+    const observed = included(sent);
+    const finalized = applyVerifiedOperationObservation(observed, {
+      type: "record_finalized",
+      identity,
+      finality: { blockNumber: "25", blockHash: finalityBlockHash, observedAt: 14 },
+    });
+    const dropped = applyVerifiedOperationObservation(sent, {
+      type: "record_dropped",
+      identity,
+      drop: replacementDrop(),
+    });
+    const superseded = applyVerifiedOperationObservation(sent, {
+      type: "record_superseded",
+      identity,
+      supersession: supersession(),
+    });
+
+    for (const source of [
+      waiting,
+      sent,
+      observed,
+      finalized,
+      dropped,
+      superseded,
+      abandoned(prepared()),
+    ]) {
+      expectOperationError(() => abandoned(source, 20), "operation_transition_forbidden");
+    }
+    expectOperationError(
+      () =>
+        applyVerifiedOperationObservation(prepared(), {
+          type: "mark_abandoned",
+          identity,
+          abandonedAt: 11,
+          reason: "submission_not_attempted",
+        }),
+      "operation_transition_forbidden",
+    );
+  });
+
+  it("never leaves abandoned and ignores only weak observations", () => {
+    const terminal = abandoned(prepared());
+    for (const transition of [
+      {
+        type: "record_pending",
+        identity,
+        observedAt: 12,
+        reason: "receipt_missing",
+      },
+      {
+        type: "record_unreadable",
+        identity,
+        observedAt: 12,
+        reason: "provider_unavailable",
+      },
+    ]) {
+      expect(applyVerifiedOperationObservation(terminal, transition)).toEqual(terminal);
+    }
+
+    expectOperationError(() => attempted(terminal, 12), "operation_transition_forbidden");
+    expectOperationError(() => submitted(terminal, 12), "operation_transition_forbidden");
+    for (const transition of [
+      {
+        type: "record_included",
+        identity,
+        inclusion: {
+          transactionHash,
+          blockNumber: "20",
+          blockHash: inclusionBlockHash,
+          outcome: "success",
+          observedAt: 12,
+        },
+      },
+      {
+        type: "record_finalized",
+        identity,
+        finality: { blockNumber: "25", blockHash: finalityBlockHash, observedAt: 12 },
+      },
+      { type: "record_dropped", identity, drop: replacementDrop() },
+      {
+        type: "record_superseded",
+        identity,
+        supersession: supersession("9", 12),
+      },
+    ]) {
+      expectOperationError(
+        () => applyVerifiedOperationObservation(terminal, transition),
+        "operation_transition_forbidden",
+      );
+    }
+  });
+
+  it("rejects hostile reason, time, identity, and expanded transition records", () => {
+    const operation = prepared();
+    expectOperationError(
+      () =>
+        advanceOperation(operation, {
+          type: "mark_abandoned",
+          identity,
+          abandonedAt: 11,
+          reason: "provider_unavailable",
+        }),
+      "operation_transition_invalid",
+    );
+    for (const abandonedAt of [9, -0, -1, 1.5]) {
+      expectOperationError(
+        () =>
+          advanceOperation(operation, {
+            type: "mark_abandoned",
+            identity,
+            abandonedAt,
+            reason: "submission_not_attempted",
+          }),
+        "operation_transition_invalid",
+      );
+    }
+    expectOperationError(
+      () =>
+        advanceOperation(operation, {
+          type: "mark_abandoned",
+          identity: { ...identity, userOperationHash: `0x${"ff".repeat(32)}` },
+          abandonedAt: 11,
+          reason: "submission_not_attempted",
+        }),
+      "operation_identity_mismatch",
+    );
+    expectOperationError(
+      () =>
+        advanceOperation(operation, {
+          type: "mark_abandoned",
+          identity,
+          abandonedAt: 11,
+          reason: "submission_not_attempted",
+          provider: "forbidden",
+        }),
+      "operation_transition_invalid",
+    );
+  });
+
+  it("property-checks monotonic prepared abandonment as permanently terminal", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1_000_000 }),
+        fc.integer({ min: 0, max: 1_000_000 }),
+        (start, delay) => {
+          const terminal = abandoned(prepared(start), start + delay);
+          expect(terminal).toMatchObject({
+            state: "abandoned",
+            revision: 1,
+            preparedAt: start,
+            abandonedAt: start + delay,
+            updatedAt: start + delay,
+            abandonment: { reason: "submission_not_attempted" },
+            observation: null,
+          });
+          expect(operationOccupiesLane(terminal)).toBe(false);
+          expectOperationError(
+            () => attempted(terminal, start + delay),
+            "operation_transition_forbidden",
+          );
+        },
+      ),
+    );
+  });
+});
 
 describe("Operation supersession", () => {
   it("frees the lane when the nonce provably advanced past a sent operation", () => {
@@ -352,6 +554,17 @@ describe("Operation aggregate", () => {
 
     expectOperationError(
       () =>
+        applyVerifiedOperationObservation(waiting, {
+          type: "record_pending",
+          identity: { ...identity, requestHash: `0x${"aa".repeat(32)}` },
+          observedAt: 12,
+          reason: "timeout",
+        }),
+      "operation_identity_mismatch",
+    );
+
+    expectOperationError(
+      () =>
         advanceOperation(waiting, {
           type: "mark_submitted",
           identity,
@@ -424,6 +637,7 @@ describe("Operation aggregate", () => {
     mutable.grantId = "changed";
     mutable.chainId += 1;
     mutable.userOperationHash = `0x${"aa".repeat(32)}`;
+    mutable.requestHash = `0x${"bb".repeat(32)}`;
     expect(operation.identity).toEqual(identity);
   });
 

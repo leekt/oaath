@@ -23,7 +23,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { type CaptureContext, captureDenseArray, captureRecord } from "@oaath/protocol";
+import {
+  advanceGrant,
+  type CaptureContext,
+  captureDenseArray,
+  captureRecord,
+} from "@oaath/protocol";
 import { type OaathCleanupResult, runOaathCleanup } from "./cleanup/coordinator.js";
 import {
   closeEffect,
@@ -48,6 +53,7 @@ import {
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
 import {
   captureChainCapability,
+  grantProviderPort,
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
@@ -60,8 +66,10 @@ import type {
   OaathCleanupCheckpointStore,
   OaathContextStore,
   OaathKeyStore,
+  WalletCallBundleStoreAdapter,
 } from "./persistence/interfaces.js";
 import { persistenceId } from "./persistence/interfaces.js";
+import { WalletCallBundleStore } from "./provider/bundle-store.js";
 import { GrantStore, type GrantStoreAdapter, type OperationStoreAdapter } from "./store.js";
 
 const MAX_CHAINS = 32;
@@ -70,6 +78,7 @@ const MAX_LOCAL_KEYS = 8;
 export interface OaathStoreConfiguration {
   readonly grants: GrantStoreAdapter;
   readonly operations: OperationStoreAdapter;
+  readonly walletCallBundles: WalletCallBundleStoreAdapter;
   readonly keys: OaathKeyStore;
   readonly cleanup: OaathCleanupCheckpointStore;
   readonly context: OaathContextStore;
@@ -147,6 +156,7 @@ function captureSessionSigner(
 const STORE_KEYS: readonly string[] = Object.freeze([
   "grants",
   "operations",
+  "walletCallBundles",
   "keys",
   "cleanup",
   "context",
@@ -301,8 +311,14 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     ),
     operations: storePort<OperationStoreAdapter>(
       storeRecord.operations,
-      ["get", "compareAndSwap", "close"],
+      ["get", "getArchived", "compareAndSwap", "close"],
       "Operation store",
+      context,
+    ),
+    walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
+      storeRecord.walletCallBundles,
+      ["get", "compareAndSwap", "close"],
+      "wallet call bundle store",
       context,
     ),
     keys: storePort<OaathKeyStore>(
@@ -343,16 +359,65 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   const now = clientCapability<() => number>(record.now, "clock");
 
   const connections: Readonly<OaathConnection>[] = [];
+  const ownedStores = [
+    stores.grants,
+    stores.operations,
+    stores.walletCallBundles,
+    stores.keys,
+    stores.context,
+  ].map((resource) => ({ resource, closed: false }));
+  let closeRequested = false;
+  let closed = false;
+  let closing: Promise<void> | null = null;
+
+  const connectionStores = Object.freeze({
+    grants: Object.freeze({
+      get: (grantId: Parameters<GrantStoreAdapter["get"]>[0]) => stores.grants.get(grantId),
+      compareAndSwap: (input: Parameters<GrantStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.grants.compareAndSwap(input),
+      close: async () => undefined,
+    }),
+    operations: Object.freeze({
+      get: (key: Parameters<OperationStoreAdapter["get"]>[0]) => stores.operations.get(key),
+      getArchived: (input: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
+        stores.operations.getArchived(input),
+      compareAndSwap: (input: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.operations.compareAndSwap(input),
+      close: async () => undefined,
+    }),
+    walletCallBundles: Object.freeze({
+      get: (key: Parameters<WalletCallBundleStoreAdapter["get"]>[0]) =>
+        stores.walletCallBundles.get(key),
+      compareAndSwap: (input: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.walletCallBundles.compareAndSwap(input),
+      close: async () => undefined,
+    }),
+    keys: Object.freeze({
+      store: (input: Parameters<OaathKeyStore["store"]>[0]) => stores.keys.store(input),
+      get: (keyId: Parameters<OaathKeyStore["get"]>[0]) => stores.keys.get(keyId),
+      delete: (keyId: Parameters<OaathKeyStore["delete"]>[0]) => stores.keys.delete(keyId),
+      close: async () => undefined,
+    }),
+    context: Object.freeze({
+      read: (bindingId: Parameters<OaathContextStore["read"]>[0]) => stores.context.read(bindingId),
+      write: (value: Parameters<OaathContextStore["write"]>[0]) => stores.context.write(value),
+      clear: (bindingId: Parameters<OaathContextStore["clear"]>[0]) =>
+        stores.context.clear(bindingId),
+      close: async () => undefined,
+    }),
+  });
 
   function open(): Readonly<OaathConnection> {
+    if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
     const connection = createConnection({
       binding,
       issuer,
       authorization,
-      grants: new GrantStore(stores.grants),
-      operations: stores.operations,
-      keys: stores.keys,
-      contexts: stores.context,
+      grants: new GrantStore(connectionStores.grants),
+      operations: connectionStores.operations,
+      walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),
+      keys: connectionStores.keys,
+      contexts: connectionStores.context,
       chains,
       ownerKey,
       sessionKey,
@@ -365,12 +430,72 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   }
 
   async function closeAll(): Promise<void> {
-    const failures: unknown[] = [];
-    for (const connection of connections.splice(0)) {
-      await connection.close().catch((error: unknown) => failures.push(error));
+    if (closed) return;
+    closeRequested = true;
+    if (closing) return closing;
+    const attempt = (async () => {
+      const childFailures: unknown[] = [];
+      for (const connection of [...connections]) {
+        await connection
+          .close()
+          .then(() => {
+            const index = connections.indexOf(connection);
+            if (index >= 0) connections.splice(index, 1);
+          })
+          .catch((error: unknown) => childFailures.push(error));
+      }
+      if (childFailures[0] !== undefined) throw childFailures[0];
+
+      const storeFailures: unknown[] = [];
+      for (const owned of ownedStores) {
+        if (owned.closed) continue;
+        await Promise.resolve()
+          .then(() => owned.resource.close())
+          .then(() => {
+            owned.closed = true;
+          })
+          .catch((error: unknown) => storeFailures.push(error));
+      }
+      if (storeFailures[0] !== undefined) throw storeFailures[0];
+      closed = true;
+    })().finally(() => {
+      if (!closed) closing = null;
+    });
+    closing = attempt;
+    return attempt;
+  }
+
+  async function revocationIsUnneeded(grant: Readonly<OaathGrantHandle>): Promise<boolean> {
+    if (grant.state === "revoked" || grant.state === "expired") return true;
+    if (grant.state !== "active") return false;
+    const observedAt = now();
+    if (!Number.isSafeInteger(observedAt) || observedAt < grant.expiresAt) return false;
+
+    try {
+      const grantId = grantProviderPort(grant).grantId;
+      const durable = new GrantStore(connectionStores.grants);
+      let current = await durable.get(grantId);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (current === undefined) return false;
+        if (current.value.state === "revoked" || current.value.state === "expired") return true;
+        if (current.value.state !== "active" || observedAt < current.value.expiresAt) return false;
+        const expired = advanceGrant(current.value, {
+          type: "expire",
+          identity: current.value.identity,
+          expiredAt: Math.max(observedAt, current.value.updatedAt, current.value.expiresAt),
+        });
+        const result = await durable.compareAndSwap({
+          grantId,
+          expectedStoreRevision: current.storeRevision,
+          next: expired,
+        });
+        if (result.status === "committed") return true;
+        current = result.current;
+      }
+      return false;
+    } catch {
+      return false;
     }
-    const failure = failures[0];
-    if (failure !== undefined) throw failure;
   }
 
   return Object.freeze({
@@ -378,15 +503,19 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     async connect(): Promise<Readonly<OaathConnection>> {
       return open();
     },
-    disconnect(grant: Readonly<OaathGrantHandle> | null): Promise<Readonly<OaathCleanupResult>> {
+    async disconnect(
+      grant: Readonly<OaathGrantHandle> | null,
+    ): Promise<Readonly<OaathCleanupResult>> {
       if (grant !== null && typeof grant.revoke !== "function") {
         clientFail("oaath_client_input_invalid", "disconnect grant is invalid");
       }
       const open_ = [...connections];
+      const revocationUnneeded = grant === null ? true : await revocationIsUnneeded(grant);
+      const revokeRequired = grant !== null && !revocationUnneeded;
       // Order: authority first, then authentication, then local state, then
       // resources. `close` is last because it disables the effects before it.
       const effects: OaathCleanupEffect[] = [
-        ...(grant === null ? [] : [revokeEffect(grant)]),
+        ...(revokeRequired ? [revokeEffect(grant)] : []),
         signOutEffect(async () => {
           for (const connection of open_) await connection.signOut();
         }),

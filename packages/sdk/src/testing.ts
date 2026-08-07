@@ -10,4 +10,5 @@ export {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryWalletCallBundleStoreAdapter,
 } from "./persistence/memory/stores.js";

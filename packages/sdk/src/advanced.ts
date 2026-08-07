@@ -139,6 +139,7 @@ export type {
   GrantStoreCompareAndSwapResult,
   GrantStoreRecord,
   OperationStoreAdapter,
+  OperationStoreArchive,
   OperationStoreCompareAndSwapResult,
   OperationStoreKey,
   OperationStoreRecord,

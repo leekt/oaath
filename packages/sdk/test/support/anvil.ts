@@ -18,6 +18,7 @@ import {
   createWalletClient,
   type DecodeErrorResultReturnType,
   decodeErrorResult,
+  decodeEventLog,
   encodeFunctionData,
   getCreate2Address,
   type Hex,
@@ -323,7 +324,24 @@ export async function createHarness(chain: AnvilChain): Promise<KernelHarness> {
       data: handleOpsCalldata(prepared, signature),
       gas: 8_000_000n,
     });
-    return (await client.waitForTransactionReceipt({ hash })).status;
+    const receipt = await client.waitForTransactionReceipt({ hash });
+    if (receipt.status === "reverted") return "reverted";
+    for (const log of receipt.logs) {
+      if (lower(log.address) !== lower(KERNEL_V4_ENTRY_POINT_V07)) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: entryPoint07Abi,
+          data: log.data,
+          topics: log.topics,
+        });
+        if (decoded.eventName !== "UserOperationEvent") continue;
+        const event = decoded.args as { readonly userOpHash: Hex; readonly success: boolean };
+        if (lower(event.userOpHash) === lower(prepared.userOperationHash)) {
+          return event.success ? "success" : "reverted";
+        }
+      } catch {}
+    }
+    throw new Error("accepted handleOps transaction omitted the exact UserOperationEvent");
   };
 
   const send = async (runtime: Readonly<KernelRuntime>, prepared: PreparedUserOperation) =>

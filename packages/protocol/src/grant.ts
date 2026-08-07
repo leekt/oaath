@@ -15,7 +15,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v1" as const;
+export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v2" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -100,28 +100,33 @@ export interface UnmaterializedMaterialization extends BoundMaterialization {
 
 export interface InstallingMaterialization extends BoundMaterialization {
   readonly state: "installing";
+  readonly operationId: `0x${string}`;
   readonly startedAt: number;
 }
 
 export interface InstalledMaterialization extends BoundMaterialization {
   readonly state: "installed";
+  readonly operationId: `0x${string}`;
   readonly installation: Readonly<ChainPermissionEvidence>;
 }
 
 export interface RevokingMaterialization extends BoundMaterialization {
   readonly state: "revoking";
+  readonly operationId: `0x${string}`;
   readonly installation: Readonly<ChainPermissionEvidence> | null;
   readonly startedAt: number;
 }
 
 export interface RevokedMaterialization extends BoundMaterialization {
   readonly state: "revoked";
+  readonly operationId: `0x${string}`;
   readonly installation: Readonly<ChainPermissionEvidence>;
   readonly removal: Readonly<ChainPermissionEvidence>;
 }
 
 export interface UnreadableMaterialization extends BoundMaterialization {
   readonly state: "unreadable";
+  readonly operationId: `0x${string}`;
   readonly priorState: "installing" | "installed" | "revoking";
   readonly installation: Readonly<ChainPermissionEvidence> | null;
   readonly reason: MaterializationUnreadableReason;
@@ -276,12 +281,21 @@ export type GrantTransition =
       type: "begin_materialization";
       identity: GrantIdentity;
       binding: ChainBinding;
+      operationId: `0x${string}`;
       startedAt: number;
+    }>
+  | Readonly<{
+      type: "abandon_materialization";
+      identity: GrantIdentity;
+      binding: ChainBinding;
+      operationId: `0x${string}`;
+      abandonedAt: number;
     }>
   | Readonly<{
       type: "record_installed";
       identity: GrantIdentity;
       binding: ChainBinding;
+      operationId: `0x${string}`;
       installation: ChainPermissionEvidence;
     }>
   | Readonly<{
@@ -681,7 +695,7 @@ function parseMaterialization(
   if (state === "installing") {
     const record = exactCapturedRecord(
       captured,
-      [...common, "startedAt"],
+      [...common, "operationId", "startedAt"],
       "installing materialization",
       code,
     );
@@ -689,13 +703,19 @@ function parseMaterialization(
     const updatedAt = safeInteger(record.updatedAt, "materialization updatedAt", code);
     const startedAt = safeInteger(record.startedAt, "materialization startedAt", code);
     if (startedAt !== updatedAt) return invalid(code, "installing materialization time conflicts");
-    return Object.freeze({ state, ...binding, updatedAt, startedAt });
+    return Object.freeze({
+      state,
+      ...binding,
+      updatedAt,
+      operationId: hash(record.operationId, "materialization operationId", code),
+      startedAt,
+    });
   }
 
   if (state === "installed") {
     const record = exactCapturedRecord(
       captured,
-      [...common, "installation"],
+      [...common, "operationId", "installation"],
       "installed materialization",
       code,
     );
@@ -710,13 +730,19 @@ function parseMaterialization(
     if (!evidenceMatchesBinding(installation, binding) || installation.observedAt !== updatedAt) {
       return invalid(code, "installed materialization evidence conflicts");
     }
-    return Object.freeze({ state, ...binding, updatedAt, installation });
+    return Object.freeze({
+      state,
+      ...binding,
+      updatedAt,
+      operationId: hash(record.operationId, "materialization operationId", code),
+      installation,
+    });
   }
 
   if (state === "revoking") {
     const record = exactCapturedRecord(
       captured,
-      [...common, "installation", "startedAt"],
+      [...common, "operationId", "installation", "startedAt"],
       "revoking materialization",
       code,
     );
@@ -731,13 +757,20 @@ function parseMaterialization(
     ) {
       return invalid(code, "revoking materialization evidence conflicts");
     }
-    return Object.freeze({ state, ...binding, updatedAt, installation, startedAt });
+    return Object.freeze({
+      state,
+      ...binding,
+      updatedAt,
+      operationId: hash(record.operationId, "materialization operationId", code),
+      installation,
+      startedAt,
+    });
   }
 
   if (state === "revoked") {
     const record = exactCapturedRecord(
       captured,
-      [...common, "installation", "removal"],
+      [...common, "operationId", "installation", "removal"],
       "revoked materialization",
       code,
     );
@@ -759,13 +792,20 @@ function parseMaterialization(
     ) {
       return invalid(code, "revoked materialization evidence conflicts");
     }
-    return Object.freeze({ state, ...binding, updatedAt, installation, removal });
+    return Object.freeze({
+      state,
+      ...binding,
+      updatedAt,
+      operationId: hash(record.operationId, "materialization operationId", code),
+      installation,
+      removal,
+    });
   }
 
   if (state === "unreadable") {
     const record = exactCapturedRecord(
       captured,
-      [...common, "priorState", "installation", "reason"],
+      [...common, "operationId", "priorState", "installation", "reason"],
       "unreadable materialization",
       code,
     );
@@ -798,6 +838,7 @@ function parseMaterialization(
       state,
       ...binding,
       updatedAt,
+      operationId: hash(record.operationId, "materialization operationId", code),
       priorState: record.priorState,
       installation,
       reason: record.reason,
@@ -1391,11 +1432,43 @@ function parseGrantTransition(value: unknown): GrantTransition {
     });
   }
 
-  if (type === "begin_materialization" || type === "begin_chain_revocation") {
+  if (type === "begin_materialization") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "operationId", "startedAt"],
+      "begin materialization transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      operationId: hash(record.operationId, "transition operationId", code),
+      startedAt: safeInteger(record.startedAt, "transition startedAt", code),
+    });
+  }
+
+  if (type === "abandon_materialization") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "binding", "operationId", "abandonedAt"],
+      "abandon materialization transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      binding: parseBinding(record.binding, code, context),
+      operationId: hash(record.operationId, "transition operationId", code),
+      abandonedAt: safeInteger(record.abandonedAt, "transition abandonedAt", code),
+    });
+  }
+
+  if (type === "begin_chain_revocation") {
     const record = exactCapturedRecord(
       captured,
       ["type", "identity", "binding", "startedAt"],
-      `${type} transition`,
+      "begin chain revocation transition",
       code,
     );
     return Object.freeze({
@@ -1409,7 +1482,7 @@ function parseGrantTransition(value: unknown): GrantTransition {
   if (type === "record_installed") {
     const record = exactCapturedRecord(
       captured,
-      ["type", "identity", "binding", "installation"],
+      ["type", "identity", "binding", "operationId", "installation"],
       "installed transition",
       code,
     );
@@ -1417,6 +1490,7 @@ function parseGrantTransition(value: unknown): GrantTransition {
       type,
       identity: parseIdentity(record.identity, code, context),
       binding: parseBinding(record.binding, code, context),
+      operationId: hash(record.operationId, "transition operationId", code),
       installation: parsePermissionEvidence(
         record.installation,
         "permission_present",
@@ -1568,6 +1642,12 @@ function requireBeforeExpiry(grant: Grant, time: number): void {
   requireGrantTime(grant, time);
   if (time >= grant.expiresAt) {
     invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+  }
+}
+
+function requireMaterializationTime(materialization: ChainMaterialization, time: number): void {
+  if (time < materialization.updatedAt) {
+    invalid("grant_transition_invalid", "chain materialization time regresses");
   }
 }
 
@@ -1756,7 +1836,28 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
         state: "installing",
         ...transition.binding,
         updatedAt: transition.startedAt,
+        operationId: transition.operationId,
         startedAt: transition.startedAt,
+      }),
+    });
+  }
+
+  if (transition.type === "abandon_materialization") {
+    if (grant.state !== "active" && grant.state !== "revoking") {
+      return forbiddenGrantTransition(grant, transition);
+    }
+    requireGrantTime(grant, transition.abandonedAt);
+    const current = requireBoundMaterialization(grant, transition.binding);
+    if (current.state !== "installing") return forbiddenGrantTransition(grant, transition);
+    if (current.operationId !== transition.operationId) {
+      return invalid("grant_identity_mismatch", "materialization operation does not match");
+    }
+    return advanceGrantRecord(grant, {
+      updatedAt: transition.abandonedAt,
+      materializations: withMaterialization(grant, {
+        state: "unmaterialized",
+        ...transition.binding,
+        updatedAt: transition.abandonedAt,
       }),
     });
   }
@@ -1773,19 +1874,24 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     ) {
       return forbiddenGrantTransition(grant, transition);
     }
+    if (current.operationId !== transition.operationId) {
+      return invalid("grant_identity_mismatch", "materialization operation does not match");
+    }
     requireEvidenceBinding(transition.installation, transition.binding);
+    requireMaterializationTime(current, transition.installation.observedAt);
     if (grant.state === "active") {
-      requireBeforeExpiry(grant, transition.installation.observedAt);
-    } else {
-      requireGrantTime(grant, transition.installation.observedAt);
+      if (transition.installation.observedAt >= grant.expiresAt) {
+        invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+      }
     }
     requireNonRegressingPresence(retainedInstallation(current), transition.installation);
     return advanceGrantRecord(grant, {
-      updatedAt: transition.installation.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.installation.observedAt),
       materializations: withMaterialization(grant, {
         state: "installed",
         ...transition.binding,
         updatedAt: transition.installation.observedAt,
+        operationId: transition.operationId,
         installation: transition.installation,
       }),
     });
@@ -1804,15 +1910,18 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     ) {
       return forbiddenGrantTransition(grant, transition);
     }
-    if (grant.state === "active") requireBeforeExpiry(grant, transition.observedAt);
-    else requireGrantTime(grant, transition.observedAt);
+    requireMaterializationTime(current, transition.observedAt);
+    if (grant.state === "active" && transition.observedAt >= grant.expiresAt) {
+      invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+    }
     const priorState = current.state === "unreadable" ? current.priorState : current.state;
     return advanceGrantRecord(grant, {
-      updatedAt: transition.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.observedAt),
       materializations: withMaterialization(grant, {
         state: "unreadable",
         ...transition.binding,
         updatedAt: transition.observedAt,
+        operationId: current.operationId,
         priorState,
         installation: retainedInstallation(current),
         reason: transition.reason,
@@ -1847,6 +1956,7 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
         state: "revoking",
         ...transition.binding,
         updatedAt: transition.startedAt,
+        operationId: current.operationId,
         installation: retainedInstallation(current),
         startedAt: transition.startedAt,
       }),
@@ -1855,7 +1965,6 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
 
   if (transition.type === "record_chain_revoked") {
     if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
-    requireGrantTime(grant, transition.removal.observedAt);
     requireEvidenceBinding(transition.removal, transition.binding);
     const current = requireBoundMaterialization(grant, transition.binding);
     if (
@@ -1864,17 +1973,19 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     ) {
       return forbiddenGrantTransition(grant, transition);
     }
+    requireMaterializationTime(current, transition.removal.observedAt);
     const installation = retainedInstallation(current);
     if (installation === null) return forbiddenGrantTransition(grant, transition);
     if (BigInt(transition.removal.blockNumber) <= BigInt(installation.blockNumber)) {
       return invalid("grant_transition_invalid", "removal does not follow installation");
     }
     return advanceGrantRecord(grant, {
-      updatedAt: transition.removal.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.removal.observedAt),
       materializations: withMaterialization(grant, {
         state: "revoked",
         ...transition.binding,
         updatedAt: transition.removal.observedAt,
+        operationId: current.operationId,
         installation,
         removal: transition.removal,
       }),

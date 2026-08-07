@@ -15,6 +15,8 @@ import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
+  OAATH_INDEXEDDB_NAME,
   type OaathDatabase,
   openOaathDatabase,
 } from "../src/persistence.js";
@@ -23,6 +25,7 @@ function idbStores(database: OaathDatabase) {
   return {
     grants: createIndexedDbGrantStoreAdapter(database),
     operations: createIndexedDbOperationStoreAdapter(database),
+    walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
     keys: createIndexedDbKeyStore(database),
     cleanup: createIndexedDbCleanupStore(database),
     context: createIndexedDbContextStore(database),
@@ -30,12 +33,22 @@ function idbStores(database: OaathDatabase) {
 }
 
 import {
+  accountProfile,
   CHAIN_ID,
+  CLIENT_TOKEN,
   createChainFixture,
+  createClock,
+  createMemoryStores,
+  createRelay,
   createUrlRealm,
+  ISSUER_URL,
+  ORIGIN,
   permissionInput,
+  REDIRECT_URI,
+  relayChainPort,
   relayKms,
   sendCallsInput,
+  VALIDATOR,
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
@@ -163,6 +176,187 @@ describe("URL-only golden path", () => {
     });
     await expect(oaath.connect()).rejects.toMatchObject({ name: "OaathClientError" });
     expect(seen).toEqual(["http://localhost:8787/bootstrap"]);
+  });
+
+  it("closes the default IndexedDB connection after URL disconnect", async () => {
+    const factory = new IDBFactory();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+    const clock = createClock();
+    const chain = createChainFixture();
+    const relay = createRelay(clock, {
+      bootstrap: {
+        application: {
+          applicationId: "app-a",
+          applicationName: "OAAth Example",
+          clientId: "client-a",
+          redirectUris: [REDIRECT_URI],
+        },
+        userHandle: "user-1",
+        account: accountProfile,
+        ownerValidator: VALIDATOR,
+      },
+      chains: [relayChainPort(chain)],
+    });
+    const oaath = createOAAth({
+      url: ISSUER_URL,
+      origin: ORIGIN,
+      now: clock.now,
+      fetch: (request: Request) => {
+        const headers = new Headers(request.headers);
+        headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+        return relay(new Request(request, { headers }));
+      },
+    });
+    try {
+      const connection = await oaath.connect();
+      expect(connection.binding.issuer.url).toBe(ISSUER_URL);
+      await oaath.disconnect(null);
+      const deletion = await new Promise<"blocked" | "deleted">((resolve, reject) => {
+        const request = factory.deleteDatabase(OAATH_INDEXEDDB_NAME);
+        request.onblocked = () => resolve("blocked");
+        request.onsuccess = () => resolve("deleted");
+        request.onerror = () => reject(request.error ?? new Error("database deletion failed"));
+      });
+      expect(deletion).toBe("deleted");
+    } finally {
+      await oaath.close().catch(() => undefined);
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "indexedDB");
+      else Object.defineProperty(globalThis, "indexedDB", previous);
+    }
+  });
+
+  it("retains the default IndexedDB owner when inner disconnect fails", async () => {
+    const factory = new IDBFactory();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+    const clock = createClock();
+    const chain = createChainFixture();
+    const relay = createRelay(clock, {
+      bootstrap: {
+        application: {
+          applicationId: "app-a",
+          applicationName: "OAAth Example",
+          clientId: "client-a",
+          redirectUris: [REDIRECT_URI],
+        },
+        userHandle: "user-1",
+        account: accountProfile,
+        ownerValidator: VALIDATOR,
+      },
+      chains: [relayChainPort(chain)],
+    });
+    const oaath = createOAAth({
+      url: ISSUER_URL,
+      origin: ORIGIN,
+      now: clock.now,
+      fetch: (request: Request) => {
+        const headers = new Headers(request.headers);
+        headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+        return relay(new Request(request, { headers }));
+      },
+    });
+    try {
+      await oaath.connect();
+      const failingGrant = {
+        async revoke() {
+          throw new Error("canonical revocation failure");
+        },
+      } as unknown as Parameters<typeof oaath.disconnect>[0];
+      await expect(oaath.disconnect(failingGrant)).rejects.toMatchObject({
+        name: "OaathCleanupError",
+      });
+      const deletion = await new Promise<"blocked" | "deleted">((resolve, reject) => {
+        const request = factory.deleteDatabase(OAATH_INDEXEDDB_NAME);
+        request.onblocked = () => resolve("blocked");
+        request.onsuccess = () => resolve("deleted");
+        request.onerror = () => reject(request.error ?? new Error("database deletion failed"));
+      });
+      expect(deletion).toBe("blocked");
+    } finally {
+      await oaath.close().catch(() => undefined);
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "indexedDB");
+      else Object.defineProperty(globalThis, "indexedDB", previous);
+    }
+  });
+
+  it("waits for an in-progress URL composition before closing its database", async () => {
+    const factory = new IDBFactory();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+    let releaseBootstrap!: () => void;
+    const bootstrapReleased = new Promise<void>((resolve) => {
+      releaseBootstrap = resolve;
+    });
+    const oaath = createOAAth({
+      url: ISSUER_URL,
+      origin: ORIGIN,
+      now: () => 1_800_000_000,
+      fetch: async () => {
+        await bootstrapReleased;
+        return new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    try {
+      const connecting = oaath.connect();
+      const closing = oaath.close();
+      releaseBootstrap();
+      await expect(connecting).rejects.toMatchObject({ name: "OaathClientError" });
+      await closing;
+      await expect(oaath.connect()).rejects.toMatchObject({ code: "oaath_client_closed" });
+      const deletion = await new Promise<"blocked" | "deleted">((resolve, reject) => {
+        const request = factory.deleteDatabase(OAATH_INDEXEDDB_NAME);
+        request.onblocked = () => resolve("blocked");
+        request.onsuccess = () => resolve("deleted");
+        request.onerror = () => reject(request.error ?? new Error("database deletion failed"));
+      });
+      expect(deletion).toBe("deleted");
+    } finally {
+      await oaath.close().catch(() => undefined);
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "indexedDB");
+      else Object.defineProperty(globalThis, "indexedDB", previous);
+    }
+  });
+
+  it("drains a successful URL connect and rejects every connect after close", async () => {
+    const source = createUrlRealm();
+    let enterBootstrap!: () => void;
+    let releaseBootstrap!: () => void;
+    const bootstrapEntered = new Promise<void>((resolve) => {
+      enterBootstrap = resolve;
+    });
+    const bootstrapReleased = new Promise<void>((resolve) => {
+      releaseBootstrap = resolve;
+    });
+    const realm = createUrlRealm({
+      clock: source.clock,
+      chain: source.chain,
+      stores: createMemoryStores(),
+      relay: async (request) => {
+        if (request.method === "GET" && new URL(request.url).pathname === "/bootstrap") {
+          enterBootstrap();
+          await bootstrapReleased;
+        }
+        return source.relay(request);
+      },
+    });
+
+    const connecting = realm.oaath.connect();
+    await bootstrapEntered;
+    let closeSettled = false;
+    const closing = realm.oaath.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+    releaseBootstrap();
+    const connection = await connecting;
+    await closing;
+    await expect(connection.resume()).rejects.toMatchObject({ code: "oaath_client_closed" });
+    await expect(realm.oaath.connect()).rejects.toMatchObject({ code: "oaath_client_closed" });
   });
 
   it("fails closed on hostile or mismatched service context", async () => {

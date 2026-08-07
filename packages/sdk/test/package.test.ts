@@ -118,12 +118,15 @@ describe("package boundary", () => {
       "OAATH_INDEXEDDB_NAME",
       "OAATH_INDEXEDDB_STORES",
       "OAATH_INDEXEDDB_VERSION",
+      "OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION",
+      "OAATH_WALLET_CALL_BUNDLE_VERSION",
       "OaathPersistenceError",
       "createIndexedDbCleanupStore",
       "createIndexedDbContextStore",
       "createIndexedDbGrantStoreAdapter",
       "createIndexedDbKeyStore",
       "createIndexedDbOperationStoreAdapter",
+      "createIndexedDbWalletCallBundleStoreAdapter",
       "isCleanupEffectName",
       "openOaathDatabase",
       "parseCleanupCheckpoint",
@@ -139,6 +142,7 @@ describe("package boundary", () => {
       "createMemoryGrantStoreAdapter",
       "createMemoryKeyStore",
       "createMemoryOperationStoreAdapter",
+      "createMemoryWalletCallBundleStoreAdapter",
     ]);
   });
 

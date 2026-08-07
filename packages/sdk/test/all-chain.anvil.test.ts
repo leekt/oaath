@@ -17,6 +17,7 @@ import {
   createKernelRuntime,
   type EcdsaSignRequest,
   ecdsaKey,
+  encodeKernelV4PermissionUninstallCalls,
   type KernelAllChainApproval,
   type KernelRuntime,
   type KernelV4AccountDescriptor,
@@ -49,6 +50,20 @@ const INSTALL_NONCE = "0";
  * class from its signature keeps the assertion machine-checked rather than prose.
  */
 const CALL_POLICY_INVALID_CALL_DATA = toFunctionSelector("InvalidCallData()");
+const REVERTING_CONTRACT_DEPLOYMENT = "0x6005600c60003960056000f360006000fd" as const;
+const KERNEL_MODULE_VIEW_ABI = [
+  {
+    type: "function",
+    name: "isModuleInstalled",
+    stateMutability: "view",
+    inputs: [
+      { name: "moduleTypeId", type: "uint256" },
+      { name: "module", type: "address" },
+      { name: "additionalContext", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
 
 const gas = Object.freeze({
   callGasLimit: "900000",
@@ -145,6 +160,115 @@ async function bringUp(
 }
 
 (requireAnvil ? describe : describe.skip)("all-chain materialization local proof", () => {
+  it("retains validation-installed permission when enable-mode execution reverts", async () => {
+    const owner = countingOwner();
+    const sessionKeyAccount = privateKeyToAccount(generatePrivateKey());
+    const placeholderTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const stack = await bringUp(CHAIN_A, owner, sessionKeyAccount, placeholderTarget);
+    const deploymentHash = await stack.harness.wallet.deployContract({
+      account: stack.harness.submitter,
+      chain: null,
+      abi: [],
+      bytecode: REVERTING_CONTRACT_DEPLOYMENT,
+      gas: 500_000n,
+    });
+    const deploymentReceipt = await stack.harness.client.waitForTransactionReceipt({
+      hash: deploymentHash,
+    });
+    if (
+      deploymentReceipt.status !== "success" ||
+      deploymentReceipt.contractAddress === null ||
+      deploymentReceipt.contractAddress === undefined
+    ) {
+      throw new Error("reverting target deployment failed");
+    }
+    const revertingTarget = lower(deploymentReceipt.contractAddress);
+    const sessionRuntime = createKernelRuntime({
+      deployment: kernelV4Deployment(CHAIN_A),
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: sessionKeyAccount,
+          validator: await stack.harness.deployValidatorCreate2(),
+        }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: revertingTarget, selector: "0x00000000", valueLimit: "0" }],
+          },
+        ],
+      }),
+      reads: stack.harness.reads,
+    });
+    const account = await sessionRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: stack.ownerRuntime.packages,
+    });
+    const approval = await approveKernelPermissionAllChain({
+      owner: stack.ownerKey,
+      account: account.account,
+      installNonce: INSTALL_NONCE,
+      packages: sessionRuntime.packages,
+    });
+    const materialized = await materializeKernelPermission({
+      approval,
+      runtime: sessionRuntime,
+      grantId: "enable-revert-installation",
+      account,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target: revertingTarget, value: "0", data: "0x" }],
+      gas,
+    });
+
+    expect(await stack.harness.sendSigned(materialized.prepared, materialized.signature)).toBe(
+      "reverted",
+    );
+    if (sessionRuntime.validation.kind !== "permission") {
+      throw new Error("session runtime carries no permission validation");
+    }
+    const signer = sessionRuntime.packages.find((entry) => entry.moduleType === 6)?.module;
+    if (signer === undefined) throw new Error("session runtime carries no signer module");
+    expect(
+      await stack.harness.client.readContract({
+        address: account.account,
+        abi: KERNEL_MODULE_VIEW_ABI,
+        functionName: "isModuleInstalled",
+        args: [6n, signer, sessionRuntime.validation.permissionId],
+      }),
+    ).toBe(true);
+
+    const deployed = await stack.ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: stack.ownerRuntime.packages,
+    });
+    expect(
+      await stack.harness.send(
+        stack.ownerRuntime,
+        stack.ownerRuntime.prepareOperation({
+          kind: "revocation",
+          grantId: "enable-revert-uninstall",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: encodeKernelV4PermissionUninstallCalls({
+            account: account.account,
+            packages: sessionRuntime.packages,
+          }),
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(
+      await stack.harness.client.readContract({
+        address: account.account,
+        abi: KERNEL_MODULE_VIEW_ABI,
+        functionName: "isModuleInstalled",
+        args: [6n, signer, sessionRuntime.validation.permissionId],
+      }),
+    ).toBe(false);
+    expect(owner.signatures()).toBe(2);
+  }, 90_000);
+
   it("materializes one replayable owner approval on two chains with different chain ids", async () => {
     const owner = countingOwner();
     // One session credential and one scope, shared by both chains: the canonical

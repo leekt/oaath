@@ -1,4 +1,5 @@
 import {
+  type AbandonedOperation,
   applyVerifiedOperationObservation,
   type CaptureContext,
   captureDenseArray,
@@ -22,6 +23,8 @@ const HASH = /^0x[0-9a-f]{64}$/u;
 const HEX_DATA = /^0x(?:[0-9a-f]{2})*$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const USER_OPERATION_EVENT = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
+const BEFORE_EXECUTION = "0xbb47ee3e183a558b1a2ff0874b079f3fc5478b7454eacf2bfc5af2ff5878f972";
+const MAX_RECEIPT_LOGS = 10_000;
 const MAX_TIMEOUT_MS = 60_000;
 
 export type OperationObserverErrorCode =
@@ -131,6 +134,22 @@ export interface OperationObserverTransactionReceiptEvidence {
   readonly logs: readonly OperationObserverLogEvidence[];
 }
 
+export interface VerifiedOperationReceiptEvidence {
+  readonly transactionHash: `0x${string}`;
+  readonly blockNumber: string;
+  readonly blockHash: `0x${string}`;
+  readonly gasUsed: string;
+  readonly outcome: OperationInclusion["outcome"];
+  readonly logs: readonly OperationObserverLogEvidence[];
+}
+
+export interface VerifyOperationReceiptEvidenceInput {
+  readonly identity: Readonly<OperationIdentity>;
+  readonly inclusion: Readonly<OperationInclusion>;
+  readonly userOperationReceipt: unknown;
+  readonly transactionReceipt: unknown;
+}
+
 export interface OperationObserverTransactionEvidence {
   readonly hash: `0x${string}`;
   readonly to: `0x${string}` | null;
@@ -164,7 +183,8 @@ export type ObserveOperationResult =
   | Readonly<{ status: "included"; operation: IncludedOperation }>
   | Readonly<{ status: "finalized"; operation: FinalizedOperation }>
   | Readonly<{ status: "dropped"; operation: DroppedOperation }>
-  | Readonly<{ status: "superseded"; operation: SupersededOperation }>;
+  | Readonly<{ status: "superseded"; operation: SupersededOperation }>
+  | Readonly<{ status: "abandoned"; operation: AbandonedOperation }>;
 
 export interface OperationObserver {
   readonly observeOperation: (input: unknown) => Promise<ObserveOperationResult>;
@@ -313,9 +333,11 @@ function parseTransactionReceipt(
   if (record.status !== "0x0" && record.status !== "0x1") {
     throw new EvidenceFailure("receipt_invalid");
   }
-  const logs = captureDenseArray(record.logs, "transaction receipt logs", context, () => {
+  const entries = captureDenseArray(record.logs, "transaction receipt logs", context, () => {
     throw new EvidenceFailure("receipt_invalid");
-  }).map((log) => parseLog(log, context));
+  });
+  if (entries.length > MAX_RECEIPT_LOGS) throw new EvidenceFailure("receipt_invalid");
+  const logs = entries.map((log) => parseLog(log, context));
   return Object.freeze({
     transactionHash: parseHash(record.transactionHash),
     blockNumber: `0x${parseQuantity(record.blockNumber).toString(16)}`,
@@ -421,6 +443,137 @@ function parseEvent(
   };
 }
 
+function isEntryPointBoundary(
+  log: OperationObserverLogEvidence,
+  entryPoint: `0x${string}`,
+): boolean {
+  if (log.address !== entryPoint) return false;
+  if (log.topics[0] === BEFORE_EXECUTION) {
+    if (log.topics.length !== 1 || log.data !== "0x") {
+      throw new EvidenceFailure("receipt_invalid");
+    }
+    return true;
+  }
+  if (log.topics[0] !== USER_OPERATION_EVENT) return false;
+  if (
+    log.topics.length !== 4 ||
+    log.data.length !== 258 ||
+    !/^0x0{24}[0-9a-f]{40}$/u.test(log.topics[2] ?? "") ||
+    !/^0x0{24}[0-9a-f]{40}$/u.test(log.topics[3] ?? "")
+  ) {
+    throw new EvidenceFailure("receipt_invalid");
+  }
+  const success = BigInt(`0x${log.data.slice(66, 130)}`);
+  if (success !== 0n && success !== 1n) throw new EvidenceFailure("receipt_invalid");
+  return true;
+}
+
+function verifyParsedOperationReceiptEvidence(
+  reference: Readonly<UserOperationReference>,
+  inclusion: Readonly<OperationInclusion>,
+  receipt: Readonly<OperationObserverUserOperationReceiptEvidence>,
+  transactionReceipt: Readonly<OperationObserverTransactionReceiptEvidence>,
+): Readonly<VerifiedOperationReceiptEvidence> {
+  const blockNumber = decimal(parseQuantity(receipt.blockNumber));
+  const outcome = receipt.success ? "success" : "reverted";
+  if (
+    receipt.userOperationHash !== reference.userOperationHash ||
+    receipt.entryPoint !== reference.entryPoint ||
+    receipt.sender !== reference.account ||
+    decimal(parseQuantity(receipt.nonce)) !== reference.nonce ||
+    receipt.transactionHash !== inclusion.transactionHash ||
+    blockNumber !== inclusion.blockNumber ||
+    receipt.blockHash !== inclusion.blockHash ||
+    outcome !== inclusion.outcome ||
+    transactionReceipt.status !== "0x1" ||
+    transactionReceipt.transactionHash !== inclusion.transactionHash ||
+    decimal(parseQuantity(transactionReceipt.blockNumber)) !== inclusion.blockNumber ||
+    transactionReceipt.blockHash !== inclusion.blockHash
+  ) {
+    throw new EvidenceFailure("receipt_invalid");
+  }
+
+  let previousLogIndex: bigint | null = null;
+  for (const log of transactionReceipt.logs) {
+    const logIndex = parseQuantity(log.logIndex);
+    if (
+      log.removed ||
+      log.transactionHash !== transactionReceipt.transactionHash ||
+      log.blockNumber !== transactionReceipt.blockNumber ||
+      log.blockHash !== transactionReceipt.blockHash ||
+      log.transactionIndex !== transactionReceipt.transactionIndex ||
+      (previousLogIndex !== null && logIndex <= previousLogIndex)
+    ) {
+      throw new EvidenceFailure("receipt_invalid");
+    }
+    previousLogIndex = logIndex;
+  }
+
+  const targetEvents = transactionReceipt.logs
+    .map((log, index) => ({ log, index }))
+    .filter(
+      ({ log }) =>
+        log.address === reference.entryPoint &&
+        log.topics[0] === USER_OPERATION_EVENT &&
+        log.topics[1] === reference.userOperationHash,
+    );
+  if (targetEvents.length !== 1) throw new EvidenceFailure("receipt_invalid");
+  const target = targetEvents[0];
+  if (!target) throw new EvidenceFailure("receipt_invalid");
+  const event = parseEvent(target.log, reference);
+  if (
+    receipt.paymaster !== event.paymaster ||
+    receipt.success !== event.success ||
+    parseQuantity(receipt.actualGasCost) !== event.actualGasCost ||
+    parseQuantity(receipt.actualGasUsed) !== event.actualGasUsed
+  ) {
+    throw new EvidenceFailure("receipt_invalid");
+  }
+
+  let boundaryIndex = -1;
+  for (let index = target.index - 1; index >= 0; index -= 1) {
+    const log = transactionReceipt.logs[index];
+    if (log && isEntryPointBoundary(log, reference.entryPoint)) {
+      boundaryIndex = index;
+      break;
+    }
+  }
+  if (boundaryIndex < 0) throw new EvidenceFailure("receipt_invalid");
+
+  return Object.freeze({
+    transactionHash: inclusion.transactionHash,
+    blockNumber: inclusion.blockNumber,
+    blockHash: inclusion.blockHash,
+    gasUsed: decimal(parseQuantity(receipt.actualGasUsed)),
+    outcome: inclusion.outcome,
+    logs: Object.freeze(transactionReceipt.logs.slice(boundaryIndex + 1, target.index + 1)),
+  });
+}
+
+/**
+ * Captures hostile provider receipts once and proves the exact target
+ * UserOperation execution window. No containing-transaction log escapes this
+ * function unless it is after the target's nearest EntryPoint boundary and no
+ * later than the target's own UserOperationEvent.
+ */
+export function verifyOperationReceiptEvidence(
+  input: Readonly<VerifyOperationReceiptEvidenceInput>,
+): Readonly<VerifiedOperationReceiptEvidence> {
+  try {
+    const receipt = parseUserOperationReceipt(input.userOperationReceipt, new WeakSet());
+    const transactionReceipt = parseTransactionReceipt(input.transactionReceipt, new WeakSet());
+    return verifyParsedOperationReceiptEvidence(
+      input.identity,
+      input.inclusion,
+      receipt,
+      transactionReceipt,
+    );
+  } catch (error) {
+    if (error instanceof EvidenceFailure) throw error;
+    throw new EvidenceFailure("receipt_invalid");
+  }
+}
+
 function captureCapabilities(value: unknown): CapturedCapabilities {
   try {
     const context: CaptureContext = new WeakSet();
@@ -485,10 +638,11 @@ function frozenResult<Result extends ObserveOperationResult>(result: Result): Re
 }
 
 function terminalResult(
-  operation: FinalizedOperation | DroppedOperation | SupersededOperation,
+  operation: FinalizedOperation | DroppedOperation | SupersededOperation | AbandonedOperation,
 ): ObserveOperationResult {
   if (operation.state === "finalized") return frozenResult({ status: "finalized", operation });
   if (operation.state === "superseded") return frozenResult({ status: "superseded", operation });
+  if (operation.state === "abandoned") return frozenResult({ status: "abandoned", operation });
   return frozenResult({ status: "dropped", operation });
 }
 
@@ -512,7 +666,8 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
       if (
         operation.state === "finalized" ||
         operation.state === "dropped" ||
-        operation.state === "superseded"
+        operation.state === "superseded" ||
+        operation.state === "abandoned"
       ) {
         return terminalResult(operation);
       }
@@ -590,6 +745,19 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           }),
           new WeakSet(),
         );
+        const inclusion = Object.freeze({
+          transactionHash: receipt.transactionHash,
+          blockNumber: decimal(parseQuantity(receipt.blockNumber)),
+          blockHash: receipt.blockHash,
+          outcome: receipt.success ? ("success" as const) : ("reverted" as const),
+          observedAt,
+        });
+        const verifiedReceipt = verifyParsedOperationReceiptEvidence(
+          reference,
+          inclusion,
+          receipt,
+          transactionReceipt,
+        );
         const transaction = parseTransaction(
           await read({
             type: "transaction",
@@ -599,70 +767,37 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           new WeakSet(),
         );
         if (
-          transactionReceipt.status !== "0x1" ||
-          transactionReceipt.transactionHash !== receipt.transactionHash ||
-          transaction.hash !== receipt.transactionHash ||
+          transaction.hash !== verifiedReceipt.transactionHash ||
           transaction.to !== reference.entryPoint ||
-          transactionReceipt.blockNumber !== receipt.blockNumber ||
-          transaction.blockNumber !== receipt.blockNumber ||
-          transactionReceipt.blockHash !== receipt.blockHash ||
-          transaction.blockHash !== receipt.blockHash ||
+          decimal(parseQuantity(transaction.blockNumber)) !== verifiedReceipt.blockNumber ||
+          transaction.blockHash !== verifiedReceipt.blockHash ||
           transactionReceipt.transactionIndex !== transaction.transactionIndex
         ) {
           throw new EvidenceFailure("receipt_invalid");
         }
 
-        const candidates = transactionReceipt.logs.filter(
-          (log) =>
-            log.address === reference.entryPoint &&
-            log.topics[0] === USER_OPERATION_EVENT &&
-            log.topics[1] === reference.userOperationHash,
-        );
-        if (candidates.length !== 1) throw new EvidenceFailure("receipt_invalid");
-        const eventLog = candidates[0];
-        if (
-          !eventLog ||
-          eventLog.removed ||
-          eventLog.transactionHash !== receipt.transactionHash ||
-          eventLog.blockNumber !== receipt.blockNumber ||
-          eventLog.blockHash !== receipt.blockHash ||
-          eventLog.transactionIndex !== transaction.transactionIndex
-        ) {
-          throw new EvidenceFailure("receipt_invalid");
-        }
-        const event = parseEvent(eventLog, reference);
-        if (
-          receipt.paymaster !== event.paymaster ||
-          receipt.success !== event.success ||
-          parseQuantity(receipt.actualGasCost) !== event.actualGasCost ||
-          parseQuantity(receipt.actualGasUsed) !== event.actualGasUsed
-        ) {
-          throw new EvidenceFailure("receipt_invalid");
-        }
-
-        const blockNumber = decimal(parseQuantity(receipt.blockNumber));
         const canonical = parseBlock(
-          await read({ type: "canonical_block", chainId: reference.chainId, blockNumber }),
+          await read({
+            type: "canonical_block",
+            chainId: reference.chainId,
+            blockNumber: verifiedReceipt.blockNumber,
+          }),
           new WeakSet(),
           "canonicality_unproven",
         );
         const transactionIndex = Number(parseQuantity(transaction.transactionIndex));
         if (
-          canonical.number !== receipt.blockNumber ||
-          canonical.hash !== receipt.blockHash ||
+          decimal(parseQuantity(canonical.number, "canonicality_unproven")) !==
+            verifiedReceipt.blockNumber ||
+          canonical.hash !== verifiedReceipt.blockHash ||
           !Number.isSafeInteger(transactionIndex) ||
-          canonical.transactions[transactionIndex] !== receipt.transactionHash ||
-          canonical.transactions.filter((hash) => hash === receipt.transactionHash).length !== 1
+          canonical.transactions[transactionIndex] !== verifiedReceipt.transactionHash ||
+          canonical.transactions.filter((hash) => hash === verifiedReceipt.transactionHash)
+            .length !== 1
         ) {
           throw new EvidenceFailure("canonicality_unproven");
         }
-        return Object.freeze({
-          transactionHash: receipt.transactionHash,
-          blockNumber,
-          blockHash: receipt.blockHash,
-          outcome: event.success ? "success" : "reverted",
-          observedAt,
-        });
+        return inclusion;
       }
 
       async function verifyFinality(

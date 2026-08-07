@@ -16,7 +16,8 @@
  *   - the packed runtime exports are exactly what the workspace build produced;
  *   - `createOAAth` composes and `requestPermission` returns an active Grant
  *     while every chain port stays untouched;
- *   - a recreated realm over the surviving durable state resumes that Grant;
+ *   - a recreated realm resumes the Grant and observes the exact durable
+ *     EIP-5792 bundle without another submission;
  *   - the public surface carries no protocol mechanics;
  *   - the published types resolve under `nodenext` strict with no `@types/node`.
  *
@@ -27,9 +28,9 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
 
 /**
  * The consumer program. Trimmed from `packages/sdk/test/support/browser.ts`: the
- * relay is the real packed handler, the stores are the package's own in-memory
- * adapters, and every chain port is a throwing stub, which is what proves
- * `requestPermission` reaches no chain.
+ * relay is the real packed handler and the stores are the package's own
+ * in-memory adapters. Chain ports reject access until consent completes, then
+ * retain one pending Operation for reload-safe provider status recovery.
  */
 const SMOKE = String.raw`
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
@@ -40,20 +41,28 @@ import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
   ecdsaKey,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_FACTORY_V07,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   sessionOperator,
 } from "@oaath/sdk/kernel";
 import {
   deriveSessionPolicyProfiles,
 } from "@oaath/sdk/advanced";
 import {
-  createMemoryCleanupStore,
-  createMemoryContextStore,
-  createMemoryGrantStoreAdapter,
-  createMemoryKeyStore,
-  createMemoryOperationStoreAdapter,
-} from "@oaath/sdk/testing";
+  createIndexedDbCleanupStore,
+  createIndexedDbContextStore,
+  createIndexedDbGrantStoreAdapter,
+  createIndexedDbKeyStore,
+  createIndexedDbOperationStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
+  openOaathDatabase,
+} from "@oaath/sdk/persistence";
+import { oaathProvider } from "@oaath/sdk/viem";
 import {
   hashPermissionRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
@@ -64,6 +73,7 @@ import {
 } from "@oaath/protocol";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { IDBFactory } from "fake-indexeddb";
 
 function fail(message) {
   throw new Error(message);
@@ -80,7 +90,9 @@ const START = 1800000000;
 const EXPIRES_IN = 1800;
 const VALIDATOR = "0x" + "22".repeat(20);
 const TARGET = "0x" + "44".repeat(20);
+const ACCOUNT = "0x" + "66".repeat(20);
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
+const deployment = kernelV4Deployment(CHAIN_ID);
 
 // Every root specifier must resolve to a built artifact inside the consumer.
 const resolutions = {};
@@ -175,7 +187,7 @@ const authorization = {
     });
     const installApproval = await approveKernelPermissionAllChain({
       owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
-      account: "0x" + "66".repeat(20),
+      account: ACCOUNT,
       installNonce: "0",
       packages: [...sessionRuntime.packages],
     });
@@ -205,30 +217,118 @@ const authorization = {
   },
 };
 
-/** requestPermission must reach no chain, so every port here throws. */
-function unreachable(port) {
-  return () => fail("requestPermission reached the chain " + port + " port");
+// Consent remains chain-free. After approval the same packed composition is
+// enabled for one exact provider send and observation-only reload recovery.
+let chainEnabled = false;
+let chainTouches = 0;
+const sends = [];
+function requireChain(port) {
+  if (!chainEnabled) fail("requestPermission reached the chain " + port + " port");
+  chainTouches += 1;
 }
 
 const chain = {
   chainId: CHAIN_ID,
-  reads: { read: unreachable("reads") },
-  observation: { read: unreachable("observation"), close: async () => {} },
-  bundler: { probe: unreachable("bundler") },
-  submission: { open: unreachable("submission") },
-  quote: unreachable("quote"),
-  usage: null,
+  reads: {
+    async read(request) {
+      requireChain("reads");
+      if (request.type === "chain_id") return CHAIN_ID;
+      if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
+      if (request.type === "runtime_code_hash") {
+        if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
+          return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+        }
+        if (request.address === KERNEL_V4_FACTORY_V07) return KERNEL_V4_FACTORY_V07_CODE_HASH;
+        if (request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
+          return deployment.implementationDeployment.runtimeCodeHash;
+        }
+      }
+      if (request.type === "kernel_factory_implementation") {
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+      }
+      if (request.type === "kernel_factory_account") return ACCOUNT;
+      if (request.type === "kernel_account_implementation") {
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+      }
+      fail("unexpected account read " + request.type);
+    },
+  },
+  observation: {
+    async read(request) {
+      requireChain("observation");
+      if (request.type === "chain_id") return CHAIN_ID;
+      if (request.type === "user_operation_receipt") return null;
+      if (request.type === "replacement_candidate") return null;
+      if (request.type === "entry_point_nonce") return null;
+      fail("unexpected pending observation " + request.type);
+    },
+    close: async () => {},
+  },
+  bundler: {
+    async probe(request) {
+      requireChain("bundler");
+      return {
+        accepting: true,
+        chainId: request.chainId,
+        supportedEntryPoints: [request.entryPoint],
+      };
+    },
+  },
+  submission: {
+    async open(request) {
+      requireChain("submission");
+      sends.push(request.prepared);
+      return {
+        async send() {
+          return { userOperationHash: request.prepared.userOperationHash };
+        },
+        close: async () => {},
+      };
+    },
+  },
+  async quote(request) {
+    requireChain("quote");
+    return {
+      nonceKey: "0",
+      sequence: String(sends.length),
+      gas: {
+        callGasLimit: "100000",
+        verificationGasLimit: "200000",
+        preVerificationGas: "50000",
+        maxFeePerGas: "1000000000",
+        maxPriorityFeePerGas: "100000000",
+      },
+    };
+  },
+  async usage(request) {
+    requireChain("usage");
+    return {
+      version: "oaath.grant-policy-usage/v1",
+      status: "complete",
+      grantId: request.grantId,
+      chainId: request.chainId,
+      finalizedOperationCount: "0",
+      through: { blockNumber: "1", blockHash: "0x" + "77".repeat(32), observedAt: now() },
+    };
+  },
   feePayer: null,
 };
 
-// The durable state outlives any one realm, so both realms share these stores.
-const stores = {
-  grants: createMemoryGrantStoreAdapter(),
-  operations: createMemoryOperationStoreAdapter(),
-  keys: createMemoryKeyStore(),
-  cleanup: createMemoryCleanupStore(),
-  context: createMemoryContextStore(),
-};
+// A new database connection and new adapters are composed after the first realm
+// closes; only IndexedDB state survives the recreation.
+const indexedDb = new IDBFactory();
+let database = await openOaathDatabase({ factory: indexedDb });
+function durableStores() {
+  return {
+    grants: createIndexedDbGrantStoreAdapter(database),
+    operations: createIndexedDbOperationStoreAdapter(database),
+    walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+    keys: createIndexedDbKeyStore(database),
+    cleanup: createIndexedDbCleanupStore(database),
+    context: createIndexedDbContextStore(database),
+  };
+}
+let stores = durableStores();
 
 let signOuts = 0;
 let invalidations = 0;
@@ -309,6 +409,31 @@ for (const [name, keys] of Object.entries(surface)) {
     fail(name + " exposes protocol mechanics: " + joined);
   }
 }
+if (chainTouches !== 0) fail("consent touched the chain " + chainTouches + " times");
+
+chainEnabled = true;
+const account = await grant.account(CHAIN_ID);
+if (account !== ACCOUNT) fail("the packed Grant resolved another account: " + account);
+const firstProvider = oaathProvider({ grant, chain: CHAIN_ID });
+const sent = await firstProvider.request({
+  method: "wallet_sendCalls",
+  params: [{
+    version: "2.0.0",
+    id: "packed-reload",
+    from: account,
+    chainId: "0x" + CHAIN_ID.toString(16),
+    atomicRequired: true,
+    calls: [{ to: TARGET, data: "0xa9059cbb" }],
+  }],
+});
+if (sent.id !== "packed-reload") fail("wallet_sendCalls returned another id");
+if (sends.length !== 1) fail("wallet_sendCalls submitted " + sends.length + " operations");
+const exactHash = sends[0].userOperationHash;
+await connection.close();
+await oaath.close();
+database.close();
+database = await openOaathDatabase({ factory: indexedDb });
+stores = durableStores();
 
 // Full realm recreation: a new composition, a new connection, and a new Grant
 // store wrapper over the durable state the first realm wrote.
@@ -319,11 +444,22 @@ if (resumed === null) fail("a recreated realm did not resume the active Grant");
 if (resumed.state !== "active") fail("the resumed Grant state is " + resumed.state);
 if (resumed.expiresAt !== grant.expiresAt) fail("the resumed Grant expiry differs");
 if (ownerRequests.length !== 1) fail("resume asked the owner again");
+const recovered = await oaathProvider({ grant: resumed, chain: CHAIN_ID }).request({
+  method: "wallet_getCallsStatus",
+  params: ["packed-reload"],
+});
+if (recovered.id !== "packed-reload" || recovered.status !== 100) {
+  fail("reloaded provider did not recover the pending bundle: " + JSON.stringify(recovered));
+}
+if (sends.length !== 1 || sends[0].userOperationHash !== exactHash) {
+  fail("status recovery resubmitted or changed the exact operation");
+}
 
 await recreatedConnection.signOut();
 if (signOuts !== 1) fail("signOut ran " + signOuts + " times");
 await recreatedConnection.close();
-await connection.close();
+await recreated.close();
+database.close();
 if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invalidated");
 
 process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
@@ -382,7 +518,7 @@ const EXPECTED_SURFACES = {
 const consumer = await createConsumer({
   label: "browser",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
-  dependencies: { viem: "2.55.8" },
+  dependencies: { "fake-indexeddb": "6.2.5", viem: "2.55.8" },
   files: { "smoke.mjs": SMOKE, "types.ts": TYPES },
 });
 
@@ -424,7 +560,9 @@ try {
   console.log(
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
-  console.log("  golden path      connect, requestPermission, realm recreation, resume, signOut");
+  console.log(
+    "  golden path      connect, consent, wallet_sendCalls, realm recreation, exact status, signOut",
+  );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {
   console.error("smoke-packed-browser: FAILED");

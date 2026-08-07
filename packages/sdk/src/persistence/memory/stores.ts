@@ -5,30 +5,37 @@
  * ones tests should reach for when durability is not the subject. They keep the
  * exact same rules as the IndexedDB backends — one current version, key custody
  * refuses extractable handles, and compare-and-swap compares the stored
- * revision — so a test that passes here proves the contract, not the medium.
+ * revision and generation — so a test that passes here proves the contract,
+ * not the medium.
  *
- * ponytail: one file for five small backends; split when one grows past its
+ * ponytail: one file for six small backends; split when one grows past its
  * factory.
  *
  * @author taek <leekt216@gmail.com>
  */
 import type { GrantStoreAdapter, OperationStoreAdapter, StoreRecord } from "../../store.js";
+import { matchesExpectedRevisionAndGeneration } from "../indexeddb/database.js";
 import {
   type OaathCleanupCheckpoint,
   type OaathCleanupCheckpointStore,
   type OaathClientContext,
   type OaathContextStore,
   type OaathKeyStore,
+  parseWalletCallBundleKey,
   persistenceFail,
   persistenceId,
   requireNonExtractableKey,
+  type WalletCallBundleKey,
+  type WalletCallBundleStoreAdapter,
 } from "../interfaces.js";
 
 function assertOpen(closed: boolean): void {
   if (closed) persistenceFail("persistence_unavailable", "memory store is closed");
 }
 
-function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: string }>): string {
+function operationKeyParts(
+  input: Readonly<{ grantId: string; chainId: number; kind: string }>,
+): readonly [string, number, string] {
   const chainId = input.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return persistenceFail("persistence_input_invalid", "memory chainId must be positive");
@@ -36,9 +43,31 @@ function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: 
   if (input.kind !== "execution" && input.kind !== "revocation") {
     return persistenceFail("persistence_input_invalid", "memory kind must name a lane");
   }
+  return [persistenceId(input.grantId, "memory grantId"), chainId, input.kind];
+}
+
+function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: string }>): string {
   // The array form keeps a grantId containing a separator from colliding with
   // another lane, the same way the IndexedDB backend uses a composite key.
-  return JSON.stringify([persistenceId(input.grantId, "memory grantId"), chainId, input.kind]);
+  return JSON.stringify(["lane", ...operationKeyParts(input)]);
+}
+
+function operationArchiveKey(
+  input: Readonly<{ grantId: string; chainId: number; kind: string }>,
+  userOperationHash: string,
+): string {
+  if (!/^0x[0-9a-f]{64}$/u.test(userOperationHash)) {
+    return persistenceFail(
+      "persistence_input_invalid",
+      "memory UserOperation hash must be a lowercase 32-byte hash",
+    );
+  }
+  return JSON.stringify(["archive", ...operationKeyParts(input), userOperationHash]);
+}
+
+function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
+  const key = parseWalletCallBundleKey(input);
+  return JSON.stringify([key.providerScopeId, key.id]);
 }
 
 function compareAndSwap(
@@ -85,20 +114,80 @@ export function createMemoryGrantStoreAdapter(): GrantStoreAdapter {
 
 export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
   const records = new Map<string, Readonly<StoreRecord<unknown>>>();
+  const archives = new Map<string, Readonly<StoreRecord<unknown>>>();
   let closed = false;
   const adapter: OperationStoreAdapter = {
     async get(key) {
       assertOpen(closed);
       return records.get(operationKey(key));
     },
+    async getArchived(input) {
+      assertOpen(closed);
+      return archives.get(operationArchiveKey(input.key, input.userOperationHash));
+    },
     async compareAndSwap(input) {
       assertOpen(closed);
-      return compareAndSwap(
-        records,
-        operationKey(input.key),
-        input.expectedStoreRevision,
-        input.next,
+      const lane = operationKey(input.key);
+      const expectedAbsentArchive = operationArchiveKey(
+        input.key,
+        input.expectedArchiveAbsentUserOperationHash,
       );
+      const current = records.get(lane);
+      if (
+        input.expectedStoreRevision === null
+          ? current !== undefined
+          : current?.storeRevision !== input.expectedStoreRevision
+      ) {
+        return false;
+      }
+      if (archives.has(expectedAbsentArchive)) return false;
+      if (input.archive !== null) {
+        if (input.archive.userOperationHash === input.expectedArchiveAbsentUserOperationHash) {
+          return false;
+        }
+        const archive = operationArchiveKey(input.key, input.archive.userOperationHash);
+        if (
+          current === undefined ||
+          JSON.stringify(current) !== JSON.stringify(input.archive.record) ||
+          archives.has(archive)
+        ) {
+          return false;
+        }
+        archives.set(archive, input.archive.record);
+      }
+      records.set(lane, input.next);
+      return true;
+    },
+    async close() {
+      closed = true;
+    },
+  };
+  return Object.freeze(adapter);
+}
+
+export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStoreAdapter {
+  const records = new Map<string, Readonly<StoreRecord<unknown>>>();
+  let closed = false;
+  const adapter: WalletCallBundleStoreAdapter = {
+    async get(key: Readonly<WalletCallBundleKey>) {
+      assertOpen(closed);
+      return records.get(walletCallBundleKey(key));
+    },
+    async compareAndSwap(input) {
+      assertOpen(closed);
+      const key = walletCallBundleKey(input.key);
+      const current = records.get(key);
+      if (
+        !matchesExpectedRevisionAndGeneration(
+          current,
+          input.expectedStoreRevision,
+          input.expectedGeneration,
+        )
+      ) {
+        return false;
+      }
+      records.set(key, input.next);
+      return true;
     },
     async close() {
       closed = true;

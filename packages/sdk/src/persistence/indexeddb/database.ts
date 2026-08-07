@@ -3,11 +3,13 @@
  * old persisted state is rejected and recreated.
  *
  * ```text
- * state and owner     the database name carries the schema version, so a schema
- *                     change is a different database, never an in-place upgrade
- * persisted evidence  grants, operations, keys, cleanup, context object stores
+ * state and owner     the numeric database version and exact store set carry
+ *                     the one current schema; an upgrade wipes before recreating
+ * persisted evidence  grants, operations, wallet-call bundles, keys, cleanup,
+ *                     and context object stores
  * resource occupied?  one connection per realm, closed by the realm
- * retry safe?         yes; opening is idempotent and never mutates records
+ * retry safe?         current-schema opens do not mutate; every upgrade wipes
+ *                     all stores before recreating the exact current set
  * crash/reload        a half-created database has the wrong store set, so the
  *                     next open discards and recreates it
  * cleanup owner       the realm that opened the handle closes it; discarded
@@ -15,8 +17,8 @@
  * ```
  *
  * Records are moved, never interpreted: every value is handed back as `unknown`
- * to the fact's owner (`GrantStore`, `OperationStore`, `parseCleanupCheckpoint`,
- * `parseClientContext`, `requireNonExtractableKey`).
+ * to the fact's owner (`GrantStore`, `OperationStore`, `WalletCallBundleStore`,
+ * `parseCleanupCheckpoint`, `parseClientContext`, `requireNonExtractableKey`).
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -31,11 +33,12 @@ import { persistenceFail } from "../interfaces.js";
  */
 export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
 /** Bumped on any schema change; the upgrade wipes, it never migrates. */
-export const OAATH_INDEXEDDB_VERSION = 2;
+export const OAATH_INDEXEDDB_VERSION = 7;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({
   grants: "grants",
   operations: "operations",
+  walletCallBundles: "walletCallBundles",
   keys: "keys",
   cleanup: "cleanup",
   context: "context",
@@ -107,6 +110,47 @@ export function matchesExpectedRevision(current: unknown, expected: number | nul
     Number.isSafeInteger(revision) &&
     revision >= 0 &&
     revision === expected
+  );
+}
+
+const LOWERCASE_32_BYTE_HASH = /^0x[0-9a-f]{64}$/u;
+
+/** Matches one exact revision and immutable generation, or an initial absent insertion. */
+export function matchesExpectedRevisionAndGeneration(
+  current: unknown,
+  expectedRevision: number | null,
+  expectedGeneration: string | null,
+): boolean {
+  if (expectedRevision === null || expectedGeneration === null) {
+    return expectedRevision === null && expectedGeneration === null && current === undefined;
+  }
+  if (
+    !LOWERCASE_32_BYTE_HASH.test(expectedGeneration) ||
+    current === null ||
+    typeof current !== "object"
+  ) {
+    return false;
+  }
+  const revisionDescriptor = Object.getOwnPropertyDescriptor(current, "storeRevision");
+  if (!revisionDescriptor || !("value" in revisionDescriptor)) return false;
+  const revision = revisionDescriptor.value;
+  if (
+    typeof revision !== "number" ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0 ||
+    revision !== expectedRevision
+  ) {
+    return false;
+  }
+  const valueDescriptor = Object.getOwnPropertyDescriptor(current, "value");
+  if (!valueDescriptor || !("value" in valueDescriptor)) return false;
+  const value = valueDescriptor.value;
+  if (value === null || typeof value !== "object") return false;
+  const generationDescriptor = Object.getOwnPropertyDescriptor(value, "generation");
+  return (
+    generationDescriptor !== undefined &&
+    "value" in generationDescriptor &&
+    generationDescriptor.value === expectedGeneration
   );
 }
 

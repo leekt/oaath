@@ -125,11 +125,14 @@ describe("hostile input at the client boundary", () => {
   });
 
   it("refuses malformed capabilities, stores, chains, keys, and clocks", () => {
+    const { walletCallBundles: _retiredOptionalStore, ...oldStores } = createMemoryStores();
     const cases: readonly Record<string, unknown>[] = [
       { authorization: { authorize: "no" } },
       { authorization: { authorize: async () => ({}), extra: 1 } },
       { invalidation: {} },
+      { stores: oldStores },
       { stores: { ...createMemoryStores(), keys: { store: 1 } } },
+      { stores: { ...createMemoryStores(), walletCallBundles: { get: async () => undefined } } },
       { chains: [] },
       { chains: [createChainFixture().capability, createChainFixture().capability] },
       { chains: [{ chainId: CHAIN_ID }] },

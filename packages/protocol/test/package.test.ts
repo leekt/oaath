@@ -88,6 +88,7 @@ describe("package boundary", () => {
       "parseMaterializationId",
       "parseOperation",
       "parseOperationId",
+      "parseOperationIdentity",
       "parseOperatorCredentialProfile",
       "parseOwnerCredentialProfile",
       "parsePermissionDecision",

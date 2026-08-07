@@ -20,6 +20,7 @@ export {
 export { createIndexedDbGrantStoreAdapter } from "./persistence/indexeddb/grant-store.js";
 export { createIndexedDbKeyStore } from "./persistence/indexeddb/key-store.js";
 export { createIndexedDbOperationStoreAdapter } from "./persistence/indexeddb/operation-store.js";
+export { createIndexedDbWalletCallBundleStoreAdapter } from "./persistence/indexeddb/wallet-call-bundle-store.js";
 export type {
   OaathCleanupCheckpoint,
   OaathCleanupCheckpointStore,
@@ -28,11 +29,18 @@ export type {
   OaathContextStore,
   OaathKeyStore,
   PersistenceErrorCode,
+  WalletCallBundleKey,
+  WalletCallBundleOperation,
+  WalletCallBundleRecord,
+  WalletCallBundleStoreAdapter,
+  WalletCallBundleStoreRecord,
 } from "./persistence/interfaces.js";
 export {
   isCleanupEffectName,
   OAATH_CLEANUP_CHECKPOINT_VERSION,
   OAATH_CLIENT_CONTEXT_VERSION,
+  OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
+  OAATH_WALLET_CALL_BUNDLE_VERSION,
   OaathPersistenceError,
   parseCleanupCheckpoint,
   parseClientContext,

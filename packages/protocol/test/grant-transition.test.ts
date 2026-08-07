@@ -58,6 +58,10 @@ function binding(chainId: number) {
   };
 }
 
+function operationId(chainId: number): `0x${string}` {
+  return `0x${chainId.toString(16).padStart(64, "0")}`;
+}
+
 function present(chainId: number, blockNumber: number, observedAt: number) {
   return {
     kind: "permission_present" as const,
@@ -104,6 +108,7 @@ function beginMaterialization(grant: Grant, chainId: number, startedAt: number):
     type: "begin_materialization",
     identity,
     binding: binding(chainId),
+    operationId: operationId(chainId),
     startedAt,
   });
 }
@@ -113,6 +118,7 @@ function install(grant: Grant, chainId: number, observedAt: number): Grant {
     type: "record_installed",
     identity,
     binding: binding(chainId),
+    operationId: operationId(chainId),
     installation: present(chainId, 10, observedAt),
   });
 }
@@ -228,6 +234,41 @@ describe("Grant transitions", () => {
     expect("nonce" in grant).toBe(false);
   });
 
+  it("accepts delayed chain-local evidence without regressing the Grant watermark", () => {
+    let grant = active();
+    grant = beginMaterialization(addUnmaterialized(grant, 1, 31), 1, 32);
+    grant = beginMaterialization(addUnmaterialized(grant, 137, 33), 137, 34);
+    grant = install(grant, 137, 40);
+    grant = advanceGrant(grant, {
+      type: "record_unreadable",
+      identity,
+      binding: binding(1),
+      observedAt: 35,
+      reason: "provider_unavailable",
+    });
+    grant = install(grant, 1, 36);
+
+    expect(grant.updatedAt).toBe(40);
+    expect(grant.materializations).toMatchObject([
+      { chainId: 1, state: "installed", updatedAt: 36, installation: { observedAt: 36 } },
+      { chainId: 137, state: "installed", updatedAt: 40, installation: { observedAt: 40 } },
+    ]);
+    expect(parseGrant(clone(grant))).toEqual(grant);
+
+    grant = beginRevocation(grant, 41);
+    grant = beginChainRevocation(grant, 1, 42);
+    grant = beginChainRevocation(grant, 137, 43);
+    grant = revokeChain(grant, 137, 50);
+    grant = revokeChain(grant, 1, 45);
+
+    expect(grant.updatedAt).toBe(50);
+    expect(grant.materializations).toMatchObject([
+      { chainId: 1, state: "revoked", updatedAt: 45, removal: { observedAt: 45 } },
+      { chainId: 137, state: "revoked", updatedAt: 50, removal: { observedAt: 50 } },
+    ]);
+    expect(parseGrant(clone(grant))).toEqual(grant);
+  });
+
   it("keeps approved separate from active and rejected terminal", () => {
     const waiting = approved();
     expect(waiting).toMatchObject({ state: "approved", materializations: [] });
@@ -271,8 +312,66 @@ describe("Grant transitions", () => {
     expectGrantError(() => addUnmaterialized(grant, 137, 33), "grant_transition_forbidden");
   });
 
+  it("abandons only the exact pre-submission materialization attempt", () => {
+    const installing = beginMaterialization(addUnmaterialized(active(), 1, 31), 1, 32);
+    expectGrantError(
+      () =>
+        advanceGrant(installing, {
+          type: "abandon_materialization",
+          identity,
+          binding: binding(1),
+          operationId: operationId(2),
+          abandonedAt: 33,
+        }),
+      "grant_identity_mismatch",
+    );
+
+    const abandoned = advanceGrant(installing, {
+      type: "abandon_materialization",
+      identity,
+      binding: binding(1),
+      operationId: operationId(1),
+      abandonedAt: 33,
+    });
+    expect(abandoned).toMatchObject({ materializations: [{ state: "unmaterialized" }] });
+    expectGrantError(() => install(abandoned, 1, 34), "grant_transition_forbidden");
+
+    const replacement = advanceGrant(abandoned, {
+      type: "begin_materialization",
+      identity,
+      binding: binding(1),
+      operationId: operationId(2),
+      startedAt: 34,
+    });
+    expectGrantError(
+      () =>
+        advanceGrant(replacement, {
+          type: "abandon_materialization",
+          identity,
+          binding: binding(1),
+          operationId: operationId(1),
+          abandonedAt: 35,
+        }),
+      "grant_identity_mismatch",
+    );
+
+    let revoking = beginRevocation(replacement, 40);
+    revoking = advanceGrant(revoking, {
+      type: "abandon_materialization",
+      identity,
+      binding: binding(1),
+      operationId: operationId(2),
+      abandonedAt: 41,
+    });
+    revoking = invalidateCapability(revoking, 42);
+    expect(
+      advanceGrant(revoking, { type: "complete_revocation", identity, revokedAt: 43 }).state,
+    ).toBe("revoked");
+  });
+
   it("requires positive child removal and capability invalidation before completion", () => {
     let grant = install(beginMaterialization(addUnmaterialized(active(), 1, 31), 1, 32), 1, 33);
+    expectGrantError(() => install(grant, 1, 32), "grant_transition_invalid");
     grant = beginRevocation(grant, 40);
     expectGrantError(
       () => advanceGrant(grant, { type: "complete_revocation", identity, revokedAt: 41 }),
@@ -306,6 +405,7 @@ describe("Grant transitions", () => {
   it("does not close an in-flight installation from absence evidence alone", () => {
     let grant = beginMaterialization(addUnmaterialized(active(), 1, 31), 1, 32);
     grant = beginChainRevocation(beginRevocation(grant, 40), 1, 41);
+    expectGrantError(() => revokeChain(grant, 1, 40), "grant_transition_invalid");
     expectGrantError(() => revokeChain(grant, 1, 42), "grant_transition_forbidden");
 
     grant = advanceGrant(grant, {
@@ -331,6 +431,7 @@ describe("Grant transitions", () => {
             type: "record_installed",
             identity,
             binding: binding(1),
+            operationId: operationId(1),
             installation: { ...present(1, 10, 33), ...changed },
           }),
         "grant_identity_mismatch",
@@ -342,6 +443,7 @@ describe("Grant transitions", () => {
           type: "record_installed",
           identity: { ...identity, grantId: "other" },
           binding: binding(1),
+          operationId: operationId(1),
           installation: present(1, 10, 33),
         }),
       "grant_identity_mismatch",
@@ -520,6 +622,7 @@ describe("Grant transitions", () => {
           type: "record_installed",
           identity,
           binding: binding(1),
+          operationId: operationId(1),
           installation: { ...present(1, 10, 34), blockHash: `0x${"99".repeat(32)}` },
         }),
       "grant_transition_invalid",
@@ -679,11 +782,25 @@ describe("Grant transitions", () => {
         binding: binding(1),
         recordedAt: 50,
       },
-      { type: "begin_materialization", identity, binding: binding(1), startedAt: 50 },
+      {
+        type: "begin_materialization",
+        identity,
+        binding: binding(1),
+        operationId: operationId(1),
+        startedAt: 50,
+      },
+      {
+        type: "abandon_materialization",
+        identity,
+        binding: binding(1),
+        operationId: operationId(1),
+        abandonedAt: 50,
+      },
       {
         type: "record_installed",
         identity,
         binding: binding(1),
+        operationId: operationId(1),
         installation: present(1, 10, 50),
       },
       {
@@ -727,6 +844,7 @@ describe("Grant transitions", () => {
           "record_unsupported",
           "record_unmaterialized",
           "begin_materialization",
+          "abandon_materialization",
           "record_installed",
           "record_unreadable",
           "begin_revocation",
@@ -736,6 +854,7 @@ describe("Grant transitions", () => {
         beginRevocation(active(), 40),
         allowed(
           "expire",
+          "abandon_materialization",
           "record_installed",
           "record_unreadable",
           "begin_chain_revocation",

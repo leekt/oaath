@@ -51,6 +51,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryWalletCallBundleStoreAdapter,
 } from "../../src/testing.js";
 
 export const CHAIN_ID = 421_614;
@@ -73,6 +74,8 @@ const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"12".repeat(32)}`);
 const ZERO_ADDRESS = `0x${"00".repeat(20)}` as const;
 const EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" as const;
+const BEFORE_EXECUTION_TOPIC =
+  "0xbb47ee3e183a558b1a2ff0874b079f3fc5478b7454eacf2bfc5af2ff5878f972" as const;
 const INCLUSION_BLOCK = 20n;
 const BLOCK_HASH = `0x${"55".repeat(32)}` as const;
 const PARENT_HASH = `0x${"aa".repeat(32)}` as const;
@@ -362,15 +365,18 @@ function word(value: bigint): string {
   return value.toString(16).padStart(64, "0");
 }
 
-function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
+function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return deployment.implementationDeployment.runtimeCodeHash;
+    return selectedDeployment.implementationDeployment.runtimeCodeHash;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
 export interface ChainFixtureOptions {
+  readonly chainId?: 46_630 | 421_614 | 11_155_111;
+  /** Smart account returned by the synthetic factory; defaults to ACCOUNT. */
+  readonly account?: `0x${string}`;
   /**
    * Complete finalized usage evidence enables session coverage. Defaults to
    * true — the golden path is session execution. `false` removes the usage
@@ -394,6 +400,8 @@ export interface ChainFixtureOptions {
   readonly blockOffset?: () => number;
   /** Withholds inclusion evidence, leaving the operation pending. */
   readonly withholdReceipt?: () => boolean;
+  /** UserOperation execution result by submission index; validation still succeeded. */
+  readonly operationSuccess?: (submissionIndex: number) => boolean;
   /**
    * Serves the EntryPoint nonce for the supersession read: given the
    * operation's own nonce, return the observed one, or null for no answer.
@@ -419,6 +427,9 @@ export interface ChainFixture {
 export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixture {
   const sends: Readonly<PreparedUserOperation>[] = [];
   const signatures: string[] = [];
+  const chainId = options.chainId ?? CHAIN_ID;
+  const selectedDeployment = kernelV4Deployment(chainId);
+  const account = options.account ?? ACCOUNT;
   const fixture = {
     sends,
     signatures,
@@ -454,6 +465,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     const prepared = submitted();
     if (!prepared || prepared.userOperationHash !== hash) return null;
     if (options.withholdReceipt?.()) return null;
+    const success = options.operationSuccess?.(currentIndex()) ?? true;
     const nonce = BigInt(prepared.userOperation.nonce);
     return {
       userOperationHash: hash,
@@ -463,7 +475,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       paymaster: ZERO_ADDRESS,
       actualGasCost: "0x9",
       actualGasUsed: "0xa",
-      success: true,
+      success,
       transactionHash: TRANSACTION_HASH,
       blockNumber: quantity(blockNumber(currentIndex())),
       blockHash: blockHash(currentIndex()),
@@ -474,6 +486,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     const prepared = submitted();
     if (!prepared) return null;
     const nonce = BigInt(prepared.userOperation.nonce);
+    const success = options.operationSuccess?.(currentIndex()) ?? true;
     return {
       transactionHash: TRANSACTION_HASH,
       blockNumber: quantity(blockNumber(currentIndex())),
@@ -489,13 +502,24 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           transactionIndex: "0x0",
           logIndex: "0x0",
           removed: false,
+          topics: [BEFORE_EXECUTION_TOPIC],
+          data: "0x",
+        },
+        {
+          address: prepared.entryPoint.address,
+          blockNumber: quantity(blockNumber(currentIndex())),
+          blockHash: blockHash(currentIndex()),
+          transactionHash: TRANSACTION_HASH,
+          transactionIndex: "0x0",
+          logIndex: "0x1",
+          removed: false,
           topics: [
             EVENT_TOPIC,
             prepared.userOperationHash,
             `0x${"0".repeat(24)}${prepared.userOperation.sender.slice(2)}`,
             `0x${"0".repeat(24)}${ZERO_ADDRESS.slice(2)}`,
           ],
-          data: `0x${word(nonce)}${word(1n)}${word(9n)}${word(10n)}`,
+          data: `0x${word(nonce)}${word(success ? 1n : 0n)}${word(9n)}${word(10n)}`,
         },
       ],
     };
@@ -512,16 +536,18 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   }
 
   const capability: Readonly<OaathChainCapability> = Object.freeze({
-    chainId: CHAIN_ID,
+    chainId,
     reads: Object.freeze({
       async read(request: KernelV4AccountReadRequest): Promise<unknown> {
         if (request.type === "chain_id") return request.chainId;
-        if (request.type === "runtime_code_hash") return runtimeCodeHash(request.address);
-        if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
+        if (request.type === "runtime_code_hash") {
+          return runtimeCodeHash(request.address, selectedDeployment);
+        }
+        if (request.type === "code") return request.address === account ? "0x" : "0x01";
         if (request.type === "kernel_factory_implementation") {
           return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
         }
-        if (request.type === "kernel_factory_account") return ACCOUNT;
+        if (request.type === "kernel_factory_account") return account;
         return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
       },
     }),
@@ -531,7 +557,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
         readonly userOperationHash?: `0x${string}`;
         readonly nonce?: string;
       }) {
-        if (request.type === "chain_id") return CHAIN_ID;
+        if (request.type === "chain_id") return chainId;
         if (request.type === "user_operation_receipt") {
           return receipt(request.userOperationHash ?? `0x${"00".repeat(32)}`);
         }
@@ -598,7 +624,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     }),
     async quote(request: { readonly chainId: number }) {
       fixture.quotes += 1;
-      if (request.chainId !== CHAIN_ID) throw new Error("unexpected quote chain");
+      if (request.chainId !== chainId) throw new Error("unexpected quote chain");
       return {
         nonceKey: "0",
         // The account's next sequence, as a chain read would report it.
@@ -643,6 +669,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
 export interface RealmStores {
   readonly grants: ReturnType<typeof createMemoryGrantStoreAdapter>;
   readonly operations: ReturnType<typeof createMemoryOperationStoreAdapter>;
+  readonly walletCallBundles: ReturnType<typeof createMemoryWalletCallBundleStoreAdapter>;
   readonly keys: ReturnType<typeof createMemoryKeyStore>;
   readonly cleanup: ReturnType<typeof createMemoryCleanupStore>;
   readonly context: ReturnType<typeof createMemoryContextStore>;
@@ -652,6 +679,7 @@ export function createMemoryStores(): RealmStores {
   return {
     grants: createMemoryGrantStoreAdapter(),
     operations: createMemoryOperationStoreAdapter(),
+    walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
     keys: createMemoryKeyStore(),
     cleanup: createMemoryCleanupStore(),
     context: createMemoryContextStore(),
@@ -773,6 +801,8 @@ export interface RealmOptions {
   readonly relay?: (request: Request) => Promise<Response>;
   readonly stores?: RealmStores;
   readonly chain?: ChainFixture;
+  readonly chains?: readonly ChainFixture[];
+  readonly binding?: unknown;
   readonly owner?: OwnerDecision;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
   readonly signing?: ReturnType<typeof signingProfiles>;
@@ -798,13 +828,14 @@ export function createRealm(options: RealmOptions = {}): Realm {
   const clock = options.clock ?? createClock();
   const relay = options.relay ?? createRelay(clock);
   const stores = options.stores ?? createMemoryStores();
-  const chain = options.chain ?? createChainFixture();
+  const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
+  const chains = options.chains ?? [chain];
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let signOuts = 0;
   let invalidations = 0;
 
   const oaath = createOAAth({
-    binding: bindingInput,
+    binding: options.binding ?? bindingInput,
     issuer: {
       url: ISSUER_URL,
       fetch: (request: Request) => relay(authorized(request, CLIENT_TOKEN)),
@@ -831,7 +862,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
       },
     },
     stores,
-    chains: [chain.capability],
+    chains: chains.map((entry) => entry.capability),
     signing: options.signing ?? signingProfiles(),
     localKeyIds: ["session-key"],
     now: clock.now,

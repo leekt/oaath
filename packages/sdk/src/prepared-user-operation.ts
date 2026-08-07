@@ -7,6 +7,7 @@ import {
   type OperationIdentity,
   type OperationKind,
 } from "@oaath/protocol";
+import type { Hash } from "viem";
 import { getUserOperationHash, type UserOperation } from "viem/account-abstraction";
 
 export const OAATH_PREPARED_USER_OPERATION_VERSION = "oaath.prepared-user-operation/v1" as const;
@@ -495,8 +496,15 @@ export function parsePreparedUserOperation(value: unknown): PreparedUserOperatio
   }
 }
 
-export function deriveOperationId(value: unknown): Readonly<OperationIdentity> {
+export function deriveOperationId(
+  value: unknown,
+  requestHash: Hash | null,
+): Readonly<OperationIdentity> {
   const prepared = parsePreparedUserOperation(value);
+  const parsedRequestHash =
+    requestHash === null
+      ? null
+      : hash(requestHash, "operation request hash", "prepared_user_operation_input_invalid");
   return Object.freeze({
     kind: prepared.kind,
     grantId: prepared.grantId,
@@ -505,5 +513,6 @@ export function deriveOperationId(value: unknown): Readonly<OperationIdentity> {
     account: prepared.userOperation.sender,
     nonce: prepared.userOperation.nonce,
     userOperationHash: prepared.userOperationHash,
+    requestHash: parsedRequestHash,
   });
 }
