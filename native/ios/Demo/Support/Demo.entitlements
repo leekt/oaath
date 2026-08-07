@@ -2,10 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- APNs sandbox environment: dev-signed installs receive SANDBOX device
-	     tokens, which is why examples/phone pushes to api.sandbox.push.apple.com.
-	     The push entitlement itself requires a PAID Apple Developer membership;
-	     without one, delete this capability and use manual operation-id entry. -->
+	<!-- Optional paid-team template. The target does not attach this file by
+	     default, so Personal Teams can provision the pull-inbox demo. Paid-team
+	     dev installs receive SANDBOX tokens for api.sandbox.push.apple.com. -->
 	<key>aps-environment</key>
 	<string>development</string>
 </dict>

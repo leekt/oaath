@@ -17,7 +17,8 @@ guarantee and no production qualification.
    in `native/ios` automatically).
 3. Signing & Capabilities → select your personal team (a free Apple account
    works; the app is then provisioned for 7 days) and set a **unique** bundle
-   identifier (replace `org.oaath.owner-phone-demo`).
+   identifier (replace `org.oaath.owner-phone-demo`). The checked-in target has
+   no signing entitlements, so it does not request paid-team capabilities.
 4. Select your iPhone as the destination. On iOS 16+ enable Developer Mode
    first: Settings → Privacy & Security → Developer Mode, then reboot.
 5. Run. The app ships with an **empty** relay field: a phone can never use the
@@ -36,22 +37,25 @@ restart the example and use the fresh browser Pair flow.
 ## Push notifications (optional, paid account required)
 
 The push entitlement (`aps-environment`) requires a **paid Apple Developer
-membership** — free personal teams cannot use it. Without one: remove the Push
-Notifications capability (and ignore the entitlements file) and use the default
+membership** — free personal teams cannot use it. The checked-in target leaves
+**Code Signing Entitlements** empty by default and therefore uses the
 authenticated pull inbox; manual operation-id entry remains a fallback.
 
 With a paid membership:
 
-1. developer.apple.com → Certificates, Identifiers & Profiles → Keys → create
+1. In the Demo target's Build Settings, set **Code Signing Entitlements** to
+   `Support/Demo.entitlements` for Debug and Release. Xcode can then provision
+   the Push Notifications capability for the paid team.
+2. developer.apple.com → Certificates, Identifiers & Profiles → Keys → create
    an APNs key; download the `.p8` once and note the **Key ID**.
-2. Note your **Team ID** (Membership page) and use your app's **bundle id**
+3. Note your **Team ID** (Membership page) and use your app's **bundle id**
    as the topic.
-3. Hand all four to the example (`APNS_KEY_PEM_PATH`, `APNS_KEY_ID`,
+4. Hand all four to the example (`APNS_KEY_PEM_PATH`, `APNS_KEY_ID`,
    `APPLE_TEAM_ID`, `APNS_TOPIC` — see `examples/phone/README.md`). The
    example pushes to **api.sandbox.push.apple.com**: dev-signed installs
    receive SANDBOX device tokens, and pushing the production host instead is
    the classic silent failure.
-4. Tapping the notification only **opens** the consent screen. Nothing is ever
+5. Tapping the notification only **opens** the consent screen. Nothing is ever
    decided by a tap: Approve and Reject are explicit buttons, always.
 
 ## Simulator fallback
