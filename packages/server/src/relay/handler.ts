@@ -21,6 +21,8 @@
  *                                                            port in reads |
  *                                                            observation | bundler |
  *                                                            quote | submissions | usage
+ * POST /chains/{chainId}/paymaster/{method}           client  registered paymaster proxy,
+ *                                                            method in stub-data | data
  * ```
  *
  * EXPERIMENTAL PREVIEW routes for the owner-phone approval surface. Preview
@@ -38,6 +40,7 @@
 
 import {
   type CaptureContext,
+  captureDenseArray,
   captureRecord,
   exactCapturedRecord,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
@@ -83,6 +86,7 @@ const DEFAULT_MAX_BODY_BYTES = 65_536;
 const MAX_TTL_MS = 86_400_000;
 /** RFC 6749 ceiling, matching `MAX_AUTHORIZATION_CODE_LIFETIME` in @oaath/protocol. */
 const MAX_CODE_TTL_MS = 600_000;
+const MAX_PAYMASTER_REQUEST_TIMEOUT_MS = 30_000;
 
 const INVALID = "relay_request_invalid" as const;
 
@@ -127,6 +131,32 @@ export interface RelaySessionSignerConfiguration {
   readonly provider: Readonly<RelaySessionSignerProvider>;
 }
 
+/** Authenticated identity and one opaque ERC-7677 params tuple. */
+export interface RelayPaymasterServiceRequest {
+  readonly caller: Readonly<{ clientId: string; subject: string }>;
+  readonly params: unknown;
+  readonly signal: AbortSignal;
+}
+
+/**
+ * One deployment-owned paymaster provider. The relay exposes only these two
+ * closed ERC-7677 operations and invokes the selected method once.
+ */
+export interface RelayPaymasterServiceProvider {
+  readonly getPaymasterStubData: (
+    request: Readonly<RelayPaymasterServiceRequest>,
+  ) => Promise<unknown>;
+  readonly getPaymasterData: (request: Readonly<RelayPaymasterServiceRequest>) => Promise<unknown>;
+}
+
+export interface RelayPaymasterServiceConfiguration {
+  readonly chainId: number;
+  readonly providerId: string;
+  /** Hard response deadline; the provider also receives its abort signal. */
+  readonly requestTimeoutMs: number;
+  readonly provider: Readonly<RelayPaymasterServiceProvider>;
+}
+
 export interface RelayHandlerOptions {
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
@@ -143,6 +173,11 @@ export interface RelayHandlerOptions {
   readonly chains?: readonly Readonly<RelayChainPort>[];
   /** Optional remote session-key custody; requires `bootstrap` as well. */
   readonly sessionSigner?: Readonly<RelaySessionSignerConfiguration>;
+  /**
+   * Optional deployment-owned paymaster services, at most one per chain.
+   * Configuration requires both bootstrap and a deployment rate limiter.
+   */
+  readonly paymasterServices?: readonly Readonly<RelayPaymasterServiceConfiguration>[];
 }
 
 export type RelayHandler = (request: Request) => Promise<Response>;
@@ -159,6 +194,7 @@ const OPTION_KEYS: readonly string[] = [
   "bootstrap",
   "chains",
   "sessionSigner",
+  "paymasterServices",
 ];
 
 const CHAIN_PORT_NAMES = ["reads", "observation", "bundler", "quote", "submission"] as const;
@@ -226,6 +262,7 @@ interface CapturedOptions {
   readonly bootstrap: Readonly<ServiceBootstrap> | null;
   readonly sessionSigner: Readonly<RelaySessionSignerConfiguration> | null;
   readonly chains: ReadonlyMap<number, Readonly<RelayChainPort>>;
+  readonly paymasterServices: ReadonlyMap<number, Readonly<RelayPaymasterServiceConfiguration>>;
 }
 
 function captureChainPorts(value: unknown): ReadonlyMap<number, Readonly<RelayChainPort>> {
@@ -253,6 +290,64 @@ function captureChainPorts(value: unknown): ReadonlyMap<number, Readonly<RelayCh
   return chains;
 }
 
+function capturePaymasterServices(
+  value: unknown,
+  context: CaptureContext,
+  chains: ReadonlyMap<number, Readonly<RelayChainPort>>,
+): ReadonlyMap<number, Readonly<RelayPaymasterServiceConfiguration>> {
+  if (value === undefined) return new Map();
+  const entries = captureDenseArray(value, "paymaster services", context, (message) =>
+    relayFailure("relay_internal", message),
+  );
+  const services = new Map<number, Readonly<RelayPaymasterServiceConfiguration>>();
+  for (const entry of entries) {
+    const service = exactCapturedRecord(
+      captureRecord(entry, "paymaster service", context, (message) =>
+        relayFailure("relay_internal", message),
+      ),
+      ["chainId", "providerId", "requestTimeoutMs", "provider"],
+      "paymaster service",
+      (message) => relayFailure("relay_internal", message),
+    );
+    const chainId = service.chainId;
+    if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
+      relayFailure("relay_internal", "paymaster service chainId must be a positive integer");
+    }
+    if (!chains.has(chainId)) {
+      relayFailure("relay_internal", "paymaster service chain is not configured");
+    }
+    if (services.has(chainId)) {
+      relayFailure("relay_internal", "paymaster services repeat a chainId");
+    }
+    if (service.requestTimeoutMs === undefined) {
+      relayFailure("relay_internal", "paymaster requestTimeoutMs is required");
+    }
+    services.set(
+      chainId,
+      Object.freeze({
+        chainId,
+        providerId: canonicalIdentifier(
+          service.providerId,
+          "paymaster providerId",
+          "relay_internal",
+        ),
+        requestTimeoutMs: duration(
+          service.requestTimeoutMs,
+          0,
+          "paymaster requestTimeoutMs",
+          MAX_PAYMASTER_REQUEST_TIMEOUT_MS,
+        ),
+        provider: requirePort<RelayPaymasterServiceProvider>(
+          service.provider,
+          ["getPaymasterStubData", "getPaymasterData"],
+          "paymaster provider",
+        ),
+      }),
+    );
+  }
+  return services;
+}
+
 function captureOptions(value: unknown): CapturedOptions {
   const context: CaptureContext = new WeakSet();
   const record = captureRecord(value, "relay handler options", context, (message) =>
@@ -267,6 +362,19 @@ function captureOptions(value: unknown): CapturedOptions {
     record.chains === undefined
       ? new Map<number, Readonly<RelayChainPort>>()
       : captureChainPorts(record.chains);
+  const rateLimit =
+    record.rateLimit === undefined
+      ? undefined
+      : requirePort<RelayRateLimiter>(record.rateLimit, ["check"], "rateLimit");
+  const paymasterServices = capturePaymasterServices(record.paymasterServices, context, chains);
+  if (paymasterServices.size > 0) {
+    if (record.bootstrap === undefined) {
+      relayFailure("relay_internal", "a paymaster service requires a bootstrap surface");
+    }
+    if (rateLimit === undefined) {
+      relayFailure("relay_internal", "a paymaster service requires a rate limiter");
+    }
+  }
   let sessionSigner: Readonly<RelaySessionSignerConfiguration> | null = null;
   if (record.sessionSigner !== undefined) {
     if (record.bootstrap === undefined) {
@@ -314,16 +422,22 @@ function captureOptions(value: unknown): CapturedOptions {
         userHandle: identity.userHandle,
         account: identity.account,
         ownerValidator: identity.ownerValidator,
-        chains: [...chains.values()].map((port) => ({
-          chainId: port.chainId,
-          usage: port.usage !== null,
-          feePayer: port.feePayer,
-        })),
+        chains: [...chains.values()].map((port) => {
+          const paymasterService = paymasterServices.get(port.chainId);
+          return {
+            chainId: port.chainId,
+            usage: port.usage !== null,
+            feePayer: port.feePayer,
+            paymasterService:
+              paymasterService === undefined ? null : { providerId: paymasterService.providerId },
+          };
+        }),
         // The one custody declaration serves both the document and the
         // signing routes; they can never disagree.
-        ...(sessionSigner !== null
-          ? { sessionSigner: { mode: sessionSigner.mode, providerId: sessionSigner.providerId } }
-          : {}),
+        sessionSigner:
+          sessionSigner === null
+            ? { mode: "frontend", providerId: null }
+            : { mode: sessionSigner.mode, providerId: sessionSigner.providerId },
       });
     } catch {
       relayFailure("relay_internal", "relay bootstrap configuration is invalid");
@@ -338,16 +452,14 @@ function captureOptions(value: unknown): CapturedOptions {
     ),
     kms: requirePort<RelayKms>(record.kms, ["encrypt", "decrypt"], "kms"),
     clock: requirePort<RelayClock>(record.clock, ["now"], "clock"),
-    rateLimit:
-      record.rateLimit === undefined
-        ? undefined
-        : requirePort<RelayRateLimiter>(record.rateLimit, ["check"], "rateLimit"),
+    rateLimit,
     requestTtlMs: duration(record.requestTtlMs, DEFAULT_REQUEST_TTL_MS, "requestTtlMs"),
     codeTtlMs: duration(record.codeTtlMs, DEFAULT_CODE_TTL_MS, "codeTtlMs", MAX_CODE_TTL_MS),
     maxBodyBytes: duration(record.maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes"),
     bootstrap,
     sessionSigner,
     chains,
+    paymasterServices,
   });
 }
 
@@ -393,6 +505,41 @@ function exactBody(
   return exactCapturedRecord(record, keys, "request body", (message) =>
     relayFailure(INVALID, message),
   );
+}
+
+async function invokePaymasterService(
+  service: Readonly<RelayPaymasterServiceConfiguration>,
+  method: "stub-data" | "data",
+  caller: Readonly<RelayCaller>,
+  params: unknown,
+): Promise<unknown> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("paymaster request deadline elapsed"));
+      }, service.requestTimeoutMs);
+    });
+    const capability =
+      method === "stub-data"
+        ? service.provider.getPaymasterStubData
+        : service.provider.getPaymasterData;
+    const request: Readonly<RelayPaymasterServiceRequest> = Object.freeze({
+      caller: Object.freeze({ clientId: caller.clientId, subject: caller.subject }),
+      params,
+      signal: controller.signal,
+    });
+    return await Promise.race([
+      Promise.resolve(Reflect.apply(capability, undefined, [request])),
+      deadline,
+    ]);
+  } catch {
+    return relayFailure("relay_chain_unavailable", "paymaster provider did not answer");
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 function decisionCommand(record: Record<string, unknown>): AuthorizationDecisionCommand {
@@ -611,6 +758,25 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         evidenceHash,
         invalidatedAt: Math.floor(record.invalidatedAt / 1_000),
       });
+    }
+
+    if (head === "chains" && segments.length === 4 && third === "paymaster") {
+      requireMethod(request, "POST");
+      const service = captured.paymasterServices.get(Number(group));
+      const method = fourth === "stub-data" || fourth === "data" ? fourth : null;
+      if (service === undefined || method === null) {
+        return relayFailure("relay_not_found", "route does not exist");
+      }
+      const caller = await authenticate(request, "client", `chains.paymaster.${method}`);
+      // The route selects the deployment-owned provider. An application URL
+      // is never accepted in this body and therefore can never become a fetch
+      // target here.
+      const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), ["params"]);
+      const result = await invokePaymasterService(service, method, caller, body.params);
+      return jsonResponse(
+        200,
+        result === undefined ? { present: false, result: null } : { present: true, result },
+      );
     }
 
     if (head === "chains") {
