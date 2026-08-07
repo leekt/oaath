@@ -14,10 +14,10 @@ import {
   isGrantPolicyAttenuation,
   parseGrantPolicy,
 } from "./grant-policy.js";
-import type {
-  KernelAccountProfile,
-  OperatorCredentialProfile,
-  OwnerCredentialProfile,
+import {
+  hashOwnerCredentialProfile,
+  type KernelAccountProfile,
+  type OperatorCredentialProfile,
 } from "./identity-profile.js";
 import {
   type CaptureContext,
@@ -31,7 +31,6 @@ export const OAATH_PERMISSION_DECISION_VERSION = "oaath.permission-decision/v1" 
 export const OAATH_PERMISSION_REQUEST_HASH_DOMAIN = "@oaath/protocol:permission-request" as const;
 export const OAATH_PERMISSION_DECISION_HASH_DOMAIN = "@oaath/protocol:permission-decision" as const;
 
-const OWNER_PROFILE_HASH_DOMAIN = "@oaath/protocol:owner-credential-profile";
 const OPERATOR_PROFILE_HASH_DOMAIN = "@oaath/protocol:operator-credential-profile";
 const KERNEL_PROFILE_HASH_DOMAIN = "@oaath/protocol:kernel-account-profile";
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -310,37 +309,6 @@ export function parsePermissionRequest(value: unknown): Readonly<PermissionReque
   );
 }
 
-function encodeOwnerCredential(profile: OwnerCredentialProfile): Hex {
-  if (profile.kind === "ecdsa") {
-    return encodeAbiParameters(
-      [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "address" }],
-      [OWNER_PROFILE_HASH_DOMAIN, profile.version, profile.kind, profile.address],
-    );
-  }
-  if (profile.kind === "p256") {
-    return encodeAbiParameters(
-      [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "bytes" }],
-      [OWNER_PROFILE_HASH_DOMAIN, profile.version, profile.kind, profile.publicKey],
-    );
-  }
-  return encodeAbiParameters(
-    [
-      { type: "string" },
-      { type: "string" },
-      { type: "string" },
-      { type: "bytes" },
-      { type: "bytes32" },
-    ],
-    [
-      OWNER_PROFILE_HASH_DOMAIN,
-      profile.version,
-      profile.kind,
-      profile.publicKey,
-      profile.authenticatorIdHash,
-    ],
-  );
-}
-
 function hashKernelAccountProfile(profile: KernelAccountProfile): `0x${string}` {
   return keccak256(
     encodeAbiParameters(
@@ -362,7 +330,7 @@ function hashKernelAccountProfile(profile: KernelAccountProfile): `0x${string}` 
         profile.kernelVersion,
         profile.factoryRoute,
         profile.entryPoint.version,
-        keccak256(encodeOwnerCredential(profile.ownerCredential)),
+        hashOwnerCredentialProfile(profile.ownerCredential),
       ],
     ),
   );

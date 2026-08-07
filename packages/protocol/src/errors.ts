@@ -30,6 +30,7 @@ export type ProtocolContractErrorCode =
   | "authorization_code_transition_forbidden"
   | "authorization_code_verifier_mismatch"
   | "service_bootstrap_invalid"
+  | "signing_request_invalid"
   | "wire_envelope_invalid";
 
 /** Every code any `@oaath/protocol` owner may raise. */
@@ -57,6 +58,7 @@ const CODES = {
   authorization_code_transition_forbidden: true,
   authorization_code_verifier_mismatch: true,
   service_bootstrap_invalid: true,
+  signing_request_invalid: true,
   wire_envelope_invalid: true,
   grant_input_invalid: true,
   grant_record_invalid: true,
