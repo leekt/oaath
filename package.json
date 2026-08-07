@@ -28,6 +28,7 @@
     "format:check": "biome format .",
     "check:public-surface": "node scripts/check-public-surface.mjs",
     "smoke:browser": "node scripts/smoke-packed-browser.mjs",
+    "smoke:extension": "node scripts/smoke-packed-extension.mjs",
     "smoke:server": "node scripts/smoke-packed-server.mjs",
     "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs",
     "smoke": "pnpm smoke:browser && pnpm smoke:server && pnpm smoke:all-chain",

@@ -216,7 +216,6 @@ The remaining release blockers have one durable ledger here:
 
 - owner-authorized changeset for the fixed `0.x` release group;
 - revocation send/return crash proof, including reload without resubmission;
-- real-Chromium IndexedDB proof across independent realm recreation;
 - PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
 - pin or explicitly remove the unsupported `session_p256` / WebAuthn signer
   surface before release.
@@ -250,15 +249,21 @@ workspace:
 ```sh
 pnpm check:public-surface # no node:/pg leakage into a browser graph; one-way deps
 pnpm smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
+pnpm smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
 pnpm smoke:server         # packed server, relay round-trip, ./postgres under node
 pnpm smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
-The two packed smokes build, pack, and `npm install` the tarballs into a
-throwaway consumer outside the workspace, so nothing resolves through a workspace
-link and no `src` path is reachable. `smoke:all-chain` runs the two-chain
-materialization proof with `OAATH_REQUIRE_ANVIL` set, so it can never report an
-all-chain proof that skipped itself.
+The browser, extension, and server smokes build, pack, and `npm install` the
+tarballs into a throwaway consumer outside the workspace, so nothing resolves
+through a workspace link and no `src` path is reachable. `smoke:extension`
+loads the actual example artifact in headful Chrome, kills its MV3 worker, and
+requires a distinct worker lifetime to recover the same IndexedDB-backed bundle
+without resubmission; it uses only a loopback relay and an owned chain fixture.
+CI supplies Xvfb; a local run requires Google Chrome.
+`smoke:all-chain` runs the two-chain materialization proof with
+`OAATH_REQUIRE_ANVIL` set, so it can never report an all-chain proof that skipped
+itself.
 
 ## Release
 
