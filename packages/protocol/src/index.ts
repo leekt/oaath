@@ -206,6 +206,7 @@ export {
   OaathOperationError,
   operationOccupiesLane,
   parseOperation,
+  parseOperationIdentity,
 } from "./operation.js";
 export type {
   ApplyPermissionDecisionInput,

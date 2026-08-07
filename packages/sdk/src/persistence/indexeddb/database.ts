@@ -33,7 +33,7 @@ import { persistenceFail } from "../interfaces.js";
  */
 export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
 /** Bumped on any schema change; the upgrade wipes, it never migrates. */
-export const OAATH_INDEXEDDB_VERSION = 4;
+export const OAATH_INDEXEDDB_VERSION = 6;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({
   grants: "grants",
@@ -110,6 +110,47 @@ export function matchesExpectedRevision(current: unknown, expected: number | nul
     Number.isSafeInteger(revision) &&
     revision >= 0 &&
     revision === expected
+  );
+}
+
+const LOWERCASE_32_BYTE_HASH = /^0x[0-9a-f]{64}$/u;
+
+/** Matches one exact revision and immutable generation, or an initial absent insertion. */
+export function matchesExpectedRevisionAndGeneration(
+  current: unknown,
+  expectedRevision: number | null,
+  expectedGeneration: string | null,
+): boolean {
+  if (expectedRevision === null || expectedGeneration === null) {
+    return expectedRevision === null && expectedGeneration === null && current === undefined;
+  }
+  if (
+    !LOWERCASE_32_BYTE_HASH.test(expectedGeneration) ||
+    current === null ||
+    typeof current !== "object"
+  ) {
+    return false;
+  }
+  const revisionDescriptor = Object.getOwnPropertyDescriptor(current, "storeRevision");
+  if (!revisionDescriptor || !("value" in revisionDescriptor)) return false;
+  const revision = revisionDescriptor.value;
+  if (
+    typeof revision !== "number" ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0 ||
+    revision !== expectedRevision
+  ) {
+    return false;
+  }
+  const valueDescriptor = Object.getOwnPropertyDescriptor(current, "value");
+  if (!valueDescriptor || !("value" in valueDescriptor)) return false;
+  const value = valueDescriptor.value;
+  if (value === null || typeof value !== "object") return false;
+  const generationDescriptor = Object.getOwnPropertyDescriptor(value, "generation");
+  return (
+    generationDescriptor !== undefined &&
+    "value" in generationDescriptor &&
+    generationDescriptor.value === expectedGeneration
   );
 }
 

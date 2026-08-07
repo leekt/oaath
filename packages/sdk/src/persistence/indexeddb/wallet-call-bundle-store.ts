@@ -1,10 +1,11 @@
 /**
- * Provider-scoped EIP-5792 wallet-call bundles in IndexedDB.
+ * Provider- and Grant-scoped EIP-5792 wallet-call bundles in IndexedDB.
  *
  * The adapter moves opaque envelopes under the exact composite
- * `[providerScopeId, account, id]` key. `WalletCallBundleStore` owns all record
+ * `[providerScopeId, grantId, id]` key. `WalletCallBundleStore` owns all record
  * parsing and lifecycle rules; this backend only compares the envelope's store
- * revision and conditionally writes or deletes in one transaction.
+ * revision and generation before conditionally writing or deleting in one
+ * transaction.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -16,7 +17,7 @@ import {
 } from "../interfaces.js";
 import {
   deleteRecord,
-  matchesExpectedRevision,
+  matchesExpectedRevisionAndGeneration,
   OAATH_INDEXEDDB_STORES,
   type OaathDatabase,
   putRecord,
@@ -25,7 +26,7 @@ import {
 
 function bundleKey(value: Readonly<WalletCallBundleKey>): IDBValidKey {
   const key = parseWalletCallBundleKey(value);
-  return [key.providerScopeId, key.account, key.id];
+  return [key.providerScopeId, key.grantId, key.id];
 }
 
 export function createIndexedDbWalletCallBundleStoreAdapter(
@@ -42,13 +43,22 @@ export function createIndexedDbWalletCallBundleStoreAdapter(
     async compareAndSwap(input: {
       readonly key: Readonly<WalletCallBundleKey>;
       readonly expectedStoreRevision: number | null;
+      readonly expectedGeneration: `0x${string}` | null;
       readonly next: Readonly<StoreRecord<unknown>>;
     }): Promise<unknown> {
       const compositeKey = bundleKey(input.key);
       return database.transact(walletCallBundles, "readwrite", async ([store]) => {
         if (store === undefined) return false;
         const current = await readRecord(store, compositeKey);
-        if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+        if (
+          !matchesExpectedRevisionAndGeneration(
+            current,
+            input.expectedStoreRevision,
+            input.expectedGeneration,
+          )
+        ) {
+          return false;
+        }
         await putRecord(store, compositeKey, input.next);
         return true;
       });
@@ -56,12 +66,21 @@ export function createIndexedDbWalletCallBundleStoreAdapter(
     async compareAndDelete(input: {
       readonly key: Readonly<WalletCallBundleKey>;
       readonly expectedStoreRevision: number;
+      readonly expectedGeneration: `0x${string}`;
     }): Promise<unknown> {
       const compositeKey = bundleKey(input.key);
       return database.transact(walletCallBundles, "readwrite", async ([store]) => {
         if (store === undefined) return false;
         const current = await readRecord(store, compositeKey);
-        if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+        if (
+          !matchesExpectedRevisionAndGeneration(
+            current,
+            input.expectedStoreRevision,
+            input.expectedGeneration,
+          )
+        ) {
+          return false;
+        }
         await deleteRecord(store, compositeKey);
         return true;
       });

@@ -1,14 +1,19 @@
 /**
  * Durable fact owner for Final EIP-5792 wallet-call bundle identities.
  *
- * A present key reserves the application-provided ID regardless of chain. State
- * advances once through compare-and-swap, and only an expired terminal record
- * can be removed. Adapter acknowledgements are never trusted without a fresh
- * retained-record read.
+ * A present Grant-scoped key reserves the application-provided ID regardless of
+ * chain. Each reservation carries an immutable generation so revision reuse
+ * after cleanup cannot authorize stale work. State advances monotonically
+ * through compare-and-swap, and only an expired terminal record can be removed.
+ * Adapter acknowledgements are never trusted without a retained-record read.
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type CaptureContext, exactRecord as exactRecordValue } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  exactRecord as exactRecordValue,
+  parseOperationIdentity,
+} from "@oaath/protocol";
 import type { Hash } from "viem";
 import {
   OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
@@ -21,17 +26,12 @@ import {
   type WalletCallBundleStoreAdapter,
   type WalletCallBundleStoreRecord,
 } from "../persistence/interfaces.js";
-import {
-  OaathStoreError,
-  type OperationStoreKey,
-  type StoreErrorCode,
-  type StoreRecord,
-} from "../store.js";
+import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
 
 export const WALLET_CALL_BUNDLE_RETENTION_SECONDS = 86_400;
+export const WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS = 30;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
-const MAX_OPERATION_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
 
 interface AdapterCapabilities extends WalletCallBundleStoreAdapter {
@@ -40,6 +40,7 @@ interface AdapterCapabilities extends WalletCallBundleStoreAdapter {
     input: Readonly<{
       key: Readonly<WalletCallBundleKey>;
       expectedStoreRevision: number | null;
+      expectedGeneration: Hash | null;
       next: Readonly<StoreRecord<unknown>>;
     }>,
   ) => Promise<unknown>;
@@ -47,6 +48,7 @@ interface AdapterCapabilities extends WalletCallBundleStoreAdapter {
     input: Readonly<{
       key: Readonly<WalletCallBundleKey>;
       expectedStoreRevision: number;
+      expectedGeneration: Hash;
     }>,
   ) => Promise<unknown>;
   readonly close: () => Promise<unknown>;
@@ -142,53 +144,28 @@ function hash(value: unknown, label: string): Hash {
   return value as Hash;
 }
 
-function operationGrantId(value: unknown): string {
-  if (
-    typeof value !== "string" ||
-    value.length < 1 ||
-    value.length > MAX_OPERATION_GRANT_ID_LENGTH ||
-    value !== value.trim()
-  ) {
-    return invalid("store_input_invalid", "Wallet call bundle operation grantId is invalid");
-  }
-  return value;
-}
-
 function inputOperation(value: unknown): Readonly<WalletCallBundleOperation> {
   const context: CaptureContext = new WeakSet();
   const operation = exactRecord(
     value,
-    ["key", "userOperationHash"],
-    "Wallet call bundle operation binding",
+    ["identity"],
+    "Wallet call bundle operation reservation",
     "store_input_invalid",
     context,
   );
-  const key = exactRecord(
-    operation.key,
-    ["grantId", "chainId", "kind"],
-    "Wallet call bundle operation key",
-    "store_input_invalid",
-    context,
-  );
-  if (key.kind !== "execution") {
-    return invalid(
-      "store_input_invalid",
-      "Wallet call bundle operation must use an execution lane",
-    );
-  }
-  return Object.freeze({
-    key: Object.freeze({
-      grantId: operationGrantId(key.grantId),
-      chainId: safeInteger(
-        key.chainId,
-        "Wallet call bundle operation chainId",
+  try {
+    const identity = parseOperationIdentity(operation.identity);
+    if (identity.kind !== "execution" || identity.requestHash === null) {
+      return invalid(
         "store_input_invalid",
-        1,
-      ),
-      kind: "execution",
-    }),
-    userOperationHash: hash(operation.userOperationHash, "Wallet call bundle userOperationHash"),
-  });
+        "Wallet call bundle operation must be a provider execution identity",
+      );
+    }
+    return Object.freeze({ identity });
+  } catch (error) {
+    if (error instanceof OaathStoreError) throw error;
+    return invalid("store_input_invalid", "Wallet call bundle operation identity is invalid");
+  }
 }
 
 function inputBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
@@ -210,14 +187,8 @@ function storedBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
 function sameKey(left: WalletCallBundleKey, right: WalletCallBundleKey): boolean {
   return (
     left.providerScopeId === right.providerScopeId &&
-    left.account === right.account &&
+    left.grantId === right.grantId &&
     left.id === right.id
-  );
-}
-
-function sameOperationKey(left: OperationStoreKey, right: OperationStoreKey): boolean {
-  return (
-    left.grantId === right.grantId && left.chainId === right.chainId && left.kind === right.kind
   );
 }
 
@@ -226,22 +197,25 @@ function sameOperation(
   right: Readonly<WalletCallBundleOperation> | null,
 ): boolean {
   if (left === null || right === null) return left === right;
-  return (
-    left.userOperationHash === right.userOperationHash && sameOperationKey(left.key, right.key)
-  );
+  return JSON.stringify(left.identity) === JSON.stringify(right.identity);
 }
 
 function sameValue(left: WalletCallBundleRecord, right: WalletCallBundleRecord): boolean {
   return (
     left.version === right.version &&
     left.providerScopeId === right.providerScopeId &&
+    left.grantId === right.grantId &&
+    left.generation === right.generation &&
     left.id === right.id &&
     left.account === right.account &&
     left.chainId === right.chainId &&
     left.createdAt === right.createdAt &&
+    left.publicationExpiresAt === right.publicationExpiresAt &&
+    left.publicationReleasedAt === right.publicationReleasedAt &&
     left.requestHash === right.requestHash &&
     sameOperation(left.operation, right.operation) &&
-    left.state === right.state
+    left.state === right.state &&
+    left.terminalFrom === right.terminalFrom
   );
 }
 
@@ -265,18 +239,31 @@ function sameImmutableIdentity(
   return (
     left.version === right.version &&
     left.providerScopeId === right.providerScopeId &&
+    left.grantId === right.grantId &&
+    left.generation === right.generation &&
     left.id === right.id &&
     left.account === right.account &&
     left.chainId === right.chainId &&
     left.createdAt === right.createdAt &&
+    left.publicationExpiresAt === right.publicationExpiresAt &&
     left.requestHash === right.requestHash
   );
 }
 
 function stateRank(state: WalletCallBundleRecord["state"]): number {
   if (state === "accepted") return 0;
-  if (state === "operation_bound") return 1;
-  return 2;
+  if (state === "operation_reserved") return 1;
+  if (state === "operation_bound") return 2;
+  return 3;
+}
+
+function requiredStoreRevision(value: WalletCallBundleRecord): number {
+  const releaseRevision = value.publicationReleasedAt === null ? 0 : 1;
+  if (value.state !== "terminal") return stateRank(value.state) + releaseRevision;
+  if (value.terminalFrom === null) {
+    return invalid("store_record_invalid", "Wallet call bundle terminal origin is missing");
+  }
+  return stateRank(value.terminalFrom) + releaseRevision + 1;
 }
 
 function requireCompatibleHistory(
@@ -292,11 +279,37 @@ function requireCompatibleHistory(
   ) {
     invalid("store_record_invalid", "Wallet call bundle history moved backward");
   }
+  if (current.value.state === "terminal") {
+    const terminalFrom = current.value.terminalFrom;
+    if (terminalFrom === null) {
+      invalid("store_record_invalid", "Wallet call bundle terminal origin is missing");
+    }
+    if (previous.value.state === "terminal") {
+      if (previous.value.terminalFrom !== terminalFrom) {
+        invalid("store_record_invalid", "Wallet call bundle terminal origin changed");
+      }
+    } else {
+      const requiredRevisions =
+        requiredStoreRevision(current.value) - requiredStoreRevision(previous.value);
+      if (
+        requiredRevisions < 1 ||
+        current.storeRevision - previous.storeRevision < requiredRevisions
+      ) {
+        invalid("store_record_invalid", "Wallet call bundle terminal origin is not reachable");
+      }
+    }
+  }
   if (
     previous.value.operation !== null &&
     !sameOperation(previous.value.operation, current.value.operation)
   ) {
     invalid("store_identity_mismatch", "Wallet call bundle operation binding changed");
+  }
+  if (
+    previous.value.publicationReleasedAt !== null &&
+    current.value.publicationReleasedAt !== previous.value.publicationReleasedAt
+  ) {
+    invalid("store_record_invalid", "Wallet call bundle publication release changed");
   }
 }
 
@@ -319,7 +332,7 @@ function reserveInput(value: unknown): Readonly<{
 }> {
   const input = exactRecord(
     value,
-    ["key", "chainId", "createdAt", "requestHash"],
+    ["key", "generation", "account", "chainId", "createdAt", "publicationExpiresAt", "requestHash"],
     "Wallet call bundle reservation",
     "store_input_invalid",
   );
@@ -327,31 +340,50 @@ function reserveInput(value: unknown): Readonly<{
   const record = inputBundleRecord({
     version: OAATH_WALLET_CALL_BUNDLE_VERSION,
     providerScopeId: key.providerScopeId,
+    grantId: key.grantId,
+    generation: hash(input.generation, "Wallet call bundle generation"),
     id: key.id,
-    account: key.account,
+    account: input.account,
     chainId: input.chainId,
     createdAt: input.createdAt,
+    publicationExpiresAt: input.publicationExpiresAt,
+    publicationReleasedAt: null,
     requestHash: input.requestHash,
     operation: null,
     state: "accepted",
+    terminalFrom: null,
   });
   return Object.freeze({ key, record });
 }
 
-function bindInput(value: unknown): Readonly<{
+function reserveOperationInput(value: unknown): Readonly<{
   key: Readonly<WalletCallBundleKey>;
+  expectedStoreRevision: number;
+  expectedGeneration: Hash;
   operation: Readonly<WalletCallBundleOperation>;
   updatedAt: number;
 }> {
   const input = exactRecord(
     value,
-    ["key", "operation", "updatedAt"],
+    ["key", "expectedStoreRevision", "expectedGeneration", "operation", "updatedAt"],
     "Wallet call bundle operation binding",
     "store_input_invalid",
   );
+  const key = inputKey(input.key);
+  const operation = inputOperation(input.operation);
+  if (operation.identity.grantId !== key.grantId) {
+    return invalid("store_input_invalid", "Wallet call bundle operation grantId does not match");
+  }
   return Object.freeze({
-    key: inputKey(input.key),
-    operation: inputOperation(input.operation),
+    key,
+    expectedStoreRevision: safeInteger(
+      input.expectedStoreRevision,
+      "Wallet call bundle expected store revision",
+      "store_input_invalid",
+      0,
+    ),
+    expectedGeneration: hash(input.expectedGeneration, "Wallet call bundle expected generation"),
+    operation,
     updatedAt: safeInteger(
       input.updatedAt,
       "Wallet call bundle transition time",
@@ -361,18 +393,30 @@ function bindInput(value: unknown): Readonly<{
   });
 }
 
-function terminalInput(value: unknown): Readonly<{
+function fencedTransitionInput(
+  value: unknown,
+  label: string,
+): Readonly<{
   key: Readonly<WalletCallBundleKey>;
+  expectedStoreRevision: number;
+  expectedGeneration: Hash;
   updatedAt: number;
 }> {
   const input = exactRecord(
     value,
-    ["key", "updatedAt"],
-    "Wallet call bundle terminal transition",
+    ["key", "expectedStoreRevision", "expectedGeneration", "updatedAt"],
+    label,
     "store_input_invalid",
   );
   return Object.freeze({
     key: inputKey(input.key),
+    expectedStoreRevision: safeInteger(
+      input.expectedStoreRevision,
+      "Wallet call bundle expected store revision",
+      "store_input_invalid",
+      0,
+    ),
+    expectedGeneration: hash(input.expectedGeneration, "Wallet call bundle expected generation"),
     updatedAt: safeInteger(
       input.updatedAt,
       "Wallet call bundle transition time",
@@ -406,44 +450,121 @@ export class WalletCallBundleStore {
     this.#assertOpen();
     const current = await this.#read(input.key);
     if (current !== undefined) return conflict(current);
-    return this.#compareAndSwap(input.key, null, input.record, input.record.createdAt);
+    return this.#compareAndSwap(input.key, null, null, input.record, input.record.createdAt);
   }
 
-  async bindOperation(value: unknown): Promise<WalletCallBundleMutationResult> {
-    const input = bindInput(value);
+  async reserveOperation(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = reserveOperationInput(value);
     this.#assertOpen();
     const current = await this.#read(input.key);
     if (
       current === undefined ||
+      current.storeRevision !== input.expectedStoreRevision ||
+      current.value.generation !== input.expectedGeneration ||
       current.value.state !== "accepted" ||
       input.updatedAt < current.updatedAt
     ) {
       return conflict(current);
     }
-    if (input.operation.key.chainId !== current.value.chainId) {
+    if (input.operation.identity.chainId !== current.value.chainId) {
       return invalid("store_input_invalid", "Wallet call bundle operation chainId does not match");
+    }
+    if (input.operation.identity.account !== current.value.account) {
+      return invalid("store_input_invalid", "Wallet call bundle operation account does not match");
     }
     const next = inputBundleRecord({
       ...current.value,
       operation: input.operation,
-      state: "operation_bound",
+      state: "operation_reserved",
     });
-    return this.#compareAndSwap(input.key, current.storeRevision, next, input.updatedAt, current);
+    return this.#compareAndSwap(
+      input.key,
+      input.expectedStoreRevision,
+      input.expectedGeneration,
+      next,
+      input.updatedAt,
+      current,
+    );
   }
 
-  async markTerminal(value: unknown): Promise<WalletCallBundleMutationResult> {
-    const input = terminalInput(value);
+  async confirmOperationPublished(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = fencedTransitionInput(
+      value,
+      "Wallet call bundle operation publication confirmation",
+    );
     this.#assertOpen();
     const current = await this.#read(input.key);
     if (
       current === undefined ||
-      current.value.state === "terminal" ||
+      current.storeRevision !== input.expectedStoreRevision ||
+      current.value.generation !== input.expectedGeneration ||
+      current.value.state !== "operation_reserved" ||
       input.updatedAt < current.updatedAt
     ) {
       return conflict(current);
     }
-    const next = inputBundleRecord({ ...current.value, state: "terminal" });
-    return this.#compareAndSwap(input.key, current.storeRevision, next, input.updatedAt, current);
+    const next = inputBundleRecord({ ...current.value, state: "operation_bound" });
+    return this.#compareAndSwap(
+      input.key,
+      input.expectedStoreRevision,
+      input.expectedGeneration,
+      next,
+      input.updatedAt,
+      current,
+    );
+  }
+
+  async releaseOperationPublication(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = fencedTransitionInput(value, "Wallet call bundle publication release");
+    this.#assertOpen();
+    const current = await this.#read(input.key);
+    if (
+      current === undefined ||
+      current.storeRevision !== input.expectedStoreRevision ||
+      current.value.generation !== input.expectedGeneration ||
+      current.value.state !== "operation_bound" ||
+      current.value.publicationReleasedAt !== null ||
+      input.updatedAt < current.updatedAt
+    ) {
+      return conflict(current);
+    }
+    const next = inputBundleRecord({
+      ...current.value,
+      publicationReleasedAt: input.updatedAt,
+    });
+    return this.#compareAndSwap(
+      input.key,
+      input.expectedStoreRevision,
+      input.expectedGeneration,
+      next,
+      input.updatedAt,
+      current,
+    );
+  }
+
+  async markTerminal(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = fencedTransitionInput(value, "Wallet call bundle terminal transition");
+    this.#assertOpen();
+    const current = await this.#read(input.key);
+    if (
+      current === undefined ||
+      current.storeRevision !== input.expectedStoreRevision ||
+      current.value.generation !== input.expectedGeneration ||
+      input.updatedAt < current.updatedAt
+    ) {
+      return conflict(current);
+    }
+    const terminalFrom = current.value.state;
+    if (terminalFrom === "terminal") return conflict(current);
+    const next = inputBundleRecord({ ...current.value, state: "terminal", terminalFrom });
+    return this.#compareAndSwap(
+      input.key,
+      input.expectedStoreRevision,
+      input.expectedGeneration,
+      next,
+      input.updatedAt,
+      current,
+    );
   }
 
   async deleteExpiredTerminal(
@@ -532,6 +653,7 @@ export class WalletCallBundleStore {
     }
     const valueKey = Object.freeze({
       providerScopeId: value.providerScopeId,
+      grantId: value.grantId,
       account: value.account,
       id: value.id,
     });
@@ -553,6 +675,12 @@ export class WalletCallBundleStore {
     if (updatedAt < value.createdAt) {
       return invalid("store_record_invalid", "Stored wallet call bundle predates its creation");
     }
+    if (storeRevision !== requiredStoreRevision(value)) {
+      return invalid(
+        "store_record_invalid",
+        "Stored wallet call bundle revision contradicts its state",
+      );
+    }
     return Object.freeze({
       version: OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
       storeRevision,
@@ -564,6 +692,7 @@ export class WalletCallBundleStore {
   async #compareAndSwap(
     key: Readonly<WalletCallBundleKey>,
     expectedStoreRevision: number | null,
+    expectedGeneration: Hash | null,
     value: Readonly<WalletCallBundleRecord>,
     updatedAt: number,
     previous?: WalletCallBundleStoreRecord,
@@ -577,7 +706,7 @@ export class WalletCallBundleStore {
     let swapped: unknown;
     try {
       swapped = await this.#adapter.compareAndSwap(
-        Object.freeze({ key, expectedStoreRevision, next }),
+        Object.freeze({ key, expectedStoreRevision, expectedGeneration, next }),
       );
     } catch {
       return invalid(
@@ -595,7 +724,10 @@ export class WalletCallBundleStore {
     let retained: WalletCallBundleStoreRecord | undefined;
     try {
       retained = await this.#read(key);
-    } catch {
+    } catch (error) {
+      if (!swapped && error instanceof OaathStoreError && error.code === "store_record_invalid") {
+        throw error;
+      }
       return swapped
         ? invalid("store_commit_unverified", "Wallet call bundle commit could not be verified")
         : invalid(
@@ -612,10 +744,13 @@ export class WalletCallBundleStore {
         "Wallet call bundle store did not retain the write",
       );
     }
-    if (
-      retained === undefined ||
-      (expectedStoreRevision !== null && retained.storeRevision <= expectedStoreRevision)
-    ) {
+    if (retained === undefined) {
+      return invalid("store_commit_indeterminate", "Wallet call bundle conflict is unverified");
+    }
+    if (expectedGeneration !== null && retained.value.generation !== expectedGeneration) {
+      return conflict(retained);
+    }
+    if (expectedStoreRevision !== null && retained.storeRevision <= expectedStoreRevision) {
       return invalid("store_commit_indeterminate", "Wallet call bundle conflict is unverified");
     }
     if (previous !== undefined) requireCompatibleHistory(previous, retained);
@@ -629,7 +764,11 @@ export class WalletCallBundleStore {
     let deleted: unknown;
     try {
       deleted = await this.#adapter.compareAndDelete(
-        Object.freeze({ key, expectedStoreRevision: previous.storeRevision }),
+        Object.freeze({
+          key,
+          expectedStoreRevision: previous.storeRevision,
+          expectedGeneration: previous.value.generation,
+        }),
       );
     } catch {
       return invalid(
@@ -647,7 +786,10 @@ export class WalletCallBundleStore {
     let retained: WalletCallBundleStoreRecord | undefined;
     try {
       retained = await this.#read(key);
-    } catch {
+    } catch (error) {
+      if (!deleted && error instanceof OaathStoreError && error.code === "store_record_invalid") {
+        throw error;
+      }
       return deleted
         ? invalid("store_commit_unverified", "Wallet call bundle deletion could not be verified")
         : invalid(
@@ -663,6 +805,9 @@ export class WalletCallBundleStore {
       );
     }
     if (retained === undefined) return Object.freeze({ status: "absent" as const });
+    if (retained.value.generation !== previous.value.generation) {
+      return Object.freeze({ status: "conflict" as const, current: retained });
+    }
     if (retained.storeRevision <= previous.storeRevision) {
       return invalid(
         "store_commit_indeterminate",

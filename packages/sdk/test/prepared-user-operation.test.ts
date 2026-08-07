@@ -11,6 +11,7 @@ const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 const SENDER = `0x${"11".repeat(20)}`;
 const FACTORY = `0x${"22".repeat(20)}`;
 const PAYMASTER = `0x${"33".repeat(20)}`;
+const REQUEST_HASH = `0x${"44".repeat(32)}` as const;
 
 function preparationInput(): Record<string, unknown> {
   return {
@@ -84,7 +85,7 @@ describe("prepared UserOperation identity", () => {
     expect(prepared.userOperationHash).toBe(
       "0xcece6f0173d0c079b6448961644ba4e1177a81344a08b1df61af7f0b4dbda241",
     );
-    expect(deriveOperationId(prepared)).toEqual({
+    expect(deriveOperationId(prepared, null)).toEqual({
       kind: "execution",
       grantId: "grant-prepared-vector",
       chainId: 31_337,
@@ -92,13 +93,37 @@ describe("prepared UserOperation identity", () => {
       account: SENDER,
       nonce: "1",
       userOperationHash: prepared.userOperationHash,
+      requestHash: null,
     });
 
     const operation = createOperation({
-      identity: deriveOperationId(prepared),
+      identity: deriveOperationId(prepared, null),
       preparedAt: 1,
     });
-    expect(operation.identity).toEqual(deriveOperationId(prepared));
+    expect(operation.identity).toEqual(deriveOperationId(prepared, null));
+  });
+
+  it("binds strict immutable request provenance outside the UserOperation hash", () => {
+    const prepared = prepareUserOperation(preparationInput());
+    const directIdentity = deriveOperationId(prepared, null);
+    const providerIdentity = deriveOperationId(prepared, REQUEST_HASH);
+
+    expect(prepared).not.toHaveProperty("requestHash");
+    expect(providerIdentity).toEqual({
+      ...directIdentity,
+      requestHash: REQUEST_HASH,
+    });
+    expect(providerIdentity.userOperationHash).toBe(directIdentity.userOperationHash);
+    expect(Object.isFrozen(providerIdentity)).toBe(true);
+    expect(Reflect.set(providerIdentity, "requestHash", null)).toBe(false);
+    expect(providerIdentity.requestHash).toBe(REQUEST_HASH);
+
+    for (const invalidRequestHash of ["0x12", `0x${"AA".repeat(32)}`, undefined]) {
+      expectPreparedError(
+        () => Reflect.apply(deriveOperationId, undefined, [prepared, invalidRequestHash]),
+        "prepared_user_operation_input_invalid",
+      );
+    }
   });
 
   it("round-trips the one JSON-safe current record and freezes every nested value", () => {
@@ -106,7 +131,7 @@ describe("prepared UserOperation identity", () => {
     const restored = parsePreparedUserOperation(clone(prepared));
 
     expect(restored).toEqual(prepared);
-    expect(deriveOperationId(restored)).toEqual(deriveOperationId(prepared));
+    expect(deriveOperationId(restored, null)).toEqual(deriveOperationId(prepared, null));
     expect(Object.isFrozen(restored)).toBe(true);
     expect(Object.isFrozen(restored.entryPoint)).toBe(true);
     expect(Object.isFrozen(restored.userOperation)).toBe(true);
@@ -129,7 +154,7 @@ describe("prepared UserOperation identity", () => {
 
     const prepared = prepareUserOperation(input);
     const before = clone(prepared);
-    const identity = deriveOperationId(prepared);
+    const identity = deriveOperationId(prepared, null);
 
     input.kind = "revocation";
     input.grantId = "changed";
@@ -144,7 +169,7 @@ describe("prepared UserOperation identity", () => {
     paymasterData.fill(0);
 
     expect(prepared).toEqual(before);
-    expect(deriveOperationId(prepared)).toEqual(identity);
+    expect(deriveOperationId(prepared, null)).toEqual(identity);
     expect(prepared.userOperation.callData).toBe("0xabcdef");
     expect(prepared.userOperation.factory?.data).toBe("0x1234");
     expect(prepared.userOperation.paymaster?.data).toBe("0xdeadbeef");
@@ -423,8 +448,8 @@ describe("prepared UserOperation identity", () => {
 
     const changedPrepared = parsePreparedUserOperation(changed);
     expect(changedPrepared.userOperationHash).toBe(prepared.userOperationHash);
-    expect(deriveOperationId(changedPrepared)).not.toEqual(deriveOperationId(prepared));
-    expect(deriveOperationId(changedPrepared)).toMatchObject({
+    expect(deriveOperationId(changedPrepared, null)).not.toEqual(deriveOperationId(prepared, null));
+    expect(deriveOperationId(changedPrepared, null)).toMatchObject({
       kind: "revocation",
       grantId: "another-grant",
     });

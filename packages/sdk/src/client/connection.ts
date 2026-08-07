@@ -60,6 +60,7 @@ import {
   type OaathKeyStore,
   parseClientContext,
 } from "../persistence/interfaces.js";
+import type { WalletCallBundleStore } from "../provider/bundle-store.js";
 import type { GrantStore, GrantStoreRecord, OperationStoreAdapter } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import {
@@ -126,7 +127,7 @@ export interface OaathRequestPermissionInput {
 export interface OaathConnection {
   readonly binding: Readonly<OaathBinding>;
   readonly requestPermission: (input: unknown) => Promise<Readonly<OaathGrantHandle>>;
-  /** The realm's persisted active Grant, or `null` when there is none. */
+  /** The realm's persisted authority/operation handle, or `null` when there is none. */
   readonly resume: () => Promise<Readonly<OaathGrantHandle> | null>;
   readonly signOut: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -138,6 +139,7 @@ export interface CreateConnectionInput {
   readonly authorization: Readonly<OaathAuthorizationCapability>;
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
+  readonly walletCallBundles: WalletCallBundleStore;
   readonly keys: OaathKeyStore;
   readonly contexts: OaathContextStore;
   readonly chains: ReadonlyMap<number, Readonly<OaathChainCapability>>;
@@ -259,12 +261,45 @@ export function createConnection(
   input: Readonly<CreateConnectionInput>,
 ): Readonly<OaathConnection> {
   let closed = false;
+  let closeRequested = false;
+  let closing: Promise<void> | null = null;
   let signedOut = false;
+  let activeHandleProducers = 0;
+  const handleProducerWaiters = new Set<() => void>();
   const handles: Readonly<OaathGrantHandle>[] = [];
+  const closeResources = [
+    input.grants,
+    input.operations,
+    input.walletCallBundles,
+    input.keys,
+    input.contexts,
+  ].map((resource) => ({ resource, closed: false }));
 
   function assertUsable(): void {
-    if (closed) clientFail("oaath_client_closed", "connection is closed");
+    if (closed || closeRequested) clientFail("oaath_client_closed", "connection is closed");
     if (signedOut) clientFail("oaath_client_signed_out", "connection signed out");
+  }
+
+  function releaseHandleProducer(): void {
+    activeHandleProducers -= 1;
+    if (activeHandleProducers !== 0) return;
+    for (const resolve of handleProducerWaiters) resolve();
+    handleProducerWaiters.clear();
+  }
+
+  function waitForHandleProducers(): Promise<void> {
+    if (activeHandleProducers === 0) return Promise.resolve();
+    return new Promise((resolve) => handleProducerWaiters.add(resolve));
+  }
+
+  async function withHandleProducer<Result>(action: () => Promise<Result>): Promise<Result> {
+    assertUsable();
+    activeHandleProducers += 1;
+    try {
+      return await action();
+    } finally {
+      releaseHandleProducer();
+    }
   }
 
   async function call(
@@ -354,6 +389,7 @@ export function createConnection(
       record,
       grants: input.grants,
       operations: input.operations,
+      walletCallBundles: input.walletCallBundles,
       chains: input.chains,
       ownerKey: input.ownerKey,
       sessionKey: input.sessionKey,
@@ -385,7 +421,7 @@ export function createConnection(
     }
   }
 
-  async function requestPermission(value: unknown): Promise<Readonly<OaathGrantHandle>> {
+  async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
     assertUsable();
     const context: CaptureContext = new WeakSet();
     const record = exactClientRecord(
@@ -581,7 +617,7 @@ export function createConnection(
     return handle(stored, request, approvedPolicy, installApproval);
   }
 
-  async function resume(): Promise<Readonly<OaathGrantHandle> | null> {
+  async function resumeWork(): Promise<Readonly<OaathGrantHandle> | null> {
     assertUsable();
     let persisted: unknown;
     try {
@@ -650,8 +686,13 @@ export function createConnection(
     // requires an active Grant), but its handle is the only path to retrying
     // `revoke()` until every chain's removal is conclusively observed —
     // returning null here would strand cleanup forever after a reload.
-    if (record.value.state !== "active" && record.value.state !== "revoking") return null;
-    if (record.value.state === "active" && input.now() >= record.value.expiresAt) return null;
+    const resumesOperations =
+      record.value.state === "active" ||
+      record.value.state === "revoking" ||
+      record.value.state === "revoked" ||
+      (record.value.state === "expired" &&
+        (record.value.terminal.from === "active" || record.value.terminal.from === "revoking"));
+    if (!resumesOperations) return null;
     return handle(record, context.request, context.approvedPolicy, context.installApproval);
   }
 
@@ -666,6 +707,14 @@ export function createConnection(
     }
   }
 
+  function requestPermission(value: unknown): Promise<Readonly<OaathGrantHandle>> {
+    return withHandleProducer(() => requestPermissionWork(value));
+  }
+
+  function resume(): Promise<Readonly<OaathGrantHandle> | null> {
+    return withHandleProducer(resumeWork);
+  }
+
   return Object.freeze({
     binding: input.binding,
     requestPermission,
@@ -673,16 +722,42 @@ export function createConnection(
     signOut,
     async close(): Promise<void> {
       if (closed) return;
-      closed = true;
-      const failures: unknown[] = [];
-      for (const created of handles.splice(0)) {
-        await created.close().catch((error: unknown) => failures.push(error));
+      closeRequested = true;
+      const active =
+        closing ??
+        (async () => {
+          await waitForHandleProducers();
+          const failures: unknown[] = [];
+          for (const created of [...handles]) {
+            await created
+              .close()
+              .then(() => {
+                const index = handles.indexOf(created);
+                if (index >= 0) handles.splice(index, 1);
+              })
+              .catch((error: unknown) => failures.push(error));
+          }
+          for (const owned of closeResources) {
+            if (owned.closed) continue;
+            await Promise.resolve()
+              .then(() => owned.resource.close())
+              .then(() => {
+                owned.closed = true;
+              })
+              .catch((error: unknown) => failures.push(error));
+          }
+          const failure = failures[0];
+          if (failure !== undefined) {
+            return mapClientFailure(failure, "connection cleanup is incomplete");
+          }
+          closed = true;
+        })();
+      closing = active;
+      try {
+        await active;
+      } finally {
+        if (closing === active) closing = null;
       }
-      for (const store of [input.grants, input.operations, input.keys, input.contexts]) {
-        await Promise.resolve(store.close()).catch((error: unknown) => failures.push(error));
-      }
-      const failure = failures[0];
-      if (failure !== undefined) mapClientFailure(failure, "connection cleanup is incomplete");
     },
   });
 }

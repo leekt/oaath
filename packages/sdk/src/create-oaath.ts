@@ -60,8 +60,10 @@ import type {
   OaathCleanupCheckpointStore,
   OaathContextStore,
   OaathKeyStore,
+  WalletCallBundleStoreAdapter,
 } from "./persistence/interfaces.js";
 import { persistenceId } from "./persistence/interfaces.js";
+import { WalletCallBundleStore } from "./provider/bundle-store.js";
 import { GrantStore, type GrantStoreAdapter, type OperationStoreAdapter } from "./store.js";
 
 const MAX_CHAINS = 32;
@@ -70,6 +72,7 @@ const MAX_LOCAL_KEYS = 8;
 export interface OaathStoreConfiguration {
   readonly grants: GrantStoreAdapter;
   readonly operations: OperationStoreAdapter;
+  readonly walletCallBundles: WalletCallBundleStoreAdapter;
   readonly keys: OaathKeyStore;
   readonly cleanup: OaathCleanupCheckpointStore;
   readonly context: OaathContextStore;
@@ -147,6 +150,7 @@ function captureSessionSigner(
 const STORE_KEYS: readonly string[] = Object.freeze([
   "grants",
   "operations",
+  "walletCallBundles",
   "keys",
   "cleanup",
   "context",
@@ -305,6 +309,12 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       "Operation store",
       context,
     ),
+    walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
+      storeRecord.walletCallBundles,
+      ["get", "compareAndSwap", "compareAndDelete", "close"],
+      "wallet call bundle store",
+      context,
+    ),
     keys: storePort<OaathKeyStore>(
       storeRecord.keys,
       ["store", "get", "delete", "close"],
@@ -343,16 +353,67 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   const now = clientCapability<() => number>(record.now, "clock");
 
   const connections: Readonly<OaathConnection>[] = [];
+  const ownedStores = [
+    stores.grants,
+    stores.operations,
+    stores.walletCallBundles,
+    stores.keys,
+    stores.context,
+  ].map((resource) => ({ resource, closed: false }));
+  let closeRequested = false;
+  let closed = false;
+  let closing: Promise<void> | null = null;
+
+  const connectionStores = Object.freeze({
+    grants: Object.freeze({
+      get: (grantId: Parameters<GrantStoreAdapter["get"]>[0]) => stores.grants.get(grantId),
+      compareAndSwap: (input: Parameters<GrantStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.grants.compareAndSwap(input),
+      close: async () => undefined,
+    }),
+    operations: Object.freeze({
+      get: (key: Parameters<OperationStoreAdapter["get"]>[0]) => stores.operations.get(key),
+      getArchived: (input: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
+        stores.operations.getArchived(input),
+      compareAndSwap: (input: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.operations.compareAndSwap(input),
+      close: async () => undefined,
+    }),
+    walletCallBundles: Object.freeze({
+      get: (key: Parameters<WalletCallBundleStoreAdapter["get"]>[0]) =>
+        stores.walletCallBundles.get(key),
+      compareAndSwap: (input: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.walletCallBundles.compareAndSwap(input),
+      compareAndDelete: (input: Parameters<WalletCallBundleStoreAdapter["compareAndDelete"]>[0]) =>
+        stores.walletCallBundles.compareAndDelete(input),
+      close: async () => undefined,
+    }),
+    keys: Object.freeze({
+      store: (input: Parameters<OaathKeyStore["store"]>[0]) => stores.keys.store(input),
+      get: (keyId: Parameters<OaathKeyStore["get"]>[0]) => stores.keys.get(keyId),
+      delete: (keyId: Parameters<OaathKeyStore["delete"]>[0]) => stores.keys.delete(keyId),
+      close: async () => undefined,
+    }),
+    context: Object.freeze({
+      read: (bindingId: Parameters<OaathContextStore["read"]>[0]) => stores.context.read(bindingId),
+      write: (value: Parameters<OaathContextStore["write"]>[0]) => stores.context.write(value),
+      clear: (bindingId: Parameters<OaathContextStore["clear"]>[0]) =>
+        stores.context.clear(bindingId),
+      close: async () => undefined,
+    }),
+  });
 
   function open(): Readonly<OaathConnection> {
+    if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
     const connection = createConnection({
       binding,
       issuer,
       authorization,
-      grants: new GrantStore(stores.grants),
-      operations: stores.operations,
-      keys: stores.keys,
-      contexts: stores.context,
+      grants: new GrantStore(connectionStores.grants),
+      operations: connectionStores.operations,
+      walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),
+      keys: connectionStores.keys,
+      contexts: connectionStores.context,
       chains,
       ownerKey,
       sessionKey,
@@ -365,12 +426,39 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   }
 
   async function closeAll(): Promise<void> {
-    const failures: unknown[] = [];
-    for (const connection of connections.splice(0)) {
-      await connection.close().catch((error: unknown) => failures.push(error));
-    }
-    const failure = failures[0];
-    if (failure !== undefined) throw failure;
+    if (closed) return;
+    closeRequested = true;
+    if (closing) return closing;
+    const attempt = (async () => {
+      const childFailures: unknown[] = [];
+      for (const connection of [...connections]) {
+        await connection
+          .close()
+          .then(() => {
+            const index = connections.indexOf(connection);
+            if (index >= 0) connections.splice(index, 1);
+          })
+          .catch((error: unknown) => childFailures.push(error));
+      }
+      if (childFailures[0] !== undefined) throw childFailures[0];
+
+      const storeFailures: unknown[] = [];
+      for (const owned of ownedStores) {
+        if (owned.closed) continue;
+        await Promise.resolve()
+          .then(() => owned.resource.close())
+          .then(() => {
+            owned.closed = true;
+          })
+          .catch((error: unknown) => storeFailures.push(error));
+      }
+      if (storeFailures[0] !== undefined) throw storeFailures[0];
+      closed = true;
+    })().finally(() => {
+      if (!closed) closing = null;
+    });
+    closing = attempt;
+    return attempt;
   }
 
   return Object.freeze({

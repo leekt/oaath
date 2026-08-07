@@ -65,14 +65,23 @@ export function createIndexedDbOperationStoreAdapter(
       readonly key: Readonly<OperationStoreKey>;
       readonly expectedStoreRevision: number | null;
       readonly next: Readonly<StoreRecord<unknown>>;
+      readonly expectedArchiveAbsentUserOperationHash: `0x${string}`;
       readonly archive: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]["archive"];
     }): Promise<unknown> {
       const lane = laneKey(input.key);
+      const expectedAbsentArchive = archiveKey(
+        input.key,
+        input.expectedArchiveAbsentUserOperationHash,
+      );
       return database.transact(operations, "readwrite", async ([store]) => {
         if (store === undefined) return false;
         const current = await readRecord(store, lane);
         if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+        if ((await readRecord(store, expectedAbsentArchive)) !== undefined) return false;
         if (input.archive !== null) {
+          if (input.archive.userOperationHash === input.expectedArchiveAbsentUserOperationHash) {
+            return false;
+          }
           const archive = archiveKey(input.key, input.archive.userOperationHash);
           if (
             JSON.stringify(current) !== JSON.stringify(input.archive.record) ||

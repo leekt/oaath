@@ -13,12 +13,19 @@ import {
   captureRecord,
   type ExactRecord,
 } from "@oaath/protocol";
-import { invalidProviderParams, refuseProviderExecution, rpcFail } from "./errors.js";
+import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
+import {
+  INTERNAL_ERROR,
+  invalidProviderParams,
+  refuseProviderExecution,
+  rpcFail,
+} from "./errors.js";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const CANONICAL_CHAIN_ID = /^0x[1-9a-f][0-9a-f]*$/u;
 const CANONICAL_QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
+const HASH = /^0x[0-9a-f]{64}$/u;
 
 const BUNDLE_KEYS = Object.freeze([
   "version",
@@ -85,6 +92,103 @@ export interface CapturedWalletSendCallsParams {
 export interface CapturedWalletGetCapabilitiesParams {
   readonly address: CapturedAddress;
   readonly chainIds?: readonly CapturedHex[];
+}
+
+function canonicalJson(value: CapturedJsonValue): string {
+  type Task = Readonly<{ kind: "value"; value: CapturedJsonValue }> | string;
+  const output: string[] = [];
+  const tasks: Task[] = [{ kind: "value", value }];
+  while (tasks.length > 0) {
+    const task = tasks.pop();
+    if (task === undefined) return invalidProviderParams();
+    if (typeof task === "string") {
+      output.push(task);
+      continue;
+    }
+    const entry = task.value;
+    if (entry === null || typeof entry === "boolean" || typeof entry === "number") {
+      output.push(JSON.stringify(entry));
+      continue;
+    }
+    if (typeof entry === "string") {
+      output.push(JSON.stringify(entry));
+      continue;
+    }
+    if (isCapturedJsonArray(entry)) {
+      tasks.push("]");
+      for (let index = entry.length - 1; index >= 0; index -= 1) {
+        const child = entry[index];
+        if (child === undefined) return invalidProviderParams();
+        tasks.push({ kind: "value", value: child });
+        if (index > 0) tasks.push(",");
+      }
+      tasks.push("[");
+      continue;
+    }
+    const keys = Object.keys(entry).sort();
+    tasks.push("}");
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      const key = keys[index];
+      if (key === undefined) return invalidProviderParams();
+      const child = entry[key];
+      if (child === undefined) return invalidProviderParams();
+      tasks.push({ kind: "value", value: child });
+      tasks.push(":");
+      tasks.push(JSON.stringify(key));
+      if (index > 0) tasks.push(",");
+    }
+    tasks.push("{");
+  }
+  return output.join("");
+}
+
+function hashCapabilities(capabilities: CapturedWalletCapabilities): CapturedJsonObject {
+  return Object.freeze({
+    ignored: Object.freeze([...capabilities.ignored].sort()),
+    values: capabilities.values,
+  });
+}
+
+/** Internal deterministic identity for one already-captured request and its exact chosen ID. */
+export function hashCapturedWalletSendCallsRequest(
+  request: Readonly<CapturedWalletSendCallsParams>,
+  id: string,
+): Hash {
+  const calls = request.calls.map((call) =>
+    Object.freeze({
+      to: call.to,
+      ...(call.data === undefined ? {} : { data: call.data }),
+      ...(call.value === undefined ? {} : { value: call.value }),
+      ...(call.capabilities === undefined
+        ? {}
+        : { capabilities: hashCapabilities(call.capabilities) }),
+    }),
+  );
+  const material: CapturedJsonObject = Object.freeze({
+    version: request.version,
+    id,
+    ...(request.from === undefined ? {} : { from: request.from }),
+    chainId: request.chainId,
+    atomicRequired: request.atomicRequired,
+    calls: Object.freeze(calls),
+    ...(request.capabilities === undefined
+      ? {}
+      : { capabilities: hashCapabilities(request.capabilities) }),
+  });
+  return keccak256(stringToBytes(canonicalJson(material)));
+}
+
+/** Binds canonical request bytes to one unrepeatable durable bundle generation. */
+export function hashWalletCallBundleProvenance(requestHash: unknown, generation: unknown): Hash {
+  if (
+    typeof requestHash !== "string" ||
+    !HASH.test(requestHash) ||
+    typeof generation !== "string" ||
+    !HASH.test(generation)
+  ) {
+    return rpcFail(INTERNAL_ERROR);
+  }
+  return keccak256(`${requestHash}${generation.slice(2)}` as Hex);
 }
 
 interface CaptureBudget {

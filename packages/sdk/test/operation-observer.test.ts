@@ -30,6 +30,7 @@ const identity: OperationIdentity = {
   account: `0x${"22".repeat(20)}`,
   nonce: "7",
   userOperationHash: `0x${"33".repeat(32)}`,
+  requestHash: null,
 };
 const targetTransactionHash = `0x${"44".repeat(32)}` as const;
 const targetBlockHash = `0x${"55".repeat(32)}` as const;

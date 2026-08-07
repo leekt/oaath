@@ -6,7 +6,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v1" as const;
+export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v2" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -48,6 +48,7 @@ export interface UserOperationReference {
 export interface OperationIdentity extends UserOperationReference {
   readonly kind: OperationKind;
   readonly grantId: string;
+  readonly requestHash: `0x${string}` | null;
 }
 
 export type OperationWeakObservation =
@@ -329,7 +330,16 @@ function parseIdentity(
 ): Readonly<OperationIdentity> {
   const record = exactRecord(
     value,
-    ["kind", "grantId", "chainId", "entryPoint", "account", "nonce", "userOperationHash"],
+    [
+      "kind",
+      "grantId",
+      "chainId",
+      "entryPoint",
+      "account",
+      "nonce",
+      "userOperationHash",
+      "requestHash",
+    ],
     "operation identity",
     code,
     context,
@@ -345,6 +355,10 @@ function parseIdentity(
     account: address(record.account, "operation identity account", code),
     nonce: uint256(record.nonce, "operation identity nonce", code),
     userOperationHash: hash(record.userOperationHash, "operation identity userOperationHash", code),
+    requestHash:
+      record.requestHash === null
+        ? null
+        : hash(record.requestHash, "operation identity requestHash", code),
   });
 }
 
@@ -867,6 +881,17 @@ export function parseOperation(value: unknown): Operation {
   }
 }
 
+export function parseOperationIdentity(value: unknown): Readonly<OperationIdentity> {
+  try {
+    return parseIdentity(value, "operation_record_invalid", new WeakSet());
+  } catch {
+    throw new OaathOperationError(
+      "operation_record_invalid",
+      "operation identity could not be captured safely",
+    );
+  }
+}
+
 export function createOperation(value: unknown): PreparedOperation {
   try {
     const context: CaptureContext = new WeakSet();
@@ -1076,7 +1101,8 @@ function sameIdentity(left: OperationIdentity, right: OperationIdentity): boolea
     left.entryPoint === right.entryPoint &&
     left.account === right.account &&
     left.nonce === right.nonce &&
-    left.userOperationHash === right.userOperationHash
+    left.userOperationHash === right.userOperationHash &&
+    left.requestHash === right.requestHash
   );
 }
 

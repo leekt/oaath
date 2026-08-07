@@ -16,6 +16,7 @@ const identity: OperationIdentity = {
   account: `0x${"22".repeat(20)}`,
   nonce: "0",
   userOperationHash: `0x${"33".repeat(32)}`,
+  requestHash: null,
 };
 
 function clone<Value>(value: Value): Value {
@@ -84,6 +85,39 @@ describe("Operation current codec", () => {
     expect(restored).toEqual(operation);
     expect(Object.isFrozen(restored)).toBe(true);
     expect(Object.isFrozen(restored.identity)).toBe(true);
+    expect(restored.identity.requestHash).toBeNull();
+  });
+
+  it("round-trips, validates, and freezes provider request provenance", () => {
+    const requestHash = `0x${"aa".repeat(32)}` as const;
+    const operation = createOperation({
+      identity: { ...identity, requestHash },
+      preparedAt: 10,
+    });
+    const restored = parseOperation(clone(operation));
+
+    expect(restored.identity.requestHash).toBe(requestHash);
+    expect(Object.isFrozen(restored.identity)).toBe(true);
+    expect(Reflect.set(restored.identity, "requestHash", null)).toBe(false);
+    expect(restored.identity.requestHash).toBe(requestHash);
+
+    for (const invalidRequestHash of ["0x1234", `0x${"AA".repeat(32)}`, undefined]) {
+      expectOperationError(
+        () =>
+          createOperation({
+            identity: { ...identity, requestHash: invalidRequestHash },
+            preparedAt: 10,
+          }),
+        "operation_input_invalid",
+      );
+    }
+
+    const missingRequestHash = { ...identity } as Record<string, unknown>;
+    delete missingRequestHash.requestHash;
+    expectOperationError(
+      () => createOperation({ identity: missingRequestHash, preparedAt: 10 }),
+      "operation_input_invalid",
+    );
   });
 
   it("accepts only the exact current abandoned record", () => {
@@ -123,6 +157,7 @@ describe("Operation current codec", () => {
     >;
 
     expectRecordInvalid({ ...operation, version: "oaath.operation/v0" });
+    expectRecordInvalid({ ...operation, version: "oaath.operation/v1" });
     expectRecordInvalid({ ...operation, compatibilityState: "legacy" });
 
     const missing = { ...operation };
@@ -146,6 +181,7 @@ describe("Operation current codec", () => {
       entryPoint: identity.entryPoint,
       account: identity.account,
       nonce: identity.nonce,
+      requestHash: identity.requestHash,
     };
     Object.defineProperty(hostileIdentity, "userOperationHash", {
       enumerable: true,

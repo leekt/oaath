@@ -12,6 +12,7 @@ import {
   runOaathCleanup,
   signOutEffect,
 } from "../src/advanced.js";
+import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
   type OaathCleanupCheckpointStore,
   type OaathCleanupEffectName,
@@ -20,6 +21,7 @@ import {
 } from "../src/persistence.js";
 import { createMemoryCleanupStore } from "../src/testing.js";
 import {
+  createChainFixture,
   createClock,
   createMemoryStores,
   createRealm,
@@ -77,19 +79,36 @@ describe("cleanup coordinator", () => {
     expect(await checkpoints.read("realm-a")).toBeUndefined();
   });
 
-  it.each(ALL)("attempts every other effect when %s fails", async (failing) => {
-    const checkpoints = createMemoryCleanupStore();
-    const record = recorder();
-    await expect(
-      cleanup({
-        effects: ALL.map((name) => record.effect(name, name === failing)),
-        checkpoints,
-      }),
-    ).rejects.toMatchObject({ name: "OaathCleanupError", code: "cleanup_incomplete" });
-    expect(record.attempts).toEqual([...ALL]);
-    const checkpoint = parseCleanupCheckpoint(await checkpoints.read("realm-a"));
-    expect(checkpoint.completed).toEqual(ALL.filter((name) => name !== failing));
-  });
+  it.each(ALL)(
+    "attempts independent effects and withholds dependents when %s fails",
+    async (failing) => {
+      const checkpoints = createMemoryCleanupStore();
+      const record = recorder();
+      await expect(
+        cleanup({
+          effects: ALL.map((name) => record.effect(name, name === failing)),
+          checkpoints,
+        }),
+      ).rejects.toMatchObject({ name: "OaathCleanupError", code: "cleanup_incomplete" });
+      const expectedAttempts =
+        failing === "revoke"
+          ? ["revoke", "signOut"]
+          : failing === "close"
+            ? [...ALL]
+            : ["revoke", "signOut", "forgetLocal"];
+      expect(record.attempts).toEqual(expectedAttempts);
+      const checkpoint = parseCleanupCheckpoint(await checkpoints.read("realm-a"));
+      const expectedCompleted =
+        failing === "revoke"
+          ? ["signOut"]
+          : failing === "signOut"
+            ? ["revoke", "forgetLocal"]
+            : failing === "forgetLocal"
+              ? ["revoke", "signOut"]
+              : ["revoke", "signOut", "forgetLocal"];
+      expect(checkpoint.completed).toEqual(expectedCompleted);
+    },
+  );
 
   it("reports every failure when all effects fail together", async () => {
     const checkpoints = createMemoryCleanupStore();
@@ -98,11 +117,11 @@ describe("cleanup coordinator", () => {
       effects: ALL.map((name) => record.effect(name, true)),
       checkpoints,
     }).catch((error: unknown) => error);
-    expect(record.attempts).toEqual([...ALL]);
+    expect(record.attempts).toEqual(["revoke", "signOut"]);
     expect(failure).toMatchObject({ name: "OaathCleanupError", code: "cleanup_incomplete" });
     const error = failure as { unfinished: readonly string[]; failures: readonly unknown[] };
     expect(error.unfinished).toEqual([...ALL]);
-    expect(error.failures).toHaveLength(4);
+    expect(error.failures).toHaveLength(2);
     expect(await checkpoints.read("realm-a")).toBeUndefined();
   });
 
@@ -116,9 +135,9 @@ describe("cleanup coordinator", () => {
       primaryError,
     }).catch((error: unknown) => error);
     expect(thrown).toBe(primaryError);
-    expect(record.attempts).toEqual([...ALL]);
-    // The durable checkpoint, not the thrown error, carries what is left to do.
-    expect(parseCleanupCheckpoint(await checkpoints.read("realm-a")).completed).toEqual(["close"]);
+    expect(record.attempts).toEqual(["revoke", "signOut"]);
+    // No destructive dependent ran, so no completion checkpoint exists.
+    expect(await checkpoints.read("realm-a")).toBeUndefined();
   });
 
   it("retries only the effects the checkpoint does not prove complete", async () => {
@@ -136,9 +155,9 @@ describe("cleanup coordinator", () => {
       effects: ALL.map((name) => second.effect(name)),
       checkpoints,
     });
-    expect(second.attempts).toEqual(["signOut"]);
+    expect(second.attempts).toEqual(["signOut", "close"]);
     expect(result.unfinished).toEqual([]);
-    expect(result.completed).toEqual(["revoke", "forgetLocal", "close", "signOut"]);
+    expect(result.completed).toEqual(["revoke", "forgetLocal", "signOut", "close"]);
   });
 
   it("keeps an effect retryable when its checkpoint cannot be written", async () => {
@@ -178,6 +197,11 @@ describe("cleanup coordinator", () => {
     await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
     const operation = await grant.sendCalls(sendCallsInput());
     expect((await operation.wait()).status).toBe("finalized");
+    await expect(
+      tracked.stores.grants.get(grantProviderPort(grant).grantId),
+    ).resolves.toMatchObject({
+      value: { materializations: [{ state: "installed" }] },
+    });
 
     const result = await realm.oaath.disconnect(grant);
     expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
@@ -188,13 +212,90 @@ describe("cleanup coordinator", () => {
     expect(tracked.deletedKeys).toEqual(["session-key"]);
     expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);
     // `close` released every store the realm owned.
-    expect(tracked.closed.sort()).toEqual(["context", "grants", "keys", "operations"]);
+    expect(tracked.closed.sort()).toEqual([
+      "context",
+      "grants",
+      "keys",
+      "operations",
+      "walletCallBundles",
+    ]);
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
       code: "oaath_client_closed",
     });
   });
 
-  it("still forgets local state and releases resources when signOut fails", async () => {
+  it("retries a failed owned store close instead of discarding the connection", async () => {
+    const memory = createMemoryStores();
+    let walletCloseAttempts = 0;
+    const stores = {
+      ...memory,
+      walletCallBundles: {
+        get: (key: Parameters<typeof memory.walletCallBundles.get>[0]) =>
+          memory.walletCallBundles.get(key),
+        compareAndSwap: (input: Parameters<typeof memory.walletCallBundles.compareAndSwap>[0]) =>
+          memory.walletCallBundles.compareAndSwap(input),
+        compareAndDelete: (
+          input: Parameters<typeof memory.walletCallBundles.compareAndDelete>[0],
+        ) => memory.walletCallBundles.compareAndDelete(input),
+        async close() {
+          walletCloseAttempts += 1;
+          if (walletCloseAttempts === 1) throw new Error("wallet bundle store still open");
+          await memory.walletCallBundles.close();
+        },
+      },
+    };
+    const realm = createRealm({ stores });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+
+    await expect(realm.oaath.disconnect(grant)).rejects.toMatchObject({
+      name: "OaathCleanupError",
+      unfinished: ["close"],
+    });
+    expect(walletCloseAttempts).toBe(1);
+    const retried = await realm.oaath.disconnect(grant);
+    expect(retried.unfinished).toEqual([]);
+    expect(retried.completed).toContain("close");
+    expect(walletCloseAttempts).toBe(2);
+  });
+
+  it("catches synchronous close throws, attempts later stores, and retries only failure", async () => {
+    const tracked = trackedStores();
+    let grantCloseAttempts = 0;
+    const realm = createRealm({
+      stores: {
+        ...tracked.stores,
+        grants: {
+          get: (grantId: Parameters<typeof tracked.stores.grants.get>[0]) =>
+            tracked.stores.grants.get(grantId),
+          compareAndSwap: (value: Parameters<typeof tracked.stores.grants.compareAndSwap>[0]) =>
+            tracked.stores.grants.compareAndSwap(value),
+          close() {
+            grantCloseAttempts += 1;
+            if (grantCloseAttempts === 1) throw new Error("synchronous Grant store close failure");
+            return tracked.stores.grants.close();
+          },
+        },
+      },
+    });
+    await realm.oaath.connect();
+
+    await expect(realm.oaath.close()).rejects.toThrow("synchronous Grant store close failure");
+    expect(grantCloseAttempts).toBe(1);
+    expect(tracked.closed.sort()).toEqual(["context", "keys", "operations", "walletCallBundles"]);
+
+    await realm.oaath.close();
+    expect(grantCloseAttempts).toBe(2);
+    expect(tracked.closed.sort()).toEqual([
+      "context",
+      "grants",
+      "keys",
+      "operations",
+      "walletCallBundles",
+    ]);
+  });
+
+  it("forgets local state but retains resources needed to retry signOut", async () => {
     const tracked = trackedStores();
     const realm = createRealm({
       stores: tracked.stores,
@@ -206,14 +307,48 @@ describe("cleanup coordinator", () => {
     const grant = await connection.requestPermission(permissionInput());
     await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
     const failure = await realm.oaath.disconnect(grant).catch((error: unknown) => error);
-    expect(failure).toMatchObject({ name: "OaathCleanupError", unfinished: ["signOut"] });
+    expect(failure).toMatchObject({
+      name: "OaathCleanupError",
+      unfinished: ["signOut", "close"],
+    });
     // No chain ever materialized, so revocation completes outright.
     expect(grant.state).toBe("revoked");
     expect(tracked.deletedKeys).toEqual(["session-key"]);
-    expect(tracked.closed).toHaveLength(4);
+    expect(tracked.closed).toHaveLength(0);
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_closed",
+      code: "oaath_client_signed_out",
     });
+  });
+
+  it("retains revocation dependencies until exact retry completes", async () => {
+    let crashOnRemoval = false;
+    const chain = createChainFixture({ crashOnSend: () => crashOnRemoval });
+    const tracked = trackedStores();
+    const realm = createRealm({ stores: tracked.stores, chain });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
+    const operation = await grant.sendCalls(sendCallsInput());
+    expect((await operation.wait()).status).toBe("finalized");
+    crashOnRemoval = true;
+
+    const first = await realm.oaath.disconnect(grant).catch((error: unknown) => error);
+    expect(first).toMatchObject({
+      name: "OaathCleanupError",
+      unfinished: ["revoke", "forgetLocal", "close"],
+    });
+    expect(grant.state).toBe("revoking");
+    expect(await tracked.stores.keys.get("session-key")).toBeDefined();
+    expect(await tracked.stores.context.read(realm.oaath.binding.bindingId)).toBeDefined();
+    expect(tracked.closed).toHaveLength(0);
+
+    crashOnRemoval = false;
+    const retried = await realm.oaath.disconnect(grant);
+    expect(retried.unfinished).toEqual([]);
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
+    expect(tracked.closed).toHaveLength(5);
   });
 
   it("deletes only the named local key handles", async () => {
@@ -276,6 +411,19 @@ function trackedStores() {
         close: async () => {
           closed.push("operations");
           return stores.operations.close();
+        },
+      },
+      walletCallBundles: {
+        get: (key: Parameters<typeof stores.walletCallBundles.get>[0]) =>
+          stores.walletCallBundles.get(key),
+        compareAndSwap: (input: Parameters<typeof stores.walletCallBundles.compareAndSwap>[0]) =>
+          stores.walletCallBundles.compareAndSwap(input),
+        compareAndDelete: (
+          input: Parameters<typeof stores.walletCallBundles.compareAndDelete>[0],
+        ) => stores.walletCallBundles.compareAndDelete(input),
+        close: async () => {
+          closed.push("walletCallBundles");
+          return stores.walletCallBundles.close();
         },
       },
       keys: {

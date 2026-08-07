@@ -41,6 +41,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryWalletCallBundleStoreAdapter,
 } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
@@ -185,11 +186,12 @@ const authorization = {
   },
 };
 
-// Durable state. A browser swaps these five for the `createIndexedDb*` adapters
+// Durable state. A browser swaps these for the `createIndexedDb*` adapters
 // from the same entry; nothing else in this file changes.
 const stores = {
   grants: createMemoryGrantStoreAdapter(),
   operations: createMemoryOperationStoreAdapter(),
+  walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
   keys: createMemoryKeyStore(),
   cleanup: createMemoryCleanupStore(),
   context: createMemoryContextStore(),

@@ -201,6 +201,8 @@ function memoryStore(control: MemoryControl): OperationStore {
 
 interface RunnerCounters {
   prepares: number;
+  authorizes: number;
+  abandons: number;
   opens: number;
   sends: number;
   preparationCloses: number;
@@ -211,6 +213,8 @@ interface RunnerCounters {
 function counters(): RunnerCounters {
   return {
     prepares: 0,
+    authorizes: 0,
+    abandons: 0,
     opens: 0,
     sends: 0,
     preparationCloses: 0,
@@ -223,8 +227,13 @@ function runner(input: {
   store: OperationStore;
   prepared: PreparedUserOperation;
   counters: RunnerCounters;
+  requestHash?: `0x${string}` | null;
   terminalBehavior?: "replace" | "reuse_same_kind";
   observer?: OperationObserver;
+  reserveOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
+  authorizeOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
+  abandonOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
+  confirmOperationPublished?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   open?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   submit?: () => Promise<unknown>;
 }) {
@@ -236,6 +245,7 @@ function runner(input: {
     });
   return createOperationRunner({
     terminalBehavior: input.terminalBehavior ?? "replace",
+    requestHash: input.requestHash ?? null,
     store: input.store,
     observer: input.observer ?? pendingObserver(),
     preparation: {
@@ -243,6 +253,18 @@ function runner(input: {
         input.counters.prepares += 1;
         return input.prepared;
       },
+      reserveOperation: input.reserveOperation ?? (async () => undefined),
+      authorizeOperation:
+        input.authorizeOperation ??
+        (async () => {
+          input.counters.authorizes += 1;
+        }),
+      abandonOperation:
+        input.abandonOperation ??
+        (async () => {
+          input.counters.abandons += 1;
+        }),
+      confirmOperationPublished: input.confirmOperationPublished ?? (async () => undefined),
       async close() {
         input.counters.preparationCloses += 1;
       },
@@ -278,7 +300,7 @@ async function seedPreparedOperation(
   const seeded = await store.compareAndSwap({
     key: { ...key, kind: snapshot.kind },
     expectedStoreRevision: null,
-    next: createOperation({ identity: deriveOperationId(snapshot), preparedAt }),
+    next: createOperation({ identity: deriveOperationId(snapshot, null), preparedAt }),
   });
   if (seeded.status !== "committed") throw new Error("expected prepared seed commit");
   return seeded.record;
@@ -297,12 +319,17 @@ describe("OperationRunner", () => {
     expect(() =>
       createOperationRunner({
         terminalBehavior: "replace",
+        requestHash: null,
         store: memoryStore(control),
         observer: pendingObserver(),
         preparation: {
           async prepare() {
             return prepared("execution");
           },
+          async reserveOperation() {},
+          async authorizeOperation() {},
+          async abandonOperation() {},
+          async confirmOperationPublished() {},
           async close() {},
           async send() {},
         },
@@ -368,7 +395,8 @@ describe("OperationRunner", () => {
     expect(result.status === "committed" && result.record).toEqual(control.raw);
     expect(observerCalls).toBe(0);
     expect(providerReads).toBe(0);
-    expect(control.archiveReads ?? 0).toBe(0);
+    // The store checks archive uniqueness before both the seed and abandonment CAS.
+    expect(control.archiveReads ?? 0).toBe(2);
     expect(count).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
 
     const observed = await operationRunner.observeOperation({
@@ -520,7 +548,7 @@ describe("OperationRunner", () => {
     await seedPreparedOperation(store, snapshot);
     const replacementSnapshot = prepared("execution", "8");
     const replacement = createOperation({
-      identity: deriveOperationId(replacementSnapshot),
+      identity: deriveOperationId(replacementSnapshot, null),
       preparedAt: 11,
     });
     control.fault = (next) => {
@@ -587,6 +615,171 @@ describe("OperationRunner", () => {
     expect(observerReads).toBe(0);
     expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
     await operationRunner.close();
+  });
+
+  it("fences publication before submission and persists request provenance", async () => {
+    const events: string[] = [];
+    const control: MemoryControl = {
+      closeFailures: 0,
+      closeCalls: 0,
+      fault(next) {
+        events.push(next.value.state);
+        return false;
+      },
+    };
+    const count = counters();
+    const requestHash = `0x${"ab".repeat(32)}` as const;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      requestHash,
+      async reserveOperation() {
+        events.push("reserve");
+      },
+      async authorizeOperation() {
+        count.authorizes += 1;
+        events.push("authorize");
+      },
+      async confirmOperationPublished() {
+        events.push("confirm");
+      },
+      async open() {
+        events.push("open");
+        return {
+          async submit() {
+            count.sends += 1;
+            events.push("send");
+            return { userOperationHash: prepared("execution").userOperationHash };
+          },
+          async close() {},
+        };
+      },
+    });
+
+    const result = await operationRunner.startOperation(runInput("execution"));
+
+    expect(result.record.value.identity.requestHash).toBe(requestHash);
+    expect(events).toEqual([
+      "reserve",
+      "prepared",
+      "authorize",
+      "confirm",
+      "submission_attempted",
+      "open",
+      "send",
+      "submitted",
+    ]);
+    await operationRunner.close();
+  });
+
+  it("abandons a published operation when publication confirmation loses its fence", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: prepared("execution"),
+      counters: count,
+      async confirmOperationPublished() {
+        throw new Error("private publication fence conflict");
+      },
+    });
+
+    await expectRunnerError(
+      () => operationRunner.startOperation(runInput("execution")),
+      "operation_runner_preparation_failed",
+    );
+
+    expect(storedOperation(control)).toMatchObject({
+      state: "abandoned",
+      abandonment: { reason: "submission_not_attempted" },
+    });
+    expect(count).toMatchObject({ prepares: 1, opens: 0, sends: 0 });
+    expect(count.abandons).toBe(1);
+    await operationRunner.close();
+  });
+
+  it("abandons durable preparation when its owner refuses pre-sign authorization", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const snapshot = prepared("execution");
+    let confirmations = 0;
+    let abandoned: PreparedUserOperation | null = null;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      async authorizeOperation(exact) {
+        count.authorizes += 1;
+        expect(exact).toEqual(snapshot);
+        expect(storedOperation(control)?.state).toBe("prepared");
+        throw new Error("owner no longer authorizes the operation");
+      },
+      async abandonOperation(exact) {
+        count.abandons += 1;
+        abandoned = exact;
+      },
+      async confirmOperationPublished() {
+        confirmations += 1;
+      },
+    });
+
+    await expectRunnerError(
+      () => operationRunner.startOperation(runInput("execution")),
+      "operation_runner_preparation_failed",
+    );
+
+    expect(storedOperation(control)).toMatchObject({
+      state: "abandoned",
+      identity: { userOperationHash: snapshot.userOperationHash },
+      abandonment: { reason: "submission_not_attempted" },
+    });
+    expect(abandoned).toEqual(snapshot);
+    expect(confirmations).toBe(0);
+    expect(count).toMatchObject({ prepares: 1, authorizes: 1, abandons: 1, opens: 0, sends: 0 });
+    await operationRunner.close();
+  });
+
+  it("never adopts a prepared identity with different request provenance", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    const providerRequestHash = `0x${"ab".repeat(32)}` as const;
+    const seeded = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: null,
+      next: createOperation({
+        identity: deriveOperationId(snapshot, providerRequestHash),
+        preparedAt: 10,
+      }),
+    });
+    expect(seeded.status).toBe("committed");
+    const count = counters();
+    let reservations = 0;
+    let confirmations = 0;
+    const directRunner = runner({
+      store,
+      prepared: snapshot,
+      counters: count,
+      requestHash: null,
+      async reserveOperation() {
+        reservations += 1;
+      },
+      async confirmOperationPublished() {
+        confirmations += 1;
+      },
+    });
+
+    await expectRunnerError(
+      () => directRunner.runOperation(runInput("execution")),
+      "operation_runner_identity_mismatch",
+    );
+
+    expect(reservations).toBe(0);
+    expect(confirmations).toBe(0);
+    expect(count).toMatchObject({ prepares: 1, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.identity.requestHash).toBe(providerRequestHash);
+    await directRunner.close();
   });
 
   it("keeps an ambiguous fresh start attempted without observing", async () => {
@@ -874,7 +1067,7 @@ describe("OperationRunner", () => {
         if (replaceDuringObservation) {
           const retained = control.raw as OperationStoreRecord;
           const replaced = createOperation({
-            identity: deriveOperationId(replacement),
+            identity: deriveOperationId(replacement, null),
             preparedAt: input.observedAt,
           });
           control.raw = Object.freeze({
@@ -1576,27 +1769,26 @@ describe("OperationRunner", () => {
     const terminalRecord = seedControl.raw as OperationStoreRecord;
 
     let retained: OperationStoreRecord | undefined;
-    let archived: unknown;
+    const archived = new Map<string, unknown>();
     let injected = false;
     const store = new OperationStore({
       async get() {
         return retained;
       },
-      async getArchived() {
-        return archived;
+      async getArchived(input: Parameters<OperationStoreAdapter["getArchived"]>[0]) {
+        return archived.get(input.userOperationHash);
       },
-      async compareAndSwap(input: {
-        expectedStoreRevision: number | null;
-        next: unknown;
-        archive: Readonly<{ record: unknown }> | null;
-      }) {
+      async compareAndSwap(input: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) {
         if (!injected) {
           injected = true;
           retained = terminalRecord;
           return false;
         }
         if (retained?.storeRevision !== input.expectedStoreRevision) return false;
-        if (input.archive !== null) archived = input.archive.record;
+        if (archived.has(input.expectedArchiveAbsentUserOperationHash)) return false;
+        if (input.archive !== null) {
+          archived.set(input.archive.userOperationHash, input.archive.record);
+        }
         retained = input.next as OperationStoreRecord;
         return true;
       },

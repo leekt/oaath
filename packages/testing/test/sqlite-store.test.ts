@@ -87,7 +87,11 @@ function rejectedGrant(): Grant {
   });
 }
 
-function operationIdentity(chainId: number, seed: string): OperationIdentity {
+function operationIdentity(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): OperationIdentity {
   return {
     kind: "execution",
     grantId: grantIdentity.grantId,
@@ -96,16 +100,28 @@ function operationIdentity(chainId: number, seed: string): OperationIdentity {
     account: `0x${"22".repeat(20)}`,
     nonce: seed,
     userOperationHash: `0x${seed.repeat(64)}`,
+    requestHash,
   };
 }
 
-function preparedOperation(chainId: number, seed: string): Operation {
-  return createOperation({ identity: operationIdentity(chainId, seed), preparedAt: 10 });
+function preparedOperation(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): Operation {
+  return createOperation({
+    identity: operationIdentity(chainId, seed, requestHash),
+    preparedAt: 10,
+  });
 }
 
-function finalizedOperation(chainId: number, seed: string): Operation {
-  const identity = operationIdentity(chainId, seed);
-  let operation = preparedOperation(chainId, seed);
+function finalizedOperation(
+  chainId: number,
+  seed: string,
+  requestHash: OperationIdentity["requestHash"] = null,
+): Operation {
+  const identity = operationIdentity(chainId, seed, requestHash);
+  let operation = preparedOperation(chainId, seed, requestHash);
   operation = advanceOperation(operation, {
     type: "mark_submission_attempted",
     identity,
@@ -333,17 +349,20 @@ describe("test-only durable SQLite stores", () => {
       value: first,
     });
 
-    const stale = await store.compareAndSwap({
-      key: operationStoreKey(grantIdentity.grantId, identity.chainId),
-      expectedStoreRevision: storeRevision,
-      next: first,
-    });
-    expect(stale).toMatchObject({
-      status: "conflict",
-      current: {
-        storeRevision: 5,
-        value: { identity: { userOperationHash: second.identity.userOperationHash } },
-      },
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: operationStoreKey(grantIdentity.grantId, identity.chainId),
+          expectedStoreRevision: storeRevision,
+          next: first,
+        }),
+      "store_identity_mismatch",
+    );
+    await expect(
+      store.get(operationStoreKey(grantIdentity.grantId, identity.chainId)),
+    ).resolves.toMatchObject({
+      storeRevision: 5,
+      value: { identity: { userOperationHash: second.identity.userOperationHash } },
     });
 
     await store.close();
@@ -357,6 +376,63 @@ describe("test-only durable SQLite stores", () => {
     await expect(
       restored.get(operationStoreKey(grantIdentity.grantId, identity.chainId)),
     ).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await restored.close();
+  });
+
+  it("atomically rejects archived hash reuse without changing SQLite history", async () => {
+    const filePath = await databasePath();
+    const key = operationStoreKey(grantIdentity.grantId, 31_337);
+    const firstRequestHash = `0x${"aa".repeat(32)}` as const;
+    const secondRequestHash = `0x${"bb".repeat(32)}` as const;
+    const thirdRequestHash = `0x${"cc".repeat(32)}` as const;
+    const first = finalizedOperation(31_337, "6", firstRequestHash);
+    const second = finalizedOperation(31_337, "7", secondRequestHash);
+    const thirdIdentity = operationIdentity(31_337, "6", thirdRequestHash);
+    const third = advanceOperation(preparedOperation(31_337, "6", thirdRequestHash), {
+      type: "mark_submission_attempted",
+      identity: thirdIdentity,
+      attemptedAt: 11,
+    });
+    const store = createSqliteOperationStore(filePath);
+    const firstRevision = await commitOperation(store, first, null);
+    const secondRevision = await commitOperation(store, second, firstRevision);
+
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key,
+          expectedStoreRevision: secondRevision,
+          next: third,
+        }),
+      "store_identity_mismatch",
+    );
+    await expect(store.get(key)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await expect(store.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: firstRevision,
+      value: first,
+    });
+    await expect(store.getExact(key, second.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+
+    await store.close();
+    const restored = createSqliteOperationStore(filePath);
+    await expect(restored.get(key)).resolves.toMatchObject({
+      storeRevision: secondRevision,
+      value: second,
+    });
+    await expect(restored.getExact(key, first.identity.userOperationHash)).resolves.toMatchObject({
+      storeRevision: firstRevision,
+      value: first,
+    });
+    await expect(restored.getExact(key, second.identity.userOperationHash)).resolves.toMatchObject({
       storeRevision: secondRevision,
       value: second,
     });

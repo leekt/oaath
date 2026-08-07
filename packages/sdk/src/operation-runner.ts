@@ -57,6 +57,14 @@ export interface OperationPreparationCapability {
       key: Readonly<OperationStoreKey>;
     }>,
   ) => Promise<unknown>;
+  /** Reserves any caller-owned durable reference before the Operation is published. */
+  readonly reserveOperation: (prepared: PreparedUserOperation) => Promise<unknown>;
+  /** Admits the now-durable prepared identity before confirmation, signing, or send. */
+  readonly authorizeOperation: (prepared: PreparedUserOperation) => Promise<unknown>;
+  /** Releases owner state after conclusive pre-submission abandonment. */
+  readonly abandonOperation: (prepared: PreparedUserOperation) => Promise<unknown>;
+  /** Confirms the caller-owned reference only after the prepared Operation is durable. */
+  readonly confirmOperationPublished: (prepared: PreparedUserOperation) => Promise<unknown>;
   readonly close: () => Promise<void>;
 }
 
@@ -76,6 +84,8 @@ export type OperationTerminalBehavior = "replace" | "reuse_same_kind";
 
 export interface OperationRunnerConfiguration {
   readonly terminalBehavior: OperationTerminalBehavior;
+  /** Provider request provenance, or null for direct and revocation operations. */
+  readonly requestHash: `0x${string}` | null;
   readonly store: OperationStore;
   readonly observer: OperationObserver;
   readonly preparation: OperationPreparationCapability;
@@ -194,6 +204,7 @@ function callable(
 
 function captureConfiguration(value: unknown): {
   terminalBehavior: OperationTerminalBehavior;
+  requestHash: `0x${string}` | null;
   store: OperationStore;
   observer: CapturedObserver;
   preparation: CapturedPreparation;
@@ -203,7 +214,7 @@ function captureConfiguration(value: unknown): {
     const context: CaptureContext = new WeakSet();
     const record = exact(
       value,
-      ["terminalBehavior", "store", "observer", "preparation", "submission"],
+      ["terminalBehavior", "requestHash", "store", "observer", "preparation", "submission"],
       "OperationRunner configuration",
       "operation_runner_capability_invalid",
       context,
@@ -217,6 +228,15 @@ function captureConfiguration(value: unknown): {
         "runner terminal behavior is invalid",
       );
     }
+    if (
+      record.requestHash !== null &&
+      (typeof record.requestHash !== "string" || !HASH.test(record.requestHash))
+    ) {
+      return runnerError(
+        "operation_runner_capability_invalid",
+        "runner request provenance is invalid",
+      );
+    }
     const observer = exact(
       record.observer,
       ["observeOperation", "close"],
@@ -226,7 +246,14 @@ function captureConfiguration(value: unknown): {
     );
     const preparation = exact(
       record.preparation,
-      ["prepare", "close"],
+      [
+        "prepare",
+        "reserveOperation",
+        "authorizeOperation",
+        "abandonOperation",
+        "confirmOperationPublished",
+        "close",
+      ],
       "OperationRunner preparation",
       "operation_runner_capability_invalid",
       context,
@@ -240,6 +267,7 @@ function captureConfiguration(value: unknown): {
     );
     return {
       terminalBehavior: record.terminalBehavior,
+      requestHash: record.requestHash as `0x${string}` | null,
       store: record.store,
       observer: Object.freeze({
         observeOperation: callable(
@@ -256,6 +284,22 @@ function captureConfiguration(value: unknown): {
           preparation.prepare,
           "operation_runner_capability_invalid",
         ) as OperationPreparationCapability["prepare"],
+        reserveOperation: callable(
+          preparation.reserveOperation,
+          "operation_runner_capability_invalid",
+        ) as OperationPreparationCapability["reserveOperation"],
+        authorizeOperation: callable(
+          preparation.authorizeOperation,
+          "operation_runner_capability_invalid",
+        ) as OperationPreparationCapability["authorizeOperation"],
+        abandonOperation: callable(
+          preparation.abandonOperation,
+          "operation_runner_capability_invalid",
+        ) as OperationPreparationCapability["abandonOperation"],
+        confirmOperationPublished: callable(
+          preparation.confirmOperationPublished,
+          "operation_runner_capability_invalid",
+        ) as OperationPreparationCapability["confirmOperationPublished"],
         close: callable(
           preparation.close,
           "operation_runner_capability_invalid",
@@ -469,7 +513,8 @@ function sameIdentity(left: OperationIdentity, right: OperationIdentity): boolea
     left.entryPoint === right.entryPoint &&
     left.account === right.account &&
     left.nonce === right.nonce &&
-    left.userOperationHash === right.userOperationHash
+    left.userOperationHash === right.userOperationHash &&
+    left.requestHash === right.requestHash
   );
 }
 
@@ -676,6 +721,40 @@ function captureObservation(value: unknown): ObserveOperationResult | null {
   }
 }
 
+function retainedObservation(operation: Operation): ObserveOperationResult | null {
+  if (operation.state === "finalized") {
+    return Object.freeze({ status: "finalized" as const, operation });
+  }
+  if (operation.state === "included") {
+    return Object.freeze({ status: "included" as const, operation });
+  }
+  if (operation.state === "dropped") {
+    return Object.freeze({ status: "dropped" as const, operation });
+  }
+  if (operation.state === "superseded") {
+    return Object.freeze({ status: "superseded" as const, operation });
+  }
+  if (operation.state === "abandoned") {
+    return Object.freeze({ status: "abandoned" as const, operation });
+  }
+  const observation = operation.observation;
+  if (observation?.status === "pending") {
+    return Object.freeze({
+      status: "pending" as const,
+      reason: observation.reason,
+      operation,
+    });
+  }
+  if (observation?.status === "unreadable") {
+    return Object.freeze({
+      status: "unreadable" as const,
+      reason: observation.reason,
+      operation,
+    });
+  }
+  return null;
+}
+
 function frozenResult<Result extends OperationRunResult | OperationStartResult>(
   result: Result,
 ): Result {
@@ -752,7 +831,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     conflictBehavior: "resume" | "reject",
   ): Promise<OperationStoreRecord> {
     const operation = createOperation({
-      identity: deriveOperationId(prepared),
+      identity: deriveOperationId(prepared, configuration.requestHash),
       preparedAt: input.preparedAt,
     });
     if (current && sameIdentity(current.value.identity, operation.identity)) {
@@ -833,7 +912,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         "Operation preparation result is invalid",
       );
     }
-    const identity = deriveOperationId(prepared);
+    const identity = deriveOperationId(prepared, configuration.requestHash);
     if (
       identity.kind !== input.kind ||
       identity.grantId !== input.key.grantId ||
@@ -848,15 +927,86 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     return prepared;
   }
 
+  async function reservePreparedOperation(prepared: PreparedUserOperation): Promise<void> {
+    try {
+      await configuration.preparation.reserveOperation(prepared);
+    } catch {
+      return runnerError(
+        "operation_runner_preparation_failed",
+        "Operation publication reservation failed",
+      );
+    }
+  }
+
+  async function confirmPreparedPublication(
+    input: OperationRunInput,
+    record: OperationStoreRecord,
+    prepared: PreparedUserOperation,
+  ): Promise<void> {
+    try {
+      await configuration.preparation.confirmOperationPublished(prepared);
+      return;
+    } catch {
+      // Publication is durable but the caller-owned reference did not confirm.
+      // Release every exact pre-submission owner only after abandonment commits.
+      await abandonBeforeSubmission(input, record, prepared);
+      return runnerError(
+        "operation_runner_preparation_failed",
+        "Operation publication confirmation failed",
+      );
+    }
+  }
+
+  async function abandonBeforeSubmission(
+    input: OperationRunInput,
+    record: OperationStoreRecord,
+    prepared: PreparedUserOperation,
+  ): Promise<void> {
+    const abandoned = advanceOperation(record.value, {
+      type: "mark_abandoned",
+      identity: record.value.identity,
+      abandonedAt: input.attemptedAt,
+      reason: "submission_not_attempted",
+    });
+    const persisted = await commit(input.key, record.storeRevision, abandoned);
+    if (persisted.status === "conflict") {
+      const current = requireConflictIdentity(persisted.current, record.value.identity);
+      if (current.value.state !== "abandoned") {
+        return runnerError(
+          "operation_runner_state_conflict",
+          "Operation abandonment lost the prepared identity",
+        );
+      }
+    }
+    await configuration.preparation.abandonOperation(prepared).catch(() => undefined);
+  }
+
+  async function authorizePreparedOperation(
+    input: OperationRunInput,
+    record: OperationStoreRecord,
+    prepared: PreparedUserOperation,
+  ): Promise<void> {
+    try {
+      await configuration.preparation.authorizeOperation(prepared);
+    } catch {
+      await abandonBeforeSubmission(input, record, prepared);
+      return runnerError(
+        "operation_runner_preparation_failed",
+        "Operation publication authority was not admitted",
+      );
+    }
+  }
+
   async function observe(
     record: OperationStoreRecord,
     input: OperationRunInput,
+    conflictAttempt = 0,
   ): Promise<OperationObserveResult> {
     let raw: unknown;
     try {
       raw = await configuration.observer.observeOperation({
         operation: record.value,
-        observedAt: input.observedAt,
+        observedAt: Math.max(input.observedAt, record.value.updatedAt),
         timeoutMs: input.timeoutMs,
       });
     } catch {
@@ -897,7 +1047,20 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       return frozenResult({ status: "observed", observation, record: persisted.record });
     }
     const current = requireConflictIdentity(persisted.current, record.value.identity);
-    return frozenResult({ status: "state_conflict", record: current });
+    if (sameOperation(current.value, derived)) {
+      return frozenResult({ status: "observed", observation, record: current });
+    }
+    // Another observer may have advanced the same exact identity. Re-observe
+    // that retained state; this path is read-only and can never submit.
+    if (conflictAttempt < 2) return observe(current, input, conflictAttempt + 1);
+    const retained = retainedObservation(current.value);
+    return retained
+      ? frozenResult({ status: "observed", observation: retained, record: current })
+      : frozenResult({
+          status: "observation_unavailable",
+          reason: "result_invalid",
+          record: current,
+        });
   }
 
   async function withActiveRun<Result>(action: () => Promise<Result>): Promise<Result> {
@@ -935,6 +1098,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         );
       }
       prepared = await prepareExact(input);
+      await reservePreparedOperation(prepared);
       record = await publishPrepared(input, record, prepared, "reject");
     } else {
       if (
@@ -949,6 +1113,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
 
       if (!record || !operationOccupiesLane(record.value)) {
         prepared = await prepareExact(input);
+        await reservePreparedOperation(prepared);
         record = await publishPrepared(input, record, prepared, "resume");
       }
     }
@@ -964,6 +1129,8 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       return observe(record, input);
     }
     prepared ??= await prepareExact(input, record.value.identity);
+    await authorizePreparedOperation(input, record, prepared);
+    await confirmPreparedPublication(input, record, prepared);
 
     const attempted = advanceOperation(record.value, {
       type: "mark_submission_attempted",
@@ -1037,26 +1204,28 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       });
     }
 
-    const submitted = advanceOperation(record.value, {
-      type: "mark_submitted",
-      identity: record.value.identity,
-      returnedUserOperationHash: returnedHash,
-      submittedAt: input.submittedAt,
-    });
-    const submittedCommit = await commit(input.key, record.storeRevision, submitted);
-    if (submittedCommit.status === "conflict") {
-      const current = requireConflictIdentity(submittedCommit.current, record.value.identity);
-      if (mode === "start") {
-        return runnerError(
-          "operation_runner_state_conflict",
-          "fresh Operation submission conflicted with durable state",
-        );
+    let submittedRecord = record;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (submittedRecord.value.state !== "submission_attempted") break;
+      const submitted = advanceOperation(submittedRecord.value, {
+        type: "mark_submitted",
+        identity: submittedRecord.value.identity,
+        returnedUserOperationHash: returnedHash,
+        submittedAt: Math.max(input.submittedAt, submittedRecord.value.updatedAt),
+      });
+      const submittedCommit = await commit(input.key, submittedRecord.storeRevision, submitted);
+      if (submittedCommit.status === "committed") {
+        submittedRecord = submittedCommit.record;
+        break;
       }
-      return observe(current, input);
+      // Concurrent observation may advance this exact identity after send. It
+      // cannot authorize another send, and the returned exact hash still lets
+      // submission acknowledgement converge against the retained revision.
+      submittedRecord = requireConflictIdentity(submittedCommit.current, record.value.identity);
     }
     return mode === "start"
-      ? frozenResult({ status: "started", record: submittedCommit.record })
-      : observe(submittedCommit.record, input);
+      ? frozenResult({ status: "started", record: submittedRecord })
+      : observe(submittedRecord, input);
   }
 
   async function startOperation(inputValue: unknown): Promise<OperationStartResult> {

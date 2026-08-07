@@ -103,6 +103,8 @@ export interface CreateOperationHandleInput {
   readonly observation: OperationObserverCapabilities["read"];
   /** Internal Grant transition triggered only by an exact later observation. */
   readonly onObserved?: (result: OperationObserveResult) => Promise<void>;
+  /** Internal owner bookkeeping after this handle's runner closes successfully. */
+  readonly onClosed?: () => void;
 }
 
 /**
@@ -190,6 +192,7 @@ export function createOperationHandle(
   const identity: Readonly<OperationIdentity> = input.initial.record.value.identity;
   let current = input.initial.record.value;
   let closed = false;
+  let closing: Promise<void> | null = null;
 
   async function observeOnce(): Promise<Readonly<OaathOperationOutcome>> {
     if (closed) clientFail("oaath_client_closed", "operation handle is closed");
@@ -210,9 +213,11 @@ export function createOperationHandle(
       return mapClientFailure(error, "operation observation failed");
     }
     const observed = operationOutcome(result);
-    if (input.onObserved) await input.onObserved(result);
     current = result.record.value;
     latest = observed;
+    // Grant materialization is secondary bookkeeping. Its durable installing
+    // marker remains retryable, but it can never replace this exact outcome.
+    if (input.onObserved) await input.onObserved(result).catch(() => undefined);
     return latest;
   }
 
@@ -302,11 +307,17 @@ export function createOperationHandle(
     },
     async close(): Promise<void> {
       if (closed) return;
-      closed = true;
-      try {
+      closing ??= (async () => {
         await input.runner.close();
+        closed = true;
+        input.onClosed?.();
+      })();
+      try {
+        await closing;
       } catch (error) {
         return mapClientFailure(error, "operation handle cleanup is incomplete");
+      } finally {
+        if (!closed) closing = null;
       }
     },
   });

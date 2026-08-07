@@ -51,6 +51,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryWalletCallBundleStoreAdapter,
 } from "../../src/testing.js";
 
 export const CHAIN_ID = 421_614;
@@ -364,15 +365,18 @@ function word(value: bigint): string {
   return value.toString(16).padStart(64, "0");
 }
 
-function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
+function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return deployment.implementationDeployment.runtimeCodeHash;
+    return selectedDeployment.implementationDeployment.runtimeCodeHash;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
 export interface ChainFixtureOptions {
+  readonly chainId?: 46_630 | 421_614 | 11_155_111;
+  /** Smart account returned by the synthetic factory; defaults to ACCOUNT. */
+  readonly account?: `0x${string}`;
   /**
    * Complete finalized usage evidence enables session coverage. Defaults to
    * true — the golden path is session execution. `false` removes the usage
@@ -421,6 +425,9 @@ export interface ChainFixture {
 export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixture {
   const sends: Readonly<PreparedUserOperation>[] = [];
   const signatures: string[] = [];
+  const chainId = options.chainId ?? CHAIN_ID;
+  const selectedDeployment = kernelV4Deployment(chainId);
+  const account = options.account ?? ACCOUNT;
   const fixture = {
     sends,
     signatures,
@@ -525,16 +532,18 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   }
 
   const capability: Readonly<OaathChainCapability> = Object.freeze({
-    chainId: CHAIN_ID,
+    chainId,
     reads: Object.freeze({
       async read(request: KernelV4AccountReadRequest): Promise<unknown> {
         if (request.type === "chain_id") return request.chainId;
-        if (request.type === "runtime_code_hash") return runtimeCodeHash(request.address);
-        if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
+        if (request.type === "runtime_code_hash") {
+          return runtimeCodeHash(request.address, selectedDeployment);
+        }
+        if (request.type === "code") return request.address === account ? "0x" : "0x01";
         if (request.type === "kernel_factory_implementation") {
           return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
         }
-        if (request.type === "kernel_factory_account") return ACCOUNT;
+        if (request.type === "kernel_factory_account") return account;
         return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
       },
     }),
@@ -544,7 +553,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
         readonly userOperationHash?: `0x${string}`;
         readonly nonce?: string;
       }) {
-        if (request.type === "chain_id") return CHAIN_ID;
+        if (request.type === "chain_id") return chainId;
         if (request.type === "user_operation_receipt") {
           return receipt(request.userOperationHash ?? `0x${"00".repeat(32)}`);
         }
@@ -611,7 +620,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     }),
     async quote(request: { readonly chainId: number }) {
       fixture.quotes += 1;
-      if (request.chainId !== CHAIN_ID) throw new Error("unexpected quote chain");
+      if (request.chainId !== chainId) throw new Error("unexpected quote chain");
       return {
         nonceKey: "0",
         // The account's next sequence, as a chain read would report it.
@@ -656,6 +665,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
 export interface RealmStores {
   readonly grants: ReturnType<typeof createMemoryGrantStoreAdapter>;
   readonly operations: ReturnType<typeof createMemoryOperationStoreAdapter>;
+  readonly walletCallBundles: ReturnType<typeof createMemoryWalletCallBundleStoreAdapter>;
   readonly keys: ReturnType<typeof createMemoryKeyStore>;
   readonly cleanup: ReturnType<typeof createMemoryCleanupStore>;
   readonly context: ReturnType<typeof createMemoryContextStore>;
@@ -665,6 +675,7 @@ export function createMemoryStores(): RealmStores {
   return {
     grants: createMemoryGrantStoreAdapter(),
     operations: createMemoryOperationStoreAdapter(),
+    walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
     keys: createMemoryKeyStore(),
     cleanup: createMemoryCleanupStore(),
     context: createMemoryContextStore(),
@@ -786,6 +797,8 @@ export interface RealmOptions {
   readonly relay?: (request: Request) => Promise<Response>;
   readonly stores?: RealmStores;
   readonly chain?: ChainFixture;
+  readonly chains?: readonly ChainFixture[];
+  readonly binding?: unknown;
   readonly owner?: OwnerDecision;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
   readonly signing?: ReturnType<typeof signingProfiles>;
@@ -811,13 +824,14 @@ export function createRealm(options: RealmOptions = {}): Realm {
   const clock = options.clock ?? createClock();
   const relay = options.relay ?? createRelay(clock);
   const stores = options.stores ?? createMemoryStores();
-  const chain = options.chain ?? createChainFixture();
+  const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
+  const chains = options.chains ?? [chain];
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let signOuts = 0;
   let invalidations = 0;
 
   const oaath = createOAAth({
-    binding: bindingInput,
+    binding: options.binding ?? bindingInput,
     issuer: {
       url: ISSUER_URL,
       fetch: (request: Request) => relay(authorized(request, CLIENT_TOKEN)),
@@ -844,7 +858,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
       },
     },
     stores,
-    chains: [chain.capability],
+    chains: chains.map((entry) => entry.capability),
     signing: options.signing ?? signingProfiles(),
     localKeyIds: ["session-key"],
     now: clock.now,

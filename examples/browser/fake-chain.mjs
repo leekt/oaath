@@ -28,6 +28,7 @@ const BLOCK_HASH = `0x${"55".repeat(32)}`;
 const PARENT_HASH = `0x${"aa".repeat(32)}`;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const USER_OPERATION_EVENT = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
+const BEFORE_EXECUTION_EVENT = "0xbb47ee3e183a558b1a2ff0874b079f3fc5478b7454eacf2bfc5af2ff5878f972";
 const INCLUSION_BLOCK = 20n;
 
 const quantity = (value) => `0x${value.toString(16)}`;
@@ -93,6 +94,17 @@ export function createFakeChain(chainId) {
           transactionHash: TRANSACTION_HASH,
           transactionIndex: "0x0",
           logIndex: "0x0",
+          removed: false,
+          topics: [BEFORE_EXECUTION_EVENT],
+          data: "0x",
+        },
+        {
+          address: prepared.entryPoint.address,
+          blockNumber: quantity(blockNumber(currentIndex())),
+          blockHash: blockHash(currentIndex()),
+          transactionHash: TRANSACTION_HASH,
+          transactionIndex: "0x0",
+          logIndex: "0x1",
           removed: false,
           topics: [
             USER_OPERATION_EVENT,

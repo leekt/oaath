@@ -20,6 +20,7 @@ const identity: OperationIdentity = {
   account: `0x${"22".repeat(20)}`,
   nonce: "7",
   userOperationHash: `0x${"33".repeat(32)}`,
+  requestHash: null,
 };
 
 const transactionHash = `0x${"44".repeat(32)}` as const;
@@ -127,7 +128,7 @@ describe("Operation abandonment", () => {
     const operation = abandoned(prepared());
 
     expect(operation).toEqual({
-      version: "oaath.operation/v1",
+      version: "oaath.operation/v2",
       identity,
       revision: 1,
       state: "abandoned",
@@ -553,6 +554,17 @@ describe("Operation aggregate", () => {
 
     expectOperationError(
       () =>
+        applyVerifiedOperationObservation(waiting, {
+          type: "record_pending",
+          identity: { ...identity, requestHash: `0x${"aa".repeat(32)}` },
+          observedAt: 12,
+          reason: "timeout",
+        }),
+      "operation_identity_mismatch",
+    );
+
+    expectOperationError(
+      () =>
         advanceOperation(waiting, {
           type: "mark_submitted",
           identity,
@@ -625,6 +637,7 @@ describe("Operation aggregate", () => {
     mutable.grantId = "changed";
     mutable.chainId += 1;
     mutable.userOperationHash = `0x${"aa".repeat(32)}`;
+    mutable.requestHash = `0x${"bb".repeat(32)}`;
     expect(operation.identity).toEqual(identity);
   });
 

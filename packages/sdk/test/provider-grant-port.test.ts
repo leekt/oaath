@@ -9,23 +9,34 @@ import {
   OperationStore,
   type OperationStoreKey,
 } from "../src/advanced.js";
-import { grantProviderPort, type OaathGrantProviderPort } from "../src/client/grant-handle.js";
+import {
+  grantProviderPort,
+  type OaathGrantProviderPort,
+  type OaathProviderOperationPointer,
+} from "../src/client/grant-handle.js";
 import type { OaathGrantHandle } from "../src/index.js";
 import * as publicSdk from "../src/index.js";
 import {
+  ACCOUNT,
   bindingInput,
   CHAIN_ID,
   type ChainFixture,
   createChainFixture,
+  createMemoryStores,
   createRealm,
   permissionInput,
   sendCallsInput,
 } from "./support/browser.js";
 
-type OperationBinding = Readonly<{
-  key: Readonly<OperationStoreKey>;
-  userOperationHash: `0x${string}`;
-}>;
+type OperationBinding = OaathProviderOperationPointer;
+
+const REQUEST_HASH = `0x${"ab".repeat(32)}` as const;
+
+function providerCallsInput() {
+  const input = sendCallsInput();
+  if (input === null || typeof input !== "object") throw new Error("expected calls input");
+  return Object.freeze({ ...input, requestHash: REQUEST_HASH });
+}
 
 async function activeGrant(chain?: ChainFixture): Promise<
   Readonly<{
@@ -86,12 +97,21 @@ function requireBinding(value: OperationBinding | null): OperationBinding {
   return value;
 }
 
+function operationKey(value: OperationBinding): Readonly<OperationStoreKey> {
+  return Object.freeze({
+    grantId: value.identity.grantId,
+    chainId: value.identity.chainId,
+    kind: value.identity.kind,
+  });
+}
+
 describe("private Grant provider port", () => {
   it("resolves only genuine handles and exposes one immutable opaque realm scope", async () => {
     const { realm, connection, grant, port } = await activeGrant();
 
     expect(Object.isFrozen(port)).toBe(true);
     expect(port.providerScopeId).toBe(realm.oaath.binding.bindingId);
+    expect(port.grantId).toMatch(/\S/u);
     expect(port.providerScopeId).toMatch(/^0x[0-9a-f]{64}$/u);
     expect([
       bindingInput.applicationId,
@@ -129,19 +149,26 @@ describe("private Grant provider port", () => {
       releaseBinding = resolve;
     });
 
-    const starting = port.startCalls(sendCallsInput(), async (operation) => {
-      bindCalls += 1;
-      binding = operation;
-      enterBinding();
-      await bindingReleased;
-    });
+    const starting = port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (operation: OaathProviderOperationPointer) => {
+          bindCalls += 1;
+          binding = operation;
+          enterBinding();
+          await bindingReleased;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
     await bindingEntered;
 
     const exact = requireBinding(binding);
     expect(Object.isFrozen(exact)).toBe(true);
-    expect(Object.isFrozen(exact.key)).toBe(true);
-    expect(Reflect.set(exact.key, "chainId", 1)).toBe(false);
-    expect(await journal.get(exact.key)).toBeUndefined();
+    expect(Object.isFrozen(exact.identity)).toBe(true);
+    expect(Reflect.set(exact.identity, "chainId", 1)).toBe(false);
+    expect(await journal.get(operationKey(exact))).toBeUndefined();
     expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
 
@@ -151,9 +178,9 @@ describe("private Grant provider port", () => {
     expect(operation.outcome).toMatchObject({ status: "pending", state: "submitted" });
     expect(observed.reads()).toBe(0);
     expect(realm.chain.sends).toHaveLength(1);
-    expect(realm.chain.sends[0]?.userOperationHash).toBe(exact.userOperationHash);
-    expect((await journal.get(exact.key))?.value.identity.userOperationHash).toBe(
-      exact.userOperationHash,
+    expect(realm.chain.sends[0]?.userOperationHash).toBe(exact.identity.userOperationHash);
+    expect((await journal.get(operationKey(exact)))?.value.identity.userOperationHash).toBe(
+      exact.identity.userOperationHash,
     );
 
     await connection.close();
@@ -165,20 +192,234 @@ describe("private Grant provider port", () => {
     let binding: OperationBinding | null = null;
 
     await expect(
-      port.startCalls(sendCallsInput(), async (operation) => {
-        binding = operation;
-        throw new Error("provider registry refused the binding");
-      }),
+      port.startCalls(
+        providerCallsInput(),
+        Object.freeze({
+          reserve: async (operation: OaathProviderOperationPointer) => {
+            binding = operation;
+            throw new Error("provider registry refused the binding");
+          },
+          confirm: async () => undefined,
+          abandon: async () => undefined,
+        }),
+      ),
     ).rejects.toMatchObject({
       code: "oaath_client_preparation_failed",
       source: "operation_runner_preparation_failed",
     });
 
     const refused = requireBinding(binding);
-    expect(await journal.get(refused.key)).toBeUndefined();
+    expect(await journal.get(operationKey(refused))).toBeUndefined();
     expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
 
+    await connection.close();
+  });
+
+  it("lets revocation cancel delayed pre-publication work before signing or send", async () => {
+    const base = createChainFixture();
+    let enterProbe!: () => void;
+    let releaseProbe!: () => void;
+    const probeEntered = new Promise<void>((resolve) => {
+      enterProbe = resolve;
+    });
+    const probeReleased = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    const chain: ChainFixture = {
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+            enterProbe();
+            await probeReleased;
+            return base.capability.bundler.probe(request);
+          },
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    };
+    const { connection, grant } = await activeGrant(chain);
+    const sending = grant.sendCalls(sendCallsInput());
+    await probeEntered;
+    const revoking = grant.revoke();
+    releaseProbe();
+
+    await expect(sending).rejects.toMatchObject({
+      code: "oaath_client_grant_inactive",
+      source: "grant_revocation_requested",
+    });
+    await revoking;
+    expect(grant.state).toBe("revoked");
+    expect(base.signatures).toHaveLength(0);
+    expect(base.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("rejects publication after another handle durably revokes the Grant", async () => {
+    const base = createChainFixture();
+    let enterProbe!: () => void;
+    let releaseProbe!: () => void;
+    const probeEntered = new Promise<void>((resolve) => {
+      enterProbe = resolve;
+    });
+    const probeReleased = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    const chain: ChainFixture = {
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+            enterProbe();
+            await probeReleased;
+            return base.capability.bundler.probe(request);
+          },
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    };
+    const { connection, grant } = await activeGrant(chain);
+    const revoker = await connection.resume();
+    if (revoker === null) throw new Error("expected a second genuine Grant handle");
+    const sending = grant.sendCalls(sendCallsInput());
+    await probeEntered;
+    await revoker.revoke();
+    releaseProbe();
+
+    await expect(sending).rejects.toMatchObject({ code: "oaath_client_grant_inactive" });
+    expect(grant.state).toBe("revoked");
+    expect(revoker.state).toBe("revoked");
+    expect(base.signatures).toHaveLength(0);
+    expect(base.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("abandons a published operation when another handle wins Grant admission", async () => {
+    const baseStores = createMemoryStores();
+    let gateAuthorization = false;
+    let authorizationBlocked = false;
+    let binding: OperationBinding | null = null;
+    let enterAuthorization!: () => void;
+    let releaseAuthorization!: () => void;
+    const authorizationEntered = new Promise<void>((resolve) => {
+      enterAuthorization = resolve;
+    });
+    const authorizationReleased = new Promise<void>((resolve) => {
+      releaseAuthorization = resolve;
+    });
+    const stores = {
+      ...baseStores,
+      grants: {
+        async get(grantId: Parameters<typeof baseStores.grants.get>[0]) {
+          const current = await baseStores.grants.get(grantId);
+          if (gateAuthorization && binding !== null && !authorizationBlocked) {
+            authorizationBlocked = true;
+            enterAuthorization();
+            await authorizationReleased;
+          }
+          return current;
+        },
+        compareAndSwap: (value: Parameters<typeof baseStores.grants.compareAndSwap>[0]) =>
+          baseStores.grants.compareAndSwap(value),
+        close: () => baseStores.grants.close(),
+      },
+    };
+    const realm = createRealm({ stores });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const revoker = await connection.resume();
+    if (revoker === null) throw new Error("expected a second genuine Grant handle");
+    const port = grantProviderPort(grant);
+    const journal = new OperationStore(realm.stores.operations);
+    let abandonments = 0;
+    gateAuthorization = true;
+
+    const starting = port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (operation: OaathProviderOperationPointer) => {
+          binding = operation;
+        },
+        confirm: async () => undefined,
+        abandon: async () => {
+          abandonments += 1;
+        },
+      }),
+    );
+    await authorizationEntered;
+    const exact = requireBinding(binding);
+    expect((await journal.get(operationKey(exact)))?.value.state).toBe("prepared");
+
+    await revoker.revoke();
+    releaseAuthorization();
+    await expect(starting).rejects.toMatchObject({
+      code: "oaath_client_preparation_failed",
+      source: "operation_runner_preparation_failed",
+    });
+
+    expect((await journal.get(operationKey(exact)))?.value).toMatchObject({
+      state: "abandoned",
+      identity: { userOperationHash: exact.identity.userOperationHash },
+    });
+    expect(revoker.state).toBe("revoked");
+    expect(abandonments).toBe(1);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("drains admitted work before close and blocks its later publication", async () => {
+    const base = createChainFixture();
+    let enterProbe!: () => void;
+    let releaseProbe!: () => void;
+    const probeEntered = new Promise<void>((resolve) => {
+      enterProbe = resolve;
+    });
+    const probeReleased = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    const chain: ChainFixture = {
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+            enterProbe();
+            await probeReleased;
+            return base.capability.bundler.probe(request);
+          },
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    };
+    const { connection, grant } = await activeGrant(chain);
+    const sending = grant.sendCalls(sendCallsInput());
+    await probeEntered;
+    let closeSettled = false;
+    const closing = grant.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+    releaseProbe();
+
+    await expect(sending).rejects.toMatchObject({ code: "oaath_client_closed" });
+    await closing;
+    expect(closeSettled).toBe(true);
+    expect(base.signatures).toHaveLength(0);
+    expect(base.sends).toHaveLength(0);
     await connection.close();
   });
 
@@ -187,9 +428,16 @@ describe("private Grant provider port", () => {
     const { realm, connection, grant, port } = await activeGrant(observed.chain);
     let binding: OperationBinding | null = null;
 
-    const first = await port.startCalls(sendCallsInput(), async (operation) => {
-      binding = operation;
-    });
+    const first = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (operation: OaathProviderOperationPointer) => {
+          binding = operation;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
     const started = requireBinding(binding);
     expect(observed.reads()).toBe(0);
     expect(realm.chain.sends).toHaveLength(1);
@@ -198,7 +446,7 @@ describe("private Grant provider port", () => {
     expect(finalized).toMatchObject({ status: "finalized", outcome: "success" });
     const finalizedReceipt = await first.receipt();
     expect(realm.chain.sends).toHaveLength(1);
-    expect(realm.chain.sends[0]?.userOperationHash).toBe(started.userOperationHash);
+    expect(realm.chain.sends[0]?.userOperationHash).toBe(started.identity.userOperationHash);
     expect(observed.reads()).toBeGreaterThan(0);
 
     const firstPrepared = realm.chain.sends[0];
@@ -211,7 +459,7 @@ describe("private Grant provider port", () => {
     const secondPrepared = realm.chain.sends[1];
     if (!secondPrepared) throw new Error("expected the replacing direct operation");
     expect((BigInt(secondPrepared.userOperation.nonce) >> 248n) & 0xffn).toBe(0n);
-    expect(secondPrepared.userOperationHash).not.toBe(started.userOperationHash);
+    expect(secondPrepared.userOperationHash).not.toBe(started.identity.userOperationHash);
 
     const readsBeforeOldObservation = observed.reads();
     await expect(first.observe()).resolves.toEqual(finalized);
@@ -220,6 +468,181 @@ describe("private Grant provider port", () => {
     expect(realm.chain.sends).toHaveLength(2);
     expect(first.outcome).toEqual(finalized);
 
+    await connection.close();
+  });
+
+  it("preserves exact finality when materialization bookkeeping fails once", async () => {
+    const memory = createMemoryStores();
+    let installationFailures = 1;
+    const realm = createRealm({
+      stores: {
+        ...memory,
+        grants: {
+          get: (grantId: Parameters<typeof memory.grants.get>[0]) => memory.grants.get(grantId),
+          compareAndSwap: (input: Parameters<typeof memory.grants.compareAndSwap>[0]) => {
+            const grant = input.next.value as {
+              readonly materializations?: readonly Readonly<{ state?: unknown }>[];
+            };
+            if (
+              installationFailures > 0 &&
+              grant.materializations?.some((entry) => entry.state === "installed")
+            ) {
+              installationFailures -= 1;
+              throw new Error("lost materialization bookkeeping write");
+            }
+            return memory.grants.compareAndSwap(input);
+          },
+          close: () => memory.grants.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const port = grantProviderPort(grant);
+    let binding: OperationBinding | null = null;
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (exact: OaathProviderOperationPointer) => {
+          binding = exact;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+
+    await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({
+      status: "finalized",
+      outcome: "success",
+    });
+    const exact = requireBinding(binding);
+    await expect(memory.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installing" }] },
+    });
+    await expect(operation.observe()).resolves.toMatchObject({ status: "finalized" });
+    await expect(memory.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installed" }] },
+    });
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("rejects recovery pointers for another Grant or account before observation", async () => {
+    const observed = countingChain();
+    const { connection, port } = await activeGrant(observed.chain);
+    let binding: OperationBinding | null = null;
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (exact: OaathProviderOperationPointer) => {
+          binding = exact;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+    await operation.close();
+    const exact = requireBinding(binding);
+    const readsBefore = observed.reads();
+
+    await expect(
+      port.recoverOperation({
+        identity: { ...exact.identity, grantId: "foreign-grant" },
+      }),
+    ).rejects.toMatchObject({ source: "provider_operation_grant_mismatch" });
+    await expect(
+      port.recoverOperation({
+        identity: { ...exact.identity, account: `0x${"99".repeat(20)}` },
+      }),
+    ).rejects.toMatchObject({ source: "provider_operation_identity_mismatch" });
+    await expect(
+      port.recoverOperation({
+        identity: { ...exact.identity, entryPoint: `0x${"98".repeat(20)}` },
+      }),
+    ).rejects.toMatchObject({ source: "provider_operation_identity_mismatch" });
+    await expect(
+      port.recoverOperation({
+        identity: { ...exact.identity, nonce: "1" },
+      }),
+    ).rejects.toMatchObject({ source: "provider_operation_identity_mismatch" });
+    await expect(
+      port.recoverOperation({
+        identity: { ...exact.identity, requestHash: `0x${"cd".repeat(32)}` },
+      }),
+    ).resolves.toEqual({ status: "request_conflict" });
+    expect(observed.reads()).toBe(readsBefore);
+
+    await connection.close();
+  });
+
+  it("drains a recovered Operation handle created while its Grant closes", async () => {
+    const memory = createMemoryStores();
+    let gateRead = false;
+    let readBlocked = false;
+    let enterRead!: () => void;
+    let releaseRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enterRead = resolve;
+    });
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const realm = createRealm({
+      stores: {
+        ...memory,
+        operations: {
+          get: async (key: Parameters<typeof memory.operations.get>[0]) => {
+            const value = await memory.operations.get(key);
+            if (gateRead && !readBlocked) {
+              readBlocked = true;
+              enterRead();
+              await readReleased;
+            }
+            return value;
+          },
+          getArchived: (input: Parameters<typeof memory.operations.getArchived>[0]) =>
+            memory.operations.getArchived(input),
+          compareAndSwap: (input: Parameters<typeof memory.operations.compareAndSwap>[0]) =>
+            memory.operations.compareAndSwap(input),
+          close: () => memory.operations.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const port = grantProviderPort(grant);
+    let binding: OperationBinding | null = null;
+    const started = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (operation: OaathProviderOperationPointer) => {
+          binding = operation;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+    await started.close();
+    const exact = requireBinding(binding);
+    gateRead = true;
+
+    const recovering = port.recoverOperation(exact);
+    await readEntered;
+    let closeSettled = false;
+    const closing = grant.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+    releaseRead();
+
+    const recovered = await recovering;
+    expect(recovered.status).toBe("observable");
+    await closing;
+    if (recovered.status !== "observable") throw new Error("expected an Operation handle");
+    await expect(recovered.operation.observe()).rejects.toMatchObject({
+      code: "oaath_client_closed",
+    });
     await connection.close();
   });
 });

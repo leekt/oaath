@@ -276,7 +276,7 @@ describe("wallet_sendCalls orchestration", () => {
 });
 
 describe("wallet_getCallsStatus state", () => {
-  it("returns after submission with zero reads, stays 100, then caches terminal 200", async () => {
+  it("returns after submission with zero reads, stays 100, then durably reprojects terminal 200", async () => {
     let withheld = true;
     const observed = countingChain({ withholdReceipt: () => withheld });
     const { connection, provider, account } = await activeProvider(observed.chain);
@@ -310,8 +310,8 @@ describe("wallet_getCallsStatus state", () => {
       method: "wallet_getCallsStatus",
       params: [sent.id],
     });
-    expect(cached).toBe(terminal);
-    expect(observed.reads()).toBe(readsAtTerminal);
+    expect(cached).toEqual(terminal);
+    expect(observed.reads()).toBeGreaterThan(readsAtTerminal);
     expect(observed.chain.sends).toHaveLength(1);
     await connection.close();
   });
@@ -389,7 +389,7 @@ describe("wallet_getCallsStatus state", () => {
     await connection.close();
   });
 
-  it("returns 5730 for unknown IDs and -32602 for malformed status params", async () => {
+  it("hides headless status existence and rejects malformed status params", async () => {
     const { connection, provider } = await activeProvider();
 
     await providerError(
@@ -398,7 +398,7 @@ describe("wallet_getCallsStatus state", () => {
     );
     await providerError(
       provider.request({ method: "wallet_showCallsStatus", params: ["unknown"] }),
-      5730,
+      4200,
     );
     for (const params of [undefined, [], ["a", "b"], new Array(1)]) {
       await providerError(provider.request({ method: "wallet_getCallsStatus", params }), -32602);

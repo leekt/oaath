@@ -33,12 +33,14 @@ import { openOaathDatabase } from "../persistence/indexeddb/database.js";
 import { createIndexedDbGrantStoreAdapter } from "../persistence/indexeddb/grant-store.js";
 import { createIndexedDbKeyStore } from "../persistence/indexeddb/key-store.js";
 import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/operation-store.js";
+import { createIndexedDbWalletCallBundleStoreAdapter } from "../persistence/indexeddb/wallet-call-bundle-store.js";
 import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability } from "./grant-handle.js";
@@ -268,26 +270,39 @@ function pollingAuthorization(
   });
 }
 
-async function defaultStores(): Promise<Record<string, unknown>> {
+interface OwnedDefaultStores {
+  readonly stores: Readonly<Record<string, unknown>>;
+  readonly close: () => Promise<void>;
+}
+
+async function defaultStores(): Promise<Readonly<OwnedDefaultStores>> {
   if (typeof indexedDB === "undefined") {
     // A runtime with no IndexedDB keeps everything in memory: nothing durable,
     // nothing resumable, and no authority inferred after a reload.
-    return {
-      grants: createMemoryGrantStoreAdapter(),
-      operations: createMemoryOperationStoreAdapter(),
-      keys: createMemoryKeyStore(),
-      cleanup: createMemoryCleanupStore(),
-      context: createMemoryContextStore(),
-    };
+    return Object.freeze({
+      stores: Object.freeze({
+        grants: createMemoryGrantStoreAdapter(),
+        operations: createMemoryOperationStoreAdapter(),
+        walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
+        keys: createMemoryKeyStore(),
+        cleanup: createMemoryCleanupStore(),
+        context: createMemoryContextStore(),
+      }),
+      close: async () => undefined,
+    });
   }
   const database = await openOaathDatabase();
-  return {
-    grants: createIndexedDbGrantStoreAdapter(database),
-    operations: createIndexedDbOperationStoreAdapter(database),
-    keys: createIndexedDbKeyStore(database),
-    cleanup: createIndexedDbCleanupStore(database),
-    context: createIndexedDbContextStore(database),
-  };
+  return Object.freeze({
+    stores: Object.freeze({
+      grants: createIndexedDbGrantStoreAdapter(database),
+      operations: createIndexedDbOperationStoreAdapter(database),
+      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+      keys: createIndexedDbKeyStore(database),
+      cleanup: createIndexedDbCleanupStore(database),
+      context: createIndexedDbContextStore(database),
+    }),
+    close: async () => database.close(),
+  });
 }
 
 function localOrigin(input: Readonly<ServiceRealmInput>): string {
@@ -473,6 +488,41 @@ export function createServiceRealm<Realm extends object>(
   const transport = serviceTransport(input);
   let inner: Realm | null = null;
   let composing: Promise<Realm> | null = null;
+  let defaultStoreOwner: Readonly<OwnedDefaultStores> | null = null;
+  let closing: Promise<void> | null = null;
+  let closeRequested = false;
+  let closed = false;
+  let activeOperations = 0;
+  const operationWaiters = new Set<() => void>();
+
+  function releaseOperation(): void {
+    activeOperations -= 1;
+    if (activeOperations !== 0) return;
+    for (const resolve of operationWaiters) resolve();
+    operationWaiters.clear();
+  }
+
+  function waitForOperations(): Promise<void> {
+    if (activeOperations === 0) return Promise.resolve();
+    return new Promise((resolve) => operationWaiters.add(resolve));
+  }
+
+  async function withOperation<Value>(action: () => Promise<Value>): Promise<Value> {
+    if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
+    activeOperations += 1;
+    try {
+      return await action();
+    } finally {
+      releaseOperation();
+    }
+  }
+
+  async function closeDefaultStoreOwner(): Promise<void> {
+    const owner = defaultStoreOwner;
+    if (owner === null) return;
+    await owner.close();
+    if (defaultStoreOwner === owner) defaultStoreOwner = null;
+  }
 
   async function realm(): Promise<Realm> {
     if (inner) return inner;
@@ -496,7 +546,8 @@ export function createServiceRealm<Realm extends object>(
       // rejection observed during that window. The real `await bootstrap`
       // still throws to the caller.
       bootstrap.catch(() => undefined);
-      const stores = (input.stores ?? (await defaultStores())) as {
+      if (input.stores === null) defaultStoreOwner = await defaultStores();
+      const stores = (input.stores ?? defaultStoreOwner?.stores) as {
         readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
         readonly keys: Parameters<typeof loadServiceSession>[0]["stores"]["keys"];
       };
@@ -519,9 +570,10 @@ export function createServiceRealm<Realm extends object>(
         await composeConfiguration(input, transport, await bootstrap, stores, session),
       );
       return inner;
-    })().catch((error: unknown) => {
+    })().catch(async (error: unknown) => {
       // A failed bootstrap leaves no realm behind; the next connect retries.
       composing = null;
+      await closeDefaultStoreOwner().catch(() => undefined);
       throw error;
     });
     return composing;
@@ -538,18 +590,50 @@ export function createServiceRealm<Realm extends object>(
       return (inner as { readonly binding: unknown }).binding;
     },
     async connect(): Promise<unknown> {
-      const composed = (await realm()) as { readonly connect: () => Promise<unknown> };
-      return composed.connect();
+      return withOperation(async () => {
+        const composed = (await realm()) as { readonly connect: () => Promise<unknown> };
+        return composed.connect();
+      });
     },
     async disconnect(grant: unknown): Promise<unknown> {
-      const composed = (await realm()) as {
-        readonly disconnect: (grant: unknown) => Promise<unknown>;
-      };
-      return composed.disconnect(grant);
+      return withOperation(async () => {
+        const composed = (await realm()) as {
+          readonly disconnect: (grant: unknown) => Promise<unknown>;
+        };
+        const result = await composed.disconnect(grant);
+        await closeDefaultStoreOwner();
+        return result;
+      });
     },
     async close(): Promise<void> {
-      if (!inner) return;
-      await (inner as { readonly close: () => Promise<void> }).close();
+      if (closed) return;
+      closeRequested = true;
+      closing ??= (async () => {
+        await waitForOperations();
+        if (composing && !inner) await composing.catch(() => undefined);
+        if (!inner && !defaultStoreOwner) {
+          closed = true;
+          return;
+        }
+        let failure: unknown;
+        if (inner) {
+          await (inner as { readonly close: () => Promise<void> })
+            .close()
+            .catch((error: unknown) => {
+              failure = error;
+            });
+        }
+        await closeDefaultStoreOwner().catch((error: unknown) => {
+          failure ??= error;
+        });
+        if (failure !== undefined) throw failure;
+        closed = true;
+      })();
+      try {
+        await closing;
+      } finally {
+        if (!closed) closing = null;
+      }
     },
   };
   return Object.freeze(facade) as unknown as Realm;

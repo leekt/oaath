@@ -59,5 +59,10 @@ export function forgetLocalEffect(input: {
 
 /** Submits and completes on-chain revocation through the Grant handle. */
 export function revokeEffect(grant: Readonly<OaathGrantHandle>): OaathCleanupEffect {
-  return effect("revoke", () => grant.revoke());
+  return effect("revoke", async () => {
+    await grant.revoke();
+    if (grant.state !== "revoked") {
+      throw new Error("Grant revocation remains unresolved");
+    }
+  });
 }

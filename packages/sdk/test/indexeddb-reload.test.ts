@@ -56,6 +56,7 @@ function storesFor(database: OaathDatabase): RealmStores {
   return {
     grants: createIndexedDbGrantStoreAdapter(database),
     operations: createIndexedDbOperationStoreAdapter(database),
+    walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
     keys: createIndexedDbKeyStore(database),
     cleanup: createIndexedDbCleanupStore(database),
     context: createIndexedDbContextStore(database),
@@ -238,7 +239,7 @@ describe("IndexedDB realm recreation", () => {
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 
-  it("recreates a malformed v4 database with exactly the six current stores", async () => {
+  it("recreates a malformed v5 database with exactly the six current stores", async () => {
     const factory = new IDBFactory();
     // A partial same-version realm receives no upgrade event, so the explicit
     // schema check must discard it and recreate the complete current schema.
@@ -256,8 +257,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(4);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(4);
+    expect(database.version).toBe(6);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(6);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -296,7 +297,7 @@ describe("IndexedDB realm recreation", () => {
     }
 
     // The exact v2 schema held five stores. Every one receives a recognizable
-    // stale value so the v4 open proves wholesale deletion rather than a
+    // stale value so the v5 open proves wholesale deletion rather than a
     // migration or a selectively preserved store.
     await new Promise<void>((resolve, reject) => {
       const request = factory.open(OAATH_INDEXEDDB_NAME, 2);
@@ -324,11 +325,11 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(4);
+    expect(database.version).toBe(6);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
-      account: `0x${"52".repeat(20)}` as const,
+      grantId: "stale-grant",
       id: "stale-bundle",
     };
     await expect(
@@ -347,7 +348,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
   });
 
-  it("wipes v3 operation lane keys instead of reading them through the v4 layout", async () => {
+  it("wipes v3 operation lane keys instead of reading them through the v5 layout", async () => {
     const factory = new IDBFactory();
     await new Promise<void>((resolve, reject) => {
       const request = factory.open(OAATH_INDEXEDDB_NAME, 3);
@@ -367,12 +368,45 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(4);
+    expect(database.version).toBe(6);
     await expect(
       createIndexedDbOperationStoreAdapter(database).get({
         grantId: "stale-grant",
         chainId: CHAIN_ID,
         kind: "execution",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("wipes v5 bundle keys instead of reading them through the v6 stable Grant axis", async () => {
+    const factory = new IDBFactory();
+    const providerScopeId = `0x${"61".repeat(32)}` as const;
+    const account = `0x${"62".repeat(20)}` as const;
+    const id = "v4-bundle";
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 5);
+      request.onupgradeneeded = () => {
+        for (const store of Object.values(OAATH_INDEXEDDB_STORES)) {
+          request.result.createObjectStore(store);
+        }
+        request.transaction
+          ?.objectStore(OAATH_INDEXEDDB_STORES.walletCallBundles)
+          .put({ source: "v5" }, [providerScopeId, "current-grant", account, id]);
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const database = await openRealmDatabase(factory);
+    expect(database.version).toBe(6);
+    await expect(
+      createIndexedDbWalletCallBundleStoreAdapter(database).get({
+        providerScopeId,
+        grantId: "current-grant",
+        id,
       }),
     ).resolves.toBeUndefined();
   });

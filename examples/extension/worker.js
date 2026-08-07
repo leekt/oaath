@@ -18,6 +18,7 @@ import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
   openOaathDatabase,
 } from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
@@ -64,6 +65,7 @@ async function realmFor(origin) {
     stores: {
       grants: createIndexedDbGrantStoreAdapter(database),
       operations: createIndexedDbOperationStoreAdapter(database),
+      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
       keys: createIndexedDbKeyStore(database),
       cleanup: createIndexedDbCleanupStore(database),
       context: createIndexedDbContextStore(database),

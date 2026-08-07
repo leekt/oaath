@@ -1,19 +1,31 @@
 /**
  * Final EIP-5792 orchestration over one genuine Grant provider port.
  *
- * The registry is intentionally provider-local in this child. It reserves an
- * ID before asynchronous execution work, binds the exact operation before
- * submission, and lets status perform observation only. Durable reload support
- * belongs to the later bundle-store child.
+ * WalletCallBundleStore owns durable request identity and lifecycle. Provider
+ * memory only coordinates calls currently executing in this orchestrator;
+ * every later status read resolves the durable bundle and exact Operation.
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { OaathGrantProviderPort } from "../client/grant-handle.js";
-import type { OaathOperationHandle } from "../client/operation-handle.js";
+import type {
+  OaathGrantProviderPort,
+  OaathProviderOperationPointer,
+} from "../client/grant-handle.js";
+import { kernelV4Deployment } from "../kernel-v4.js";
+import type {
+  WalletCallBundleKey,
+  WalletCallBundleStoreRecord,
+} from "../persistence/interfaces.js";
+import {
+  WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS,
+  WALLET_CALL_BUNDLE_RETENTION_SECONDS,
+} from "./bundle-store.js";
 import {
   captureWalletCallsStatusParams,
   captureWalletGetCapabilitiesParams,
   captureWalletSendCallsParams,
+  hashCapturedWalletSendCallsRequest,
+  hashWalletCallBundleProvenance,
   isWalletAddress,
 } from "./capture.js";
 import {
@@ -28,6 +40,9 @@ import {
 } from "./errors.js";
 import { type Eip5792CallsStatus, projectEip5792Status } from "./status.js";
 
+const GENERATED_ID_ATTEMPTS = 8;
+const HASH = /^0x[0-9a-f]{64}$/u;
+
 export type OaathCallsStatusPresenter = (
   this: void,
   status: Readonly<Eip5792CallsStatus>,
@@ -39,37 +54,14 @@ interface CreateEip5792OrchestratorInput {
   readonly showCallsStatus?: OaathCallsStatusPresenter;
 }
 
-interface AcceptedBundleRecord {
-  readonly state: "accepted";
-  readonly id: string;
-  readonly pending: Readonly<Eip5792CallsStatus>;
-}
-
-interface OperationBoundBundleRecord {
-  readonly state: "operation_bound";
-  readonly id: string;
-  readonly pending: Readonly<Eip5792CallsStatus>;
-  readonly operation: Readonly<OaathOperationHandle> | null;
-  statusRead: Promise<Readonly<Eip5792CallsStatus>> | null;
-}
-
-interface TerminalBundleRecord {
-  readonly state: "terminal";
-  readonly id: string;
-  readonly status: Readonly<Eip5792CallsStatus>;
-}
-
-type BundleRecord = AcceptedBundleRecord | OperationBoundBundleRecord | TerminalBundleRecord;
-
 function projectProviderStatus(
   input: Parameters<typeof projectEip5792Status>[0],
 ): Readonly<Eip5792CallsStatus> {
   try {
     return projectEip5792Status(input);
   } catch (error) {
-    // The projector's invalid-params code describes malformed direct input.
-    // Here every field is provider-owned operation evidence, so disagreement is
-    // an internal observation contradiction rather than application input.
+    // Every field here is provider-owned operation evidence, so disagreement is
+    // an internal contradiction rather than malformed application input.
     if (error instanceof OaathProviderRpcError && error.code === INVALID_PARAMS) {
       return rpcFail(INTERNAL_ERROR);
     }
@@ -84,22 +76,18 @@ export interface Eip5792Orchestrator {
   readonly getCapabilities: (params: unknown) => Promise<Readonly<Record<string, unknown>>>;
 }
 
-function generatedBundleId(records: ReadonlyMap<string, BundleRecord>): string {
+function generatedBundleId(): string {
   const generator = globalThis.crypto;
   if (!generator || typeof generator.getRandomValues !== "function") {
     return rpcFail(INTERNAL_ERROR);
   }
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    let bytes: Uint8Array;
-    try {
-      bytes = generator.getRandomValues(new Uint8Array(32));
-    } catch {
-      return rpcFail(INTERNAL_ERROR);
-    }
-    const id = `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-    if (!records.has(id)) return id;
+  const bytes = new Uint8Array(32);
+  try {
+    generator.getRandomValues(bytes);
+  } catch {
+    return rpcFail(INTERNAL_ERROR);
   }
-  return rpcFail(INTERNAL_ERROR);
+  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function pendingStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> {
@@ -117,39 +105,174 @@ function pendingStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> 
   });
 }
 
+function offchainFailureStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> {
+  return projectProviderStatus({
+    id,
+    chainId: chain,
+    outcome: Object.freeze({
+      status: "abandoned",
+      state: "abandoned",
+      transactionHash: null,
+      blockNumber: null,
+      outcome: null,
+      reason: "submission_not_attempted",
+    }),
+  });
+}
+
+function sameOperationPointer(
+  left: OaathProviderOperationPointer,
+  right: OaathProviderOperationPointer,
+): boolean {
+  return (
+    left.identity.kind === right.identity.kind &&
+    left.identity.grantId === right.identity.grantId &&
+    left.identity.chainId === right.identity.chainId &&
+    left.identity.entryPoint === right.identity.entryPoint &&
+    left.identity.account === right.identity.account &&
+    left.identity.nonce === right.identity.nonce &&
+    left.identity.userOperationHash === right.identity.userOperationHash &&
+    left.identity.requestHash === right.identity.requestHash
+  );
+}
+
 export function createEip5792Orchestrator(
   input: Readonly<CreateEip5792OrchestratorInput>,
 ): Readonly<Eip5792Orchestrator> {
-  const records = new Map<string, BundleRecord>();
   const chainId = `0x${input.chain.toString(16)}`;
-  // Capture the function alone so a method-style call cannot expose this
-  // internal composition object as the presenter's `this` value.
   const presenter = input.showCallsStatus;
+  const store = input.port.walletCallBundles;
 
-  function reserve(requestedId: string | undefined): AcceptedBundleRecord {
-    const id = requestedId ?? generatedBundleId(records);
-    if (records.has(id)) return rpcFail(DUPLICATE_ID);
-    const accepted = Object.freeze({
-      state: "accepted" as const,
+  function now(): number {
+    const value = input.port.now();
+    if (
+      typeof value !== "number" ||
+      !Number.isSafeInteger(value) ||
+      Object.is(value, -0) ||
+      value < 0
+    ) {
+      return rpcFail(INTERNAL_ERROR);
+    }
+    return value;
+  }
+
+  async function account(): Promise<`0x${string}`> {
+    const value = (await input.port.account(input.chain)).toLowerCase();
+    if (!isWalletAddress(value)) return rpcFail(INTERNAL_ERROR);
+    return value;
+  }
+
+  function key(id: string): Readonly<WalletCallBundleKey> {
+    if (
+      !HASH.test(input.port.providerScopeId) ||
+      input.port.grantId.length < 1 ||
+      input.port.grantId.length > 256 ||
+      input.port.grantId !== input.port.grantId.trim()
+    ) {
+      return rpcFail(INTERNAL_ERROR);
+    }
+    return Object.freeze({
+      providerScopeId: input.port.providerScopeId as `0x${string}`,
+      grantId: input.port.grantId,
       id,
-      pending: pendingStatus(id, input.chain),
     });
-    records.set(id, accepted);
-    return accepted;
+  }
+
+  async function reserve(
+    captured: ReturnType<typeof captureWalletSendCallsParams>,
+    accountAddress: `0x${string}`,
+  ): Promise<
+    Readonly<{
+      id: string;
+      key: Readonly<WalletCallBundleKey>;
+      operationRequestHash: `0x${string}`;
+      record: WalletCallBundleStoreRecord;
+    }>
+  > {
+    const createdAt = now();
+    const publicationExpiresAt = createdAt + WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS;
+    if (!Number.isSafeInteger(publicationExpiresAt)) return rpcFail(INTERNAL_ERROR);
+    const attempts = captured.id === undefined ? GENERATED_ID_ATTEMPTS : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const id = captured.id ?? generatedBundleId();
+      const bundleKey = key(id);
+      const requestHash = hashCapturedWalletSendCallsRequest(captured, id);
+      const generation = generatedBundleId();
+      const operationRequestHash = hashWalletCallBundleProvenance(requestHash, generation);
+      const result = await store.reserveAccepted({
+        key: bundleKey,
+        generation,
+        account: accountAddress,
+        chainId: input.chain,
+        createdAt,
+        publicationExpiresAt,
+        requestHash,
+      });
+      if (result.status === "committed") {
+        return Object.freeze({
+          id,
+          key: bundleKey,
+          operationRequestHash,
+          record: result.record,
+        });
+      }
+      if (captured.id !== undefined) return rpcFail(DUPLICATE_ID);
+    }
+    return rpcFail(INTERNAL_ERROR);
+  }
+
+  async function terminalize(
+    bundleKey: Readonly<WalletCallBundleKey>,
+    observed: WalletCallBundleStoreRecord,
+  ): Promise<WalletCallBundleStoreRecord> {
+    const result = await store.markTerminal({
+      key: bundleKey,
+      expectedStoreRevision: observed.storeRevision,
+      expectedGeneration: observed.value.generation,
+      updatedAt: Math.max(now(), observed.updatedAt),
+    });
+    if (result.status === "committed") return result.record;
+    if (result.current !== undefined) {
+      if (result.current.value.generation !== observed.value.generation) {
+        return rpcFail(UNKNOWN_BUNDLE_ID);
+      }
+      return result.current;
+    }
+    return rpcFail(INTERNAL_ERROR);
+  }
+
+  function operationBinding(
+    record: WalletCallBundleStoreRecord,
+  ): NonNullable<WalletCallBundleStoreRecord["value"]["operation"]> | null {
+    const binding = record.value.operation;
+    if (binding === null) return null;
+    const identity = binding.identity;
+    if (
+      identity.entryPoint !== kernelV4Deployment(record.value.chainId).entryPoint.address ||
+      identity.requestHash !==
+        hashWalletCallBundleProvenance(record.value.requestHash, record.value.generation)
+    ) {
+      return rpcFail(INTERNAL_ERROR);
+    }
+    return binding;
   }
 
   async function sendCalls(params: unknown): Promise<Readonly<{ id: string }>> {
     const captured = captureWalletSendCallsParams(params, input.chain);
-    const accepted = reserve(captured.id);
-    let startResolved = false;
+    if (captured.id !== undefined && (await store.get(key(captured.id))) !== undefined) {
+      return rpcFail(DUPLICATE_ID);
+    }
+    const accountAddress = await account();
+    if (captured.from !== undefined && captured.from !== accountAddress) {
+      return rpcFail(UNAUTHORIZED);
+    }
+
+    const accepted = await reserve(captured, accountAddress);
+    let reservationStarted = false;
+    let reserved: WalletCallBundleStoreRecord | null = null;
+    let reservedPointer: OaathProviderOperationPointer | null = null;
 
     try {
-      const account = (await input.port.account(input.chain)).toLowerCase();
-      if (!isWalletAddress(account)) return rpcFail(INTERNAL_ERROR);
-      if (captured.from !== undefined && captured.from !== account) {
-        return rpcFail(UNAUTHORIZED);
-      }
-
       const calls = Object.freeze(
         captured.calls.map((call) =>
           Object.freeze({
@@ -160,71 +283,308 @@ export function createEip5792Orchestrator(
         ),
       );
       const operation = await input.port.startCalls(
-        Object.freeze({ chain: input.chain, calls }),
-        async () => {
-          if (records.get(accepted.id) !== accepted) return rpcFail(INTERNAL_ERROR);
-          records.set(accepted.id, {
-            state: "operation_bound",
-            id: accepted.id,
-            pending: accepted.pending,
-            operation: null,
-            statusRead: null,
-          });
-        },
+        Object.freeze({ chain: input.chain, calls, requestHash: accepted.operationRequestHash }),
+        Object.freeze({
+          reserve: async (exact: OaathProviderOperationPointer) => {
+            const identity = exact.identity;
+            if (
+              identity.grantId !== accepted.key.grantId ||
+              identity.chainId !== input.chain ||
+              identity.kind !== "execution" ||
+              identity.account !== accountAddress ||
+              identity.entryPoint !== kernelV4Deployment(input.chain).entryPoint.address ||
+              identity.requestHash !== accepted.operationRequestHash
+            ) {
+              return rpcFail(INTERNAL_ERROR);
+            }
+            reservationStarted = true;
+            const result = await store.reserveOperation({
+              key: accepted.key,
+              expectedStoreRevision: accepted.record.storeRevision,
+              expectedGeneration: accepted.record.value.generation,
+              operation: Object.freeze({ identity }),
+              updatedAt: now(),
+            });
+            if (result.status !== "committed") return rpcFail(INTERNAL_ERROR);
+            reserved = result.record;
+            reservedPointer = exact;
+          },
+          confirm: async (exact: OaathProviderOperationPointer) => {
+            if (
+              reserved === null ||
+              reservedPointer === null ||
+              !sameOperationPointer(reservedPointer, exact)
+            ) {
+              return rpcFail(INTERNAL_ERROR);
+            }
+            const result = await store.confirmOperationPublished({
+              key: accepted.key,
+              expectedStoreRevision: reserved.storeRevision,
+              expectedGeneration: reserved.value.generation,
+              updatedAt: now(),
+            });
+            if (result.status !== "committed") return rpcFail(INTERNAL_ERROR);
+            reserved = result.record;
+          },
+          abandon: async (exact: OaathProviderOperationPointer) => {
+            if (
+              reserved === null ||
+              reservedPointer === null ||
+              !sameOperationPointer(reservedPointer, exact)
+            ) {
+              return rpcFail(INTERNAL_ERROR);
+            }
+            if (reserved.value.state === "terminal") return;
+            const result = await store.markTerminal({
+              key: accepted.key,
+              expectedStoreRevision: reserved.storeRevision,
+              expectedGeneration: reserved.value.generation,
+              updatedAt: Math.max(now(), reserved.updatedAt),
+            });
+            if (result.status === "committed") {
+              reserved = result.record;
+              return;
+            }
+            if (
+              result.current?.value.generation === reserved.value.generation &&
+              result.current.value.state === "terminal"
+            ) {
+              reserved = result.current;
+              return;
+            }
+            return rpcFail(INTERNAL_ERROR);
+          },
+        }),
       );
-      startResolved = true;
-
-      const bound = records.get(accepted.id);
-      if (bound?.state !== "operation_bound" || bound.operation !== null) {
+      const bound = await store.get(accepted.key);
+      if (
+        bound === undefined ||
+        bound.value.generation !== accepted.record.value.generation ||
+        bound.value.state !== "operation_bound"
+      ) {
         return rpcFail(INTERNAL_ERROR);
       }
-      records.set(accepted.id, { ...bound, operation });
+      const released = await store.releaseOperationPublication({
+        key: accepted.key,
+        expectedStoreRevision: bound.storeRevision,
+        expectedGeneration: bound.value.generation,
+        updatedAt: Math.max(now(), bound.updatedAt),
+      });
+      if (released.status !== "committed") return rpcFail(INTERNAL_ERROR);
+      reserved = released.record;
+      // Status reconstructs from durable exact identity, so this start handle
+      // owns no provider authority after wallet_sendCalls returns.
+      await operation.close().catch(() => undefined);
       return Object.freeze({ id: accepted.id });
     } catch (error) {
-      // Before binding, startCalls cannot have published, signed, or submitted
-      // an operation. Once binding happened, retain the ID conservatively.
-      if (!startResolved && records.get(accepted.id) === accepted) records.delete(accepted.id);
+      // Before the reservation callback, the runner cannot have published, signed,
+      // or submitted. The failed reservation remains terminal and cannot be
+      // silently reused. Once reservation starts, preserve its uncertain state for
+      // exact recovery instead of inferring that no send happened.
+      if (!reservationStarted) {
+        await terminalize(accepted.key, accepted.record).catch(() => undefined);
+      }
       throw error;
     }
   }
 
-  async function observeBound(
-    record: OperationBoundBundleRecord,
-  ): Promise<Readonly<Eip5792CallsStatus>> {
-    const operation = record.operation;
-    if (operation === null) return record.pending;
-
-    const outcome = await operation.observe();
-    const status =
-      outcome.status === "finalized"
-        ? projectProviderStatus({
-            id: record.id,
-            chainId: input.chain,
-            outcome,
-            receipt: await operation.receipt(),
-          })
-        : projectProviderStatus({ id: record.id, chainId: input.chain, outcome });
-    if (status.status !== 100 && records.get(record.id) === record) {
-      records.set(record.id, Object.freeze({ state: "terminal", id: record.id, status }));
+  async function retainedBundle(
+    bundleKey: Readonly<WalletCallBundleKey>,
+  ): Promise<WalletCallBundleStoreRecord | undefined> {
+    let record = await store.get(bundleKey);
+    if (record === undefined || record.value.state !== "terminal") return record;
+    const at = now();
+    if (at < record.updatedAt || at - record.updatedAt < WALLET_CALL_BUNDLE_RETENTION_SECONDS) {
+      return record;
     }
-    return status;
+    if (record.value.terminalFrom !== "accepted") {
+      const binding = operationBinding(record);
+      if (binding === null) return rpcFail(INTERNAL_ERROR);
+      const recovered = await input.port.recoverOperation(binding);
+      if (recovered.status === "absent") return record;
+      if (recovered.status === "prepared") return record;
+      if (
+        recovered.status === "request_conflict" &&
+        record.value.terminalFrom !== "operation_reserved"
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (
+        recovered.status === "abandoned" &&
+        record.value.terminalFrom !== "operation_reserved" &&
+        record.value.terminalFrom !== "operation_bound"
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (recovered.status === "observable") {
+        try {
+          const terminal =
+            recovered.operation.outcome.status === "finalized" ||
+            recovered.operation.outcome.status === "dropped" ||
+            recovered.operation.outcome.status === "superseded" ||
+            recovered.operation.outcome.status === "abandoned";
+          if (record.value.terminalFrom !== "operation_bound" || !terminal) {
+            return rpcFail(INTERNAL_ERROR);
+          }
+        } finally {
+          await recovered.operation.close().catch(() => undefined);
+        }
+      }
+    }
+    const deleted = await store.deleteExpiredTerminal(
+      bundleKey,
+      at,
+      WALLET_CALL_BUNDLE_RETENTION_SECONDS,
+    );
+    if (deleted.status === "deleted" || deleted.status === "absent") return undefined;
+    if (deleted.current.value.generation !== record.value.generation) return undefined;
+    record = deleted.current;
+    return record;
   }
 
-  async function statusForId(id: string): Promise<Readonly<Eip5792CallsStatus>> {
-    const record = records.get(id);
-    if (record === undefined) return rpcFail(UNKNOWN_BUNDLE_ID);
-    if (record.state === "accepted") return record.pending;
-    if (record.state === "terminal") return record.status;
-    if (record.operation === null) return record.pending;
-    if (record.statusRead !== null) return record.statusRead;
-
-    const read = observeBound(record);
-    record.statusRead = read;
-    try {
-      return await read;
-    } finally {
-      if (records.get(id) === record && record.statusRead === read) record.statusRead = null;
+  async function statusFromOperation(
+    record: WalletCallBundleStoreRecord,
+    bundleKey: Readonly<WalletCallBundleKey>,
+  ): Promise<Readonly<Eip5792CallsStatus>> {
+    const binding = operationBinding(record);
+    if (binding === null) {
+      return record.value.state === "terminal"
+        ? offchainFailureStatus(record.value.id, record.value.chainId)
+        : rpcFail(INTERNAL_ERROR);
     }
+    if (
+      (record.value.state === "operation_reserved" || record.value.state === "operation_bound") &&
+      record.value.publicationReleasedAt === null &&
+      now() < record.value.publicationExpiresAt
+    ) {
+      return pendingStatus(record.value.id, record.value.chainId);
+    }
+    let recovered = await input.port.recoverOperation(binding);
+    if (recovered.status === "prepared" && now() >= record.value.publicationExpiresAt) {
+      recovered = await input.port.abandonPreparedOperation(binding);
+    }
+    if (recovered.status === "absent") {
+      // A publication CAS may still be in progress. Missing evidence never
+      // authorizes resubmission. The durable lease may, however, prove the
+      // pre-submission producer lost its fenced publication window.
+      if (record.value.state !== "operation_reserved") return rpcFail(INTERNAL_ERROR);
+      if (now() < record.value.publicationExpiresAt) {
+        return pendingStatus(record.value.id, record.value.chainId);
+      }
+      const terminal = await terminalize(bundleKey, record);
+      if (
+        terminal.value.state !== "terminal" ||
+        terminal.value.terminalFrom !== "operation_reserved"
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      return offchainFailureStatus(record.value.id, record.value.chainId);
+    }
+    if (recovered.status === "request_conflict") {
+      if (
+        record.value.state !== "operation_reserved" &&
+        !(record.value.state === "terminal" && record.value.terminalFrom === "operation_reserved")
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (record.value.state === "operation_reserved") {
+        const terminal = await terminalize(bundleKey, record);
+        if (
+          terminal.value.state !== "terminal" ||
+          terminal.value.terminalFrom !== "operation_reserved"
+        ) {
+          return rpcFail(INTERNAL_ERROR);
+        }
+      }
+      return offchainFailureStatus(record.value.id, record.value.chainId);
+    }
+    if (recovered.status === "abandoned") {
+      if (
+        record.value.state !== "operation_reserved" &&
+        record.value.state !== "operation_bound" &&
+        !(
+          record.value.state === "terminal" &&
+          (record.value.terminalFrom === "operation_reserved" ||
+            record.value.terminalFrom === "operation_bound")
+        )
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (record.value.state === "operation_reserved" || record.value.state === "operation_bound") {
+        const terminal = await terminalize(bundleKey, record);
+        if (
+          terminal.value.state !== "terminal" ||
+          terminal.value.terminalFrom !== record.value.state
+        ) {
+          return rpcFail(INTERNAL_ERROR);
+        }
+      }
+      return offchainFailureStatus(record.value.id, record.value.chainId);
+    }
+    if (recovered.status === "prepared") {
+      if (record.value.state === "terminal") return rpcFail(INTERNAL_ERROR);
+      return pendingStatus(record.value.id, record.value.chainId);
+    }
+
+    if (
+      record.value.state === "operation_reserved" ||
+      (record.value.state === "terminal" && record.value.terminalFrom === "operation_reserved")
+    ) {
+      await recovered.operation.close().catch(() => undefined);
+      return rpcFail(INTERNAL_ERROR);
+    }
+
+    const operation = recovered.operation;
+    try {
+      const outcome = await operation.observe();
+      const status =
+        outcome.status === "finalized"
+          ? projectProviderStatus({
+              id: record.value.id,
+              chainId: record.value.chainId,
+              outcome,
+              receipt: await operation.receipt(),
+            })
+          : projectProviderStatus({
+              id: record.value.id,
+              chainId: record.value.chainId,
+              outcome,
+            });
+      if (status.status === 100) {
+        if (record.value.state === "terminal") return rpcFail(INTERNAL_ERROR);
+        return status;
+      }
+      if (record.value.state !== "terminal") {
+        const terminal = await terminalize(bundleKey, record);
+        if (terminal.value.state !== "terminal") return rpcFail(INTERNAL_ERROR);
+      }
+      return status;
+    } finally {
+      await operation.close().catch(() => undefined);
+    }
+  }
+
+  async function readStatus(id: string): Promise<Readonly<Eip5792CallsStatus>> {
+    const bundleKey = key(id);
+    let record = await retainedBundle(bundleKey);
+    if (record === undefined) return rpcFail(UNKNOWN_BUNDLE_ID);
+    if (record.value.state === "accepted") {
+      if (now() < record.value.publicationExpiresAt) {
+        return pendingStatus(id, record.value.chainId);
+      }
+      record = await terminalize(bundleKey, record);
+      if (record.value.state !== "terminal" || record.value.terminalFrom !== "accepted") {
+        return rpcFail(INTERNAL_ERROR);
+      }
+    }
+    if (record.value.state === "terminal" && record.value.operation === null) {
+      return offchainFailureStatus(record.value.id, record.value.chainId);
+    }
+    return statusFromOperation(record, bundleKey);
+  }
+
+  function statusForId(id: string): Promise<Readonly<Eip5792CallsStatus>> {
+    return readStatus(id);
   }
 
   async function getCallsStatus(params: unknown): Promise<Readonly<Eip5792CallsStatus>> {
@@ -233,7 +593,6 @@ export function createEip5792Orchestrator(
 
   async function showCallsStatus(params: unknown): Promise<undefined> {
     const id = captureWalletCallsStatusParams(params);
-    if (!records.has(id)) return rpcFail(UNKNOWN_BUNDLE_ID);
     if (presenter === undefined) return rpcFail(UNSUPPORTED_METHOD);
     await presenter(await statusForId(id));
     return undefined;
@@ -241,9 +600,8 @@ export function createEip5792Orchestrator(
 
   async function getCapabilities(params: unknown): Promise<Readonly<Record<string, unknown>>> {
     const captured = captureWalletGetCapabilitiesParams(params);
-    const account = (await input.port.account(input.chain)).toLowerCase();
-    if (!isWalletAddress(account)) return rpcFail(INTERNAL_ERROR);
-    if (captured.address !== account) return rpcFail(UNAUTHORIZED);
+    const accountAddress = await account();
+    if (captured.address !== accountAddress) return rpcFail(UNAUTHORIZED);
 
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);

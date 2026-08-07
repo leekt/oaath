@@ -26,6 +26,7 @@ const ABANDONED_IDENTITY: OperationIdentity = {
   account: `0x${"66".repeat(20)}`,
   nonce: "7",
   userOperationHash: `0x${"77".repeat(32)}`,
+  requestHash: null,
 };
 
 function operationOutcome(overrides: Partial<OaathOperationOutcome> = {}): OaathOperationOutcome {
@@ -107,7 +108,7 @@ describe("Final EIP-5792 status projection", () => {
       status: "observed",
       observation: { status: "abandoned", operation: abandoned },
       record: {
-        version: "oaath.operation-store-record/v1",
+        version: "oaath.operation-store-record/v2",
         storeRevision: 1,
         updatedAt: abandoned.updatedAt,
         value: abandoned,

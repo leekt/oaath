@@ -5,7 +5,8 @@
  * ones tests should reach for when durability is not the subject. They keep the
  * exact same rules as the IndexedDB backends — one current version, key custody
  * refuses extractable handles, and compare-and-swap compares the stored
- * revision — so a test that passes here proves the contract, not the medium.
+ * revision and generation — so a test that passes here proves the contract,
+ * not the medium.
  *
  * ponytail: one file for six small backends; split when one grows past its
  * factory.
@@ -13,7 +14,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { GrantStoreAdapter, OperationStoreAdapter, StoreRecord } from "../../store.js";
-import { matchesExpectedRevision } from "../indexeddb/database.js";
+import { matchesExpectedRevisionAndGeneration } from "../indexeddb/database.js";
 import {
   type OaathCleanupCheckpoint,
   type OaathCleanupCheckpointStore,
@@ -66,7 +67,7 @@ function operationArchiveKey(
 
 function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
   const key = parseWalletCallBundleKey(input);
-  return JSON.stringify([key.providerScopeId, key.account, key.id]);
+  return JSON.stringify([key.providerScopeId, key.grantId, key.id]);
 }
 
 function compareAndSwap(
@@ -127,6 +128,10 @@ export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
     async compareAndSwap(input) {
       assertOpen(closed);
       const lane = operationKey(input.key);
+      const expectedAbsentArchive = operationArchiveKey(
+        input.key,
+        input.expectedArchiveAbsentUserOperationHash,
+      );
       const current = records.get(lane);
       if (
         input.expectedStoreRevision === null
@@ -135,7 +140,11 @@ export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
       ) {
         return false;
       }
+      if (archives.has(expectedAbsentArchive)) return false;
       if (input.archive !== null) {
+        if (input.archive.userOperationHash === input.expectedArchiveAbsentUserOperationHash) {
+          return false;
+        }
         const archive = operationArchiveKey(input.key, input.archive.userOperationHash);
         if (
           current === undefined ||
@@ -168,7 +177,15 @@ export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStor
       assertOpen(closed);
       const key = walletCallBundleKey(input.key);
       const current = records.get(key);
-      if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+      if (
+        !matchesExpectedRevisionAndGeneration(
+          current,
+          input.expectedStoreRevision,
+          input.expectedGeneration,
+        )
+      ) {
+        return false;
+      }
       records.set(key, input.next);
       return true;
     },
@@ -176,7 +193,15 @@ export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStor
       assertOpen(closed);
       const key = walletCallBundleKey(input.key);
       const current = records.get(key);
-      if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
+      if (
+        !matchesExpectedRevisionAndGeneration(
+          current,
+          input.expectedStoreRevision,
+          input.expectedGeneration,
+        )
+      ) {
+        return false;
+      }
       records.delete(key);
       return true;
     },

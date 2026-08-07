@@ -12,11 +12,10 @@
  * cleanup owner          the caller retries this coordinator
  * ```
  *
- * Rules that never bend: every requested effect is attempted even after an
- * earlier one fails; the canonical error that caused the cleanup is preserved
- * and re-thrown unchanged; cleanup failures are suppressed diagnostics on the
- * result, never a replacement for that error; and an effect is recorded complete
- * only after it succeeded.
+ * Rules that never bend: every independent requested effect is attempted even
+ * after another fails; destructive dependents wait for their prerequisites;
+ * the canonical error that caused cleanup is preserved and re-thrown unchanged;
+ * and an effect is recorded complete only after it succeeded.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -157,14 +156,25 @@ export async function runOaathCleanup(value: unknown): Promise<Readonly<OaathCle
   const completed = new Set<OaathCleanupEffectName>(await readCompleted(checkpoints, cleanupId));
   const failures: Readonly<{ effect: OaathCleanupEffectName; error: unknown }>[] = [];
   const unfinished: OaathCleanupEffectName[] = [];
+  const requested = new Set(effects.map((effect) => effect.name));
 
   for (const effect of effects) {
     if (completed.has(effect.name)) continue;
+    const blocked =
+      (effect.name === "forgetLocal" && requested.has("revoke") && !completed.has("revoke")) ||
+      (effect.name === "close" &&
+        effects.some((candidate) =>
+          candidate.name === "close" ? false : !completed.has(candidate.name),
+        ));
+    if (blocked) {
+      unfinished.push(effect.name);
+      continue;
+    }
     try {
       await effect.run();
     } catch (error) {
-      // Every remaining effect is still attempted: a failed signOut must not
-      // strand local key material or an unreleased runtime resource.
+      // Independent remaining effects are still attempted. Dependents are
+      // withheld below so every failed capability remains retryable.
       failures.push(Object.freeze({ effect: effect.name, error }));
       unfinished.push(effect.name);
       continue;

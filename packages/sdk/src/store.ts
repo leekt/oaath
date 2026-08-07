@@ -11,7 +11,7 @@ import {
 } from "@oaath/protocol";
 
 export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v1" as const;
-export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v1" as const;
+export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v2" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
@@ -91,6 +91,8 @@ export interface OperationStoreAdapter {
     readonly key: Readonly<OperationStoreKey>;
     readonly expectedStoreRevision: number | null;
     readonly next: Readonly<StoreRecord<unknown>>;
+    /** Must remain absent from this lane's archive for the whole atomic write. */
+    readonly expectedArchiveAbsentUserOperationHash: `0x${string}`;
     readonly archive: Readonly<OperationStoreArchive> | null;
   }): Promise<unknown>;
   close(): Promise<unknown>;
@@ -307,6 +309,10 @@ class AggregateStore<Value, Key, Version extends string> {
   ) {
     this.#adapter = adapter;
     this.#access = access;
+  }
+
+  assertOpen(): void {
+    this.#assertOpen();
   }
 
   async get(key: Key): Promise<Readonly<StoreRecord<Value, Version>> | undefined> {
@@ -548,6 +554,7 @@ export class OperationStore {
               key,
               expectedStoreRevision,
               next,
+              expectedArchiveAbsentUserOperationHash: next.value.identity.userOperationHash,
               archive: archiveFor(current, next),
             }),
           ),
@@ -581,6 +588,16 @@ export class OperationStore {
         validateNext: (current, next) => {
           if (
             current !== undefined &&
+            current.identity.userOperationHash === next.identity.userOperationHash &&
+            !sameOperationIdentity(current, next)
+          ) {
+            invalid(
+              "store_identity_mismatch",
+              "same UserOperation hash cannot change Operation identity or request provenance",
+            );
+          }
+          if (
+            current !== undefined &&
             !sameOperationIdentity(current, next) &&
             operationOccupiesLane(current)
           ) {
@@ -597,15 +614,11 @@ export class OperationStore {
     return this.#store.get(parseOperationKey(key));
   }
 
-  async getExact(
-    keyValue: unknown,
-    expectedUserOperationHashValue: unknown,
+  async #readArchived(
+    key: Readonly<OperationStoreKey>,
+    expectedUserOperationHash: `0x${string}`,
   ): Promise<OperationStoreRecord | undefined> {
-    const key = parseOperationKey(keyValue);
-    const expectedUserOperationHash = canonicalUserOperationHash(expectedUserOperationHashValue);
-    const current = await this.#store.get(key);
-    if (current?.value.identity.userOperationHash === expectedUserOperationHash) return current;
-
+    this.#store.assertOpen();
     let raw: unknown;
     try {
       raw = await this.#getArchived(
@@ -625,7 +638,36 @@ export class OperationStore {
     return archived;
   }
 
-  compareAndSwap(value: unknown): Promise<OperationStoreCompareAndSwapResult> {
+  async getExact(
+    keyValue: unknown,
+    expectedUserOperationHashValue: unknown,
+  ): Promise<OperationStoreRecord | undefined> {
+    const key = parseOperationKey(keyValue);
+    const expectedUserOperationHash = canonicalUserOperationHash(expectedUserOperationHashValue);
+    const current = await this.#store.get(key);
+    const archived = await this.#readArchived(key, expectedUserOperationHash);
+    if (
+      archived !== undefined &&
+      (current === undefined || archived.storeRevision >= current.storeRevision)
+    ) {
+      return invalid(
+        "store_record_invalid",
+        "archived Operation is not older than a retained current lane record",
+      );
+    }
+    if (current?.value.identity.userOperationHash === expectedUserOperationHash) {
+      if (archived !== undefined) {
+        return invalid(
+          "store_identity_mismatch",
+          "UserOperation hash exists as both current and archived history",
+        );
+      }
+      return current;
+    }
+    return archived;
+  }
+
+  async compareAndSwap(value: unknown): Promise<OperationStoreCompareAndSwapResult> {
     const context: CaptureContext = new WeakSet();
     const record = exactRecord(
       value,
@@ -648,6 +690,12 @@ export class OperationStore {
       next.identity.kind !== key.kind
     ) {
       return invalid("store_key_mismatch", "next Operation belongs to another key");
+    }
+    if ((await this.#readArchived(key, next.identity.userOperationHash)) !== undefined) {
+      return invalid(
+        "store_identity_mismatch",
+        "UserOperation hash already belongs to archived Operation history",
+      );
     }
     return this.#store.compareAndSwap(key, expected, next);
   }

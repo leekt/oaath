@@ -46,6 +46,7 @@ const identity: Readonly<OperationIdentity> = Object.freeze({
   account: ACCOUNT,
   nonce: "7",
   userOperationHash: USER_OPERATION_HASH,
+  requestHash: null,
 });
 
 const inclusion: Readonly<OperationInclusion> = Object.freeze({

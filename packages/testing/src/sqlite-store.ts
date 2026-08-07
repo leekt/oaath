@@ -187,6 +187,12 @@ function operationLaneId(grantId: string): string {
 }
 
 function operationArchiveId(grantId: string, userOperationHash: string): string {
+  if (!/^0x[0-9a-f]{64}$/u.test(userOperationHash)) {
+    throw new OaathStoreError(
+      "store_input_invalid",
+      "SQLite UserOperation hash must be a lowercase 32-byte hash",
+    );
+  }
   return encode(["archive", grantId, userOperationHash]);
 }
 
@@ -280,8 +286,18 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
             | undefined,
         );
       },
-      async compareAndSwap({ key, expectedStoreRevision, next, archive }) {
+      async compareAndSwap({
+        key,
+        expectedStoreRevision,
+        next,
+        expectedArchiveAbsentUserOperationHash,
+        archive,
+      }) {
         const laneId = operationLaneId(key.grantId);
+        const expectedAbsentArchiveId = operationArchiveId(
+          key.grantId,
+          expectedArchiveAbsentUserOperationHash,
+        );
         const payload = encode(next.value);
         database.exec("BEGIN IMMEDIATE");
         let transactionOpen = true;
@@ -296,7 +312,17 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
             transactionOpen = false;
             return false;
           }
+          if (get.get(expectedAbsentArchiveId, key.chainId, key.kind) !== undefined) {
+            database.exec("ROLLBACK");
+            transactionOpen = false;
+            return false;
+          }
           if (archive !== null) {
+            if (archive.userOperationHash === expectedArchiveAbsentUserOperationHash) {
+              database.exec("ROLLBACK");
+              transactionOpen = false;
+              return false;
+            }
             if (current === undefined || encode(current) !== encode(archive.record)) {
               database.exec("ROLLBACK");
               transactionOpen = false;

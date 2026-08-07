@@ -19,6 +19,7 @@ import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
   type OaathDatabase,
   openOaathDatabase,
 } from "../src/persistence.js";
@@ -50,6 +51,7 @@ async function realmStores(factory: IDBFactory): Promise<{
     stores: {
       grants: createIndexedDbGrantStoreAdapter(database),
       operations: createIndexedDbOperationStoreAdapter(database),
+      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
       keys: createIndexedDbKeyStore(database),
       cleanup: createIndexedDbCleanupStore(database),
       context: createIndexedDbContextStore(database),
