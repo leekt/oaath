@@ -20,6 +20,7 @@ export {
 export { createIndexedDbGrantStoreAdapter } from "./persistence/indexeddb/grant-store.js";
 export { createIndexedDbKeyStore } from "./persistence/indexeddb/key-store.js";
 export { createIndexedDbOperationStoreAdapter } from "./persistence/indexeddb/operation-store.js";
+export { createIndexedDbPreparedCallStoreAdapter } from "./persistence/indexeddb/prepared-call-store.js";
 export { createIndexedDbWalletCallBundleStoreAdapter } from "./persistence/indexeddb/wallet-call-bundle-store.js";
 export type {
   OaathCleanupCheckpoint,
@@ -46,3 +47,9 @@ export {
   parseClientContext,
   requireNonExtractableKey,
 } from "./persistence/interfaces.js";
+export type {
+  PreparedCallContextRecord,
+  PreparedCallKey,
+  PreparedCallStoreAdapter,
+  PreparedCallStoreRecord,
+} from "./provider/prepared-call-store.js";

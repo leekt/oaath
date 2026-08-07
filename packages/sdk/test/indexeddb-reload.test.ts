@@ -8,7 +8,7 @@
  *
  * Evidence limit: `fake-indexeddb` provides the IndexedDB and structured-clone
  * semantics here, including non-extractable `CryptoKey` custody. The
- * real-Chromium realm is child issue 10's packed-browser smoke.
+ * real-Chromium extension path is owned by `smoke-packed-extension.mjs`.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -240,7 +240,7 @@ describe("IndexedDB realm recreation", () => {
     expect(latest?.storeRevision).toBeGreaterThan(stale.storeRevision);
   });
 
-  it("recreates a malformed current-version database with exactly the six current stores", async () => {
+  it("recreates a malformed current-version database with exactly the seven current stores", async () => {
     const factory = new IDBFactory();
     // A partial same-version realm receives no upgrade event, so the explicit
     // schema check must discard it and recreate the complete current schema.
@@ -258,17 +258,18 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(8);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(8);
+    expect(database.version).toBe(9);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(9);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
       "grants",
       "keys",
       "operations",
+      "preparedCallContexts",
       "walletCallBundles",
     ]);
-    expect(Object.values(OAATH_INDEXEDDB_STORES)).toHaveLength(6);
+    expect(Object.values(OAATH_INDEXEDDB_STORES)).toHaveLength(7);
     // The legacy store is gone, not read and not migrated.
     await expect(
       database.transact(["grants"], "readonly", async ([store]) => store?.name),
@@ -326,7 +327,7 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(8);
+    expect(database.version).toBe(9);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
@@ -369,7 +370,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(8);
+    expect(database.version).toBe(9);
     await expect(
       createIndexedDbOperationStoreAdapter(database).get({
         grantId: "stale-grant",
@@ -401,7 +402,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(8);
+    expect(database.version).toBe(9);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -411,7 +412,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("wipes v7 sender-less bundle keys instead of reading them through the v8 account axis", async () => {
+  it("wipes v7 sender-less bundle keys instead of reading them through the current account axis", async () => {
     const factory = new IDBFactory();
     const providerScopeId = `0x${"62".repeat(32)}` as const;
     const id = "v7-bundle";
@@ -433,7 +434,55 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(8);
+    expect(database.version).toBe(9);
+    await expect(
+      createIndexedDbWalletCallBundleStoreAdapter(database).get({
+        providerScopeId,
+        account: ACCOUNT,
+        id,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("wipes the v8 sender-scoped schema before adding prepared-call contexts in v9", async () => {
+    const factory = new IDBFactory();
+    const providerScopeId = `0x${"63".repeat(32)}` as const;
+    const id = "v8-bundle";
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 8);
+      request.onupgradeneeded = () => {
+        for (const store of [
+          "grants",
+          "operations",
+          "walletCallBundles",
+          "keys",
+          "cleanup",
+          "context",
+        ]) {
+          request.result.createObjectStore(store);
+        }
+        request.transaction
+          ?.objectStore("walletCallBundles")
+          .put({ source: "v8" }, [providerScopeId, ACCOUNT, id]);
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const database = await openRealmDatabase(factory);
+    expect(database.version).toBe(9);
+    expect(await readStoreNames(factory)).toEqual([
+      "cleanup",
+      "context",
+      "grants",
+      "keys",
+      "operations",
+      "preparedCallContexts",
+      "walletCallBundles",
+    ]);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,

@@ -126,6 +126,7 @@ describe("package boundary", () => {
       "createIndexedDbGrantStoreAdapter",
       "createIndexedDbKeyStore",
       "createIndexedDbOperationStoreAdapter",
+      "createIndexedDbPreparedCallStoreAdapter",
       "createIndexedDbWalletCallBundleStoreAdapter",
       "isCleanupEffectName",
       "openOaathDatabase",
@@ -142,6 +143,7 @@ describe("package boundary", () => {
       "createMemoryGrantStoreAdapter",
       "createMemoryKeyStore",
       "createMemoryOperationStoreAdapter",
+      "createMemoryPreparedCallStoreAdapter",
       "createMemoryWalletCallBundleStoreAdapter",
     ]);
   });
