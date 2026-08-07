@@ -29,9 +29,9 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { parsePermissionRequest } from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
+import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import type { RelayClock } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
@@ -207,60 +207,64 @@ export async function projectOwnerPhoneScope(
   operationId: string,
 ): Promise<OwnerPhoneScopeProjection> {
   try {
+    const classified = classifyStoredAuthorizationScope(requestedScope, operationId);
+    if (classified.kind === "permission-request") {
+      const request = classified.request;
+      return Object.freeze({
+        kind: "permission-request",
+        decision: "approve-or-reject",
+        application: Object.freeze({
+          applicationId: request.application.applicationId,
+          clientId: request.application.clientId,
+          origin: request.application.origin,
+          deviceFingerprint: (
+            await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
+          ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+        }),
+        account: Object.freeze({
+          accountIndex: request.logicalAccount.accountIndex,
+          kernelVersion: request.logicalAccount.kernelVersion,
+          factoryRoute: request.logicalAccount.factoryRoute,
+          entryPointVersion: request.logicalAccount.entryPoint.version,
+          ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
+        }),
+        operatorCredential: projectCredential(request.operatorCredential),
+        sessionSigner:
+          request.sessionSigner === null
+            ? null
+            : Object.freeze({
+                mode: request.sessionSigner.mode,
+                providerId: request.sessionSigner.providerId,
+              }),
+        chainScope: request.chainScope,
+        calls: Object.freeze(
+          request.policy.calls.map((call) =>
+            Object.freeze({
+              target: call.target,
+              selector: call.selector,
+              valueLimit: call.valueLimit,
+              argumentEquals: Object.freeze(
+                call.argumentEquals.map((rule) =>
+                  Object.freeze({ index: rule.index, value: rule.value }),
+                ),
+              ),
+            }),
+          ),
+        ),
+        requestedAt: request.requestedAt,
+        expiresAt: request.expiresAt,
+        policyValidAfter: request.policy.validAfter,
+        policyValidUntil: request.policy.validUntil,
+        perChainOperationLimit: request.policy.perChainOperationLimit,
+      });
+    }
     const parsed: unknown = JSON.parse(requestedScope);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
       return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
     }
     const signatureRequest = projectSignatureRequestScope(parsed);
     if (signatureRequest) return signatureRequest;
-    const request = parsePermissionRequest({ ...parsed, requestId: operationId });
-    return Object.freeze({
-      kind: "permission-request",
-      decision: "approve-or-reject",
-      application: Object.freeze({
-        applicationId: request.application.applicationId,
-        clientId: request.application.clientId,
-        origin: request.application.origin,
-        deviceFingerprint: (
-          await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
-        ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
-      }),
-      account: Object.freeze({
-        accountIndex: request.logicalAccount.accountIndex,
-        kernelVersion: request.logicalAccount.kernelVersion,
-        factoryRoute: request.logicalAccount.factoryRoute,
-        entryPointVersion: request.logicalAccount.entryPoint.version,
-        ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
-      }),
-      operatorCredential: projectCredential(request.operatorCredential),
-      sessionSigner:
-        request.sessionSigner === null
-          ? null
-          : Object.freeze({
-              mode: request.sessionSigner.mode,
-              providerId: request.sessionSigner.providerId,
-            }),
-      chainScope: request.chainScope,
-      calls: Object.freeze(
-        request.policy.calls.map((call) =>
-          Object.freeze({
-            target: call.target,
-            selector: call.selector,
-            valueLimit: call.valueLimit,
-            argumentEquals: Object.freeze(
-              call.argumentEquals.map((rule) =>
-                Object.freeze({ index: rule.index, value: rule.value }),
-              ),
-            ),
-          }),
-        ),
-      ),
-      requestedAt: request.requestedAt,
-      expiresAt: request.expiresAt,
-      policyValidAfter: request.policy.validAfter,
-      policyValidUntil: request.policy.validUntil,
-      perChainOperationLimit: request.policy.perChainOperationLimit,
-    });
+    return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   } catch {
     return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   }

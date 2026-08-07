@@ -11,6 +11,7 @@ import { createKmsSessionSignerProvider } from "../src/session-signer/kms-provid
 import type { RelayStore, RelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
+  APPROVABLE_PERMISSION_SCOPE,
   approve,
   CLIENT_TOKEN,
   claim,
@@ -63,7 +64,7 @@ describe("relay handler", () => {
       requestId: created.requestId,
       clientId: "client-a",
       redirectUri: REDIRECT_URI,
-      requestedScope: '{"chainScope":"all"}',
+      requestedScope: APPROVABLE_PERMISSION_SCOPE,
       expired: false,
       decision: null,
     });

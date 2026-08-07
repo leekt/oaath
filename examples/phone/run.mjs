@@ -441,20 +441,26 @@ async function createSignatureRequest(
         command: "reject",
       });
     } else if (simulationCommand === "approve") {
+      // Test-only chain evidence: the synthetic phone key signs locally and no
+      // server decision API is asked to approve or release this legacy digest.
+      // This preserves operation/race coverage without claiming consent or
+      // clear-signing evidence from the production path.
       const signature = `0x${p256.sign(hexToBytes(digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
-      const decision = await relayCall(
-        "POST",
-        `/native/decisions/${created.requestId}`,
-        activeDevice.credential,
-        { command: "approve", artifact: signature },
-      );
-      record.code = decision.release.code;
+      record.artifact = signature;
+      markInboxTerminal(signatureRequests, record.requestId);
     }
   }
   return record;
 }
 async function resolveSignature(record) {
-  if (record.artifact !== null) return record.artifact;
+  if (record.artifact !== null) {
+    if (record.outcome !== "approved") {
+      record.outcome = "approved";
+      signatureRequestLane.terminate(record.reservationToken, "completed");
+      event("signature.approved", { purpose: record.purpose, requestId: record.requestId });
+    }
+    return record.artifact;
+  }
   if (record.outcome === "rejected") return null;
   if (record.code === null) {
     const state = await relayCall(
@@ -1513,20 +1519,17 @@ async function simulate() {
     "inbox pull changed release state",
   );
   const inboxSignature = `0x${p256.sign(hexToBytes(inboxDigest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
-  const inboxDecision = await relayCall(
-    "POST",
-    `/native/decisions/${inboxRequest.requestId}`,
-    activeDevice.credential,
-    { command: "approve", artifact: inboxSignature },
-  );
-  inboxRequest.code = inboxDecision.release.code;
+  // As above, this fixture supplies local bytes only to retain inbox/operation
+  // regression coverage. The relay request remains unapproved server-side.
+  inboxRequest.artifact = inboxSignature;
+  markInboxTerminal(signatureRequests, inboxRequest.requestId);
   expect(
     (await (await inboxFetch(activeDevice.credential)).json()).requests.length === 0,
     "approved request remained in inbox",
   );
   expect(
-    inboxRequest.artifact === null && inboxRequest.code !== null,
-    "inbox terminal marker stole release",
+    inboxRequest.artifact === inboxSignature && inboxRequest.code === null,
+    "inbox terminal marker changed the local fixture",
   );
   expect((await resolveSignature(inboxRequest)) !== null, "approved inbox request did not deliver");
 

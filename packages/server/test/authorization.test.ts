@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { verifyPkceS256 } from "../src/authorization/challenge.js";
+import type { RelayKms } from "../src/security/kms.js";
 import {
   approve,
   CLIENT_TOKEN,
@@ -16,6 +17,7 @@ import {
   consume,
   createHarness,
   createRequest,
+  createTestKms,
   expectFailure,
   expectOk,
   get,
@@ -40,6 +42,69 @@ describe("PKCE S256 verification", () => {
 });
 
 describe("authorization decision", () => {
+  it.each([
+    ["raw", '{"permission":"opaque"}'],
+    [
+      "legacy digest",
+      JSON.stringify({
+        version: "oaath.signature-request/v1",
+        kind: "signature-request",
+        digest: `0x${"4b".repeat(32)}`,
+        display: JSON.stringify({ digest: `0x${"4b".repeat(32)}`, kind: "user-operation" }),
+      }),
+    ],
+    [
+      "malformed legacy digest",
+      JSON.stringify({
+        version: "oaath.signature-request/v1",
+        kind: "signature-request",
+        digest: "0x4b",
+        display: "{}",
+      }),
+    ],
+  ])(
+    "keeps an unverified %s scope reject-only before artifact sealing",
+    async (_label, requestedScope) => {
+      const base = createTestKms();
+      let encryptions = 0;
+      const kms: RelayKms = {
+        async encrypt(plaintext) {
+          encryptions += 1;
+          return base.encrypt(plaintext);
+        },
+        decrypt: (ciphertextRef) => base.decrypt(ciphertextRef),
+      };
+      const harness = createHarness({ kms });
+      const created = await createRequest(harness, requestedScope);
+
+      await expectFailure(
+        await harness.handler(
+          post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+            outcome: "approved",
+            artifact: "must-not-be-sealed",
+          }),
+        ),
+        "relay_request_invalid",
+      );
+      expect(encryptions).toBe(0);
+      const pending = await expectOk<{ decision: unknown }>(
+        await harness.handler(get(`/authorization/requests/${created.requestId}`, OWNER_TOKEN)),
+        200,
+      );
+      expect(pending.decision).toBeNull();
+
+      await expectOk(
+        await harness.handler(
+          post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+            outcome: "rejected",
+          }),
+        ),
+        200,
+      );
+      expect(encryptions).toBe(0);
+    },
+  );
+
   it("is terminal: a second decide fails and releases no second code", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);
