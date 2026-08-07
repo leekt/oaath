@@ -2,12 +2,13 @@
  EXPERIMENTAL PREVIEW — owner approval UI over the review state machine.
 
  The view is the consent surface: it renders the projection exactly as the
- relay sends it — the match code, the requesting client and its redirect
- target, every permitted call with its value limit, the operation limit, and
- the expiries — so the owner sees exactly the authority they grant before
- tapping approve. An unstructured scope is rendered as an explicit "review the
- raw text" state, never silently. The approve artifact is deployment-injected:
- composing what the client will claim is not this app's job.
+ relay sends it — application, client, origin, redirect target, device,
+ account, credentials, custody, every permitted call and argument constraint,
+ validity window, and operation limit — so the owner sees exactly the
+ authority they grant before tapping approve. An unstructured scope is
+ rendered as an explicit "review the raw text" state, never silently. The
+ approve artifact is deployment-injected: composing what the client will claim
+ is not this app's job.
 
  Approval is always an explicit tap on this screen. A push notification only
  opens the review; nothing decides on tap, foreground, or notification action.
@@ -20,6 +21,221 @@
  */
 #if canImport(SwiftUI)
 import SwiftUI
+
+/// One immutable fact rendered from an already-decoded permission projection.
+/// The value remains typed until the view formats it, so tests can prove that
+/// every authority-defining field reaches the consent surface without relying
+/// on locale-specific rendered date strings.
+struct PermissionConsentFact: Equatable, Identifiable, Sendable {
+    enum Value: Equatable, Sendable {
+        case text(String)
+        case unixSeconds(Int)
+
+        var display: String {
+            switch self {
+            case let .text(value):
+                return value
+            case let .unixSeconds(value):
+                let date = Date(timeIntervalSince1970: Double(value)).formatted()
+                return "\(date) (\(value) Unix seconds)"
+            }
+        }
+    }
+
+    let id: String
+    let label: String
+    let value: Value
+}
+
+/// A titled group of permission facts. Stable identifiers make repeated calls
+/// and argument rules distinct even when their displayed values are identical.
+struct PermissionConsentSection: Equatable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let facts: [PermissionConsentFact]
+}
+
+/// The single presentation owner for a structured permission request. It is a
+/// pure projection of authenticated wire facts: it derives labels and ordering,
+/// but never adds authority, drops constraints, or rewrites credential bytes.
+struct PermissionConsentPresentation: Equatable, Sendable {
+    let sections: [PermissionConsentSection]
+
+    init(client: OwnerPhoneClientIdentity, scope: OwnerPhonePermissionScope) {
+        var sections = [
+            PermissionConsentSection(
+                id: "application",
+                title: "Application",
+                facts: [
+                    .init(
+                        id: "application.applicationId",
+                        label: "Application ID",
+                        value: .text(scope.application.applicationId)),
+                    .init(
+                        id: "application.permissionClientId",
+                        label: "Permission client ID",
+                        value: .text(scope.application.clientId)),
+                    .init(
+                        id: "application.authenticatedClientId",
+                        label: "Authenticated client ID",
+                        value: .text(client.clientId)),
+                    .init(
+                        id: "application.origin",
+                        label: "Origin",
+                        value: .text(scope.application.origin)),
+                    .init(
+                        id: "application.redirectUri",
+                        label: "Code delivery",
+                        value: .text(client.redirectUri)),
+                    .init(
+                        id: "application.deviceFingerprint",
+                        label: "Device fingerprint",
+                        value: .text(scope.application.deviceFingerprint)),
+                ]),
+            PermissionConsentSection(
+                id: "account",
+                title: "Kernel account",
+                facts: [
+                    .init(
+                        id: "account.accountIndex",
+                        label: "Account index",
+                        value: .text(scope.account.accountIndex)),
+                    .init(
+                        id: "account.kernelVersion",
+                        label: "Kernel version",
+                        value: .text(scope.account.kernelVersion)),
+                    .init(
+                        id: "account.factoryRoute",
+                        label: "Factory route",
+                        value: .text(scope.account.factoryRoute)),
+                    .init(
+                        id: "account.entryPointVersion",
+                        label: "EntryPoint version",
+                        value: .text(scope.account.entryPointVersion)),
+                ] + Self.credentialFacts(
+                    prefix: "account.ownerCredential",
+                    label: "Owner credential",
+                    credential: scope.account.ownerCredential)),
+            PermissionConsentSection(
+                id: "authority",
+                title: "Session authority",
+                facts: Self.credentialFacts(
+                    prefix: "authority.operatorCredential",
+                    label: "Operator credential",
+                    credential: scope.operatorCredential
+                ) + [
+                    .init(
+                        id: "authority.custody",
+                        label: "Session custody",
+                        value: .text(scope.sessionSigner?.mode ?? "frontend")),
+                    .init(
+                        id: "authority.providerId",
+                        label: "Session provider",
+                        value: .text(scope.sessionSigner?.providerId ?? "none")),
+                    .init(
+                        id: "authority.chainScope",
+                        label: "Chain scope",
+                        value: .text(scope.chainScope)),
+                ]),
+        ]
+
+        for (callIndex, call) in scope.calls.enumerated() {
+            var facts = [
+                PermissionConsentFact(
+                    id: "call.\(callIndex).target",
+                    label: "Target",
+                    value: .text(call.target)),
+                PermissionConsentFact(
+                    id: "call.\(callIndex).selector",
+                    label: "Selector",
+                    value: .text(call.selector)),
+                PermissionConsentFact(
+                    id: "call.\(callIndex).valueLimit",
+                    label: "Value limit (wei)",
+                    value: .text(call.valueLimit)),
+            ]
+            for (ruleIndex, rule) in call.argumentEquals.enumerated() {
+                facts.append(contentsOf: [
+                    PermissionConsentFact(
+                        id: "call.\(callIndex).argument.\(ruleIndex).index",
+                        label: "Argument constraint \(ruleIndex + 1) word index",
+                        value: .text(String(rule.index))),
+                    PermissionConsentFact(
+                        id: "call.\(callIndex).argument.\(ruleIndex).value",
+                        label: "Argument constraint \(ruleIndex + 1) equals",
+                        value: .text(rule.value)),
+                ])
+            }
+            sections.append(PermissionConsentSection(
+                id: "call.\(callIndex)",
+                title: "Permitted call \(callIndex + 1)",
+                facts: facts))
+        }
+
+        sections.append(PermissionConsentSection(
+            id: "validity",
+            title: "Validity and limits",
+            facts: [
+                .init(
+                    id: "validity.requestedAt",
+                    label: "Requested at",
+                    value: .unixSeconds(scope.requestedAt)),
+                .init(
+                    id: "validity.expiresAt",
+                    label: "Permission request expires",
+                    value: .unixSeconds(scope.expiresAt)),
+                .init(
+                    id: "validity.policyValidAfter",
+                    label: "Policy valid after",
+                    value: .unixSeconds(scope.policyValidAfter)),
+                .init(
+                    id: "validity.policyValidUntil",
+                    label: "Policy valid until",
+                    value: scope.policyValidUntil.map(PermissionConsentFact.Value.unixSeconds)
+                        ?? .text("no upper bound")),
+                .init(
+                    id: "validity.perChainOperationLimit",
+                    label: "Operations per chain",
+                    value: .text(String(scope.perChainOperationLimit))),
+            ]))
+
+        self.sections = sections
+    }
+
+    private static func credentialFacts(
+        prefix: String,
+        label: String,
+        credential: OwnerPhoneCredential
+    ) -> [PermissionConsentFact] {
+        switch credential {
+        case let .ecdsa(address):
+            return [
+                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("ECDSA")),
+                .init(id: "\(prefix).address", label: "\(label) address", value: .text(address)),
+            ]
+        case let .p256(publicKey):
+            return [
+                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("P-256")),
+                .init(
+                    id: "\(prefix).publicKey",
+                    label: "\(label) public key",
+                    value: .text(publicKey)),
+            ]
+        case let .webauthn(publicKey, authenticatorIdHash):
+            return [
+                .init(id: "\(prefix).kind", label: "\(label) kind", value: .text("WebAuthn")),
+                .init(
+                    id: "\(prefix).publicKey",
+                    label: "\(label) public key",
+                    value: .text(publicKey)),
+                .init(
+                    id: "\(prefix).authenticatorIdHash",
+                    label: "Authenticator ID hash",
+                    value: .text(authenticatorIdHash)),
+            ]
+        }
+    }
+}
 
 @MainActor
 public final class ApprovalModel: ObservableObject {
@@ -265,22 +481,9 @@ public struct ApprovalView: View {
                     .foregroundStyle(.secondary)
                 switch projection.scope {
                 case let .permissionRequest(scope):
-                    Text("Chain scope: \(scope.chainScope == "all" ? "all chains" : scope.chainScope)")
-                        .font(.footnote)
-                    ForEach(Array(scope.calls.enumerated()), id: \.offset) { _, call in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Call \(call.target)")
-                                .font(.caption.monospaced())
-                            Text("selector \(call.selector), value limit \(call.valueLimit) wei")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Text("Up to \(scope.perChainOperationLimit) operations per chain")
-                        .font(.footnote)
-                    Text("Permission expires \(Date(timeIntervalSince1970: Double(scope.expiresAt)).formatted())")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    permissionBody(PermissionConsentPresentation(
+                        client: projection.client,
+                        scope: scope))
                 case let .signatureRequest(scope):
                     // The signing consent: the FULL authenticated canonical
                     // display bytes plus the exact digest the owner key signs. Approve
@@ -316,6 +519,34 @@ public struct ApprovalView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private func permissionBody(_ presentation: PermissionConsentPresentation) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(presentation.sections) { section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(section.title)
+                            .font(.footnote)
+                            .bold()
+                        ForEach(section.facts) { fact in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(fact.label)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(fact.value.display)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxHeight: 320)
     }
 
     @ViewBuilder
