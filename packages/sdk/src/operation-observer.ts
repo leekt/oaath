@@ -131,6 +131,7 @@ export interface OperationObserverTransactionReceiptEvidence {
   readonly blockHash: `0x${string}`;
   readonly transactionIndex: `0x${string}`;
   readonly status: "0x0" | "0x1";
+  readonly gasUsed: `0x${string}`;
   readonly logs: readonly OperationObserverLogEvidence[];
 }
 
@@ -326,7 +327,15 @@ function parseTransactionReceipt(
 ): OperationObserverTransactionReceiptEvidence {
   const record = exact(
     value,
-    ["transactionHash", "blockNumber", "blockHash", "transactionIndex", "status", "logs"],
+    [
+      "transactionHash",
+      "blockNumber",
+      "blockHash",
+      "transactionIndex",
+      "status",
+      "gasUsed",
+      "logs",
+    ],
     "transaction receipt",
     context,
   );
@@ -344,6 +353,7 @@ function parseTransactionReceipt(
     blockHash: parseHash(record.blockHash),
     transactionIndex: `0x${parseQuantity(record.transactionIndex).toString(16)}`,
     status: record.status,
+    gasUsed: `0x${parseQuantity(record.gasUsed).toString(16)}`,
     logs: Object.freeze(logs),
   });
 }
@@ -544,7 +554,10 @@ function verifyParsedOperationReceiptEvidence(
     transactionHash: inclusion.transactionHash,
     blockNumber: inclusion.blockNumber,
     blockHash: inclusion.blockHash,
-    gasUsed: decimal(parseQuantity(receipt.actualGasUsed)),
+    // The public wallet receipt is a subset of the containing transaction
+    // receipt. UserOperation actualGasUsed remains independently verified
+    // above, but it is not the transaction's gasUsed when a bundler batches.
+    gasUsed: decimal(parseQuantity(transactionReceipt.gasUsed)),
     outcome: inclusion.outcome,
     logs: Object.freeze(transactionReceipt.logs.slice(boundaryIndex + 1, target.index + 1)),
   });

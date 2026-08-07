@@ -154,6 +154,7 @@ function transactionReceipt(
     blockHash: BLOCK_HASH,
     transactionIndex: "0x2",
     status: "0x1",
+    gasUsed: "0x2a",
     logs,
     ...overrides,
   };
@@ -165,7 +166,7 @@ function verify(
     identity?: Readonly<OperationIdentity>;
     inclusion?: Readonly<OperationInclusion>;
     operationReceipt?: OperationObserverUserOperationReceiptEvidence;
-    transactionReceipt?: OperationObserverTransactionReceiptEvidence;
+    transactionReceipt?: unknown;
   }> = {},
 ) {
   return verifyOperationReceiptEvidence({
@@ -314,7 +315,7 @@ describe("exact UserOperation receipt evidence", () => {
       transactionHash: TRANSACTION_HASH,
       blockNumber: "20",
       blockHash: BLOCK_HASH,
-      gasUsed: "10",
+      gasUsed: "42",
       outcome: "success",
     });
   });
@@ -441,6 +442,18 @@ describe("exact UserOperation receipt evidence", () => {
     expectInvalid(() =>
       verify(logs, { transactionReceipt: transactionReceipt(logs, { status: "0x0" }) }),
     );
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["noncanonical", "0x02a"],
+    ["non-quantity", "42"],
+  ] as const)("rejects %s transaction gasUsed", (_label, gasUsed) => {
+    const logs = [beforeExecution(0), log(1), userOperationEvent(2)];
+    const receipt: Record<string, unknown> = { ...transactionReceipt(logs) };
+    if (gasUsed === undefined) delete receipt.gasUsed;
+    else receipt.gasUsed = gasUsed;
+    expectInvalid(() => verify(logs, { transactionReceipt: receipt }));
   });
 });
 
