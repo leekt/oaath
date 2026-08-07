@@ -121,6 +121,22 @@ private struct EIP712CaptureContext {
     }
 
     private mutating func insert(_ object: AnyObject, label: String) throws {
+        // Foundation interns empty immutable JSON containers. Two independent
+        // `[]` or `{}` values can therefore have the same object identity after
+        // JSONSerialization, even though neither can carry an alias or cycle.
+        // Mutable empty containers still participate in identity tracking.
+        if let array = object as? NSArray,
+           array.count == 0,
+           !(object is NSMutableArray)
+        {
+            return
+        }
+        if let dictionary = object as? NSDictionary,
+           dictionary.count == 0,
+           !(object is NSMutableDictionary)
+        {
+            return
+        }
         guard containers.insert(ObjectIdentifier(object)).inserted else {
             throw EIP712DerivationError.aliasedContainer(label)
         }

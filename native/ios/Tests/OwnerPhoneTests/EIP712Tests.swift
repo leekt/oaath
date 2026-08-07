@@ -309,6 +309,20 @@ final class EIP712Tests: XCTestCase {
         children.removeAllObjects() // break the test-only retain cycle
     }
 
+    func testIndependentEmptyJSONContainersAreNotMistakenForAliases() throws {
+        let encoded = try JSONSerialization.data(withJSONObject: twoEmptyArraysTypedData())
+        let decoded = try JSONSerialization.jsonObject(with: encoded)
+        XCTAssertNoThrow(try captureCanonicalEIP712TypedData(jsonValue: decoded))
+
+        let mutable = try XCTUnwrap(
+            try mutableJSONClone(twoEmptyArraysTypedData()) as? NSMutableDictionary)
+        let message = try XCTUnwrap(mutable["message"] as? NSMutableDictionary)
+        let shared = NSMutableArray()
+        message["left"] = shared
+        message["right"] = shared
+        assertEIP712Rejected(mutable)
+    }
+
     func testCaptureDetachesFromMutableInputAndComparisonIsNonAuthorizingEvidence() throws {
         let fixture = try sharedFixture()
         let vectors = try XCTUnwrap(fixture["vectors"] as? [Any])
@@ -419,6 +433,21 @@ private func pairTypedData() -> [String: Any] {
         "primaryType": "Pair",
         "domain": ["chainId": "1"],
         "message": ["left": ["value": "1"], "right": ["value": "2"]]
+    ]
+}
+
+private func twoEmptyArraysTypedData() -> [String: Any] {
+    [
+        "types": [
+            "EIP712Domain": [["name": "chainId", "type": "uint256"]],
+            "Payload": [
+                ["name": "left", "type": "string[]"],
+                ["name": "right", "type": "string[]"]
+            ]
+        ],
+        "primaryType": "Payload",
+        "domain": ["chainId": "1"],
+        "message": ["left": [Any](), "right": [Any]()]
     ]
 }
 
