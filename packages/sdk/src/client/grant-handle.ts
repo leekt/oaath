@@ -189,6 +189,13 @@ export interface OaathExternalPreparedCallKey {
   readonly prehash: false;
 }
 
+/** Ephemeral provider selection; only the final prepared paymaster is durable. */
+export type OaathExternalPreparedCallPaymasterSelection = Readonly<{
+  readonly kind: "erc7677";
+  readonly url: string;
+  readonly context: unknown;
+}> | null;
+
 /** Exact preparation facts persisted by the prepared-call context owner. */
 export interface OaathExternalPreparedCallPlan {
   readonly grantId: string;
@@ -326,6 +333,7 @@ export interface OaathGrantProviderPort {
       chain: number;
       calls: readonly Readonly<OaathCallInput>[];
       key: Readonly<OaathExternalPreparedCallKey>;
+      paymaster: OaathExternalPreparedCallPaymasterSelection;
     }>,
   ) => Promise<Readonly<OaathExternalPreparedCallPlan>>;
   readonly validatePreparedCalls: (
@@ -1129,14 +1137,15 @@ export function createGrantHandle(
     });
   }
 
-  function requireEnableApproval(
-    shape: Readonly<ExecutionShape>,
+  function requireBoundEnableApproval(
+    runtime: Readonly<KernelRuntime>,
+    account: `0x${string}`,
+    approval: Readonly<KernelAllChainApproval> | null,
   ): Readonly<KernelAllChainApproval> {
-    const approval = input.installApproval;
     if (approval === null) return unsupported("grant_capability_unavailable");
-    const packages = captureKernelV4Installs(shape.runtime.packages);
+    const packages = captureKernelV4Installs(runtime.packages);
     if (
-      approval.account !== shape.descriptor.account ||
+      approval.account !== account ||
       approval.packages.length !== packages.length ||
       !packages.every((install, index) => {
         const approved = approval.packages[index];
@@ -1152,9 +1161,44 @@ export function createGrantHandle(
     return approval;
   }
 
+  function requireEnableApproval(
+    shape: Readonly<ExecutionShape>,
+  ): Readonly<KernelAllChainApproval> {
+    return requireBoundEnableApproval(
+      shape.runtime,
+      shape.descriptor.account,
+      input.installApproval,
+    );
+  }
+
+  function enableSimulationSignature(
+    runtime: Readonly<KernelRuntime>,
+    account: `0x${string}`,
+    approval: Readonly<KernelAllChainApproval> | null,
+  ): `0x${string}` {
+    const retained = requireBoundEnableApproval(runtime, account, approval);
+    return encodeKernelV4EnableSignature({
+      nonce: retained.installNonce,
+      packages: retained.packages,
+      enableSignature: retained.enableSignature,
+      userOperationSignature: runtime.dummySignature,
+    });
+  }
+
+  type PreparedCallPaymasterSource =
+    | Readonly<{
+        kind: "resolve-erc7677";
+        sponsorship: Readonly<OaathKernelSponsorshipCapability>;
+      }>
+    | Readonly<{ kind: "retained"; paymaster: Readonly<PreparedPaymaster> }>
+    | null;
+
   async function prepareExecutionShape(
     shape: Readonly<ExecutionShape>,
-    gasOverride?: Readonly<KernelV4UserOperationGas>,
+    options: Readonly<{
+      gas?: Readonly<KernelV4UserOperationGas>;
+      paymaster?: PreparedCallPaymasterSource;
+    }> = {},
   ): Promise<
     Readonly<{
       prepared: Readonly<PreparedUserOperation>;
@@ -1177,20 +1221,34 @@ export function createGrantHandle(
       nonceKey: quote.nonceKey,
       sequence: quote.sequence,
       calls: [...shape.calls],
-      gas: gasOverride ?? quote.gas,
-      paymaster: null,
+      gas: options.gas ?? quote.gas,
+      paymaster: options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null,
     };
-    let prepared: Readonly<PreparedUserOperation>;
+    let operation: KernelRuntimePrepareInput;
+    let simulationSignature = shape.runtime.dummySignature;
     if (shape.mode === "enable-replayable") {
-      requireEnableApproval(shape);
-      prepared = shape.runtime.prepareOperation({
+      simulationSignature = enableSimulationSignature(
+        shape.runtime,
+        shape.descriptor.account,
+        input.installApproval,
+      );
+      operation = {
         ...fields,
         kind: "execution",
         mode: "enable-replayable",
-      });
+      };
     } else {
-      prepared = shape.runtime.prepareOperation({ kind: "execution", ...fields });
+      operation = { kind: "execution", ...fields };
     }
+    const prepared =
+      options.paymaster?.kind === "resolve-erc7677"
+        ? await prepareSponsoredKernelOperation({
+            runtime: shape.runtime,
+            operation,
+            simulationSignature,
+            sponsorship: options.paymaster.sponsorship,
+          })
+        : shape.runtime.prepareOperation(operation);
     return Object.freeze({
       prepared,
       quote: Object.freeze({ nonceKey: quote.nonceKey, sequence: quote.sequence }),
@@ -1289,34 +1347,16 @@ export function createGrantHandle(
             let operation: KernelRuntimePrepareInput;
             let simulationSignature = spec.runtime.dummySignature;
             if (spec.mode === "enable-replayable") {
-              const approval = spec.installApproval;
-              if (approval === null) return unsupported("grant_capability_unavailable");
-              const packages = captureKernelV4Installs(spec.runtime.packages);
-              if (
-                approval.account !== spec.descriptor.account ||
-                approval.packages.length !== packages.length ||
-                !packages.every((install, index) => {
-                  const approved = approval.packages[index];
-                  return approved !== undefined && sameInstall(install, approved);
-                })
-              ) {
-                return clientFail(
-                  "oaath_client_state_conflict",
-                  "the install approval does not bind this permission runtime",
-                  "kernel_runtime_binding_mismatch",
-                );
-              }
               operation = {
                 ...fields,
                 kind: spec.kind,
                 mode: "enable-replayable",
               };
-              simulationSignature = encodeKernelV4EnableSignature({
-                nonce: approval.installNonce,
-                packages: approval.packages,
-                enableSignature: approval.enableSignature,
-                userOperationSignature: spec.runtime.dummySignature,
-              });
+              simulationSignature = enableSimulationSignature(
+                spec.runtime,
+                spec.descriptor.account,
+                spec.installApproval,
+              );
             } else {
               operation = { kind: spec.kind, ...fields };
             }
@@ -2316,12 +2356,13 @@ export function createGrantHandle(
       chain: number;
       calls: readonly Readonly<OaathCallInput>[];
       key: Readonly<OaathExternalPreparedCallKey>;
+      paymaster: OaathExternalPreparedCallPaymasterSelection;
     }>,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(
       value,
-      ["chain", "calls", "key"],
+      ["chain", "calls", "key", "paymaster"],
       "provider prepareCalls input",
       context,
     );
@@ -2346,8 +2387,28 @@ export function createGrantHandle(
     approvedExternalKey(key);
     const custody = preparedCustody();
     const calls = captureCalls(request.calls, context);
+    const paymaster = providerPaymaster(request.chain, request.paymaster, context);
+    if (paymaster?.kind === "erc7902-static") {
+      return unsupported("prepared_calls_static_paymaster_unsupported");
+    }
     const shape = await resolveExecutionShape(request.chain, calls);
-    return externalPlan(shape, key, custody, await prepareExecutionShape(shape));
+    if (paymaster !== null && shape.decision.route !== "bundler") {
+      return unsupported("erc7677_bundler_unavailable");
+    }
+    return externalPlan(
+      shape,
+      key,
+      custody,
+      await prepareExecutionShape(shape, {
+        paymaster:
+          paymaster === null
+            ? null
+            : Object.freeze({
+                kind: "resolve-erc7677" as const,
+                sponsorship: paymaster.sponsorship,
+              }),
+      }),
+    );
   }
 
   async function validatePreparedCallsWork(
@@ -2372,7 +2433,14 @@ export function createGrantHandle(
     }
     const calls = captureCalls(plan.calls, new WeakSet());
     const shape = await resolveExecutionShape(plan.chainId, calls);
-    const current = await prepareExecutionShape(shape, storedGas(plan.prepared));
+    const retainedPaymaster = plan.prepared.userOperation.paymaster;
+    const current = await prepareExecutionShape(shape, {
+      gas: storedGas(plan.prepared),
+      paymaster:
+        retainedPaymaster === null
+          ? null
+          : Object.freeze({ kind: "retained" as const, paymaster: retainedPaymaster }),
+    });
     const expectedRoute = shape.decision.route === "bundler" ? "bundler" : "direct";
     if (
       plan.account !== shape.descriptor.account ||
@@ -2384,7 +2452,8 @@ export function createGrantHandle(
       plan.quote.sequence !== current.quote.sequence ||
       plan.decision.route !== expectedRoute ||
       !sameFeePayer(plan.decision.feePayer, shape.decision.feePayer) ||
-      plan.prepared.userOperation.paymaster !== null ||
+      (retainedPaymaster !== null &&
+        (plan.decision.route !== "bundler" || expectedRoute !== "bundler")) ||
       current.prepared.userOperationHash !== plan.prepared.userOperationHash
     ) {
       return clientFail(
@@ -2625,6 +2694,7 @@ export function createGrantHandle(
       chain: number;
       calls: readonly Readonly<OaathCallInput>[];
       key: Readonly<OaathExternalPreparedCallKey>;
+      paymaster: OaathExternalPreparedCallPaymasterSelection;
     }>,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
     return withExecution(() => prepareCallsWork(value));

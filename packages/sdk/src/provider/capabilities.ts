@@ -129,7 +129,11 @@ const PAYMASTER_SERVICE_HANDLER: WalletCapabilityHandler<
 > = Object.freeze({
   key: "paymasterService",
   status: "review",
-  metadataMethods: Object.freeze(["wallet_sendCalls"] as const),
+  metadataMethods: Object.freeze([
+    "wallet_sendCalls",
+    "wallet_prepareCalls",
+    "wallet_sendPreparedCalls",
+  ] as const),
   metadataScopes: Object.freeze(["bundle"] as const),
   advertise(context: Readonly<WalletCapabilityContext>) {
     return context.paymasterService === true ? Object.freeze({ supported: true as const }) : null;

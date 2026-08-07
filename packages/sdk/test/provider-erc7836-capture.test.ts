@@ -241,38 +241,93 @@ describe("wallet_prepareCalls experimental capture", () => {
     );
   });
 
-  it("does not enable paymasterService for experimental prepared calls", () => {
+  it("captures exact paymasterService preparation and echoed-send metadata", () => {
     const paymasterService = {
+      url: "https://relay.example/chains/421614/paymaster",
+      context: { policy: "prepared" },
+    };
+    const prepared = capturePrepare(basePrepare({ capabilities: { paymasterService } }));
+    expect(prepared.capabilities).toEqual({
+      values: { paymasterService },
+      ignored: [],
+      paymasterService: { ...paymasterService, optional: false },
+    });
+    expectDeepFrozen(prepared.capabilities);
+
+    const sent = captureSend(baseSend({ capabilities: { paymasterService } }));
+    expect(sent.capabilities).toEqual({
+      values: { paymasterService },
+      ignored: [],
+      paymasterService: { ...paymasterService, optional: false },
+    });
+    expectDeepFrozen(sent.capabilities);
+
+    const optional = { ...paymasterService, optional: true };
+    expect(
+      capturePrepare(basePrepare({ capabilities: { paymasterService: optional } })).capabilities,
+    ).toMatchObject({ ignored: [], paymasterService: optional });
+    expect(
+      captureSend(baseSend({ capabilities: { paymasterService: optional } })).capabilities,
+    ).toMatchObject({ ignored: [], paymasterService: optional });
+
+    expect(
+      hashCapturedWalletPrepareCallsRequest(
+        capturePrepare(
+          basePrepare({
+            capabilities: {
+              paymasterService: { ...paymasterService, context: { policy: "changed" } },
+            },
+          }),
+        ),
+      ),
+    ).not.toBe(hashCapturedWalletPrepareCallsRequest(prepared));
+    expect(
+      hashCapturedWalletSendPreparedCallsRequest(
+        captureSend(baseSend({ capabilities: { paymasterService: optional } })),
+      ),
+    ).not.toBe(hashCapturedWalletSendPreparedCallsRequest(sent));
+  });
+
+  it("keeps paymasterService malformed and call-scoped forms fail closed", () => {
+    const exact = {
       url: "https://relay.example/chains/421614/paymaster",
       context: {},
     };
+    for (const paymasterService of [
+      { url: exact.url },
+      { ...exact, optional: "true" },
+      { ...exact, extra: true },
+    ]) {
+      expectRpcError(
+        () => capturePrepare(basePrepare({ capabilities: { paymasterService } })),
+        INVALID_PARAMS,
+      );
+      expectRpcError(
+        () => captureSend(baseSend({ capabilities: { paymasterService } })),
+        INVALID_PARAMS,
+      );
+    }
+
     expectRpcError(
-      () => capturePrepare(basePrepare({ capabilities: { paymasterService } })),
+      () =>
+        capturePrepare(
+          basePrepare({ calls: [{ to: TARGET_A, capabilities: { paymasterService: exact } }] }),
+        ),
       UNSUPPORTED_CAPABILITY,
     );
     expect(
       capturePrepare(
         basePrepare({
-          capabilities: { paymasterService: { ...paymasterService, optional: true } },
+          calls: [
+            {
+              to: TARGET_A,
+              capabilities: { paymasterService: { ...exact, optional: true } },
+            },
+          ],
         }),
-      ).capabilities,
+      ).calls[0]?.capabilities,
     ).toEqual({
-      values: { paymasterService: { ...paymasterService, optional: true } },
-      ignored: ["paymasterService"],
-    });
-
-    expectRpcError(
-      () => captureSend(baseSend({ capabilities: { paymasterService } })),
-      UNSUPPORTED_CAPABILITY,
-    );
-    expect(
-      captureSend(
-        baseSend({
-          capabilities: { paymasterService: { ...paymasterService, optional: true } },
-        }),
-      ).capabilities,
-    ).toEqual({
-      values: { paymasterService: { ...paymasterService, optional: true } },
+      values: { paymasterService: { ...exact, optional: true } },
       ignored: ["paymasterService"],
     });
   });

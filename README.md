@@ -61,12 +61,11 @@ experiments:
 | --- | --- | --- |
 | EIP-5792 `wallet_sendCalls` / status / capabilities | Final (`2.0.0`) | Implemented PoC path |
 | ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; opaque five-minute context, approved secp256k1 or WebAuthn operator, one-time durable consumption |
-| ERC-7677 `paymasterService` | Review | Experimental `wallet_sendCalls` path for a deployment-registered same-service proxy and bundler estimator |
+| ERC-7677 `paymasterService` | Review | Experimental `wallet_sendCalls` and prepared-call paths for a deployment-registered same-service proxy and bundler estimator |
 | ERC-7902 `staticPaymasterConfiguration` | Draft | Experimental bundled `wallet_sendCalls` path for one authenticated per-chain configuration commitment |
 
 The Draft profiles are not advertised as stable or as generic conformance.
-ERC-7677 sponsorship for prepared calls and the remaining ERC-7902 capability
-fields remain later, independent work.
+The remaining ERC-7902 capability fields remain later, independent work.
 
 ## Browser golden path
 

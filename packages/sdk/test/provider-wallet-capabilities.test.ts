@@ -81,11 +81,17 @@ describe("closed wallet capability registry", () => {
     expect(isHandledWalletCapability("paymasterService", "wallet_sendCalls", "bundle")).toBe(true);
     expect(isHandledWalletCapability("paymasterService", "wallet_sendCalls", "call")).toBe(false);
     expect(isHandledWalletCapability("paymasterService", "wallet_prepareCalls", "bundle")).toBe(
-      false,
+      true,
     );
     expect(
       isHandledWalletCapability("paymasterService", "wallet_sendPreparedCalls", "bundle"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(isHandledWalletCapability("paymasterService", "wallet_prepareCalls", "call")).toBe(
+      false,
+    );
+    expect(isHandledWalletCapability("paymasterService", "wallet_sendPreparedCalls", "call")).toBe(
+      false,
+    );
     expect(
       isHandledWalletCapability("staticPaymasterConfiguration", "wallet_sendCalls", "bundle"),
     ).toBe(true);

@@ -22,6 +22,7 @@ import type {
 } from "../persistence/interfaces.js";
 import { deriveOperationId } from "../prepared-user-operation.js";
 import { WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS } from "./bundle-store.js";
+import { applyWalletCapabilities } from "./capabilities.js";
 import {
   type CapturedWalletCapabilities,
   type CapturedWalletPreparedCallsKey,
@@ -228,10 +229,10 @@ export function createErc7836Orchestrator(
   }
 
   function calls(
-    captured: ReturnType<typeof captureWalletPrepareCallsParams>,
+    capturedCalls: ReturnType<typeof captureWalletPrepareCallsParams>["calls"],
   ): readonly Readonly<{ target: `0x${string}`; value: string; data: `0x${string}` }>[] {
     return Object.freeze(
-      captured.calls.map((call) =>
+      capturedCalls.map((call) =>
         Object.freeze({
           target: call.to,
           value: BigInt(call.value ?? "0x0").toString(10),
@@ -421,12 +422,30 @@ export function createErc7836Orchestrator(
 
   async function prepareCalls(params: unknown) {
     const captured = captureWalletPrepareCallsParams(params, input.chain);
+    const capabilityEffect = applyWalletCapabilities({
+      atomic: Object.freeze({ atomicRequired: true }),
+      calls: captured.calls,
+      chainId: input.chain,
+      atomicExecution: true,
+      ...(captured.capabilities === undefined ? {} : { capabilities: captured.capabilities }),
+      registeredPaymasterServiceUrl: input.port.registeredPaymasterServiceUrl(input.chain),
+      staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
+    });
+    if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
+    if (capabilityEffect.paymaster?.kind === "erc7902-static") {
+      return rpcFail(INTERNAL_ERROR);
+    }
     const accountAddress = await account();
     if (captured.from !== undefined && captured.from !== accountAddress) {
       return rpcFail(UNAUTHORIZED);
     }
     const plan = await input.port
-      .prepareCalls({ chain: input.chain, calls: calls(captured), key: captured.key })
+      .prepareCalls({
+        chain: input.chain,
+        calls: calls(capabilityEffect.calls),
+        key: captured.key,
+        paymaster: capabilityEffect.paymaster,
+      })
       .catch(mapPreparationFailure);
     const createdAt = now();
     const expiresAt = Math.min(createdAt + PREPARED_CONTEXT_LIFETIME_SECONDS, plan.expiresAt);
@@ -445,10 +464,12 @@ export function createErc7836Orchestrator(
       const echo = Object.freeze({
         version: "1" as const,
         chainId: captured.chainId,
-        capabilities: Object.freeze({
-          values: capabilities as Readonly<Record<string, never>>,
-          ignored: Object.freeze(Object.keys(capabilities).sort()),
-        }),
+        capabilities:
+          captured.capabilities ??
+          Object.freeze({
+            values: capabilities as Readonly<Record<string, never>>,
+            ignored: Object.freeze([]),
+          }),
         context,
         key: captured.key,
         signature: ECHO_SIGNATURE_SENTINEL,
