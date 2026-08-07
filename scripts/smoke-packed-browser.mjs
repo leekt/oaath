@@ -18,6 +18,8 @@
  *     while every chain port stays untouched;
  *   - a recreated realm resumes the Grant and observes the exact durable
  *     EIP-5792 bundle without another submission;
+ *   - replaying its app-provided ID after recreation returns `5720` without
+ *     opening another submission;
  *   - the public surface carries no protocol mechanics;
  *   - the published types resolve under `nodenext` strict with no `@types/node`.
  *
@@ -415,16 +417,17 @@ chainEnabled = true;
 const account = await grant.account(CHAIN_ID);
 if (account !== ACCOUNT) fail("the packed Grant resolved another account: " + account);
 const firstProvider = oaathProvider({ grant, chain: CHAIN_ID });
+const appBundle = {
+  version: "2.0.0",
+  id: "packed-reload",
+  from: account,
+  chainId: "0x" + CHAIN_ID.toString(16),
+  atomicRequired: true,
+  calls: [{ to: TARGET, data: "0xa9059cbb" }],
+};
 const sent = await firstProvider.request({
   method: "wallet_sendCalls",
-  params: [{
-    version: "2.0.0",
-    id: "packed-reload",
-    from: account,
-    chainId: "0x" + CHAIN_ID.toString(16),
-    atomicRequired: true,
-    calls: [{ to: TARGET, data: "0xa9059cbb" }],
-  }],
+  params: [appBundle],
 });
 if (sent.id !== "packed-reload") fail("wallet_sendCalls returned another id");
 if (sends.length !== 1) fail("wallet_sendCalls submitted " + sends.length + " operations");
@@ -444,7 +447,19 @@ if (resumed === null) fail("a recreated realm did not resume the active Grant");
 if (resumed.state !== "active") fail("the resumed Grant state is " + resumed.state);
 if (resumed.expiresAt !== grant.expiresAt) fail("the resumed Grant expiry differs");
 if (ownerRequests.length !== 1) fail("resume asked the owner again");
-const recovered = await oaathProvider({ grant: resumed, chain: CHAIN_ID }).request({
+const recreatedProvider = oaathProvider({ grant: resumed, chain: CHAIN_ID });
+let duplicateCode = null;
+try {
+  await recreatedProvider.request({ method: "wallet_sendCalls", params: [appBundle] });
+} catch (error) {
+  duplicateCode =
+    error !== null && typeof error === "object" && "code" in error ? error.code : null;
+}
+if (duplicateCode !== 5720) fail("reloaded duplicate ID did not return 5720");
+if (sends.length !== 1 || sends[0].userOperationHash !== exactHash) {
+  fail("reloaded duplicate ID opened or changed a submission");
+}
+const recovered = await recreatedProvider.request({
   method: "wallet_getCallsStatus",
   params: ["packed-reload"],
 });
@@ -561,7 +576,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      connect, consent, wallet_sendCalls, realm recreation, exact status, signOut",
+    "  golden path      connect, consent, wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {
