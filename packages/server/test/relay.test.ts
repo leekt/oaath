@@ -613,6 +613,7 @@ describe("URL-only service surface", () => {
       submission: async () => ({ userOperationHash: `0x${"aa".repeat(32)}` }),
       usage: async () => ({ status: "complete" }),
       feePayer: null,
+      staticPaymasterConfigurationHash: null,
       ...overrides,
     };
   }
@@ -718,15 +719,26 @@ describe("URL-only service surface", () => {
   });
 
   it("serves the exact versioned bootstrap document to a client", async () => {
-    const harness = createHarness(bootstrapOptions());
+    const staticPaymasterConfigurationHash = `0x${"44".repeat(32)}`;
+    const harness = createHarness(
+      bootstrapOptions({ chains: [chainPort({ staticPaymasterConfigurationHash })] }),
+    );
     const document = await expectOk<Record<string, unknown>>(
       await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
       200,
     );
     expect(document).toMatchObject({
-      version: "oaath.service-bootstrap/v2",
+      version: "oaath.service-bootstrap/v3",
       userHandle: "user-1",
-      chains: [{ chainId: 31_337, usage: true, feePayer: null, paymasterService: null }],
+      chains: [
+        {
+          chainId: 31_337,
+          usage: true,
+          feePayer: null,
+          paymasterService: null,
+          staticPaymasterConfigurationHash,
+        },
+      ],
       sessionSigner: { mode: "frontend", providerId: null },
     });
     await expectFailure(await harness.handler(get("/bootstrap", OWNER_TOKEN)), "relay_forbidden");
@@ -748,6 +760,15 @@ describe("URL-only service surface", () => {
         createHarness(
           bootstrapOptions({
             bootstrap: { application: {}, userHandle: "", account: {}, ownerValidator: null },
+          }),
+        ),
+      "relay_internal",
+    );
+    expectConstructionFailure(
+      () =>
+        createHarness(
+          bootstrapOptions({
+            chains: [chainPort({ staticPaymasterConfigurationHash: "0x01" })],
           }),
         ),
       "relay_internal",
@@ -853,6 +874,7 @@ describe("URL-only service surface", () => {
         usage: true,
         feePayer: null,
         paymasterService: { providerId: "paymaster-primary" },
+        staticPaymasterConfigurationHash: null,
       },
     ]);
 

@@ -99,6 +99,7 @@ function chainPort(capability) {
     },
     usage: capability.usage === null ? null : (request) => capability.usage(request),
     feePayer: capability.feePayer,
+    staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
   };
 }
 

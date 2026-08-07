@@ -230,6 +230,7 @@ export function createFakeChain(chainId) {
       },
       feePayer: null,
       paymasterService: null,
+      staticPaymasterConfigurationHash: null,
     },
   };
 }

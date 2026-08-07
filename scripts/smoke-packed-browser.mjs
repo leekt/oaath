@@ -319,6 +319,7 @@ const chain = {
     };
   },
   feePayer: null,
+  staticPaymasterConfigurationHash: null,
   paymasterService: {
     url: ISSUER_URL + "/chains/" + CHAIN_ID + "/paymaster",
     async request(request) {

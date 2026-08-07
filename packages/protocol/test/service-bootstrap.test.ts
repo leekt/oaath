@@ -14,6 +14,7 @@ import {
 } from "../src/index.js";
 
 const VALIDATOR = `0x${"22".repeat(20)}`;
+const STATIC_PAYMASTER_HASH = `0x${"44".repeat(32)}`;
 
 function document(): Record<string, unknown> {
   return {
@@ -39,7 +40,15 @@ function document(): Record<string, unknown> {
       },
     },
     ownerValidator: VALIDATOR,
-    chains: [{ chainId: 31_337, usage: true, feePayer: null, paymasterService: null }],
+    chains: [
+      {
+        chainId: 31_337,
+        usage: true,
+        feePayer: null,
+        paymasterService: null,
+        staticPaymasterConfigurationHash: null,
+      },
+    ],
     sessionSigner: { mode: "frontend", providerId: null },
   };
 }
@@ -51,7 +60,13 @@ describe("service bootstrap", () => {
     expect(bootstrap.account.ownerCredential.kind).toBe("ecdsa");
     expect(bootstrap.ownerValidator).toBe(VALIDATOR);
     expect(bootstrap.chains).toEqual([
-      { chainId: 31_337, usage: true, feePayer: null, paymasterService: null },
+      {
+        chainId: 31_337,
+        usage: true,
+        feePayer: null,
+        paymasterService: null,
+        staticPaymasterConfigurationHash: null,
+      },
     ]);
     expect(Object.isFrozen(bootstrap)).toBe(true);
     expect(Object.isFrozen(bootstrap.chains)).toBe(true);
@@ -66,6 +81,7 @@ describe("service bootstrap", () => {
           usage: false,
           feePayer: { address: `0x${"77".repeat(20)}`, balance: "1000" },
           paymasterService: { providerId: "paymaster-primary" },
+          staticPaymasterConfigurationHash: STATIC_PAYMASTER_HASH,
         },
       ],
     });
@@ -76,15 +92,16 @@ describe("service bootstrap", () => {
     expect(bootstrap.chains[0]?.paymasterService).toEqual({
       providerId: "paymaster-primary",
     });
+    expect(bootstrap.chains[0]?.staticPaymasterConfigurationHash).toBe(STATIC_PAYMASTER_HASH);
   });
 
   it.each([
-    ["a wrong version", { version: "oaath.service-bootstrap/v1" }],
+    ["the retired v2 version", { version: "oaath.service-bootstrap/v2" }],
     ["an unknown field", { extra: 1 }],
     ["a missing user handle", { userHandle: "" }],
     ["no chains", { chains: [] }],
     [
-      "a chain without an explicit paymaster policy",
+      "a chain without explicit paymaster policies",
       { chains: [{ chainId: 1, usage: false, feePayer: null }] },
     ],
     [
@@ -96,6 +113,21 @@ describe("service bootstrap", () => {
             usage: false,
             feePayer: null,
             paymasterService: { providerId: "" },
+            staticPaymasterConfigurationHash: null,
+          },
+        ],
+      },
+    ],
+    [
+      "a malformed static paymaster commitment",
+      {
+        chains: [
+          {
+            chainId: 1,
+            usage: false,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: `0x${"AA".repeat(32)}`,
           },
         ],
       },
@@ -104,8 +136,20 @@ describe("service bootstrap", () => {
       "a repeated chain",
       {
         chains: [
-          { chainId: 1, usage: false, feePayer: null, paymasterService: null },
-          { chainId: 1, usage: true, feePayer: null, paymasterService: null },
+          {
+            chainId: 1,
+            usage: false,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: null,
+          },
+          {
+            chainId: 1,
+            usage: true,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: null,
+          },
         ],
       },
     ],

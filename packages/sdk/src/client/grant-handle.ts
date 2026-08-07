@@ -268,6 +268,8 @@ export interface OaathChainCapability {
   readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
   /** Null means this chain does not advertise ERC-7677. */
   readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
+  /** Authenticated commitment to one exact ERC-7902 static paymaster, or null. */
+  readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
 /** Proves the replayable approval capability can no longer authorize anything. */
@@ -388,6 +390,7 @@ const CHAIN_KEYS: readonly string[] = Object.freeze([
   "usage",
   "feePayer",
   "paymasterService",
+  "staticPaymasterConfigurationHash",
 ]);
 
 function unsupported(source: string): never {
@@ -465,6 +468,17 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       ),
     });
   }
+  const staticPaymasterConfigurationHash = record.staticPaymasterConfigurationHash;
+  if (
+    staticPaymasterConfigurationHash !== null &&
+    (typeof staticPaymasterConfigurationHash !== "string" ||
+      !USER_OPERATION_HASH.test(staticPaymasterConfigurationHash))
+  ) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "static paymaster configuration commitment is invalid",
+    );
+  }
   return Object.freeze({
     chainId,
     reads: capabilityObject<KernelV4AccountReadCapability>(
@@ -501,6 +515,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       clientFail("oaath_client_capability_invalid", message),
     ),
     paymasterService,
+    staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,
   });
 }
 

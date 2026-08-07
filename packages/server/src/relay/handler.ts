@@ -87,6 +87,7 @@ const MAX_TTL_MS = 86_400_000;
 /** RFC 6749 ceiling, matching `MAX_AUTHORIZATION_CODE_LIFETIME` in @oaath/protocol. */
 const MAX_CODE_TTL_MS = 600_000;
 const MAX_PAYMASTER_REQUEST_TIMEOUT_MS = 30_000;
+const HASH = /^0x[0-9a-f]{64}$/u;
 
 const INVALID = "relay_request_invalid" as const;
 
@@ -107,6 +108,8 @@ export interface RelayChainPort {
   /** Finalized per-grant usage evidence, or null when this chain serves none. */
   readonly usage: ((request: unknown) => Promise<unknown>) | null;
   readonly feePayer: Readonly<{ address: `0x${string}`; balance: string }> | null;
+  /** Authenticated commitment to one exact ERC-7902 static paymaster, or null. */
+  readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
 /** The identity facts `GET /bootstrap` serves; chains derive from `chains`. */
@@ -282,6 +285,16 @@ function captureChainPorts(value: unknown): ReadonlyMap<number, Readonly<RelayCh
     if (port.usage !== null && typeof port.usage !== "function") {
       return relayFailure("relay_internal", "chain port usage must be a function or null");
     }
+    if (
+      port.staticPaymasterConfigurationHash !== null &&
+      (typeof port.staticPaymasterConfigurationHash !== "string" ||
+        !HASH.test(port.staticPaymasterConfigurationHash))
+    ) {
+      return relayFailure(
+        "relay_internal",
+        "chain port static paymaster commitment must be a lowercase hash or null",
+      );
+    }
     if (chains.has(port.chainId)) {
       return relayFailure("relay_internal", "chain ports repeat a chainId");
     }
@@ -430,6 +443,7 @@ function captureOptions(value: unknown): CapturedOptions {
             feePayer: port.feePayer,
             paymasterService:
               paymasterService === undefined ? null : { providerId: paymasterService.providerId },
+            staticPaymasterConfigurationHash: port.staticPaymasterConfigurationHash,
           };
         }),
         // The one custody declaration serves both the document and the

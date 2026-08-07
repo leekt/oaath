@@ -260,6 +260,7 @@ export async function createAnvilChain(chainId) {
         balance: feePayerBalance.toString(10),
       },
       paymasterService: null,
+      staticPaymasterConfigurationHash: null,
     },
   };
 }

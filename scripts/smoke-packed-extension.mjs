@@ -281,6 +281,7 @@ try {
         ? null
         : (request) => chain.capability.usage(request),
     feePayer: chain.capability.feePayer,
+    staticPaymasterConfigurationHash: chain.capability.staticPaymasterConfigurationHash,
   };
 
   relay = createRelayHandler({

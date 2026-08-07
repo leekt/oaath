@@ -239,6 +239,7 @@ function serviceChainCapability(
     usage: chain.usage ? port("usage") : null,
     feePayer: chain.feePayer,
     paymasterService,
+    staticPaymasterConfigurationHash: chain.staticPaymasterConfigurationHash,
   }) as Readonly<OaathChainCapability>;
 }
 

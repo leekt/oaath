@@ -26,13 +26,14 @@ import {
   exactRecord,
 } from "./internal/exact-record.js";
 
-export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v2" as const;
+export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v3" as const;
 
 const MAX_REDIRECT_URIS = 8;
 const MAX_CHAINS = 32;
 const MAX_NAME_LENGTH = 256;
 const MAX_HANDLE_LENGTH = 256;
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
+const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
 export interface ServiceBootstrapApplication {
@@ -58,6 +59,12 @@ export interface ServiceBootstrapChain {
    * this identifier is configuration evidence, never an application endpoint.
    */
   readonly paymasterService: Readonly<ServiceBootstrapPaymasterService> | null;
+  /**
+   * Deployment-authenticated commitment to the one exact ERC-7902 static
+   * paymaster configuration this chain accepts, or null. The bootstrap never
+   * interprets or carries the potentially large paymaster data itself.
+   */
+  readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
 export interface ServiceBootstrapPaymasterService {
@@ -123,7 +130,7 @@ function captureChain(
 ): Readonly<ServiceBootstrapChain> {
   const record = exactRecord(
     value,
-    ["chainId", "usage", "feePayer", "paymasterService"],
+    ["chainId", "usage", "feePayer", "paymasterService", "staticPaymasterConfigurationHash"],
     "service bootstrap chain",
     context,
     fail,
@@ -170,7 +177,21 @@ function captureChain(
       ),
     });
   }
-  return Object.freeze({ chainId, usage: record.usage, feePayer, paymasterService });
+  const staticPaymasterConfigurationHash = record.staticPaymasterConfigurationHash;
+  if (
+    staticPaymasterConfigurationHash !== null &&
+    (typeof staticPaymasterConfigurationHash !== "string" ||
+      !HASH.test(staticPaymasterConfigurationHash))
+  ) {
+    return fail("service bootstrap static paymaster commitment must be a lowercase hash or null");
+  }
+  return Object.freeze({
+    chainId,
+    usage: record.usage,
+    feePayer,
+    paymasterService,
+    staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,
+  });
 }
 
 function captureSessionSigner(

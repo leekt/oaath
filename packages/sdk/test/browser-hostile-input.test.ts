@@ -136,6 +136,14 @@ describe("hostile input at the client boundary", () => {
       { chains: [] },
       { chains: [createChainFixture().capability, createChainFixture().capability] },
       { chains: [{ chainId: CHAIN_ID }] },
+      {
+        chains: [
+          {
+            ...createChainFixture().capability,
+            staticPaymasterConfigurationHash: "0x01",
+          },
+        ],
+      },
       { signing: { owner: signingProfiles().owner } },
       { signing: { owner: { kind: "ecdsa" }, session: signingProfiles().session } },
       { localKeyIds: [""] },
