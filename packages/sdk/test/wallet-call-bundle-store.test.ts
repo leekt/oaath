@@ -40,9 +40,9 @@ const OTHER_GRANT_ID = "other-grant";
 function key(
   id = "bundle",
   providerScopeId: WalletCallBundleKey["providerScopeId"] = SCOPE,
-  _account: `0x${string}` = ACCOUNT,
+  account: WalletCallBundleKey["account"] = ACCOUNT,
 ): Readonly<WalletCallBundleKey> {
-  return Object.freeze({ providerScopeId, id });
+  return Object.freeze({ providerScopeId, account, id });
 }
 
 function operation(
@@ -107,7 +107,7 @@ function clone<Value>(value: Value): Value {
 }
 
 function mapKey(value: Readonly<WalletCallBundleKey>): string {
-  return JSON.stringify([value.providerScopeId, value.id]);
+  return JSON.stringify([value.providerScopeId, value.account, value.id]);
 }
 
 function storedGeneration(value: unknown): unknown {
@@ -200,7 +200,7 @@ async function reserve(
   createdAt = 10,
   requestHash: WalletCallBundleRecord["requestHash"] = REQUEST_HASH,
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
-  account: WalletCallBundleRecord["account"] = ACCOUNT,
+  account: WalletCallBundleRecord["account"] = entryKey.account,
   grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
 ): Promise<WalletCallBundleMutationResult> {
   return store.reserveAccepted({
@@ -216,7 +216,7 @@ async function reserve(
 }
 
 describe("wallet-call bundle persistence parser", () => {
-  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v4 record", () => {
+  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v5 record", () => {
     const id = " app:\u0000/日本語/😀/not-hex ";
     const capturedKey = parseWalletCallBundleKey(key(id));
     expect(capturedKey.id).toBe(id);
@@ -347,7 +347,8 @@ describe("wallet-call bundle persistence parser", () => {
     for (const invalidKey of [
       { ...key(), providerScopeId: SCOPE.toUpperCase() },
       { ...key(), grantId: " grant " },
-      { ...key(), account: ACCOUNT },
+      { providerScopeId: SCOPE, id: "bundle" },
+      { ...key(), account: ACCOUNT.toUpperCase() },
       { ...key(), id: "" },
       { ...key(), extra: true },
     ]) {
@@ -405,6 +406,20 @@ describe("wallet-call bundle persistence parser", () => {
         }),
       "store_input_invalid",
     );
+    await expectStoreError(
+      () =>
+        store.reserveAccepted({
+          key: key("account-mismatch"),
+          grantId: GRANT_ID,
+          account: OTHER_ACCOUNT,
+          generation: GENERATION_A,
+          chainId: CHAIN_ID,
+          createdAt: 10,
+          publicationExpiresAt: 40,
+          requestHash: REQUEST_HASH,
+        }),
+      "store_input_invalid",
+    );
 
     memory.set(key(), { ...envelope(), value: {} });
     await expectStoreError(() => store.get(key()), "store_record_invalid");
@@ -417,15 +432,12 @@ describe("wallet-call bundle persistence parser", () => {
 
     for (const value of [
       bundleRecord({ providerScopeId: OTHER_SCOPE }),
+      bundleRecord({ account: OTHER_ACCOUNT }),
       bundleRecord({ id: "other" }),
     ]) {
       memory.set(key(), envelope(value));
       await expectStoreError(() => store.get(key()), "store_key_mismatch");
     }
-    memory.set(key(), envelope(bundleRecord({ account: OTHER_ACCOUNT })));
-    await expect(store.get(key())).resolves.toMatchObject({
-      value: { account: OTHER_ACCOUNT },
-    });
     memory.set(key(), envelope(bundleRecord({ grantId: OTHER_GRANT_ID })));
     await expect(store.get(key())).resolves.toMatchObject({
       value: { grantId: OTHER_GRANT_ID },
@@ -782,7 +794,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(memory.casCalls()).toBe(1);
   });
 
-  it("keeps exact IDs and isolates scope while Grant, account, and chain are not key axes", async () => {
+  it("keeps exact IDs and isolates scope and account while Grant and chain are not key axes", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
     const unicode = " 日本語/😀/\u0000 ";
@@ -793,11 +805,12 @@ describe("wallet-call bundle transitions and uniqueness", () => {
 
     requireCommitted(await reserve(store, first, 1));
     requireCommitted(await reserve(store, anotherScope, 1));
-    await expect(
-      reserve(store, anotherAccount, 1, 10, REQUEST_HASH, GENERATION_B, OTHER_ACCOUNT),
-    ).resolves.toMatchObject({
-      status: "conflict",
-      current: { value: { account: ACCOUNT } },
+    requireCommitted(
+      await reserve(store, anotherAccount, 1, 10, REQUEST_HASH, GENERATION_B, OTHER_ACCOUNT),
+    );
+    await expect(store.get(first)).resolves.toMatchObject({ value: { account: ACCOUNT } });
+    await expect(store.get(anotherAccount)).resolves.toMatchObject({
+      value: { account: OTHER_ACCOUNT },
     });
     await expect(
       reserve(store, first, 1, 10, REQUEST_HASH, GENERATION_B, ACCOUNT, OTHER_GRANT_ID),
@@ -1296,6 +1309,10 @@ describe("wallet-call bundle races and retained-write verification", () => {
         "store_identity_mismatch",
       ],
       [
+        bundleRecord({ account: OTHER_ACCOUNT, state: "terminal", terminalFrom: "accepted" }),
+        "store_commit_indeterminate",
+      ],
+      [
         bundleRecord({ id: "other", state: "terminal", terminalFrom: "accepted" }),
         "store_commit_indeterminate",
       ],
@@ -1322,37 +1339,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         expectedCode,
       );
     }
-    reads = 0;
-    const accountMutation = new WalletCallBundleStore({
-      async get() {
-        reads += 1;
-        return reads === 1
-          ? envelope()
-          : envelope(
-              bundleRecord({
-                account: OTHER_ACCOUNT,
-                state: "terminal",
-                terminalFrom: "accepted",
-              }),
-              1,
-              20,
-            );
-      },
-      async compareAndSwap() {
-        return false;
-      },
-      async close() {},
-    });
-    await expectStoreError(
-      () =>
-        accountMutation.markTerminal({
-          key: key(),
-          expectedStoreRevision: 0,
-          expectedGeneration: GENERATION_A,
-          updatedAt: 20,
-        }),
-      "store_identity_mismatch",
-    );
   });
 
   it("rejects backward state and transition-time evidence from a racing writer", async () => {

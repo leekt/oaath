@@ -1,8 +1,8 @@
 /**
  * Durable fact owner for Final EIP-5792 wallet-call bundle identities.
  *
- * A present provider-scoped key permanently reserves the application-provided
- * ID regardless of Grant, account, or chain. State advances monotonically
+ * A present provider-and-account-scoped key permanently reserves the
+ * application-provided ID regardless of Grant or chain. State advances monotonically
  * through compare-and-swap, and terminal records remain durable tombstones.
  * Adapter acknowledgements are never trusted without a retained-record read.
  *
@@ -165,7 +165,11 @@ function storedBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
 }
 
 function sameKey(left: WalletCallBundleKey, right: WalletCallBundleKey): boolean {
-  return left.providerScopeId === right.providerScopeId && left.id === right.id;
+  return (
+    left.providerScopeId === right.providerScopeId &&
+    left.account === right.account &&
+    left.id === right.id
+  );
 }
 
 function sameOperation(
@@ -338,6 +342,9 @@ function reserveInput(value: unknown): Readonly<{
     state: "accepted",
     terminalFrom: null,
   });
+  if (record.account !== key.account) {
+    return invalid("store_input_invalid", "Wallet call bundle account contradicts its key");
+  }
   return Object.freeze({ key, record });
 }
 
@@ -606,6 +613,7 @@ export class WalletCallBundleStore {
     }
     const valueKey = Object.freeze({
       providerScopeId: value.providerScopeId,
+      account: value.account,
       id: value.id,
     });
     if (!sameKey(valueKey, key)) {

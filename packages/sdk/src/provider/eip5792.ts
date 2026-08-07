@@ -160,9 +160,10 @@ export function createEip5792Orchestrator(
     return value;
   }
 
-  function key(id: string): Readonly<WalletCallBundleKey> {
+  function key(id: string, accountAddress: `0x${string}`): Readonly<WalletCallBundleKey> {
     if (
       !HASH.test(input.port.providerScopeId) ||
+      !isWalletAddress(accountAddress) ||
       input.port.grantId.length < 1 ||
       input.port.grantId.length > 256 ||
       input.port.grantId !== input.port.grantId.trim()
@@ -171,6 +172,7 @@ export function createEip5792Orchestrator(
     }
     return Object.freeze({
       providerScopeId: input.port.providerScopeId as `0x${string}`,
+      account: accountAddress,
       id,
     });
   }
@@ -192,7 +194,7 @@ export function createEip5792Orchestrator(
     const attempts = captured.id === undefined ? GENERATED_ID_ATTEMPTS : 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const id = captured.id ?? generatedBundleId();
-      const bundleKey = key(id);
+      const bundleKey = key(id, accountAddress);
       const requestHash = hashCapturedWalletSendCallsRequest(captured, id);
       const generation = generatedBundleId();
       const operationRequestHash = hashWalletCallBundleProvenance(requestHash, generation);
@@ -264,12 +266,15 @@ export function createEip5792Orchestrator(
       atomicExecution: true,
     });
     if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
-    if (captured.id !== undefined && (await store.get(key(captured.id))) !== undefined) {
-      return rpcFail(DUPLICATE_ID);
-    }
     const accountAddress = await account();
     if (captured.from !== undefined && captured.from !== accountAddress) {
       return rpcFail(UNAUTHORIZED);
+    }
+    if (
+      captured.id !== undefined &&
+      (await store.get(key(captured.id, accountAddress))) !== undefined
+    ) {
+      return rpcFail(DUPLICATE_ID);
     }
 
     const accepted = await reserve(captured, accountAddress);
@@ -525,7 +530,7 @@ export function createEip5792Orchestrator(
   }
 
   async function readStatus(id: string): Promise<Readonly<Eip5792CallsStatus>> {
-    const bundleKey = key(id);
+    const bundleKey = key(id, await account());
     let record = await retainedBundle(bundleKey);
     if (record === undefined) return rpcFail(UNKNOWN_BUNDLE_ID);
     if (record.value.grantId !== input.port.grantId) return rpcFail(UNKNOWN_BUNDLE_ID);

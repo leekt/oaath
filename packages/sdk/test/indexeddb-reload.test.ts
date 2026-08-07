@@ -30,6 +30,7 @@ import {
   requireNonExtractableKey,
 } from "../src/persistence.js";
 import {
+  ACCOUNT,
   CHAIN_ID,
   createChainFixture,
   createClock,
@@ -257,8 +258,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(7);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(7);
+    expect(database.version).toBe(8);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(8);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -325,10 +326,11 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(7);
+    expect(database.version).toBe(8);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
+      account: ACCOUNT,
       id: "stale-bundle",
     };
     await expect(
@@ -367,7 +369,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(7);
+    expect(database.version).toBe(8);
     await expect(
       createIndexedDbOperationStoreAdapter(database).get({
         grantId: "stale-grant",
@@ -377,7 +379,7 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("wipes v6 Grant-scoped bundle keys instead of reading them through the v7 provider scope", async () => {
+  it("wipes v6 Grant-scoped bundle keys instead of reading them through the sender scope", async () => {
     const factory = new IDBFactory();
     const providerScopeId = `0x${"61".repeat(32)}` as const;
     const id = "v6-bundle";
@@ -399,10 +401,43 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(7);
+    expect(database.version).toBe(8);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
+        account: ACCOUNT,
+        id,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("wipes v7 sender-less bundle keys instead of reading them through the v8 account axis", async () => {
+    const factory = new IDBFactory();
+    const providerScopeId = `0x${"62".repeat(32)}` as const;
+    const id = "v7-bundle";
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 7);
+      request.onupgradeneeded = () => {
+        for (const store of Object.values(OAATH_INDEXEDDB_STORES)) {
+          request.result.createObjectStore(store);
+        }
+        request.transaction
+          ?.objectStore(OAATH_INDEXEDDB_STORES.walletCallBundles)
+          .put({ source: "v7" }, [providerScopeId, id]);
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const database = await openRealmDatabase(factory);
+    expect(database.version).toBe(8);
+    await expect(
+      createIndexedDbWalletCallBundleStoreAdapter(database).get({
+        providerScopeId,
+        account: ACCOUNT,
         id,
       }),
     ).resolves.toBeUndefined();
