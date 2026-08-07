@@ -24,7 +24,16 @@ await build({
   logLevel: "silent",
 });
 
-for (const file of ["manifest.json", "injected.js", "content.js", "popup.html", "popup.js"]) {
+for (const file of [
+  "manifest.json",
+  "injected.js",
+  "content.js",
+  "popup.html",
+  "popup.js",
+  "status.html",
+  "status.js",
+  "status-presentation.js",
+]) {
   copyFileSync(join(HERE, file), join(DIST, file));
 }
 

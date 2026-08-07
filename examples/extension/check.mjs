@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatWalletCallStatus, showWalletCallStatus } from "./status-presentation.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -41,9 +42,67 @@ expect(
 const bundle = readFileSync(join(HERE, "dist", "worker.bundle.js"), "utf8");
 expect(!/\brequire\(/u.test(bundle), "worker bundle must be pure ESM");
 expect(!/node:[a-z]/u.test(bundle), "worker bundle must not import node builtins");
-for (const piece of ["injected.js", "content.js", "popup.html", "popup.js"]) {
+for (const piece of [
+  "injected.js",
+  "content.js",
+  "popup.html",
+  "popup.js",
+  "status.html",
+  "status.js",
+  "status-presentation.js",
+]) {
   readFileSync(join(HERE, "dist", piece));
 }
+expect(
+  formatWalletCallStatus({
+    origin: "https://example.test",
+    status: { id: "bundle-1", chainId: "0x1", atomic: true, status: 100 },
+  }).includes("status   100 pending"),
+  "status page must render pending wallet calls",
+);
+expect(
+  formatWalletCallStatus({
+    origin: "https://example.test",
+    status: {
+      id: "bundle-2",
+      chainId: "0x1",
+      atomic: true,
+      status: 200,
+      receipts: [{ transactionHash: "0x1234", blockNumber: "0x2", status: "0x1" }],
+    },
+  }).includes("tx       0x1234"),
+  "status page must render confirmed transaction evidence",
+);
+const presentationEvents = [];
+await showWalletCallStatus(
+  {
+    runtime: { getURL: (path) => `chrome-extension://oaath/${path}` },
+    storage: {
+      session: {
+        async set(value) {
+          presentationEvents.push({ kind: "stored", value });
+        },
+        async remove() {
+          presentationEvents.push({ kind: "removed" });
+        },
+      },
+    },
+    tabs: {
+      async create(value) {
+        presentationEvents.push({ kind: "opened", value });
+      },
+    },
+  },
+  "https://example.test",
+  { id: "bundle-3", chainId: "0x1", atomic: true, status: 100 },
+);
+expect(presentationEvents.length === 2, "status presentation must store then open exactly once");
+expect(presentationEvents[0]?.kind === "stored", "status presentation must store before opening");
+expect(presentationEvents[1]?.kind === "opened", "status presentation must open its status page");
+expect(
+  presentationEvents[1]?.value?.url.startsWith("chrome-extension://oaath/status.html#"),
+  "status presentation must open the extension-owned status page",
+);
 // The page-world provider announces the EIP-6963 identity dapps discover by.
 const injected = readFileSync(join(HERE, "dist", "injected.js"), "utf8");
 expect(injected.includes("eip6963:announceProvider"), "injected provider must announce EIP-6963");
