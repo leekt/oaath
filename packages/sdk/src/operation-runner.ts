@@ -59,6 +59,8 @@ export interface OperationPreparationCapability {
   ) => Promise<unknown>;
   /** Reserves any caller-owned durable reference before the Operation is published. */
   readonly reserveOperation: (prepared: PreparedUserOperation) => Promise<unknown>;
+  /** Releases only that reservation after a conclusive publication loss. */
+  readonly releaseOperationReservation: (prepared: PreparedUserOperation) => Promise<unknown>;
   /** Admits the now-durable prepared identity before confirmation, signing, or send. */
   readonly authorizeOperation: (prepared: PreparedUserOperation) => Promise<unknown>;
   /** Releases owner state after conclusive pre-submission abandonment. */
@@ -249,6 +251,7 @@ function captureConfiguration(value: unknown): {
       [
         "prepare",
         "reserveOperation",
+        "releaseOperationReservation",
         "authorizeOperation",
         "abandonOperation",
         "confirmOperationPublished",
@@ -288,6 +291,10 @@ function captureConfiguration(value: unknown): {
           preparation.reserveOperation,
           "operation_runner_capability_invalid",
         ) as OperationPreparationCapability["reserveOperation"],
+        releaseOperationReservation: callable(
+          preparation.releaseOperationReservation,
+          "operation_runner_capability_invalid",
+        ) as OperationPreparationCapability["releaseOperationReservation"],
         authorizeOperation: callable(
           preparation.authorizeOperation,
           "operation_runner_capability_invalid",
@@ -605,6 +612,9 @@ function requireLane(operation: Operation, input: Pick<OperationRunInput, "kind"
 }
 
 function mapStoreError(error: unknown): never {
+  if (error instanceof OaathStoreError && error.code === "store_identity_mismatch") {
+    return runnerError("operation_runner_state_conflict", "Operation identity is already retained");
+  }
   if (
     error instanceof OaathStoreError &&
     (error.code === "store_commit_indeterminate" || error.code === "store_commit_unverified")
@@ -835,6 +845,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       preparedAt: input.preparedAt,
     });
     if (current && sameIdentity(current.value.identity, operation.identity)) {
+      await releasePreparedReservation(prepared);
       return runnerError(
         "operation_runner_state_conflict",
         "terminal Operation identity cannot be restarted",
@@ -844,7 +855,18 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
     let expectedStoreRevision = current?.storeRevision ?? null;
     const attempts = conflictBehavior === "resume" ? 2 : 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const persisted = await commit(input.key, expectedStoreRevision, operation);
+      let persisted: OperationStoreCompareAndSwapResult;
+      try {
+        persisted = await commit(input.key, expectedStoreRevision, operation);
+      } catch (error) {
+        if (
+          error instanceof OaathOperationRunnerError &&
+          error.code === "operation_runner_state_conflict"
+        ) {
+          await releasePreparedReservation(prepared);
+        }
+        throw error;
+      }
       if (persisted.status === "committed") return persisted.record;
       const conflict = persisted.current;
       if (!conflict) {
@@ -854,6 +876,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         );
       }
       if (conflictBehavior === "reject") {
+        await releasePreparedReservation(prepared);
         return runnerError(
           "operation_runner_state_conflict",
           "another Operation occupies the requested lane",
@@ -864,11 +887,13 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         expectedStoreRevision = conflict.storeRevision;
         continue;
       }
+      await releasePreparedReservation(prepared);
       return runnerError(
         "operation_runner_state_conflict",
         "another Operation occupies the requested lane",
       );
     }
+    await releasePreparedReservation(prepared);
     return runnerError("operation_runner_state_conflict", "Operation publish did not converge");
   }
 
@@ -935,6 +960,15 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
         "operation_runner_preparation_failed",
         "Operation publication reservation failed",
       );
+    }
+  }
+
+  async function releasePreparedReservation(prepared: PreparedUserOperation): Promise<void> {
+    try {
+      await configuration.preparation.releaseOperationReservation(prepared);
+    } catch {
+      // The conclusive publication result remains canonical. The caller-owned
+      // reservation is still recoverable through its durable lease.
     }
   }
 

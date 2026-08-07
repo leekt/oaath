@@ -1,11 +1,10 @@
 /**
- * Provider- and Grant-scoped EIP-5792 wallet-call bundles in IndexedDB.
+ * Provider-scoped EIP-5792 wallet-call bundles in IndexedDB.
  *
  * The adapter moves opaque envelopes under the exact composite
- * `[providerScopeId, grantId, id]` key. `WalletCallBundleStore` owns all record
+ * `[providerScopeId, id]` key. `WalletCallBundleStore` owns all record
  * parsing and lifecycle rules; this backend only compares the envelope's store
- * revision and generation before conditionally writing or deleting in one
- * transaction.
+ * revision and generation before conditionally writing in one transaction.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -16,7 +15,6 @@ import {
   type WalletCallBundleStoreAdapter,
 } from "../interfaces.js";
 import {
-  deleteRecord,
   matchesExpectedRevisionAndGeneration,
   OAATH_INDEXEDDB_STORES,
   type OaathDatabase,
@@ -26,7 +24,7 @@ import {
 
 function bundleKey(value: Readonly<WalletCallBundleKey>): IDBValidKey {
   const key = parseWalletCallBundleKey(value);
-  return [key.providerScopeId, key.grantId, key.id];
+  return [key.providerScopeId, key.id];
 }
 
 export function createIndexedDbWalletCallBundleStoreAdapter(
@@ -60,28 +58,6 @@ export function createIndexedDbWalletCallBundleStoreAdapter(
           return false;
         }
         await putRecord(store, compositeKey, input.next);
-        return true;
-      });
-    },
-    async compareAndDelete(input: {
-      readonly key: Readonly<WalletCallBundleKey>;
-      readonly expectedStoreRevision: number;
-      readonly expectedGeneration: `0x${string}`;
-    }): Promise<unknown> {
-      const compositeKey = bundleKey(input.key);
-      return database.transact(walletCallBundles, "readwrite", async ([store]) => {
-        if (store === undefined) return false;
-        const current = await readRecord(store, compositeKey);
-        if (
-          !matchesExpectedRevisionAndGeneration(
-            current,
-            input.expectedStoreRevision,
-            input.expectedGeneration,
-          )
-        ) {
-          return false;
-        }
-        await deleteRecord(store, compositeKey);
         return true;
       });
     },

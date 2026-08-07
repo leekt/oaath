@@ -1645,6 +1645,12 @@ function requireBeforeExpiry(grant: Grant, time: number): void {
   }
 }
 
+function requireMaterializationTime(materialization: ChainMaterialization, time: number): void {
+  if (time < materialization.updatedAt) {
+    invalid("grant_transition_invalid", "chain materialization time regresses");
+  }
+}
+
 function forbiddenGrantTransition(grant: Grant, transition: GrantTransition): never {
   return invalid(
     "grant_transition_forbidden",
@@ -1872,14 +1878,15 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
       return invalid("grant_identity_mismatch", "materialization operation does not match");
     }
     requireEvidenceBinding(transition.installation, transition.binding);
+    requireMaterializationTime(current, transition.installation.observedAt);
     if (grant.state === "active") {
-      requireBeforeExpiry(grant, transition.installation.observedAt);
-    } else {
-      requireGrantTime(grant, transition.installation.observedAt);
+      if (transition.installation.observedAt >= grant.expiresAt) {
+        invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+      }
     }
     requireNonRegressingPresence(retainedInstallation(current), transition.installation);
     return advanceGrantRecord(grant, {
-      updatedAt: transition.installation.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.installation.observedAt),
       materializations: withMaterialization(grant, {
         state: "installed",
         ...transition.binding,
@@ -1903,11 +1910,13 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     ) {
       return forbiddenGrantTransition(grant, transition);
     }
-    if (grant.state === "active") requireBeforeExpiry(grant, transition.observedAt);
-    else requireGrantTime(grant, transition.observedAt);
+    requireMaterializationTime(current, transition.observedAt);
+    if (grant.state === "active" && transition.observedAt >= grant.expiresAt) {
+      invalid("grant_transition_invalid", "grant authority transition is not before expiry");
+    }
     const priorState = current.state === "unreadable" ? current.priorState : current.state;
     return advanceGrantRecord(grant, {
-      updatedAt: transition.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.observedAt),
       materializations: withMaterialization(grant, {
         state: "unreadable",
         ...transition.binding,
@@ -1956,7 +1965,6 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
 
   if (transition.type === "record_chain_revoked") {
     if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
-    requireGrantTime(grant, transition.removal.observedAt);
     requireEvidenceBinding(transition.removal, transition.binding);
     const current = requireBoundMaterialization(grant, transition.binding);
     if (
@@ -1965,13 +1973,14 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     ) {
       return forbiddenGrantTransition(grant, transition);
     }
+    requireMaterializationTime(current, transition.removal.observedAt);
     const installation = retainedInstallation(current);
     if (installation === null) return forbiddenGrantTransition(grant, transition);
     if (BigInt(transition.removal.blockNumber) <= BigInt(installation.blockNumber)) {
       return invalid("grant_transition_invalid", "removal does not follow installation");
     }
     return advanceGrantRecord(grant, {
-      updatedAt: transition.removal.observedAt,
+      updatedAt: Math.max(grant.updatedAt, transition.removal.observedAt),
       materializations: withMaterialization(grant, {
         state: "revoked",
         ...transition.binding,

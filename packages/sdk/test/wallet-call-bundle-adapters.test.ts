@@ -16,7 +16,6 @@ import {
   type WalletCallBundleStoreRecord,
 } from "../src/persistence.js";
 import {
-  WALLET_CALL_BUNDLE_RETENTION_SECONDS,
   type WalletCallBundleMutationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
@@ -73,9 +72,8 @@ function key(
   id = "bundle",
   providerScopeId: WalletCallBundleKey["providerScopeId"] = SCOPE,
   _account: `0x${string}` = ACCOUNT,
-  grantId = GRANT_ID,
 ): Readonly<WalletCallBundleKey> {
-  return Object.freeze({ providerScopeId, grantId, id });
+  return Object.freeze({ providerScopeId, id });
 }
 
 function operation(grantId = GRANT_ID): Readonly<WalletCallBundleOperation> {
@@ -101,9 +99,11 @@ function reserve(
   requestHash: WalletCallBundleRecord["requestHash"] = REQUEST_HASH,
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
   account: WalletCallBundleRecord["account"] = ACCOUNT,
+  grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
 ): Promise<WalletCallBundleMutationResult> {
   return store.reserveAccepted({
     key: bundleKey,
+    grantId,
     generation,
     account,
     chainId,
@@ -157,11 +157,10 @@ for (const backendCase of BACKENDS) {
       }
     });
 
-    it("uses grantId as an exact physical key axis", async () => {
+    it("uses only provider scope and ID as physical key axes", async () => {
       const backend = await backendCase.open();
       try {
         const firstKey = key("same-id");
-        const otherGrantKey = key("same-id", SCOPE, ACCOUNT, OTHER_GRANT_ID);
         const first: Readonly<StoreRecord<unknown>> = Object.freeze({
           version: "opaque/v1",
           storeRevision: 0,
@@ -182,20 +181,19 @@ for (const backendCase of BACKENDS) {
         ).resolves.toBe(true);
         await expect(
           backend.adapter.compareAndSwap({
-            key: otherGrantKey,
+            key: firstKey,
             expectedStoreRevision: null,
             expectedGeneration: null,
             next: otherGrant,
           }),
-        ).resolves.toBe(true);
+        ).resolves.toBe(false);
         await expect(backend.adapter.get(firstKey)).resolves.toEqual(first);
-        await expect(backend.adapter.get(otherGrantKey)).resolves.toEqual(otherGrant);
       } finally {
         backend.dispose();
       }
     });
 
-    it("rejects stale update and delete after a generation revision collision", async () => {
+    it("rejects a stale update after a generation revision collision", async () => {
       const backend = await backendCase.open();
       try {
         const generationA: Readonly<StoreRecord<unknown>> = Object.freeze({
@@ -206,6 +204,7 @@ for (const backendCase of BACKENDS) {
         });
         const generationB: Readonly<StoreRecord<unknown>> = Object.freeze({
           ...generationA,
+          storeRevision: 1,
           updatedAt: 20,
           value: Object.freeze({ generation: GENERATION_B, marker: "generation-b" }),
         });
@@ -227,17 +226,10 @@ for (const backendCase of BACKENDS) {
           }),
         ).resolves.toBe(true);
         await expect(
-          backend.adapter.compareAndDelete({
+          backend.adapter.compareAndSwap({
             key: key(),
             expectedStoreRevision: generationA.storeRevision,
             expectedGeneration: GENERATION_A,
-          }),
-        ).resolves.toBe(true);
-        await expect(
-          backend.adapter.compareAndSwap({
-            key: key(),
-            expectedStoreRevision: null,
-            expectedGeneration: null,
             next: generationB,
           }),
         ).resolves.toBe(true);
@@ -248,13 +240,6 @@ for (const backendCase of BACKENDS) {
             expectedStoreRevision: generationA.storeRevision,
             expectedGeneration: GENERATION_A,
             next: Object.freeze({ ...generationA, storeRevision: 1 }),
-          }),
-        ).resolves.toBe(false);
-        await expect(
-          backend.adapter.compareAndDelete({
-            key: key(),
-            expectedStoreRevision: generationA.storeRevision,
-            expectedGeneration: GENERATION_A,
           }),
         ).resolves.toBe(false);
         await expect(backend.adapter.get(key())).resolves.toEqual(generationB);
@@ -407,18 +392,29 @@ for (const backendCase of BACKENDS) {
       }
     });
 
-    it("isolates the same ID by provider scope and Grant while account stays record evidence", async () => {
+    it("isolates the same ID by provider scope while Grant and account stay record evidence", async () => {
       const backend = await backendCase.open();
       try {
         const store = new WalletCallBundleStore(backend.adapter);
-        const keys = [
-          key("same-id"),
-          key("same-id", OTHER_SCOPE),
-          key("same-id", SCOPE, ACCOUNT, OTHER_GRANT_ID),
-        ] as const;
+        const keys = [key("same-id"), key("same-id", OTHER_SCOPE)] as const;
         for (const [index, bundleKey] of keys.entries()) {
           requireCommitted(await reserve(store, bundleKey, CHAIN_ID + index));
         }
+        await expect(
+          reserve(
+            store,
+            key("same-id"),
+            CHAIN_ID + 2,
+            10,
+            REQUEST_HASH,
+            GENERATION_B,
+            ACCOUNT,
+            OTHER_GRANT_ID,
+          ),
+        ).resolves.toMatchObject({
+          status: "conflict",
+          current: { value: { grantId: GRANT_ID } },
+        });
         await expect(
           reserve(
             store,
@@ -436,82 +432,7 @@ for (const backendCase of BACKENDS) {
         await expect(Promise.all(keys.map((bundleKey) => store.get(bundleKey)))).resolves.toEqual([
           expect.objectContaining({ value: expect.objectContaining({ chainId: CHAIN_ID }) }),
           expect.objectContaining({ value: expect.objectContaining({ chainId: CHAIN_ID + 1 }) }),
-          expect.objectContaining({ value: expect.objectContaining({ chainId: CHAIN_ID + 2 }) }),
         ]);
-      } finally {
-        backend.dispose();
-      }
-    });
-
-    it("reports a CAD revision race, then deletes the retained terminal revision", async () => {
-      const backend = await backendCase.open();
-      let race = true;
-      const racingAdapter: WalletCallBundleStoreAdapter = Object.freeze({
-        get: (bundleKey: Readonly<WalletCallBundleKey>) => backend.adapter.get(bundleKey),
-        compareAndSwap: (input: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0]) =>
-          backend.adapter.compareAndSwap(input),
-        async compareAndDelete(
-          input: Parameters<WalletCallBundleStoreAdapter["compareAndDelete"]>[0],
-        ) {
-          if (race) {
-            race = false;
-            const deleted = await backend.adapter.compareAndDelete(input);
-            if (deleted !== true) throw new Error("failed to delete the raced generation");
-            const replacement = new WalletCallBundleStore({
-              get: (bundleKey: Readonly<WalletCallBundleKey>) => backend.adapter.get(bundleKey),
-              compareAndSwap: (
-                value: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0],
-              ) => backend.adapter.compareAndSwap(value),
-              compareAndDelete: (
-                value: Parameters<WalletCallBundleStoreAdapter["compareAndDelete"]>[0],
-              ) => backend.adapter.compareAndDelete(value),
-              close: async () => undefined,
-            });
-            const accepted = requireCommitted(
-              await reserve(replacement, input.key, CHAIN_ID, 21, OTHER_REQUEST_HASH, GENERATION_B),
-            );
-            requireCommitted(
-              await replacement.markTerminal({
-                key: input.key,
-                expectedStoreRevision: accepted.storeRevision,
-                expectedGeneration: accepted.value.generation,
-                updatedAt: 21,
-              }),
-            );
-          }
-          return backend.adapter.compareAndDelete(input);
-        },
-        close: () => backend.adapter.close(),
-      });
-      try {
-        const store = new WalletCallBundleStore(racingAdapter);
-        const accepted = requireCommitted(await reserve(store));
-        requireCommitted(
-          await store.markTerminal({
-            key: key(),
-            expectedStoreRevision: accepted.storeRevision,
-            expectedGeneration: accepted.value.generation,
-            updatedAt: 20,
-          }),
-        );
-        await expect(
-          store.deleteExpiredTerminal(
-            key(),
-            20 + WALLET_CALL_BUNDLE_RETENTION_SECONDS,
-            WALLET_CALL_BUNDLE_RETENTION_SECONDS,
-          ),
-        ).resolves.toMatchObject({
-          status: "conflict",
-          current: { storeRevision: 1, value: { generation: GENERATION_B } },
-        });
-        await expect(
-          store.deleteExpiredTerminal(
-            key(),
-            21 + WALLET_CALL_BUNDLE_RETENTION_SECONDS,
-            WALLET_CALL_BUNDLE_RETENTION_SECONDS,
-          ),
-        ).resolves.toEqual({ status: "deleted" });
-        await expect(store.get(key())).resolves.toBeUndefined();
       } finally {
         backend.dispose();
       }
@@ -526,7 +447,6 @@ for (const backendCase of BACKENDS) {
         await store.close();
         await expectStoreError(() => store.get(key()), "store_closed");
         await expectStoreError(() => reserve(store), "store_closed");
-        await expectStoreError(() => store.deleteExpiredTerminal(key(), 100_000), "store_closed");
       } finally {
         backend.dispose();
       }

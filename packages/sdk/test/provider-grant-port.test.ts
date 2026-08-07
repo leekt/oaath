@@ -527,6 +527,227 @@ describe("private Grant provider port", () => {
     await connection.close();
   });
 
+  it("reconciles a finalized installing operation before revocation after reload-style loss", async () => {
+    const memory = createMemoryStores();
+    let rejectInstallation = true;
+    const chain = createChainFixture({ operationSuccess: (index) => index !== 0 });
+    const realm = createRealm({
+      chain,
+      stores: {
+        ...memory,
+        grants: {
+          get: (grantId: Parameters<typeof memory.grants.get>[0]) => memory.grants.get(grantId),
+          compareAndSwap: (input: Parameters<typeof memory.grants.compareAndSwap>[0]) => {
+            const grant = input.next.value as {
+              readonly materializations?: readonly Readonly<{ state?: unknown }>[];
+            };
+            if (
+              rejectInstallation &&
+              grant.materializations?.some((entry) => entry.state === "installed")
+            ) {
+              throw new Error("installation bookkeeping unavailable");
+            }
+            return memory.grants.compareAndSwap(input);
+          },
+          close: () => memory.grants.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const port = grantProviderPort(grant);
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async () => undefined,
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+
+    await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({
+      status: "finalized",
+      outcome: "reverted",
+    });
+    await expect(memory.grants.get(port.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installing" }] },
+    });
+
+    rejectInstallation = false;
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("observes a submitted installation during revocation without resubmitting it", async () => {
+    const chain = createChainFixture({ operationSuccess: (index) => index !== 0 });
+    const { realm, connection, grant, port } = await activeGrant(chain);
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async () => undefined,
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+    await operation.close();
+    await expect(realm.stores.grants.get(port.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installing" }] },
+    });
+    expect(chain.sends).toHaveLength(1);
+
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("revokes permission installed during validation when execution reverts", async () => {
+    const chain = createChainFixture({ operationSuccess: (index) => index !== 0 });
+    const { realm, connection, grant, port } = await activeGrant(chain);
+    let binding: OperationBinding | null = null;
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (exact: OaathProviderOperationPointer) => {
+          binding = exact;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+
+    await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({
+      status: "finalized",
+      outcome: "reverted",
+    });
+    const exact = requireBinding(binding);
+    await expect(realm.stores.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installed" }] },
+    });
+
+    await grant.revoke();
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("keeps a nonce-superseded installation unresolved during revocation", async () => {
+    const chain = createChainFixture({
+      withholdReceipt: () => true,
+      entryPointNonce: (nonce) => String(BigInt(nonce) + 1n),
+    });
+    const { realm, connection, grant, port } = await activeGrant(chain);
+    let binding: OperationBinding | null = null;
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (exact: OaathProviderOperationPointer) => {
+          binding = exact;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+
+    await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({ status: "superseded" });
+    const exact = requireBinding(binding);
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoking");
+    await expect(realm.stores.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installing" }] },
+    });
+    expect(chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("does not mint an uninstall while the revocation journal is unreadable", async () => {
+    const memory = createMemoryStores();
+    let failRevocationRead = false;
+    let blockOffset = 0;
+    const chain = createChainFixture({
+      permissionInstalled: () => true,
+      blockOffset: () => blockOffset,
+    });
+    const realm = createRealm({
+      chain,
+      stores: {
+        ...memory,
+        operations: {
+          async get(key: Parameters<typeof memory.operations.get>[0]) {
+            if (failRevocationRead && key.kind === "revocation") {
+              failRevocationRead = false;
+              throw new Error("revocation journal unavailable");
+            }
+            return memory.operations.get(key);
+          },
+          getArchived: (input: Parameters<typeof memory.operations.getArchived>[0]) =>
+            memory.operations.getArchived(input),
+          compareAndSwap: (input: Parameters<typeof memory.operations.compareAndSwap>[0]) =>
+            memory.operations.compareAndSwap(input),
+          close: () => memory.operations.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+    blockOffset = 1;
+    failRevocationRead = true;
+
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(1);
+
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("requires finalized permission presence before replacing a superseded uninstall", async () => {
+    let withholdReceipt = false;
+    let supersede = false;
+    let installed: boolean | null = null;
+    let blockOffset = 0;
+    const chain = createChainFixture({
+      withholdReceipt: () => withholdReceipt,
+      entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
+      permissionInstalled: () => installed,
+      blockOffset: () => blockOffset,
+    });
+    const { connection, grant } = await activeGrant(chain);
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+
+    withholdReceipt = true;
+    supersede = true;
+    blockOffset = 1;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+
+    installed = true;
+    withholdReceipt = false;
+    supersede = false;
+    blockOffset = 2;
+    await grant.revoke();
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(3);
+    await connection.close();
+  });
+
   it("rejects recovery pointers for another Grant or account before observation", async () => {
     const observed = countingChain();
     const { connection, port } = await activeGrant(observed.chain);

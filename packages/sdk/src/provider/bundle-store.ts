@@ -1,10 +1,9 @@
 /**
  * Durable fact owner for Final EIP-5792 wallet-call bundle identities.
  *
- * A present Grant-scoped key reserves the application-provided ID regardless of
- * chain. Each reservation carries an immutable generation so revision reuse
- * after cleanup cannot authorize stale work. State advances monotonically
- * through compare-and-swap, and only an expired terminal record can be removed.
+ * A present provider-scoped key permanently reserves the application-provided
+ * ID regardless of Grant, account, or chain. State advances monotonically
+ * through compare-and-swap, and terminal records remain durable tombstones.
  * Adapter acknowledgements are never trusted without a retained-record read.
  *
  * @author taek <leekt216@gmail.com>
@@ -28,7 +27,6 @@ import {
 } from "../persistence/interfaces.js";
 import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
 
-export const WALLET_CALL_BUNDLE_RETENTION_SECONDS = 86_400;
 export const WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS = 30;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -44,24 +42,12 @@ interface AdapterCapabilities extends WalletCallBundleStoreAdapter {
       next: Readonly<StoreRecord<unknown>>;
     }>,
   ) => Promise<unknown>;
-  readonly compareAndDelete: (
-    input: Readonly<{
-      key: Readonly<WalletCallBundleKey>;
-      expectedStoreRevision: number;
-      expectedGeneration: Hash;
-    }>,
-  ) => Promise<unknown>;
   readonly close: () => Promise<unknown>;
 }
 
 export type WalletCallBundleMutationResult =
   | Readonly<{ status: "committed"; record: WalletCallBundleStoreRecord }>
   | Readonly<{ status: "conflict"; current?: WalletCallBundleStoreRecord }>;
-
-export type DeleteExpiredWalletCallBundleResult =
-  | Readonly<{ status: "deleted" }>
-  | Readonly<{ status: "absent" }>
-  | Readonly<{ status: "conflict"; current: WalletCallBundleStoreRecord }>;
 
 function invalid(code: StoreErrorCode, message: string): never {
   throw new OaathStoreError(code, message);
@@ -90,7 +76,7 @@ function capability(
 function captureAdapter(value: unknown): AdapterCapabilities {
   const record = exactRecord(
     value,
-    ["get", "compareAndSwap", "compareAndDelete", "close"],
+    ["get", "compareAndSwap", "close"],
     "Wallet call bundle store adapter",
     "store_input_invalid",
   );
@@ -99,17 +85,11 @@ function captureAdapter(value: unknown): AdapterCapabilities {
     record.compareAndSwap,
     "Wallet call bundle store compareAndSwap",
   );
-  const compareAndDelete = capability(
-    record.compareAndDelete,
-    "Wallet call bundle store compareAndDelete",
-  );
   const close = capability(record.close, "Wallet call bundle store close");
   return Object.freeze({
     get: (key: Readonly<WalletCallBundleKey>) => get(key),
     compareAndSwap: (input: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0]) =>
       compareAndSwap(input),
-    compareAndDelete: (input: Parameters<WalletCallBundleStoreAdapter["compareAndDelete"]>[0]) =>
-      compareAndDelete(input),
     close: () => close(),
   });
 }
@@ -185,11 +165,7 @@ function storedBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
 }
 
 function sameKey(left: WalletCallBundleKey, right: WalletCallBundleKey): boolean {
-  return (
-    left.providerScopeId === right.providerScopeId &&
-    left.grantId === right.grantId &&
-    left.id === right.id
-  );
+  return left.providerScopeId === right.providerScopeId && left.id === right.id;
 }
 
 function sameOperation(
@@ -332,7 +308,16 @@ function reserveInput(value: unknown): Readonly<{
 }> {
   const input = exactRecord(
     value,
-    ["key", "generation", "account", "chainId", "createdAt", "publicationExpiresAt", "requestHash"],
+    [
+      "key",
+      "grantId",
+      "generation",
+      "account",
+      "chainId",
+      "createdAt",
+      "publicationExpiresAt",
+      "requestHash",
+    ],
     "Wallet call bundle reservation",
     "store_input_invalid",
   );
@@ -340,7 +325,7 @@ function reserveInput(value: unknown): Readonly<{
   const record = inputBundleRecord({
     version: OAATH_WALLET_CALL_BUNDLE_VERSION,
     providerScopeId: key.providerScopeId,
-    grantId: key.grantId,
+    grantId: input.grantId,
     generation: hash(input.generation, "Wallet call bundle generation"),
     id: key.id,
     account: input.account,
@@ -371,9 +356,6 @@ function reserveOperationInput(value: unknown): Readonly<{
   );
   const key = inputKey(input.key);
   const operation = inputOperation(input.operation);
-  if (operation.identity.grantId !== key.grantId) {
-    return invalid("store_input_invalid", "Wallet call bundle operation grantId does not match");
-  }
   return Object.freeze({
     key,
     expectedStoreRevision: safeInteger(
@@ -472,6 +454,9 @@ export class WalletCallBundleStore {
     if (input.operation.identity.account !== current.value.account) {
       return invalid("store_input_invalid", "Wallet call bundle operation account does not match");
     }
+    if (input.operation.identity.grantId !== current.value.grantId) {
+      return invalid("store_input_invalid", "Wallet call bundle operation grantId does not match");
+    }
     const next = inputBundleRecord({
       ...current.value,
       operation: input.operation,
@@ -567,38 +552,6 @@ export class WalletCallBundleStore {
     );
   }
 
-  async deleteExpiredTerminal(
-    key: unknown,
-    now: unknown,
-    retentionSeconds: unknown = WALLET_CALL_BUNDLE_RETENTION_SECONDS,
-  ): Promise<DeleteExpiredWalletCallBundleResult> {
-    const capturedKey = inputKey(key);
-    const capturedNow = safeInteger(
-      now,
-      "Wallet call bundle cleanup time",
-      "store_input_invalid",
-      0,
-    );
-    const capturedRetention = safeInteger(
-      retentionSeconds,
-      "Wallet call bundle retention",
-      "store_input_invalid",
-      0,
-    );
-    this.#assertOpen();
-
-    const current = await this.#read(capturedKey);
-    if (current === undefined) return Object.freeze({ status: "absent" as const });
-    if (
-      current.value.state !== "terminal" ||
-      capturedNow < current.updatedAt ||
-      capturedNow - current.updatedAt < capturedRetention
-    ) {
-      return Object.freeze({ status: "conflict" as const, current });
-    }
-    return this.#compareAndDelete(capturedKey, current);
-  }
-
   async close(): Promise<void> {
     if (this.#closed) return;
     if (!this.#closing) {
@@ -653,8 +606,6 @@ export class WalletCallBundleStore {
     }
     const valueKey = Object.freeze({
       providerScopeId: value.providerScopeId,
-      grantId: value.grantId,
-      account: value.account,
       id: value.id,
     });
     if (!sameKey(valueKey, key)) {
@@ -755,67 +706,6 @@ export class WalletCallBundleStore {
     }
     if (previous !== undefined) requireCompatibleHistory(previous, retained);
     return conflict(retained);
-  }
-
-  async #compareAndDelete(
-    key: Readonly<WalletCallBundleKey>,
-    previous: WalletCallBundleStoreRecord,
-  ): Promise<DeleteExpiredWalletCallBundleResult> {
-    let deleted: unknown;
-    try {
-      deleted = await this.#adapter.compareAndDelete(
-        Object.freeze({
-          key,
-          expectedStoreRevision: previous.storeRevision,
-          expectedGeneration: previous.value.generation,
-        }),
-      );
-    } catch {
-      return invalid(
-        "store_commit_indeterminate",
-        "Wallet call bundle compare-and-delete completion is indeterminate",
-      );
-    }
-    if (typeof deleted !== "boolean") {
-      return invalid(
-        "store_commit_indeterminate",
-        "Wallet call bundle compare-and-delete result is invalid",
-      );
-    }
-
-    let retained: WalletCallBundleStoreRecord | undefined;
-    try {
-      retained = await this.#read(key);
-    } catch (error) {
-      if (!deleted && error instanceof OaathStoreError && error.code === "store_record_invalid") {
-        throw error;
-      }
-      return deleted
-        ? invalid("store_commit_unverified", "Wallet call bundle deletion could not be verified")
-        : invalid(
-            "store_commit_indeterminate",
-            "Wallet call bundle delete conflict could not be verified",
-          );
-    }
-    if (deleted) {
-      if (retained === undefined) return Object.freeze({ status: "deleted" as const });
-      return invalid(
-        "store_commit_unverified",
-        "Wallet call bundle store retained a deleted record",
-      );
-    }
-    if (retained === undefined) return Object.freeze({ status: "absent" as const });
-    if (retained.value.generation !== previous.value.generation) {
-      return Object.freeze({ status: "conflict" as const, current: retained });
-    }
-    if (retained.storeRevision <= previous.storeRevision) {
-      return invalid(
-        "store_commit_indeterminate",
-        "Wallet call bundle delete conflict is unverified",
-      );
-    }
-    requireCompatibleHistory(previous, retained);
-    return Object.freeze({ status: "conflict" as const, current: retained });
   }
 
   #assertOpen(): void {

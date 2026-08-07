@@ -67,7 +67,7 @@ function operationArchiveKey(
 
 function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
   const key = parseWalletCallBundleKey(input);
-  return JSON.stringify([key.providerScopeId, key.grantId, key.id]);
+  return JSON.stringify([key.providerScopeId, key.id]);
 }
 
 function compareAndSwap(
@@ -187,22 +187,6 @@ export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStor
         return false;
       }
       records.set(key, input.next);
-      return true;
-    },
-    async compareAndDelete(input) {
-      assertOpen(closed);
-      const key = walletCallBundleKey(input.key);
-      const current = records.get(key);
-      if (
-        !matchesExpectedRevisionAndGeneration(
-          current,
-          input.expectedStoreRevision,
-          input.expectedGeneration,
-        )
-      ) {
-        return false;
-      }
-      records.delete(key);
       return true;
     },
     async close() {

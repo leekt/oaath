@@ -234,6 +234,41 @@ describe("Grant transitions", () => {
     expect("nonce" in grant).toBe(false);
   });
 
+  it("accepts delayed chain-local evidence without regressing the Grant watermark", () => {
+    let grant = active();
+    grant = beginMaterialization(addUnmaterialized(grant, 1, 31), 1, 32);
+    grant = beginMaterialization(addUnmaterialized(grant, 137, 33), 137, 34);
+    grant = install(grant, 137, 40);
+    grant = advanceGrant(grant, {
+      type: "record_unreadable",
+      identity,
+      binding: binding(1),
+      observedAt: 35,
+      reason: "provider_unavailable",
+    });
+    grant = install(grant, 1, 36);
+
+    expect(grant.updatedAt).toBe(40);
+    expect(grant.materializations).toMatchObject([
+      { chainId: 1, state: "installed", updatedAt: 36, installation: { observedAt: 36 } },
+      { chainId: 137, state: "installed", updatedAt: 40, installation: { observedAt: 40 } },
+    ]);
+    expect(parseGrant(clone(grant))).toEqual(grant);
+
+    grant = beginRevocation(grant, 41);
+    grant = beginChainRevocation(grant, 1, 42);
+    grant = beginChainRevocation(grant, 137, 43);
+    grant = revokeChain(grant, 137, 50);
+    grant = revokeChain(grant, 1, 45);
+
+    expect(grant.updatedAt).toBe(50);
+    expect(grant.materializations).toMatchObject([
+      { chainId: 1, state: "revoked", updatedAt: 45, removal: { observedAt: 45 } },
+      { chainId: 137, state: "revoked", updatedAt: 50, removal: { observedAt: 50 } },
+    ]);
+    expect(parseGrant(clone(grant))).toEqual(grant);
+  });
+
   it("keeps approved separate from active and rejected terminal", () => {
     const waiting = approved();
     expect(waiting).toMatchObject({ state: "approved", materializations: [] });
@@ -336,6 +371,7 @@ describe("Grant transitions", () => {
 
   it("requires positive child removal and capability invalidation before completion", () => {
     let grant = install(beginMaterialization(addUnmaterialized(active(), 1, 31), 1, 32), 1, 33);
+    expectGrantError(() => install(grant, 1, 32), "grant_transition_invalid");
     grant = beginRevocation(grant, 40);
     expectGrantError(
       () => advanceGrant(grant, { type: "complete_revocation", identity, revokedAt: 41 }),
@@ -369,6 +405,7 @@ describe("Grant transitions", () => {
   it("does not close an in-flight installation from absence evidence alone", () => {
     let grant = beginMaterialization(addUnmaterialized(active(), 1, 31), 1, 32);
     grant = beginChainRevocation(beginRevocation(grant, 40), 1, 41);
+    expectGrantError(() => revokeChain(grant, 1, 40), "grant_transition_invalid");
     expectGrantError(() => revokeChain(grant, 1, 42), "grant_transition_forbidden");
 
     grant = advanceGrant(grant, {

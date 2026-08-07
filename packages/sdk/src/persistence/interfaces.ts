@@ -48,9 +48,9 @@ import type { StoreRecord } from "../store.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
-export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v3" as const;
+export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v4" as const;
 export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
-  "oaath.wallet-call-bundle-store-record/v3" as const;
+  "oaath.wallet-call-bundle-store-record/v4" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
@@ -195,10 +195,9 @@ function walletCallBundleOperation(
   return Object.freeze({ identity });
 }
 
-/** The exact durable uniqueness key. Chain is deliberately not an axis. */
+/** The exact durable uniqueness key. Grant, account, and chain are deliberately not axes. */
 export interface WalletCallBundleKey {
   readonly providerScopeId: Hash;
-  readonly grantId: string;
   readonly id: string;
 }
 
@@ -241,11 +240,6 @@ export interface WalletCallBundleStoreAdapter {
     readonly expectedGeneration: Hash | null;
     readonly next: Readonly<StoreRecord<unknown>>;
   }): Promise<unknown>;
-  compareAndDelete(input: {
-    readonly key: Readonly<WalletCallBundleKey>;
-    readonly expectedStoreRevision: number;
-    readonly expectedGeneration: Hash;
-  }): Promise<unknown>;
   close(): Promise<unknown>;
 }
 
@@ -254,7 +248,7 @@ export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBun
   const code: PersistenceErrorCode = "persistence_input_invalid";
   const record = exactRecord(
     value,
-    ["providerScopeId", "grantId", "id"],
+    ["providerScopeId", "id"],
     "wallet call bundle key",
     new WeakSet(),
     failFor(code),
@@ -265,7 +259,6 @@ export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBun
       "wallet call bundle providerScopeId",
       code,
     ),
-    grantId: persistenceId(record.grantId, "wallet call bundle grantId", failFor(code)),
     id: walletCallBundleId(record.id, "wallet call bundle id", code),
   });
 }

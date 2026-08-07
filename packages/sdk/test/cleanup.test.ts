@@ -224,6 +224,132 @@ describe("cleanup coordinator", () => {
     });
   });
 
+  it("forgets an active Grant whose authority already expired without starting revocation", async () => {
+    const clock = createClock();
+    const tracked = trackedStores();
+    const realm = createRealm({ clock, stores: tracked.stores });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
+    clock.advance(grant.expiresAt - clock.now());
+    expect(grant.state).toBe("active");
+
+    const result = await realm.oaath.disconnect(grant);
+
+    expect(result.completed).toEqual(["signOut", "forgetLocal", "close"]);
+    expect(realm.invalidations()).toBe(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
+    expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);
+    expect(tracked.closed).toHaveLength(5);
+  });
+
+  it("reads durable state before an expired stale handle can abandon revocation", async () => {
+    let crashOnRemoval = false;
+    const clock = createClock();
+    const chain = createChainFixture({ crashOnSend: () => crashOnRemoval });
+    const tracked = trackedStores();
+    const realm = createRealm({ clock, chain, stores: tracked.stores });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const stale = await connection.resume();
+    if (stale === null) throw new Error("expected a stale Grant handle");
+    await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
+    const operation = await grant.sendCalls(sendCallsInput());
+    expect((await operation.wait()).status).toBe("finalized");
+
+    crashOnRemoval = true;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(stale.state).toBe("active");
+    clock.advance(stale.expiresAt - clock.now());
+    crashOnRemoval = false;
+
+    const result = await realm.oaath.disconnect(stale);
+
+    expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
+    expect(stale.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
+    expect(tracked.closed).toHaveLength(5);
+  });
+
+  it("fences expiry cleanup against a concurrent revocation commit", async () => {
+    let crashOnRemoval = false;
+    let enterRevocation!: () => void;
+    let releaseRevocation!: () => void;
+    let enterExpiry!: () => void;
+    let releaseExpiry!: () => void;
+    const revocationEntered = new Promise<void>((resolve) => {
+      enterRevocation = resolve;
+    });
+    const revocationReleased = new Promise<void>((resolve) => {
+      releaseRevocation = resolve;
+    });
+    const expiryEntered = new Promise<void>((resolve) => {
+      enterExpiry = resolve;
+    });
+    const expiryReleased = new Promise<void>((resolve) => {
+      releaseExpiry = resolve;
+    });
+    let blockRevocation = true;
+    let blockExpiry = true;
+    const clock = createClock();
+    const chain = createChainFixture({ crashOnSend: () => crashOnRemoval });
+    const tracked = trackedStores();
+    const realm = createRealm({
+      clock,
+      chain,
+      stores: {
+        ...tracked.stores,
+        grants: {
+          get: (grantId: Parameters<typeof tracked.stores.grants.get>[0]) =>
+            tracked.stores.grants.get(grantId),
+          async compareAndSwap(input: Parameters<typeof tracked.stores.grants.compareAndSwap>[0]) {
+            const state = (input.next as { readonly value?: { readonly state?: unknown } }).value
+              ?.state;
+            if (blockRevocation && state === "revoking") {
+              blockRevocation = false;
+              enterRevocation();
+              await revocationReleased;
+            }
+            if (blockExpiry && state === "expired") {
+              blockExpiry = false;
+              enterExpiry();
+              await expiryReleased;
+            }
+            return tracked.stores.grants.compareAndSwap(input);
+          },
+          close: () => tracked.stores.grants.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const revoker = await connection.requestPermission(permissionInput());
+    const stale = await connection.resume();
+    if (stale === null) throw new Error("expected a stale Grant handle");
+    const installation = await revoker.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+    crashOnRemoval = true;
+    const revoking = revoker.revoke();
+    await revocationEntered;
+    clock.advance(stale.expiresAt - clock.now());
+
+    const disconnecting = realm.oaath.disconnect(stale);
+    await expiryEntered;
+    releaseRevocation();
+    await revoking;
+    expect(revoker.state).toBe("revoking");
+    crashOnRemoval = false;
+    releaseExpiry();
+
+    const result = await disconnecting;
+    expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
+    expect(stale.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    expect(tracked.closed).toHaveLength(5);
+  });
+
   it("retries a failed owned store close instead of discarding the connection", async () => {
     const memory = createMemoryStores();
     let walletCloseAttempts = 0;
@@ -234,9 +360,6 @@ describe("cleanup coordinator", () => {
           memory.walletCallBundles.get(key),
         compareAndSwap: (input: Parameters<typeof memory.walletCallBundles.compareAndSwap>[0]) =>
           memory.walletCallBundles.compareAndSwap(input),
-        compareAndDelete: (
-          input: Parameters<typeof memory.walletCallBundles.compareAndDelete>[0],
-        ) => memory.walletCallBundles.compareAndDelete(input),
         async close() {
           walletCloseAttempts += 1;
           if (walletCloseAttempts === 1) throw new Error("wallet bundle store still open");
@@ -342,6 +465,7 @@ describe("cleanup coordinator", () => {
     expect(await tracked.stores.context.read(realm.oaath.binding.bindingId)).toBeDefined();
     expect(tracked.closed).toHaveLength(0);
 
+    realm.clock.advance(grant.expiresAt - realm.clock.now());
     crashOnRemoval = false;
     const retried = await realm.oaath.disconnect(grant);
     expect(retried.unfinished).toEqual([]);
@@ -418,9 +542,6 @@ function trackedStores() {
           stores.walletCallBundles.get(key),
         compareAndSwap: (input: Parameters<typeof stores.walletCallBundles.compareAndSwap>[0]) =>
           stores.walletCallBundles.compareAndSwap(input),
-        compareAndDelete: (
-          input: Parameters<typeof stores.walletCallBundles.compareAndDelete>[0],
-        ) => stores.walletCallBundles.compareAndDelete(input),
         close: async () => {
           closed.push("walletCallBundles");
           return stores.walletCallBundles.close();

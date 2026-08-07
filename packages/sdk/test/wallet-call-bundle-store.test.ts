@@ -1,5 +1,5 @@
 /**
- * Durable wallet-call bundle state, concurrency, and retention invariants.
+ * Durable wallet-call bundle state, concurrency, and tombstone invariants.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -17,7 +17,6 @@ import {
   type WalletCallBundleStoreRecord,
 } from "../src/persistence/interfaces.js";
 import {
-  WALLET_CALL_BUNDLE_RETENTION_SECONDS,
   type WalletCallBundleMutationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
@@ -42,9 +41,8 @@ function key(
   id = "bundle",
   providerScopeId: WalletCallBundleKey["providerScopeId"] = SCOPE,
   _account: `0x${string}` = ACCOUNT,
-  grantId = GRANT_ID,
 ): Readonly<WalletCallBundleKey> {
-  return Object.freeze({ providerScopeId, grantId, id });
+  return Object.freeze({ providerScopeId, id });
 }
 
 function operation(
@@ -109,7 +107,7 @@ function clone<Value>(value: Value): Value {
 }
 
 function mapKey(value: Readonly<WalletCallBundleKey>): string {
-  return JSON.stringify([value.providerScopeId, value.grantId, value.id]);
+  return JSON.stringify([value.providerScopeId, value.id]);
 }
 
 function storedGeneration(value: unknown): unknown {
@@ -124,7 +122,6 @@ interface MemoryAdapter {
   readonly raw: (value: Readonly<WalletCallBundleKey>) => unknown;
   readonly set: (value: Readonly<WalletCallBundleKey>, record: unknown) => void;
   readonly casCalls: () => number;
-  readonly deleteCalls: () => number;
   readonly closeCalls: () => number;
 }
 
@@ -133,7 +130,6 @@ function memoryAdapter(
 ): MemoryAdapter {
   const records = new Map(entries.map(([entryKey, value]) => [mapKey(entryKey), clone(value)]));
   let casCalls = 0;
-  let deleteCalls = 0;
   let closeCalls = 0;
   const adapter: WalletCallBundleStoreAdapter = {
     async get(entryKey) {
@@ -154,19 +150,6 @@ function memoryAdapter(
       records.set(serialized, clone(next));
       return true;
     },
-    async compareAndDelete({ key: entryKey, expectedStoreRevision, expectedGeneration }) {
-      deleteCalls += 1;
-      const serialized = mapKey(entryKey);
-      const current = records.get(serialized) as { storeRevision?: unknown } | undefined;
-      if (
-        current?.storeRevision !== expectedStoreRevision ||
-        storedGeneration(current) !== expectedGeneration
-      ) {
-        return false;
-      }
-      records.delete(serialized);
-      return true;
-    },
     async close() {
       closeCalls += 1;
     },
@@ -176,7 +159,6 @@ function memoryAdapter(
     raw: (entryKey) => clone(records.get(mapKey(entryKey))),
     set: (entryKey, value) => records.set(mapKey(entryKey), clone(value)),
     casCalls: () => casCalls,
-    deleteCalls: () => deleteCalls,
     closeCalls: () => closeCalls,
   };
 }
@@ -219,9 +201,11 @@ async function reserve(
   requestHash: WalletCallBundleRecord["requestHash"] = REQUEST_HASH,
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
   account: WalletCallBundleRecord["account"] = ACCOUNT,
+  grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
 ): Promise<WalletCallBundleMutationResult> {
   return store.reserveAccepted({
     key: entryKey,
+    grantId,
     generation,
     account,
     chainId,
@@ -232,7 +216,7 @@ async function reserve(
 }
 
 describe("wallet-call bundle persistence parser", () => {
-  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v3 record", () => {
+  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v4 record", () => {
     const id = " app:\u0000/日本語/😀/not-hex ";
     const capturedKey = parseWalletCallBundleKey(key(id));
     expect(capturedKey.id).toBe(id);
@@ -244,7 +228,6 @@ describe("wallet-call bundle persistence parser", () => {
       () => parseWalletCallBundleKey(key(`${exactBoundary}a`)),
       "persistence_input_invalid",
     );
-
     const binding = operation();
     const captured = parseWalletCallBundleRecord(
       bundleRecord({ id, operation: binding, state: "operation_bound" }),
@@ -362,7 +345,6 @@ describe("wallet-call bundle persistence parser", () => {
     }
 
     for (const invalidKey of [
-      { providerScopeId: SCOPE, id: "bundle" },
       { ...key(), providerScopeId: SCOPE.toUpperCase() },
       { ...key(), grantId: " grant " },
       { ...key(), account: ACCOUNT },
@@ -413,6 +395,8 @@ describe("wallet-call bundle persistence parser", () => {
       () =>
         store.reserveAccepted({
           key: key(),
+          grantId: GRANT_ID,
+          account: ACCOUNT,
           generation: GENERATION_A,
           chainId: 0,
           createdAt: 10,
@@ -433,7 +417,6 @@ describe("wallet-call bundle persistence parser", () => {
 
     for (const value of [
       bundleRecord({ providerScopeId: OTHER_SCOPE }),
-      bundleRecord({ grantId: OTHER_GRANT_ID }),
       bundleRecord({ id: "other" }),
     ]) {
       memory.set(key(), envelope(value));
@@ -442,6 +425,10 @@ describe("wallet-call bundle persistence parser", () => {
     memory.set(key(), envelope(bundleRecord({ account: OTHER_ACCOUNT })));
     await expect(store.get(key())).resolves.toMatchObject({
       value: { account: OTHER_ACCOUNT },
+    });
+    memory.set(key(), envelope(bundleRecord({ grantId: OTHER_GRANT_ID })));
+    await expect(store.get(key())).resolves.toMatchObject({
+      value: { grantId: OTHER_GRANT_ID },
     });
 
     for (const impossible of [
@@ -476,9 +463,6 @@ describe("wallet-call bundle persistence parser", () => {
         return { ...envelope(), storeRevision: -0 };
       },
       async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
         return false;
       },
       async close() {},
@@ -731,10 +715,6 @@ describe("wallet-call bundle transitions and uniqueness", () => {
         calls += 1;
         return false;
       },
-      async compareAndDelete() {
-        calls += 1;
-        return false;
-      },
       async close() {},
     });
     const hostile = {
@@ -802,14 +782,13 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(memory.casCalls()).toBe(1);
   });
 
-  it("keeps exact IDs and isolates grant/scope while account and chain are not key axes", async () => {
+  it("keeps exact IDs and isolates scope while Grant, account, and chain are not key axes", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
     const unicode = " 日本語/😀/\u0000 ";
     const first = key(unicode);
     const anotherScope = key(unicode, OTHER_SCOPE);
     const anotherAccount = key(unicode, SCOPE, OTHER_ACCOUNT);
-    const anotherGrant = key(unicode, SCOPE, ACCOUNT, OTHER_GRANT_ID);
     const caseDistinct = key(`${unicode}A`);
 
     requireCommitted(await reserve(store, first, 1));
@@ -820,7 +799,12 @@ describe("wallet-call bundle transitions and uniqueness", () => {
       status: "conflict",
       current: { value: { account: ACCOUNT } },
     });
-    requireCommitted(await reserve(store, anotherGrant, 1));
+    await expect(
+      reserve(store, first, 1, 10, REQUEST_HASH, GENERATION_B, ACCOUNT, OTHER_GRANT_ID),
+    ).resolves.toMatchObject({
+      status: "conflict",
+      current: { value: { grantId: GRANT_ID } },
+    });
     requireCommitted(await reserve(store, caseDistinct, 1));
     const writes = memory.casCalls();
 
@@ -897,9 +881,6 @@ function racingAdapter(initial?: WalletCallBundleStoreRecord): WalletCallBundleS
       }
       raw = clone(next);
       return true;
-    },
-    async compareAndDelete() {
-      return false;
     },
     async close() {},
   };
@@ -989,9 +970,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         if (nextState === "operation_bound") reportPublication();
         return true;
       },
-      async compareAndDelete() {
-        return false;
-      },
       async close() {},
     };
     const confirmer = new WalletCallBundleStore(adapter);
@@ -1017,7 +995,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
     await expect(staleTerminal.get(key())).resolves.toEqual(bound);
   });
 
-  it("rejects stale reservation, confirmation, and terminalization after generation reuse", async () => {
+  it("retains a terminal generation and rejects every later reservation or stale mutation", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
     const acceptedA = requireCommitted(await reserve(store));
@@ -1030,7 +1008,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
         updatedAt: 20,
       }),
     );
-    requireCommitted(
+    const terminal = requireCommitted(
       await store.markTerminal({
         key: key(),
         expectedStoreRevision: reservedA.storeRevision,
@@ -1038,15 +1016,10 @@ describe("wallet-call bundle races and retained-write verification", () => {
         updatedAt: 21,
       }),
     );
-    await expect(store.deleteExpiredTerminal(key(), 21, 0)).resolves.toEqual({
-      status: "deleted",
-    });
-
-    const acceptedB = requireCommitted(
-      await reserve(store, key(), CHAIN_ID, 30, OTHER_REQUEST_HASH, GENERATION_B),
-    );
-    expect(acceptedB.storeRevision).toBe(acceptedA.storeRevision);
-    const writesBeforeStaleReservation = memory.casCalls();
+    const writesBeforeConflicts = memory.casCalls();
+    await expect(
+      reserve(store, key(), CHAIN_ID, 30, OTHER_REQUEST_HASH, GENERATION_B),
+    ).resolves.toEqual({ status: "conflict", current: terminal });
     await expect(
       store.reserveOperation({
         key: key(),
@@ -1055,25 +1028,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
         operation: operation(),
         updatedAt: 31,
       }),
-    ).resolves.toEqual({ status: "conflict", current: acceptedB });
-    expect(memory.casCalls()).toBe(writesBeforeStaleReservation);
-    await expect(store.get(key())).resolves.toEqual(acceptedB);
-
-    const reservedB = requireCommitted(
-      await store.reserveOperation({
-        key: key(),
-        expectedStoreRevision: acceptedB.storeRevision,
-        expectedGeneration: acceptedB.value.generation,
-        operation: operation(),
-        updatedAt: 31,
-      }),
-    );
-    expect(reservedB).toMatchObject({
-      storeRevision: reservedA.storeRevision,
-      value: { generation: GENERATION_B, state: "operation_reserved" },
-    });
-    const writesBeforeStaleMutations = memory.casCalls();
-
+    ).resolves.toEqual({ status: "conflict", current: terminal });
     await expect(
       store.confirmOperationPublished({
         key: key(),
@@ -1081,7 +1036,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
         expectedGeneration: reservedA.value.generation,
         updatedAt: 32,
       }),
-    ).resolves.toEqual({ status: "conflict", current: reservedB });
+    ).resolves.toEqual({ status: "conflict", current: terminal });
     await expect(
       store.markTerminal({
         key: key(),
@@ -1089,9 +1044,9 @@ describe("wallet-call bundle races and retained-write verification", () => {
         expectedGeneration: reservedA.value.generation,
         updatedAt: 32,
       }),
-    ).resolves.toEqual({ status: "conflict", current: reservedB });
-    expect(memory.casCalls()).toBe(writesBeforeStaleMutations);
-    await expect(store.get(key())).resolves.toEqual(reservedB);
+    ).resolves.toEqual({ status: "conflict", current: terminal });
+    expect(memory.casCalls()).toBe(writesBeforeConflicts);
+    await expect(store.get(key())).resolves.toEqual(terminal);
   });
 
   it("returns the recreated generation when it wins after a stale transition read", async () => {
@@ -1124,9 +1079,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
           raw = generationB;
           return false;
         },
-        async compareAndDelete() {
-          return false;
-        },
         async close() {},
       });
       const input = {
@@ -1154,17 +1106,9 @@ describe("wallet-call bundle races and retained-write verification", () => {
         writes += 1;
         return true;
       },
-      async compareAndDelete() {
-        writes += 1;
-        return true;
-      },
       async close() {},
     });
     await expectStoreError(() => reserve(store), "store_record_invalid");
-    await expectStoreError(
-      () => store.deleteExpiredTerminal(key(), 100_000),
-      "store_record_invalid",
-    );
     expect(writes).toBe(0);
   });
 
@@ -1179,9 +1123,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       const store = new WalletCallBundleStore({
         async get() {},
         compareAndSwap,
-        async compareAndDelete() {
-          return false;
-        },
         async close() {},
       });
       await expectStoreError(() => reserve(store), "store_commit_indeterminate");
@@ -1194,9 +1135,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         return reads === 1 ? envelope() : envelope();
       },
       async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
         return false;
       },
       async close() {},
@@ -1233,9 +1171,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       async compareAndSwap() {
         return true;
       },
-      async compareAndDelete() {
-        return false;
-      },
       async close() {},
     });
     await expectStoreError(() => reserve(lying), "store_commit_unverified");
@@ -1249,9 +1184,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         raw = { ...input.next, storeRevision: input.next.storeRevision + 1 };
         return true;
       },
-      async compareAndDelete() {
-        return false;
-      },
       async close() {},
     });
     await expectStoreError(() => reserve(altered), "store_commit_unverified");
@@ -1264,9 +1196,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       async compareAndSwap(input: { next: Readonly<StoreRecord<unknown>> }) {
         raw = input.next;
         throw new Error("acknowledgement lost");
-      },
-      async compareAndDelete() {
-        return false;
       },
       async close() {},
     });
@@ -1284,9 +1213,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       },
       async compareAndSwap() {
         return true;
-      },
-      async compareAndDelete() {
-        return false;
       },
       async close() {},
     });
@@ -1312,9 +1238,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
           return reads === 1 ? envelope() : envelope(replacement, 1, replacement.createdAt);
         },
         async compareAndSwap() {
-          return false;
-        },
-        async compareAndDelete() {
           return false;
         },
         async close() {},
@@ -1346,9 +1269,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       async compareAndSwap() {
         return false;
       },
-      async compareAndDelete() {
-        return false;
-      },
       async close() {},
     });
     await expectStoreError(
@@ -1362,15 +1282,24 @@ describe("wallet-call bundle races and retained-write verification", () => {
       "store_identity_mismatch",
     );
 
-    for (const replacement of [
-      bundleRecord({
-        providerScopeId: OTHER_SCOPE,
-        state: "terminal",
-        terminalFrom: "accepted",
-      }),
-      bundleRecord({ grantId: OTHER_GRANT_ID, state: "terminal", terminalFrom: "accepted" }),
-      bundleRecord({ id: "other", state: "terminal", terminalFrom: "accepted" }),
-    ]) {
+    for (const [replacement, expectedCode] of [
+      [
+        bundleRecord({
+          providerScopeId: OTHER_SCOPE,
+          state: "terminal",
+          terminalFrom: "accepted",
+        }),
+        "store_commit_indeterminate",
+      ],
+      [
+        bundleRecord({ grantId: OTHER_GRANT_ID, state: "terminal", terminalFrom: "accepted" }),
+        "store_identity_mismatch",
+      ],
+      [
+        bundleRecord({ id: "other", state: "terminal", terminalFrom: "accepted" }),
+        "store_commit_indeterminate",
+      ],
+    ] as const) {
       reads = 0;
       const store = new WalletCallBundleStore({
         async get() {
@@ -1378,9 +1307,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
           return reads === 1 ? envelope() : envelope(replacement, 1, 20);
         },
         async compareAndSwap() {
-          return false;
-        },
-        async compareAndDelete() {
           return false;
         },
         async close() {},
@@ -1393,7 +1319,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
             expectedGeneration: GENERATION_A,
             updatedAt: 20,
           }),
-        "store_commit_indeterminate",
+        expectedCode,
       );
     }
     reads = 0;
@@ -1413,9 +1339,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
             );
       },
       async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
         return false;
       },
       async close() {},
@@ -1442,9 +1365,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
           return reads === 1 ? envelope(bound, 2, 20) : raced;
         },
         async compareAndSwap() {
-          return false;
-        },
-        async compareAndDelete() {
           return false;
         },
         async close() {},
@@ -1478,9 +1398,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
       async compareAndSwap() {
         return false;
       },
-      async compareAndDelete() {
-        return false;
-      },
       async close() {},
     });
     await expectStoreError(
@@ -1493,217 +1410,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         }),
       "store_record_invalid",
     );
-
-    const reservedTerminal = bundleRecord({
-      operation: operation(),
-      state: "terminal",
-      terminalFrom: "operation_reserved",
-    });
-    const rewrittenTerminal = bundleRecord({
-      operation: operation(),
-      state: "terminal",
-      terminalFrom: "operation_bound",
-    });
-    let raw = envelope(reservedTerminal, 2, 20);
-    const rewritten = new WalletCallBundleStore({
-      async get() {
-        return clone(raw);
-      },
-      async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
-        raw = envelope(rewrittenTerminal, 3, 21);
-        return false;
-      },
-      async close() {},
-    });
-    await expectStoreError(
-      () => rewritten.deleteExpiredTerminal(key(), 100_000, 0),
-      "store_record_invalid",
-    );
-  });
-});
-
-describe("wallet-call bundle terminal retention", () => {
-  it("deletes only at the exact terminal-age boundary", async () => {
-    const terminal = bundleRecord({ state: "terminal", terminalFrom: "accepted" });
-    const memory = memoryAdapter([[key(), envelope(terminal, 1, 20)]]);
-    const store = new WalletCallBundleStore(memory.adapter);
-
-    await expect(
-      store.deleteExpiredTerminal(key(), 20 + WALLET_CALL_BUNDLE_RETENTION_SECONDS - 1),
-    ).resolves.toMatchObject({ status: "conflict", current: { updatedAt: 20 } });
-    expect(memory.deleteCalls()).toBe(0);
-
-    await expect(
-      store.deleteExpiredTerminal(key(), 20 + WALLET_CALL_BUNDLE_RETENTION_SECONDS),
-    ).resolves.toEqual({ status: "deleted" });
-    expect(memory.deleteCalls()).toBe(1);
-    await expect(store.deleteExpiredTerminal(key(), 200_000)).resolves.toEqual({
-      status: "absent",
-    });
-  });
-
-  it("never cleans accepted, reserved, or bound work even long past 24 hours", async () => {
-    const acceptedKey = key("accepted");
-    const reservedKey = key("reserved");
-    const boundKey = key("bound");
-    const accepted = bundleRecord({ id: acceptedKey.id });
-    const reserved = bundleRecord({
-      id: reservedKey.id,
-      operation: operation(),
-      state: "operation_reserved",
-    });
-    const bound = bundleRecord({
-      id: boundKey.id,
-      operation: operation(),
-      state: "operation_bound",
-    });
-    const memory = memoryAdapter([
-      [acceptedKey, envelope(accepted, 0, 10)],
-      [reservedKey, envelope(reserved, 1, 20)],
-      [boundKey, envelope(bound, 2, 30)],
-    ]);
-    const store = new WalletCallBundleStore(memory.adapter);
-    const farFuture = 10 * WALLET_CALL_BUNDLE_RETENTION_SECONDS;
-
-    await expect(store.deleteExpiredTerminal(acceptedKey, farFuture)).resolves.toMatchObject({
-      status: "conflict",
-      current: { value: { state: "accepted" } },
-    });
-    await expect(store.deleteExpiredTerminal(boundKey, farFuture)).resolves.toMatchObject({
-      status: "conflict",
-      current: { value: { state: "operation_bound" } },
-    });
-    await expect(store.deleteExpiredTerminal(reservedKey, farFuture)).resolves.toMatchObject({
-      status: "conflict",
-      current: { value: { state: "operation_reserved" } },
-    });
-    expect(memory.deleteCalls()).toBe(0);
-  });
-
-  it("uses the caller's exact time and configurable nonnegative retention", async () => {
-    const terminal = bundleRecord({ state: "terminal", terminalFrom: "accepted" });
-    const memory = memoryAdapter([[key(), envelope(terminal, 1, 20)]]);
-    const store = new WalletCallBundleStore(memory.adapter);
-    await expect(store.deleteExpiredTerminal(key(), 19, 0)).resolves.toMatchObject({
-      status: "conflict",
-    });
-    await expect(store.deleteExpiredTerminal(key(), 20, 0)).resolves.toEqual({
-      status: "deleted",
-    });
-
-    for (const invalidValue of [-1, -0, Number.MAX_SAFE_INTEGER + 1]) {
-      await expectStoreError(
-        () => store.deleteExpiredTerminal(key(), invalidValue),
-        "store_input_invalid",
-      );
-      await expectStoreError(
-        () => store.deleteExpiredTerminal(key(), 20, invalidValue),
-        "store_input_invalid",
-      );
-    }
-  });
-
-  it("reports compare-and-delete races as explicit conflict or absence", async () => {
-    const terminal = bundleRecord({ state: "terminal", terminalFrom: "accepted" });
-    let raw: WalletCallBundleStoreRecord | undefined = envelope(terminal, 1, 20);
-    let mode: "conflict" | "absent" = "conflict";
-    const store = new WalletCallBundleStore({
-      async get() {
-        return clone(raw);
-      },
-      async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
-        if (mode === "conflict") {
-          raw = envelope(bundleRecord({ generation: GENERATION_B }), 0, 21);
-        } else raw = undefined;
-        return false;
-      },
-      async close() {},
-    });
-
-    await expect(store.deleteExpiredTerminal(key(), 100_000, 0)).resolves.toMatchObject({
-      status: "conflict",
-      current: { storeRevision: 0, value: { generation: GENERATION_B } },
-    });
-    mode = "absent";
-    raw = envelope(terminal, 1, 22);
-    await expect(store.deleteExpiredTerminal(key(), 100_000, 0)).resolves.toEqual({
-      status: "absent",
-    });
-  });
-
-  it("rejects indeterminate or unverified compare-and-delete outcomes", async () => {
-    const terminalEnvelope = envelope(
-      bundleRecord({ state: "terminal", terminalFrom: "accepted" }),
-      1,
-      20,
-    );
-    for (const compareAndDelete of [
-      async () => {
-        throw new Error("ack lost");
-      },
-      async () => "deleted",
-      async () => false,
-    ]) {
-      const store = new WalletCallBundleStore({
-        async get() {
-          return terminalEnvelope;
-        },
-        async compareAndSwap() {
-          return false;
-        },
-        compareAndDelete,
-        async close() {},
-      });
-      await expectStoreError(
-        () => store.deleteExpiredTerminal(key(), 100_000, 0),
-        "store_commit_indeterminate",
-      );
-    }
-
-    const lying = new WalletCallBundleStore({
-      async get() {
-        return terminalEnvelope;
-      },
-      async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
-        return true;
-      },
-      async close() {},
-    });
-    await expectStoreError(
-      () => lying.deleteExpiredTerminal(key(), 100_000, 0),
-      "store_commit_unverified",
-    );
-
-    for (const deleted of [true, false]) {
-      let reads = 0;
-      const unavailableVerification = new WalletCallBundleStore({
-        async get() {
-          reads += 1;
-          if (reads > 1) throw new Error("read unavailable");
-          return terminalEnvelope;
-        },
-        async compareAndSwap() {
-          return false;
-        },
-        async compareAndDelete() {
-          return deleted;
-        },
-        async close() {},
-      });
-      await expectStoreError(
-        () => unavailableVerification.deleteExpiredTerminal(key(), 100_000, 0),
-        deleted ? "store_commit_unverified" : "store_commit_indeterminate",
-      );
-    }
   });
 });
 
@@ -1712,7 +1418,6 @@ describe("wallet-call bundle store capability and close boundary", () => {
     let accesses = 0;
     const hostile = {
       compareAndSwap: async () => false,
-      compareAndDelete: async () => false,
       close: async () => {},
     } as Record<string, unknown>;
     Object.defineProperty(hostile, "get", {
@@ -1748,9 +1453,6 @@ describe("wallet-call bundle store capability and close boundary", () => {
     const store = new WalletCallBundleStore({
       async get() {},
       async compareAndSwap() {
-        return false;
-      },
-      async compareAndDelete() {
         return false;
       },
       async close() {
@@ -1803,6 +1505,5 @@ describe("wallet-call bundle store capability and close boundary", () => {
         }),
       "store_closed",
     );
-    await expectStoreError(() => store.deleteExpiredTerminal(key(), 100_000), "store_closed");
   });
 });

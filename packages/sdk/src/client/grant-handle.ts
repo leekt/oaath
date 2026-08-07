@@ -925,6 +925,19 @@ export function createGrantHandle(
             await spec.publication.reserve(exact);
             reservedOperation = exact;
           },
+          releaseOperationReservation: async (prepared: PreparedUserOperation) => {
+            if (!spec.publication || reservedOperation === null) return;
+            const exact = Object.freeze({
+              identity: deriveOperationId(prepared, spec.requestHash),
+            });
+            if (!sameProviderOperationPointer(reservedOperation, exact)) {
+              return clientFail(
+                "oaath_client_internal",
+                "the provider operation reservation release is inconsistent",
+              );
+            }
+            await spec.publication.abandon(exact);
+          },
           authorizeOperation: async (prepared: PreparedUserOperation) => {
             if (!spec.authorizeOperation) return;
             await spec.authorizeOperation(
@@ -1028,6 +1041,11 @@ export function createGrantHandle(
             clientFail(
               "oaath_client_internal",
               "an observation-only provider runner cannot reserve publication",
+            ),
+          releaseOperationReservation: async () =>
+            clientFail(
+              "oaath_client_internal",
+              "an observation-only provider runner cannot release publication",
             ),
           authorizeOperation: async () =>
             clientFail(
@@ -1257,7 +1275,7 @@ export function createGrantHandle(
     }
   }
 
-  async function recordSuccessfulMaterialization(
+  async function recordFinalizedMaterialization(
     binding: Readonly<{
       chainId: number;
       account: `0x${string}`;
@@ -1267,7 +1285,7 @@ export function createGrantHandle(
   ): Promise<void> {
     if (result.status !== "observed") return;
     const value = result.record.value;
-    if (value.state !== "finalized" || value.inclusion.outcome !== "success") return;
+    if (value.state !== "finalized") return;
     if (value.identity.chainId !== binding.chainId || value.identity.account !== binding.account) {
       return clientFail(
         "oaath_client_state_conflict",
@@ -1344,11 +1362,7 @@ export function createGrantHandle(
     account: `0x${string}`,
     result: OperationObserveResult,
   ): Promise<void> {
-    if (
-      result.status !== "observed" ||
-      result.record.value.state !== "finalized" ||
-      result.record.value.inclusion.outcome !== "success"
-    ) {
+    if (result.status !== "observed" || result.record.value.state !== "finalized") {
       return;
     }
     const chainId = result.record.value.identity.chainId;
@@ -1364,7 +1378,7 @@ export function createGrantHandle(
         "grant_materialization_operation_mismatch",
       );
     }
-    await recordSuccessfulMaterialization(
+    await recordFinalizedMaterialization(
       Object.freeze({
         chainId,
         account,
@@ -1497,11 +1511,48 @@ export function createGrantHandle(
     snapshot: GrantStoreRecord,
     binding: Readonly<{ chainId: number; account: `0x${string}`; permissionId: `0x${string}` }>,
     operationId: `0x${string}`,
+    observeUnresolved = false,
   ): Promise<GrantStoreRecord> {
-    const operation = await exactOperation(
-      { grantId: snapshot.value.identity.grantId, chainId: binding.chainId, kind: "execution" },
-      operationId,
-    );
+    const operationKey = Object.freeze({
+      grantId: snapshot.value.identity.grantId,
+      chainId: binding.chainId,
+      kind: "execution" as const,
+    });
+    let operation = await exactOperation(operationKey, operationId);
+    if (
+      observeUnresolved &&
+      (operation?.value.state === "prepared" ||
+        operation?.value.state === "submission_attempted" ||
+        operation?.value.state === "submitted" ||
+        operation?.value.state === "included")
+    ) {
+      const observing = observationOnlyRunner(binding.chainId);
+      try {
+        const observedAt = Math.max(input.now(), operation.value.updatedAt);
+        if (operation.value.state === "prepared") {
+          await observing.abandonPreparedOperation({
+            kind: "execution",
+            key: operationKey,
+            expectedUserOperationHash: operationId,
+            abandonedAt: observedAt,
+          });
+        } else {
+          await observing.observeOperation({
+            kind: "execution",
+            key: operationKey,
+            preparedAt: observedAt,
+            attemptedAt: observedAt,
+            submittedAt: observedAt,
+            observedAt,
+            timeoutMs: SUBMISSION_TIMEOUT_MS,
+            expectedUserOperationHash: operationId,
+          });
+        }
+      } finally {
+        await observing.close().catch(() => undefined);
+      }
+      operation = await exactOperation(operationKey, operationId);
+    }
     if (
       operation === undefined ||
       operation.value.identity.account !== binding.account ||
@@ -1509,7 +1560,7 @@ export function createGrantHandle(
     ) {
       return snapshot;
     }
-    if (operation.value.state === "finalized" && operation.value.inclusion.outcome === "success") {
+    if (operation.value.state === "finalized") {
       return commit(
         snapshot,
         transition(snapshot.value, {
@@ -1529,9 +1580,7 @@ export function createGrantHandle(
     }
     const conclusivelyNotInstalled =
       operation.value.state === "abandoned" ||
-      operation.value.state === "superseded" ||
-      (operation.value.state === "dropped" && operation.value.priorInclusion === null) ||
-      (operation.value.state === "finalized" && operation.value.inclusion.outcome === "reverted");
+      (operation.value.state === "dropped" && operation.value.priorInclusion === null);
     if (!conclusivelyNotInstalled) return snapshot;
     return commit(
       snapshot,
@@ -1760,7 +1809,7 @@ export function createGrantHandle(
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
     if (action === "run" && mode === "enable-replayable") {
-      await recordSuccessfulMaterialization(binding, result).catch(() => undefined);
+      await recordFinalizedMaterialization(binding, result).catch(() => undefined);
     }
     return trackedOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
@@ -1773,7 +1822,7 @@ export function createGrantHandle(
       ...(mode === "enable-replayable"
         ? {
             onObserved: (observed: OperationObserveResult) =>
-              recordSuccessfulMaterialization(binding, observed),
+              recordFinalizedMaterialization(binding, observed),
           }
         : {}),
     });
@@ -1868,20 +1917,22 @@ export function createGrantHandle(
   }
 
   /**
-   * Finalized-anchored observation that a chain's permission is no longer
-   * installed: Kernel's own `isModuleInstalled(6, signer, permissionId)` view
-   * turning false at a finalized block later than the installation. This is
-   * how a realm that cannot sign owner operations (URL mode never holds owner
-   * authority) still completes `revoking` once the owner's console removed the
-   * permission out-of-band.
+   * Finalized-anchored observation of the chain's current permission state via
+   * Kernel's own `isModuleInstalled(6, signer, permissionId)` view. Absence can
+   * complete out-of-band removal; presence can prove a superseded uninstall's
+   * effect is still required.
    *
-   * Fail closed everywhere: only an exact `false` at a block that rebinds to
+   * Fail closed everywhere: only an exact boolean at a block that rebinds to
    * the same finalized hash counts; every other answer is inconclusive.
    */
-  async function observeChainRemoval(
+  async function observeChainPermission(
     binding: Readonly<{ chainId: number; account: `0x${string}`; permissionId: `0x${string}` }>,
     installedAtBlock: string,
-  ): Promise<Readonly<ChainPermissionEvidence> | null> {
+  ): Promise<
+    | Readonly<{ status: "present" }>
+    | Readonly<{ status: "absent"; removal: Readonly<ChainPermissionEvidence> }>
+    | null
+  > {
     if (input.installApproval === null) return null;
     const signer = input.installApproval.packages.find((entry) => entry.moduleType === 6)?.module;
     if (signer === undefined) return null;
@@ -1913,7 +1964,7 @@ export function createGrantHandle(
         permissionId: binding.permissionId,
         blockNumber,
       });
-      if (installed !== false) return null;
+      if (installed !== true && installed !== false) return null;
       // The read was answered by number alone, so rebind: the block at that
       // number must still be the finalized block this evidence names.
       const rebound = (await chain.observation.read({
@@ -1922,12 +1973,16 @@ export function createGrantHandle(
         blockNumber,
       })) as { readonly number?: unknown; readonly hash?: unknown } | null;
       if (rebound?.hash !== block.hash || rebound.number !== block.number) return null;
+      if (installed) return Object.freeze({ status: "present" as const });
       return Object.freeze({
-        ...binding,
-        kind: "permission_absent" as const,
-        blockNumber,
-        blockHash: block.hash as `0x${string}`,
-        observedAt: input.now(),
+        status: "absent" as const,
+        removal: Object.freeze({
+          ...binding,
+          kind: "permission_absent" as const,
+          blockNumber,
+          blockHash: block.hash as `0x${string}`,
+          observedAt: input.now(),
+        }),
       });
     } catch {
       return null;
@@ -1981,12 +2036,12 @@ export function createGrantHandle(
       kind: "revocation" as const,
     });
     let value: FinalizedOperation | null = null;
+    let prior: OperationStoreRecord | undefined;
+    let journalReadable = true;
     try {
       // A prior removal that already finalized successfully completes
       // directly — a Grant commit lost to a crash never mints a second
-      // uninstall. Any other terminal attempt (dropped, superseded, included
-      // but failed) is replaceable below, so one bad attempt cannot strand
-      // cleanup forever.
+      // uninstall. The journal must remain readable before any retry decision.
       const journal = new OperationStore({
         get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
         getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
@@ -1995,7 +2050,7 @@ export function createGrantHandle(
           input.operations.compareAndSwap(record),
         close: async () => undefined,
       } satisfies OperationStoreAdapter);
-      const prior = await journal.get(laneKey);
+      prior = await journal.get(laneKey);
       if (
         prior !== undefined &&
         prior.value.state === "finalized" &&
@@ -2005,9 +2060,15 @@ export function createGrantHandle(
         value = prior.value;
       }
     } catch {
-      // An unreadable journal decides nothing; the run below owns the lane.
+      journalReadable = false;
     }
-    if (value === null) {
+    let permissionObservation: Awaited<ReturnType<typeof observeChainPermission>> | undefined;
+    let retryPositivelySafe = journalReadable;
+    if (prior?.value.state === "superseded") {
+      permissionObservation = await observeChainPermission(binding, entry.installation.blockNumber);
+      retryPositivelySafe = permissionObservation?.status === "present";
+    }
+    if (value === null && retryPositivelySafe) {
       let result: OperationRunResult | null = null;
       try {
         const chain = chainCapability(chainId);
@@ -2085,10 +2146,10 @@ export function createGrantHandle(
         }),
       );
     }
-    // No owner operation completed here. If the owner's console already
-    // removed the permission out-of-band, the chain proves it.
-    const removal = await observeChainRemoval(binding, entry.installation.blockNumber);
-    if (removal === null) return latest;
+    // No owner operation completed here. If the owner's console or an ambiguous
+    // prior attempt already removed the permission, the chain proves it.
+    permissionObservation ??= await observeChainPermission(binding, entry.installation.blockNumber);
+    if (permissionObservation?.status !== "absent") return latest;
     latest = await refresh();
     return commit(
       latest,
@@ -2096,7 +2157,7 @@ export function createGrantHandle(
         type: "record_chain_revoked",
         identity: latest.value.identity,
         binding,
-        removal,
+        removal: permissionObservation.removal,
       }),
     );
   }
@@ -2134,8 +2195,25 @@ export function createGrantHandle(
     // capability completes it here; one that does not (URL mode never holds
     // owner authority) leaves the chain pending. The Grant stays durably
     // `revoking` until every chain's removal is conclusively observed.
-    for (const entry of [...grant.materializations]) {
-      snapshot = await revokeChainPermission(snapshot, entry);
+    for (const original of [...grant.materializations]) {
+      let entry = grant.materializations.find(
+        (candidate) => candidate.chainId === original.chainId,
+      );
+      if (entry?.state === "installing") {
+        snapshot = await reconcileInstallingMaterialization(
+          snapshot,
+          {
+            chainId: entry.chainId,
+            account: entry.account,
+            permissionId: entry.permissionId,
+          },
+          entry.operationId,
+          true,
+        );
+        grant = snapshot.value;
+        entry = grant.materializations.find((candidate) => candidate.chainId === original.chainId);
+      }
+      if (entry !== undefined) snapshot = await revokeChainPermission(snapshot, entry);
       grant = snapshot.value;
     }
     if (

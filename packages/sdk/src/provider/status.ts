@@ -92,7 +92,10 @@ export function projectEip5792Status(
   }
   if (outcome.status === "superseded") {
     if (outcome.state !== "superseded") return invalidEvidence();
-    return Object.freeze({ ...base, status: 400 });
+    // Nonce advancement proves this identity cannot execute in the future, but
+    // without its receipt it does not prove whether it executed before that
+    // advancement. Do not project the ambiguity as a failed call.
+    return Object.freeze({ ...base, status: 100 });
   }
   if (outcome.status === "abandoned") {
     if (outcome.state !== "abandoned") return invalidEvidence();

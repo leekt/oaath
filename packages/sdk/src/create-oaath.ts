@@ -23,7 +23,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { type CaptureContext, captureDenseArray, captureRecord } from "@oaath/protocol";
+import {
+  advanceGrant,
+  type CaptureContext,
+  captureDenseArray,
+  captureRecord,
+} from "@oaath/protocol";
 import { type OaathCleanupResult, runOaathCleanup } from "./cleanup/coordinator.js";
 import {
   closeEffect,
@@ -48,6 +53,7 @@ import {
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
 import {
   captureChainCapability,
+  grantProviderPort,
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
@@ -311,7 +317,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     ),
     walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
       storeRecord.walletCallBundles,
-      ["get", "compareAndSwap", "compareAndDelete", "close"],
+      ["get", "compareAndSwap", "close"],
       "wallet call bundle store",
       context,
     ),
@@ -384,8 +390,6 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
         stores.walletCallBundles.get(key),
       compareAndSwap: (input: Parameters<WalletCallBundleStoreAdapter["compareAndSwap"]>[0]) =>
         stores.walletCallBundles.compareAndSwap(input),
-      compareAndDelete: (input: Parameters<WalletCallBundleStoreAdapter["compareAndDelete"]>[0]) =>
-        stores.walletCallBundles.compareAndDelete(input),
       close: async () => undefined,
     }),
     keys: Object.freeze({
@@ -461,20 +465,57 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     return attempt;
   }
 
+  async function revocationIsUnneeded(grant: Readonly<OaathGrantHandle>): Promise<boolean> {
+    if (grant.state === "revoked" || grant.state === "expired") return true;
+    if (grant.state !== "active") return false;
+    const observedAt = now();
+    if (!Number.isSafeInteger(observedAt) || observedAt < grant.expiresAt) return false;
+
+    try {
+      const grantId = grantProviderPort(grant).grantId;
+      const durable = new GrantStore(connectionStores.grants);
+      let current = await durable.get(grantId);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (current === undefined) return false;
+        if (current.value.state === "revoked" || current.value.state === "expired") return true;
+        if (current.value.state !== "active" || observedAt < current.value.expiresAt) return false;
+        const expired = advanceGrant(current.value, {
+          type: "expire",
+          identity: current.value.identity,
+          expiredAt: Math.max(observedAt, current.value.updatedAt, current.value.expiresAt),
+        });
+        const result = await durable.compareAndSwap({
+          grantId,
+          expectedStoreRevision: current.storeRevision,
+          next: expired,
+        });
+        if (result.status === "committed") return true;
+        current = result.current;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   return Object.freeze({
     binding,
     async connect(): Promise<Readonly<OaathConnection>> {
       return open();
     },
-    disconnect(grant: Readonly<OaathGrantHandle> | null): Promise<Readonly<OaathCleanupResult>> {
+    async disconnect(
+      grant: Readonly<OaathGrantHandle> | null,
+    ): Promise<Readonly<OaathCleanupResult>> {
       if (grant !== null && typeof grant.revoke !== "function") {
         clientFail("oaath_client_input_invalid", "disconnect grant is invalid");
       }
       const open_ = [...connections];
+      const revocationUnneeded = grant === null ? true : await revocationIsUnneeded(grant);
+      const revokeRequired = grant !== null && !revocationUnneeded;
       // Order: authority first, then authentication, then local state, then
       // resources. `close` is last because it disables the effects before it.
       const effects: OaathCleanupEffect[] = [
-        ...(grant === null ? [] : [revokeEffect(grant)]),
+        ...(revokeRequired ? [revokeEffect(grant)] : []),
         signOutEffect(async () => {
           for (const connection of open_) await connection.signOut();
         }),

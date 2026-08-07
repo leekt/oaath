@@ -231,6 +231,7 @@ function runner(input: {
   terminalBehavior?: "replace" | "reuse_same_kind";
   observer?: OperationObserver;
   reserveOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
+  releaseOperationReservation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   authorizeOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   abandonOperation?: (snapshot: PreparedUserOperation) => Promise<unknown>;
   confirmOperationPublished?: (snapshot: PreparedUserOperation) => Promise<unknown>;
@@ -254,6 +255,7 @@ function runner(input: {
         return input.prepared;
       },
       reserveOperation: input.reserveOperation ?? (async () => undefined),
+      releaseOperationReservation: input.releaseOperationReservation ?? (async () => undefined),
       authorizeOperation:
         input.authorizeOperation ??
         (async () => {
@@ -670,6 +672,122 @@ describe("OperationRunner", () => {
       "send",
       "submitted",
     ]);
+    await operationRunner.close();
+  });
+
+  it("releases a reserved producer only after a conclusive publication loss", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const snapshot = prepared("execution");
+    const competingStore = memoryStore(control);
+    const count = counters();
+    let releases = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      requestHash: `0x${"aa".repeat(32)}`,
+      async reserveOperation() {
+        const competing = await competingStore.compareAndSwap({
+          key,
+          expectedStoreRevision: null,
+          next: createOperation({
+            identity: deriveOperationId(snapshot, `0x${"bb".repeat(32)}`),
+            preparedAt: 10,
+          }),
+        });
+        expect(competing.status).toBe("committed");
+      },
+      releaseOperationReservation(exact) {
+        releases += 1;
+        expect(exact).toEqual(snapshot);
+        throw new Error("reservation cleanup failed after the publication conflict");
+      },
+    });
+
+    await expectRunnerError(
+      () => operationRunner.startOperation(runInput("execution")),
+      "operation_runner_state_conflict",
+    );
+
+    expect(releases).toBe(1);
+    expect(count).toMatchObject({ authorizes: 0, abandons: 0, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.identity.requestHash).toBe(`0x${"bb".repeat(32)}`);
+    await operationRunner.close();
+  });
+
+  it("releases a reservation when the prepared hash already exists in terminal history", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const history = memoryStore(control);
+    const snapshot = prepared("execution");
+    const seeded = await seedPreparedOperation(history, snapshot);
+    const abandoned = advanceOperation(seeded.value, {
+      type: "mark_abandoned",
+      identity: seeded.value.identity,
+      abandonedAt: 11,
+      reason: "submission_not_attempted",
+    });
+    const terminal = await history.compareAndSwap({
+      key,
+      expectedStoreRevision: seeded.storeRevision,
+      next: abandoned,
+    });
+    if (terminal.status !== "committed") throw new Error("expected terminal target history");
+
+    const replacement = createOperation({
+      identity: deriveOperationId(prepared("execution", "8"), null),
+      preparedAt: 12,
+    });
+    const replaced = await history.compareAndSwap({
+      key,
+      expectedStoreRevision: terminal.record.storeRevision,
+      next: replacement,
+    });
+    if (replaced.status !== "committed") throw new Error("expected terminal history replacement");
+    const replacementTerminal = advanceOperation(replaced.record.value, {
+      type: "mark_abandoned",
+      identity: replaced.record.value.identity,
+      abandonedAt: 13,
+      reason: "submission_not_attempted",
+    });
+    const retained = await history.compareAndSwap({
+      key,
+      expectedStoreRevision: replaced.record.storeRevision,
+      next: replacementTerminal,
+    });
+    if (retained.status !== "committed") throw new Error("expected terminal replacement");
+
+    const count = counters();
+    let reservations = 0;
+    let releases = 0;
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      async reserveOperation() {
+        reservations += 1;
+      },
+      async releaseOperationReservation() {
+        releases += 1;
+      },
+    });
+
+    await expectRunnerError(
+      () =>
+        operationRunner.startOperation({
+          ...runInput("execution"),
+          preparedAt: 14,
+          attemptedAt: 15,
+          submittedAt: 16,
+          observedAt: 17,
+        }),
+      "operation_runner_state_conflict",
+    );
+    expect(reservations).toBe(1);
+    expect(releases).toBe(1);
+    expect(count).toMatchObject({ authorizes: 0, abandons: 0, opens: 0, sends: 0 });
+    expect(storedOperation(control)?.identity.userOperationHash).toBe(
+      replacement.identity.userOperationHash,
+    );
     await operationRunner.close();
   });
 
@@ -1169,10 +1287,14 @@ describe("OperationRunner", () => {
         fault: (next) => next.value.state === faultState,
       };
       const count = counters();
+      let releases = 0;
       const operationRunner = runner({
         store: memoryStore(control),
         prepared: prepared("execution"),
         counters: count,
+        async releaseOperationReservation() {
+          releases += 1;
+        },
       });
 
       await expectRunnerError(
@@ -1182,6 +1304,7 @@ describe("OperationRunner", () => {
       expect(count.opens).toBe(expectedOpens);
       expect(count.sends).toBe(expectedSends);
       expect(storedOperation(control)?.state).toBe(expectedStoredState);
+      expect(releases).toBe(0);
     },
   );
 

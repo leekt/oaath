@@ -400,6 +400,8 @@ export interface ChainFixtureOptions {
   readonly blockOffset?: () => number;
   /** Withholds inclusion evidence, leaving the operation pending. */
   readonly withholdReceipt?: () => boolean;
+  /** UserOperation execution result by submission index; validation still succeeded. */
+  readonly operationSuccess?: (submissionIndex: number) => boolean;
   /**
    * Serves the EntryPoint nonce for the supersession read: given the
    * operation's own nonce, return the observed one, or null for no answer.
@@ -463,6 +465,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     const prepared = submitted();
     if (!prepared || prepared.userOperationHash !== hash) return null;
     if (options.withholdReceipt?.()) return null;
+    const success = options.operationSuccess?.(currentIndex()) ?? true;
     const nonce = BigInt(prepared.userOperation.nonce);
     return {
       userOperationHash: hash,
@@ -472,7 +475,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       paymaster: ZERO_ADDRESS,
       actualGasCost: "0x9",
       actualGasUsed: "0xa",
-      success: true,
+      success,
       transactionHash: TRANSACTION_HASH,
       blockNumber: quantity(blockNumber(currentIndex())),
       blockHash: blockHash(currentIndex()),
@@ -483,6 +486,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
     const prepared = submitted();
     if (!prepared) return null;
     const nonce = BigInt(prepared.userOperation.nonce);
+    const success = options.operationSuccess?.(currentIndex()) ?? true;
     return {
       transactionHash: TRANSACTION_HASH,
       blockNumber: quantity(blockNumber(currentIndex())),
@@ -515,7 +519,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             `0x${"0".repeat(24)}${prepared.userOperation.sender.slice(2)}`,
             `0x${"0".repeat(24)}${ZERO_ADDRESS.slice(2)}`,
           ],
-          data: `0x${word(nonce)}${word(1n)}${word(9n)}${word(10n)}`,
+          data: `0x${word(nonce)}${word(success ? 1n : 0n)}${word(9n)}${word(10n)}`,
         },
       ],
     };

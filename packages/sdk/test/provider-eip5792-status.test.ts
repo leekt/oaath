@@ -212,7 +212,6 @@ describe("Final EIP-5792 status projection", () => {
       blockNumber: "2748",
       outcome: "success",
     }),
-    operationOutcome({ status: "superseded", state: "superseded" }),
     operationOutcome({
       status: "abandoned",
       state: "abandoned",
@@ -222,6 +221,13 @@ describe("Final EIP-5792 status projection", () => {
     const result = project(outcome, operationReceipt());
 
     expect(result.status).toBe(400);
+    expect("receipts" in result).toBe(false);
+  });
+
+  it("keeps nonce-superseded execution ambiguous without a receipt", () => {
+    const result = project(operationOutcome({ status: "superseded", state: "superseded" }));
+
+    expect(result).toMatchObject({ status: 100 });
     expect("receipts" in result).toBe(false);
   });
 
@@ -309,7 +315,7 @@ describe("Final EIP-5792 status projection", () => {
       ).status,
     ];
 
-    expect(statuses).toEqual([100, 200, 500, 400, 400, 400]);
+    expect(statuses).toEqual([100, 200, 500, 400, 100, 400]);
     expect(statuses).not.toContain(600);
   });
 });
