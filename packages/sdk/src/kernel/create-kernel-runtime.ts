@@ -48,6 +48,7 @@ const RUNTIME_MODES: readonly KernelRuntimeValidationMode[] = Object.freeze([
   "standard",
   "enable-replayable",
 ]);
+const MAX_EXTERNAL_SIGNATURE_BYTES = 4_096;
 
 function runtimeMode(value: unknown): KernelRuntimeValidationMode {
   if (value === undefined) return "standard";
@@ -215,7 +216,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     });
   }
 
-  async function signOperation(prepared: unknown): Promise<`0x${string}`> {
+  function boundOperation(prepared: unknown): PreparedUserOperation {
     let operation: PreparedUserOperation;
     try {
       operation = parsePreparedUserOperation(prepared);
@@ -256,7 +257,37 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
         "Prepared UserOperation validation does not match this authority",
       );
     }
+    return operation;
+  }
+
+  async function signOperation(prepared: unknown): Promise<`0x${string}`> {
+    const operation = boundOperation(prepared);
     return operator.encodeSignature(await operator.key.sign(operation.userOperationHash));
+  }
+
+  async function encodeVerifiedSignature(
+    prepared: unknown,
+    signatureValue: unknown,
+  ): Promise<`0x${string}`> {
+    const operation = boundOperation(prepared);
+    if (typeof signatureValue !== "string") {
+      return inputInvalid("Kernel external key signature is invalid");
+    }
+    const signature = signatureValue.toLowerCase();
+    if (
+      signature === "0x" ||
+      !isBytes(signature) ||
+      (signature.length - 2) / 2 > MAX_EXTERNAL_SIGNATURE_BYTES
+    ) {
+      return inputInvalid("Kernel external key signature is invalid");
+    }
+    if (!(await operator.key.verify(operation.userOperationHash, signature))) {
+      return runtimeFail(
+        "kernel_runtime_signature_invalid",
+        "Kernel external key signature does not verify against the bound public material",
+      );
+    }
+    return operator.encodeSignature(signature);
   }
 
   return Object.freeze({
@@ -272,5 +303,6 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     bindAccount,
     prepareOperation,
     signOperation,
+    encodeVerifiedSignature,
   });
 }
