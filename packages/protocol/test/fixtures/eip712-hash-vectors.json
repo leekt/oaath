@@ -1,0 +1,179 @@
+{
+  "version": "oaath.eip712-hash-vectors/v1",
+  "canonicalValueRules": {
+    "integer": "decimal-string",
+    "hex": "lowercase-0x-even-length",
+    "boolean": "json-boolean",
+    "domain": "explicit-EIP712Domain"
+  },
+  "vectors": [
+    {
+      "name": "official-eip712-mail",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            { "name": "name", "type": "string" },
+            { "name": "version", "type": "string" },
+            { "name": "chainId", "type": "uint256" },
+            { "name": "verifyingContract", "type": "address" }
+          ],
+          "Person": [{ "name": "name", "type": "string" }, { "name": "wallet", "type": "address" }],
+          "Mail": [
+            { "name": "from", "type": "Person" },
+            { "name": "to", "type": "Person" },
+            { "name": "contents", "type": "string" }
+          ]
+        },
+        "primaryType": "Mail",
+        "domain": {
+          "name": "Ether Mail",
+          "version": "1",
+          "chainId": "1",
+          "verifyingContract": "0xcccccccccccccccccccccccccccccccccccccccc"
+        },
+        "message": {
+          "from": {
+            "name": "Cow",
+            "wallet": "0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826"
+          },
+          "to": {
+            "name": "Bob",
+            "wallet": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "contents": "Hello, Bob!"
+        }
+      },
+      "expectedDigest": "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
+      "mutations": [
+        {
+          "name": "message-contents",
+          "pointer": "/message/contents",
+          "value": "Hello, Alice!",
+          "expectedDigest": "0xfdcf4691e7118ee1d933444eab787fb0131eb49efadf3aadded82e6058b3241d"
+        },
+        {
+          "name": "domain-chain-id",
+          "pointer": "/domain/chainId",
+          "value": "2",
+          "expectedDigest": "0x14de802c695286f7385b8e05255879ff7545cd20798e16b18d3b1e2eff362c5a"
+        }
+      ]
+    },
+    {
+      "name": "nested-fixed-and-dynamic-arrays",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            { "name": "name", "type": "string" },
+            { "name": "version", "type": "string" },
+            { "name": "chainId", "type": "uint256" },
+            { "name": "verifyingContract", "type": "address" }
+          ],
+          "Entry": [
+            { "name": "delta", "type": "int128" },
+            { "name": "amount", "type": "uint256" },
+            { "name": "enabled", "type": "bool" }
+          ],
+          "Batch": [
+            { "name": "groups", "type": "Entry[2][]" },
+            { "name": "label", "type": "string" },
+            { "name": "payload", "type": "bytes" }
+          ]
+        },
+        "primaryType": "Batch",
+        "domain": {
+          "name": "OAAth Vector Batch",
+          "version": "1",
+          "chainId": "84532",
+          "verifyingContract": "0x1111111111111111111111111111111111111111"
+        },
+        "message": {
+          "groups": [
+            [
+              { "delta": "-128", "amount": "0", "enabled": false },
+              {
+                "delta": "127",
+                "amount": "340282366920938463463374607431768211455",
+                "enabled": true
+              }
+            ],
+            [
+              {
+                "delta": "-1",
+                "amount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+                "enabled": true
+              },
+              { "delta": "0", "amount": "1", "enabled": false }
+            ]
+          ],
+          "label": "nested payload",
+          "payload": "0x000102ff"
+        }
+      },
+      "expectedDigest": "0x8da3f582575aafbec8f8a3320cbf23b7c60cc23063ae6dfa4114cafa1f9b4c30",
+      "mutations": [
+        {
+          "name": "nested-signed-value",
+          "pointer": "/message/groups/0/0/delta",
+          "value": "-127",
+          "expectedDigest": "0xc051e1f2eb0cccdd4a8c2ca41bd55a86564c72079a2b8f4dd5351324adc8d0b0"
+        },
+        {
+          "name": "dynamic-bytes",
+          "pointer": "/message/payload",
+          "value": "0x000102fe",
+          "expectedDigest": "0x7e591fb39c2f1a3a5afac9c32396497357dff0ec438c31bf7b00b6079cbb1729"
+        }
+      ]
+    },
+    {
+      "name": "chainless-dynamic-document",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            { "name": "name", "type": "string" },
+            { "name": "version", "type": "string" }
+          ],
+          "Document": [
+            { "name": "title", "type": "string" },
+            { "name": "body", "type": "bytes" },
+            { "name": "tag", "type": "bytes4" },
+            { "name": "approved", "type": "bool" }
+          ]
+        },
+        "primaryType": "Document",
+        "domain": {
+          "name": "OAAth Chainless",
+          "version": "1"
+        },
+        "message": {
+          "title": "cross-runtime document",
+          "body": "0x68656c6c6f00ff",
+          "tag": "0x01020304",
+          "approved": true
+        }
+      },
+      "expectedDigest": "0xd8902b2a37f9601c4bbb594b3074207227854476b826ef9274b00e73a6da46ff",
+      "mutations": [
+        {
+          "name": "dynamic-string",
+          "pointer": "/message/title",
+          "value": "cross-runtime document v2",
+          "expectedDigest": "0x2d4be528f10e123c9565af1f2dcd0eda6bf87de016f289289d67121297f73324"
+        },
+        {
+          "name": "chainless-domain-version",
+          "pointer": "/domain/version",
+          "value": "2",
+          "expectedDigest": "0x8308c1233c692f8769ef4fd4ee4771b1ee16911f71e0085b2a83078553c3c9de"
+        },
+        {
+          "name": "fixed-bytes",
+          "pointer": "/message/tag",
+          "value": "0x05060708",
+          "expectedDigest": "0xbad57cda80b4f70200da0bf9153b0477779d23e4223882558e200189c63f9863"
+        }
+      ]
+    }
+  ]
+}

@@ -14,8 +14,14 @@ let package = Package(
         .library(name: "OwnerPhone", targets: ["OwnerPhone"]),
         .library(name: "OwnerPhoneDemo", targets: ["OwnerPhoneDemo"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", exact: "1.10.0")
+    ],
     targets: [
-        .target(name: "OwnerPhone"),
+        .target(
+            name: "OwnerPhone",
+            dependencies: [.product(name: "CryptoSwift", package: "CryptoSwift")]
+        ),
         .target(name: "OwnerPhoneDemo", dependencies: ["OwnerPhone"]),
         .testTarget(name: "OwnerPhoneTests", dependencies: ["OwnerPhone", "OwnerPhoneDemo"])
     ]

@@ -39,6 +39,23 @@ published to npm.
   ever auto-resubmitted; an explicit retry is safe only because the server
   saga is replay-only.
 
+## EIP-712 derivation prerequisite
+
+`OwnerPhone` contains a package-internal, non-authorizing EIP-712 primitive
+for the canonical typed-data subset owned by `@oaath/protocol`. It captures an
+already-parsed semantic value, derives Ethereum's Keccak-256 digest, and can
+compare that result with an expected digest. Shared protocol/viem/Swift vectors
+cover the official Mail example, nested fixed and dynamic arrays, signed and
+unsigned integers, fixed and dynamic bytes, strings, booleans, addresses, and
+domain subsets.
+
+This primitive is deliberately not connected to the relay projection,
+approval state machine, key custody, or artifact creation. It does not create
+a `VerifiedSignableDigest`, and EIP-712 requests remain reject-only until a
+later reviewed owner binds the full request, signer/account, freshness, live
+review, and hardware user presence. Its input is an already-parsed value; it
+does not claim exact raw-JSON decoding or duplicate-key detection.
+
 ## Transport is deployment-wired
 
 The relay serves the preview routes `GET /native/projections/{operationId}`
@@ -135,3 +152,11 @@ Apple provisioning and entitlements, physical Secure Enclave key creation,
 hosted relay interoperability, a simulator run, or any
 signed physical-device install/run (see [Demo/README.md](Demo/README.md)). The unsigned
 generic simulator build is a compile/link proof only.
+
+## Dependency acknowledgment
+
+Ethereum Keccak-256 is provided by
+[CryptoSwift 1.10.0](https://github.com/krzyzanowskim/CryptoSwift/releases/tag/1.10.0),
+pinned exactly in `Package.swift`. This product includes software developed by
+Marcin Krzyżanowski (`https://krzyzanowskim.com/`). OAAth does not use
+CryptoSwift for key custody or signing.
