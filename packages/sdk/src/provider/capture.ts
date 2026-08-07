@@ -28,7 +28,7 @@ import {
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
-const CANONICAL_CHAIN_ID = /^0x[1-9a-f][0-9a-f]*$/u;
+const CANONICAL_CHAIN_ID = /^0x[1-9a-fA-F][0-9a-fA-F]*$/u;
 const CANONICAL_QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 
@@ -220,6 +220,11 @@ export function isHexBytes(value: unknown): value is CapturedHex {
 
 export function isCanonicalChainId(value: unknown): value is CapturedHex {
   return typeof value === "string" && CANONICAL_CHAIN_ID.test(value);
+}
+
+function canonicalChainId(value: unknown): CapturedHex {
+  if (!isCanonicalChainId(value)) return invalidProviderParams();
+  return `0x${value.slice(2).toLowerCase()}`;
 }
 
 export function isCanonicalQuantity(value: unknown): value is CapturedHex {
@@ -626,8 +631,7 @@ export function captureWalletSendCallsParams(
 
   const id = optionalId(bundle);
   const from = optionalFrom(bundle);
-  if (!isCanonicalChainId(bundle.chainId)) return invalidProviderParams();
-  const chainId = bundle.chainId;
+  const chainId = canonicalChainId(bundle.chainId);
   if (chainId !== expectedChainId) return rpcFail(5710);
   const atomic = captureAtomicCapability(bundle.atomicRequired);
   const atomicRequired = atomic.atomicRequired;
@@ -726,8 +730,7 @@ export function captureWalletGetCapabilitiesParams(
     );
     chainIds = Object.freeze(
       requested.map((chainId) => {
-        if (!isCanonicalChainId(chainId)) return invalidProviderParams();
-        return chainId;
+        return canonicalChainId(chainId);
       }),
     );
   }

@@ -140,6 +140,23 @@ describe("wallet_sendCalls orchestration", () => {
     await connection.close();
   });
 
+  it("accepts mixed-case chain digits while retaining one lowercase identity", async () => {
+    const { realm, connection, provider, account } = await activeProvider();
+    const mixedCaseChain = `0x${CHAIN_HEX.slice(2).toUpperCase()}`;
+
+    await expect(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id: "mixed-case-chain", chainId: mixedCaseChain })],
+      }),
+    ).resolves.toEqual({ id: "mixed-case-chain" });
+
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.signatures).toHaveLength(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
   it("generates an unpredictable-shape ID when the app omits one", async () => {
     const { realm, connection, provider, account } = await activeProvider();
 
@@ -221,14 +238,21 @@ describe("wallet_sendCalls orchestration", () => {
     await connection.close();
   });
 
-  it("returns 5710 for another chain and 4100 for another sender, then releases the ID", async () => {
+  it("refuses malformed chains, another chain, and another sender without consuming the ID", async () => {
     const { realm, connection, provider, account } = await activeProvider();
     const id = "retry-after-conclusive-refusal";
 
     await providerError(
       provider.request({
         method: "wallet_sendCalls",
-        params: [bundle(account, { id, chainId: "0x1" })],
+        params: [bundle(account, { id, chainId: "0x0A" })],
+      }),
+      -32602,
+    );
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id, chainId: "0xA" })],
       }),
       5710,
     );
@@ -240,6 +264,7 @@ describe("wallet_sendCalls orchestration", () => {
       4100,
     );
     expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
 
     await expect(
@@ -482,6 +507,7 @@ describe("wallet_getCapabilities authorization and parsing", () => {
   it("advertises atomic only for the configured requested chain", async () => {
     const { connection, provider, account } = await activeProvider();
     const uppercaseAccount = `0x${account.slice(2).toUpperCase()}`;
+    const uppercaseChain = `0x${CHAIN_HEX.slice(2).toUpperCase()}`;
 
     await expect(
       provider.request({ method: "wallet_getCapabilities", params: [uppercaseAccount] }),
@@ -490,12 +516,12 @@ describe("wallet_getCapabilities authorization and parsing", () => {
     });
     const mixed = (await provider.request({
       method: "wallet_getCapabilities",
-      params: [account, ["0x1", CHAIN_HEX]],
+      params: [account, ["0xA", uppercaseChain, CHAIN_HEX]],
     })) as Record<string, unknown>;
     expect(mixed).toEqual({ [CHAIN_HEX]: { atomic: { status: "supported" } } });
     expect(mixed).not.toHaveProperty("0x0");
     await expect(
-      provider.request({ method: "wallet_getCapabilities", params: [account, ["0x1"]] }),
+      provider.request({ method: "wallet_getCapabilities", params: [account, ["0xA"]] }),
     ).resolves.toEqual({});
     await connection.close();
   });
@@ -512,7 +538,8 @@ describe("wallet_getCapabilities authorization and parsing", () => {
       [],
       [account, ["0x0"]],
       [account, ["0x01"]],
-      [account, ["0xA"]],
+      [account, ["0x0A"]],
+      [account, ["0X1"]],
       [account, new Array(1)],
     ]) {
       await providerError(provider.request({ method: "wallet_getCapabilities", params }), -32602);
