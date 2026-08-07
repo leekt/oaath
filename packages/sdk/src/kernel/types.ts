@@ -248,4 +248,13 @@ export interface KernelRuntime {
    * fails closed in Kernel's validation phase.
    */
   readonly signOperation: (prepared: unknown) => Promise<`0x${string}`>;
+  /**
+   * Verifies caller-produced normalized key bytes against this runtime's exact
+   * prepared operation and bound public material, then applies the same Kernel
+   * authority envelope as `signOperation`. It never signs or prepares anything.
+   */
+  readonly encodeVerifiedSignature: (
+    prepared: unknown,
+    signature: unknown,
+  ) => Promise<`0x${string}`>;
 }

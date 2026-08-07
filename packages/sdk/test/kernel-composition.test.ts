@@ -524,6 +524,43 @@ describe("Kernel composition matrix", () => {
     });
   });
 
+  it("verifies and envelopes one external session signature for the exact operation", async () => {
+    const runtime = ecdsaRuntime("session");
+    const prepared = runtime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-external-signature",
+      account: await ecdsaAccountDescriptor(),
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" }],
+      gas,
+    });
+    const raw = await ecdsaAccount.sign({ hash: prepared.userOperationHash });
+    const enveloped = await runtime.encodeVerifiedSignature(prepared, raw.toUpperCase());
+    const [slices] = decodeAbiParameters([{ name: "signatures", type: "bytes[]" }], enveloped);
+    const signerSlice = slices[1];
+    if (!signerSlice) throw new Error("permission envelope carries no signer slice");
+    expect(slices).toHaveLength(2);
+    expect(slices[0]).toBe("0x");
+    expect(await recoverAddress({ hash: prepared.userOperationHash, signature: signerSlice })).toBe(
+      getAddress(ecdsaAccount.address),
+    );
+
+    const foreign = privateKeyToAccount(`0x${"12".repeat(32)}`);
+    await expect(
+      runtime.encodeVerifiedSignature(
+        prepared,
+        await foreign.sign({ hash: prepared.userOperationHash }),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
+    await expect(runtime.encodeVerifiedSignature(prepared, "not-hex")).rejects.toMatchObject({
+      code: "kernel_runtime_input_invalid",
+    });
+    await expect(
+      ecdsaRuntime("owner").encodeVerifiedSignature(prepared, raw),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+  });
+
   it("refuses to sign an operation prepared for another chain", async () => {
     const runtime = createKernelRuntime({
       deployment: kernelV4Deployment(11_155_111),
