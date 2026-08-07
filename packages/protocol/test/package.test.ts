@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as protocol from "../src/index.js";
 
 describe("package boundary", () => {
-  it("exports only accepted id, time, error, actor, authorization, grant, operation, permission, wire, and capture owners", () => {
+  it("exports only accepted id, time, error, actor, authorization, grant, operation, permission, signing, wire, and capture owners", () => {
     expect(Object.keys(protocol).sort()).toEqual([
       "MAX_AUTHORIZATION_CODE_LIFETIME",
       "MAX_PROTOCOL_TIMESTAMP",
@@ -20,6 +20,8 @@ describe("package boundary", () => {
       "OAATH_OPERATION_RECORD_VERSION",
       "OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION",
       "OAATH_OWNER_CREDENTIAL_PROFILE_VERSION",
+      "OAATH_OWNER_SIGNING_REQUEST_HASH_DOMAIN",
+      "OAATH_OWNER_SIGNING_REQUEST_VERSION",
       "OAATH_PERMISSION_DECISION_HASH_DOMAIN",
       "OAATH_PERMISSION_DECISION_VERSION",
       "OAATH_PERMISSION_REQUEST_HASH_DOMAIN",
@@ -43,9 +45,11 @@ describe("package boundary", () => {
       "captureAuthorizationDecision",
       "captureAuthorizationRequest",
       "captureBrowserEnvelope",
+      "captureCanonicalEip712TypedData",
       "captureClientBinding",
       "captureDenseArray",
       "captureIssuerIdentity",
+      "captureOwnerSigningRequest",
       "captureRecord",
       "captureServiceBootstrap",
       "captureSubjectBinding",
@@ -59,13 +63,16 @@ describe("package boundary", () => {
       "deriveSubjectId",
       "durationBetween",
       "encodeGrantPolicy",
+      "encodeOwnerSigningRequest",
       "encodePermissionDecision",
       "encodePermissionRequest",
       "evaluateGrantPolicyCoverage",
       "exactCapturedRecord",
       "exactRecord",
       "hashAuthorizationCode",
+      "hashCanonicalEip712TypedData",
       "hashGrantPolicy",
+      "hashOwnerSigningRequest",
       "hashPermissionDecision",
       "hashPermissionRequest",
       "isGrantPolicyAttenuation",
@@ -76,6 +83,7 @@ describe("package boundary", () => {
       "parseAuthorizationDecision",
       "parseAuthorizationRequest",
       "parseBrowserEnvelope",
+      "parseCanonicalEip712TypedData",
       "parseClientBinding",
       "parseClientId",
       "parseDeviceId",
@@ -91,6 +99,7 @@ describe("package boundary", () => {
       "parseOperationIdentity",
       "parseOperatorCredentialProfile",
       "parseOwnerCredentialProfile",
+      "parseOwnerSigningRequest",
       "parsePermissionDecision",
       "parsePermissionRequest",
       "parseServiceBootstrap",

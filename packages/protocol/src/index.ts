@@ -246,6 +246,30 @@ export {
   OAATH_SERVICE_BOOTSTRAP_VERSION,
   parseServiceBootstrap,
 } from "./service-bootstrap.js";
+export type {
+  CanonicalEip712Array,
+  CanonicalEip712Field,
+  CanonicalEip712Object,
+  CanonicalEip712TypedData,
+  CanonicalEip712Value,
+  Eip712OwnerSigningRequest,
+  Eip712SigningPurpose,
+  OwnerSigningReplayFacts,
+  OwnerSigningRequest,
+  OwnerSigningRequestSigner,
+  RawDigestOwnerSigningRequest,
+} from "./signing-request.js";
+export {
+  captureCanonicalEip712TypedData,
+  captureOwnerSigningRequest,
+  encodeOwnerSigningRequest,
+  hashCanonicalEip712TypedData,
+  hashOwnerSigningRequest,
+  OAATH_OWNER_SIGNING_REQUEST_HASH_DOMAIN,
+  OAATH_OWNER_SIGNING_REQUEST_VERSION,
+  parseCanonicalEip712TypedData,
+  parseOwnerSigningRequest,
+} from "./signing-request.js";
 export type { Duration, Timestamp } from "./time.js";
 export {
   durationBetween,
