@@ -43,6 +43,7 @@ import {
   type PermissionRequest,
   parseOperationIdentity,
 } from "@oaath/protocol";
+import { publicKeyToAddress } from "viem/accounts";
 import {
   diagnoseKernelCapability,
   type KernelCapability,
@@ -78,6 +79,7 @@ import {
 } from "../operation-runner.js";
 import { deriveOperationId, type PreparedUserOperation } from "../prepared-user-operation.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
+import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import { feePayerDescriptor, type OaathSessionCoverage } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
@@ -96,7 +98,13 @@ import {
   type OperationStoreRecord,
 } from "../store.js";
 import type { OaathBinding } from "./binding.js";
-import { clientCapability, clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
+import {
+  clientCapability,
+  clientFail,
+  exactClientRecord,
+  mapClientFailure,
+  OaathClientError,
+} from "./errors.js";
 import {
   createOperationHandle,
   type OaathOperationHandle,
@@ -146,6 +154,43 @@ export interface OaathCallInput {
 export interface OaathSendCallsInput {
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
+}
+
+/** OAAth's explicit experimental ERC-7836 external-key profile. */
+export interface OaathExternalPreparedCallKey {
+  readonly type: "secp256k1" | "webauthn-p256";
+  readonly publicKey: `0x${string}`;
+  readonly prehash: false;
+}
+
+/** Exact preparation facts persisted by the prepared-call context owner. */
+export interface OaathExternalPreparedCallPlan {
+  readonly grantId: string;
+  readonly account: `0x${string}`;
+  readonly chainId: number;
+  readonly calls: readonly Readonly<OaathCallInput>[];
+  readonly key: Readonly<OaathExternalPreparedCallKey>;
+  readonly custody: Readonly<{
+    mode: "frontend" | "application_backend";
+    providerId: string | null;
+  }>;
+  readonly materialization: Readonly<{
+    mode: "standard" | "enable-replayable";
+    permissionId: `0x${string}`;
+  }>;
+  readonly quote: Readonly<{ nonceKey: string; sequence: string }>;
+  readonly decision: Readonly<{
+    route: "bundler" | "direct";
+    feePayer: Readonly<OaathFeePayerDescriptor> | null;
+  }>;
+  readonly prepared: Readonly<PreparedUserOperation>;
+  /** Exclusive bound imposed by the Grant owner or the shorter context lifetime. */
+  readonly expiresAt: number;
+}
+
+/** An in-memory, locally verified capability; its signature is never persisted. */
+export interface OaathValidatedPreparedCalls {
+  readonly plan: Readonly<OaathExternalPreparedCallPlan>;
 }
 
 /** The exact snapshot a submission transport receives. It replaces nothing. */
@@ -222,11 +267,30 @@ export interface OaathGrantProviderPort {
   readonly providerScopeId: string;
   readonly grantId: string;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly now: () => number;
   readonly account: OaathGrantHandle["account"];
   readonly authorizedAccount: OaathGrantHandle["account"];
   readonly startCalls: (
     input: unknown,
+    publication: OaathProviderOperationPublication,
+  ) => Promise<Readonly<OaathOperationHandle>>;
+  readonly prepareCalls: (
+    input: Readonly<{
+      chain: number;
+      calls: readonly Readonly<OaathCallInput>[];
+      key: Readonly<OaathExternalPreparedCallKey>;
+    }>,
+  ) => Promise<Readonly<OaathExternalPreparedCallPlan>>;
+  readonly validatePreparedCalls: (
+    input: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ) => Promise<Readonly<OaathValidatedPreparedCalls>>;
+  readonly startPreparedCalls: (
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
     publication: OaathProviderOperationPublication,
   ) => Promise<Readonly<OaathOperationHandle>>;
   readonly recoverOperation: (input: unknown) => Promise<Readonly<OaathProviderOperationRecovery>>;
@@ -267,6 +331,7 @@ export interface CreateGrantHandleInput {
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly chains: ReadonlyMap<number, Readonly<OaathChainCapability>>;
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
@@ -578,6 +643,14 @@ export function createGrantHandle(
   const activityWaiters = new Set<() => void>();
   const observers = new Map<number, OperationObserver>();
   const handles = new Set<Readonly<OaathOperationHandle>>();
+  const validatedPreparedCalls = new WeakMap<
+    object,
+    Readonly<{
+      shape: Readonly<ExecutionShape>;
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>
+  >();
 
   function assertOpen(): void {
     if (closed || closeRequested) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -825,6 +898,232 @@ export function createGrantHandle(
     }
   }
 
+  interface ExecutionShape {
+    readonly chainId: number;
+    readonly chain: Readonly<OaathChainCapability>;
+    readonly runtime: Readonly<KernelRuntime>;
+    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+    readonly calls: readonly Readonly<KernelV4Call>[];
+    readonly mode: "standard" | "enable-replayable";
+    readonly decision: Readonly<OaathExecutionDecision>;
+    readonly binding: Readonly<{
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+    }>;
+    readonly grantId: string;
+    readonly grantExpiresAt: number;
+  }
+
+  async function resolveExecutionShape(
+    chainId: number,
+    calls: readonly Readonly<KernelV4Call>[],
+  ): Promise<Readonly<ExecutionShape>> {
+    const grantSnapshot = await requireActive();
+    const grant = grantSnapshot.value;
+    const chain = chainCapability(chainId);
+    const deployment = (() => {
+      try {
+        return kernelV4Deployment(chainId);
+      } catch (error) {
+        return mapClientFailure(error, "chain is not a supported Kernel deployment");
+      }
+    })();
+
+    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
+    const coverage = await sessionCoverage(grant, chainId, calls);
+    if (coverage !== "covered") {
+      return clientFail(
+        "oaath_client_scope_denied",
+        coverage === "uncovered"
+          ? "the calls are outside the approved Grant scope"
+          : "Grant scope coverage could not be conclusively evaluated",
+        coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
+      );
+    }
+    const bundler = await probeBundlerCapability({
+      capability: chain.bundler,
+      request: { chainId, entryPoint: deployment.entryPoint.address },
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
+    const decision = decideExecution({
+      operationKind: "execution",
+      sessionCoverage: coverage,
+      bundler,
+      feePayer: chain.feePayer,
+    });
+    if (decision.route === "none") {
+      return clientFail(
+        "oaath_client_route_unavailable",
+        "no safe submission route is available",
+        decision.reasons.join(","),
+      );
+    }
+    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
+    requireKernelCapability(chainId, "hook_call");
+    const runtime = sessionRuntime(chainId);
+    const descriptor = await accountDescriptor(chainId);
+    requireExecutionPublication();
+    let publicationSnapshot = await requireActive();
+    requireExecutionPublication();
+    if (publicationSnapshot.storeRevision !== grantSnapshot.storeRevision) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the Grant advanced before operation publication",
+        "grant_store_conflict",
+      );
+    }
+    let publicationGrant = publicationSnapshot.value;
+    if (runtime.validation.kind !== "permission") {
+      return unsupported("session_validation_not_permission");
+    }
+    const binding = Object.freeze({
+      chainId,
+      account: descriptor.account,
+      permissionId: runtime.validation.permissionId,
+    });
+    let materialization = publicationGrant.materializations.find(
+      (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+    );
+    if (materialization?.state === "installing") {
+      publicationSnapshot = await reconcileInstallingMaterialization(
+        publicationSnapshot,
+        binding,
+        materialization.operationId,
+      );
+      publicationGrant = publicationSnapshot.value;
+      materialization = publicationGrant.materializations.find(
+        (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+      );
+    }
+    let mode: "standard" | "enable-replayable" = "standard";
+    let latest = publicationSnapshot;
+    if (materialization === undefined || materialization.state === "unmaterialized") {
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+      if (materialization === undefined) {
+        latest = await commit(
+          latest,
+          transition(latest.value, {
+            type: "record_unmaterialized",
+            identity: latest.value.identity,
+            binding,
+            recordedAt: input.now(),
+          }),
+        );
+        publicationGrant = latest.value;
+      }
+    } else if (materialization.state === "installing") {
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+    } else if (materialization.state !== "installed") {
+      return unsupported(`grant_materialization_${materialization.state}`);
+    }
+
+    return Object.freeze({
+      chainId,
+      chain,
+      runtime,
+      descriptor,
+      calls,
+      mode,
+      decision,
+      binding,
+      grantId: publicationGrant.identity.grantId,
+      grantExpiresAt: publicationGrant.expiresAt,
+    });
+  }
+
+  function requireEnableApproval(
+    shape: Readonly<ExecutionShape>,
+  ): Readonly<KernelAllChainApproval> {
+    const approval = input.installApproval;
+    if (approval === null) return unsupported("grant_capability_unavailable");
+    const packages = captureKernelV4Installs(shape.runtime.packages);
+    if (
+      approval.account !== shape.descriptor.account ||
+      approval.packages.length !== packages.length ||
+      !packages.every((install, index) => {
+        const approved = approval.packages[index];
+        return approved !== undefined && sameInstall(install, approved);
+      })
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the install approval does not bind this permission runtime",
+        "kernel_runtime_binding_mismatch",
+      );
+    }
+    return approval;
+  }
+
+  async function prepareExecutionShape(
+    shape: Readonly<ExecutionShape>,
+    gasOverride?: Readonly<KernelV4UserOperationGas>,
+  ): Promise<
+    Readonly<{
+      prepared: Readonly<PreparedUserOperation>;
+      quote: Readonly<{ nonceKey: string; sequence: string }>;
+    }>
+  > {
+    const quote = quoteFields(
+      await shape.chain.quote({
+        chainId: shape.chainId,
+        kind: "execution",
+        signer: "session",
+        account: shape.descriptor.account,
+        calls: shape.calls,
+      }),
+    );
+    const fields = {
+      grantId: shape.grantId,
+      account: shape.descriptor,
+      nonceKey: quote.nonceKey,
+      sequence: quote.sequence,
+      calls: [...shape.calls],
+      gas: gasOverride ?? quote.gas,
+    };
+    let prepared: Readonly<PreparedUserOperation>;
+    if (shape.mode === "enable-replayable") {
+      requireEnableApproval(shape);
+      prepared = shape.runtime.prepareOperation({
+        ...fields,
+        kind: "execution",
+        mode: "enable-replayable",
+      });
+    } else {
+      prepared = shape.runtime.prepareOperation({ kind: "execution", ...fields });
+    }
+    return Object.freeze({
+      prepared,
+      quote: Object.freeze({ nonceKey: quote.nonceKey, sequence: quote.sequence }),
+    });
+  }
+
+  async function finalExternalSignature(
+    shape: Readonly<ExecutionShape>,
+    prepared: Readonly<PreparedUserOperation>,
+    signature: `0x${string}`,
+  ): Promise<`0x${string}`> {
+    try {
+      const inner = await shape.runtime.encodeVerifiedSignature(prepared, signature);
+      if (shape.mode !== "enable-replayable") return inner;
+      const approval = requireEnableApproval(shape);
+      return encodeKernelV4EnableSignature({
+        nonce: approval.installNonce,
+        packages: approval.packages,
+        enableSignature: approval.enableSignature,
+        userOperationSignature: inner,
+      });
+    } catch (error) {
+      return mapClientFailure(error, "prepared-call signature could not be verified");
+    }
+  }
+
   function runner(spec: {
     readonly chainId: number;
     readonly kind: OperationKind;
@@ -848,6 +1147,9 @@ export function createGrantHandle(
     readonly publication?: Readonly<OaathProviderOperationPublication>;
     readonly authorizeOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly abandonOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
+    readonly prepared?: Readonly<PreparedUserOperation>;
+    /** Already locally verified and fully wrapped; retained in memory only. */
+    readonly externalSignature?: `0x${string}`;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
@@ -867,6 +1169,7 @@ export function createGrantHandle(
         },
         preparation: {
           prepare: async () => {
+            if (spec.prepared !== undefined) return spec.prepared;
             const quote = quoteFields(
               await chain.quote({
                 chainId: spec.chainId,
@@ -992,16 +1295,19 @@ export function createGrantHandle(
             // enable envelope is minted here, after provider binding and the
             // runner's durable submission-attempt transition, for this exact
             // snapshot and nothing else.
-            const userOperationSignature = await spec.runtime.signOperation(prepared);
-            let signature = userOperationSignature;
-            if (spec.mode === "enable-replayable") {
+            let signature = spec.externalSignature;
+            if (signature === undefined) {
+              const userOperationSignature = await spec.runtime.signOperation(prepared);
+              signature = userOperationSignature;
+            }
+            if (spec.externalSignature === undefined && spec.mode === "enable-replayable") {
               const approval = spec.installApproval;
               if (approval === null) return unsupported("grant_capability_unavailable");
               signature = encodeKernelV4EnableSignature({
                 nonce: approval.installNonce,
                 packages: approval.packages,
                 enableSignature: approval.enableSignature,
-                userOperationSignature,
+                userOperationSignature: signature,
               });
             }
             return captureSubmissionSession(
@@ -1276,6 +1582,28 @@ export function createGrantHandle(
     }
   }
 
+  async function resumePreparedOnce(
+    created: ReturnType<typeof createOperationRunner>,
+    key: Readonly<OperationStoreKey>,
+    expectedUserOperationHash: `0x${string}`,
+  ): Promise<OperationStartResult> {
+    const at = input.now();
+    try {
+      return await created.resumePreparedOperation({
+        kind: "execution",
+        key,
+        preparedAt: at,
+        attemptedAt: at,
+        submittedAt: at,
+        observedAt: at,
+        timeoutMs: SUBMISSION_TIMEOUT_MS,
+        expectedUserOperationHash,
+      });
+    } catch (error) {
+      return mapClientFailure(error, "prepared operation resume failed");
+    }
+  }
+
   async function recordFinalizedMaterialization(
     binding: Readonly<{
       chainId: number;
@@ -1415,56 +1743,90 @@ export function createGrantHandle(
     operation: OaathProviderOperationPointer,
   ): Promise<void> {
     const operationId = requireMaterializationOperation(binding, operation);
-    requireExecutionPublication();
-    const snapshot = await requireActive();
-    const current = snapshot.value.materializations.find(
-      (entry) => entry.chainId === binding.chainId && entry.state !== "unsupported",
-    );
-    if (
-      !current ||
-      current.state === "unsupported" ||
-      current.account !== binding.account ||
-      current.permissionId !== binding.permissionId
-    ) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant materialization binding changed before signing",
-        "grant_materialization_binding_mismatch",
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      requireExecutionPublication();
+      const snapshot = await requireActive();
+      const current = snapshot.value.materializations.find(
+        (entry) => entry.chainId === binding.chainId && entry.state !== "unsupported",
       );
-    }
-
-    if (mode === "enable-replayable") {
-      if (current.state === "unmaterialized") {
-        await commit(
-          snapshot,
-          transition(snapshot.value, {
-            type: "begin_materialization",
-            identity: snapshot.value.identity,
-            binding,
-            operationId,
-            startedAt: input.now(),
-          }),
-        );
-        return;
-      }
-      if (current.state !== "installing" || current.operationId !== operationId) {
+      if (
+        !current ||
+        current.state === "unsupported" ||
+        current.account !== binding.account ||
+        current.permissionId !== binding.permissionId
+      ) {
         return clientFail(
           "oaath_client_state_conflict",
-          "another operation owns Grant materialization",
-          "grant_materialization_operation_mismatch",
+          "the Grant materialization binding changed before signing",
+          "grant_materialization_binding_mismatch",
         );
       }
-    } else if (current.state !== "installed") {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant permission is not installed",
-        "grant_materialization_not_installed",
-      );
-    }
 
-    // Even when the aggregate value is unchanged, this CAS is the durable
-    // admission linearization point against another handle beginning revocation.
-    await commit(snapshot, snapshot.value);
+      if (mode === "enable-replayable") {
+        if (current.state === "installing" && current.operationId === operationId) {
+          // Another exact producer already admitted this same operation. Its
+          // begin-materialization CAS is the shared linearization point.
+          return;
+        }
+        if (current.state !== "unmaterialized") {
+          return clientFail(
+            "oaath_client_state_conflict",
+            "another operation owns Grant materialization",
+            "grant_materialization_operation_mismatch",
+          );
+        }
+        try {
+          await commit(
+            snapshot,
+            transition(snapshot.value, {
+              type: "begin_materialization",
+              identity: snapshot.value.identity,
+              binding,
+              operationId,
+              startedAt: input.now(),
+            }),
+          );
+          return;
+        } catch (error) {
+          if (
+            error instanceof OaathClientError &&
+            error.source === "grant_store_conflict" &&
+            attempt < 2
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (current.state !== "installed") {
+        return clientFail(
+          "oaath_client_state_conflict",
+          "the Grant permission is not installed",
+          "grant_materialization_not_installed",
+        );
+      }
+      // Even when the aggregate value is unchanged, this CAS is the durable
+      // admission linearization point against another handle beginning revocation.
+      try {
+        await commit(snapshot, snapshot.value);
+        return;
+      } catch (error) {
+        if (
+          error instanceof OaathClientError &&
+          error.source === "grant_store_conflict" &&
+          attempt < 2
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    return clientFail(
+      "oaath_client_state_conflict",
+      "the Grant could not admit the exact operation",
+      "grant_store_conflict",
+    );
   }
 
   function materializationReleaseTime(grant: Grant): number {
@@ -1645,149 +2007,29 @@ export function createGrantHandle(
       return clientFail("oaath_client_input_invalid", "sendCalls chain is invalid");
     }
     const calls = captureCalls(request.calls, context);
-    const grantSnapshot = await requireActive();
-    const grant = grantSnapshot.value;
-    const chain = chainCapability(chainId);
-    const deployment = (() => {
-      try {
-        return kernelV4Deployment(chainId);
-      } catch (error) {
-        return mapClientFailure(error, "chain is not a supported Kernel deployment");
-      }
-    })();
-
-    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
-    const coverage = await sessionCoverage(grant, chainId, calls);
-    // A Grant may authorize at most the owner-approved scope. Denial happens
-    // here — before the bundler probe, the quote, the durable journal, any
-    // signature, and any send — and it is conclusive: unreadable or missing
-    // usage evidence is not coverage.
-    if (coverage !== "covered") {
-      return clientFail(
-        "oaath_client_scope_denied",
-        coverage === "uncovered"
-          ? "the calls are outside the approved Grant scope"
-          : "Grant scope coverage could not be conclusively evaluated",
-        coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
-      );
-    }
-    const bundler = await probeBundlerCapability({
-      capability: chain.bundler,
-      request: { chainId, entryPoint: deployment.entryPoint.address },
-      timeoutMs: SUBMISSION_TIMEOUT_MS,
-    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
-    const decision = decideExecution({
-      operationKind: "execution",
-      sessionCoverage: coverage,
-      bundler,
-      feePayer: chain.feePayer,
-    });
-    if (decision.route === "none") {
-      return clientFail(
-        "oaath_client_route_unavailable",
-        "no safe submission route is available",
-        decision.reasons.join(","),
-      );
-    }
-    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
-    requireKernelCapability(chainId, "hook_call");
-    // Coverage was proven above and the decision table maps covered execution
-    // to the session signer, so this handle never composes owner authority for
-    // a send. `ownerRuntime` remains only for account identity binding.
-    const runtime = sessionRuntime(chainId);
-    const descriptor = await accountDescriptor(chainId);
-    requireExecutionPublication();
-    let publicationSnapshot = await requireActive();
-    requireExecutionPublication();
-    if (publicationSnapshot.storeRevision !== grantSnapshot.storeRevision) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant advanced before operation publication",
-        "grant_store_conflict",
-      );
-    }
-    let publicationGrant = publicationSnapshot.value;
+    const resolved = await resolveExecutionShape(chainId, calls);
     const key = Object.freeze({
-      grantId: publicationGrant.identity.grantId,
+      grantId: resolved.grantId,
       chainId,
       kind: "execution" as const,
     });
-
-    // One approval, materialized independently per chain: the first covered
-    // execution on an unmaterialized chain spends the owner's replayable
-    // install approval in enable mode and executes together with it; every
-    // later operation validates through the standard permission path. The
-    // durable Grant record owns each chain's state, committed before any
-    // signature or send exists.
-    if (runtime.validation.kind !== "permission") {
-      return unsupported("session_validation_not_permission");
-    }
-    const binding = Object.freeze({
-      chainId,
-      account: descriptor.account,
-      permissionId: runtime.validation.permissionId,
-    });
-    let materialization = publicationGrant.materializations.find(
-      (entry) => entry.chainId === chainId && entry.state !== "unsupported",
-    );
-    if (materialization?.state === "installing") {
-      publicationSnapshot = await reconcileInstallingMaterialization(
-        publicationSnapshot,
-        binding,
-        materialization.operationId,
-      );
-      publicationGrant = publicationSnapshot.value;
-      materialization = publicationGrant.materializations.find(
-        (entry) => entry.chainId === chainId && entry.state !== "unsupported",
-      );
-    }
-    let mode: "standard" | "enable-replayable" = "standard";
-    let latest = publicationSnapshot;
-    if (materialization === undefined || materialization.state === "unmaterialized") {
-      if (input.installApproval === null) {
-        return unsupported("grant_capability_unavailable");
-      }
-      mode = "enable-replayable";
-      if (materialization === undefined) {
-        latest = await commit(
-          latest,
-          transition(latest.value, {
-            type: "record_unmaterialized",
-            identity: latest.value.identity,
-            binding,
-            recordedAt: input.now(),
-          }),
-        );
-      }
-    } else if (materialization.state === "installing") {
-      // A prior materialization attempt exists; the lane below owns its exact
-      // identity and never submits twice. Re-entering enable mode can only
-      // observe or, on a terminal lane, mint an operation the chain refuses
-      // because the install nonce is spent — never a second authority.
-      if (input.installApproval === null) {
-        return unsupported("grant_capability_unavailable");
-      }
-      mode = "enable-replayable";
-    } else if (materialization.state !== "installed") {
-      return unsupported(`grant_materialization_${materialization.state}`);
-    }
 
     const shape = {
       chainId,
       kind: "execution" as const,
-      runtime,
-      descriptor,
+      runtime: resolved.runtime,
+      descriptor: resolved.descriptor,
       calls,
       signer: "session" as const,
-      mode,
+      mode: resolved.mode,
       installApproval: input.installApproval,
-      decision,
-      grantId: publicationGrant.identity.grantId,
+      decision: resolved.decision,
+      grantId: resolved.grantId,
       requestHash,
       authorizeOperation: (operation: OaathProviderOperationPointer) =>
-        authorizeExecutionOperation(binding, mode, operation),
+        authorizeExecutionOperation(resolved.binding, resolved.mode, operation),
       abandonOperation: (operation: OaathProviderOperationPointer) =>
-        abandonExecutionOperation(binding, mode, operation),
+        abandonExecutionOperation(resolved.binding, resolved.mode, operation),
     };
     // The sender may replace a terminal lane, while the returned handle receives
     // a separate read-only runner and pins the exact hash below. Neither can
@@ -1809,8 +2051,8 @@ export function createGrantHandle(
     }
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
-    if (action === "run" && mode === "enable-replayable") {
-      await recordFinalizedMaterialization(binding, result).catch(() => undefined);
+    if (action === "run" && resolved.mode === "enable-replayable") {
+      await recordFinalizedMaterialization(resolved.binding, result).catch(() => undefined);
     }
     return trackedOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
@@ -1819,11 +2061,279 @@ export function createGrantHandle(
       timeoutMs: SUBMISSION_TIMEOUT_MS,
       now: input.now,
       initial: result,
-      observation: (readRequest) => chain.observation.read(readRequest),
-      ...(mode === "enable-replayable"
+      observation: (readRequest) => resolved.chain.observation.read(readRequest),
+      ...(resolved.mode === "enable-replayable"
         ? {
             onObserved: (observed: OperationObserveResult) =>
-              recordFinalizedMaterialization(binding, observed),
+              recordFinalizedMaterialization(resolved.binding, observed),
+          }
+        : {}),
+    });
+  }
+
+  function approvedExternalKey(value: Readonly<OaathExternalPreparedCallKey>): void {
+    if (value.prehash !== false || typeof value.publicKey !== "string") {
+      clientFail("oaath_client_input_invalid", "prepared-call key is invalid");
+    }
+    const approved = input.binding.operatorCredential;
+    if (value.type === "secp256k1" && approved.kind === "ecdsa") {
+      let address: string;
+      try {
+        address = publicKeyToAddress(value.publicKey).toLowerCase();
+      } catch {
+        clientFail("oaath_client_input_invalid", "prepared-call public key is invalid");
+      }
+      if (address === approved.address && input.sessionKey.kind === "ecdsa") return;
+    }
+    if (
+      value.type === "webauthn-p256" &&
+      approved.kind === "webauthn" &&
+      input.sessionKey.kind === "webauthn" &&
+      value.publicKey === approved.publicKey
+    ) {
+      return;
+    }
+    clientFail(
+      "oaath_client_capability_invalid",
+      "prepared-call key is not the approved operator credential",
+      "operator_credential_mismatch",
+    );
+  }
+
+  function preparedCustody(): Readonly<OaathExternalPreparedCallPlan["custody"]> {
+    const signer = input.request.sessionSigner;
+    if (signer === null) return Object.freeze({ mode: "frontend", providerId: null });
+    if (signer.mode === "application_backend") {
+      return Object.freeze({ mode: signer.mode, providerId: signer.providerId });
+    }
+    return unsupported("prepared_calls_hosted_custody_unsupported");
+  }
+
+  function storedGas(
+    prepared: Readonly<PreparedUserOperation>,
+  ): Readonly<KernelV4UserOperationGas> {
+    const operation = prepared.userOperation;
+    return Object.freeze({
+      callGasLimit: operation.callGasLimit,
+      verificationGasLimit: operation.verificationGasLimit,
+      preVerificationGas: operation.preVerificationGas,
+      maxFeePerGas: operation.maxFeePerGas,
+      maxPriorityFeePerGas: operation.maxPriorityFeePerGas,
+    });
+  }
+
+  function sameFeePayer(
+    left: Readonly<OaathFeePayerDescriptor> | null,
+    right: Readonly<OaathFeePayerDescriptor> | null,
+  ): boolean {
+    return (
+      (left === null && right === null) ||
+      (left !== null &&
+        right !== null &&
+        left.address === right.address &&
+        left.balance === right.balance)
+    );
+  }
+
+  function samePreparedCalls(
+    left: readonly Readonly<OaathCallInput>[],
+    right: readonly Readonly<KernelV4Call>[],
+  ): boolean {
+    return (
+      left.length === right.length &&
+      left.every((call, index) => {
+        const retained = right[index];
+        return (
+          retained !== undefined &&
+          call.target === retained.target &&
+          call.value === retained.value &&
+          call.data === retained.data
+        );
+      })
+    );
+  }
+
+  function externalPlan(
+    shape: Readonly<ExecutionShape>,
+    key: Readonly<OaathExternalPreparedCallKey>,
+    custody: Readonly<OaathExternalPreparedCallPlan["custody"]>,
+    result: Awaited<ReturnType<typeof prepareExecutionShape>>,
+  ): Readonly<OaathExternalPreparedCallPlan> {
+    return Object.freeze({
+      grantId: shape.grantId,
+      account: shape.descriptor.account,
+      chainId: shape.chainId,
+      calls: Object.freeze(
+        shape.calls.map((call) =>
+          Object.freeze({ target: call.target, value: call.value, data: call.data }),
+        ),
+      ),
+      key: Object.freeze({ ...key }),
+      custody,
+      materialization: Object.freeze({
+        mode: shape.mode,
+        permissionId: shape.binding.permissionId,
+      }),
+      quote: result.quote,
+      decision: Object.freeze({
+        route: shape.decision.route === "bundler" ? ("bundler" as const) : ("direct" as const),
+        feePayer: shape.decision.feePayer,
+      }),
+      prepared: result.prepared,
+      expiresAt: shape.grantExpiresAt,
+    });
+  }
+
+  async function prepareCallsWork(
+    value: Readonly<{
+      chain: number;
+      calls: readonly Readonly<OaathCallInput>[];
+      key: Readonly<OaathExternalPreparedCallKey>;
+    }>,
+  ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
+    const context: CaptureContext = new WeakSet();
+    const request = exactClientRecord(
+      value,
+      ["chain", "calls", "key"],
+      "provider prepareCalls input",
+      context,
+    );
+    if (
+      typeof request.chain !== "number" ||
+      !Number.isSafeInteger(request.chain) ||
+      request.chain < 1
+    ) {
+      return clientFail("oaath_client_input_invalid", "prepared-call chain is invalid");
+    }
+    const keyRecord = exactClientRecord(
+      request.key,
+      ["type", "publicKey", "prehash"],
+      "provider prepared-call key",
+      context,
+    );
+    const key = Object.freeze({
+      type: keyRecord.type,
+      publicKey: keyRecord.publicKey,
+      prehash: keyRecord.prehash,
+    }) as Readonly<OaathExternalPreparedCallKey>;
+    approvedExternalKey(key);
+    const custody = preparedCustody();
+    const calls = captureCalls(request.calls, context);
+    const shape = await resolveExecutionShape(request.chain, calls);
+    return externalPlan(shape, key, custody, await prepareExecutionShape(shape));
+  }
+
+  async function validatePreparedCallsWork(
+    value: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ): Promise<Readonly<OaathValidatedPreparedCalls>> {
+    const plan = value.plan;
+    approvedExternalKey(plan.key);
+    const custody = preparedCustody();
+    if (
+      plan.grantId !== record.value.identity.grantId ||
+      plan.custody.mode !== custody.mode ||
+      plan.custody.providerId !== custody.providerId
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "prepared-call authority changed",
+        "prepared_call_authority_changed",
+      );
+    }
+    const calls = captureCalls(plan.calls, new WeakSet());
+    const shape = await resolveExecutionShape(plan.chainId, calls);
+    const current = await prepareExecutionShape(shape, storedGas(plan.prepared));
+    const expectedRoute = shape.decision.route === "bundler" ? "bundler" : "direct";
+    if (
+      plan.account !== shape.descriptor.account ||
+      plan.expiresAt > shape.grantExpiresAt ||
+      !samePreparedCalls(plan.calls, shape.calls) ||
+      plan.materialization.mode !== shape.mode ||
+      plan.materialization.permissionId !== shape.binding.permissionId ||
+      plan.quote.nonceKey !== current.quote.nonceKey ||
+      plan.quote.sequence !== current.quote.sequence ||
+      plan.decision.route !== expectedRoute ||
+      !sameFeePayer(plan.decision.feePayer, shape.decision.feePayer) ||
+      plan.prepared.userOperation.paymaster !== null ||
+      current.prepared.userOperationHash !== plan.prepared.userOperationHash
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "prepared-call context is stale",
+        "prepared_call_stale",
+      );
+    }
+    const signature = await finalExternalSignature(shape, plan.prepared, value.signature);
+    const validated: Readonly<OaathValidatedPreparedCalls> = Object.freeze({ plan });
+    validatedPreparedCalls.set(validated, Object.freeze({ shape, plan, signature }));
+    return validated;
+  }
+
+  async function startPreparedCallsWork(
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
+    publicationValue: OaathProviderOperationPublication,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    const retained = validatedPreparedCalls.get(validated);
+    if (!retained || !USER_OPERATION_HASH.test(requestHash)) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "validated prepared-call capability is invalid",
+      );
+    }
+    const publication = captureProviderPublication(publicationValue);
+    const { shape, plan, signature } = retained;
+    const key = Object.freeze({
+      grantId: shape.grantId,
+      chainId: shape.chainId,
+      kind: "execution" as const,
+    });
+    const runnerShape = {
+      chainId: shape.chainId,
+      kind: "execution" as const,
+      runtime: shape.runtime,
+      descriptor: shape.descriptor,
+      calls: shape.calls,
+      signer: "session" as const,
+      mode: shape.mode,
+      installApproval: input.installApproval,
+      decision: shape.decision,
+      grantId: shape.grantId,
+      requestHash,
+      prepared: plan.prepared,
+      externalSignature: signature,
+      authorizeOperation: (operation: OaathProviderOperationPointer) =>
+        authorizeExecutionOperation(shape.binding, shape.mode, operation),
+      abandonOperation: (operation: OaathProviderOperationPointer) =>
+        abandonExecutionOperation(shape.binding, shape.mode, operation),
+    };
+    const sender = runner({
+      ...runnerShape,
+      terminalBehavior: "replace",
+      publication,
+    });
+    let result: OperationStartResult;
+    try {
+      result = await resumePreparedOnce(sender, key, plan.prepared.userOperationHash);
+    } finally {
+      await sender.close().catch(() => undefined);
+    }
+    operationOutcome(result);
+    return trackedOperationHandle({
+      runner: runner({ ...runnerShape, terminalBehavior: "reuse_same_kind" }),
+      key,
+      kind: "execution",
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+      now: input.now,
+      initial: result,
+      observation: shape.chain.observation.read,
+      ...(shape.mode === "enable-replayable"
+        ? {
+            onObserved: (observed: OperationObserveResult) =>
+              recordFinalizedMaterialization(shape.binding, observed),
           }
         : {}),
     });
@@ -1861,6 +2371,33 @@ export function createGrantHandle(
         captureProviderPublication(publicationValue),
       );
     });
+  }
+
+  function prepareCalls(
+    value: Readonly<{
+      chain: number;
+      calls: readonly Readonly<OaathCallInput>[];
+      key: Readonly<OaathExternalPreparedCallKey>;
+    }>,
+  ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
+    return withExecution(() => prepareCallsWork(value));
+  }
+
+  function validatePreparedCalls(
+    value: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ): Promise<Readonly<OaathValidatedPreparedCalls>> {
+    return withExecution(() => validatePreparedCallsWork(value));
+  }
+
+  function startPreparedCalls(
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
+    publication: OaathProviderOperationPublication,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    return withExecution(() => startPreparedCallsWork(validated, requestHash, publication));
   }
 
   function recoverOperation(value: unknown): Promise<Readonly<OaathProviderOperationRecovery>> {
@@ -2326,10 +2863,14 @@ export function createGrantHandle(
       providerScopeId: input.binding.bindingId,
       grantId: record.value.identity.grantId,
       walletCallBundles: input.walletCallBundles,
+      preparedCallContexts: input.preparedCallContexts,
       now: input.now,
       account,
       authorizedAccount,
       startCalls,
+      prepareCalls,
+      validatePreparedCalls,
+      startPreparedCalls,
       recoverOperation,
       abandonPreparedOperation,
     }),

@@ -217,6 +217,7 @@ describe("cleanup coordinator", () => {
       "grants",
       "keys",
       "operations",
+      "preparedCallContexts",
       "walletCallBundles",
     ]);
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
@@ -241,7 +242,7 @@ describe("cleanup coordinator", () => {
     expect(realm.chain.sends).toHaveLength(0);
     expect(tracked.deletedKeys).toEqual(["session-key"]);
     expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);
-    expect(tracked.closed).toHaveLength(5);
+    expect(tracked.closed).toHaveLength(6);
   });
 
   it("reads durable state before an expired stale handle can abandon revocation", async () => {
@@ -271,7 +272,7 @@ describe("cleanup coordinator", () => {
     expect(stale.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
     expect(tracked.deletedKeys).toEqual(["session-key"]);
-    expect(tracked.closed).toHaveLength(5);
+    expect(tracked.closed).toHaveLength(6);
   });
 
   it("fences expiry cleanup against a concurrent revocation commit", async () => {
@@ -347,7 +348,7 @@ describe("cleanup coordinator", () => {
     expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
     expect(stale.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
-    expect(tracked.closed).toHaveLength(5);
+    expect(tracked.closed).toHaveLength(6);
   });
 
   it("retries a failed owned store close instead of discarding the connection", async () => {
@@ -405,7 +406,13 @@ describe("cleanup coordinator", () => {
 
     await expect(realm.oaath.close()).rejects.toThrow("synchronous Grant store close failure");
     expect(grantCloseAttempts).toBe(1);
-    expect(tracked.closed.sort()).toEqual(["context", "keys", "operations", "walletCallBundles"]);
+    expect(tracked.closed.sort()).toEqual([
+      "context",
+      "keys",
+      "operations",
+      "preparedCallContexts",
+      "walletCallBundles",
+    ]);
 
     await realm.oaath.close();
     expect(grantCloseAttempts).toBe(2);
@@ -414,6 +421,7 @@ describe("cleanup coordinator", () => {
       "grants",
       "keys",
       "operations",
+      "preparedCallContexts",
       "walletCallBundles",
     ]);
   });
@@ -472,7 +480,7 @@ describe("cleanup coordinator", () => {
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
     expect(tracked.deletedKeys).toEqual(["session-key"]);
-    expect(tracked.closed).toHaveLength(5);
+    expect(tracked.closed).toHaveLength(6);
   });
 
   it("deletes only the named local key handles", async () => {
@@ -545,6 +553,16 @@ function trackedStores() {
         close: async () => {
           closed.push("walletCallBundles");
           return stores.walletCallBundles.close();
+        },
+      },
+      preparedCallContexts: {
+        get: (key: Parameters<typeof stores.preparedCallContexts.get>[0]) =>
+          stores.preparedCallContexts.get(key),
+        compareAndSwap: (input: Parameters<typeof stores.preparedCallContexts.compareAndSwap>[0]) =>
+          stores.preparedCallContexts.compareAndSwap(input),
+        close: async () => {
+          closed.push("preparedCallContexts");
+          return stores.preparedCallContexts.close();
         },
       },
       keys: {

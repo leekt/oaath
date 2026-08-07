@@ -61,6 +61,7 @@ import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbKeyStore,
   createIndexedDbOperationStoreAdapter,
+  createIndexedDbPreparedCallStoreAdapter,
   createIndexedDbWalletCallBundleStoreAdapter,
   openOaathDatabase,
 } from "@oaath/sdk/persistence";
@@ -325,6 +326,7 @@ function durableStores() {
     grants: createIndexedDbGrantStoreAdapter(database),
     operations: createIndexedDbOperationStoreAdapter(database),
     walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+    preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
     keys: createIndexedDbKeyStore(database),
     cleanup: createIndexedDbCleanupStore(database),
     context: createIndexedDbContextStore(database),

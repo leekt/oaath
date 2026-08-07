@@ -17,6 +17,7 @@ import {
 import { clientFail } from "./client/errors.js";
 import { grantProviderPort, type OaathGrantHandle } from "./client/grant-handle.js";
 import { createEip5792Orchestrator, type OaathCallsStatusPresenter } from "./provider/eip5792.js";
+import { createErc7836Orchestrator } from "./provider/erc7836.js";
 import {
   INTERNAL_ERROR,
   INVALID_PARAMS,
@@ -156,6 +157,7 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
       ? {}
       : { showCallsStatus: captured.showCallsStatus }),
   });
+  const preparedWallet = createErc7836Orchestrator({ port, chain });
 
   async function account(): Promise<`0x${string}`> {
     const value = (await port.account(chain)).toLowerCase();
@@ -198,6 +200,10 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
             return await sendTransaction(request.params);
           case "wallet_sendCalls":
             return await wallet.sendCalls(request.params);
+          case "wallet_prepareCalls":
+            return await preparedWallet.prepareCalls(request.params);
+          case "wallet_sendPreparedCalls":
+            return await preparedWallet.sendPreparedCalls(request.params);
           case "wallet_getCallsStatus":
             return await wallet.getCallsStatus(request.params);
           case "wallet_showCallsStatus":

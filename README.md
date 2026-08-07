@@ -54,6 +54,18 @@ carries the concrete SQLite test stores and is never a production dependency.
 and the experimental phone and APNs preview surfaces. Remaining capabilities land
 as bounded, independently reviewed child PRs.
 
+The wallet-RPC surface intentionally distinguishes finalized standards from
+experiments:
+
+| Surface | Standards status | OAAth status |
+| --- | --- | --- |
+| EIP-5792 `wallet_sendCalls` / status / capabilities | Final (`2.0.0`) | Implemented PoC path |
+| ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; opaque five-minute context, approved secp256k1 or WebAuthn operator, one-time durable consumption |
+
+The Draft profile is not advertised as stable or as generic ERC-7836
+conformance. Sponsorship adapters and ERC-7902 capability fields remain later,
+independent work.
+
 ## Browser golden path
 
 `createOAAth` is the one supported constructor, and the OAAth service URL is

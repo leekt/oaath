@@ -33,6 +33,7 @@ import { openOaathDatabase } from "../persistence/indexeddb/database.js";
 import { createIndexedDbGrantStoreAdapter } from "../persistence/indexeddb/grant-store.js";
 import { createIndexedDbKeyStore } from "../persistence/indexeddb/key-store.js";
 import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/operation-store.js";
+import { createIndexedDbPreparedCallStoreAdapter } from "../persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../persistence/indexeddb/wallet-call-bundle-store.js";
 import {
   createMemoryCleanupStore,
@@ -40,6 +41,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
@@ -284,6 +286,7 @@ async function defaultStores(): Promise<Readonly<OwnedDefaultStores>> {
         grants: createMemoryGrantStoreAdapter(),
         operations: createMemoryOperationStoreAdapter(),
         walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
+        preparedCallContexts: createMemoryPreparedCallStoreAdapter(),
         keys: createMemoryKeyStore(),
         cleanup: createMemoryCleanupStore(),
         context: createMemoryContextStore(),
@@ -297,6 +300,7 @@ async function defaultStores(): Promise<Readonly<OwnedDefaultStores>> {
       grants: createIndexedDbGrantStoreAdapter(database),
       operations: createIndexedDbOperationStoreAdapter(database),
       walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+      preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
       keys: createIndexedDbKeyStore(database),
       cleanup: createIndexedDbCleanupStore(database),
       context: createIndexedDbContextStore(database),

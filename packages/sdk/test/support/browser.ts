@@ -51,6 +51,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "../../src/testing.js";
 
@@ -72,6 +73,10 @@ export const CAPABILITY_HASH = keccak256(stringToBytes("oaath-test-capability"))
 
 const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"12".repeat(32)}`);
+export const SESSION_PUBLIC_KEY = sessionAccount.publicKey.toLowerCase() as `0x${string}`;
+export async function signPreparedDigest(hash: `0x${string}`): Promise<`0x${string}`> {
+  return (await sessionAccount.sign({ hash })).toLowerCase() as `0x${string}`;
+}
 const ZERO_ADDRESS = `0x${"00".repeat(20)}` as const;
 const EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" as const;
 const BEFORE_EXECUTION_TOPIC =
@@ -671,19 +676,33 @@ export interface RealmStores {
   readonly grants: ReturnType<typeof createMemoryGrantStoreAdapter>;
   readonly operations: ReturnType<typeof createMemoryOperationStoreAdapter>;
   readonly walletCallBundles: ReturnType<typeof createMemoryWalletCallBundleStoreAdapter>;
+  readonly preparedCallContexts?: ReturnType<typeof createMemoryPreparedCallStoreAdapter>;
   readonly keys: ReturnType<typeof createMemoryKeyStore>;
   readonly cleanup: ReturnType<typeof createMemoryCleanupStore>;
   readonly context: ReturnType<typeof createMemoryContextStore>;
 }
 
-export function createMemoryStores(): RealmStores {
+export type CompleteRealmStores = RealmStores &
+  Readonly<{
+    preparedCallContexts: ReturnType<typeof createMemoryPreparedCallStoreAdapter>;
+  }>;
+
+export function createMemoryStores(): CompleteRealmStores {
   return {
     grants: createMemoryGrantStoreAdapter(),
     operations: createMemoryOperationStoreAdapter(),
     walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
+    preparedCallContexts: createMemoryPreparedCallStoreAdapter(),
     keys: createMemoryKeyStore(),
     cleanup: createMemoryCleanupStore(),
     context: createMemoryContextStore(),
+  };
+}
+
+function completeRealmStores(stores: RealmStores): CompleteRealmStores {
+  return {
+    ...stores,
+    preparedCallContexts: stores.preparedCallContexts ?? createMemoryPreparedCallStoreAdapter(),
   };
 }
 
@@ -718,7 +737,7 @@ export interface UrlRealm {
   readonly oaath: Readonly<Oaath>;
   readonly clock: SecondsClock;
   readonly chain: ChainFixture;
-  readonly stores: RealmStores;
+  readonly stores: CompleteRealmStores;
   readonly relay: (request: Request) => Promise<Response>;
   readonly invalidations: () => number;
   readonly fetched: readonly string[];
@@ -733,7 +752,7 @@ export interface UrlRealm {
 export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   const clock = options.clock ?? createClock();
   const chain = options.chain ?? createChainFixture();
-  const stores = options.stores ?? createMemoryStores();
+  const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const relay =
     options.relay ??
     createRelay(clock, {
@@ -817,7 +836,7 @@ export interface Realm {
   readonly oaath: Readonly<Oaath>;
   readonly clock: SecondsClock;
   readonly relay: (request: Request) => Promise<Response>;
-  readonly stores: RealmStores;
+  readonly stores: CompleteRealmStores;
   readonly chain: ChainFixture;
   readonly ownerCalls: readonly string[];
   readonly signOutCalls: () => number;
@@ -828,7 +847,7 @@ export interface Realm {
 export function createRealm(options: RealmOptions = {}): Realm {
   const clock = options.clock ?? createClock();
   const relay = options.relay ?? createRelay(clock);
-  const stores = options.stores ?? createMemoryStores();
+  const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
   const chains = options.chains ?? [chain];
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);

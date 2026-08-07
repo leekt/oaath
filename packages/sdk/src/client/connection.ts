@@ -61,6 +61,7 @@ import {
   parseClientContext,
 } from "../persistence/interfaces.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
+import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { GrantStore, GrantStoreRecord, OperationStoreAdapter } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import {
@@ -140,6 +141,7 @@ export interface CreateConnectionInput {
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly keys: OaathKeyStore;
   readonly contexts: OaathContextStore;
   readonly chains: ReadonlyMap<number, Readonly<OaathChainCapability>>;
@@ -271,6 +273,7 @@ export function createConnection(
     input.grants,
     input.operations,
     input.walletCallBundles,
+    input.preparedCallContexts,
     input.keys,
     input.contexts,
   ].map((resource) => ({ resource, closed: false }));
@@ -390,6 +393,7 @@ export function createConnection(
       grants: input.grants,
       operations: input.operations,
       walletCallBundles: input.walletCallBundles,
+      preparedCallContexts: input.preparedCallContexts,
       chains: input.chains,
       ownerKey: input.ownerKey,
       sessionKey: input.sessionKey,
