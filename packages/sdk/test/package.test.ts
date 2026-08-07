@@ -77,6 +77,7 @@ describe("package boundary", () => {
 
   it("exposes custom-deployment ports on /advanced", () => {
     expect(Object.keys(advanced).sort()).toEqual([
+      "ERC7902_STATIC_PAYMASTER_LIMITS",
       "GrantStore",
       "OAATH_BINDING_HASH_DOMAIN",
       "OAATH_BINDING_VERSION",
@@ -90,6 +91,7 @@ describe("package boundary", () => {
       "OaathRoutingError",
       "OaathStoreError",
       "OperationStore",
+      "captureErc7902StaticPaymasterConfiguration",
       "captureOaathBinding",
       "captureRoutingCapabilities",
       "classifyBundlerAcceptance",

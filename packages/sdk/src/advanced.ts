@@ -80,6 +80,11 @@ export {
   createOperationRunner,
   OaathOperationRunnerError,
 } from "./operation-runner.js";
+export type { Erc7902StaticPaymasterConfiguration } from "./provider/erc7902.js";
+export {
+  captureErc7902StaticPaymasterConfiguration,
+  ERC7902_STATIC_PAYMASTER_LIMITS,
+} from "./provider/erc7902.js";
 export type {
   CreateErc7677SponsorshipCapabilityInput,
   Erc7677EstimationUserOperationV07,
