@@ -49,6 +49,16 @@ function baseBundle(overrides: Readonly<Record<string, unknown>> = {}): Record<s
   };
 }
 
+function staticPaymasterConfiguration(optional = false): Record<string, unknown> {
+  return {
+    paymaster: `0x${"33".repeat(20)}`,
+    paymasterData: "0xdeadbeef",
+    paymasterValidationGasLimit: "0x9c40",
+    paymasterPostOpGasLimit: "0xc350",
+    ...(optional ? { optional: true } : {}),
+  };
+}
+
 function captureBundle(bundle: unknown = baseBundle(), configuredChain: number = CHAIN) {
   return captureWalletSendCallsParams([bundle], configuredChain);
 }
@@ -439,6 +449,95 @@ describe("owned capture limits", () => {
 });
 
 describe("capability semantics", () => {
+  it("derives one static paymaster selection while retaining exact request hash material", () => {
+    const configuration = staticPaymasterConfiguration(true);
+    const captured = captureBundle(
+      baseBundle({ capabilities: { staticPaymasterConfiguration: configuration } }),
+    );
+
+    expect(captured.capabilities).toEqual({
+      values: { staticPaymasterConfiguration: configuration },
+      ignored: [],
+      staticPaymasterConfiguration: {
+        optional: true,
+        paymaster: {
+          address: `0x${"33".repeat(20)}`,
+          data: "0xdeadbeef",
+          verificationGasLimit: "40000",
+          postOpGasLimit: "50000",
+        },
+        configurationHash: "0x70a35e6c247838ac3ef02bdd886943bec3426ceed1692726aee6da0de816a031",
+      },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const required = captureBundle(
+      baseBundle({
+        capabilities: { staticPaymasterConfiguration: staticPaymasterConfiguration() },
+      }),
+    );
+    expect(required.capabilities?.staticPaymasterConfiguration?.configurationHash).toBe(
+      captured.capabilities?.staticPaymasterConfiguration?.configurationHash,
+    );
+    expect(hashCapturedWalletSendCallsRequest(required, "static-paymaster-request")).not.toBe(
+      hashCapturedWalletSendCallsRequest(captured, "static-paymaster-request"),
+    );
+  });
+
+  it("maps malformed handled static paymaster configurations to invalid params", () => {
+    const alias = staticPaymasterConfiguration();
+    delete alias.paymasterValidationGasLimit;
+    alias.paymasterVerificationGasLimit = "0x9c40";
+    for (const configurationValue of [
+      { ...staticPaymasterConfiguration(), extra: true },
+      { ...staticPaymasterConfiguration(), optional: "true" },
+      alias,
+    ]) {
+      expectRpcError(
+        () =>
+          captureBundle(
+            baseBundle({ capabilities: { staticPaymasterConfiguration: configurationValue } }),
+          ),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps static paymasters unsupported at call scope unless optional", () => {
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({
+            calls: [
+              {
+                to: TARGET_A,
+                capabilities: {
+                  staticPaymasterConfiguration: staticPaymasterConfiguration(),
+                },
+              },
+            ],
+          }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+
+    const optional = staticPaymasterConfiguration(true);
+    const captured = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { staticPaymasterConfiguration: optional },
+          },
+        ],
+      }),
+    );
+    expect(captured.calls[0]?.capabilities).toEqual({
+      values: { staticPaymasterConfiguration: optional },
+      ignored: ["staticPaymasterConfiguration"],
+    });
+  });
+
   it("captures one exact bundle paymaster selection and retains its request hash material", () => {
     const url = "https://relay.example/chains/421614/paymaster";
     const context = { policy: "sponsored", nested: { quota: 2 } };

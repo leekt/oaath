@@ -77,6 +77,7 @@ describe("package boundary", () => {
 
   it("exposes custom-deployment ports on /advanced", () => {
     expect(Object.keys(advanced).sort()).toEqual([
+      "ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN",
       "ERC7902_STATIC_PAYMASTER_LIMITS",
       "GrantStore",
       "OAATH_BINDING_HASH_DOMAIN",
@@ -106,6 +107,7 @@ describe("package boundary", () => {
       "deriveSessionPolicyProfiles",
       "encodeHandleOps",
       "forgetLocalEffect",
+      "hashErc7902StaticPaymasterConfiguration",
       "prepareSponsoredKernelOperation",
       "probeBundlerCapability",
       "revokeEffect",

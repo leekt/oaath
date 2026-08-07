@@ -35,7 +35,7 @@ const REQUEST_HASH = `0x${"ab".repeat(32)}` as const;
 function providerCallsInput() {
   const input = sendCallsInput();
   if (input === null || typeof input !== "object") throw new Error("expected calls input");
-  return Object.freeze({ ...input, requestHash: REQUEST_HASH, paymasterService: null });
+  return Object.freeze({ ...input, requestHash: REQUEST_HASH, paymaster: null });
 }
 
 async function activeGrant(chain?: ChainFixture): Promise<

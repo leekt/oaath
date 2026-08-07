@@ -266,6 +266,7 @@ export function createEip5792Orchestrator(
       atomicExecution: true,
       ...(captured.capabilities === undefined ? {} : { capabilities: captured.capabilities }),
       registeredPaymasterServiceUrl: input.port.registeredPaymasterServiceUrl(input.chain),
+      staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
     });
     if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
     const accountAddress = await account();
@@ -299,7 +300,7 @@ export function createEip5792Orchestrator(
           chain: input.chain,
           calls,
           requestHash: accepted.operationRequestHash,
-          paymasterService: capabilityEffect.paymasterService,
+          paymaster: capabilityEffect.paymaster,
         }),
         Object.freeze({
           reserve: async (exact: OaathProviderOperationPointer) => {
@@ -583,6 +584,7 @@ export function createEip5792Orchestrator(
       result[chainId] = advertiseWalletCapabilities({
         atomicExecution: true,
         paymasterService: input.port.registeredPaymasterServiceUrl(input.chain) !== null,
+        staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
       });
     }
     return Object.freeze(result);

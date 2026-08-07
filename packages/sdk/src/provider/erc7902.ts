@@ -10,6 +10,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
+import { encodeAbiParameters, type Hash, keccak256 } from "viem";
 import type { PreparedPaymaster } from "../prepared-user-operation.js";
 import { capabilityInvalid } from "../routing/types.js";
 
@@ -31,6 +32,18 @@ export const ERC7902_STATIC_PAYMASTER_LIMITS = Object.freeze({
   /** Raw bytes; the Wallet Call provider separately owns its smaller aggregate JSON budget. */
   paymasterDataBytes: 64 * 1_024,
 });
+
+/** Domain that prevents this commitment from being reused as another OAAth hash. */
+export const ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN =
+  "@oaath/sdk:erc-7902-static-paymaster-configuration/v1" as const;
+
+const STATIC_PAYMASTER_CONFIGURATION_HASH_PARAMETERS = Object.freeze([
+  Object.freeze({ name: "domain", type: "string" }),
+  Object.freeze({ name: "paymaster", type: "address" }),
+  Object.freeze({ name: "paymasterData", type: "bytes" }),
+  Object.freeze({ name: "paymasterValidationGasLimit", type: "uint120" }),
+  Object.freeze({ name: "paymasterPostOpGasLimit", type: "uint120" }),
+] as const);
 
 /**
  * One fully captured capability. `optional` is explicit even when absent on
@@ -84,6 +97,23 @@ function quantity(value: unknown): string {
 }
 
 /**
+ * Hashes an already captured paymaster. Callers outside this module must first
+ * use one of the exact capture owners above. Kept package-internal so the
+ * public helper cannot accidentally bless an unvalidated internal shape.
+ */
+export function hashCapturedErc7902PreparedPaymaster(paymaster: Readonly<PreparedPaymaster>): Hash {
+  return keccak256(
+    encodeAbiParameters(STATIC_PAYMASTER_CONFIGURATION_HASH_PARAMETERS, [
+      ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN,
+      paymaster.address,
+      paymaster.data,
+      BigInt(paymaster.verificationGasLimit),
+      BigInt(paymaster.postOpGasLimit),
+    ]),
+  );
+}
+
+/**
  * Captures the exact experimental ERC-7902 capability shape once. The draft's
  * literal `paymasterValidationGasLimit` spelling is accepted; the common
  * `paymasterVerificationGasLimit` spelling is intentionally not an alias.
@@ -109,4 +139,15 @@ export function captureErc7902StaticPaymasterConfiguration(
   } catch {
     return invalid();
   }
+}
+
+/**
+ * Returns the authenticated commitment for one exact Draft wire
+ * configuration. `optional` controls negotiation only, so it is deliberately
+ * excluded; the normalized address, data, and both uint120 gas limits are
+ * bound in a domain-separated ABI encoding.
+ */
+export function hashErc7902StaticPaymasterConfiguration(value: unknown): Hash {
+  const captured = captureErc7902StaticPaymasterConfiguration(value);
+  return hashCapturedErc7902PreparedPaymaster(captured.paymaster);
 }

@@ -31,7 +31,9 @@ import {
   type CaptureContext,
   type ChainPermissionEvidence,
   captureDenseArray,
+  captureRecord,
   evaluateGrantPolicyCoverage,
+  exactCapturedRecord,
   type FinalizedOperation,
   type Grant,
   type GrantPolicy,
@@ -84,13 +86,21 @@ import {
   type OperationStartResult,
   type OperationSubmissionSession,
 } from "../operation-runner.js";
-import { deriveOperationId, type PreparedUserOperation } from "../prepared-user-operation.js";
+import {
+  deriveOperationId,
+  type PreparedPaymaster,
+  type PreparedUserOperation,
+} from "../prepared-user-operation.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
 import {
   createErc7677SponsorshipCapability,
   type Erc7677GasEstimator,
   type Erc7677RegisteredPaymasterService,
 } from "../provider/erc7677.js";
+import {
+  captureErc7902StaticPaymasterConfiguration,
+  hashCapturedErc7902PreparedPaymaster,
+} from "../provider/erc7902.js";
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import { feePayerDescriptor, type OaathSessionCoverage } from "../routing/capabilities.js";
@@ -232,6 +242,8 @@ export interface OaathQuoteRequest {
   readonly signer: OaathExecutionSigner;
   readonly account: `0x${string}`;
   readonly calls: readonly Readonly<KernelV4Call>[];
+  /** Exact static sponsorship selected before quoting, or null. */
+  readonly paymaster: Readonly<PreparedPaymaster> | null;
 }
 
 /** Nonce sequence and gas are deployment facts; the SDK never invents them. */
@@ -304,6 +316,7 @@ export interface OaathGrantProviderPort {
   readonly account: OaathGrantHandle["account"];
   readonly authorizedAccount: OaathGrantHandle["account"];
   readonly registeredPaymasterServiceUrl: (chain: number) => string | null;
+  readonly staticPaymasterConfigurationHash: (chain: number) => `0x${string}` | null;
   readonly startCalls: (
     input: unknown,
     publication: OaathProviderOperationPublication,
@@ -1155,6 +1168,7 @@ export function createGrantHandle(
         signer: "session",
         account: shape.descriptor.account,
         calls: shape.calls,
+        paymaster: null,
       }),
     );
     const fields = {
@@ -1164,6 +1178,7 @@ export function createGrantHandle(
       sequence: quote.sequence,
       calls: [...shape.calls],
       gas: gasOverride ?? quote.gas,
+      paymaster: null,
     };
     let prepared: Readonly<PreparedUserOperation>;
     if (shape.mode === "enable-replayable") {
@@ -1230,6 +1245,8 @@ export function createGrantHandle(
     readonly externalSignature?: `0x${string}`;
     /** Present only while one final sponsored identity is being prepared. */
     readonly sponsorship?: Readonly<OaathKernelSponsorshipCapability>;
+    /** Present only for one authenticated ERC-7902 static configuration. */
+    readonly staticPaymaster?: Readonly<PreparedPaymaster>;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
@@ -1257,6 +1274,7 @@ export function createGrantHandle(
                 signer: spec.signer,
                 account: spec.descriptor.account,
                 calls: spec.calls,
+                paymaster: spec.staticPaymaster ?? null,
               }),
             );
             const fields = {
@@ -1266,6 +1284,7 @@ export function createGrantHandle(
               sequence: quote.sequence,
               calls: [...spec.calls],
               gas: quote.gas,
+              paymaster: spec.staticPaymaster ?? null,
             };
             let operation: KernelRuntimePrepareInput;
             let simulationSignature = spec.runtime.dummySignature;
@@ -2094,7 +2113,10 @@ export function createGrantHandle(
     action: "run" | "start",
     requestHash: `0x${string}` | null,
     publication?: Readonly<OaathProviderOperationPublication>,
-    sponsorship: Readonly<OaathKernelSponsorshipCapability> | null = null,
+    paymaster: Readonly<
+      | { readonly kind: "erc7677"; readonly sponsorship: OaathKernelSponsorshipCapability }
+      | { readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }
+    > | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -2104,11 +2126,11 @@ export function createGrantHandle(
     }
     const calls = captureCalls(request.calls, context);
     const resolved = await resolveExecutionShape(chainId, calls);
-    if (sponsorship !== null && resolved.decision.route !== "bundler") {
+    if (paymaster !== null && resolved.decision.route !== "bundler") {
       return clientFail(
         "oaath_client_capability_unsupported",
         "paymaster sponsorship requires the bundler route",
-        "erc7677_bundler_unavailable",
+        `${paymaster.kind}_bundler_unavailable`,
       );
     }
     const key = Object.freeze({
@@ -2141,7 +2163,8 @@ export function createGrantHandle(
       ...shape,
       terminalBehavior: "replace",
       ...(publication ? { publication } : {}),
-      ...(sponsorship === null ? {} : { sponsorship }),
+      ...(paymaster?.kind === "erc7677" ? { sponsorship: paymaster.sponsorship } : {}),
+      ...(paymaster?.kind === "erc7902-static" ? { staticPaymaster: paymaster.paymaster } : {}),
     });
     let result: OperationRunResult | OperationStartResult;
     try {
@@ -2451,6 +2474,10 @@ export function createGrantHandle(
     return chainCapability(chainId).paymasterService?.url ?? null;
   }
 
+  function staticPaymasterConfigurationHash(chainId: number): `0x${string}` | null {
+    return chainCapability(chainId).staticPaymasterConfigurationHash;
+  }
+
   function providerSponsorship(
     chainId: number,
     value: unknown,
@@ -2485,6 +2512,76 @@ export function createGrantHandle(
     }
   }
 
+  function providerPaymaster(
+    chainId: number,
+    value: unknown,
+    context: CaptureContext,
+  ):
+    | Readonly<{
+        readonly kind: "erc7677";
+        readonly sponsorship: OaathKernelSponsorshipCapability;
+      }>
+    | Readonly<{ readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }>
+    | null {
+    if (value === null) return null;
+    const fail = (message: string): never => clientFail("oaath_client_capability_invalid", message);
+    const captured = captureRecord(value, "provider paymaster selection", context, fail);
+    if (captured.kind === "erc7677") {
+      const selection = exactCapturedRecord(
+        captured,
+        ["kind", "url", "context"],
+        "provider ERC-7677 selection",
+        fail,
+      );
+      const sponsorship = providerSponsorship(
+        chainId,
+        Object.freeze({ url: selection.url, context: selection.context }),
+        context,
+      );
+      if (sponsorship === null) {
+        return clientFail(
+          "oaath_client_capability_invalid",
+          "provider ERC-7677 selection is empty",
+        );
+      }
+      return Object.freeze({ kind: "erc7677" as const, sponsorship });
+    }
+    if (captured.kind === "erc7902-static") {
+      const selection = exactCapturedRecord(
+        captured,
+        ["kind", "configuration"],
+        "provider ERC-7902 selection",
+        fail,
+      );
+      try {
+        const configuration = captureErc7902StaticPaymasterConfiguration(selection.configuration);
+        if (
+          hashCapturedErc7902PreparedPaymaster(configuration.paymaster) !==
+          chainCapability(chainId).staticPaymasterConfigurationHash
+        ) {
+          return clientFail(
+            "oaath_client_capability_invalid",
+            "provider ERC-7902 selection does not match the authenticated policy",
+            "erc7902_static_policy_mismatch",
+          );
+        }
+        return Object.freeze({
+          kind: "erc7902-static" as const,
+          paymaster: configuration.paymaster,
+        });
+      } catch {
+        return clientFail(
+          "oaath_client_capability_invalid",
+          "provider ERC-7902 selection is invalid",
+        );
+      }
+    }
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider paymaster selection kind is unsupported",
+    );
+  }
+
   function startCalls(
     value: unknown,
     publicationValue: OaathProviderOperationPublication,
@@ -2493,7 +2590,7 @@ export function createGrantHandle(
       const context: CaptureContext = new WeakSet();
       const request = exactClientRecord(
         value,
-        ["chain", "calls", "requestHash", "paymasterService"],
+        ["chain", "calls", "requestHash", "paymaster"],
         "provider sendCalls input",
         context,
       );
@@ -2518,7 +2615,7 @@ export function createGrantHandle(
         "start",
         request.requestHash as `0x${string}`,
         captureProviderPublication(publicationValue),
-        providerSponsorship(request.chain, request.paymasterService, context),
+        providerPaymaster(request.chain, request.paymaster, context),
       );
     });
   }
@@ -3018,6 +3115,7 @@ export function createGrantHandle(
       account,
       authorizedAccount,
       registeredPaymasterServiceUrl,
+      staticPaymasterConfigurationHash,
       startCalls,
       prepareCalls,
       validatePreparedCalls,

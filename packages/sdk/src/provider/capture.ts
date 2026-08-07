@@ -16,8 +16,10 @@ import {
 } from "@oaath/protocol";
 import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
 import {
+  type CapturedWalletStaticPaymasterConfiguration,
   captureAtomicCapability,
   capturePaymasterServiceCapability,
+  captureStaticPaymasterConfigurationCapability,
   isHandledWalletCapability,
   type WalletCapabilityMethod,
   type WalletCapabilityScope,
@@ -118,6 +120,7 @@ export interface CapturedWalletCapabilities {
   readonly values: Readonly<Record<string, CapturedJsonObject>>;
   readonly ignored: readonly string[];
   readonly paymasterService?: CapturedWalletPaymasterService;
+  readonly staticPaymasterConfiguration?: CapturedWalletStaticPaymasterConfiguration;
 }
 
 export interface CapturedWalletCall {
@@ -620,6 +623,7 @@ function captureCapabilities(
   const values: Record<string, CapturedJsonObject> = Object.create(null);
   const ignored: string[] = [];
   let paymasterService: CapturedWalletPaymasterService | undefined;
+  let staticPaymasterConfiguration: CapturedWalletStaticPaymasterConfiguration | undefined;
 
   for (const name of Object.keys(capabilityMap)) {
     const capability = captureJsonObject(
@@ -641,6 +645,8 @@ function captureCapabilities(
       if (optional !== true) budget.hasUnsupportedRequiredCapability = true;
     } else if (name === "paymasterService") {
       paymasterService = capturePaymasterServiceCapability(capability);
+    } else if (name === "staticPaymasterConfiguration") {
+      staticPaymasterConfiguration = captureStaticPaymasterConfigurationCapability(capability);
     }
   }
 
@@ -653,6 +659,7 @@ function captureCapabilities(
     values: capturedValues,
     ignored: Object.freeze(ignored),
     ...(paymasterService === undefined ? {} : { paymasterService }),
+    ...(staticPaymasterConfiguration === undefined ? {} : { staticPaymasterConfiguration }),
   };
   Object.setPrototypeOf(captured, null);
   return Object.freeze(captured);

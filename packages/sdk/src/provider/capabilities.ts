@@ -8,12 +8,18 @@
  * @author taek <leekt216@gmail.com>
  */
 import { OAATH_ISSUER_VERSION, parseIssuerIdentity } from "@oaath/protocol";
+import type { Hash } from "viem";
 import type {
   CapturedJsonObject,
   CapturedWalletCall,
   CapturedWalletCapabilities,
   CapturedWalletPaymasterService,
 } from "./capture.js";
+import {
+  captureErc7902StaticPaymasterConfiguration,
+  type Erc7902StaticPaymasterConfiguration,
+  hashCapturedErc7902PreparedPaymaster,
+} from "./erc7902.js";
 import {
   ATOMICITY_UNSUPPORTED,
   INTERNAL_ERROR,
@@ -32,6 +38,7 @@ type WalletCapabilityStatus = "final" | "review" | "draft" | "experimental";
 interface WalletCapabilityContext {
   readonly atomicExecution: boolean;
   readonly paymasterService?: boolean;
+  readonly staticPaymasterConfigurationHash: Hash | null;
 }
 
 interface WalletCapabilityBaseEffect {
@@ -39,11 +46,26 @@ interface WalletCapabilityBaseEffect {
   readonly calls: readonly CapturedWalletCall[];
 }
 
-interface WalletCapabilityEffect extends WalletCapabilityBaseEffect {
-  readonly paymasterService: Readonly<{
-    readonly url: string;
-    readonly context: CapturedJsonObject;
-  }> | null;
+export type WalletPaymasterSelection =
+  | Readonly<{
+      readonly kind: "erc7677";
+      readonly url: string;
+      readonly context: CapturedJsonObject;
+    }>
+  | Readonly<{
+      readonly kind: "erc7902-static";
+      readonly configuration: CapturedJsonObject;
+    }>
+  | null;
+
+export interface WalletCapabilityEffect extends WalletCapabilityBaseEffect {
+  readonly paymaster: WalletPaymasterSelection;
+}
+
+/** Normalized selection derived once from the retained exact request value. */
+export interface CapturedWalletStaticPaymasterConfiguration
+  extends Erc7902StaticPaymasterConfiguration {
+  readonly configurationHash: Hash;
 }
 
 interface WalletCapabilityHandler<Captured, Response> {
@@ -147,7 +169,39 @@ const PAYMASTER_SERVICE_HANDLER: WalletCapabilityHandler<
   },
 });
 
-const CAPABILITY_HANDLERS = Object.freeze([ATOMIC_HANDLER, PAYMASTER_SERVICE_HANDLER]);
+const STATIC_PAYMASTER_CONFIGURATION_HANDLER: WalletCapabilityHandler<
+  CapturedWalletStaticPaymasterConfiguration,
+  Readonly<{ supported: true; status: "experimental" }>
+> = Object.freeze({
+  key: "staticPaymasterConfiguration",
+  status: "experimental",
+  metadataMethods: Object.freeze(["wallet_sendCalls"] as const),
+  metadataScopes: Object.freeze(["bundle"] as const),
+  advertise(context: Readonly<WalletCapabilityContext>) {
+    return typeof context.staticPaymasterConfigurationHash === "string"
+      ? Object.freeze({ supported: true as const, status: "experimental" as const })
+      : null;
+  },
+  capture(value: unknown, scope: WalletCapabilityScope) {
+    if (scope !== "bundle") return invalidProviderParams();
+    try {
+      const captured = captureErc7902StaticPaymasterConfiguration(value);
+      return Object.freeze({
+        optional: captured.optional,
+        paymaster: captured.paymaster,
+        configurationHash: hashCapturedErc7902PreparedPaymaster(captured.paymaster),
+      });
+    } catch {
+      return invalidProviderParams();
+    }
+  },
+});
+
+const CAPABILITY_HANDLERS = Object.freeze([
+  ATOMIC_HANDLER,
+  PAYMASTER_SERVICE_HANDLER,
+  STATIC_PAYMASTER_CONFIGURATION_HANDLER,
+]);
 
 /** Whether a named bundle/call capability has an implemented closed handler. */
 export function isHandledWalletCapability(
@@ -175,6 +229,13 @@ export function capturePaymasterServiceCapability(
   return PAYMASTER_SERVICE_HANDLER.capture(value, "bundle");
 }
 
+/** Exact capture for one already-isolated ERC-7902 bundle capability value. */
+export function captureStaticPaymasterConfigurationCapability(
+  value: CapturedJsonObject,
+): Readonly<CapturedWalletStaticPaymasterConfiguration> {
+  return STATIC_PAYMASTER_CONFIGURATION_HANDLER.capture(value, "bundle");
+}
+
 /** Apply all implemented capability effects before operation preparation. */
 export function applyWalletCapabilities(input: {
   readonly atomic: Readonly<AtomicCapability>;
@@ -183,25 +244,49 @@ export function applyWalletCapabilities(input: {
   readonly atomicExecution: boolean;
   readonly capabilities?: Readonly<CapturedWalletCapabilities>;
   readonly registeredPaymasterServiceUrl: string | null;
+  readonly staticPaymasterConfigurationHash: Hash | null;
 }): Readonly<WalletCapabilityEffect> {
+  const requestedPaymasterService = input.capabilities?.paymasterService;
+  const requestedStaticPaymaster = input.capabilities?.staticPaymasterConfiguration;
+  if (requestedPaymasterService !== undefined && requestedStaticPaymaster !== undefined) {
+    return invalidProviderParams();
+  }
+
   const applyAtomic = ATOMIC_HANDLER.apply;
   if (applyAtomic === undefined) return rpcFail(INTERNAL_ERROR);
   const atomic = applyAtomic({
     captured: input.atomic,
     calls: input.calls,
     chainId: input.chainId,
-    context: Object.freeze({ atomicExecution: input.atomicExecution }),
+    context: Object.freeze({
+      atomicExecution: input.atomicExecution,
+      staticPaymasterConfigurationHash: input.staticPaymasterConfigurationHash,
+    }),
   });
 
-  const requested = input.capabilities?.paymasterService;
-  let paymasterService: WalletCapabilityEffect["paymasterService"] = null;
-  if (requested !== undefined) {
-    if (input.registeredPaymasterServiceUrl === requested.url) {
-      paymasterService = Object.freeze({
-        url: requested.url,
-        context: requested.context,
+  let paymaster: WalletPaymasterSelection = null;
+  if (requestedPaymasterService !== undefined) {
+    if (input.registeredPaymasterServiceUrl === requestedPaymasterService.url) {
+      paymaster = Object.freeze({
+        kind: "erc7677" as const,
+        url: requestedPaymasterService.url,
+        context: requestedPaymasterService.context,
       });
-    } else if (!requested.optional) {
+    } else if (!requestedPaymasterService.optional) {
+      return rpcFail(UNSUPPORTED_CAPABILITY);
+    }
+  } else if (requestedStaticPaymaster !== undefined) {
+    if (
+      input.staticPaymasterConfigurationHash !== null &&
+      input.staticPaymasterConfigurationHash === requestedStaticPaymaster.configurationHash
+    ) {
+      const configuration = input.capabilities?.values.staticPaymasterConfiguration;
+      if (configuration === undefined) return rpcFail(INTERNAL_ERROR);
+      paymaster = Object.freeze({
+        kind: "erc7902-static" as const,
+        configuration,
+      });
+    } else if (!requestedStaticPaymaster.optional) {
       return rpcFail(UNSUPPORTED_CAPABILITY);
     }
   }
@@ -209,7 +294,7 @@ export function applyWalletCapabilities(input: {
   return Object.freeze({
     atomic: atomic.atomic,
     calls: atomic.calls,
-    paymasterService,
+    paymaster,
   });
 }
 

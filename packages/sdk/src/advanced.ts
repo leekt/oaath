@@ -97,7 +97,9 @@ export { createErc7677SponsorshipCapability } from "./provider/erc7677.js";
 export type { Erc7902StaticPaymasterConfiguration } from "./provider/erc7902.js";
 export {
   captureErc7902StaticPaymasterConfiguration,
+  ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN,
   ERC7902_STATIC_PAYMASTER_LIMITS,
+  hashErc7902StaticPaymasterConfiguration,
 } from "./provider/erc7902.js";
 export type {
   OaathBundlerAcceptanceEvidence,

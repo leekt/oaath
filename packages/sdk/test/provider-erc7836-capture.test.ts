@@ -157,6 +157,7 @@ describe("wallet_prepareCalls experimental capture", () => {
       chainId: CHAIN,
       atomicExecution: true,
       registeredPaymasterServiceUrl: null,
+      staticPaymasterConfigurationHash: null,
     });
     expect(applied.calls).toBe(captured.calls);
   });
@@ -274,6 +275,36 @@ describe("wallet_prepareCalls experimental capture", () => {
       values: { paymasterService: { ...paymasterService, optional: true } },
       ignored: ["paymasterService"],
     });
+  });
+
+  it("does not enable static paymasters for experimental prepared calls", () => {
+    const staticPaymasterConfiguration = {
+      paymaster: `0x${"33".repeat(20)}`,
+      paymasterData: "0xdeadbeef",
+      paymasterValidationGasLimit: "0x9c40",
+      paymasterPostOpGasLimit: "0xc350",
+    };
+    for (const capture of [capturePrepare, captureSend]) {
+      expectRpcError(
+        () =>
+          capture(
+            capture === capturePrepare
+              ? basePrepare({ capabilities: { staticPaymasterConfiguration } })
+              : baseSend({ capabilities: { staticPaymasterConfiguration } }),
+          ),
+        UNSUPPORTED_CAPABILITY,
+      );
+      const optional = { ...staticPaymasterConfiguration, optional: true };
+      const captured = capture(
+        capture === capturePrepare
+          ? basePrepare({ capabilities: { staticPaymasterConfiguration: optional } })
+          : baseSend({ capabilities: { staticPaymasterConfiguration: optional } }),
+      );
+      expect(captured.capabilities).toEqual({
+        values: { staticPaymasterConfiguration: optional },
+        ignored: ["staticPaymasterConfiguration"],
+      });
+    }
   });
 });
 

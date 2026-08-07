@@ -266,6 +266,7 @@ async function ownerConsole() {
         signer: "owner",
         account: bound.account,
         calls,
+        paymaster: null,
       });
       const prepared = ownerRuntime.prepareOperation({
         kind: "revocation",

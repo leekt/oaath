@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   captureErc7902StaticPaymasterConfiguration,
+  ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN,
   ERC7902_STATIC_PAYMASTER_LIMITS,
+  hashErc7902StaticPaymasterConfiguration,
   OaathRoutingError,
 } from "../src/advanced.js";
 import { prepareUserOperation } from "../src/kernel.js";
@@ -96,6 +98,26 @@ describe("ERC-7902 static paymaster capture", () => {
       paymaster: captured.paymaster,
     });
     expect(withPaymaster.userOperationHash).not.toBe(withoutPaymaster.userOperationHash);
+  });
+
+  it("commits every normalized paymaster field under one domain but excludes negotiation", () => {
+    const baseline = hashErc7902StaticPaymasterConfiguration(configuration());
+    expect(ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN).toBe(
+      "@oaath/sdk:erc-7902-static-paymaster-configuration/v1",
+    );
+    expect(baseline).toBe("0x70a35e6c247838ac3ef02bdd886943bec3426ceed1692726aee6da0de816a031");
+    expect(hashErc7902StaticPaymasterConfiguration({ ...configuration(), optional: true })).toBe(
+      baseline,
+    );
+
+    for (const changed of [
+      { ...configuration(), paymaster: `0x${"44".repeat(20)}` },
+      { ...configuration(), paymasterData: "0xdeadbe00" },
+      { ...configuration(), paymasterValidationGasLimit: "0x9c41" },
+      { ...configuration(), paymasterPostOpGasLimit: "0xc351" },
+    ]) {
+      expect(hashErc7902StaticPaymasterConfiguration(changed)).not.toBe(baseline);
+    }
   });
 
   it("accepts the exact numeric and data boundaries", () => {
