@@ -68,12 +68,17 @@ const GOLDEN_OWNER_SIGNING_SCOPE = GOLDEN.projection.ownerSigningRequest?.scope 
   readonly requestHash: `0x${string}`;
   readonly request: Record<string, unknown>;
 };
+const GOLDEN_KERNEL_ENABLE_SCOPE = GOLDEN.projection.kernelEnableOwnerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
+};
 const GOLDEN_RAW_DIGEST_SCOPE = GOLDEN.projection.rawDigestOwnerSigningRequest?.scope as {
   readonly requestHash: `0x${string}`;
   readonly request: Record<string, unknown>;
 };
 /** Serialized exactly as a requesting client stores it into requestedScope. */
 const OWNER_SIGNING_SCOPE = JSON.stringify(GOLDEN_OWNER_SIGNING_SCOPE.request);
+const KERNEL_ENABLE_SCOPE = JSON.stringify(GOLDEN_KERNEL_ENABLE_SCOPE.request);
 const RAW_DIGEST_REQUEST = GOLDEN_RAW_DIGEST_SCOPE.request;
 const RAW_DIGEST_SCOPE = JSON.stringify(RAW_DIGEST_REQUEST);
 const LEGACY_SIGNATURE_SCOPE = JSON.stringify({
@@ -241,6 +246,7 @@ describe("experimental owner-phone projection", () => {
 
   it.each([
     ["EIP-712", OWNER_SIGNING_SCOPE, GOLDEN_OWNER_SIGNING_SCOPE.request],
+    ["Kernel enable", KERNEL_ENABLE_SCOPE, GOLDEN_KERNEL_ENABLE_SCOPE.request],
     ["raw digest", RAW_DIGEST_SCOPE, RAW_DIGEST_REQUEST],
   ])(
     "projects a complete %s owner-signing request and its exact hash",
@@ -358,6 +364,7 @@ describe("experimental owner-phone decision saga", () => {
   it.each([
     ["raw", RAW_SCOPE],
     ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
+    ["Kernel enable owner signing", KERNEL_ENABLE_SCOPE],
     ["raw-digest owner signing", RAW_DIGEST_SCOPE],
     ["legacy digest", LEGACY_SIGNATURE_SCOPE],
   ])(
@@ -413,6 +420,7 @@ describe("experimental owner-phone preview routes", () => {
     for (const [variant, requestedScope] of [
       ["permissionRequest", PERMISSION_SCOPE],
       ["ownerSigningRequest", OWNER_SIGNING_SCOPE],
+      ["kernelEnableOwnerSigningRequest", KERNEL_ENABLE_SCOPE],
       ["rawDigestOwnerSigningRequest", RAW_DIGEST_SCOPE],
       ["raw", RAW_SCOPE],
     ] as const) {

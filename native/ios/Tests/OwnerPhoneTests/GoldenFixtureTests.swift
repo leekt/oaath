@@ -76,6 +76,27 @@ final class GoldenFixtureTests: XCTestCase {
         XCTAssertEqual(derived.canonicalHex, request.expectedDigest)
         XCTAssertFalse(signing.scope.approvable)
 
+        let kernelEnable = try OwnerPhoneRequestProjection.decode(
+            try bytes(fixture, "projection", "kernelEnableOwnerSigningRequest"))
+        guard case let .ownerSigningRequest(kernelScope) = kernelEnable.scope,
+              case let .eip712(kernelRequest) = kernelScope.request
+        else {
+            return XCTFail("golden kernelEnableOwnerSigningRequest did not decode structurally")
+        }
+        XCTAssertEqual(
+            kernelScope.requestHash,
+            "0xa00d9d6245f9adb00f254c6ea1295c9fb7e6bba1adfd479e6dc51fe4fa5538e4")
+        XCTAssertEqual(kernelRequest.purpose, .kernelEnable)
+        XCTAssertEqual(kernelRequest.typedData.primaryType, "InstallPackages")
+        XCTAssertEqual(
+            kernelRequest.expectedDigest,
+            "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03")
+        guard case let .matches(kernelDerived) = kernelRequest.digestComparison else {
+            return XCTFail("golden Kernel enable digest did not match locally")
+        }
+        XCTAssertEqual(kernelDerived.canonicalHex, kernelRequest.expectedDigest)
+        XCTAssertFalse(kernelEnable.scope.approvable)
+
         let rawDigest = try OwnerPhoneRequestProjection.decode(
             try bytes(fixture, "projection", "rawDigestOwnerSigningRequest"))
         guard case let .ownerSigningRequest(rawScope) = rawDigest.scope,

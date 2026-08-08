@@ -229,6 +229,7 @@ public enum OwnerPhoneSigningPurpose: String, Equatable, Sendable {
     case permit
     case permit2
     case application
+    case kernelEnable = "kernel-enable"
 }
 
 public struct OwnerPhoneSigningSigner: Equatable, Sendable {

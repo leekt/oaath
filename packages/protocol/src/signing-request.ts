@@ -47,7 +47,7 @@ const MAX_TOTAL_BYTES = 64 * 1024;
 const MAX_TOTAL_VALUES = 4_096;
 const MAX_UINT256 = (1n << 256n) - 1n;
 
-export type Eip712SigningPurpose = "permit" | "permit2" | "application";
+export type Eip712SigningPurpose = "permit" | "permit2" | "application" | "kernel-enable";
 
 export interface CanonicalEip712Field {
   readonly name: string;
@@ -532,7 +532,8 @@ export function captureOwnerSigningRequest(
   if (
     record.purpose !== "permit" &&
     record.purpose !== "permit2" &&
-    record.purpose !== "application"
+    record.purpose !== "application" &&
+    record.purpose !== "kernel-enable"
   ) {
     return fail("EIP-712 owner signing purpose is unsupported");
   }

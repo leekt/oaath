@@ -578,6 +578,18 @@ final class OwnerSigningConsentPresentationTests: XCTestCase {
         XCTAssertTrue(Set(rendered.keys).contains("message.field.from.meta.fieldCount"))
     }
 
+    func testRendersKernelEnablePurposeExactly() throws {
+        let presentation = OwnerSigningConsentPresentation(
+            scope: try signingScope(projection(named: "kernelEnableOwnerSigningRequest")))
+        let rendered = facts(presentation)
+
+        XCTAssertEqual(rendered["identity.purpose"]?.value, "kernel-enable")
+        XCTAssertEqual(rendered["typedData.primaryType"]?.value, "InstallPackages")
+        XCTAssertEqual(
+            rendered["digest.derived"]?.value,
+            "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03")
+    }
+
     func testPresentationFactIdsDisambiguateMetadataFromFieldNames() throws {
         var object = try projection(named: "ownerSigningRequest")
         var scope = try XCTUnwrap(object["scope"] as? [String: Any])

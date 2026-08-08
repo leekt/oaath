@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   encodeOwnerSigningRequest,
@@ -12,6 +13,20 @@ const ACCOUNT = "0x1111111111111111111111111111111111111111";
 const OWNER_PUBLIC_KEY =
   "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5";
 const DIGEST = "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2";
+const KERNEL_ENABLE = (
+  JSON.parse(
+    readFileSync(
+      new URL("../../server/test/fixtures/owner-phone-golden.json", import.meta.url),
+      "utf8",
+    ),
+  ) as {
+    readonly projection: {
+      readonly kernelEnableOwnerSigningRequest: {
+        readonly scope: { readonly requestHash: `0x${string}`; readonly request: unknown };
+      };
+    };
+  }
+).projection.kernelEnableOwnerSigningRequest.scope;
 
 function mailTypedData() {
   return {
@@ -110,6 +125,22 @@ describe("owner signing request", () => {
     input.signer.account = "0x3333333333333333333333333333333333333333";
     expect(hashCanonicalEip712TypedData(captured.typedData)).toBe(DIGEST);
     expect(captured.signer.account).toBe(ACCOUNT);
+  });
+
+  it("captures the closed Kernel enable purpose and binds the accepted InstallPackages value", () => {
+    const captured = parseOwnerSigningRequest(KERNEL_ENABLE.request);
+    expect(captured.kind).toBe("eip712");
+    if (captured.kind !== "eip712") throw new Error("wrong captured kind");
+
+    expect(captured.purpose).toBe("kernel-enable");
+    expect(captured.typedData.primaryType).toBe("InstallPackages");
+    expect(hashCanonicalEip712TypedData(captured.typedData)).toBe(
+      "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03",
+    );
+    expect(hashOwnerSigningRequest(captured)).toBe(KERNEL_ENABLE.requestHash);
+    expect(KERNEL_ENABLE.requestHash).toBe(
+      "0xa00d9d6245f9adb00f254c6ea1295c9fb7e6bba1adfd479e6dc51fe4fa5538e4",
+    );
   });
 
   it("captures the complete bounded atomic, struct, and array type family", () => {

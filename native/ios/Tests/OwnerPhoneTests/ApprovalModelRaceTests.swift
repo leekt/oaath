@@ -201,12 +201,32 @@ final class ApprovalModelRaceTests: XCTestCase {
             JSONSerialization.data(withJSONObject: projection)).scope
     }
 
+    private func kernelEnableScope() throws -> OwnerPhoneScope {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            let projection = projections["kernelEnableOwnerSigningRequest"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("Kernel enable test fixture")
+        }
+        return try OwnerPhoneRequestProjection.decode(
+            JSONSerialization.data(withJSONObject: projection)).scope
+    }
+
     func testRejectOnlyScopesGenerateNoArtifactAndSendOnlyExplicitRejection() async throws {
         let digest = "0x" + String(repeating: "a1", count: 32)
         let scopes: [OwnerPhoneScope] = [
             .raw(#"{"chainScope":"all"}"#),
             .rawDigestSigningFixture(digest: digest),
             try mismatchedEIP712Scope(),
+            try kernelEnableScope(),
         ]
 
         for (index, scope) in scopes.enumerated() {
