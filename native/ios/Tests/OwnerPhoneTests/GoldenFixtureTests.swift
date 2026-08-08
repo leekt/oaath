@@ -95,7 +95,7 @@ final class GoldenFixtureTests: XCTestCase {
             return XCTFail("golden Kernel enable digest did not match locally")
         }
         XCTAssertEqual(kernelDerived.canonicalHex, kernelRequest.expectedDigest)
-        XCTAssertEqual(kernelScope.decisionCapability, .rejectOnly)
+        XCTAssertEqual(kernelScope.decisionCapability, .approveOrReject)
 
         let rawDigest = try OwnerPhoneRequestProjection.decode(
             try bytes(fixture, "projection", "rawDigestOwnerSigningRequest"))

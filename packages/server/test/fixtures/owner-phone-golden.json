@@ -158,7 +158,7 @@
       },
       "scope": {
         "kind": "owner-signing-request",
-        "decision": "reject-only",
+        "decision": "approve-or-reject",
         "requestHash": "0xa00d9d6245f9adb00f254c6ea1295c9fb7e6bba1adfd479e6dc51fe4fa5538e4",
         "request": {
           "version": "oaath.owner-signing-request/v1",

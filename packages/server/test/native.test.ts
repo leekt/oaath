@@ -26,6 +26,7 @@ import type { RelayKms } from "../src/security/kms.js";
 import type { RelayStore } from "../src/store/interface.js";
 import { withRelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
+import { createKernelOwnerApprovalInput } from "./kernel-owner-signing-input.js";
 import {
   APPROVABLE_PERMISSION_SCOPE,
   CLIENT_TOKEN,
@@ -246,22 +247,53 @@ describe("experimental owner-phone projection", () => {
   });
 
   it.each([
-    ["EIP-712", OWNER_SIGNING_SCOPE, GOLDEN_OWNER_SIGNING_SCOPE.request],
-    ["Kernel enable", KERNEL_ENABLE_SCOPE, GOLDEN_KERNEL_ENABLE_SCOPE.request],
-    ["raw digest", RAW_DIGEST_SCOPE, RAW_DIGEST_REQUEST],
+    ["EIP-712", OWNER_SIGNING_SCOPE, GOLDEN_OWNER_SIGNING_SCOPE.request, "reject-only"],
+    ["Kernel enable", KERNEL_ENABLE_SCOPE, GOLDEN_KERNEL_ENABLE_SCOPE.request, "approve-or-reject"],
+    ["raw digest", RAW_DIGEST_SCOPE, RAW_DIGEST_REQUEST, "reject-only"],
   ])(
     "projects a complete %s owner-signing request and its exact hash",
-    async (_, stored, request) => {
+    async (_, stored, request, decision) => {
       const fixed = await fixture(stored);
       const projection = await project(fixed);
       expect(projection.scope).toEqual({
         kind: "owner-signing-request",
-        decision: "reject-only",
+        decision,
         requestHash: hashOwnerSigningRequest(request),
         request,
       });
     },
   );
+
+  it("keeps non-P256 Kernel signer profiles reject-only", async () => {
+    const original = GOLDEN_KERNEL_ENABLE_SCOPE.request as {
+      signer: { ownerCredential: { version: string; publicKey: string } };
+    };
+    const credentials = [
+      {
+        version: original.signer.ownerCredential.version,
+        kind: "ecdsa",
+        address: `0x${"55".repeat(20)}`,
+      },
+      {
+        version: original.signer.ownerCredential.version,
+        kind: "webauthn",
+        publicKey: original.signer.ownerCredential.publicKey,
+        authenticatorIdHash: `0x${"44".repeat(32)}`,
+      },
+    ];
+
+    for (const ownerCredential of credentials) {
+      const request = structuredClone(GOLDEN_KERNEL_ENABLE_SCOPE.request) as {
+        signer: { ownerCredential: unknown };
+      };
+      request.signer.ownerCredential = ownerCredential;
+      const fixed = await fixture(JSON.stringify(request));
+      expect((await project(fixed)).scope).toMatchObject({
+        kind: "owner-signing-request",
+        decision: "reject-only",
+      });
+    }
+  });
 
   it("fails malformed and legacy signing scopes closed to labeled raw text", async () => {
     const wrongVersion = JSON.parse(OWNER_SIGNING_SCOPE) as Record<string, unknown>;
@@ -313,6 +345,48 @@ describe("experimental owner-phone projection", () => {
 });
 
 describe("experimental owner-phone decision saga", () => {
+  it("verifies one Kernel artifact and replays without a second release", async () => {
+    const input = createKernelOwnerApprovalInput();
+    const fixed = await fixture(input.requestedScope);
+    const projection = await project(fixed);
+    expect(projection.scope).toMatchObject({
+      kind: "owner-signing-request",
+      decision: "approve-or-reject",
+    });
+
+    const decided = await submitOwnerPhoneDecision({
+      store: fixed.store,
+      clock: fixed.clock,
+      kms: fixed.kms,
+      caller: OWNER,
+      operationId: fixed.requestId,
+      command: { outcome: "approved", artifact: input.canonicalArtifact },
+      codeTtlMs: CODE_TTL_MS,
+    });
+    expect(decided).toMatchObject({
+      settlement: "decided",
+      outcome: "approved",
+    });
+    expect(decided.release?.outcome).toBe("approved");
+    expect(fixed.kmsEncryptions()).toBe(2);
+
+    const replayed = await submitOwnerPhoneDecision({
+      store: fixed.store,
+      clock: fixed.clock,
+      kms: fixed.kms,
+      caller: OWNER,
+      operationId: fixed.requestId,
+      command: { outcome: "approved", artifact: "{}" },
+      codeTtlMs: CODE_TTL_MS,
+    });
+    expect(replayed).toMatchObject({
+      settlement: "replayed",
+      outcome: "approved",
+      release: null,
+    });
+    expect(fixed.kmsEncryptions()).toBe(2);
+  });
+
   it("decides once and releases the one-time material to that call only", async () => {
     const fixed = await fixture();
     const decided = await decide(fixed, "approved");
@@ -365,7 +439,6 @@ describe("experimental owner-phone decision saga", () => {
   it.each([
     ["raw", RAW_SCOPE],
     ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
-    ["Kernel enable owner signing", KERNEL_ENABLE_SCOPE],
     ["raw-digest owner signing", RAW_DIGEST_SCOPE],
     ["legacy digest", LEGACY_SIGNATURE_SCOPE],
   ])(

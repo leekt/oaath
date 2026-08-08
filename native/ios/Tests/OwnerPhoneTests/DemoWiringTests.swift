@@ -302,9 +302,9 @@ private final class OwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
 private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [URLRequest] = []
-    private let decision: String
+    private let decision: String?
 
-    init(decision: String) {
+    init(decision: String? = nil) {
         self.decision = decision
     }
 
@@ -326,7 +326,7 @@ private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendab
         else {
             throw OwnerPhoneWireError.invalidField("Kernel owner signing test fixture")
         }
-        scope["decision"] = decision
+        if let decision { scope["decision"] = decision }
         projection["scope"] = scope
         projection["operationId"] = request.url?.lastPathComponent ?? "kernel-owner-signing"
         projection["expiresAt"] = 2_000_000_000_000
@@ -1111,14 +1111,14 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(store.load(), .stored(pairingB))
     }
 
-    func testDemoComposesKernelBindingWhileCurrentServerScopeRemainsRejectOnly() async throws {
+    func testDemoComposesCurrentKernelBindingAndKeepsExplicitRejectOnlyScopeInert() async throws {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
             account: "0x" + String(repeating: "66", count: 20),
             ownerPublicMaterial: fakeOwnerPublicMaterial)
 
-        let currentHTTP = KernelOwnerSigningRecordingHTTP(decision: "reject-only")
+        let currentHTTP = KernelOwnerSigningRecordingHTTP()
         let currentSigning = OwnerSigningAttemptRecorder()
         let current = DemoModel(
             pairings: InMemoryPairingStore(result: .stored(pairing)),
@@ -1132,34 +1132,34 @@ final class DemoPairingIdentityTests: XCTestCase {
         }
         XCTAssertEqual(
             currentApproval.approvalAvailability(for: currentReview.projection),
-            .rejectOnly)
-
-        await currentApproval.approve()
-
+            .kernelP256OwnerSigning)
         XCTAssertEqual(currentSigning.recordedCount(), 0)
         XCTAssertEqual(currentHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
-        guard case let .review(afterApproval) = currentApproval.phase else {
+
+        let rejectedHTTP = KernelOwnerSigningRecordingHTTP(decision: "reject-only")
+        let rejectedSigning = OwnerSigningAttemptRecorder()
+        let rejected = DemoModel(
+            pairings: InMemoryPairingStore(result: .stored(pairing)),
+            http: rejectedHTTP,
+            ownerKey: FakeOwnerSigning(signingAttempts: rejectedSigning))
+        rejected.operationIdText = "reject-only-kernel-owner-signing"
+        await rejected.openManually()
+        let rejectedApproval = try XCTUnwrap(rejected.approval)
+        guard case let .review(rejectedReview) = rejectedApproval.phase else {
+            return XCTFail("expected the reject-only Kernel review")
+        }
+        XCTAssertEqual(
+            rejectedApproval.approvalAvailability(for: rejectedReview.projection),
+            .rejectOnly)
+
+        await rejectedApproval.approve()
+
+        XCTAssertEqual(rejectedSigning.recordedCount(), 0)
+        XCTAssertEqual(rejectedHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
+        guard case let .review(afterApproval) = rejectedApproval.phase else {
             return XCTFail("reject-only approval must remain pending")
         }
         XCTAssertEqual(afterApproval.state, .pending)
-
-        let futureHTTP = KernelOwnerSigningRecordingHTTP(decision: "approve-or-reject")
-        let futureSigning = OwnerSigningAttemptRecorder()
-        let future = DemoModel(
-            pairings: InMemoryPairingStore(result: .stored(pairing)),
-            http: futureHTTP,
-            ownerKey: FakeOwnerSigning(signingAttempts: futureSigning))
-        future.operationIdText = "future-kernel-owner-signing"
-        await future.openManually()
-        let futureApproval = try XCTUnwrap(future.approval)
-        guard case let .review(futureReview) = futureApproval.phase else {
-            return XCTFail("expected the future Kernel review")
-        }
-        XCTAssertEqual(
-            futureApproval.approvalAvailability(for: futureReview.projection),
-            .kernelP256OwnerSigning)
-        XCTAssertEqual(futureSigning.recordedCount(), 0)
-        XCTAssertEqual(futureHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
     }
 
     func testKernelBindingRechecksPairingImmediatelyBeforeCustody() async throws {

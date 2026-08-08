@@ -465,10 +465,12 @@ async function createOwnerSigningRequest(
   }
   event("signature.requested", { purpose, requestId: created.requestId });
   if (SIMULATE) {
+    const expectedDecision =
+      ownerSigningRequest.kind === "eip712" ? "approve-or-reject" : "reject-only";
     expect(
       projection.scope?.kind === "owner-signing-request" &&
-        projection.scope.decision === "reject-only",
-      "simulation owner signing request was not reject-only",
+        projection.scope.decision === expectedDecision,
+      "simulation owner signing decision capability drifted",
     );
     expect(
       projection.scope.requestHash === hashOwnerSigningRequest(ownerSigningRequest),
@@ -1748,10 +1750,10 @@ async function simulate() {
   const projectedScope = projectedPermission.scope;
   expect(
     projectedScope?.kind === "owner-signing-request" &&
-      projectedScope.decision === "reject-only" &&
+      projectedScope.decision === "approve-or-reject" &&
       projectedScope.request?.kind === "eip712" &&
       projectedScope.request.purpose === "kernel-enable",
-    "permission route did not project a reject-only Kernel enable request",
+    "permission route did not project an approvable Kernel enable request",
   );
   const projectedRequest = projectedScope.request;
   const installScope = Object.freeze({
@@ -1807,7 +1809,7 @@ async function simulate() {
       permission.request.outcome === null,
     "permission route produced local release state before fixture injection",
   );
-  const refusedApproval = await fetch(
+  const invalidApproval = await fetch(
     `http://127.0.0.1:${relayPort}/native/decisions/${requested.requestId}`,
     {
       method: "POST",
@@ -1818,17 +1820,17 @@ async function simulate() {
       body: JSON.stringify({ command: "approve", artifact: "must-not-be-released" }),
     },
   );
-  const refusedApprovalBody = await refusedApproval.json();
+  const invalidApprovalBody = await invalidApproval.json();
   expect(
-    !refusedApproval.ok && refusedApprovalBody.error?.code === "relay_request_invalid",
-    "server accepted a reject-only Kernel enable request",
+    !invalidApproval.ok && invalidApprovalBody.error?.code === "relay_request_invalid",
+    "server accepted an invalid Kernel owner artifact",
   );
   const serverRequest = await relayCall(
     "GET",
     `/authorization/requests/${requested.requestId}`,
     OWNER_TOKEN,
   );
-  expect(serverRequest.decision === null, "refused Kernel enable approval created a decision");
+  expect(serverRequest.decision === null, "invalid Kernel enable approval created a decision");
   injectTestOnlySimulationSignature(permission.request);
   expect(
     permission.request.artifact !== null && permission.request.code === null,

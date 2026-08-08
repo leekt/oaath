@@ -9,6 +9,7 @@ import { OAATH_OWNER_SIGNING_REQUEST_VERSION } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { verifyPkceS256 } from "../src/authorization/challenge.js";
 import type { RelayKms } from "../src/security/kms.js";
+import { createKernelOwnerApprovalInput } from "./kernel-owner-signing-input.js";
 import {
   approve,
   CLIENT_TOKEN,
@@ -138,6 +139,84 @@ describe("authorization decision", () => {
       200,
     );
     expect(encryptions).toBe(0);
+  });
+
+  it("releases only a verified canonical Kernel owner artifact", async () => {
+    const input = createKernelOwnerApprovalInput();
+    const harness = createHarness();
+    const created = await createRequest(harness, input.requestedScope);
+    const decision = await approve(harness, created.requestId, input.canonicalArtifact);
+    const consumed = await expectOk<{ artifactId: string }>(
+      await consume(harness, decision.code),
+      200,
+    );
+    const claimed = await expectOk<{ artifact: string }>(
+      await claim(harness, consumed.artifactId),
+      200,
+    );
+
+    expect(claimed.artifact === input.canonicalArtifact).toBe(true);
+  });
+
+  it("verifies Kernel artifacts after terminal and expiry precedence but before KMS", async () => {
+    const base = createTestKms();
+    let encryptions = 0;
+    const kms: RelayKms = {
+      async encrypt(plaintext) {
+        encryptions += 1;
+        return base.encrypt(plaintext);
+      },
+      decrypt: (ciphertextRef) => base.decrypt(ciphertextRef),
+    };
+    const input = createKernelOwnerApprovalInput();
+    const harness = createHarness({ kms });
+    const pending = await createRequest(harness, input.requestedScope);
+
+    await expectFailure(
+      await harness.handler(
+        post(`/authorization/requests/${pending.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: "{}",
+        }),
+      ),
+      "relay_request_invalid",
+    );
+    expect(encryptions).toBe(0);
+    expect(
+      (
+        await expectOk<{ decision: unknown }>(
+          await harness.handler(get(`/authorization/requests/${pending.requestId}`, OWNER_TOKEN)),
+          200,
+        )
+      ).decision,
+    ).toBeNull();
+
+    await approve(harness, pending.requestId, input.canonicalArtifact);
+    expect(encryptions).toBe(2);
+    await expectFailure(
+      await harness.handler(
+        post(`/authorization/requests/${pending.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: "{}",
+        }),
+      ),
+      "relay_already_decided",
+    );
+    expect(encryptions).toBe(2);
+
+    const expiredHarness = createHarness({ kms }, undefined, undefined);
+    const expired = await createRequest(expiredHarness, input.requestedScope);
+    expiredHarness.clock.advance(300_000);
+    await expectFailure(
+      await expiredHarness.handler(
+        post(`/authorization/requests/${expired.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: "{}",
+        }),
+      ),
+      "relay_expired",
+    );
+    expect(encryptions).toBe(2);
   });
 
   it("is terminal: a second decide fails and releases no second code", async () => {

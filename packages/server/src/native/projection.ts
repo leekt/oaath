@@ -29,7 +29,11 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { hashOwnerSigningRequest, type OwnerSigningRequest } from "@oaath/protocol";
+import {
+  hashOwnerSigningRequest,
+  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type OwnerSigningRequest,
+} from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
 import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
@@ -48,8 +52,8 @@ const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 
 /**
  * Whether the phone may offer approval for one projected scope. Permission
- * requests are currently approvable; owner-signing, unknown, and malformed
- * scopes remain inspectable but reject-only.
+ * requests and exact Kernel replayable-install P-256 signing are approvable;
+ * every other owner-signing, unknown, and malformed scope remains reject-only.
  */
 export type OwnerPhoneDecisionCapability = "approve-or-reject" | "reject-only";
 
@@ -64,8 +68,8 @@ export type OwnerPhoneCredentialProjection =
  * an `@oaath/protocol` permission request, every fact that determines who
  * receives authority, over which account, and under what limits is projected
  * structurally. A valid owner-signing request is also projected in full with
- * its protocol-owned hash, but remains reject-only. Anything else is returned
- * as explicitly labeled raw text.
+ * its protocol-owned hash; only exact Kernel replayable-install P-256 signing
+ * is approvable. Anything else is returned as explicitly labeled raw text.
  */
 export type OwnerPhoneScopeProjection =
   | Readonly<{
@@ -113,6 +117,14 @@ export type OwnerPhoneScopeProjection =
       policyValidAfter: number;
       policyValidUntil: number | null;
       perChainOperationLimit: number;
+    }>
+  | Readonly<{
+      kind: "owner-signing-request";
+      decision: "approve-or-reject";
+      /** Canonical hash binding every captured request fact. */
+      requestHash: `0x${string}`;
+      /** Exact Kernel request independently refined by the protocol owner. */
+      request: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
     }>
   | Readonly<{
       kind: "owner-signing-request";
@@ -240,6 +252,14 @@ export async function projectOwnerPhoneScope(
         policyValidAfter: request.policy.validAfter,
         policyValidUntil: request.policy.validUntil,
         perChainOperationLimit: request.policy.perChainOperationLimit,
+      });
+    }
+    if (classified.kind === "kernel-owner-signing-request") {
+      return Object.freeze({
+        kind: "owner-signing-request",
+        decision: "approve-or-reject",
+        requestHash: hashOwnerSigningRequest(classified.request),
+        request: classified.request,
       });
     }
     if (classified.kind === "owner-signing-request") {
