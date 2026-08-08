@@ -94,6 +94,8 @@ const TRANSACTION_HASH = "0x" + "44".repeat(32);
 const OWNER_TOKEN = randomUUID();
 const OWNER_ACCOUNT = privateKeyToAccount(generatePrivateKey());
 const TIMEOUT_MS = 20_000;
+const GRANT_LIFETIME_SECONDS = 1_800;
+const RANGE_LIFETIME_SECONDS = 300;
 
 function fail(message) {
   throw new Error(message);
@@ -469,7 +471,7 @@ try {
           target: input.target,
           selector: input.selector,
           valueLimit: "1000",
-          expiresIn: 1_800,
+          expiresIn: input.expiresIn,
           perChainOperationLimit: 10,
         },
       });
@@ -480,6 +482,7 @@ try {
       origin: serviceOrigin,
       target: TARGET,
       selector: SELECTOR,
+      expiresIn: GRANT_LIFETIME_SECONDS,
     },
   );
   if (paired?.ok !== true || paired.result?.state !== "active") {
@@ -487,15 +490,64 @@ try {
   }
   const account = paired.result.account;
   if (typeof account !== "string") fail("the paired account is unavailable");
+  const pairedStatus = await popup.evaluate(
+    (origin) => chrome.runtime.sendMessage({ type: "popup", command: "status", origin }),
+    serviceOrigin,
+  );
+  const grantExpiresAt = pairedStatus?.result?.expiresAt;
+  if (
+    pairedStatus?.ok !== true ||
+    pairedStatus.result?.state !== "active" ||
+    !Number.isSafeInteger(grantExpiresAt)
+  ) {
+    fail("the active Grant ceiling is unavailable");
+  }
   await popup.close();
 
+  const chainId = "0x" + CHAIN_ID.toString(16);
+  const capabilities = await dapp.evaluate(
+    (input) =>
+      window.__oaathProvider.request({
+        method: "wallet_getCapabilities",
+        params: [input.account, [input.chainId]],
+      }),
+    { account, chainId },
+  );
+  const advertisedRange = capabilities?.[chainId]?.validityTimeRange;
+  const validityAdvertised =
+    advertisedRange?.supported === true &&
+    advertisedRange?.status === "experimental" &&
+    Object.keys(advertisedRange).sort().join(",") === "status,supported";
+  expect(validityAdvertised, "the extension did not advertise exact validity-range support");
+  expect(counts.submissions === 0, "capability discovery submitted an operation");
+  expect(chain.sends.length === 0, "capability discovery reached the chain submission path");
+
+  // The status read exposes the current Grant expiry. Its fixed lifetime
+  // recovers the approved lower bound, making this active 300-second interval
+  // deterministic and strictly below that expiry.
+  const validAfter = grantExpiresAt - GRANT_LIFETIME_SECONDS;
+  const validUntil = validAfter + RANGE_LIFETIME_SECONDS;
+  const rangeObservedAt = Math.floor(Date.now() / 1_000);
+  expect(
+    validAfter <= rangeObservedAt && rangeObservedAt <= validUntil,
+    "the deterministic validity range is not active",
+  );
+  expect(validUntil < grantExpiresAt, "the validity range reached the Grant ceiling");
+  const validAfterUtc = new Date(validAfter * 1_000).toISOString();
+  const validUntilUtc = new Date(validUntil * 1_000).toISOString();
   const request = {
     version: "2.0.0",
     id: BUNDLE_ID,
     from: account,
-    chainId: "0x" + CHAIN_ID.toString(16),
+    chainId,
     atomicRequired: true,
     calls: [{ to: TARGET, data: CALL_DATA, value: "0x5" }],
+    capabilities: {
+      validityTimeRange: {
+        validAfter: "0x" + validAfter.toString(16),
+        validUntil: "0x" + validUntil.toString(16),
+      },
+    },
   };
   const confirmationTarget = browser.waitForTarget(
     (target) =>
@@ -527,6 +579,15 @@ try {
     "confirmation lost the chain",
   );
   expect(confirmationText.includes("target   " + TARGET), "confirmation lost the exact call");
+  const rangePresented =
+    confirmationText.includes("validity (inclusive)") &&
+    confirmationText.includes(
+      "after    " + validAfter + " seconds (" + validAfterUtc + ")",
+    ) &&
+    confirmationText.includes(
+      "until    " + validUntil + " seconds (" + validUntilUtc + ")",
+    );
+  expect(rangePresented, "confirmation lost the exact inclusive validity range");
   expect(counts.submissions === 0, "the extension submitted before wallet confirmation");
   expect(chain.sends.length === 0, "the chain received a call before wallet confirmation");
   await confirmationPage.click("#approve");
@@ -591,6 +652,8 @@ try {
         observations: counts.observations,
         workerRestarted: true,
         duplicateCode: duplicate.code,
+        validityAdvertised,
+        rangePresented,
       }),
   );
 } finally {
@@ -631,8 +694,11 @@ try {
   assert(report.status === 200, "Chromium did not recover confirmed status");
   assert(report.submissions === 1, "Chromium recovery resubmitted");
   assert(report.duplicateCode === 5720, "Chromium duplicate ID did not return 5720");
+  assert(report.validityAdvertised === true, "Chromium did not advertise validity ranges");
+  assert(report.rangePresented === true, "Chromium did not present the exact validity range");
   console.log("packed Chromium MV3 extension smoke: ok");
   console.log(`  bundle           ${report.id}, status ${report.status}`);
+  console.log("  validity         advertised and presented with inclusive UTC bounds");
   console.log(
     `  worker restart   forced death, distinct wake, ${report.observations} observations`,
   );

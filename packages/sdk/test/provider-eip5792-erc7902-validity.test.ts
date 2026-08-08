@@ -16,6 +16,7 @@ import {
   type OaathProviderOperationPointer,
 } from "../src/client/grant-handle.js";
 import { encodeKernelV4Execution, OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel.js";
+import { createEip5792Orchestrator } from "../src/provider/eip5792.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
@@ -84,7 +85,7 @@ function replaceChain(base: ChainFixture, overrides: Partial<OaathChainCapabilit
 
 function observingPolicyReads(
   base: ChainFixture,
-  observedHash?: `0x${string}`,
+  observedHash?: `0x${string}` | Error,
 ): Readonly<{ chain: ChainFixture; reads: () => number }> {
   let reads = 0;
   return Object.freeze({
@@ -96,6 +97,7 @@ function observingPolicyReads(
             request.address === OAATH_KERNEL_V4_VALIDITY_POLICY
           ) {
             reads += 1;
+            if (observedHash instanceof Error) throw observedHash;
             if (observedHash !== undefined) return observedHash;
           }
           return base.capability.reads.read(request);
@@ -111,6 +113,7 @@ async function activeProvider(
     chain?: ChainFixture;
     clock?: ReturnType<typeof createClock>;
     confirmCalls?: NonNullable<OaathProviderInput["confirmCalls"]>;
+    permission?: unknown;
   }> = {},
 ) {
   const realm = createRealm({
@@ -118,7 +121,7 @@ async function activeProvider(
     ...(input.clock === undefined ? {} : { clock: input.clock }),
   });
   const connection = await realm.oaath.connect();
-  const grant = await connection.requestPermission(permissionInput());
+  const grant = await connection.requestPermission(input.permission ?? permissionInput());
   const provider = oaathProvider({
     grant,
     chain: CHAIN_ID,
@@ -210,6 +213,144 @@ function registeredService(): Readonly<{
   });
   return Object.freeze({ service, stages });
 }
+
+describe("wallet_getCapabilities ERC-7902 validity advertisement", () => {
+  it("advertises one frozen experimental capability after the exact runtime proof", async () => {
+    const base = createChainFixture();
+    const observed = observingPolicyReads(base);
+    const active = await activeProvider({
+      chain: observed.chain,
+      confirmCalls: async () => "approved" as const,
+    });
+
+    const response = (await active.provider.request({
+      method: "wallet_getCapabilities",
+      params: [active.account],
+    })) as Readonly<Record<string, unknown>>;
+    expect(response).toEqual({
+      [CHAIN_HEX]: {
+        atomic: { status: "supported" },
+        validityTimeRange: { supported: true, status: "experimental" },
+      },
+    });
+    expect(Object.isFrozen(response)).toBe(true);
+    const chainCapabilities = response[CHAIN_HEX] as Readonly<Record<string, unknown>>;
+    expect(Object.isFrozen(chainCapabilities)).toBe(true);
+    expect(Object.isFrozen(chainCapabilities.validityTimeRange)).toBe(true);
+    expect(observed.reads()).toBe(1);
+    await expect(
+      active.provider.request({
+        method: "wallet_getCapabilities",
+        params: [active.account],
+      }),
+    ).resolves.toEqual(response);
+    expect(observed.reads()).toBe(2);
+    await expectNoEffects(active, "validity-capability-probe");
+    await active.connection.close();
+  });
+
+  it("skips the runtime probe when headless or when only another chain was requested", async () => {
+    const headlessObserved = observingPolicyReads(createChainFixture());
+    const headless = await activeProvider({ chain: headlessObserved.chain });
+    await expect(
+      headless.provider.request({
+        method: "wallet_getCapabilities",
+        params: [headless.account],
+      }),
+    ).resolves.toEqual({ [CHAIN_HEX]: { atomic: { status: "supported" } } });
+    expect(headlessObserved.reads()).toBe(0);
+    await expectNoEffects(headless, "validity-headless-probe");
+    await headless.connection.close();
+
+    const otherObserved = observingPolicyReads(createChainFixture());
+    const other = await activeProvider({
+      chain: otherObserved.chain,
+      confirmCalls: async () => "approved" as const,
+    });
+    await expect(
+      other.provider.request({
+        method: "wallet_getCapabilities",
+        params: [other.account, ["0xa"]],
+      }),
+    ).resolves.toEqual({});
+    expect(otherObserved.reads()).toBe(0);
+    await expectNoEffects(other, "validity-other-chain-probe");
+    await other.connection.close();
+  });
+
+  it.each([
+    ["wrong", `0x${"ff".repeat(32)}` as const],
+    ["unreadable", new Error("policy read unavailable")],
+  ] as const)("omits validity when its exact runtime is %s", async (_failure, observedHash) => {
+    const observed = observingPolicyReads(createChainFixture(), observedHash);
+    const active = await activeProvider({
+      chain: observed.chain,
+      confirmCalls: async () => "approved" as const,
+    });
+
+    await expect(
+      active.provider.request({
+        method: "wallet_getCapabilities",
+        params: [active.account],
+      }),
+    ).resolves.toEqual({ [CHAIN_HEX]: { atomic: { status: "supported" } } });
+    expect(observed.reads()).toBe(1);
+    await expectNoEffects(active, `validity-${_failure}-probe`);
+    await active.connection.close();
+  });
+
+  it("omits malformed positive support evidence from the internal port", async () => {
+    const active = await activeProvider({ confirmCalls: async () => "approved" as const });
+    const port = grantProviderPort(active.grant);
+    const orchestrator = createEip5792Orchestrator({
+      port: Object.freeze({
+        ...port,
+        probeValidityTimeRangeSupport: async () =>
+          Object.freeze({ status: "supported", unexpected: true }) as never,
+      }),
+      chain: CHAIN_ID,
+      confirmCalls: async () => "approved" as const,
+    });
+
+    await expect(orchestrator.getCapabilities([active.account])).resolves.toEqual({
+      [CHAIN_HEX]: { atomic: { status: "supported" } },
+    });
+    await expectNoEffects(active, "validity-malformed-support");
+    await active.connection.close();
+  });
+
+  it("supports the shortest nonempty inclusive ceiling and stops probing after expiry", async () => {
+    const clock = createClock();
+    const observed = observingPolicyReads(createChainFixture());
+    const active = await activeProvider({
+      chain: observed.chain,
+      clock,
+      confirmCalls: async () => "approved" as const,
+      permission: permissionInput({ expiresIn: 2 }),
+    });
+    const port = grantProviderPort(active.grant);
+
+    const supported = await port.probeValidityTimeRangeSupport(CHAIN_ID);
+    expect(supported).toEqual({ status: "supported" });
+    expect(Object.isFrozen(supported)).toBe(true);
+    expect(observed.reads()).toBe(1);
+    clock.advance(2);
+    await expect(port.probeValidityTimeRangeSupport(CHAIN_ID)).resolves.toEqual({
+      status: "unsupported",
+    });
+    expect(observed.reads()).toBe(1);
+    await providerError(
+      active.provider.request({
+        method: "wallet_getCapabilities",
+        params: [active.account],
+      }),
+      4100,
+    );
+    expect(observed.reads()).toBe(1);
+    await expectNoEffects(active, "validity-expired-probe");
+    await active.connection.close();
+  });
+});
 
 describe("wallet_sendCalls ERC-7902 validity admission", () => {
   it("requires a confirmer while an optional unsupported range stays in default mode", async () => {

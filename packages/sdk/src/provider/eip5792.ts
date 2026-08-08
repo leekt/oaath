@@ -46,6 +46,18 @@ const HASH = /^0x[0-9a-f]{64}$/u;
 const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000n;
 const UNSUPPORTED_VALIDITY_ADMISSION = Object.freeze({ status: "unsupported" as const });
 
+function isSupportedValidityTimeRangeProbe(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 1 || keys[0] !== "status") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "status");
+    return descriptor !== undefined && "value" in descriptor && descriptor.value === "supported";
+  } catch {
+    return false;
+  }
+}
+
 export type OaathCallsStatusPresenter = (
   this: void,
   status: Readonly<Eip5792CallsStatus>,
@@ -704,10 +716,21 @@ export function createEip5792Orchestrator(
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);
     if (requested.includes(chainId)) {
+      let validityTimeRange = false;
+      if (confirmer !== undefined) {
+        try {
+          validityTimeRange = isSupportedValidityTimeRangeProbe(
+            await input.port.probeValidityTimeRangeSupport(input.chain),
+          );
+        } catch {
+          validityTimeRange = false;
+        }
+      }
       result[chainId] = advertiseWalletCapabilities({
         atomicExecution: true,
         paymasterService: input.port.registeredPaymasterServiceUrl(input.chain) !== null,
         staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
+        validityTimeRange,
       });
     }
     return Object.freeze(result);

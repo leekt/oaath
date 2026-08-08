@@ -62,11 +62,26 @@ describe("closed wallet capability registry", () => {
     ).toEqual({
       atomic: { status: "supported" },
     });
+    const fullySupported = advertiseWalletCapabilities({
+      atomicExecution: true,
+      paymasterService: true,
+      staticPaymasterConfigurationHash: STATIC_PAYMASTER_HASH,
+      validityTimeRange: true,
+    });
+    expect(fullySupported).toEqual({
+      atomic: { status: "supported" },
+      paymasterService: { supported: true },
+      staticPaymasterConfiguration: { supported: true, status: "experimental" },
+      validityTimeRange: { supported: true, status: "experimental" },
+    });
+    expect(Object.isFrozen(fullySupported)).toBe(true);
+    expect(Object.isFrozen(fullySupported.validityTimeRange)).toBe(true);
     expect(
       advertiseWalletCapabilities({
         atomicExecution: true,
         paymasterService: true,
         staticPaymasterConfigurationHash: STATIC_PAYMASTER_HASH,
+        validityTimeRange: false,
       }),
     ).toEqual({
       atomic: { status: "supported" },

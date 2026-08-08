@@ -41,6 +41,7 @@ interface WalletCapabilityContext {
   readonly atomicExecution: boolean;
   readonly paymasterService?: boolean;
   readonly staticPaymasterConfigurationHash: Hash | null;
+  readonly validityTimeRange?: boolean;
 }
 
 interface WalletCapabilityBaseEffect {
@@ -216,8 +217,10 @@ const VALIDITY_TIME_RANGE_HANDLER: WalletCapabilityHandler<
     "wallet_sendPreparedCalls",
   ] as const),
   metadataScopes: Object.freeze(["bundle"] as const),
-  advertise() {
-    return null;
+  advertise(context: Readonly<WalletCapabilityContext>) {
+    return context.validityTimeRange === true
+      ? Object.freeze({ supported: true as const, status: "experimental" as const })
+      : null;
   },
   capture(value: unknown, scope: WalletCapabilityScope) {
     if (scope !== "bundle") return invalidProviderParams();

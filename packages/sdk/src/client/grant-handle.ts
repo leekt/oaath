@@ -168,6 +168,11 @@ export type OaathProviderValidityAdmissionResult =
   | Readonly<{ status: "accepted"; admission: Readonly<OaathProviderValidityAdmission> }>
   | Readonly<{ status: "unsupported" }>;
 
+/** Read-only proof result used only to project current provider support. */
+export type OaathProviderValidityTimeRangeSupportResult =
+  | Readonly<{ status: "supported" }>
+  | Readonly<{ status: "unsupported" }>;
+
 function sameProviderOperationPointer(
   left: OaathProviderOperationPointer,
   right: OaathProviderOperationPointer,
@@ -342,6 +347,9 @@ export interface OaathGrantProviderPort {
   readonly authorizedAccount: OaathGrantHandle["account"];
   readonly registeredPaymasterServiceUrl: (chain: number) => string | null;
   readonly staticPaymasterConfigurationHash: (chain: number) => `0x${string}` | null;
+  readonly probeValidityTimeRangeSupport: (
+    chain: number,
+  ) => Promise<Readonly<OaathProviderValidityTimeRangeSupportResult>>;
   readonly admitValidityTimeRange: (
     input: Readonly<{
       chain: number;
@@ -839,6 +847,8 @@ export function createGrantHandle(
   >();
   const validityAdmissions = new WeakMap<object, Readonly<ValidityAdmissionEvidence>>();
   const unsupportedValidityAdmission = Object.freeze({ status: "unsupported" as const });
+  const supportedValidityTimeRange = Object.freeze({ status: "supported" as const });
+  const unsupportedValidityTimeRange = Object.freeze({ status: "unsupported" as const });
 
   function assertOpen(): void {
     if (closed || closeRequested) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -2680,6 +2690,33 @@ export function createGrantHandle(
     return chainCapability(chainId).staticPaymasterConfigurationHash;
   }
 
+  function approvedValidityTimeRange(at: number): Readonly<KernelV4ValidityTimeRange> | null {
+    const validAfter = input.approvedPolicy.validAfter;
+    const validUntil = input.approvedPolicy.validUntil;
+    if (
+      !Number.isSafeInteger(at) ||
+      Object.is(at, -0) ||
+      at < 0 ||
+      !Number.isSafeInteger(validAfter) ||
+      Object.is(validAfter, -0) ||
+      validAfter < 0 ||
+      validUntil === null ||
+      !Number.isSafeInteger(validUntil) ||
+      Object.is(validUntil, -0) ||
+      validUntil < 1 ||
+      BigInt(validAfter) > MAX_UINT48 ||
+      BigInt(validUntil) > MAX_UINT48 ||
+      validAfter >= validUntil ||
+      at > validUntil
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      validAfter: validAfter.toString(10),
+      validUntil: validUntil.toString(10),
+    });
+  }
+
   async function proveValidityTimeRange(
     value: Readonly<{
       chain: number;
@@ -2687,21 +2724,18 @@ export function createGrantHandle(
     }>,
   ): Promise<Readonly<ValidityAdmissionEvidence> | null> {
     const requested = captureProviderValidityAdmissionInput(value);
-    if (revocationRequested) return null;
+    if (revocationRequested || !input.chains.has(requested.chain)) return null;
     try {
       await requireActive();
       const at = input.now();
+      const ceiling = approvedValidityTimeRange(at);
+      if (ceiling === null) return null;
       const validAfter = BigInt(requested.range.validAfter);
       const validUntil = BigInt(requested.range.validUntil);
-      const ceiling = input.approvedPolicy.validUntil;
       if (
-        !Number.isSafeInteger(at) ||
-        Object.is(at, -0) ||
-        at < 0 ||
         BigInt(at) > validUntil ||
-        ceiling === null ||
-        validAfter < BigInt(input.approvedPolicy.validAfter) ||
-        validUntil > BigInt(ceiling)
+        validAfter < BigInt(ceiling.validAfter) ||
+        validUntil > BigInt(ceiling.validUntil)
       ) {
         return null;
       }
@@ -2716,6 +2750,25 @@ export function createGrantHandle(
     } catch {
       return null;
     }
+  }
+
+  function probeValidityTimeRangeSupport(
+    chain: number,
+  ): Promise<Readonly<OaathProviderValidityTimeRangeSupportResult>> {
+    return withActivity(async () => {
+      if (
+        !Number.isSafeInteger(chain) ||
+        chain < 1 ||
+        revocationRequested ||
+        !input.chains.has(chain)
+      ) {
+        return unsupportedValidityTimeRange;
+      }
+      const range = approvedValidityTimeRange(input.now());
+      if (range === null) return unsupportedValidityTimeRange;
+      const evidence = await proveValidityTimeRange({ chain, range });
+      return evidence === null ? unsupportedValidityTimeRange : supportedValidityTimeRange;
+    });
   }
 
   function admitValidityTimeRange(
@@ -3406,6 +3459,7 @@ export function createGrantHandle(
       authorizedAccount,
       registeredPaymasterServiceUrl,
       staticPaymasterConfigurationHash,
+      probeValidityTimeRangeSupport,
       admitValidityTimeRange,
       startCalls,
       prepareCalls,
