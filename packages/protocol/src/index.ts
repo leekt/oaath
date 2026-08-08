@@ -222,6 +222,12 @@ export {
   parseOperation,
   parseOperationIdentity,
 } from "./operation.js";
+export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
+export {
+  OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
+  parseOwnerSigningArtifact,
+  serializeOwnerSigningArtifact,
+} from "./owner-signing-artifact.js";
 export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,

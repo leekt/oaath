@@ -21,6 +21,7 @@ describe("package boundary", () => {
       "OAATH_OPERATION_RECORD_VERSION",
       "OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION",
       "OAATH_OWNER_CREDENTIAL_PROFILE_VERSION",
+      "OAATH_OWNER_SIGNING_ARTIFACT_VERSION",
       "OAATH_OWNER_SIGNING_REQUEST_HASH_DOMAIN",
       "OAATH_OWNER_SIGNING_REQUEST_VERSION",
       "OAATH_PERMISSION_DECISION_HASH_DOMAIN",
@@ -103,6 +104,7 @@ describe("package boundary", () => {
       "parseOperationIdentity",
       "parseOperatorCredentialProfile",
       "parseOwnerCredentialProfile",
+      "parseOwnerSigningArtifact",
       "parseOwnerSigningRequest",
       "parsePermissionDecision",
       "parsePermissionRequest",
@@ -115,6 +117,7 @@ describe("package boundary", () => {
       "sameKernelAccountProfile",
       "sameOperatorCredentialProfile",
       "sameOwnerCredentialProfile",
+      "serializeOwnerSigningArtifact",
       "serverErrorEnvelope",
     ]);
   });
