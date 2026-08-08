@@ -677,7 +677,7 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
         id: revertResult.id,
         atomic: true,
         status: 500,
-        receipts: [{ status: "0x0" }],
+        receipts: [{ status: "0x1" }],
       });
       expect(await live.harness.client.getBalance({ address: rollbackTarget })).toBe(
         beforeRollback,

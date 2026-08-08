@@ -128,6 +128,7 @@ export function projectEip5792Status(
   if (
     receipt.transactionHash !== transactionHash ||
     quantity(receipt.blockNumber) !== canonicalBlockNumber ||
+    receipt.transactionStatus !== "success" ||
     receipt.status !== operationResult
   ) {
     return invalidEvidence();
@@ -135,7 +136,7 @@ export function projectEip5792Status(
 
   const projectedReceipt = Object.freeze({
     logs: Object.freeze(receipt.logs.map(immutableLog)),
-    status: operationResult === "success" ? ("0x1" as const) : ("0x0" as const),
+    status: "0x1" as const,
     blockHash: receipt.blockHash,
     blockNumber: canonicalBlockNumber,
     gasUsed: quantity(receipt.gasUsed),

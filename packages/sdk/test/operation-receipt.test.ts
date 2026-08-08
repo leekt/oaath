@@ -316,6 +316,7 @@ describe("exact UserOperation receipt evidence", () => {
       blockNumber: "20",
       blockHash: BLOCK_HASH,
       gasUsed: "42",
+      transactionStatus: "success",
       outcome: "success",
     });
   });

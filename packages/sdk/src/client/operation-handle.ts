@@ -71,6 +71,9 @@ export interface OaathOperationReceipt {
   readonly blockNumber: string;
   /** Canonical decimal string. */
   readonly gasUsed: string;
+  /** Status of the containing EntryPoint transaction, distinct from this UserOperation. */
+  readonly transactionStatus: "success";
+  /** Outcome of this exact UserOperation inside the containing transaction. */
   readonly status: "success" | "reverted";
   /**
    * Call-relevant logs from this UserOperation's exact EntryPoint execution
@@ -278,6 +281,7 @@ export function createOperationHandle(
       blockHash: verified.blockHash,
       blockNumber: verified.blockNumber,
       gasUsed: verified.gasUsed,
+      transactionStatus: verified.transactionStatus,
       status: verified.outcome,
       logs: Object.freeze(logs),
     });

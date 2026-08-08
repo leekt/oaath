@@ -140,6 +140,8 @@ export interface VerifiedOperationReceiptEvidence {
   readonly blockNumber: string;
   readonly blockHash: `0x${string}`;
   readonly gasUsed: string;
+  /** The containing EntryPoint transaction is independently verified successful. */
+  readonly transactionStatus: "success";
   readonly outcome: OperationInclusion["outcome"];
   readonly logs: readonly OperationObserverLogEvidence[];
 }
@@ -558,6 +560,7 @@ function verifyParsedOperationReceiptEvidence(
     // receipt. UserOperation actualGasUsed remains independently verified
     // above, but it is not the transaction's gasUsed when a bundler batches.
     gasUsed: decimal(parseQuantity(transactionReceipt.gasUsed)),
+    transactionStatus: "success",
     outcome: inclusion.outcome,
     logs: Object.freeze(transactionReceipt.logs.slice(boundaryIndex + 1, target.index + 1)),
   });

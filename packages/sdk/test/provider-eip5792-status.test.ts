@@ -72,6 +72,7 @@ function operationReceipt(
     blockHash: BLOCK_HASH,
     blockNumber: "2748",
     gasUsed: "3567",
+    transactionStatus: "success",
     status,
     logs: [
       {
@@ -223,11 +224,11 @@ describe("Final EIP-5792 status projection", () => {
     });
   });
 
-  it("projects finalized full revert as 500 with receipt status 0x0", () => {
+  it("projects finalized full UserOperation revert as 500 with containing receipt status 0x1", () => {
     const result = project(finalizedOutcome("reverted"), operationReceipt("reverted"));
 
     expect(result.status).toBe(500);
-    expect("receipts" in result && result.receipts[0].status).toBe("0x0");
+    expect("receipts" in result && result.receipts[0].status).toBe("0x1");
   });
 
   it.each([
