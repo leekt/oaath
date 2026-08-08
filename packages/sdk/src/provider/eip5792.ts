@@ -10,6 +10,7 @@
 import type {
   OaathGrantProviderPort,
   OaathProviderOperationPointer,
+  OaathProviderValidityAdmission,
 } from "../client/grant-handle.js";
 import { kernelV4Deployment } from "../kernel-v4.js";
 import type {
@@ -34,6 +35,7 @@ import {
   rpcFail,
   UNAUTHORIZED,
   UNKNOWN_BUNDLE_ID,
+  UNSUPPORTED_CAPABILITY,
   UNSUPPORTED_METHOD,
   USER_REJECTED_REQUEST,
 } from "./errors.js";
@@ -41,6 +43,8 @@ import { type Eip5792CallsStatus, projectEip5792Status } from "./status.js";
 
 const GENERATED_ID_ATTEMPTS = 8;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000n;
+const UNSUPPORTED_VALIDITY_ADMISSION = Object.freeze({ status: "unsupported" as const });
 
 export type OaathCallsStatusPresenter = (
   this: void,
@@ -61,6 +65,15 @@ export interface OaathCallsConfirmation {
   readonly account: `0x${string}`;
   readonly chainId: `0x${string}`;
   readonly calls: readonly Readonly<OaathCallsConfirmationCall>[];
+  readonly validityTimeRange?: Readonly<{
+    /** Canonical decimal inclusive lower endpoint, in Unix seconds. */
+    readonly validAfter: string;
+    /** Canonical decimal inclusive upper endpoint, in Unix seconds. */
+    readonly validUntil: string;
+    readonly validAfterUtc: string;
+    readonly validUntilUtc: string;
+    readonly inclusive: true;
+  }>;
 }
 
 export type OaathCallsConfirmationDecision = "approved" | "rejected";
@@ -111,6 +124,30 @@ function generatedBundleId(): string {
     return rpcFail(INTERNAL_ERROR);
   }
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function validityTimeRangeConfirmation(
+  range: Readonly<{ validAfter: string; validUntil: string }>,
+): NonNullable<OaathCallsConfirmation["validityTimeRange"]> | null {
+  function utc(seconds: string): string | null {
+    const milliseconds = BigInt(seconds) * 1_000n;
+    if (milliseconds > MAX_DATE_MILLISECONDS) return null;
+    try {
+      return new Date(Number(milliseconds)).toISOString();
+    } catch {
+      return null;
+    }
+  }
+  const validAfterUtc = utc(range.validAfter);
+  const validUntilUtc = utc(range.validUntil);
+  if (validAfterUtc === null || validUntilUtc === null) return null;
+  return Object.freeze({
+    validAfter: range.validAfter,
+    validUntil: range.validUntil,
+    validAfterUtc,
+    validUntilUtc,
+    inclusive: true as const,
+  });
 }
 
 function pendingStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> {
@@ -316,6 +353,10 @@ export function createEip5792Orchestrator(
         }),
       ),
     );
+    const requestedValidity = capabilityEffect.validityTimeRange;
+    if (requestedValidity !== null && confirmer === undefined && !requestedValidity.optional) {
+      return rpcFail(UNSUPPORTED_CAPABILITY);
+    }
     let confirmingKey: string | null = null;
     if (confirmer !== undefined) {
       confirmingKey = captured.id === undefined ? null : `${accountAddress}\u0000${captured.id}`;
@@ -323,28 +364,49 @@ export function createEip5792Orchestrator(
         if (confirmingExplicitIds.has(confirmingKey)) return rpcFail(DUPLICATE_ID);
         confirmingExplicitIds.add(confirmingKey);
       }
-      let decision: unknown;
-      try {
-        decision = await confirmer(
-          Object.freeze({
-            account: accountAddress,
-            chainId: captured.chainId,
-            calls,
-          }),
-        );
-      } catch {
-        if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
-        return rpcFail(INTERNAL_ERROR);
-      }
-      if (decision !== "approved") {
-        if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
-        if (decision === "rejected") return rpcFail(USER_REJECTED_REQUEST);
-        return rpcFail(INTERNAL_ERROR);
-      }
     }
 
+    let validityAdmission: Readonly<OaathProviderValidityAdmission> | null = null;
     let accepted: Awaited<ReturnType<typeof reserve>>;
     try {
+      let presentedValidity: OaathCallsConfirmation["validityTimeRange"];
+      if (requestedValidity !== null && confirmer !== undefined) {
+        const admitted = await input.port
+          .admitValidityTimeRange({
+            chain: input.chain,
+            range: Object.freeze({
+              validAfter: requestedValidity.validAfter,
+              validUntil: requestedValidity.validUntil,
+            }),
+          })
+          .catch(() => UNSUPPORTED_VALIDITY_ADMISSION);
+        if (admitted.status === "accepted") {
+          presentedValidity = validityTimeRangeConfirmation(requestedValidity) ?? undefined;
+          if (presentedValidity !== undefined) validityAdmission = admitted.admission;
+        }
+        if (validityAdmission === null && !requestedValidity.optional) {
+          return rpcFail(UNSUPPORTED_CAPABILITY);
+        }
+      }
+      if (confirmer !== undefined) {
+        let decision: unknown;
+        try {
+          decision = await confirmer(
+            Object.freeze({
+              account: accountAddress,
+              chainId: captured.chainId,
+              calls,
+              ...(presentedValidity === undefined ? {} : { validityTimeRange: presentedValidity }),
+            }),
+          );
+        } catch {
+          return rpcFail(INTERNAL_ERROR);
+        }
+        if (decision !== "approved") {
+          if (decision === "rejected") return rpcFail(USER_REJECTED_REQUEST);
+          return rpcFail(INTERNAL_ERROR);
+        }
+      }
       accepted = await reserve(captured, accountAddress);
     } finally {
       if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
@@ -360,6 +422,7 @@ export function createEip5792Orchestrator(
           calls,
           requestHash: accepted.operationRequestHash,
           paymaster: capabilityEffect.paymaster,
+          ...(validityAdmission === null ? {} : { validityAdmission }),
         }),
         Object.freeze({
           reserve: async (exact: OaathProviderOperationPointer) => {

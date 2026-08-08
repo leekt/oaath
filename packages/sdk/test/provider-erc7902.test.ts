@@ -8,6 +8,7 @@ import {
   OaathRoutingError,
 } from "../src/advanced.js";
 import { prepareUserOperation } from "../src/kernel.js";
+import { captureErc7902ValidityTimeRange } from "../src/provider/erc7902.js";
 
 const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 const SENDER = `0x${"11".repeat(20)}`;
@@ -192,5 +193,106 @@ describe("ERC-7902 static paymaster capture", () => {
       },
     });
     expectCapabilityInvalid(hostile);
+  });
+});
+
+describe("ERC-7902 validity time range capture", () => {
+  it("normalizes exact compact uint48 endpoints into one immutable decimal range", () => {
+    const source: Record<string, unknown> = {
+      validAfter: "0xa",
+      validUntil: "0x10",
+    };
+    const captured = captureErc7902ValidityTimeRange(source);
+
+    expect(captured).toEqual({
+      optional: false,
+      validAfter: "10",
+      validUntil: "16",
+    });
+    expect(Object.isFrozen(captured)).toBe(true);
+
+    source.validAfter = "0xb";
+    source.validUntil = "0x11";
+    source.optional = true;
+    expect(captured).toEqual({
+      optional: false,
+      validAfter: "10",
+      validUntil: "16",
+    });
+
+    expect(
+      captureErc7902ValidityTimeRange({
+        validAfter: "0x0",
+        validUntil: "0xffffffffffff",
+        optional: true,
+      }),
+    ).toEqual({
+      optional: true,
+      validAfter: "0",
+      validUntil: ((1n << 48n) - 1n).toString(10),
+    });
+  });
+
+  it("rejects missing, extra, aliased, malformed, noncanonical, and invalid ranges", () => {
+    const aboveUint48 = "0x1000000000000";
+    for (const value of [
+      null,
+      [],
+      {},
+      { validAfter: "0x0" },
+      { validUntil: "0x1" },
+      { validAfter: "0x0", validUntil: "0x1", extra: true },
+      { validityAfter: "0x0", validUntil: "0x1" },
+      { validAfter: "0x0", validityUntil: "0x1" },
+      { validAfter: "0x0", validUntil: "0x1", optional: "true" },
+      { validAfter: 0, validUntil: "0x1" },
+      { validAfter: "0x0", validUntil: 1 },
+      { validAfter: "0x00", validUntil: "0x1" },
+      { validAfter: "0x0", validUntil: "0x01" },
+      { validAfter: "0xA", validUntil: "0xb" },
+      { validAfter: "0xa", validUntil: "0xB" },
+      { validAfter: aboveUint48, validUntil: "0xffffffffffff" },
+      { validAfter: "0x0", validUntil: aboveUint48 },
+      { validAfter: "0x0", validUntil: "0x0" },
+      { validAfter: "0x1", validUntil: "0x1" },
+      { validAfter: "0x2", validUntil: "0x1" },
+    ]) {
+      try {
+        captureErc7902ValidityTimeRange(value);
+      } catch (error) {
+        expect(error).toBeInstanceOf(OaathRoutingError);
+        expect((error as OaathRoutingError).code).toBe("routing_capability_invalid");
+        continue;
+      }
+      throw new Error("expected invalid ERC-7902 validity time range");
+    }
+  });
+
+  it("rejects accessors and hostile reflection without invoking them", () => {
+    let reads = 0;
+    const accessor: Record<string, unknown> = { validUntil: "0x2" };
+    Object.defineProperty(accessor, "validAfter", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return "0x1";
+      },
+    });
+    expect(() => captureErc7902ValidityTimeRange(accessor)).toThrowError(
+      expect.objectContaining({ code: "routing_capability_invalid" }),
+    );
+    expect(reads).toBe(0);
+
+    const hostile = new Proxy(
+      { validAfter: "0x1", validUntil: "0x2" },
+      {
+        ownKeys() {
+          throw new Error("private provider detail");
+        },
+      },
+    );
+    expect(() => captureErc7902ValidityTimeRange(hostile)).toThrowError(
+      expect.objectContaining({ code: "routing_capability_invalid" }),
+    );
   });
 });

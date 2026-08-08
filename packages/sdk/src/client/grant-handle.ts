@@ -72,6 +72,7 @@ import {
   type KernelV4AccountReadCapability,
   type KernelV4Call,
   type KernelV4UserOperationGas,
+  type KernelV4ValidityTimeRange,
   kernelV4Deployment,
 } from "../kernel-v4.js";
 import {
@@ -141,6 +142,8 @@ const SUBMISSION_TIMEOUT_MS = 30_000;
 const MAX_CALLS = 64;
 const USER_OPERATION_HASH = /^0x[0-9a-f]{64}$/u;
 const PROVIDER_ACCOUNT = /^0x[0-9a-f]{40}$/u;
+const DECIMAL_UINT48 = /^(?:0|[1-9][0-9]{0,14})$/u;
+const MAX_UINT48 = (1n << 48n) - 1n;
 
 export type OaathProviderOperationPointer = Readonly<{
   identity: Readonly<OperationIdentity>;
@@ -151,6 +154,19 @@ export interface OaathProviderOperationPublication {
   readonly confirm: (operation: OaathProviderOperationPointer) => Promise<void>;
   readonly abandon: (operation: OaathProviderOperationPointer) => Promise<void>;
 }
+
+/**
+ * One handle-local, one-use proof that the requested range is enforceable by
+ * the exact OAAth validity policy on the action chain. Structural lookalikes
+ * carry no authority; the issuing Grant port retains the only membership map.
+ */
+export interface OaathProviderValidityAdmission {
+  readonly kind: "oaath_provider_validity_admission";
+}
+
+export type OaathProviderValidityAdmissionResult =
+  | Readonly<{ status: "accepted"; admission: Readonly<OaathProviderValidityAdmission> }>
+  | Readonly<{ status: "unsupported" }>;
 
 function sameProviderOperationPointer(
   left: OaathProviderOperationPointer,
@@ -324,6 +340,12 @@ export interface OaathGrantProviderPort {
   readonly authorizedAccount: OaathGrantHandle["account"];
   readonly registeredPaymasterServiceUrl: (chain: number) => string | null;
   readonly staticPaymasterConfigurationHash: (chain: number) => `0x${string}` | null;
+  readonly admitValidityTimeRange: (
+    input: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ) => Promise<Readonly<OaathProviderValidityAdmissionResult>>;
   readonly startCalls: (
     input: unknown,
     publication: OaathProviderOperationPublication,
@@ -623,6 +645,61 @@ function captureProviderPublication(value: unknown): Readonly<OaathProviderOpera
   });
 }
 
+function captureProviderValidityAdmissionInput(value: unknown): Readonly<{
+  chain: number;
+  range: Readonly<KernelV4ValidityTimeRange>;
+}> {
+  const context: CaptureContext = new WeakSet();
+  const record = exactClientRecord(
+    value,
+    ["chain", "range"],
+    "provider validity admission",
+    context,
+    "oaath_client_capability_invalid",
+  );
+  if (typeof record.chain !== "number" || !Number.isSafeInteger(record.chain) || record.chain < 1) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider validity admission chain is invalid",
+    );
+  }
+  const range = exactClientRecord(
+    record.range,
+    ["validAfter", "validUntil"],
+    "provider validity range",
+    context,
+    "oaath_client_capability_invalid",
+  );
+  if (
+    typeof range.validAfter !== "string" ||
+    !DECIMAL_UINT48.test(range.validAfter) ||
+    typeof range.validUntil !== "string" ||
+    !DECIMAL_UINT48.test(range.validUntil)
+  ) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider validity range endpoints are invalid",
+    );
+  }
+  const validAfter = BigInt(range.validAfter);
+  const validUntil = BigInt(range.validUntil);
+  if (
+    validAfter > MAX_UINT48 ||
+    validUntil > MAX_UINT48 ||
+    validUntil === 0n ||
+    validAfter >= validUntil
+  ) {
+    return clientFail("oaath_client_capability_invalid", "provider validity range is invalid");
+  }
+  return Object.freeze({
+    chain: record.chain,
+    range: Object.freeze({
+      validAfter: validAfter.toString(10),
+      validUntil: validUntil.toString(10),
+    }),
+  });
+}
+
 /**
  * Maps the approved Grant policy onto Kernel policy hook profiles. This is the
  * one place the two vocabularies meet, and it is deliberately total: an approved
@@ -730,6 +807,13 @@ function captureSubmissionSession(value: unknown): Readonly<OperationSubmissionS
 export function createGrantHandle(
   input: Readonly<CreateGrantHandleInput>,
 ): Readonly<OaathGrantHandle> {
+  interface ValidityAdmissionEvidence {
+    readonly chainId: number;
+    readonly range: Readonly<KernelV4ValidityTimeRange>;
+    readonly runtime: Readonly<KernelRuntime>;
+    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+  }
+
   let record = input.record;
   let closed = false;
   let closeRequested = false;
@@ -750,6 +834,8 @@ export function createGrantHandle(
       signature: `0x${string}`;
     }>
   >();
+  const validityAdmissions = new WeakMap<object, Readonly<ValidityAdmissionEvidence>>();
+  const unsupportedValidityAdmission = Object.freeze({ status: "unsupported" as const });
 
   function assertOpen(): void {
     if (closed || closeRequested) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -1018,11 +1104,13 @@ export function createGrantHandle(
     }>;
     readonly grantId: string;
     readonly grantExpiresAt: number;
+    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
   }
 
   async function resolveExecutionShape(
     chainId: number,
     calls: readonly Readonly<KernelV4Call>[],
+    validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
   ): Promise<Readonly<ExecutionShape>> {
     const grantSnapshot = await requireActive();
     const grant = grantSnapshot.value;
@@ -1066,8 +1154,8 @@ export function createGrantHandle(
     }
     requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
     requireKernelCapability(chainId, "hook_call");
-    const runtime = sessionRuntime(chainId);
-    const descriptor = await accountDescriptor(chainId, runtime);
+    const runtime = validityAdmission?.runtime ?? sessionRuntime(chainId);
+    const descriptor = validityAdmission?.descriptor ?? (await accountDescriptor(chainId, runtime));
     requireExecutionPublication();
     let publicationSnapshot = await requireActive();
     requireExecutionPublication();
@@ -1140,6 +1228,7 @@ export function createGrantHandle(
       binding,
       grantId: publicationGrant.identity.grantId,
       grantExpiresAt: publicationGrant.expiresAt,
+      ...(validityAdmission === null ? {} : { validityTimeRange: validityAdmission.range }),
     });
   }
 
@@ -1301,6 +1390,7 @@ export function createGrantHandle(
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
     readonly requestHash: `0x${string}` | null;
+    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
     readonly publication?: Readonly<OaathProviderOperationPublication>;
     readonly authorizeOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly abandonOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
@@ -1349,6 +1439,9 @@ export function createGrantHandle(
               calls: [...spec.calls],
               gas: quote.gas,
               paymaster: spec.staticPaymaster ?? null,
+              ...(spec.validityTimeRange === undefined
+                ? {}
+                : { validityTimeRange: spec.validityTimeRange }),
             };
             let operation: KernelRuntimePrepareInput;
             let simulationSignature = spec.runtime.dummySignature;
@@ -2163,6 +2256,7 @@ export function createGrantHandle(
       | { readonly kind: "erc7677"; readonly sponsorship: OaathKernelSponsorshipCapability }
       | { readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }
     > | null = null,
+    validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -2171,7 +2265,7 @@ export function createGrantHandle(
       return clientFail("oaath_client_input_invalid", "sendCalls chain is invalid");
     }
     const calls = captureCalls(request.calls, context);
-    const resolved = await resolveExecutionShape(chainId, calls);
+    const resolved = await resolveExecutionShape(chainId, calls, validityAdmission);
     if (paymaster !== null && resolved.decision.route !== "bundler") {
       return clientFail(
         "oaath_client_capability_unsupported",
@@ -2197,6 +2291,9 @@ export function createGrantHandle(
       decision: resolved.decision,
       grantId: resolved.grantId,
       requestHash,
+      ...(resolved.validityTimeRange === undefined
+        ? {}
+        : { validityTimeRange: resolved.validityTimeRange }),
       authorizeOperation: (operation: OaathProviderOperationPointer) =>
         authorizeExecutionOperation(resolved.binding, resolved.mode, operation),
       abandonOperation: (operation: OaathProviderOperationPointer) =>
@@ -2553,6 +2650,53 @@ export function createGrantHandle(
     return chainCapability(chainId).staticPaymasterConfigurationHash;
   }
 
+  function admitValidityTimeRange(
+    value: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ): Promise<Readonly<OaathProviderValidityAdmissionResult>> {
+    return withActivity(async () => {
+      const requested = captureProviderValidityAdmissionInput(value);
+      if (revocationRequested) return unsupportedValidityAdmission;
+      try {
+        await requireActive();
+        const at = input.now();
+        const validAfter = BigInt(requested.range.validAfter);
+        const validUntil = BigInt(requested.range.validUntil);
+        const ceiling = input.approvedPolicy.validUntil;
+        if (
+          !Number.isSafeInteger(at) ||
+          Object.is(at, -0) ||
+          at < 0 ||
+          BigInt(at) > validUntil ||
+          ceiling === null ||
+          validAfter < BigInt(input.approvedPolicy.validAfter) ||
+          validUntil > BigInt(ceiling)
+        ) {
+          return unsupportedValidityAdmission;
+        }
+        const runtime = sessionRuntime(requested.chain);
+        const descriptor = await accountDescriptor(requested.chain, runtime);
+        const admission = Object.freeze({
+          kind: "oaath_provider_validity_admission" as const,
+        });
+        validityAdmissions.set(
+          admission,
+          Object.freeze({
+            chainId: requested.chain,
+            range: requested.range,
+            runtime,
+            descriptor,
+          }),
+        );
+        return Object.freeze({ status: "accepted" as const, admission });
+      } catch {
+        return unsupportedValidityAdmission;
+      }
+    });
+  }
+
   function providerSponsorship(
     chainId: number,
     value: unknown,
@@ -2663,11 +2807,17 @@ export function createGrantHandle(
   ): Promise<Readonly<OaathOperationHandle>> {
     return withExecution(() => {
       const context: CaptureContext = new WeakSet();
-      const request = exactClientRecord(
-        value,
-        ["chain", "calls", "requestHash", "paymaster"],
+      const invalidInput = (message: string): never =>
+        clientFail("oaath_client_input_invalid", message);
+      const captured = captureRecord(value, "provider sendCalls input", context, invalidInput);
+      const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
+      const request = exactCapturedRecord(
+        captured,
+        hasValidityAdmission
+          ? ["chain", "calls", "requestHash", "paymaster", "validityAdmission"]
+          : ["chain", "calls", "requestHash", "paymaster"],
         "provider sendCalls input",
-        context,
+        invalidInput,
       );
       if (
         typeof request.chain !== "number" ||
@@ -2675,6 +2825,25 @@ export function createGrantHandle(
         request.chain < 1
       ) {
         return clientFail("oaath_client_input_invalid", "provider chain is invalid");
+      }
+      let validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null;
+      if (hasValidityAdmission) {
+        const token = request.validityAdmission;
+        if (token === null || typeof token !== "object") {
+          return clientFail(
+            "oaath_client_capability_invalid",
+            "provider validity admission is invalid",
+          );
+        }
+        const retained = validityAdmissions.get(token);
+        validityAdmissions.delete(token);
+        if (retained === undefined || retained.chainId !== request.chain) {
+          return clientFail(
+            "oaath_client_capability_invalid",
+            "provider validity admission is unavailable",
+          );
+        }
+        validityAdmission = retained;
       }
       if (
         typeof request.requestHash !== "string" ||
@@ -2691,6 +2860,7 @@ export function createGrantHandle(
         request.requestHash as `0x${string}`,
         captureProviderPublication(publicationValue),
         providerPaymaster(request.chain, request.paymaster, context),
+        validityAdmission,
       );
     });
   }
@@ -3192,6 +3362,7 @@ export function createGrantHandle(
       authorizedAccount,
       registeredPaymasterServiceUrl,
       staticPaymasterConfigurationHash,
+      admitValidityTimeRange,
       startCalls,
       prepareCalls,
       validatePreparedCalls,

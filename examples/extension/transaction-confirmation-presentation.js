@@ -7,25 +7,55 @@ const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const CHAIN_ID = /^0x[1-9a-f][0-9a-f]*$/u;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
+const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000n;
 
 /** token -> the worker-memory-only decision authority for one open tab. */
 const pending = new Map();
 
 function exactKeys(value, keys) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.keys(value).length === keys.length &&
-    keys.every((key) => Object.hasOwn(value, key))
-  );
+  try {
+    return (
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length === keys.length &&
+      keys.every((key) => Object.hasOwn(value, key))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hasOwnField(value, key) {
+  try {
+    return value !== null && typeof value === "object" && Object.hasOwn(value, key);
+  } catch {
+    return false;
+  }
+}
+
+function utcSeconds(value) {
+  if (typeof value !== "string" || !DECIMAL.test(value)) return null;
+  const milliseconds = BigInt(value) * 1_000n;
+  if (milliseconds > MAX_DATE_MILLISECONDS) return null;
+  try {
+    return new Date(Number(milliseconds)).toISOString();
+  } catch {
+    return null;
+  }
 }
 
 function capturePublicConfirmation(origin, confirmation) {
+  const hasValidityTimeRange = hasOwnField(confirmation, "validityTimeRange");
   if (
     typeof origin !== "string" ||
     !ORIGIN.test(origin) ||
-    !exactKeys(confirmation, ["account", "chainId", "calls"]) ||
+    !exactKeys(
+      confirmation,
+      hasValidityTimeRange
+        ? ["account", "chainId", "calls", "validityTimeRange"]
+        : ["account", "chainId", "calls"],
+    ) ||
     typeof confirmation.account !== "string" ||
     !ADDRESS.test(confirmation.account) ||
     typeof confirmation.chainId !== "string" ||
@@ -50,11 +80,42 @@ function capturePublicConfirmation(origin, confirmation) {
     }
     return Object.freeze({ target: call.target, value: call.value, data: call.data });
   });
+  let validityTimeRange;
+  if (hasValidityTimeRange) {
+    const range = confirmation.validityTimeRange;
+    if (
+      !exactKeys(range, [
+        "validAfter",
+        "validUntil",
+        "validAfterUtc",
+        "validUntilUtc",
+        "inclusive",
+      ]) ||
+      typeof range.validAfter !== "string" ||
+      !DECIMAL.test(range.validAfter) ||
+      typeof range.validUntil !== "string" ||
+      !DECIMAL.test(range.validUntil) ||
+      BigInt(range.validAfter) >= BigInt(range.validUntil) ||
+      range.validAfterUtc !== utcSeconds(range.validAfter) ||
+      range.validUntilUtc !== utcSeconds(range.validUntil) ||
+      range.inclusive !== true
+    ) {
+      throw new Error("wallet call confirmation is unavailable");
+    }
+    validityTimeRange = Object.freeze({
+      validAfter: range.validAfter,
+      validUntil: range.validUntil,
+      validAfterUtc: range.validAfterUtc,
+      validUntilUtc: range.validUntilUtc,
+      inclusive: true,
+    });
+  }
   return Object.freeze({
     origin,
     account: confirmation.account,
     chainId: confirmation.chainId,
     calls: Object.freeze(calls),
+    ...(validityTimeRange === undefined ? {} : { validityTimeRange }),
   });
 }
 
@@ -126,13 +187,22 @@ export async function rejectClosedWalletCallConfirmation(extension, tabId) {
 
 /** Validates and formats only the public model captured by the worker. */
 export function formatWalletCallConfirmation(record) {
-  if (!exactKeys(record, ["origin", "account", "chainId", "calls"])) {
+  const hasValidityTimeRange = hasOwnField(record, "validityTimeRange");
+  if (
+    !exactKeys(
+      record,
+      hasValidityTimeRange
+        ? ["origin", "account", "chainId", "calls", "validityTimeRange"]
+        : ["origin", "account", "chainId", "calls"],
+    )
+  ) {
     throw new Error("wallet call confirmation is unavailable");
   }
   const exact = capturePublicConfirmation(record.origin, {
     account: record.account,
     chainId: record.chainId,
     calls: record.calls,
+    ...(hasValidityTimeRange ? { validityTimeRange: record.validityTimeRange } : {}),
   });
   const lines = [
     `origin   ${exact.origin}`,
@@ -140,6 +210,14 @@ export function formatWalletCallConfirmation(record) {
     `chain    ${exact.chainId}`,
     `calls    ${exact.calls.length}`,
   ];
+  if (exact.validityTimeRange !== undefined) {
+    lines.push(
+      "",
+      "validity (inclusive)",
+      `after    ${exact.validityTimeRange.validAfter} seconds (${exact.validityTimeRange.validAfterUtc})`,
+      `until    ${exact.validityTimeRange.validUntil} seconds (${exact.validityTimeRange.validUntilUtc})`,
+    );
+  }
   exact.calls.forEach((call, index) => {
     lines.push(
       "",

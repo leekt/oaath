@@ -5,6 +5,7 @@ import {
   applyWalletCapabilities,
   captureAtomicCapability,
   captureStaticPaymasterConfigurationCapability,
+  captureValidityTimeRangeCapability,
   isHandledWalletCapability,
 } from "../src/provider/capabilities.js";
 import {
@@ -45,7 +46,12 @@ describe("closed wallet capability registry", () => {
 
     expect(atomic).toEqual({ atomicRequired: true });
     expect(Object.isFrozen(atomic)).toBe(true);
-    expect(effect).toEqual({ atomic: true, calls, paymaster: null });
+    expect(effect).toEqual({
+      atomic: true,
+      calls,
+      paymaster: null,
+      validityTimeRange: null,
+    });
     expect(effect.calls).toBe(calls);
     expect(Object.isFrozen(effect)).toBe(true);
     expect(
@@ -108,6 +114,52 @@ describe("closed wallet capability registry", () => {
         "bundle",
       ),
     ).toBe(false);
+    expect(isHandledWalletCapability("validityTimeRange", "wallet_sendCalls", "bundle")).toBe(true);
+    expect(isHandledWalletCapability("validityTimeRange", "wallet_sendCalls", "call")).toBe(false);
+    expect(isHandledWalletCapability("validityTimeRange", "wallet_prepareCalls", "bundle")).toBe(
+      false,
+    );
+    expect(
+      isHandledWalletCapability("validityTimeRange", "wallet_sendPreparedCalls", "bundle"),
+    ).toBe(false);
+  });
+
+  it("carries validity orthogonally to a paymaster selection", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    const context = Object.freeze({ policy: "sponsored" });
+    const wireRange = Object.freeze({
+      validAfter: "0xa",
+      validUntil: "0x10",
+      optional: true,
+    });
+    const validityTimeRange = captureValidityTimeRangeCapability(wireRange);
+    const selected = applyWalletCapabilities({
+      atomic: captureAtomicCapability(false),
+      calls: Object.freeze([CALL]),
+      chainId: 421_614,
+      atomicExecution: true,
+      capabilities: Object.freeze({
+        values: Object.freeze({
+          paymasterService: Object.freeze({ url, context, optional: false }),
+          validityTimeRange: wireRange,
+        }),
+        ignored: Object.freeze([]),
+        paymasterService: Object.freeze({ url, context, optional: false }),
+        validityTimeRange,
+      }),
+      registeredPaymasterServiceUrl: url,
+      staticPaymasterConfigurationHash: null,
+    });
+
+    expect(selected.paymaster).toEqual({ kind: "erc7677", url, context });
+    expect(selected.validityTimeRange).toBe(validityTimeRange);
+    expect(selected.validityTimeRange).toEqual({
+      optional: true,
+      validAfter: "10",
+      validUntil: "16",
+    });
+    expect(Object.isFrozen(selected.validityTimeRange)).toBe(true);
+    expect(Object.isFrozen(selected)).toBe(true);
   });
 
   it("rejects invalid atomic input and unsupported required execution", () => {
@@ -264,6 +316,9 @@ describe("closed wallet capability registry", () => {
         capabilities: Object.freeze({
           ...capabilities,
           paymasterService: Object.freeze({ url, context, optional: true }),
+          validityTimeRange: captureValidityTimeRangeCapability(
+            Object.freeze({ validAfter: "0x1", validUntil: "0x2" }),
+          ),
         }),
         registeredPaymasterServiceUrl: "https://other.example/paymaster",
         staticPaymasterConfigurationHash: null,

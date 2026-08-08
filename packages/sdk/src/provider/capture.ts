@@ -20,10 +20,15 @@ import {
   captureAtomicCapability,
   capturePaymasterServiceCapability,
   captureStaticPaymasterConfigurationCapability,
+  captureValidityTimeRangeCapability,
   isHandledWalletCapability,
   type WalletCapabilityMethod,
   type WalletCapabilityScope,
 } from "./capabilities.js";
+import type { CapturedWalletValidityTimeRange } from "./erc7902.js";
+
+export type { CapturedWalletValidityTimeRange } from "./erc7902.js";
+
 import {
   INTERNAL_ERROR,
   invalidProviderParams,
@@ -121,6 +126,7 @@ export interface CapturedWalletCapabilities {
   readonly ignored: readonly string[];
   readonly paymasterService?: CapturedWalletPaymasterService;
   readonly staticPaymasterConfiguration?: CapturedWalletStaticPaymasterConfiguration;
+  readonly validityTimeRange?: CapturedWalletValidityTimeRange;
 }
 
 export interface CapturedWalletCall {
@@ -624,6 +630,7 @@ function captureCapabilities(
   const ignored: string[] = [];
   let paymasterService: CapturedWalletPaymasterService | undefined;
   let staticPaymasterConfiguration: CapturedWalletStaticPaymasterConfiguration | undefined;
+  let validityTimeRange: CapturedWalletValidityTimeRange | undefined;
 
   for (const name of Object.keys(capabilityMap)) {
     const capability = captureJsonObject(
@@ -647,6 +654,8 @@ function captureCapabilities(
       paymasterService = capturePaymasterServiceCapability(capability);
     } else if (name === "staticPaymasterConfiguration") {
       staticPaymasterConfiguration = captureStaticPaymasterConfigurationCapability(capability);
+    } else if (name === "validityTimeRange") {
+      validityTimeRange = captureValidityTimeRangeCapability(capability);
     }
   }
 
@@ -660,6 +669,7 @@ function captureCapabilities(
     ignored: Object.freeze(ignored),
     ...(paymasterService === undefined ? {} : { paymasterService }),
     ...(staticPaymasterConfiguration === undefined ? {} : { staticPaymasterConfiguration }),
+    ...(validityTimeRange === undefined ? {} : { validityTimeRange }),
   };
   Object.setPrototypeOf(captured, null);
   return Object.freeze(captured);

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   captureWalletGetCapabilitiesParams,
+  captureWalletPrepareCallsParams,
   captureWalletSendCallsParams,
   EIP5792_CAPTURE_LIMITS,
   hashCapturedWalletSendCallsRequest,
@@ -59,8 +60,34 @@ function staticPaymasterConfiguration(optional = false): Record<string, unknown>
   };
 }
 
+function validityTimeRange(optional = false): Record<string, unknown> {
+  return {
+    validAfter: "0xa",
+    validUntil: "0x10",
+    ...(optional ? { optional: true } : {}),
+  };
+}
+
 function captureBundle(bundle: unknown = baseBundle(), configuredChain: number = CHAIN) {
   return captureWalletSendCallsParams([bundle], configuredChain);
+}
+
+function capturePrepareWithCapabilities(capabilities: unknown) {
+  return captureWalletPrepareCallsParams(
+    [
+      {
+        version: "1",
+        calls: [{ to: TARGET_A }],
+        capabilities,
+        key: {
+          type: "secp256k1",
+          publicKey: `0x04${"11".repeat(64)}`,
+          prehash: false,
+        },
+      },
+    ],
+    CHAIN,
+  );
 }
 
 function expectRpcError(action: () => unknown, code: OaathProviderErrorCode): void {
@@ -449,6 +476,89 @@ describe("owned capture limits", () => {
 });
 
 describe("capability semantics", () => {
+  it("derives one immutable validity range while retaining exact request hash material", () => {
+    const range = validityTimeRange(true);
+    const captured = captureBundle(baseBundle({ capabilities: { validityTimeRange: range } }));
+
+    expect(captured.capabilities).toEqual({
+      values: { validityTimeRange: range },
+      ignored: [],
+      validityTimeRange: {
+        optional: true,
+        validAfter: "10",
+        validUntil: "16",
+      },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const required = captureBundle(
+      baseBundle({ capabilities: { validityTimeRange: validityTimeRange() } }),
+    );
+    expect(hashCapturedWalletSendCallsRequest(required, "validity-request")).not.toBe(
+      hashCapturedWalletSendCallsRequest(captured, "validity-request"),
+    );
+  });
+
+  it("maps malformed known validity ranges to invalid params even when optional", () => {
+    for (const range of [
+      { validAfter: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: true, extra: true },
+      { validAfter: "0xA", validUntil: "0x10", optional: true },
+      { validAfter: "0xa", validUntil: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: "true" },
+    ]) {
+      expectRpcError(
+        () => captureBundle(baseBundle({ capabilities: { validityTimeRange: range } })),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps validity ranges unsupported outside wallet_sendCalls bundle scope", () => {
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({
+            calls: [
+              {
+                to: TARGET_A,
+                capabilities: { validityTimeRange: validityTimeRange() },
+              },
+            ],
+          }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+    expectRpcError(
+      () => capturePrepareWithCapabilities({ validityTimeRange: validityTimeRange() }),
+      UNSUPPORTED_CAPABILITY,
+    );
+
+    const optionalCall = validityTimeRange(true);
+    const capturedCall = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { validityTimeRange: optionalCall },
+          },
+        ],
+      }),
+    );
+    expect(capturedCall.calls[0]?.capabilities).toEqual({
+      values: { validityTimeRange: optionalCall },
+      ignored: ["validityTimeRange"],
+    });
+
+    const optionalPrepare = validityTimeRange(true);
+    expect(
+      capturePrepareWithCapabilities({ validityTimeRange: optionalPrepare }).capabilities,
+    ).toEqual({
+      values: { validityTimeRange: optionalPrepare },
+      ignored: ["validityTimeRange"],
+    });
+  });
+
   it("derives one static paymaster selection while retaining exact request hash material", () => {
     const configuration = staticPaymasterConfiguration(true);
     const captured = captureBundle(

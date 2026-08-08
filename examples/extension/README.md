@@ -19,9 +19,11 @@ per origin, the owner approves the scope on their own device, and
   can reach another's authority and a service change starts fresh.
 - Every `wallet_sendCalls` request waits on an extension-owned confirmation tab
   showing that browser-bound origin, the exact account and chain, and every
-  ordered call. Approval exists only in the current worker's one-use memory;
-  rejection or closing the tab returns `4001`, while a worker restart cannot
-  recover an approval or start the operation.
+  ordered call. When the request uses the supported ERC-7902 validity range,
+  the same page also shows both inclusive endpoints as exact Unix seconds and
+  UTC. Approval exists only in the current worker's one-use memory; rejection
+  or closing the tab returns `4001`, while a worker restart cannot recover an
+  approval or start the operation.
 - **URL mode never holds owner authority.** Pairing routes the owner's review
   through the service's authorization flow (the phone); revocation from the
   extension invalidates the capability and leaves the Grant durably `revoking`

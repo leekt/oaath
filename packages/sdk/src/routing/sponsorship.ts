@@ -175,6 +175,9 @@ export async function prepareSponsoredKernelOperation(
     calls: operation.calls,
     gas: result.gas,
     ...(operation.mode === undefined ? {} : { mode: operation.mode }),
+    ...(operation.validityTimeRange === undefined
+      ? {}
+      : { validityTimeRange: operation.validityTimeRange }),
     paymaster: result.paymaster,
   });
 }

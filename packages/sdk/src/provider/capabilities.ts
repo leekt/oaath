@@ -16,7 +16,9 @@ import type {
   CapturedWalletPaymasterService,
 } from "./capture.js";
 import {
+  type CapturedWalletValidityTimeRange,
   captureErc7902StaticPaymasterConfiguration,
+  captureErc7902ValidityTimeRange,
   type Erc7902StaticPaymasterConfiguration,
   hashCapturedErc7902PreparedPaymaster,
 } from "./erc7902.js";
@@ -60,6 +62,7 @@ export type WalletPaymasterSelection =
 
 export interface WalletCapabilityEffect extends WalletCapabilityBaseEffect {
   readonly paymaster: WalletPaymasterSelection;
+  readonly validityTimeRange: Readonly<CapturedWalletValidityTimeRange> | null;
 }
 
 /** Normalized selection derived once from the retained exact request value. */
@@ -201,10 +204,32 @@ const STATIC_PAYMASTER_CONFIGURATION_HANDLER: WalletCapabilityHandler<
   },
 });
 
+const VALIDITY_TIME_RANGE_HANDLER: WalletCapabilityHandler<
+  CapturedWalletValidityTimeRange,
+  Readonly<{ supported: true; status: "experimental" }>
+> = Object.freeze({
+  key: "validityTimeRange",
+  status: "experimental",
+  metadataMethods: Object.freeze(["wallet_sendCalls"] as const),
+  metadataScopes: Object.freeze(["bundle"] as const),
+  advertise() {
+    return null;
+  },
+  capture(value: unknown, scope: WalletCapabilityScope) {
+    if (scope !== "bundle") return invalidProviderParams();
+    try {
+      return captureErc7902ValidityTimeRange(value);
+    } catch {
+      return invalidProviderParams();
+    }
+  },
+});
+
 const CAPABILITY_HANDLERS = Object.freeze([
   ATOMIC_HANDLER,
   PAYMASTER_SERVICE_HANDLER,
   STATIC_PAYMASTER_CONFIGURATION_HANDLER,
+  VALIDITY_TIME_RANGE_HANDLER,
 ]);
 
 /** Whether a named bundle/call capability has an implemented closed handler. */
@@ -238,6 +263,13 @@ export function captureStaticPaymasterConfigurationCapability(
   value: CapturedJsonObject,
 ): Readonly<CapturedWalletStaticPaymasterConfiguration> {
   return STATIC_PAYMASTER_CONFIGURATION_HANDLER.capture(value, "bundle");
+}
+
+/** Exact capture for one already-isolated ERC-7902 bundle validity range. */
+export function captureValidityTimeRangeCapability(
+  value: CapturedJsonObject,
+): Readonly<CapturedWalletValidityTimeRange> {
+  return VALIDITY_TIME_RANGE_HANDLER.capture(value, "bundle");
 }
 
 /** Apply all implemented capability effects before operation preparation. */
@@ -299,6 +331,7 @@ export function applyWalletCapabilities(input: {
     atomic: atomic.atomic,
     calls: atomic.calls,
     paymaster,
+    validityTimeRange: input.capabilities?.validityTimeRange ?? null,
   });
 }
 

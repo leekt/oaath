@@ -1,11 +1,11 @@
 /**
- * Draft ERC-7902 static-paymaster capture into OAAth's existing EntryPoint 0.7
- * `PreparedPaymaster` owner.
+ * Draft ERC-7902 capability capture into OAAth's existing EntryPoint 0.7
+ * `PreparedPaymaster` and Kernel validity-range owners.
  *
- * This codec proves only syntax, bounds, immutability, and the deliberate wire
- * rename from `paymasterValidationGasLimit` to EntryPoint's verification-gas
- * field. It grants no authority and performs no policy lookup, estimation,
- * preparation, signing, persistence, submission, retry, or advertisement.
+ * These codecs prove only syntax, bounds, immutability, and deliberate wire
+ * normalization. They grant no authority and perform no policy lookup,
+ * estimation, preparation, signing, persistence, submission, retry, or
+ * advertisement.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -18,6 +18,7 @@ const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const CANONICAL_QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT120 = (1n << 120n) - 1n;
 
 const REQUIRED_KEYS = Object.freeze([
@@ -27,6 +28,11 @@ const REQUIRED_KEYS = Object.freeze([
   "paymasterPostOpGasLimit",
 ]);
 const ALLOWED_KEYS = Object.freeze([...REQUIRED_KEYS, "optional"]);
+const VALIDITY_TIME_RANGE_REQUIRED_KEYS = Object.freeze(["validAfter", "validUntil"]);
+const VALIDITY_TIME_RANGE_ALLOWED_KEYS = Object.freeze([
+  ...VALIDITY_TIME_RANGE_REQUIRED_KEYS,
+  "optional",
+]);
 
 export const ERC7902_STATIC_PAYMASTER_LIMITS = Object.freeze({
   /** Raw bytes; the Wallet Call provider separately owns its smaller aggregate JSON budget. */
@@ -55,8 +61,19 @@ export interface Erc7902StaticPaymasterConfiguration {
   readonly paymaster: Readonly<PreparedPaymaster>;
 }
 
+/** One exact ERC-7902 bundle validity range normalized for Kernel preparation. */
+export interface CapturedWalletValidityTimeRange {
+  readonly optional: boolean;
+  readonly validAfter: string;
+  readonly validUntil: string;
+}
+
 function invalid(): never {
   return capabilityInvalid("ERC-7902 static paymaster configuration is invalid");
+}
+
+function invalidValidityTimeRange(): never {
+  return capabilityInvalid("ERC-7902 validity time range is invalid");
 }
 
 function exactConfigurationRecord(
@@ -94,6 +111,53 @@ function quantity(value: unknown): string {
   const parsed = BigInt(value);
   if (parsed > MAX_UINT120) invalid();
   return parsed.toString(10);
+}
+
+function validityTimeRangeQuantity(value: unknown): bigint {
+  if (typeof value !== "string" || !CANONICAL_QUANTITY.test(value)) {
+    return invalidValidityTimeRange();
+  }
+  const parsed = BigInt(value);
+  if (parsed > MAX_UINT48) return invalidValidityTimeRange();
+  return parsed;
+}
+
+/**
+ * Captures the exact experimental ERC-7902 bundle validity range. Both wire
+ * endpoints are compact lowercase hex quantities; downstream code receives
+ * canonical decimal uint48 strings matching Kernel's operation owner.
+ */
+export function captureErc7902ValidityTimeRange(
+  value: unknown,
+): Readonly<CapturedWalletValidityTimeRange> {
+  try {
+    const record = captureRecord(
+      value,
+      "ERC-7902 validity time range",
+      new WeakSet(),
+      invalidValidityTimeRange,
+    );
+    for (const key of Object.keys(record)) {
+      if (!VALIDITY_TIME_RANGE_ALLOWED_KEYS.includes(key)) invalidValidityTimeRange();
+    }
+    for (const key of VALIDITY_TIME_RANGE_REQUIRED_KEYS) {
+      if (!Object.hasOwn(record, key)) invalidValidityTimeRange();
+    }
+
+    const optional = Object.hasOwn(record, "optional") ? record.optional : false;
+    if (typeof optional !== "boolean") invalidValidityTimeRange();
+    const validAfter = validityTimeRangeQuantity(record.validAfter);
+    const validUntil = validityTimeRangeQuantity(record.validUntil);
+    if (validUntil === 0n || validAfter >= validUntil) invalidValidityTimeRange();
+
+    return Object.freeze({
+      optional,
+      validAfter: validAfter.toString(10),
+      validUntil: validUntil.toString(10),
+    });
+  } catch {
+    return invalidValidityTimeRange();
+  }
 }
 
 /**

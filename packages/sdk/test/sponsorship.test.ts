@@ -163,4 +163,36 @@ describe("pre-sign Kernel sponsorship", () => {
     });
     expect(final.userOperation.paymaster).toEqual(sponsorshipResult().paymaster);
   });
+
+  it("retains the exact validity range in both sponsored preparations", async () => {
+    const preparations: KernelRuntimePrepareInput[] = [];
+    const base = runtime();
+    const ranged = {
+      ...operation(),
+      validityTimeRange: Object.freeze({ validAfter: "1800000010", validUntil: "1800000100" }),
+    };
+
+    await prepareSponsoredKernelOperation({
+      runtime: Object.freeze({
+        ...base,
+        prepareOperation(input: KernelRuntimePrepareInput) {
+          preparations.push(input);
+          return base.prepareOperation(input);
+        },
+      }),
+      operation: ranged,
+      simulationSignature: DUMMY_SIGNATURE,
+      sponsorship: {
+        async sponsor() {
+          return sponsorshipResult();
+        },
+      },
+    });
+
+    expect(preparations).toHaveLength(2);
+    expect(preparations.map((input) => input.validityTimeRange)).toEqual([
+      ranged.validityTimeRange,
+      ranged.validityTimeRange,
+    ]);
+  });
 });

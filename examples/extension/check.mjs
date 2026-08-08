@@ -188,6 +188,36 @@ expect(
 );
 expect((await rejection) === "rejected", "closing the confirmation tab must reject");
 
+const rangedConfirmation = confirmWalletCalls(confirmationExtension, "https://example.test", {
+  ...exactCalls,
+  validityTimeRange: Object.freeze({
+    validAfter: "1800000010",
+    validUntil: "1800000100",
+    validAfterUtc: "2027-01-15T08:00:10.000Z",
+    validUntilUtc: "2027-01-15T08:01:40.000Z",
+    inclusive: true,
+  }),
+});
+await Promise.resolve();
+await Promise.resolve();
+const rangedOpen = confirmationEvents.filter((event) => event.kind === "opened").at(-1);
+const rangedToken = decodeURIComponent(rangedOpen?.value?.url.split("#")[1] ?? "");
+const rangedKey = `wallet-call-confirmation:${rangedToken}`;
+const rangedRecord = confirmationRecords.get(rangedKey);
+expect(Object.isFrozen(rangedRecord?.validityTimeRange), "validity display must be frozen");
+const rangedText = formatWalletCallConfirmation(rangedRecord);
+expect(
+  rangedText.includes("validity (inclusive)") &&
+    rangedText.includes("after    1800000010 seconds (2027-01-15T08:00:10.000Z)") &&
+    rangedText.includes("until    1800000100 seconds (2027-01-15T08:01:40.000Z)"),
+  "confirmation page must render exact inclusive seconds and UTC endpoints",
+);
+expect(
+  await decideWalletCallConfirmation(confirmationExtension, rangedToken, "approved"),
+  "the ranged approval must settle",
+);
+expect((await rangedConfirmation) === "approved", "the ranged presenter must return approval");
+
 const orphanToken = "11111111-1111-4111-8111-111111111111";
 const orphanKey = `wallet-call-confirmation:${orphanToken}`;
 await confirmationExtension.storage.session.set({ [orphanKey]: approvalRecord });
