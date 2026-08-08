@@ -3,6 +3,12 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+The headless Grant provider returns `4200` for `wallet_showCallsStatus` unless
+the adopter supplies a wallet-owned status presenter. Executable
+`wallet_sendCalls` entries without `to` are valid contract-creation requests,
+but OAAth does not own a creation policy and refuses them with its fixed
+provider execution error (`-32000`).
+
 The Draft ERC-7836 prepared-call profile accepts only the approved operator's
 `secp256k1` or `webauthn-p256` external signature. Custody must be `frontend`
 or `application_backend`; `oaath_hosted` is rejected before preparation.
