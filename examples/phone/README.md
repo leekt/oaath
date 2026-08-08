@@ -21,9 +21,12 @@ The page has one **Pair phone** action plus four account actions:
    address. It asks for no owner authorization.
 2. **Request permission** creates a secp256k1 session private key in the page
    (`crypto.getRandomValues` through noble), retains it in `localStorage`, and
-   sends only its public key/address. The relay projects the closed protocol
-   raw-digest request and its exact request hash for inspection, but every
-   server decision API refuses to approve or release it.
+   sends only its public key/address. The relay binds the actual Kernel account,
+   install nonce, exact runtime packages, and paired P-256 credential into a
+   closed EIP-712 `kernel-enable` owner-signing request. The authenticated phone
+   projection carries that request and its exact protocol request hash, but both
+   server and phone remain reject-only: neither approves, signs, nor releases an
+   artifact.
 3. **Send tx with session key** gets the validation nonce from EntryPoint,
    prepares the CallPolicy/value-bounded operation server-side, signs its exact
    UserOperation hash in the page, and submits. In default local mode it is
@@ -60,9 +63,12 @@ This is owned local evidence, not Byzantine RPC verification.
 `OAATH_PHONE_SIMULATE=1` pairs a noble P-256 test fixture and exercises Pair
 plus all four account actions, sending the session action twice with
 getNonce-derived sequences, while contacting neither Apple nor ZeroDev. The
-fixture supplies owner signatures locally to preserve chain and race evidence;
-it does not approve a relay request and is not phone-consent or clear-signing
-evidence. `pnpm examples:check` owns this unattended path.
+actual permission route first proves the structured Kernel request is
+reject-only, digest-consistent, and still pending with no server artifact. Only
+then does the fixture inject owner signatures locally to preserve chain and race
+evidence; it does not approve a relay request, create a
+`VerifiedSignableDigest`, or provide phone-consent or clear-signing evidence.
+`pnpm examples:check` owns this unattended path.
 
 ## ZeroDev Arbitrum Sepolia mode (explicit live opt-in)
 
