@@ -1,4 +1,5 @@
 import {
+  type CanonicalEip712TypedData,
   type CaptureContext,
   captureDenseArray,
   captureRecord,
@@ -16,6 +17,7 @@ import {
   hexToBigInt,
   keccak256,
   pad,
+  type TypedData,
   toHex,
 } from "viem";
 import {
@@ -337,12 +339,12 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
   }),
 });
 
-const INSTALL_COMPONENTS = [
-  { name: "moduleType", type: "uint256" },
-  { name: "module", type: "address" },
-  { name: "moduleData", type: "bytes" },
-  { name: "internalData", type: "bytes" },
-] as const;
+const INSTALL_COMPONENTS = Object.freeze([
+  Object.freeze({ name: "moduleType", type: "uint256" }),
+  Object.freeze({ name: "module", type: "address" }),
+  Object.freeze({ name: "moduleData", type: "bytes" }),
+  Object.freeze({ name: "internalData", type: "bytes" }),
+] as const);
 
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
@@ -366,13 +368,18 @@ const INSTALL_ARRAY_PARAMETER = {
  * `Install`'s member list is the same one the install ABI parameter carries, so
  * the digest and the calldata can never describe different packages.
  */
-const INSTALL_PACKAGES_TYPES = {
-  InstallPackages: [
-    { name: "nonce", type: "uint256" },
-    { name: "packages", type: "Install[]" },
-  ],
+const INSTALL_PACKAGES_TYPES = Object.freeze({
+  EIP712Domain: Object.freeze([
+    Object.freeze({ name: "name", type: "string" }),
+    Object.freeze({ name: "version", type: "string" }),
+    Object.freeze({ name: "verifyingContract", type: "address" }),
+  ] as const),
+  InstallPackages: Object.freeze([
+    Object.freeze({ name: "nonce", type: "uint256" }),
+    Object.freeze({ name: "packages", type: "Install[]" }),
+  ] as const),
   Install: INSTALL_COMPONENTS,
-} as const;
+});
 
 const ENTRY_POINT_GET_NONCE_ABI = [
   {
@@ -1284,8 +1291,8 @@ export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[
 }
 
 /**
- * The digest one owner signature must cover to authorize a replayable
- * enable-mode install, computed the way Kernel v4 computes it.
+ * The canonical EIP-712 value one owner signature must cover to authorize a
+ * replayable enable-mode install, computed the way Kernel v4 computes it.
  *
  * Derivation, against the vendored Kernel v4 source:
  * `Kernel._processUserOp` reads the enable-signature-replayable flag from the
@@ -1314,7 +1321,9 @@ export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[
  * operation hash with a chain-agnostic one under the separate `isReplayable`
  * flag (bit `0x40`), which this SDK never sets.
  */
-export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
+export function kernelV4ReplayableInstallTypedData(
+  value: KernelV4ReplayableInstallDigestInput,
+): Readonly<CanonicalEip712TypedData> {
   const context: CaptureContext = new WeakSet();
   const record = exact(
     value,
@@ -1322,25 +1331,38 @@ export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstall
     "Kernel replayable install",
     context,
   );
-  return hashTypedData({
-    domain: {
+  return Object.freeze({
+    types: INSTALL_PACKAGES_TYPES,
+    primaryType: "InstallPackages",
+    domain: Object.freeze({
       name: "Kernel",
       version: "0.4.0",
       verifyingContract: address(record.account, "Kernel replayable install account"),
-    },
-    types: INSTALL_PACKAGES_TYPES,
-    primaryType: "InstallPackages",
-    message: {
-      nonce: uint(record.nonce, MAX_UINT256, "Kernel install nonce"),
-      packages: captureInstalls(record.packages, context, "Kernel enable packages").map(
-        (install) => ({
-          moduleType: BigInt(install.moduleType),
-          module: install.module,
-          moduleData: install.moduleData,
-          internalData: install.internalData,
-        }),
+    }),
+    message: Object.freeze({
+      nonce: uint(record.nonce, MAX_UINT256, "Kernel install nonce").toString(10),
+      packages: Object.freeze(
+        captureInstalls(record.packages, context, "Kernel enable packages").map((install) =>
+          Object.freeze({
+            moduleType: install.moduleType.toString(10),
+            module: install.module,
+            moduleData: install.moduleData,
+            internalData: install.internalData,
+          }),
+        ),
       ),
-    },
+    }),
+  });
+}
+
+/** The digest of the canonical replayable install typed data. */
+export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
+  const typedData = kernelV4ReplayableInstallTypedData(value);
+  return hashTypedData({
+    types: typedData.types as TypedData,
+    primaryType: typedData.primaryType,
+    domain: typedData.domain as never,
+    message: typedData.message as never,
   });
 }
 

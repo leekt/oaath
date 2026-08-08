@@ -1,3 +1,4 @@
+import { hashCanonicalEip712TypedData } from "@oaath/protocol";
 import { concat, encodeAbiParameters, hashTypedData, keccak256, recoverAddress, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
@@ -21,6 +22,7 @@ import {
   type KernelV4Install,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
+  kernelV4ReplayableInstallTypedData,
   materializeKernelPermission,
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   ownerOperator,
@@ -172,9 +174,10 @@ describe("Kernel v4 replayable install digest", () => {
       ),
     );
 
-    expect(kernelV4ReplayableInstallDigest({ account, nonce, packages })).toBe(
-      keccak256(concat(["0x1901", domainSeparator, structHash])),
-    );
+    const expected = keccak256(concat(["0x1901", domainSeparator, structHash]));
+    const input = { account, nonce, packages };
+    expect(hashCanonicalEip712TypedData(kernelV4ReplayableInstallTypedData(input))).toBe(expected);
+    expect(kernelV4ReplayableInstallDigest(input)).toBe(expected);
   });
 
   it("omits the chain id from the domain, so the same install digests identically everywhere", () => {
@@ -184,7 +187,41 @@ describe("Kernel v4 replayable install digest", () => {
     expect(remote.session.packages).toEqual(packages);
     expect(remote.session.validation).toEqual(local.session.validation);
 
-    const digest = kernelV4ReplayableInstallDigest({ account, nonce: "0", packages });
+    const typedData = kernelV4ReplayableInstallTypedData({ account, nonce: "0", packages });
+    expect(typedData).toEqual({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        InstallPackages: [
+          { name: "nonce", type: "uint256" },
+          { name: "packages", type: "Install[]" },
+        ],
+        Install: [
+          { name: "moduleType", type: "uint256" },
+          { name: "module", type: "address" },
+          { name: "moduleData", type: "bytes" },
+          { name: "internalData", type: "bytes" },
+        ],
+      },
+      primaryType: "InstallPackages",
+      domain: { name: "Kernel", version: "0.4.0", verifyingContract: account },
+      message: {
+        nonce: "0",
+        packages: packages.map((install) => ({
+          moduleType: install.moduleType.toString(10),
+          module: install.module,
+          moduleData: install.moduleData,
+          internalData: install.internalData,
+        })),
+      },
+    });
+    expect(Object.hasOwn(typedData.domain, "chainId")).toBe(false);
+    expect(typedData.types.EIP712Domain?.some((field) => field.name === "chainId")).toBe(false);
+
+    const digest = hashCanonicalEip712TypedData(typedData);
     // The chain-bound variant Kernel would use without the replayable flag is a
     // different digest on every chain; the replayable one is not.
     for (const chain of [chainId, otherChainId]) {
@@ -220,39 +257,66 @@ describe("Kernel v4 replayable install digest", () => {
 
   it("binds the account, the install nonce, and every package byte", () => {
     const packages = local.session.packages;
-    const base = kernelV4ReplayableInstallDigest({ account, nonce: "0", packages });
-    expect(
-      kernelV4ReplayableInstallDigest({ account: `0x${"67".repeat(20)}`, nonce: "0", packages }),
-    ).not.toBe(base);
-    expect(kernelV4ReplayableInstallDigest({ account, nonce: "1", packages })).not.toBe(base);
+    const typedDataHash = (value: Parameters<typeof kernelV4ReplayableInstallTypedData>[0]) =>
+      hashCanonicalEip712TypedData(kernelV4ReplayableInstallTypedData(value));
+    const base = typedDataHash({ account, nonce: "0", packages });
+    expect(typedDataHash({ account: `0x${"67".repeat(20)}`, nonce: "0", packages })).not.toBe(base);
+    expect(typedDataHash({ account, nonce: "1", packages })).not.toBe(base);
     const widened = packages.map((install, index) =>
       index === 0 ? { ...install, moduleData: concat([install.moduleData, "0xff"]) } : install,
     );
-    expect(kernelV4ReplayableInstallDigest({ account, nonce: "0", packages: widened })).not.toBe(
-      base,
-    );
+    expect(typedDataHash({ account, nonce: "0", packages: widened })).not.toBe(base);
+  });
+
+  it("returns a deeply frozen snapshot that does not alias mutable input", () => {
+    const packages = local.session.packages.map((install) => ({ ...install }));
+    const typedData = kernelV4ReplayableInstallTypedData({ account, nonce: "0", packages });
+    const hash = hashCanonicalEip712TypedData(typedData);
+    const projectedPackages = typedData.message.packages;
+    if (!Array.isArray(projectedPackages)) throw new Error("missing projected packages");
+
+    expect(Object.isFrozen(typedData)).toBe(true);
+    expect(Object.isFrozen(typedData.types)).toBe(true);
+    expect(Object.values(typedData.types).every((fields) => Object.isFrozen(fields))).toBe(true);
+    expect(
+      Object.values(typedData.types).every((fields) =>
+        fields.every((field) => Object.isFrozen(field)),
+      ),
+    ).toBe(true);
+    expect(Object.isFrozen(typedData.domain)).toBe(true);
+    expect(Object.isFrozen(typedData.message)).toBe(true);
+    expect(Object.isFrozen(projectedPackages)).toBe(true);
+    expect(projectedPackages.every((entry) => Object.isFrozen(entry))).toBe(true);
+
+    const first = packages[0];
+    if (!first) throw new Error("missing mutable input package");
+    first.moduleData = "0x";
+    packages.length = 0;
+    expect(hashCanonicalEip712TypedData(typedData)).toBe(hash);
   });
 
   it("fails closed on a hostile account, nonce, package set, or field set", () => {
     const packages = local.session.packages;
-    for (const input of [
-      { account: "0xdead", nonce: "0", packages },
-      { account, nonce: "-1", packages },
-      { account, nonce: "0", packages: [] },
-      { account, nonce: "0", packages: [{ ...packages[0], moduleType: 0 }] },
-    ]) {
-      expect(() => asHostile(kernelV4ReplayableInstallDigest)(input as never)).toThrowError(
-        expect.objectContaining({ code: "kernel_v4_input_invalid" }),
-      );
+    for (const derive of [kernelV4ReplayableInstallTypedData, kernelV4ReplayableInstallDigest]) {
+      for (const input of [
+        { account: "0xdead", nonce: "0", packages },
+        { account, nonce: "-1", packages },
+        { account, nonce: "0", packages: [] },
+        { account, nonce: "0", packages: [{ ...packages[0], moduleType: 0 }] },
+      ]) {
+        expect(() => asHostile(derive)(input as never)).toThrowError(
+          expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+        );
+      }
+      expect(() =>
+        asHostile(derive)({
+          account,
+          nonce: "0",
+          packages,
+          extra: 1,
+        } as never),
+      ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
     }
-    expect(() =>
-      asHostile(kernelV4ReplayableInstallDigest)({
-        account,
-        nonce: "0",
-        packages,
-        extra: 1,
-      } as never),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
   });
 });
 

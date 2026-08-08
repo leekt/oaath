@@ -135,6 +135,7 @@ export {
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
+  kernelV4ReplayableInstallTypedData,
   OaathKernelV4Error,
   prepareKernelV4UserOperation,
 } from "./kernel-v4.js";

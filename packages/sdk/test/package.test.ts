@@ -63,6 +63,7 @@ describe("package boundary", () => {
       "kernelAllChainCapabilityHash",
       "kernelV4Deployment",
       "kernelV4ReplayableInstallDigest",
+      "kernelV4ReplayableInstallTypedData",
       "materializeKernelPermission",
       "ownerOperator",
       "p256Key",
