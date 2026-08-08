@@ -41,11 +41,15 @@ struct CanonicalEIP712TypedData: Equatable, Sendable {
     let message: [String: CanonicalEIP712Value]
 }
 
-/// Canonical lowercase hex only. Raw signing bytes are intentionally absent.
+/// Device-derived comparison evidence. The immutable bytes stay package-
+/// internal so the verified-signable refinement can consume the exact digest
+/// without decoding presentation text.
 struct DerivedEIP712Digest: Equatable, Sendable {
     let canonicalHex: String
+    let bytes: Data
 
     fileprivate init(bytes: [UInt8]) {
+        self.bytes = Data(bytes)
         canonicalHex = "0x" + bytes.map { String(format: "%02x", $0) }.joined()
     }
 }
