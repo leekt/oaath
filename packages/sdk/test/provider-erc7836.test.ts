@@ -3,7 +3,9 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
@@ -27,6 +29,7 @@ import {
   createMemoryStores,
   createRealm,
   createRelay,
+  createUrlRealm,
   permissionInput,
   SESSION_PUBLIC_KEY,
   signingProfiles,
@@ -50,7 +53,14 @@ interface PreparedRpcResponse {
   readonly digest: `0x${string}`;
 }
 
-function providerPrepareRequest(account: `0x${string}`) {
+function providerPrepareRequest(
+  account: `0x${string}`,
+  key: PreparedRpcResponse["key"] = {
+    type: "secp256k1",
+    publicKey: SESSION_PUBLIC_KEY,
+    prehash: false,
+  },
+) {
   return {
     method: "wallet_prepareCalls",
     params: [
@@ -60,11 +70,7 @@ function providerPrepareRequest(account: `0x${string}`) {
         chainId: CHAIN_HEX,
         calls: [{ to: TARGET, data: CALL_DATA }],
         capabilities: { applicationHint: { optional: true, value: "retained" } },
-        key: {
-          type: "secp256k1",
-          publicKey: SESSION_PUBLIC_KEY,
-          prehash: false,
-        },
+        key,
       },
     ],
   } as const;
@@ -251,6 +257,135 @@ describe("experimental wallet prepared calls", () => {
     expect(chain.sends).toHaveLength(1);
     await secondConnection.close();
     second.database.close();
+  });
+
+  it("refuses changed backend custody before relay resume and preserves one prepared retry", async () => {
+    const backend = privateKeyToAccount(generatePrivateKey());
+    const backendSignedHashes: `0x${string}`[] = [];
+    const backendProvider = Object.freeze({
+      async credential() {
+        return Object.freeze({
+          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa" as const,
+          address: backend.address.toLowerCase(),
+        });
+      },
+      async sign(request: Readonly<{ hash: `0x${string}` }>) {
+        backendSignedHashes.push(request.hash);
+        return backend.sign({ hash: request.hash });
+      },
+    });
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const chain = createChainFixture();
+    const first = await indexedDbPreparedRealmStores(factory);
+    const before = createUrlRealm({
+      stores: first.stores,
+      clock,
+      chain,
+      sessionSigner: {
+        mode: "application_backend",
+        providerId: "backend-a",
+        provider: backendProvider,
+      },
+    });
+    const firstConnection = await before.oaath.connect();
+    const firstGrant = await firstConnection.requestPermission(permissionInput());
+    const account = await firstGrant.account(CHAIN_ID);
+    const firstProvider = oaathProvider({ grant: firstGrant, chain: CHAIN_ID });
+    const prepared = (await firstProvider.request(
+      providerPrepareRequest(account, {
+        type: "secp256k1",
+        publicKey: backend.publicKey.toLowerCase() as `0x${string}`,
+        prehash: false,
+      }),
+    )) as PreparedRpcResponse;
+    const firstPort = grantProviderPort(firstGrant);
+    const contextKey = Object.freeze({
+      providerScopeId: firstPort.providerScopeId as `0x${string}`,
+      contextId: prepared.context.id,
+    });
+    const preparedRecord = await firstPort.preparedCallContexts.get(contextKey);
+    const rawPreparedRecord = await first.stores.preparedCallContexts.get(contextKey);
+    if (preparedRecord === undefined || rawPreparedRecord === undefined) {
+      throw new Error("expected one durable prepared context");
+    }
+
+    expect(preparedRecord.value).toMatchObject({
+      state: "prepared",
+      custody: { mode: "application_backend", providerId: "backend-a" },
+      digest: prepared.digest,
+    });
+    expect(chain.quotes).toBe(1);
+    expect(backendSignedHashes).toEqual([]);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await firstConnection.close();
+    first.database.close();
+
+    const second = await indexedDbPreparedRealmStores(factory);
+    const changed = createUrlRealm({
+      stores: second.stores,
+      clock,
+      chain,
+      relay: before.relay,
+      bootstrap(document) {
+        return {
+          ...document,
+          sessionSigner: { mode: "application_backend", providerId: "backend-b" },
+        };
+      },
+    });
+    const changedConnection = await changed.oaath.connect();
+
+    await expect(changedConnection.resume()).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_state_conflict",
+      source: "session_signer_binding_mismatch",
+    });
+    expect(changed.fetched).not.toContain("POST /authorization/resume");
+    await expect(second.stores.preparedCallContexts.get(contextKey)).resolves.toEqual(
+      rawPreparedRecord,
+    );
+    expect(chain.quotes).toBe(1);
+    expect(backendSignedHashes).toEqual([]);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await changedConnection.close();
+    second.database.close();
+
+    const third = await indexedDbPreparedRealmStores(factory);
+    const restored = createUrlRealm({
+      stores: third.stores,
+      clock,
+      chain,
+      relay: before.relay,
+    });
+    const restoredConnection = await restored.oaath.connect();
+    const restoredGrant = await restoredConnection.resume();
+    if (restoredGrant === null) throw new Error("expected the approved backend Grant to resume");
+    const restoredProvider = oaathProvider({ grant: restoredGrant, chain: CHAIN_ID });
+    const restoredPort = grantProviderPort(restoredGrant);
+    await expect(restoredPort.preparedCallContexts.get(contextKey)).resolves.toEqual(
+      preparedRecord,
+    );
+
+    const externalSignature = await backendProvider.sign({ hash: prepared.digest });
+    const sent = await restoredProvider.request(
+      providerSendRequest(prepared, externalSignature.toLowerCase() as `0x${string}`),
+    );
+    const consumed = await restoredPort.preparedCallContexts.get(contextKey);
+
+    expect(sent).toMatchObject({ id: expect.stringMatching(/^0x[0-9a-f]{64}$/u) });
+    expect(backendSignedHashes).toEqual([prepared.digest]);
+    expect(chain.quotes).toBe(2);
+    expect(chain.signatures.length).toBe(1);
+    expect(chain.sends).toHaveLength(1);
+    expect(chain.sends[0]?.userOperationHash).toBe(prepared.digest);
+    expect(consumed?.storeRevision).toBe(preparedRecord.storeRevision + 1);
+    expect(consumed?.value.state).toBe("consumed");
+    await restoredConnection.close();
+    third.database.close();
   });
 
   it("keeps an invalid external signature unconsumed and submits nothing", async () => {

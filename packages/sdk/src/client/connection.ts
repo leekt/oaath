@@ -82,6 +82,19 @@ const MAX_PERMISSIONS = 16;
 const MAX_EXPIRES_IN = 86_400;
 const VERIFIER_BYTES = 32;
 
+function sameSessionSigner(
+  approved: Readonly<PermissionSessionSigner> | null,
+  current: Readonly<PermissionSessionSigner> | null,
+): boolean {
+  return (
+    (approved === null && current === null) ||
+    (approved !== null &&
+      current !== null &&
+      approved.mode === current.mode &&
+      approved.providerId === current.providerId)
+  );
+}
+
 /**
  * The issuer transport. The caller owns credentials: its `fetch` adds whatever
  * the deployment's authentication port expects, so no token, cookie, or bearer
@@ -657,6 +670,13 @@ export function createConnection(
         "oaath_client_state_conflict",
         "the persisted Grant does not match its reviewed request",
         "grant_identity_mismatch",
+      );
+    }
+    if (!sameSessionSigner(context.request.sessionSigner, input.sessionSigner)) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the current session signer does not match the reviewed Grant",
+        "session_signer_binding_mismatch",
       );
     }
 
