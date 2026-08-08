@@ -278,8 +278,9 @@ async function ownerInstallApproval(
   reads: OaathChainCapability["reads"],
   approvedPolicy: unknown,
   operatorAddress: `0x${string}`,
+  validator: `0x${string}`,
 ): Promise<Readonly<KernelAllChainApproval>> {
-  const owner = ecdsaKey({ account: ownerAccount, validator: VALIDATOR });
+  const owner = ecdsaKey({ account: ownerAccount, validator });
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({ key: owner }),
@@ -297,6 +298,8 @@ async function ownerInstallApproval(
     operator: sessionOperator({
       key: ecdsaKey({
         account: { address: operatorAddress, sign: async () => "0x" },
+        // Session composition resolves the pinned signer module and never
+        // consults this syntactic validator member.
         validator: `0x${"01".repeat(20)}`,
       }),
       policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
@@ -321,6 +324,7 @@ export function createOwnerAuthorization(
   clock: SecondsClock,
   options: OwnerDecision = {},
   reads: OaathChainCapability["reads"] = createChainFixture().capability.reads,
+  validator: `0x${string}` = VALIDATOR,
 ) {
   const calls: string[] = [];
   return {
@@ -354,6 +358,7 @@ export function createOwnerAuthorization(
             reads,
             approvedPolicy,
             operator.address,
+            validator,
           );
           decision = {
             version: OAATH_PERMISSION_DECISION_VERSION,
@@ -744,10 +749,10 @@ function completeRealmStores(stores: RealmStores): CompleteRealmStores {
   };
 }
 
-export function signingProfiles() {
+export function signingProfiles(validator: `0x${string}` = VALIDATOR) {
   return {
-    owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
-    session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
+    owner: ecdsaKey({ account: ownerAccount, validator }),
+    session: ecdsaKey({ account: sessionAccount, validator }),
   };
 }
 
@@ -887,6 +892,8 @@ export interface RealmOptions {
   readonly chains?: readonly ChainFixture[];
   readonly binding?: unknown;
   readonly owner?: OwnerDecision;
+  /** ECDSA validator deployed by a real local chain fixture. */
+  readonly validator?: `0x${string}`;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
   readonly signing?: ReturnType<typeof signingProfiles>;
   readonly issuerSignOut?: (() => Promise<unknown>) | null;
@@ -913,7 +920,14 @@ export function createRealm(options: RealmOptions = {}): Realm {
   const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
   const chains = options.chains ?? [chain];
-  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
+  const validator = options.validator ?? VALIDATOR;
+  const owner = createOwnerAuthorization(
+    relay,
+    clock,
+    options.owner ?? {},
+    chain.capability.reads,
+    validator,
+  );
   let signOuts = 0;
   let invalidations = 0;
 
@@ -946,7 +960,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
     },
     stores,
     chains: chains.map((entry) => entry.capability),
-    signing: options.signing ?? signingProfiles(),
+    signing: options.signing ?? signingProfiles(validator),
     localKeyIds: ["session-key"],
     now: clock.now,
   });
