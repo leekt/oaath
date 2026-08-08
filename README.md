@@ -60,12 +60,14 @@ experiments:
 | Surface | Standards status | OAAth status |
 | --- | --- | --- |
 | EIP-5792 `wallet_sendCalls` / status / capabilities | Final (`2.0.0`) | Implemented PoC path |
-| ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; opaque five-minute context, approved secp256k1 or WebAuthn operator, one-time durable consumption |
+| ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; approved secp256k1 or WebAuthn external signer in `frontend` or `application_backend` custody, current-version opaque five-minute context, one-time durable consumption and reload recovery; `oaath_hosted` custody is rejected |
 | ERC-7677 `paymasterService` | Review | Experimental `wallet_sendCalls` and prepared-call paths for a deployment-registered same-service proxy and bundler estimator |
 | ERC-7902 `staticPaymasterConfiguration` | Draft | Experimental bundled `wallet_sendCalls` path for one authenticated per-chain configuration commitment |
+| ERC-7902 `validityTimeRange` | Draft | Experimental `wallet_sendCalls` and prepared-call paths only with a configured transaction confirmer and proof of the configured chain's pinned OAAth validity-policy runtime; `validAfter` and `validUntil` are inclusive |
 
 The Draft profiles are not advertised as stable or as generic conformance.
-The remaining ERC-7902 capability fields remain later, independent work.
+ERC-7902 `multidimensionalNonce`, AA gas parameter overrides, and
+`eip7702Auth` are explicitly unsupported and deferred.
 
 ## Browser golden path
 
@@ -231,7 +233,7 @@ The remaining release blockers have one durable ledger here:
 - owner-authorized changeset for the fixed `0.x` release group;
 - revocation send/return crash proof, including reload without resubmission;
 - PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
-- pin or explicitly remove the unsupported `session_p256` / WebAuthn signer
+- pin or explicitly remove the unsupported raw P-256 `session_p256` signer
   surface before release.
 
 ## Development
