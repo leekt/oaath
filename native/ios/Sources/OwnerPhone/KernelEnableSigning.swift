@@ -1,12 +1,11 @@
 /**
  Package-internal Kernel 0.4.0 replayable-install signing refinement.
 
- This is deliberately disconnected from the live v3 approval surface. It
- accepts only an already-captured pending review, proves the exact Kernel
- profile and paired P-256 identity before invoking one injected signer, then
- normalizes and verifies that result before emitting the current canonical
- owner-signing artifact JSON. No network, keychain, or persistence effect
- lives here.
+ Pure refinement first proves the exact Kernel profile without minting signing
+ authority. Artifact production then accepts only an already-captured pending
+ review, proves the paired P-256 identity, and invokes one injected signer
+ before normalizing and verifying the current canonical artifact JSON. No
+ network, keychain, or persistence effect lives here.
 
  @author taek <leekt216@gmail.com>
  */
@@ -37,7 +36,7 @@ struct KernelEnablePairedIdentity: Equatable, Sendable {
     let p256XY: Data?
 }
 
-/// A sealed future approval capability. Construction captures one exact,
+/// A sealed approval binding. Construction captures one exact,
 /// already-validated account/P-256 pairing and only a verified-digest signer;
 /// no raw digest or raw signer escapes this owner.
 public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
@@ -161,6 +160,23 @@ private struct VerifiedKernelEnableRequest {
     let publicKey: P256.Signing.PublicKey
 }
 
+/// Immutable wire semantics for the one Kernel request this phone knows how
+/// to approve. Pairing is deliberately absent: projection decoding may grant
+/// only this semantic capability, while the live action separately intersects
+/// it with the current locally held account/key binding.
+struct RefinedKernelEnableSigningScope {
+    let requestHash: String
+    let account: String
+    let digest: DerivedEIP712Digest
+    let requestedPublicKey: P256.Signing.PublicKey
+}
+
+private struct CapturedKernelEnableSigningScope {
+    let requestHash: String
+    let request: OwnerPhoneEIP712SigningRequest
+    let requestedPublicKey: P256.Signing.PublicKey
+}
+
 /**
  Produces the fixed-order canonical `oaath.owner-signing-artifact/v1` JSON.
 
@@ -217,40 +233,80 @@ private func verifyKernelEnableReview(
     guard now < review.projection.expiresAt else {
         throw KernelEnableSigningError.expired
     }
-    return try verifyKernelEnableProjection(
+    let bound = try verifyKernelEnableProjection(
         review.projection,
         pairedIdentity: pairedIdentity)
+    return VerifiedKernelEnableRequest(
+        requestHash: bound.requestHash,
+        digest: VerifiedSignableDigest(derived: bound.digest),
+        publicKey: bound.requestedPublicKey)
 }
 
 private func verifyKernelEnableProjection(
     _ projection: OwnerPhoneRequestProjection,
     pairedIdentity: KernelEnablePairedIdentity
-) throws -> VerifiedKernelEnableRequest {
-    guard case let .ownerSigningRequest(scope) = projection.scope,
-          case let .eip712(request) = scope.request,
+) throws -> RefinedKernelEnableSigningScope {
+    guard case let .ownerSigningRequest(scope) = projection.scope else {
+        throw KernelEnableSigningError.requestNotKernelEnable
+    }
+    let captured = try captureKernelEnableSigningScope(scope)
+
+    let publicKey = try kernelEnablePublicKey(for: pairedIdentity)
+    guard let pairedAccount = pairedIdentity.account else {
+        throw KernelEnableSigningError.pairedIdentityInvalid
+    }
+    guard captured.request.signer.account == pairedAccount else {
+        throw KernelEnableSigningError.accountMismatch
+    }
+    guard captured.requestedPublicKey.x963Representation == publicKey.x963Representation else {
+        throw KernelEnableSigningError.credentialMismatch
+    }
+    let refined = try refineKernelEnableSigningScope(captured)
+
+    return refined
+}
+
+/// Refines authenticated projection evidence into the only semantic owner-key
+/// request the v4 decoder may mark approve-or-reject. This is pure: it neither
+/// reads pairing/custody nor invokes a signer.
+func refineKernelEnableSigningScope(
+    _ scope: OwnerPhoneSigningRequestScope
+) throws -> RefinedKernelEnableSigningScope {
+    try refineKernelEnableSigningScope(captureKernelEnableSigningScope(scope))
+}
+
+private func captureKernelEnableSigningScope(
+    _ scope: OwnerPhoneSigningRequestScope
+) throws -> CapturedKernelEnableSigningScope {
+    guard case let .eip712(request) = scope.request,
           request.version == ownerPhoneSigningRequestVersion,
           request.purpose == .kernelEnable
     else {
         throw KernelEnableSigningError.requestNotKernelEnable
     }
-
     guard isLowercaseHex(scope.requestHash, byteCount: 32) else {
-        throw KernelEnableSigningError.pairedIdentityInvalid
+        throw KernelEnableSigningError.requestNotKernelEnable
     }
-    let publicKey = try kernelEnablePublicKey(for: pairedIdentity)
-    guard let pairedAccount = pairedIdentity.account else {
-        throw KernelEnableSigningError.pairedIdentityInvalid
-    }
-
-    guard request.signer.account == pairedAccount else {
+    guard isNonzeroAddress(request.signer.account) else {
         throw KernelEnableSigningError.accountMismatch
     }
     guard request.signer.ownerCredential.version == ownerPhoneOwnerCredentialVersion,
-          case let .p256(requestedPublicKey) = request.signer.ownerCredential.credential,
-          requestedPublicKey == hexEncode(publicKey.x963Representation)
+          case let .p256(requestedPublicKeyText) = request.signer.ownerCredential.credential,
+          let requestedPublicKey = kernelEnableRequestedPublicKey(requestedPublicKeyText)
     else {
         throw KernelEnableSigningError.credentialMismatch
     }
+
+    return CapturedKernelEnableSigningScope(
+        requestHash: scope.requestHash,
+        request: request,
+        requestedPublicKey: requestedPublicKey)
+}
+
+private func refineKernelEnableSigningScope(
+    _ captured: CapturedKernelEnableSigningScope
+) throws -> RefinedKernelEnableSigningScope {
+    let request = captured.request
 
     let typedData = request.typedData
     guard typedData.primaryType == "InstallPackages",
@@ -261,7 +317,7 @@ private func verifyKernelEnableProjection(
           Set(typedData.domain.keys) == ["name", "version", "verifyingContract"],
           typedData.domain["name"] == .string("Kernel"),
           typedData.domain["version"] == .string("0.4.0"),
-          typedData.domain["verifyingContract"] == .string(pairedAccount),
+          typedData.domain["verifyingContract"] == .string(request.signer.account),
           Set(typedData.message.keys) == ["nonce", "packages"],
           case let .string(messageNonce)? = typedData.message["nonce"],
           case let .array(packages)? = typedData.message["packages"],
@@ -284,10 +340,20 @@ private func verifyKernelEnableProjection(
         throw KernelEnableSigningError.digestMismatch
     }
 
-    return VerifiedKernelEnableRequest(
-        requestHash: scope.requestHash,
-        digest: VerifiedSignableDigest(derived: derived),
-        publicKey: publicKey)
+    return RefinedKernelEnableSigningScope(
+        requestHash: captured.requestHash,
+        account: request.signer.account,
+        digest: derived,
+        requestedPublicKey: captured.requestedPublicKey)
+}
+
+private func kernelEnableRequestedPublicKey(
+    _ text: String
+) -> P256.Signing.PublicKey? {
+    guard text.hasPrefix("0x04"),
+          let x963 = decodeKernelLowercaseHex(text, byteCount: 65)
+    else { return nil }
+    return try? P256.Signing.PublicKey(x963Representation: x963)
 }
 
 private func kernelEnablePublicKey(
@@ -310,13 +376,17 @@ private func kernelEnablePublicKey(
 }
 
 private func decodeKernelP256PublicMaterial(_ text: String) -> Data? {
+    decodeKernelLowercaseHex(text, byteCount: 64)
+}
+
+private func decodeKernelLowercaseHex(_ text: String, byteCount: Int) -> Data? {
     let characters = Array(text.utf8)
-    guard characters.count == 130,
+    guard characters.count == 2 + byteCount * 2,
           characters[0] == 48,
           characters[1] == 120
     else { return nil }
     var result = Data()
-    result.reserveCapacity(64)
+    result.reserveCapacity(byteCount)
     for index in stride(from: 2, to: characters.count, by: 2) {
         guard let high = lowercaseHexValue(characters[index]),
               let low = lowercaseHexValue(characters[index + 1])

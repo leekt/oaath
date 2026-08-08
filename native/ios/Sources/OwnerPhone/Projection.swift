@@ -302,17 +302,17 @@ public enum OwnerPhoneSigningRequest: Equatable, Sendable {
 }
 
 /// The one closed discriminator used by both the consent surface and the
-/// approval action. A decoded v4 owner-signing scope is always `.rejectOnly`;
-/// the Kernel case exists only for the sealed, package-internal future binding.
+/// approval action. Kernel owner signing is available only when authenticated
+/// wire semantics and the separately injected local binding both agree.
 enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
     case permission
     case kernelP256OwnerSigning
     case rejectOnly
 }
 
-/// Authenticated wire semantics only. Current v4 decoding accepts exactly the
-/// reject-only value; a future decoder may opt an exact owner-signing request
-/// into approval without embedding any custody capability in wire evidence.
+/// Authenticated wire semantics only. The decoder grants `.approveOrReject`
+/// solely after the exact Kernel/P-256 request has passed local semantic
+/// refinement; this never embeds custody capability in wire evidence.
 enum OwnerPhoneSigningDecisionCapability: Equatable, Sendable {
     case rejectOnly
     case approveOrReject
@@ -469,14 +469,29 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 object,
                 ["kind", "decision", "requestHash", "request"],
                 label: "scope")
-            guard object["decision"] as? String == "reject-only" else {
+            guard let decision = object["decision"] as? String,
+                  decision == "reject-only" || decision == "approve-or-reject"
+            else {
                 throw OwnerPhoneWireError.invalidField("scope decision")
             }
-            return .ownerSigningRequest(OwnerPhoneSigningRequestScope(
+            let captured = OwnerPhoneSigningRequestScope(
                 requestHash: try Wire.lowercaseHex(
                     object["requestHash"], byteLength: 32, label: "requestHash"),
                 request: try decodeSigningRequest(object["request"]),
                 decisionCapability: .rejectOnly
+            )
+            if decision == "reject-only" {
+                return .ownerSigningRequest(captured)
+            }
+            do {
+                _ = try refineKernelEnableSigningScope(captured)
+            } catch {
+                throw OwnerPhoneWireError.invalidField("scope decision")
+            }
+            return .ownerSigningRequest(OwnerPhoneSigningRequestScope(
+                requestHash: captured.requestHash,
+                request: captured.request,
+                decisionCapability: .approveOrReject
             ))
         case "raw":
             try Wire.exactKeys(object, ["kind", "decision", "text"], label: "scope")

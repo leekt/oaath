@@ -35,7 +35,49 @@ private enum InjectedSignerFailure: Error {
     case refused
 }
 
+private final class SigningInvocationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+
+    func record() {
+        lock.lock()
+        calls += 1
+        lock.unlock()
+    }
+
+    func count() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+}
+
 final class KernelEnableSigningTests: XCTestCase {
+    func testSemanticCapabilityAndPairingCheckDoNotInvokeTheSigner() throws {
+        let key = P256.Signing.PrivateKey()
+        let harness = try makeReviewHarness(
+            publicKeyX963: key.publicKey.x963Representation)
+        let signer = SigningInvocationProbe()
+        let binding = try OwnerPhoneKernelP256ApprovalBinding(
+            account: signingTestAccount,
+            p256PublicMaterial: hexEncode(Data(key.publicKey.x963Representation.dropFirst())),
+            pairingIsCurrent: { true },
+            sign: { _ in
+                signer.record()
+                throw InjectedSignerFailure.refused
+            })
+        guard case let .ownerSigningRequest(scope) = harness.review.projection.scope else {
+            return XCTFail("expected a Kernel owner-signing request")
+        }
+
+        let refined = try refineKernelEnableSigningScope(scope)
+        XCTAssertTrue(refined.requestHash == harness.requestHash)
+        XCTAssertTrue(refined.account == signingTestAccount)
+        XCTAssertTrue(refined.digest.canonicalHex.count == 66)
+        XCTAssertTrue(binding.semanticallyMatches(harness.review.projection))
+        XCTAssertTrue(signer.count() == 0)
+    }
+
     func testApprovalBindingAcceptsOnlyExactAccountAndOnCurvePublicMaterial() throws {
         let key = P256.Signing.PrivateKey()
         let validMaterial = hexEncode(Data(key.publicKey.x963Representation.dropFirst()))

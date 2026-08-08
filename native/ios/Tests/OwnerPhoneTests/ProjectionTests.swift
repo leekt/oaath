@@ -14,6 +14,52 @@ final class ProjectionTests: XCTestCase {
         (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
 
+    private func kernelProjection() throws -> [String: Any] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            let projection = projections["kernelEnableOwnerSigningRequest"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("Kernel projection fixture")
+        }
+        return projection
+    }
+
+    private func replacing(
+        _ object: [String: Any],
+        at path: [String],
+        with value: Any
+    ) throws -> [String: Any] {
+        guard let key = path.first else { return object }
+        var result = object
+        if path.count == 1 {
+            result[key] = value
+            return result
+        }
+        guard let child = result[key] as? [String: Any] else {
+            throw OwnerPhoneWireError.invalidField(path.joined(separator: "."))
+        }
+        result[key] = try replacing(
+            child,
+            at: Array(path.dropFirst()),
+            with: value)
+        return result
+    }
+
+    private func approvingKernelProjection() throws -> [String: Any] {
+        try replacing(
+            kernelProjection(),
+            at: ["scope", "decision"],
+            with: "approve-or-reject")
+    }
+
     private let rawScope: [String: Any] = [
         "kind": "raw",
         "decision": "reject-only",
@@ -329,6 +375,78 @@ final class ProjectionTests: XCTestCase {
         XCTAssertEqual(request.digest, digest)
         XCTAssertEqual(request.reason, "No device-side derivation is available")
         XCTAssertEqual(scope.decisionCapability, .rejectOnly)
+    }
+
+    func testExactKernelRequestMayCaptureApproveOrRejectCapability() throws {
+        let projection = try OwnerPhoneRequestProjection.decode(
+            json(try approvingKernelProjection()))
+        guard case let .ownerSigningRequest(scope) = projection.scope else {
+            return XCTFail("expected an owner-signing request")
+        }
+        XCTAssertEqual(scope.decisionCapability, .approveOrReject)
+
+        let current = try OwnerPhoneRequestProjection.decode(json(try kernelProjection()))
+        guard case let .ownerSigningRequest(currentScope) = current.scope else {
+            return XCTFail("expected the current Kernel owner-signing request")
+        }
+        XCTAssertEqual(currentScope.decisionCapability, .rejectOnly)
+    }
+
+    func testApproveDecisionFailsClosedForEveryNonKernelP256Semantic() throws {
+        let base = try approvingKernelProjection()
+        let rawRequest: [String: Any] = [
+            "version": ownerPhoneSigningRequestVersion,
+            "kind": "raw-digest",
+            "digest": "0x" + String(repeating: "44", count: 32),
+            "reason": "No device-side derivation is available",
+            "decision": "reject-only",
+        ]
+        let ecdsaCredential: [String: Any] = [
+            "version": ownerPhoneOwnerCredentialVersion,
+            "kind": "ecdsa",
+            "address": "0x" + String(repeating: "33", count: 20),
+        ]
+        let webauthnCredential: [String: Any] = [
+            "version": ownerPhoneOwnerCredentialVersion,
+            "kind": "webauthn",
+            "publicKey": p256PublicKey,
+            "authenticatorIdHash": "0x" + String(repeating: "55", count: 32),
+        ]
+
+        let contradictions = try [
+            replacing(base, at: ["scope", "request"], with: rawRequest),
+            replacing(base, at: ["scope", "request", "purpose"], with: "application"),
+            replacing(base, at: ["scope", "request", "expectedDigest"],
+                      with: "0x" + String(repeating: "55", count: 32)),
+            replacing(base, at: ["scope", "request", "typedData", "domain", "name"],
+                      with: "Not Kernel"),
+            replacing(base, at: ["scope", "request", "signer", "account"],
+                      with: "0x" + String(repeating: "77", count: 20)),
+            replacing(base, at: ["scope", "request", "signer", "ownerCredential"],
+                      with: ecdsaCredential),
+            replacing(base, at: ["scope", "request", "signer", "ownerCredential"],
+                      with: webauthnCredential),
+            replacing(base, at: ["scope", "request", "replay", "nonce"], with: "1"),
+            replacing(base, at: ["scope", "request", "replay", "deadline"], with: "1"),
+            replacing(base, at: ["scope", "request", "typedData", "message", "packages"],
+                      with: [Any]()),
+        ]
+
+        for contradiction in contradictions {
+            XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(contradiction))) {
+                XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("scope decision"))
+            }
+        }
+
+        let malformedKey = try replacing(
+            base,
+            at: ["scope", "request", "signer", "ownerCredential", "publicKey"],
+            with: "0x04" + String(repeating: "00", count: 64))
+        XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(malformedKey))) {
+            XCTAssertEqual(
+                $0 as? OwnerPhoneWireError,
+                .invalidField("owner signing credential publicKey"))
+        }
     }
 
     func testRejectsMalformedMissingAndUnknownOwnerSigningFields() {
