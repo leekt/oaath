@@ -176,6 +176,20 @@ export {
   exactRecord,
 } from "./internal/exact-record.js";
 export type {
+  KernelV4Install,
+  KernelV4ModuleType,
+  KernelV4ReplayableInstallOwnerSigningRequest,
+  KernelV4ReplayableInstallPackage,
+  KernelV4ReplayableInstallTypedData,
+  KernelV4ReplayableInstallTypedDataInput,
+} from "./kernel-v4-replayable-install.js";
+export {
+  createKernelV4ReplayableInstallTypedData,
+  KERNEL_V4_INSTALL_COMPONENTS,
+  parseKernelV4InstallPackages,
+  parseKernelV4ReplayableInstallOwnerSigningRequest,
+} from "./kernel-v4-replayable-install.js";
+export type {
   AbandonedOperation,
   DroppedOperation,
   FinalizedOperation,

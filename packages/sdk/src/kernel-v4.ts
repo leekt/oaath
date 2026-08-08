@@ -3,8 +3,14 @@ import {
   type CaptureContext,
   captureDenseArray,
   captureRecord,
+  createKernelV4ReplayableInstallTypedData,
   type ExactRecord,
   exactCapturedRecord,
+  KERNEL_V4_INSTALL_COMPONENTS,
+  OaathProtocolError,
+  type KernelV4Install as ProtocolKernelV4Install,
+  type KernelV4ModuleType as ProtocolKernelV4ModuleType,
+  parseKernelV4InstallPackages,
 } from "@oaath/protocol";
 import {
   concat,
@@ -66,7 +72,7 @@ export const KERNEL_V4_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
 export const KERNEL_V4_EXECUTE_USER_OP_SELECTOR = "0x8dd7712f" as const;
 
 export type KernelV4SupportedChainId = 46_630 | 421_614 | 11_155_111;
-export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
+export type KernelV4ModuleType = ProtocolKernelV4ModuleType;
 export type KernelV4ValidationMode =
   | "standard"
   | "enable"
@@ -110,12 +116,7 @@ export interface KernelV4Deployment {
   }>;
 }
 
-export interface KernelV4Install {
-  readonly moduleType: KernelV4ModuleType;
-  readonly module: `0x${string}`;
-  readonly moduleData: `0x${string}`;
-  readonly internalData: `0x${string}`;
-}
+export type KernelV4Install = ProtocolKernelV4Install;
 
 export interface KernelV4Call {
   readonly target: `0x${string}`;
@@ -339,47 +340,11 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
   }),
 });
 
-const INSTALL_COMPONENTS = Object.freeze([
-  Object.freeze({ name: "moduleType", type: "uint256" }),
-  Object.freeze({ name: "module", type: "address" }),
-  Object.freeze({ name: "moduleData", type: "bytes" }),
-  Object.freeze({ name: "internalData", type: "bytes" }),
-] as const);
-
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
   type: "tuple[]",
-  components: INSTALL_COMPONENTS,
+  components: KERNEL_V4_INSTALL_COMPONENTS,
 } as const;
-
-/**
- * The EIP-712 struct Kernel v4 hashes an enable-mode install under. The encoded
- * type strings reproduce the two constants pinned in src/types/Constants.sol at
- * the vendored Kernel commit:
- *
- * - `INSTALL_PACKAGES_STRUCT_HASH` =
- *   keccak256("InstallPackages(uint256 nonce,Install[] packages)Install(uint256
- *   moduleType,address module,bytes moduleData,bytes internalData)")
- *   = 0x633d6810f7f4053622dad4c187707d9c3cd7f57b8b68943473d3437060aefc6d
- * - `INSTALL_STRUCT_HASH` = keccak256("Install(uint256 moduleType,address
- *   module,bytes moduleData,bytes internalData)")
- *   = 0x50c63c739a5f8d2e99954b3d4c7008fcdcef795a1b755ab9287372b01d6ac239
- *
- * `Install`'s member list is the same one the install ABI parameter carries, so
- * the digest and the calldata can never describe different packages.
- */
-const INSTALL_PACKAGES_TYPES = Object.freeze({
-  EIP712Domain: Object.freeze([
-    Object.freeze({ name: "name", type: "string" }),
-    Object.freeze({ name: "version", type: "string" }),
-    Object.freeze({ name: "verifyingContract", type: "address" }),
-  ] as const),
-  InstallPackages: Object.freeze([
-    Object.freeze({ name: "nonce", type: "uint256" }),
-    Object.freeze({ name: "packages", type: "Install[]" }),
-  ] as const),
-  Install: INSTALL_COMPONENTS,
-});
 
 const ENTRY_POINT_GET_NONCE_ABI = [
   {
@@ -556,57 +521,19 @@ async function readEvidence(
   }
 }
 
-function moduleType(value: unknown): KernelV4ModuleType {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 6) {
-    return fail("Kernel module type is invalid");
-  }
-  return value as KernelV4ModuleType;
-}
-
-function captureInstall(
-  value: unknown,
-  context: CaptureContext,
-  index: number,
-): Readonly<KernelV4Install> {
-  const record = exact(
-    value,
-    ["moduleType", "module", "moduleData", "internalData"],
-    `Kernel install package ${index}`,
-    context,
-  );
-  return Object.freeze({
-    moduleType: moduleType(record.moduleType),
-    module: address(record.module, "Kernel install module"),
-    moduleData: bytes(record.moduleData, "Kernel install module data"),
-    internalData: bytes(record.internalData, "Kernel install internal data"),
-  });
-}
-
 function captureInstalls(
   value: unknown,
-  context: CaptureContext,
+  _context: CaptureContext,
   label: string,
 ): readonly Readonly<KernelV4Install>[] {
-  const values = captureDenseArray(value, label, context, fail);
-  if (values.length < 1 || values.length > 256) {
-    return fail("Kernel install package count is invalid");
-  }
-  const packages = values.map((entry, index) => captureInstall(entry, context, index));
-  let pendingPermission: string | undefined;
-  for (const pkg of packages) {
-    if (pkg.moduleType !== 5 && pkg.moduleType !== 6) continue;
-    if (pkg.internalData.length < 10) return fail("Kernel permission package is invalid");
-    const permission = pkg.internalData.slice(0, 10);
-    if (pendingPermission && pendingPermission !== permission) {
-      return fail("Kernel permission package sequence is invalid");
+  try {
+    return parseKernelV4InstallPackages(value);
+  } catch (error) {
+    if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
+      return fail(`${label} is invalid`);
     }
-    if (pkg.moduleType === 6 && !pendingPermission) {
-      return fail("Kernel permission package sequence is invalid");
-    }
-    pendingPermission = pkg.moduleType === 5 ? permission : undefined;
+    throw error;
   }
-  if (pendingPermission) return fail("Kernel permission package sequence is incomplete");
-  return Object.freeze(packages);
 }
 
 function captureInitialPackages(
@@ -1331,28 +1258,17 @@ export function kernelV4ReplayableInstallTypedData(
     "Kernel replayable install",
     context,
   );
-  return Object.freeze({
-    types: INSTALL_PACKAGES_TYPES,
-    primaryType: "InstallPackages",
-    domain: Object.freeze({
-      name: "Kernel",
-      version: "0.4.0",
-      verifyingContract: address(record.account, "Kernel replayable install account"),
-    }),
-    message: Object.freeze({
-      nonce: uint(record.nonce, MAX_UINT256, "Kernel install nonce").toString(10),
-      packages: Object.freeze(
-        captureInstalls(record.packages, context, "Kernel enable packages").map((install) =>
-          Object.freeze({
-            moduleType: install.moduleType.toString(10),
-            module: install.module,
-            moduleData: install.moduleData,
-            internalData: install.internalData,
-          }),
-        ),
-      ),
-    }),
-  });
+  const account = address(record.account, "Kernel replayable install account");
+  const nonce = uint(record.nonce, MAX_UINT256, "Kernel install nonce").toString(10);
+  const packages = captureInstalls(record.packages, context, "Kernel enable packages");
+  try {
+    return createKernelV4ReplayableInstallTypedData({ account, nonce, packages });
+  } catch (error) {
+    if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
+      return fail("Kernel replayable install typed data is invalid");
+    }
+    throw error;
+  }
 }
 
 /** The digest of the canonical replayable install typed data. */

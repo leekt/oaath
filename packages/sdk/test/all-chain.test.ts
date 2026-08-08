@@ -25,6 +25,7 @@ import {
   kernelV4ReplayableInstallTypedData,
   materializeKernelPermission,
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+  OaathKernelV4Error,
   ownerOperator,
   sessionOperator,
 } from "../src/kernel.js";
@@ -297,12 +298,22 @@ describe("Kernel v4 replayable install digest", () => {
 
   it("fails closed on a hostile account, nonce, package set, or field set", () => {
     const packages = local.session.packages;
+    const scalarBoundPackages = packages.map((install, index) =>
+      index === 0
+        ? { ...install, moduleData: `0x${"00".repeat(16 * 1024 + 1)}` as `0x${string}` }
+        : install,
+    );
     for (const derive of [kernelV4ReplayableInstallTypedData, kernelV4ReplayableInstallDigest]) {
       for (const input of [
         { account: "0xdead", nonce: "0", packages },
         { account, nonce: "-1", packages },
         { account, nonce: "0", packages: [] },
         { account, nonce: "0", packages: [{ ...packages[0], moduleType: 0 }] },
+        {
+          account,
+          nonce: "0",
+          packages: scalarBoundPackages,
+        },
       ]) {
         expect(() => asHostile(derive)(input as never)).toThrowError(
           expect.objectContaining({ code: "kernel_v4_input_invalid" }),
@@ -317,6 +328,9 @@ describe("Kernel v4 replayable install digest", () => {
         } as never),
       ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
     }
+    expect(() =>
+      kernelV4ReplayableInstallTypedData({ account, nonce: "0", packages: scalarBoundPackages }),
+    ).toThrowError(OaathKernelV4Error);
   });
 });
 

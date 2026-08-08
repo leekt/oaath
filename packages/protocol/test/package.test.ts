@@ -4,6 +4,7 @@ import * as protocol from "../src/index.js";
 describe("package boundary", () => {
   it("exports only accepted id, time, error, actor, authorization, grant, operation, permission, signing, wire, and capture owners", () => {
     expect(Object.keys(protocol).sort()).toEqual([
+      "KERNEL_V4_INSTALL_COMPONENTS",
       "MAX_AUTHORIZATION_CODE_LIFETIME",
       "MAX_PROTOCOL_TIMESTAMP",
       "OAATH_AUTHORIZATION_CODE_VERSION",
@@ -56,6 +57,7 @@ describe("package boundary", () => {
       "createGrant",
       "createGrantFromPermissionRequest",
       "createKernelAccountActionInput",
+      "createKernelV4ReplayableInstallTypedData",
       "createOperation",
       "createSubjectBinding",
       "deriveCodeChallenge",
@@ -93,6 +95,8 @@ describe("package boundary", () => {
       "parseGrantPolicy",
       "parseIssuerIdentity",
       "parseKernelAccountProfile",
+      "parseKernelV4InstallPackages",
+      "parseKernelV4ReplayableInstallOwnerSigningRequest",
       "parseMaterializationId",
       "parseOperation",
       "parseOperationId",
