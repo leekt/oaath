@@ -57,6 +57,7 @@ import {
   type PreparedCallStore,
   type PreparedCallStoreRecord,
 } from "./prepared-call-store.js";
+import type { OaathWalletCallResultCapabilities } from "./result-capabilities.js";
 
 const GENERATED_ID_ATTEMPTS = 8;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -77,7 +78,12 @@ export interface Erc7836Orchestrator {
       digest: Hash;
     }>
   >;
-  readonly sendPreparedCalls: (params: unknown) => Promise<Readonly<{ id: string }>>;
+  readonly sendPreparedCalls: (params: unknown) => Promise<
+    Readonly<{
+      id: string;
+      capabilities?: Readonly<OaathWalletCallResultCapabilities>;
+    }>
+  >;
 }
 
 interface CreateErc7836OrchestratorInput {
@@ -127,6 +133,13 @@ function sameOperationPointer(
   );
 }
 
+function sameResultCapabilities(
+  left: Readonly<OaathWalletCallResultCapabilities> | null,
+  right: Readonly<OaathWalletCallResultCapabilities> | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function echoedCapabilities(
   capabilities: Readonly<CapturedWalletCapabilities> | undefined,
 ): Readonly<Record<string, unknown>> {
@@ -168,6 +181,7 @@ function toPlan(
     materialization: record.materialization,
     quote: record.quote,
     decision: record.decision,
+    resultCapabilities: record.resultCapabilities,
     prepared: record.prepared,
     validityTimeRange: record.validityTimeRange,
     expiresAt: record.expiresAt,
@@ -278,7 +292,11 @@ export function createErc7836Orchestrator(
       }
       if (
         retained.value.operation !== null &&
-        !sameOperationPointer(retained.value.operation, expectedPointer(record))
+        (!sameOperationPointer(retained.value.operation, expectedPointer(record)) ||
+          !sameResultCapabilities(
+            retained.value.operation.resultCapabilities,
+            record.resultCapabilities,
+          ))
       ) {
         rpcFail(INTERNAL_ERROR);
       }
@@ -333,11 +351,19 @@ export function createErc7836Orchestrator(
       publication: Object.freeze({
         reserve: async (reservation: Readonly<OaathProviderOperationReservation>) => {
           const pointer = reservation.operation;
-          if (reservation.resultCapabilities !== null) return rpcFail(INTERNAL_ERROR);
+          if (!sameResultCapabilities(reservation.resultCapabilities, context.resultCapabilities)) {
+            return rpcFail(INTERNAL_ERROR);
+          }
           requirePointer(pointer);
           retained = (await bundles.get(key)) ?? retained;
           if (retained.value.operation !== null) {
-            if (!sameOperationPointer(retained.value.operation, exact))
+            if (
+              !sameOperationPointer(retained.value.operation, exact) ||
+              !sameResultCapabilities(
+                retained.value.operation.resultCapabilities,
+                context.resultCapabilities,
+              )
+            )
               return rpcFail(INTERNAL_ERROR);
             return;
           }
@@ -347,7 +373,7 @@ export function createErc7836Orchestrator(
             expectedGeneration: context.bundleGeneration,
             operation: Object.freeze({
               identity: exact.identity,
-              resultCapabilities: null,
+              resultCapabilities: context.resultCapabilities,
             }),
             updatedAt: Math.max(now(), retained.updatedAt),
           });
@@ -358,7 +384,11 @@ export function createErc7836Orchestrator(
           if (
             result.current?.value.operation !== null &&
             result.current?.value.operation !== undefined &&
-            sameOperationPointer(result.current.value.operation, exact)
+            sameOperationPointer(result.current.value.operation, exact) &&
+            sameResultCapabilities(
+              result.current.value.operation.resultCapabilities,
+              context.resultCapabilities,
+            )
           ) {
             retained = result.current;
             return;
@@ -418,7 +448,11 @@ export function createErc7836Orchestrator(
     let retained = (await bundles.get(bundleKey(record))) ?? retainedValue;
     if (
       retained.value.operation === null ||
-      !sameOperationPointer(retained.value.operation, expectedPointer(record))
+      !sameOperationPointer(retained.value.operation, expectedPointer(record)) ||
+      !sameResultCapabilities(
+        retained.value.operation.resultCapabilities,
+        record.resultCapabilities,
+      )
     ) {
       rpcFail(INTERNAL_ERROR);
     }
@@ -564,6 +598,7 @@ export function createErc7836Orchestrator(
         materialization: plan.materialization,
         quote: plan.quote,
         decision: plan.decision,
+        resultCapabilities: plan.resultCapabilities,
         calls: plan.calls,
         prepared: plan.prepared,
         digest: plan.prepared.userOperationHash,
@@ -585,7 +620,22 @@ export function createErc7836Orchestrator(
     return rpcFail(INTERNAL_ERROR);
   }
 
-  async function sendPreparedCalls(params: unknown): Promise<Readonly<{ id: string }>> {
+  function sendResult(record: Readonly<PreparedCallContextRecord>): Readonly<{
+    id: string;
+    capabilities?: Readonly<OaathWalletCallResultCapabilities>;
+  }> {
+    return Object.freeze({
+      id: record.bundleId,
+      ...(record.resultCapabilities === null ? {} : { capabilities: record.resultCapabilities }),
+    });
+  }
+
+  async function sendPreparedCalls(params: unknown): Promise<
+    Readonly<{
+      id: string;
+      capabilities?: Readonly<OaathWalletCallResultCapabilities>;
+    }>
+  > {
     const captured = captureWalletSendPreparedCallsParams(params, input.chain);
     const key = contextKey(captured.context.id);
     let retained: PreparedCallStoreRecord | undefined = await contexts.get(key);
@@ -619,7 +669,7 @@ export function createErc7836Orchestrator(
         const bundle = await reserveBundle(retained.value);
         await releasePublication(retained.value, bundle);
         await recovery.operation.close().catch(() => undefined);
-        return Object.freeze({ id: retained.value.bundleId });
+        return sendResult(retained.value);
       }
       if (recovery.status === "request_conflict" || recovery.status === "abandoned") {
         return rpcFail(INVALID_PARAMS);
@@ -674,12 +724,15 @@ export function createErc7836Orchestrator(
     // own. Idempotently converge the public bundle binding before release.
     const exactPointer = expectedPointer(retained.value);
     await callbacks.publication.reserve(
-      Object.freeze({ operation: exactPointer, resultCapabilities: null }),
+      Object.freeze({
+        operation: exactPointer,
+        resultCapabilities: retained.value.resultCapabilities,
+      }),
     );
     await callbacks.publication.confirm(exactPointer);
     await releasePublication(retained.value, callbacks.retained());
     await operation.close().catch(() => undefined);
-    return Object.freeze({ id: retained.value.bundleId });
+    return sendResult(retained.value);
   }
 
   return Object.freeze({ prepareCalls, sendPreparedCalls });

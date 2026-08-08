@@ -6,7 +6,8 @@
  *                     invalidated_as_stale and no other transition
  * persisted evidence provider scope, Grant/account/chain, exact calls,
  *                     signer/custody/materialization, quote/route, prepared
- *                     UserOperation, digest, and preallocated bundle identity
+ *                     UserOperation, sanitized result metadata, digest, and
+ *                     preallocated bundle identity
  * resource occupied? preparation occupies no Operation lane; consumed records
  *                     permanently fence the one context use
  * retry safe?         only one prepared revision can win the terminal CAS
@@ -34,10 +35,14 @@ import {
 } from "../prepared-user-operation.js";
 import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
 import { hashWalletCallBundleProvenance } from "./capture.js";
+import {
+  captureWalletCallResultCapabilities,
+  type OaathWalletCallResultCapabilities,
+} from "./result-capabilities.js";
 
-export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v2" as const;
+export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v3" as const;
 export const OAATH_PREPARED_CALL_STORE_RECORD_VERSION =
-  "oaath.prepared-call-store-record/v2" as const;
+  "oaath.prepared-call-store-record/v3" as const;
 /** Exclusive local lifetime of one prepared context, owned by this durable codec. */
 export const OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS = 300;
 
@@ -125,6 +130,7 @@ export interface PreparedCallImmutableFields {
   readonly materialization: Readonly<PreparedCallMaterialization>;
   readonly quote: Readonly<PreparedCallQuote>;
   readonly decision: Readonly<PreparedCallDecision>;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
   readonly calls: readonly Readonly<PreparedCallInput>[];
   readonly prepared: Readonly<PreparedUserOperation>;
   /** Always exactly `prepared.userOperationHash`. */
@@ -523,6 +529,10 @@ function parseImmutableFields(
     return invalid(code, "Prepared call context expiry exceeds its validity range");
   }
   const quote = parseQuote(record.quote, context, code);
+  const resultCapabilities =
+    record.resultCapabilities === null
+      ? null
+      : captureWalletCallResultCapabilities(record.resultCapabilities, context, failFor(code));
   const prepared = parsePrepared(record.prepared, "Prepared call UserOperation", code);
   const digest = hash(record.digest, "Prepared call digest", code);
   const bundleRequestHash = hash(
@@ -566,6 +576,7 @@ function parseImmutableFields(
     materialization: parseMaterialization(record.materialization, context, code),
     quote,
     decision: parseDecision(record.decision, context, code),
+    resultCapabilities,
     calls: parseCalls(record.calls, context, code),
     prepared,
     digest,
@@ -592,6 +603,7 @@ const IMMUTABLE_KEYS = Object.freeze([
   "materialization",
   "quote",
   "decision",
+  "resultCapabilities",
   "calls",
   "prepared",
   "digest",
@@ -714,6 +726,7 @@ function immutableFields(value: PreparedCallContextRecord): Readonly<PreparedCal
     materialization: value.materialization,
     quote: value.quote,
     decision: value.decision,
+    resultCapabilities: value.resultCapabilities,
     calls: value.calls,
     prepared: value.prepared,
     digest: value.digest,
@@ -808,6 +821,7 @@ function reserveInput(value: unknown): Readonly<{
       "materialization",
       "quote",
       "decision",
+      "resultCapabilities",
       "calls",
       "prepared",
       "digest",
@@ -838,6 +852,7 @@ function reserveInput(value: unknown): Readonly<{
       materialization: record.materialization,
       quote: record.quote,
       decision: record.decision,
+      resultCapabilities: record.resultCapabilities,
       calls: record.calls,
       prepared: record.prepared,
       digest: record.digest,

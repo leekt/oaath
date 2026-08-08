@@ -244,6 +244,7 @@ export interface OaathExternalPreparedCallPlan {
     route: "bundler" | "direct";
     feePayer: Readonly<OaathFeePayerDescriptor> | null;
   }>;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
   readonly prepared: Readonly<PreparedUserOperation>;
   /** Exact applied request range, or null when preparation retained the Grant ceiling. */
   readonly validityTimeRange: Readonly<KernelV4ValidityTimeRange> | null;
@@ -1304,6 +1305,7 @@ export function createGrantHandle(
     | Readonly<{
         kind: "resolve-erc7677";
         sponsorship: Readonly<OaathKernelSponsorshipCapability>;
+        resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
       }>
     | Readonly<{ kind: "retained"; paymaster: Readonly<PreparedPaymaster> }>
     | null;
@@ -1318,6 +1320,7 @@ export function createGrantHandle(
     Readonly<{
       prepared: Readonly<PreparedUserOperation>;
       quote: Readonly<{ nonceKey: string; sequence: string }>;
+      resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
     }>
   > {
     const quote = quoteFields(
@@ -1358,6 +1361,7 @@ export function createGrantHandle(
     } else {
       operation = { kind: "execution", ...fields };
     }
+    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
     const prepared =
       options.paymaster?.kind === "resolve-erc7677"
         ? await prepareSponsoredKernelOperation({
@@ -1367,9 +1371,13 @@ export function createGrantHandle(
             sponsorship: options.paymaster.sponsorship,
           })
         : shape.runtime.prepareOperation(operation);
+    if (options.paymaster?.kind === "resolve-erc7677") {
+      resultCapabilities = options.paymaster.resultCapabilities();
+    }
     return Object.freeze({
       prepared,
       quote: Object.freeze({ nonceKey: quote.nonceKey, sequence: quote.sequence }),
+      resultCapabilities,
     });
   }
 
@@ -1418,6 +1426,8 @@ export function createGrantHandle(
     readonly authorizeOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly abandonOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly prepared?: Readonly<PreparedUserOperation>;
+    /** Display-only facts retained with an already prepared operation. */
+    readonly preparedResultCapabilities?: Readonly<OaathWalletCallResultCapabilities> | null;
     /** Already locally verified and fully wrapped; retained in memory only. */
     readonly externalSignature?: `0x${string}`;
     /** Present only while one final sponsored identity is being prepared. */
@@ -1430,7 +1440,8 @@ export function createGrantHandle(
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
     let reservedOperation: OaathProviderOperationPointer | null = null;
-    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
+    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null =
+      spec.preparedResultCapabilities ?? null;
     let publicationConfirmed = false;
     try {
       return createOperationRunner({
@@ -2486,6 +2497,7 @@ export function createGrantHandle(
         route: shape.decision.route === "bundler" ? ("bundler" as const) : ("direct" as const),
         feePayer: shape.decision.feePayer,
       }),
+      resultCapabilities: result.resultCapabilities,
       prepared: result.prepared,
       validityTimeRange: shape.validityTimeRange ?? null,
       expiresAt: shape.grantExpiresAt,
@@ -2551,6 +2563,7 @@ export function createGrantHandle(
             : Object.freeze({
                 kind: "resolve-erc7677" as const,
                 sponsorship: paymaster.sponsorship,
+                resultCapabilities: paymaster.resultCapabilities,
               }),
       }),
     );
@@ -2664,6 +2677,7 @@ export function createGrantHandle(
       grantId: shape.grantId,
       requestHash,
       prepared: plan.prepared,
+      preparedResultCapabilities: plan.resultCapabilities,
       externalSignature: signature,
       authorizeOperation: (operation: OaathProviderOperationPointer) =>
         authorizeExecutionOperation(shape.binding, shape.mode, operation),

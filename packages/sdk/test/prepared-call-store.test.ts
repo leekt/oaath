@@ -38,6 +38,14 @@ const TARGET = addressOf("44");
 const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 const GRANT_ID = "grant-prepared-call";
 const CHAIN_ID = 31_337;
+const RESULT_CAPABILITIES = {
+  paymasterService: {
+    sponsor: {
+      name: "Prepared Sponsor",
+      icon: "data:image/png;base64,AQ==",
+    },
+  },
+};
 
 function hashOf(byte: string): Hash {
   return `0x${byte.repeat(32)}` as Hash;
@@ -171,6 +179,7 @@ function reservation(overrides: Record<string, unknown> = {}): Record<string, un
       route: "bundler",
       feePayer: null,
     },
+    resultCapabilities: null,
     calls: [
       {
         target: TARGET,
@@ -218,7 +227,8 @@ describe("PreparedCallStore", () => {
   it("captures one exact prepared record and consumes its preallocated identity once", async () => {
     const adapter = new MemoryPreparedCallAdapter();
     const store = new PreparedCallStore(adapter.adapter);
-    const input = reservation();
+    const resultCapabilities = clone(RESULT_CAPABILITIES);
+    const input = reservation({ resultCapabilities });
     const calls = input.calls as Record<string, unknown>[];
     const keyHint = input.keyHint as Record<string, unknown>;
     const validityTimeRange = input.validityTimeRange as Record<string, unknown>;
@@ -228,6 +238,7 @@ describe("PreparedCallStore", () => {
     calls[0] = { target: OTHER_ACCOUNT, value: "9", data: "0x" };
     keyHint.publicKey = `0x04${"ff".repeat(64)}`;
     validityTimeRange.validUntil = "91";
+    resultCapabilities.paymasterService.sponsor.name = "mutated-after-capture";
 
     const prepared = requireCommitted(await pending);
     expect(prepared).toEqual({
@@ -252,9 +263,13 @@ describe("PreparedCallStore", () => {
     expect(prepared.value.keyHint.publicKey).toBe(`0x04${"66".repeat(64)}`);
     expect(prepared.value.validityTimeRange).toEqual({ validAfter: "5", validUntil: "90" });
     expect(prepared.value.digest).toBe(prepared.value.prepared.userOperationHash);
+    expect(prepared.value.resultCapabilities).toEqual(RESULT_CAPABILITIES);
     expect(Object.isFrozen(prepared.value.calls)).toBe(true);
     expect(Object.isFrozen(prepared.value.calls[0])).toBe(true);
     expect(Object.isFrozen(prepared.value.validityTimeRange)).toBe(true);
+    expect(Object.isFrozen(prepared.value.resultCapabilities)).toBe(true);
+    expect(Object.isFrozen(prepared.value.resultCapabilities?.paymasterService)).toBe(true);
+    expect(Object.isFrozen(prepared.value.resultCapabilities?.paymasterService.sponsor)).toBe(true);
 
     const consumed = requireCommitted(
       await store.consume({
@@ -274,6 +289,7 @@ describe("PreparedCallStore", () => {
     });
     expect(consumed.value).not.toHaveProperty("terminalAt");
     expect(consumed.value.validityTimeRange).toEqual(prepared.value.validityTimeRange);
+    expect(consumed.value.resultCapabilities).toEqual(prepared.value.resultCapabilities);
     expect(Object.isFrozen(consumed.value.validityTimeRange)).toBe(true);
     expect(await store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID })).toEqual(
       consumed,
@@ -416,9 +432,9 @@ describe("PreparedCallStore", () => {
     );
   });
 
-  it("rejects invalid validity evidence and every v1 durable shape", async () => {
-    expect(OAATH_PREPARED_CALL_CONTEXT_VERSION).toBe("oaath.prepared-call-context/v2");
-    expect(OAATH_PREPARED_CALL_STORE_RECORD_VERSION).toBe("oaath.prepared-call-store-record/v2");
+  it("rejects invalid validity evidence and every v2 durable shape", async () => {
+    expect(OAATH_PREPARED_CALL_CONTEXT_VERSION).toBe("oaath.prepared-call-context/v3");
+    expect(OAATH_PREPARED_CALL_STORE_RECORD_VERSION).toBe("oaath.prepared-call-store-record/v3");
     const adapter = new MemoryPreparedCallAdapter();
     const store = new PreparedCallStore(adapter.adapter);
     const missingRange = reservation();
@@ -472,7 +488,7 @@ describe("PreparedCallStore", () => {
       () =>
         parsePreparedCallRecord({
           ...committed.value,
-          version: "oaath.prepared-call-context/v1",
+          version: "oaath.prepared-call-context/v2",
         }),
       "store_record_invalid",
     );
@@ -480,7 +496,7 @@ describe("PreparedCallStore", () => {
       { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
       {
         ...committed,
-        value: { ...committed.value, version: "oaath.prepared-call-context/v1" },
+        value: { ...committed.value, version: "oaath.prepared-call-context/v2" },
       },
     );
     await expectStoreError(
@@ -524,7 +540,7 @@ describe("PreparedCallStore", () => {
 
     adapter.overwrite(
       { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
-      { ...committed, version: "oaath.prepared-call-store-record/v1" },
+      { ...committed, version: "oaath.prepared-call-store-record/v2" },
     );
     await expectStoreError(
       () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
@@ -564,6 +580,18 @@ describe("PreparedCallStore", () => {
       reservation({ custody: { mode: "frontend", providerId: "unexpected" } }),
       reservation({ decision: { route: "bundler", feePayer: { address: ACCOUNT, balance: "1" } } }),
       reservation({ decision: { route: "direct", feePayer: null } }),
+      reservation({
+        resultCapabilities: {
+          paymasterService: {
+            sponsor: { name: "Prepared Sponsor", icon: "https://example.com/icon.png" },
+          },
+        },
+      }),
+      (() => {
+        const missing = reservation();
+        delete missing.resultCapabilities;
+        return missing;
+      })(),
       { ...reservation(), unexpected: true },
     ];
     for (const mismatch of mismatches) {
@@ -572,6 +600,24 @@ describe("PreparedCallStore", () => {
     expect(adapter.compareAndSwapCalls).toBe(0);
 
     const committed = requireCommitted(await store.reservePrepared(reservation()));
+    adapter.overwrite(
+      { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
+      {
+        ...committed,
+        value: {
+          ...committed.value,
+          resultCapabilities: {
+            paymasterService: {
+              sponsor: { name: "Prepared Sponsor", icon: "data:image/svg+xml;base64,PHN2Zz4=" },
+            },
+          },
+        },
+      },
+    );
+    await expectStoreError(
+      () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
+      "store_record_invalid",
+    );
     const malformed = clone(committed) as unknown as {
       version: string;
       storeRevision: number;
@@ -703,13 +749,15 @@ for (const backendCase of PREPARED_CALL_BACKENDS) {
 }
 
 describe("IndexedDB prepared-call durability", () => {
-  it("retains exact v2 ranges across independent lifecycle-owner connections", async () => {
+  it("retains exact v3 ranges and result metadata across independent owner connections", async () => {
     const factory = new IDBFactory();
     const firstDatabase = await openOaathDatabase({ factory });
     const firstStore = new PreparedCallStore(
       createIndexedDbPreparedCallStoreAdapter(firstDatabase),
     );
-    const rangedPrepared = requireCommitted(await firstStore.reservePrepared(reservation()));
+    const rangedPrepared = requireCommitted(
+      await firstStore.reservePrepared(reservation({ resultCapabilities: RESULT_CAPABILITIES })),
+    );
     const nullPrepared = requireCommitted(
       await firstStore.reservePrepared(
         reservation({
@@ -747,7 +795,9 @@ describe("IndexedDB prepared-call durability", () => {
         }),
       );
       expect(consumed.value.validityTimeRange).toEqual({ validAfter: "5", validUntil: "90" });
+      expect(consumed.value.resultCapabilities).toEqual(RESULT_CAPABILITIES);
       expect(Object.isFrozen(consumed.value.validityTimeRange)).toBe(true);
+      expect(Object.isFrozen(consumed.value.resultCapabilities)).toBe(true);
       expect(stale.value.validityTimeRange).toBeNull();
       await expect(firstStore.get(rangedKey)).resolves.toEqual(consumed);
       await expect(secondStore.get(nullKey)).resolves.toEqual(stale);
@@ -767,14 +817,14 @@ describe("IndexedDB prepared-call durability", () => {
     }
   });
 
-  it("wipes every v10 store when opening the v11 database without migration", async () => {
-    expect(OAATH_INDEXEDDB_VERSION).toBe(11);
+  it("wipes every v11 store when opening the v12 database without migration", async () => {
+    expect(OAATH_INDEXEDDB_VERSION).toBe(12);
     const factory = new IDBFactory();
     await new Promise<void>((resolve, reject) => {
-      const request = factory.open(OAATH_INDEXEDDB_NAME, 10);
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 11);
       request.onupgradeneeded = () => {
         for (const storeName of Object.values(OAATH_INDEXEDDB_STORES)) {
-          request.result.createObjectStore(storeName).put({ source: "v10" }, "stale");
+          request.result.createObjectStore(storeName).put({ source: "v11" }, "stale");
         }
       };
       request.onsuccess = () => {
@@ -786,7 +836,7 @@ describe("IndexedDB prepared-call durability", () => {
 
     const database = await openOaathDatabase({ factory });
     try {
-      expect(database.version).toBe(11);
+      expect(database.version).toBe(12);
       const counts = await database.transact(
         Object.values(OAATH_INDEXEDDB_STORES),
         "readonly",

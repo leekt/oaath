@@ -42,6 +42,13 @@ const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}` as const;
 const SERVICE_URL = `https://issuer.example/chains/${CHAIN_ID}/paymaster`;
 const FOREIGN_URL = "https://attacker.example/paymaster";
 const PAYMASTER = `0x${"33".repeat(20)}` as const;
+const SPONSOR = Object.freeze({
+  name: "Prepared Sponsor",
+  icon: "data:image/png;base64,AQ==",
+});
+const RESULT_CAPABILITIES = Object.freeze({
+  paymasterService: Object.freeze({ sponsor: SPONSOR }),
+});
 
 interface PreparedRpcResponse {
   readonly version: "1";
@@ -111,7 +118,12 @@ function replaceChain(base: ChainFixture, overrides: Partial<OaathChainCapabilit
   });
 }
 
-function registeredService(options: Readonly<{ malformedEstimate?: boolean }> = {}): Readonly<{
+function registeredService(
+  options: Readonly<{
+    malformedEstimate?: boolean;
+    sponsor?: Readonly<{ name: string; icon?: string }>;
+  }> = {},
+): Readonly<{
   service: Readonly<OaathRegisteredPaymasterService>;
   stages: readonly string[];
   serviceRequests: readonly Readonly<Erc7677PaymasterServiceRequest>[];
@@ -127,6 +139,7 @@ function registeredService(options: Readonly<{ malformedEstimate?: boolean }> = 
       stages.push(request.method === "pm_getPaymasterStubData" ? "stub" : "final");
       if (request.method === "pm_getPaymasterStubData") {
         return {
+          ...(options.sponsor === undefined ? {} : { sponsor: options.sponsor }),
           paymaster: PAYMASTER,
           paymasterData: "0x01020304",
           paymasterPostOpGasLimit: "0x3c",
@@ -192,7 +205,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const firstStores = await indexedDbStores(factory);
     const clock = createClock();
     const base = createChainFixture();
-    const registered = registeredService();
+    const registered = registeredService({ sponsor: SPONSOR });
     const firstChain = replaceChain(base, { paymasterService: registered.service });
     const before = createRealm({ stores: firstStores.stores, clock, chain: firstChain });
     const firstConnection = await before.oaath.connect();
@@ -246,6 +259,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       validAfter: String(validAfter),
       validUntil: String(validUntil),
     });
+    expect(retained?.value.resultCapabilities).toEqual(RESULT_CAPABILITIES);
     expect(retained?.value.prepared.userOperation.paymaster).toEqual({
       address: PAYMASTER,
       verificationGasLimit: "50",
@@ -300,6 +314,10 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const signature = await signPreparedDigest(prepared.digest);
 
     const sent = await secondProvider.request(sendRequest(prepared, signature));
+    expect(sent).toEqual({
+      id: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+      capabilities: RESULT_CAPABILITIES,
+    });
     expect(base.quotes).toBe(2);
     expect(base.sends).toHaveLength(1);
     expect(base.sends[0]?.userOperationHash).toBe(prepared.digest);
@@ -318,10 +336,62 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     await expect(secondProvider.request(sendRequest(prepared, signature))).resolves.toEqual(sent);
     expect(base.quotes).toBe(2);
     expect(base.sends).toHaveLength(1);
+    expect(base.signatures).toHaveLength(1);
     expect(confirmations).toBe(1);
     expect(registered.stages).toEqual(["stub", "estimate", "final"]);
     await secondConnection.close();
     secondStores.database.close();
+
+    const effectsAfterSend = Object.freeze({
+      quotes: base.quotes,
+      signatures: base.signatures.length,
+      sends: base.sends.length,
+    });
+    const thirdStores = await indexedDbStores(factory);
+    const recreated = createRealm({
+      stores: thirdStores.stores,
+      clock,
+      relay: before.relay,
+      chain: replaceChain(base, { paymasterService: poisonService }),
+    });
+    const thirdConnection = await recreated.oaath.connect();
+    const thirdGrant = await thirdConnection.resume();
+    if (thirdGrant === null) throw new Error("expected the sent Grant to resume");
+    const presented: unknown[] = [];
+    const thirdProvider = oaathProvider({
+      grant: thirdGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        confirmations += 1;
+        throw new Error("status must not present again");
+      },
+      showCallsStatus(status) {
+        presented.push(status);
+      },
+    });
+    const sentId = (sent as Readonly<{ id: string }>).id;
+    const status = await thirdProvider.request({
+      method: "wallet_getCallsStatus",
+      params: [sentId],
+    });
+    expect(status).toMatchObject({
+      id: sentId,
+      status: 200,
+      capabilities: RESULT_CAPABILITIES,
+    });
+    await expect(
+      thirdProvider.request({ method: "wallet_showCallsStatus", params: [sentId] }),
+    ).resolves.toBeUndefined();
+    expect(presented).toEqual([status]);
+    expect({
+      quotes: base.quotes,
+      signatures: base.signatures.length,
+      sends: base.sends.length,
+    }).toEqual(effectsAfterSend);
+    expect(confirmations).toBe(1);
+    expect(registered.stages).toEqual(["stub", "estimate", "final"]);
+    await thirdConnection.close();
+    thirdStores.database.close();
   });
 
   it.each(["foreign service", "direct route"] as const)(
@@ -411,10 +481,21 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       contextId: prepared.context.id,
     });
     expect(retained?.value.prepared.userOperation.paymaster).toBeNull();
+    expect(retained?.value.resultCapabilities).toBeNull();
     expect(registered.stages).toEqual([]);
     expect(base.quotes).toBe(1);
     expect(base.signatures).toHaveLength(0);
     expect(base.sends).toHaveLength(0);
+    const signature = await signPreparedDigest(prepared.digest);
+    const sent = await provider.request(sendRequest(prepared, signature));
+    expect(sent).toEqual({ id: expect.stringMatching(/^0x[0-9a-f]{64}$/u) });
+    const sentId = (sent as Readonly<{ id: string }>).id;
+    const bundle = await port.walletCallBundles.get({
+      providerScopeId: port.providerScopeId as `0x${string}`,
+      account,
+      id: sentId,
+    });
+    expect(bundle?.value.operation?.resultCapabilities).toBeNull();
     await connection.close();
   });
 });
