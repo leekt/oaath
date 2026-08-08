@@ -47,6 +47,16 @@ final class DecisionTests: XCTestCase {
         .fixture()
     }
 
+    private var futureKernelApprovalScope: OwnerPhoneScope {
+        guard case let .ownerSigningRequest(scope) = OwnerPhoneScope.rawDigestSigningFixture() else {
+            preconditionFailure("owner-signing fixture changed shape")
+        }
+        return .ownerSigningRequest(OwnerPhoneSigningRequestScope(
+            requestHash: scope.requestHash,
+            request: scope.request,
+            decisionCapability: .approveOrReject))
+    }
+
     // MARK: decode
 
     func testDecodesADecidedApprovalWithItsOneTimeRelease() throws {
@@ -184,6 +194,63 @@ final class DecisionTests: XCTestCase {
         }
     }
 
+    func testKernelApprovalRequiresExactAuthorizationTransitions() throws {
+        var review = OwnerPhoneReview(projection: .fixture(scope: futureKernelApprovalScope))
+
+        XCTAssertThrowsError(try review.beginSubmission(.approved, now: 0)) {
+            XCTAssertEqual(
+                $0 as? OwnerPhoneReview.TransitionError,
+                .authorizationRequired)
+        }
+        try review.beginAuthorization(
+            availability: .kernelP256OwnerSigning,
+            now: 0)
+        XCTAssertEqual(review.state, .authorizing)
+        XCTAssertThrowsError(try review.beginSubmission(.rejected, now: 0)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notPending)
+        }
+        try review.authorizationFailed()
+        XCTAssertEqual(review.state, .pending)
+
+        try review.beginAuthorization(
+            availability: .kernelP256OwnerSigning,
+            now: 0)
+        try review.finishAuthorization(now: 0)
+        XCTAssertEqual(review.state, .submitting(.approved))
+        XCTAssertThrowsError(try review.authorizationFailed()) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notAuthorizing)
+        }
+    }
+
+    func testAuthorizationRejectsWrongScopeExpiryAndWrongState() throws {
+        var permission = OwnerPhoneReview(projection: projection)
+        XCTAssertThrowsError(try permission.beginAuthorization(
+            availability: .rejectOnly,
+            now: 0)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notApprovable)
+        }
+        var v3OwnerSigning = OwnerPhoneReview(projection: .fixture(
+            scope: .rawDigestSigningFixture()))
+        XCTAssertThrowsError(try v3OwnerSigning.beginAuthorization(
+            availability: .kernelP256OwnerSigning,
+            now: 0)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notApprovable)
+        }
+
+        let expiredProjection = OwnerPhoneRequestProjection.fixture(
+            expiresAt: 1,
+            scope: futureKernelApprovalScope)
+        var expired = OwnerPhoneReview(projection: expiredProjection)
+        XCTAssertThrowsError(try expired.beginAuthorization(
+            availability: .kernelP256OwnerSigning,
+            now: 1)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .expired)
+        }
+        XCTAssertThrowsError(try expired.finishAuthorization(now: 0)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notAuthorizing)
+        }
+    }
+
     func testExpiredRequestCannotStartASubmission() {
         var review = OwnerPhoneReview(projection: projection)
         XCTAssertThrowsError(try review.beginSubmission(.approved, now: projection.expiresAt)) {
@@ -251,6 +318,22 @@ final class DecisionTests: XCTestCase {
         // Switching is allowed: the command provably never left the device.
         try review.beginSubmission(.rejected, now: 0)
         XCTAssertEqual(review.state, .submitting(.rejected))
+    }
+
+    func testProvenNonSubmissionRetryPreservesAnOlderAmbiguousIntent() throws {
+        var review = OwnerPhoneReview(projection: projection)
+        try review.beginSubmission(.approved, now: 0)
+        try review.submissionFailed(ambiguous: true)
+        try review.beginSubmission(.approved, now: 0)
+        try review.submissionFailed(ambiguous: false)
+
+        XCTAssertEqual(review.state, .pending)
+        XCTAssertEqual(review.unresolvedIntent, .approved)
+        XCTAssertThrowsError(try review.beginSubmission(.rejected, now: 0)) {
+            XCTAssertEqual(
+                $0 as? OwnerPhoneReview.TransitionError,
+                .conflictingUnresolvedIntent)
+        }
     }
 
     func testReplayAnswersTheStoredOutcomeEvenWhenItDiffers() throws {

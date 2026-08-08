@@ -74,7 +74,7 @@ final class GoldenFixtureTests: XCTestCase {
             return XCTFail("golden owner-signing digest did not match locally")
         }
         XCTAssertEqual(derived.canonicalHex, request.expectedDigest)
-        XCTAssertFalse(signing.scope.approvable)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
 
         let kernelEnable = try OwnerPhoneRequestProjection.decode(
             try bytes(fixture, "projection", "kernelEnableOwnerSigningRequest"))
@@ -95,7 +95,7 @@ final class GoldenFixtureTests: XCTestCase {
             return XCTFail("golden Kernel enable digest did not match locally")
         }
         XCTAssertEqual(kernelDerived.canonicalHex, kernelRequest.expectedDigest)
-        XCTAssertFalse(kernelEnable.scope.approvable)
+        XCTAssertEqual(kernelScope.decisionCapability, .rejectOnly)
 
         let rawDigest = try OwnerPhoneRequestProjection.decode(
             try bytes(fixture, "projection", "rawDigestOwnerSigningRequest"))
@@ -109,7 +109,7 @@ final class GoldenFixtureTests: XCTestCase {
             "0xc54b4026d0a405712135675831934bf49451ca293a1d0d528d26979e7c0fc40a")
         XCTAssertEqual(rawRequest.digest, "0x" + String(repeating: "44", count: 32))
         XCTAssertEqual(rawRequest.reason, "No device-side derivation is available")
-        XCTAssertFalse(rawDigest.scope.approvable)
+        XCTAssertEqual(rawScope.decisionCapability, .rejectOnly)
 
         let raw = try OwnerPhoneRequestProjection.decode(try bytes(fixture, "projection", "raw"))
         guard case .raw = raw.scope else {

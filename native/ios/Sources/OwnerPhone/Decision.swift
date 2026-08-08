@@ -174,6 +174,7 @@ public struct OwnerPhoneDecision: Equatable, Sendable {
 public struct OwnerPhoneReview: Equatable, Sendable {
     public enum State: Equatable, Sendable {
         case pending
+        case authorizing
         case submitting(OwnerPhoneOutcome)
         case settled(OwnerPhoneDecision)
     }
@@ -181,7 +182,9 @@ public struct OwnerPhoneReview: Equatable, Sendable {
     public enum TransitionError: Error, Equatable, Sendable {
         case expired
         case notApprovable
+        case authorizationRequired
         case notPending
+        case notAuthorizing
         case notSubmitting
         /// An unresolved intent exists for the opposite outcome; the stored
         /// outcome must be learned before the owner may switch commands.
@@ -209,14 +212,61 @@ public struct OwnerPhoneReview: Equatable, Sendable {
     public mutating func beginSubmission(_ outcome: OwnerPhoneOutcome, now: Int) throws {
         guard case .pending = state else { throw TransitionError.notPending }
         guard now < projection.expiresAt else { throw TransitionError.expired }
-        guard outcome != .approved || projection.scope.approvable else {
-            throw TransitionError.notApprovable
+        if outcome == .approved {
+            switch projection.scope {
+            case .permissionRequest:
+                break
+            case let .ownerSigningRequest(scope):
+                guard scope.decisionCapability == .approveOrReject else {
+                    throw TransitionError.notApprovable
+                }
+                throw TransitionError.authorizationRequired
+            case .raw:
+                throw TransitionError.notApprovable
+            }
         }
         if let unresolvedIntent, unresolvedIntent != outcome {
             throw TransitionError.conflictingUnresolvedIntent
         }
         submittedOutcome = outcome
         state = .submitting(outcome)
+    }
+
+    /// Reserves the exact Kernel approval while user-presence signing may
+    /// suspend. Permission approvals never enter this state.
+    mutating func beginAuthorization(
+        availability: OwnerPhoneApprovalAvailability,
+        now: Int
+    ) throws {
+        guard case .pending = state else { throw TransitionError.notPending }
+        guard now < projection.expiresAt else { throw TransitionError.expired }
+        guard availability == .kernelP256OwnerSigning,
+              case let .ownerSigningRequest(scope) = projection.scope,
+              scope.decisionCapability == .approveOrReject
+        else {
+            throw TransitionError.notApprovable
+        }
+        if let unresolvedIntent, unresolvedIntent != .approved {
+            throw TransitionError.conflictingUnresolvedIntent
+        }
+        state = .authorizing
+    }
+
+    /// A freshly produced or retained canonical artifact is ready to submit.
+    /// Expiry is checked again because signing may have suspended for consent.
+    mutating func finishAuthorization(now: Int) throws {
+        guard case .authorizing = state else { throw TransitionError.notAuthorizing }
+        guard now < projection.expiresAt else { throw TransitionError.expired }
+        submittedOutcome = .approved
+        state = .submitting(.approved)
+    }
+
+    /// No command left the phone. This transition never creates unresolved
+    /// submission intent; ApprovalModel separately owns any older ambiguous
+    /// canonical artifact.
+    mutating func authorizationFailed() throws {
+        guard case .authorizing = state else { throw TransitionError.notAuthorizing }
+        state = .pending
     }
 
     public mutating func settle(_ decision: OwnerPhoneDecision) throws {
@@ -233,10 +283,13 @@ public struct OwnerPhoneReview: Equatable, Sendable {
 
     /// `ambiguous: true` means the transport failed after the command may have
     /// reached the relay; the intent is kept so the retry stays explicit.
-    /// `ambiguous: false` means the command provably never left this device.
+    /// `ambiguous: false` means this attempt provably never left this device;
+    /// it cannot erase an unresolved intent from an older attempt.
     public mutating func submissionFailed(ambiguous: Bool) throws {
         guard case let .submitting(sent) = state else { throw TransitionError.notSubmitting }
-        unresolvedIntent = ambiguous ? sent : nil
+        if ambiguous {
+            unresolvedIntent = sent
+        }
         state = .pending
     }
 

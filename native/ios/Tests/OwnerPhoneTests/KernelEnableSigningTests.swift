@@ -25,7 +25,7 @@ private struct KernelSigningHarness {
     let requestHash: String
 }
 
-private struct KernelReviewHarness {
+struct KernelReviewHarness {
     let pairedIdentity: KernelEnablePairedIdentity
     let review: OwnerPhoneReview
     let requestHash: String
@@ -36,6 +36,35 @@ private enum InjectedSignerFailure: Error {
 }
 
 final class KernelEnableSigningTests: XCTestCase {
+    func testApprovalBindingAcceptsOnlyExactAccountAndOnCurvePublicMaterial() throws {
+        let key = P256.Signing.PrivateKey()
+        let validMaterial = hexEncode(Data(key.publicKey.x963Representation.dropFirst()))
+        XCTAssertNoThrow(try OwnerPhoneKernelP256ApprovalBinding(
+            account: signingTestAccount,
+            p256PublicMaterial: validMaterial,
+            pairingIsCurrent: { true },
+            sign: { _ in throw InjectedSignerFailure.refused }))
+
+        let invalidBindings = [
+            (signingTestAccount.uppercased(), validMaterial),
+            ("0x" + String(repeating: "00", count: 20), validMaterial),
+            (signingTestAccount, "0x12"),
+            (signingTestAccount, "0xA" + String(validMaterial.dropFirst(3))),
+            (signingTestAccount, "0x" + String(repeating: "00", count: 64)),
+        ]
+        for (account, material) in invalidBindings {
+            XCTAssertThrowsError(try OwnerPhoneKernelP256ApprovalBinding(
+                account: account,
+                p256PublicMaterial: material,
+                pairingIsCurrent: { true },
+                sign: { _ in throw InjectedSignerFailure.refused }
+            )) {
+                XCTAssertTrue(
+                    $0 as? KernelEnableSigningError == .pairedIdentityInvalid)
+            }
+        }
+    }
+
 #if canImport(Security)
     func testLoadOnlyKeychainCustodyConsumesOnlyTheVerifiedDigest() throws {
         let tag = "org.oaath.tests.verified-signing.\(UUID().uuidString)"
@@ -467,7 +496,7 @@ private func makeHarness() throws -> KernelSigningHarness {
         requestHash: reviewHarness.requestHash)
 }
 
-private func makeReviewHarness(publicKeyX963 x963: Data) throws -> KernelReviewHarness {
+func makeReviewHarness(publicKeyX963 x963: Data) throws -> KernelReviewHarness {
     let typedData = validKernelTypedData()
     let digest = try deriveEIP712Digest(from: typedData)
     let request = OwnerPhoneEIP712SigningRequest(

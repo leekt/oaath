@@ -301,16 +301,39 @@ public enum OwnerPhoneSigningRequest: Equatable, Sendable {
     case rawDigest(OwnerPhoneRawDigestSigningRequest)
 }
 
+/// The one closed discriminator used by both the consent surface and the
+/// approval action. A decoded v3 owner-signing scope is always `.rejectOnly`;
+/// the Kernel case exists only for the sealed, package-internal future binding.
+enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
+    case permission
+    case kernelP256OwnerSigning
+    case rejectOnly
+}
+
+/// Authenticated wire semantics only. Current v3 decoding accepts exactly the
+/// reject-only value; a future decoder may opt an exact owner-signing request
+/// into approval without embedding any custody capability in wire evidence.
+enum OwnerPhoneSigningDecisionCapability: Equatable, Sendable {
+    case rejectOnly
+    case approveOrReject
+}
+
 /// The server/protocol request commitment plus its exact captured request.
 /// `requestHash` is authenticated projection evidence; this device does not
 /// independently reproduce `hashOwnerSigningRequest` in this child.
 public struct OwnerPhoneSigningRequestScope: Equatable, Sendable {
     public let requestHash: String
     public let request: OwnerPhoneSigningRequest
+    let decisionCapability: OwnerPhoneSigningDecisionCapability
 
-    init(requestHash: String, request: OwnerPhoneSigningRequest) {
+    init(
+        requestHash: String,
+        request: OwnerPhoneSigningRequest,
+        decisionCapability: OwnerPhoneSigningDecisionCapability = .rejectOnly
+    ) {
         self.requestHash = requestHash
         self.request = request
+        self.decisionCapability = decisionCapability
     }
 }
 
@@ -322,18 +345,6 @@ public enum OwnerPhoneScope: Equatable, Sendable {
     case permissionRequest(OwnerPhonePermissionScope)
     case ownerSigningRequest(OwnerPhoneSigningRequestScope)
     case raw(String)
-
-    /// Whether this scope may be approved at all. Raw and owner-signing scopes
-    /// are reject-only: the UI never renders Approve and the relay refuses an
-    /// approval independently.
-    public var approvable: Bool {
-        switch self {
-        case .permissionRequest:
-            return true
-        case .ownerSigningRequest, .raw:
-            return false
-        }
-    }
 }
 
 /// Mirrors `OwnerPhoneRequestProjection` in `native/projection.ts`.
@@ -464,7 +475,8 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
             return .ownerSigningRequest(OwnerPhoneSigningRequestScope(
                 requestHash: try Wire.lowercaseHex(
                     object["requestHash"], byteLength: 32, label: "requestHash"),
-                request: try decodeSigningRequest(object["request"])
+                request: try decodeSigningRequest(object["request"]),
+                decisionCapability: .rejectOnly
             ))
         case "raw":
             try Wire.exactKeys(object, ["kind", "decision", "text"], label: "scope")

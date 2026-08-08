@@ -5,11 +5,11 @@
  relay sends it — application, client, origin, redirect target, device,
  account, credentials, custody, every permitted call and argument constraint,
  validity window, and operation limit — so the owner sees exactly the
- authority they grant before tapping approve. Unstructured and owner-signing
- scopes are rendered for explicit rejection, never silently, and expose no
- approval action. The
- permission approval artifact is deployment-injected: composing what the
- client will claim is not this app's job.
+ authority they grant before tapping approve. Unstructured and current v3
+ owner-signing scopes are rendered for explicit rejection, never silently,
+ and expose no approval action. The permission approval artifact is
+ deployment-injected: composing what the client will claim is not this app's
+ job.
 
  Approval is always an explicit tap on this screen. A push notification only
  opens the review; nothing decides on tap, foreground, or notification action.
@@ -586,6 +586,7 @@ public final class ApprovalModel: ObservableObject {
     /// permission projection. Reject-only scopes are gated before this
     /// deployment-injected boundary.
     private let approvalArtifact: @Sendable (OwnerPhoneRequestProjection) async throws -> String
+    private let kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding?
     private let now: @Sendable () -> Int
 
     /// Immutable ownership for one exact authenticated projection. Async UI
@@ -595,16 +596,31 @@ public final class ApprovalModel: ObservableObject {
         let projection: OwnerPhoneRequestProjection
     }
 
+    /// Memory-only evidence for the exact review that produced it. A candidate
+    /// survives only once a submission becomes ambiguous; an older ambiguous
+    /// artifact is never discarded by a later proven-unsent retry.
+    private struct RetainedKernelArtifact {
+        let reviewTokenId: UUID
+        let canonical: String
+        var ambiguouslySubmitted: Bool
+    }
+
     private var activeLoadToken: UUID?
     private var currentReviewToken: ReviewToken?
+    private var activeAuthorizationToken: UUID?
+    private var retainedKernelArtifact: RetainedKernelArtifact?
+    private var isForeground = false
+    private var foregroundGeneration = 0
 
     public init(
         relay: any OwnerPhoneRelayClient,
         approvalArtifact: @escaping @Sendable (OwnerPhoneRequestProjection) async throws -> String,
+        kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding? = nil,
         now: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
     ) {
         self.relay = relay
         self.approvalArtifact = approvalArtifact
+        self.kernelP256ApprovalBinding = kernelP256ApprovalBinding
         self.now = now
     }
 
@@ -640,11 +656,58 @@ public final class ApprovalModel: ObservableObject {
 
     public func approve() async {
         guard let (token, review) = capturedReview() else { return }
+        switch approvalAvailability(for: review.projection) {
+        case .permission:
+            await approvePermission(token: token, review: review)
+        case .kernelP256OwnerSigning:
+            guard let binding = kernelP256ApprovalBinding else { return }
+            await approveKernel(
+                token: token,
+                review: review,
+                binding: binding)
+        case .rejectOnly:
+            return
+        }
+    }
+
+    /// The sole UI/action approval discriminator: authenticated scope semantics
+    /// privately intersected with the one deployment-provided custody binding.
+    func approvalAvailability(
+        for projection: OwnerPhoneRequestProjection
+    ) -> OwnerPhoneApprovalAvailability {
+        switch projection.scope {
+        case .permissionRequest:
+            return .permission
+        case let .ownerSigningRequest(scope):
+            guard scope.decisionCapability == .approveOrReject,
+                  let binding = kernelP256ApprovalBinding,
+                  binding.semanticallyMatches(projection)
+            else { return .rejectOnly }
+            return .kernelP256OwnerSigning
+        case .raw:
+            return .rejectOnly
+        }
+    }
+
+    public func reject() async {
+        guard let (token, review) = capturedReview() else { return }
+        await decide(.rejected, token: token, review: review)
+    }
+
+    /// ApprovalView is the sole lifecycle driver. Permission approvals do not
+    /// consult this state; only user-presence owner signing is foreground-bound.
+    func setForeground(_ foreground: Bool) {
+        if isForeground, !foreground {
+            foregroundGeneration &+= 1
+        }
+        isForeground = foreground
+    }
+
+    private func approvePermission(
+        token: ReviewToken,
+        review: OwnerPhoneReview
+    ) async {
         let request = review.projection
-        // Eligibility is checked before the deployment-injected artifact
-        // boundary. Reject-only scopes therefore cannot sign or even begin
-        // composing an approval artifact through a programmatic call.
-        guard request.scope.approvable else { return }
         guard let artifact = try? await approvalArtifact(request) else {
             return // artifact composition failed before any submission; still pending
         }
@@ -654,9 +717,92 @@ public final class ApprovalModel: ObservableObject {
         await decide(.approved(artifact: artifact), token: token, review: review)
     }
 
-    public func reject() async {
-        guard let (token, review) = capturedReview() else { return }
-        await decide(.rejected, token: token, review: review)
+    private func approveKernel(
+        token: ReviewToken,
+        review capturedReview: OwnerPhoneReview,
+        binding: OwnerPhoneKernelP256ApprovalBinding
+    ) async {
+        let startedAt = now()
+        guard owns(token, displayedReview: capturedReview),
+              !Task.isCancelled,
+              isForeground,
+              binding.pairingIsCurrent(),
+              binding.validates(capturedReview, now: startedAt)
+        else { return }
+
+        var review = capturedReview
+        do {
+            try review.beginAuthorization(
+                availability: .kernelP256OwnerSigning,
+                now: startedAt)
+        } catch {
+            return
+        }
+        let authorizationToken = UUID()
+        let capturedForegroundGeneration = foregroundGeneration
+        activeAuthorizationToken = authorizationToken
+        phase = .review(review)
+
+        let artifact: String
+        if let retained = retainedKernelArtifact,
+           retained.reviewTokenId == token.id,
+           retained.ambiguouslySubmitted
+        {
+            artifact = retained.canonical
+        } else {
+            let signingTask = Task.detached {
+                try Task.checkCancellation()
+                return try binding.makeArtifact(capturedReview, now: startedAt)
+            }
+            do {
+                artifact = try await withTaskCancellationHandler(
+                    operation: { try await signingTask.value },
+                    onCancel: { signingTask.cancel() })
+            } catch {
+                cancelAuthorizationIfOwned(
+                    token: token,
+                    authorizationToken: authorizationToken)
+                return
+            }
+            guard ownsAuthorization(token, authorizationToken: authorizationToken) else {
+                return
+            }
+            retainedKernelArtifact = RetainedKernelArtifact(
+                reviewTokenId: token.id,
+                canonical: artifact,
+                ambiguouslySubmitted: false)
+        }
+
+        let finishedAt = now()
+        guard ownsAuthorization(token, authorizationToken: authorizationToken),
+              !Task.isCancelled,
+              isForeground,
+              foregroundGeneration == capturedForegroundGeneration,
+              finishedAt < capturedReview.projection.expiresAt,
+              binding.pairingIsCurrent(),
+              binding.validates(capturedReview, now: finishedAt)
+        else {
+            cancelAuthorizationIfOwned(
+                token: token,
+                authorizationToken: authorizationToken)
+            return
+        }
+
+        do {
+            try review.finishAuthorization(now: finishedAt)
+        } catch {
+            cancelAuthorizationIfOwned(
+                token: token,
+                authorizationToken: authorizationToken)
+            return
+        }
+        activeAuthorizationToken = nil
+        phase = .review(review)
+        await submit(
+            .approved(artifact: artifact),
+            token: token,
+            submittingReview: review,
+            retainsKernelArtifact: true)
     }
 
     private func beginLoading() -> UUID {
@@ -665,6 +811,8 @@ public final class ApprovalModel: ObservableObject {
         // Arrival of a newer request immediately revokes every action owner for
         // the older consent surface, even while projection loading suspends.
         currentReviewToken = nil
+        activeAuthorizationToken = nil
+        retainedKernelArtifact = nil
         unresolvedNotice = false
         phase = .loading
         return token
@@ -700,6 +848,41 @@ public final class ApprovalModel: ObservableObject {
         return displayedReview == nil || current == displayedReview
     }
 
+    private func ownsAuthorization(
+        _ token: ReviewToken,
+        authorizationToken: UUID
+    ) -> Bool {
+        guard activeAuthorizationToken == authorizationToken,
+              currentReviewToken == token,
+              case let .review(current) = phase,
+              current.projection == token.projection,
+              case .authorizing = current.state
+        else { return false }
+        return true
+    }
+
+    private func cancelAuthorizationIfOwned(
+        token: ReviewToken,
+        authorizationToken: UUID
+    ) {
+        guard ownsAuthorization(token, authorizationToken: authorizationToken),
+              case let .review(current) = phase
+        else { return }
+        var review = current
+        try? review.authorizationFailed()
+        activeAuthorizationToken = nil
+        clearKernelCandidate(for: token)
+        phase = .review(review)
+    }
+
+    private func clearKernelCandidate(for token: ReviewToken) {
+        guard let retained = retainedKernelArtifact,
+              retained.reviewTokenId == token.id,
+              !retained.ambiguouslySubmitted
+        else { return }
+        retainedKernelArtifact = nil
+    }
+
     private func decide(
         _ command: OwnerPhoneDecisionCommand,
         token: ReviewToken,
@@ -713,26 +896,68 @@ public final class ApprovalModel: ObservableObject {
             return // forbidden transition; the current state already renders why
         }
         phase = .review(review)
-        let operationId = capturedReview.projection.operationId
+        await submit(
+            command,
+            token: token,
+            submittingReview: review,
+            retainsKernelArtifact: false)
+    }
+
+    private func submit(
+        _ command: OwnerPhoneDecisionCommand,
+        token: ReviewToken,
+        submittingReview: OwnerPhoneReview,
+        retainsKernelArtifact: Bool
+    ) async {
+        var review = submittingReview
+        let operationId = review.projection.operationId
         do {
             let decision = try await relay.submit(operationId: operationId, command: command)
             guard owns(token) else { return }
             try review.settle(decision)
             unresolvedNotice = false
+            if retainsKernelArtifact {
+                retainedKernelArtifact = nil
+            }
         } catch let error as OwnerPhoneWireError {
             guard owns(token) else { return }
             // The command never encoded or the answer was unreadable. An
             // unreadable answer is still an ambiguous submission.
             let ambiguous = !isEncodingFailure(error)
             try? review.submissionFailed(ambiguous: ambiguous)
-            unresolvedNotice = ambiguous
+            unresolvedNotice = review.unresolvedIntent != nil
+            updateKernelArtifactAfterFailure(
+                for: token,
+                retainedByThisSubmission: retainsKernelArtifact,
+                ambiguous: ambiguous)
         } catch {
             guard owns(token) else { return }
             try? review.submissionFailed(ambiguous: true)
             unresolvedNotice = true
+            updateKernelArtifactAfterFailure(
+                for: token,
+                retainedByThisSubmission: retainsKernelArtifact,
+                ambiguous: true)
         }
         guard owns(token) else { return }
         phase = .review(review)
+    }
+
+    private func updateKernelArtifactAfterFailure(
+        for token: ReviewToken,
+        retainedByThisSubmission: Bool,
+        ambiguous: Bool
+    ) {
+        guard retainedByThisSubmission,
+              var retained = retainedKernelArtifact,
+              retained.reviewTokenId == token.id
+        else { return }
+        if ambiguous {
+            retained.ambiguouslySubmitted = true
+            retainedKernelArtifact = retained
+        } else if !retained.ambiguouslySubmitted {
+            retainedKernelArtifact = nil
+        }
     }
 
     private func isEncodingFailure(_ error: OwnerPhoneWireError) -> Bool {
@@ -742,6 +967,7 @@ public final class ApprovalModel: ObservableObject {
 }
 
 public struct ApprovalView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: ApprovalModel
 
     public init(model: ApprovalModel) {
@@ -765,6 +991,10 @@ public struct ApprovalView: View {
             }
         }
         .padding()
+        .onAppear { model.setForeground(scenePhase == .active) }
+        .onChange(of: scenePhase) { phase in
+            model.setForeground(phase == .active)
+        }
     }
 
     @ViewBuilder
@@ -790,11 +1020,16 @@ public struct ApprovalView: View {
             }
             HStack(spacing: 24) {
                 Button("Reject", role: .destructive) { Task { await model.reject() } }
-                if review.projection.scope.approvable {
+                switch model.approvalAvailability(for: review.projection) {
+                case .permission, .kernelP256OwnerSigning:
                     Button("Approve") { Task { await model.approve() } }
                         .buttonStyle(.borderedProminent)
+                case .rejectOnly:
+                    EmptyView()
                 }
             }
+        case .authorizing:
+            ProgressView("Authorizing…")
         case .submitting:
             ProgressView("Submitting…")
         case let .settled(decision):
@@ -819,10 +1054,17 @@ public struct ApprovalView: View {
                         client: projection.client,
                         scope: scope))
                 case let .ownerSigningRequest(scope):
-                    Text("Owner-signing request — reject only. This build can inspect structured input and derive EIP-712 digests, but it cannot sign, approve, or guarantee an outcome.")
-                        .font(.footnote)
-                        .bold()
-                        .foregroundStyle(.orange)
+                    switch model.approvalAvailability(for: projection) {
+                    case .kernelP256OwnerSigning:
+                        Text("Kernel owner-signing request — approve only while this exact review, pairing, and foreground consent remain current.")
+                            .font(.footnote)
+                            .bold()
+                    case .permission, .rejectOnly:
+                        Text("Owner-signing request — reject only. This build can inspect structured input and derive EIP-712 digests, but it cannot sign, approve, or guarantee an outcome.")
+                            .font(.footnote)
+                            .bold()
+                            .foregroundStyle(.orange)
+                    }
                     ownerSigningBody(OwnerSigningConsentPresentation(scope: scope))
                 case let .raw(text):
                     // Explicit unstructured state: the owner reviews the raw

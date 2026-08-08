@@ -37,6 +37,61 @@ struct KernelEnablePairedIdentity: Equatable, Sendable {
     let p256XY: Data?
 }
 
+/// A sealed future approval capability. Construction captures one exact,
+/// already-validated account/P-256 pairing and only a verified-digest signer;
+/// no raw digest or raw signer escapes this owner.
+public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
+    private let pairedIdentity: KernelEnablePairedIdentity
+    private let pairingIsCurrentClosure: @Sendable () -> Bool
+    private let signClosure: @Sendable (VerifiedSignableDigest) throws -> Data
+
+    /// `p256PublicMaterial` is the exact lowercase `0x`-prefixed 64-byte x‖y
+    /// representation registered by pairing. Construction rejects a zero or
+    /// non-canonical account and material that is malformed or off-curve.
+    public init(
+        account: String,
+        p256PublicMaterial: String,
+        pairingIsCurrent: @escaping @Sendable () -> Bool,
+        sign: @escaping @Sendable (VerifiedSignableDigest) throws -> Data
+    ) throws {
+        guard let p256XY = decodeKernelP256PublicMaterial(p256PublicMaterial) else {
+            throw KernelEnableSigningError.pairedIdentityInvalid
+        }
+        let pairedIdentity = KernelEnablePairedIdentity(
+            account: account,
+            p256XY: p256XY)
+        _ = try kernelEnablePublicKey(for: pairedIdentity)
+        self.pairedIdentity = pairedIdentity
+        pairingIsCurrentClosure = pairingIsCurrent
+        signClosure = sign
+    }
+
+    func pairingIsCurrent() -> Bool {
+        pairingIsCurrentClosure()
+    }
+
+    func validates(_ review: OwnerPhoneReview, now: Int) -> Bool {
+        (try? verifyKernelEnableReview(
+            review,
+            now: now,
+            pairedIdentity: pairedIdentity)) != nil
+    }
+
+    func semanticallyMatches(_ projection: OwnerPhoneRequestProjection) -> Bool {
+        (try? verifyKernelEnableProjection(
+            projection,
+            pairedIdentity: pairedIdentity)) != nil
+    }
+
+    func makeArtifact(_ review: OwnerPhoneReview, now: Int) throws -> String {
+        try makeKernelEnableOwnerSigningArtifact(
+            review: review,
+            now: now,
+            pairedIdentity: pairedIdentity,
+            signer: signClosure)
+    }
+}
+
 /// The only digest type accepted by owner-key custody. The type crosses the
 /// package boundary so demo custody can consume it, but construction and raw
 /// bytes remain owned by this module: arbitrary network bytes cannot be
@@ -162,7 +217,16 @@ private func verifyKernelEnableReview(
     guard now < review.projection.expiresAt else {
         throw KernelEnableSigningError.expired
     }
-    guard case let .ownerSigningRequest(scope) = review.projection.scope,
+    return try verifyKernelEnableProjection(
+        review.projection,
+        pairedIdentity: pairedIdentity)
+}
+
+private func verifyKernelEnableProjection(
+    _ projection: OwnerPhoneRequestProjection,
+    pairedIdentity: KernelEnablePairedIdentity
+) throws -> VerifiedKernelEnableRequest {
+    guard case let .ownerSigningRequest(scope) = projection.scope,
           case let .eip712(request) = scope.request,
           request.version == ownerPhoneSigningRequestVersion,
           request.purpose == .kernelEnable
@@ -170,18 +234,11 @@ private func verifyKernelEnableReview(
         throw KernelEnableSigningError.requestNotKernelEnable
     }
 
-    guard isLowercaseHex(scope.requestHash, byteCount: 32),
-          let pairedAccount = pairedIdentity.account,
-          isNonzeroAddress(pairedAccount),
-          let pairedXY = pairedIdentity.p256XY,
-          pairedXY.count == 64
-    else {
+    guard isLowercaseHex(scope.requestHash, byteCount: 32) else {
         throw KernelEnableSigningError.pairedIdentityInvalid
     }
-
-    var x963 = Data([0x04])
-    x963.append(pairedXY)
-    guard let publicKey = try? P256.Signing.PublicKey(x963Representation: x963) else {
+    let publicKey = try kernelEnablePublicKey(for: pairedIdentity)
+    guard let pairedAccount = pairedIdentity.account else {
         throw KernelEnableSigningError.pairedIdentityInvalid
     }
 
@@ -190,7 +247,7 @@ private func verifyKernelEnableReview(
     }
     guard request.signer.ownerCredential.version == ownerPhoneOwnerCredentialVersion,
           case let .p256(requestedPublicKey) = request.signer.ownerCredential.credential,
-          requestedPublicKey == hexEncode(x963)
+          requestedPublicKey == hexEncode(publicKey.x963Representation)
     else {
         throw KernelEnableSigningError.credentialMismatch
     }
@@ -231,6 +288,50 @@ private func verifyKernelEnableReview(
         requestHash: scope.requestHash,
         digest: VerifiedSignableDigest(derived: derived),
         publicKey: publicKey)
+}
+
+private func kernelEnablePublicKey(
+    for pairedIdentity: KernelEnablePairedIdentity
+) throws -> P256.Signing.PublicKey {
+    guard let account = pairedIdentity.account,
+          isNonzeroAddress(account),
+          let pairedXY = pairedIdentity.p256XY,
+          pairedXY.count == 64
+    else {
+        throw KernelEnableSigningError.pairedIdentityInvalid
+    }
+    var x963 = Data([0x04])
+    x963.append(pairedXY)
+    do {
+        return try P256.Signing.PublicKey(x963Representation: x963)
+    } catch {
+        throw KernelEnableSigningError.pairedIdentityInvalid
+    }
+}
+
+private func decodeKernelP256PublicMaterial(_ text: String) -> Data? {
+    let characters = Array(text.utf8)
+    guard characters.count == 130,
+          characters[0] == 48,
+          characters[1] == 120
+    else { return nil }
+    var result = Data()
+    result.reserveCapacity(64)
+    for index in stride(from: 2, to: characters.count, by: 2) {
+        guard let high = lowercaseHexValue(characters[index]),
+              let low = lowercaseHexValue(characters[index + 1])
+        else { return nil }
+        result.append(high << 4 | low)
+    }
+    return result
+}
+
+private func lowercaseHexValue(_ byte: UInt8) -> UInt8? {
+    switch byte {
+    case 48...57: return byte - 48
+    case 97...102: return byte - 87
+    default: return nil
+    }
 }
 
 private func validateKernelPackages(_ values: [CanonicalEIP712Value]) -> Bool {

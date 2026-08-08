@@ -1090,13 +1090,13 @@ final class DemoPairingIdentityTests: XCTestCase {
             return XCTFail("mismatched request must remain reviewable")
         }
         XCTAssertEqual(review.state, .pending)
-        XCTAssertFalse(review.projection.scope.approvable)
         guard case let .ownerSigningRequest(scope) = review.projection.scope,
               case let .eip712(request) = scope.request,
               case let .mismatch(expected, derived) = request.digestComparison
         else {
             return XCTFail("expected a locally derived digest mismatch")
         }
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
         XCTAssertEqual(expected, "0x" + String(repeating: "55", count: 32))
         XCTAssertEqual(
             derived.canonicalHex,

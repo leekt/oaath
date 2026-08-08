@@ -197,7 +197,6 @@ final class ProjectionTests: XCTestCase {
             policyValidUntil: nil,
             perChainOperationLimit: 10
         )))
-        XCTAssertTrue(projection.scope.approvable)
     }
 
     func testDecodesRemoteSessionCustodyAndRejectsUnknownModes() throws {
@@ -214,7 +213,6 @@ final class ProjectionTests: XCTestCase {
         XCTAssertEqual(
             scope.sessionSigner,
             OwnerPhoneSessionSigner(mode: "oaath_hosted", providerId: "kms-primary"))
-        XCTAssertTrue(projection.scope.approvable)
 
         // A custody model this decoder cannot name is never rendered partially.
         for hostile: Any in [
@@ -232,7 +230,9 @@ final class ProjectionTests: XCTestCase {
 
     func testARawScopeIsRejectOnly() throws {
         let projection = try OwnerPhoneRequestProjection.decode(json(valid))
-        XCTAssertFalse(projection.scope.approvable)
+        guard case .raw = projection.scope else {
+            return XCTFail("expected a raw scope")
+        }
     }
 
     func testRejectsAnUnknownScopeKindInsteadOfRenderingPartially() {
@@ -271,7 +271,7 @@ final class ProjectionTests: XCTestCase {
         }
         XCTAssertEqual(derived.canonicalHex, mailDigest)
         XCTAssertEqual(request.replay, OwnerPhoneSigningReplayFacts(nonce: "0", deadline: nil))
-        XCTAssertFalse(projection.scope.approvable)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
     }
 
     func testDigestSubstitutionRemainsDecodableButMismatchedAndRejectOnly() throws {
@@ -289,7 +289,7 @@ final class ProjectionTests: XCTestCase {
         }
         XCTAssertEqual(expected, substituted)
         XCTAssertEqual(derived.canonicalHex, mailDigest)
-        XCTAssertFalse(projection.scope.approvable)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
     }
 
     func testTwoEmptyArraysDecodeAfterJSONParsing() throws {
@@ -306,7 +306,7 @@ final class ProjectionTests: XCTestCase {
         }
         XCTAssertEqual(signingRequest.typedData.message["left"], .array([]))
         XCTAssertEqual(signingRequest.typedData.message["right"], .array([]))
-        XCTAssertFalse(projection.scope.approvable)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
     }
 
     func testRawDigestRequestIsReadableAndRejectOnly() throws {
@@ -328,7 +328,7 @@ final class ProjectionTests: XCTestCase {
         XCTAssertEqual(request.version, ownerPhoneSigningRequestVersion)
         XCTAssertEqual(request.digest, digest)
         XCTAssertEqual(request.reason, "No device-side derivation is available")
-        XCTAssertFalse(projection.scope.approvable)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
     }
 
     func testRejectsMalformedMissingAndUnknownOwnerSigningFields() {
