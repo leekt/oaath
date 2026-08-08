@@ -35,9 +35,11 @@ import {
 import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
 import { hashWalletCallBundleProvenance } from "./capture.js";
 
-export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v1" as const;
+export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v2" as const;
 export const OAATH_PREPARED_CALL_STORE_RECORD_VERSION =
-  "oaath.prepared-call-store-record/v1" as const;
+  "oaath.prepared-call-store-record/v2" as const;
+/** Exclusive local lifetime of one prepared context, owned by this durable codec. */
+export const OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS = 300;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
@@ -47,6 +49,7 @@ const UNCOMPRESSED_SECP256K1_PUBLIC_KEY = /^0x04[0-9a-f]{128}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT64 = (1n << 64n) - 1n;
+const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT192 = (1n << 192n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_CALLS = 64;
@@ -99,6 +102,13 @@ export interface PreparedCallInput {
   readonly data: `0x${string}`;
 }
 
+export interface PreparedCallValidityTimeRange {
+  /** Canonical decimal uint48 lower bound, inclusive. */
+  readonly validAfter: string;
+  /** Canonical nonzero decimal uint48 upper bound, inclusive. */
+  readonly validUntil: string;
+}
+
 export interface PreparedCallImmutableFields {
   readonly version: typeof OAATH_PREPARED_CALL_CONTEXT_VERSION;
   readonly providerScopeId: Hash;
@@ -108,6 +118,7 @@ export interface PreparedCallImmutableFields {
   readonly chainId: number;
   readonly createdAt: number;
   readonly expiresAt: number;
+  readonly validityTimeRange: Readonly<PreparedCallValidityTimeRange> | null;
   readonly requestHash: Hash;
   readonly keyHint: Readonly<PreparedCallKeyHint>;
   readonly custody: Readonly<PreparedCallCustody>;
@@ -372,6 +383,37 @@ function parseQuote(
   });
 }
 
+function parseValidityTimeRange(
+  value: unknown,
+  context: CaptureContext,
+  code: StoreErrorCode,
+): Readonly<PreparedCallValidityTimeRange> | null {
+  if (value === null) return null;
+  const record = exactRecord(
+    value,
+    ["validAfter", "validUntil"],
+    "Prepared call validity time range",
+    code,
+    context,
+  );
+  const validAfter = decimal(
+    record.validAfter,
+    MAX_UINT48,
+    "Prepared call validity validAfter",
+    code,
+  );
+  const validUntil = decimal(
+    record.validUntil,
+    MAX_UINT48,
+    "Prepared call validity validUntil",
+    code,
+  );
+  if (validUntil === "0" || BigInt(validAfter) >= BigInt(validUntil)) {
+    return invalid(code, "Prepared call validity range must be nonempty and bounded");
+  }
+  return Object.freeze({ validAfter, validUntil });
+}
+
 function parseFeePayer(
   value: unknown,
   context: CaptureContext,
@@ -470,8 +512,15 @@ function parseImmutableFields(
   const capturedChainId = chainId(record.chainId, code);
   const createdAt = safeInteger(record.createdAt, "Prepared call creation time", code, 0);
   const expiresAt = safeInteger(record.expiresAt, "Prepared call expiry time", code, 1);
-  if (createdAt >= expiresAt) {
-    return invalid(code, "Prepared call context must expire after creation");
+  const validityTimeRange = parseValidityTimeRange(record.validityTimeRange, context, code);
+  if (
+    createdAt >= expiresAt ||
+    expiresAt - createdAt > OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS
+  ) {
+    return invalid(code, "Prepared call context expiry is outside its owned lifetime");
+  }
+  if (validityTimeRange !== null && BigInt(expiresAt) > BigInt(validityTimeRange.validUntil) + 1n) {
+    return invalid(code, "Prepared call context expiry exceeds its validity range");
   }
   const quote = parseQuote(record.quote, context, code);
   const prepared = parsePrepared(record.prepared, "Prepared call UserOperation", code);
@@ -510,6 +559,7 @@ function parseImmutableFields(
     chainId: capturedChainId,
     createdAt,
     expiresAt,
+    validityTimeRange,
     requestHash: hash(record.requestHash, "Prepared call requestHash", code),
     keyHint: parseKeyHint(record.keyHint, context, code),
     custody: parseCustody(record.custody, context, code),
@@ -535,6 +585,7 @@ const IMMUTABLE_KEYS = Object.freeze([
   "chainId",
   "createdAt",
   "expiresAt",
+  "validityTimeRange",
   "requestHash",
   "keyHint",
   "custody",
@@ -656,6 +707,7 @@ function immutableFields(value: PreparedCallContextRecord): Readonly<PreparedCal
     chainId: value.chainId,
     createdAt: value.createdAt,
     expiresAt: value.expiresAt,
+    validityTimeRange: value.validityTimeRange,
     requestHash: value.requestHash,
     keyHint: value.keyHint,
     custody: value.custody,
@@ -749,6 +801,7 @@ function reserveInput(value: unknown): Readonly<{
       "chainId",
       "createdAt",
       "expiresAt",
+      "validityTimeRange",
       "requestHash",
       "keyHint",
       "custody",
@@ -778,6 +831,7 @@ function reserveInput(value: unknown): Readonly<{
       chainId: record.chainId,
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
+      validityTimeRange: record.validityTimeRange,
       requestHash: record.requestHash,
       keyHint: record.keyHint,
       custody: record.custody,

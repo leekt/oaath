@@ -210,7 +210,11 @@ const VALIDITY_TIME_RANGE_HANDLER: WalletCapabilityHandler<
 > = Object.freeze({
   key: "validityTimeRange",
   status: "experimental",
-  metadataMethods: Object.freeze(["wallet_sendCalls"] as const),
+  metadataMethods: Object.freeze([
+    "wallet_sendCalls",
+    "wallet_prepareCalls",
+    "wallet_sendPreparedCalls",
+  ] as const),
   metadataScopes: Object.freeze(["bundle"] as const),
   advertise() {
     return null;

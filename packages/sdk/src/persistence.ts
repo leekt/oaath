@@ -52,4 +52,5 @@ export type {
   PreparedCallKey,
   PreparedCallStoreAdapter,
   PreparedCallStoreRecord,
+  PreparedCallValidityTimeRange,
 } from "./provider/prepared-call-store.js";

@@ -288,6 +288,84 @@ describe("wallet_prepareCalls experimental capture", () => {
     ).not.toBe(hashCapturedWalletSendPreparedCallsRequest(sent));
   });
 
+  it("captures exact bundle validity for preparation and its echoed send", () => {
+    const validityTimeRange = {
+      validAfter: "0xa",
+      validUntil: "0x10",
+      optional: true,
+    };
+    const prepared = capturePrepare(basePrepare({ capabilities: { validityTimeRange } }));
+    const sent = captureSend(baseSend({ capabilities: { validityTimeRange } }));
+
+    for (const captured of [prepared, sent]) {
+      expect(captured.capabilities).toEqual({
+        values: { validityTimeRange },
+        ignored: [],
+        validityTimeRange: { optional: true, validAfter: "10", validUntil: "16" },
+      });
+      expectDeepFrozen(captured.capabilities);
+    }
+    expect(hashCapturedWalletPrepareCallsRequest(prepared)).not.toBe(
+      hashCapturedWalletPrepareCallsRequest(
+        capturePrepare(
+          basePrepare({
+            capabilities: {
+              validityTimeRange: { ...validityTimeRange, validUntil: "0x11" },
+            },
+          }),
+        ),
+      ),
+    );
+    expect(hashCapturedWalletSendPreparedCallsRequest(sent)).not.toBe(
+      hashCapturedWalletSendPreparedCallsRequest(
+        captureSend(
+          baseSend({
+            capabilities: {
+              validityTimeRange: { ...validityTimeRange, validUntil: "0x11" },
+            },
+          }),
+        ),
+      ),
+    );
+  });
+
+  it("keeps prepared validity malformed and call-scoped forms fail closed", () => {
+    for (const validityTimeRange of [
+      { validAfter: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: true, extra: true },
+      { validAfter: "0xA", validUntil: "0x10", optional: true },
+      { validAfter: "0xa", validUntil: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: "true" },
+    ]) {
+      expectRpcError(
+        () => capturePrepare(basePrepare({ capabilities: { validityTimeRange } })),
+        INVALID_PARAMS,
+      );
+      expectRpcError(
+        () => captureSend(baseSend({ capabilities: { validityTimeRange } })),
+        INVALID_PARAMS,
+      );
+    }
+
+    const required = { validAfter: "0xa", validUntil: "0x10" };
+    expectRpcError(
+      () =>
+        capturePrepare(
+          basePrepare({ calls: [{ to: TARGET_A, capabilities: { validityTimeRange: required } }] }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+    const optional = { ...required, optional: true };
+    expect(
+      capturePrepare(
+        basePrepare({ calls: [{ to: TARGET_A, capabilities: { validityTimeRange: optional } }] }),
+      ).calls[0]?.capabilities,
+    ).toEqual({
+      values: { validityTimeRange: optional },
+      ignored: ["validityTimeRange"],
+    });
+  });
+
   it("keeps paymasterService malformed and call-scoped forms fail closed", () => {
     const exact = {
       url: "https://relay.example/chains/421614/paymaster",

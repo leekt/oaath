@@ -13,6 +13,7 @@ import type {
   OaathExternalPreparedCallPlan,
   OaathGrantProviderPort,
   OaathProviderOperationPointer,
+  OaathProviderValidityAdmission,
   OaathValidatedPreparedCalls,
 } from "../client/grant-handle.js";
 import { kernelV4Deployment } from "../kernel-v4.js";
@@ -36,23 +37,30 @@ import {
   OAATH_PREPARED_CALL_CONTEXT_TOKEN_VERSION,
 } from "./capture.js";
 import {
+  type OaathCallsConfirmation,
+  type OaathCallsConfirmer,
+  projectValidityTimeRangeConfirmation,
+} from "./eip5792.js";
+import {
   INTERNAL_ERROR,
   INVALID_PARAMS,
   rpcFail,
   UNAUTHORIZED,
   UNSUPPORTED_CAPABILITY,
+  USER_REJECTED_REQUEST,
 } from "./errors.js";
-import type {
-  PreparedCallContextRecord,
-  PreparedCallKey,
-  PreparedCallStore,
-  PreparedCallStoreRecord,
+import {
+  OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS,
+  type PreparedCallContextRecord,
+  type PreparedCallKey,
+  type PreparedCallStore,
+  type PreparedCallStoreRecord,
 } from "./prepared-call-store.js";
 
 const GENERATED_ID_ATTEMPTS = 8;
-const PREPARED_CONTEXT_LIFETIME_SECONDS = 300;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const ECHO_SIGNATURE_SENTINEL = "0x00" as const;
+const UNSUPPORTED_VALIDITY_ADMISSION = Object.freeze({ status: "unsupported" as const });
 
 export interface Erc7836Orchestrator {
   readonly prepareCalls: (params: unknown) => Promise<
@@ -74,6 +82,7 @@ export interface Erc7836Orchestrator {
 interface CreateErc7836OrchestratorInput {
   readonly port: Readonly<OaathGrantProviderPort>;
   readonly chain: number;
+  readonly confirmCalls?: OaathCallsConfirmer;
 }
 
 function generatedHash(): Hash {
@@ -159,6 +168,7 @@ function toPlan(
     quote: record.quote,
     decision: record.decision,
     prepared: record.prepared,
+    validityTimeRange: record.validityTimeRange,
     expiresAt: record.expiresAt,
   });
 }
@@ -439,16 +449,68 @@ export function createErc7836Orchestrator(
     if (captured.from !== undefined && captured.from !== accountAddress) {
       return rpcFail(UNAUTHORIZED);
     }
+    const preparedCalls = calls(capabilityEffect.calls);
+    const requestedValidity = capabilityEffect.validityTimeRange;
+    if (requestedValidity !== null && input.confirmCalls === undefined) {
+      if (!requestedValidity.optional) return rpcFail(UNSUPPORTED_CAPABILITY);
+    }
+    let validityAdmission: Readonly<OaathProviderValidityAdmission> | null = null;
+    if (requestedValidity !== null && input.confirmCalls !== undefined) {
+      const admitted = await input.port
+        .admitValidityTimeRange({
+          chain: input.chain,
+          range: Object.freeze({
+            validAfter: requestedValidity.validAfter,
+            validUntil: requestedValidity.validUntil,
+          }),
+        })
+        .catch(() => UNSUPPORTED_VALIDITY_ADMISSION);
+      const presentedValidity =
+        admitted.status === "accepted"
+          ? projectValidityTimeRangeConfirmation(requestedValidity)
+          : null;
+      if (admitted.status === "accepted" && presentedValidity !== null) {
+        validityAdmission = admitted.admission;
+        let decision: unknown;
+        try {
+          decision = await input.confirmCalls(
+            Object.freeze({
+              account: accountAddress,
+              chainId: captured.chainId,
+              calls: preparedCalls,
+              validityTimeRange: presentedValidity,
+            } satisfies OaathCallsConfirmation),
+          );
+        } catch {
+          return rpcFail(INTERNAL_ERROR);
+        }
+        if (decision !== "approved") {
+          if (decision === "rejected") return rpcFail(USER_REJECTED_REQUEST);
+          return rpcFail(INTERNAL_ERROR);
+        }
+      } else if (!requestedValidity.optional) {
+        return rpcFail(UNSUPPORTED_CAPABILITY);
+      }
+    }
     const plan = await input.port
       .prepareCalls({
         chain: input.chain,
-        calls: calls(capabilityEffect.calls),
+        calls: preparedCalls,
         key: captured.key,
         paymaster: capabilityEffect.paymaster,
+        ...(validityAdmission === null ? {} : { validityAdmission }),
       })
       .catch(mapPreparationFailure);
     const createdAt = now();
-    const expiresAt = Math.min(createdAt + PREPARED_CONTEXT_LIFETIME_SECONDS, plan.expiresAt);
+    const validityExpiresAt =
+      plan.validityTimeRange === null
+        ? plan.expiresAt
+        : Number(BigInt(plan.validityTimeRange.validUntil) + 1n);
+    const expiresAt = Math.min(
+      createdAt + OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS,
+      plan.expiresAt,
+      validityExpiresAt,
+    );
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) return rpcFail(UNAUTHORIZED);
     const prepareRequestHash = hashCapturedWalletPrepareCallsRequest(captured);
     const capabilities = echoedCapabilities(captured.capabilities);
@@ -489,6 +551,7 @@ export function createErc7836Orchestrator(
         chainId: plan.chainId,
         createdAt,
         expiresAt,
+        validityTimeRange: plan.validityTimeRange,
         requestHash: prepareRequestHash,
         keyHint: plan.key,
         custody: plan.custody,

@@ -233,6 +233,8 @@ export interface OaathExternalPreparedCallPlan {
     feePayer: Readonly<OaathFeePayerDescriptor> | null;
   }>;
   readonly prepared: Readonly<PreparedUserOperation>;
+  /** Exact applied request range, or null when preparation retained the Grant ceiling. */
+  readonly validityTimeRange: Readonly<KernelV4ValidityTimeRange> | null;
   /** Exclusive bound imposed by the Grant owner or the shorter context lifetime. */
   readonly expiresAt: number;
 }
@@ -356,6 +358,7 @@ export interface OaathGrantProviderPort {
       calls: readonly Readonly<OaathCallInput>[];
       key: Readonly<OaathExternalPreparedCallKey>;
       paymaster: OaathExternalPreparedCallPaymasterSelection;
+      validityAdmission?: Readonly<OaathProviderValidityAdmission>;
     }>,
   ) => Promise<Readonly<OaathExternalPreparedCallPlan>>;
   readonly validatePreparedCalls: (
@@ -1318,6 +1321,9 @@ export function createGrantHandle(
       calls: [...shape.calls],
       gas: options.gas ?? quote.gas,
       paymaster: options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null,
+      ...(shape.validityTimeRange === undefined
+        ? {}
+        : { validityTimeRange: shape.validityTimeRange }),
     };
     let operation: KernelRuntimePrepareInput;
     let simulationSignature = shape.runtime.dummySignature;
@@ -2450,24 +2456,26 @@ export function createGrantHandle(
         feePayer: shape.decision.feePayer,
       }),
       prepared: result.prepared,
+      validityTimeRange: shape.validityTimeRange ?? null,
       expiresAt: shape.grantExpiresAt,
     });
   }
 
   async function prepareCallsWork(
-    value: Readonly<{
-      chain: number;
-      calls: readonly Readonly<OaathCallInput>[];
-      key: Readonly<OaathExternalPreparedCallKey>;
-      paymaster: OaathExternalPreparedCallPaymasterSelection;
-    }>,
+    value: unknown,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
     const context: CaptureContext = new WeakSet();
-    const request = exactClientRecord(
-      value,
-      ["chain", "calls", "key", "paymaster"],
+    const invalidInput = (message: string): never =>
+      clientFail("oaath_client_input_invalid", message);
+    const captured = captureRecord(value, "provider prepareCalls input", context, invalidInput);
+    const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
+    const request = exactCapturedRecord(
+      captured,
+      hasValidityAdmission
+        ? ["chain", "calls", "key", "paymaster", "validityAdmission"]
+        : ["chain", "calls", "key", "paymaster"],
       "provider prepareCalls input",
-      context,
+      invalidInput,
     );
     if (
       typeof request.chain !== "number" ||
@@ -2476,6 +2484,9 @@ export function createGrantHandle(
     ) {
       return clientFail("oaath_client_input_invalid", "prepared-call chain is invalid");
     }
+    const validityAdmission = hasValidityAdmission
+      ? consumeValidityAdmission(request.validityAdmission, request.chain)
+      : null;
     const keyRecord = exactClientRecord(
       request.key,
       ["type", "publicKey", "prehash"],
@@ -2494,7 +2505,7 @@ export function createGrantHandle(
     if (paymaster?.kind === "erc7902-static") {
       return unsupported("prepared_calls_static_paymaster_unsupported");
     }
-    const shape = await resolveExecutionShape(request.chain, calls);
+    const shape = await resolveExecutionShape(request.chain, calls, validityAdmission);
     if (paymaster !== null && shape.decision.route !== "bundler") {
       return unsupported("erc7677_bundler_unavailable");
     }
@@ -2535,7 +2546,26 @@ export function createGrantHandle(
       );
     }
     const calls = captureCalls(plan.calls, new WeakSet());
-    const shape = await resolveExecutionShape(plan.chainId, calls);
+    const retainedValidityTimeRange = plan.validityTimeRange;
+    let validityEvidence: Readonly<ValidityAdmissionEvidence> | null = null;
+    if (retainedValidityTimeRange !== null) {
+      try {
+        validityEvidence = await proveValidityTimeRange({
+          chain: plan.chainId,
+          range: retainedValidityTimeRange,
+        });
+      } catch {
+        validityEvidence = null;
+      }
+      if (validityEvidence === null) {
+        return clientFail(
+          "oaath_client_state_conflict",
+          "prepared-call validity evidence is stale",
+          "prepared_call_stale",
+        );
+      }
+    }
+    const shape = await resolveExecutionShape(plan.chainId, calls, validityEvidence);
     const retainedPaymaster = plan.prepared.userOperation.paymaster;
     const current = await prepareExecutionShape(shape, {
       gas: storedGas(plan.prepared),
@@ -2650,6 +2680,44 @@ export function createGrantHandle(
     return chainCapability(chainId).staticPaymasterConfigurationHash;
   }
 
+  async function proveValidityTimeRange(
+    value: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ): Promise<Readonly<ValidityAdmissionEvidence> | null> {
+    const requested = captureProviderValidityAdmissionInput(value);
+    if (revocationRequested) return null;
+    try {
+      await requireActive();
+      const at = input.now();
+      const validAfter = BigInt(requested.range.validAfter);
+      const validUntil = BigInt(requested.range.validUntil);
+      const ceiling = input.approvedPolicy.validUntil;
+      if (
+        !Number.isSafeInteger(at) ||
+        Object.is(at, -0) ||
+        at < 0 ||
+        BigInt(at) > validUntil ||
+        ceiling === null ||
+        validAfter < BigInt(input.approvedPolicy.validAfter) ||
+        validUntil > BigInt(ceiling)
+      ) {
+        return null;
+      }
+      const runtime = sessionRuntime(requested.chain);
+      const descriptor = await accountDescriptor(requested.chain, runtime);
+      return Object.freeze({
+        chainId: requested.chain,
+        range: requested.range,
+        runtime,
+        descriptor,
+      });
+    } catch {
+      return null;
+    }
+  }
+
   function admitValidityTimeRange(
     value: Readonly<{
       chain: number;
@@ -2657,44 +2725,35 @@ export function createGrantHandle(
     }>,
   ): Promise<Readonly<OaathProviderValidityAdmissionResult>> {
     return withActivity(async () => {
-      const requested = captureProviderValidityAdmissionInput(value);
-      if (revocationRequested) return unsupportedValidityAdmission;
-      try {
-        await requireActive();
-        const at = input.now();
-        const validAfter = BigInt(requested.range.validAfter);
-        const validUntil = BigInt(requested.range.validUntil);
-        const ceiling = input.approvedPolicy.validUntil;
-        if (
-          !Number.isSafeInteger(at) ||
-          Object.is(at, -0) ||
-          at < 0 ||
-          BigInt(at) > validUntil ||
-          ceiling === null ||
-          validAfter < BigInt(input.approvedPolicy.validAfter) ||
-          validUntil > BigInt(ceiling)
-        ) {
-          return unsupportedValidityAdmission;
-        }
-        const runtime = sessionRuntime(requested.chain);
-        const descriptor = await accountDescriptor(requested.chain, runtime);
-        const admission = Object.freeze({
-          kind: "oaath_provider_validity_admission" as const,
-        });
-        validityAdmissions.set(
-          admission,
-          Object.freeze({
-            chainId: requested.chain,
-            range: requested.range,
-            runtime,
-            descriptor,
-          }),
-        );
-        return Object.freeze({ status: "accepted" as const, admission });
-      } catch {
-        return unsupportedValidityAdmission;
-      }
+      const evidence = await proveValidityTimeRange(value);
+      if (evidence === null) return unsupportedValidityAdmission;
+      const admission = Object.freeze({
+        kind: "oaath_provider_validity_admission" as const,
+      });
+      validityAdmissions.set(admission, evidence);
+      return Object.freeze({ status: "accepted" as const, admission });
     });
+  }
+
+  function consumeValidityAdmission(
+    value: unknown,
+    chainId: number,
+  ): Readonly<ValidityAdmissionEvidence> {
+    if (value === null || typeof value !== "object") {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider validity admission is invalid",
+      );
+    }
+    const retained = validityAdmissions.get(value);
+    validityAdmissions.delete(value);
+    if (retained === undefined || retained.chainId !== chainId) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider validity admission is unavailable",
+      );
+    }
+    return retained;
   }
 
   function providerSponsorship(
@@ -2826,25 +2885,9 @@ export function createGrantHandle(
       ) {
         return clientFail("oaath_client_input_invalid", "provider chain is invalid");
       }
-      let validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null;
-      if (hasValidityAdmission) {
-        const token = request.validityAdmission;
-        if (token === null || typeof token !== "object") {
-          return clientFail(
-            "oaath_client_capability_invalid",
-            "provider validity admission is invalid",
-          );
-        }
-        const retained = validityAdmissions.get(token);
-        validityAdmissions.delete(token);
-        if (retained === undefined || retained.chainId !== request.chain) {
-          return clientFail(
-            "oaath_client_capability_invalid",
-            "provider validity admission is unavailable",
-          );
-        }
-        validityAdmission = retained;
-      }
+      const validityAdmission = hasValidityAdmission
+        ? consumeValidityAdmission(request.validityAdmission, request.chain)
+        : null;
       if (
         typeof request.requestHash !== "string" ||
         !USER_OPERATION_HASH.test(request.requestHash)
@@ -2871,6 +2914,7 @@ export function createGrantHandle(
       calls: readonly Readonly<OaathCallInput>[];
       key: Readonly<OaathExternalPreparedCallKey>;
       paymaster: OaathExternalPreparedCallPaymasterSelection;
+      validityAdmission?: Readonly<OaathProviderValidityAdmission>;
     }>,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
     return withExecution(() => prepareCallsWork(value));

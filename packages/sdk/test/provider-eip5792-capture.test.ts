@@ -514,7 +514,7 @@ describe("capability semantics", () => {
     }
   });
 
-  it("keeps validity ranges unsupported outside wallet_sendCalls bundle scope", () => {
+  it("keeps validity bundle-scoped while capturing prepared-call bundle metadata", () => {
     expectRpcError(
       () =>
         captureBundle(
@@ -529,10 +529,13 @@ describe("capability semantics", () => {
         ),
       UNSUPPORTED_CAPABILITY,
     );
-    expectRpcError(
-      () => capturePrepareWithCapabilities({ validityTimeRange: validityTimeRange() }),
-      UNSUPPORTED_CAPABILITY,
-    );
+    expect(
+      capturePrepareWithCapabilities({ validityTimeRange: validityTimeRange() }).capabilities,
+    ).toEqual({
+      values: { validityTimeRange: validityTimeRange() },
+      ignored: [],
+      validityTimeRange: { optional: false, validAfter: "10", validUntil: "16" },
+    });
 
     const optionalCall = validityTimeRange(true);
     const capturedCall = captureBundle(
@@ -555,7 +558,8 @@ describe("capability semantics", () => {
       capturePrepareWithCapabilities({ validityTimeRange: optionalPrepare }).capabilities,
     ).toEqual({
       values: { validityTimeRange: optionalPrepare },
-      ignored: ["validityTimeRange"],
+      ignored: [],
+      validityTimeRange: { optional: true, validAfter: "10", validUntil: "16" },
     });
   });
 

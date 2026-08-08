@@ -172,7 +172,11 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
       ? {}
       : { showCallsStatus: captured.showCallsStatus }),
   });
-  const preparedWallet = createErc7836Orchestrator({ port, chain });
+  const preparedWallet = createErc7836Orchestrator({
+    port,
+    chain,
+    ...(captured.confirmCalls === undefined ? {} : { confirmCalls: captured.confirmCalls }),
+  });
 
   async function account(): Promise<`0x${string}`> {
     const value = (await port.account(chain)).toLowerCase();

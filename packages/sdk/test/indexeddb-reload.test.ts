@@ -258,8 +258,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(9);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(9);
+    expect(database.version).toBe(10);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(10);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -327,7 +327,7 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(9);
+    expect(database.version).toBe(10);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
@@ -370,7 +370,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(9);
+    expect(database.version).toBe(10);
     await expect(
       createIndexedDbOperationStoreAdapter(database).get({
         grantId: "stale-grant",
@@ -402,7 +402,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(9);
+    expect(database.version).toBe(10);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -434,7 +434,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(9);
+    expect(database.version).toBe(10);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -473,7 +473,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(9);
+    expect(database.version).toBe(10);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",

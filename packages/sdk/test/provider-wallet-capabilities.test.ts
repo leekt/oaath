@@ -117,11 +117,11 @@ describe("closed wallet capability registry", () => {
     expect(isHandledWalletCapability("validityTimeRange", "wallet_sendCalls", "bundle")).toBe(true);
     expect(isHandledWalletCapability("validityTimeRange", "wallet_sendCalls", "call")).toBe(false);
     expect(isHandledWalletCapability("validityTimeRange", "wallet_prepareCalls", "bundle")).toBe(
-      false,
+      true,
     );
     expect(
       isHandledWalletCapability("validityTimeRange", "wallet_sendPreparedCalls", "bundle"),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("carries validity orthogonally to a paymaster selection", () => {

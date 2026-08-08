@@ -12,6 +12,7 @@ import type {
   OaathRegisteredPaymasterService,
 } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
+import { encodeKernelV4Execution } from "../src/kernel.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -58,6 +59,7 @@ interface PreparedRpcResponse {
 function prepareRequest(
   account: `0x${string}`,
   paymasterService: Readonly<Record<string, unknown>>,
+  validityTimeRange?: Readonly<Record<string, unknown>>,
 ) {
   return {
     method: "wallet_prepareCalls",
@@ -67,7 +69,10 @@ function prepareRequest(
         from: account,
         chainId: CHAIN_HEX,
         calls: [{ to: TARGET, data: CALL_DATA }],
-        capabilities: { paymasterService },
+        capabilities: {
+          paymasterService,
+          ...(validityTimeRange === undefined ? {} : { validityTimeRange }),
+        },
         key: {
           type: "secp256k1",
           publicKey: SESSION_PUBLIC_KEY,
@@ -193,17 +198,37 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
-    const firstProvider = oaathProvider({ grant: firstGrant, chain: CHAIN_ID });
+    const validAfter = clock.now() + 10;
+    const validUntil = validAfter + 90;
+    const validityTimeRange = {
+      validAfter: `0x${validAfter.toString(16)}`,
+      validUntil: `0x${validUntil.toString(16)}`,
+    };
+    let confirmations = 0;
+    const firstProvider = oaathProvider({
+      grant: firstGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        confirmations += 1;
+        return "approved" as const;
+      },
+    });
 
     const prepared = (await firstProvider.request(
-      prepareRequest(account, {
-        url: SERVICE_URL,
-        context: { policyId: "prepared" },
-      }),
+      prepareRequest(
+        account,
+        {
+          url: SERVICE_URL,
+          context: { policyId: "prepared" },
+        },
+        validityTimeRange,
+      ),
     )) as PreparedRpcResponse;
     expect(prepared.capabilities).toEqual({
       paymasterService: { url: SERVICE_URL, context: { policyId: "prepared" } },
+      validityTimeRange,
     });
+    expect(confirmations).toBe(1);
     expect(registered.stages).toEqual(["stub", "estimate", "final"]);
     expect(registered.serviceRequests).toHaveLength(2);
     expect(registered.estimatorRequests).toHaveLength(1);
@@ -217,6 +242,10 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       contextId: prepared.context.id,
     });
     expect(retained?.value.digest).toBe(prepared.digest);
+    expect(retained?.value.validityTimeRange).toEqual({
+      validAfter: String(validAfter),
+      validUntil: String(validUntil),
+    });
     expect(retained?.value.prepared.userOperation.paymaster).toEqual({
       address: PAYMASTER,
       verificationGasLimit: "50",
@@ -260,19 +289,36 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const secondConnection = await after.oaath.connect();
     const secondGrant = await secondConnection.resume();
     if (secondGrant === null) throw new Error("expected the Grant to resume");
-    const secondProvider = oaathProvider({ grant: secondGrant, chain: CHAIN_ID });
+    const secondProvider = oaathProvider({
+      grant: secondGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        confirmations += 1;
+        throw new Error("send must not present again");
+      },
+    });
     const signature = await signPreparedDigest(prepared.digest);
 
     const sent = await secondProvider.request(sendRequest(prepared, signature));
     expect(base.quotes).toBe(2);
     expect(base.sends).toHaveLength(1);
     expect(base.sends[0]?.userOperationHash).toBe(prepared.digest);
+    expect(base.sends[0]?.userOperation.callData).toBe(
+      encodeKernelV4Execution({
+        calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+        validityTimeRange: {
+          validAfter: String(validAfter),
+          validUntil: String(validUntil),
+        },
+      }),
+    );
     expect(base.sends[0]?.userOperation.paymaster).toEqual(
       retained?.value.prepared.userOperation.paymaster,
     );
     await expect(secondProvider.request(sendRequest(prepared, signature))).resolves.toEqual(sent);
     expect(base.quotes).toBe(2);
     expect(base.sends).toHaveLength(1);
+    expect(confirmations).toBe(1);
     expect(registered.stages).toEqual(["stub", "estimate", "final"]);
     await secondConnection.close();
     secondStores.database.close();

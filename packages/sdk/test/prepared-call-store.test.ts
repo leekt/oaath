@@ -3,6 +3,9 @@ import type { Hash } from "viem";
 import { describe, expect, it } from "vitest";
 import {
   createIndexedDbPreparedCallStoreAdapter,
+  OAATH_INDEXEDDB_NAME,
+  OAATH_INDEXEDDB_STORES,
+  OAATH_INDEXEDDB_VERSION,
   type OaathDatabase,
   openOaathDatabase,
 } from "../src/persistence.js";
@@ -12,6 +15,8 @@ import {
 } from "../src/prepared-user-operation.js";
 import { hashWalletCallBundleProvenance } from "../src/provider/capture.js";
 import {
+  OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS,
+  OAATH_PREPARED_CALL_CONTEXT_VERSION,
   OAATH_PREPARED_CALL_STORE_RECORD_VERSION,
   type PreparedCallKey,
   type PreparedCallMutationResult,
@@ -139,7 +144,11 @@ function reservation(overrides: Record<string, unknown> = {}): Record<string, un
     account: ACCOUNT,
     chainId: CHAIN_ID,
     createdAt: 10,
-    expiresAt: 100,
+    expiresAt: 90,
+    validityTimeRange: {
+      validAfter: "5",
+      validUntil: "90",
+    },
     requestHash: hashOf("55"),
     keyHint: {
       type: "secp256k1",
@@ -212,11 +221,13 @@ describe("PreparedCallStore", () => {
     const input = reservation();
     const calls = input.calls as Record<string, unknown>[];
     const keyHint = input.keyHint as Record<string, unknown>;
+    const validityTimeRange = input.validityTimeRange as Record<string, unknown>;
 
     const pending = store.reservePrepared(input);
     input.grantId = "mutated-after-capture";
     calls[0] = { target: OTHER_ACCOUNT, value: "9", data: "0x" };
     keyHint.publicKey = `0x04${"ff".repeat(64)}`;
+    validityTimeRange.validUntil = "91";
 
     const prepared = requireCommitted(await pending);
     expect(prepared).toEqual({
@@ -228,6 +239,7 @@ describe("PreparedCallStore", () => {
         contextId: CONTEXT_ID,
         grantId: GRANT_ID,
         account: ACCOUNT,
+        version: OAATH_PREPARED_CALL_CONTEXT_VERSION,
         state: "prepared",
         publicationExpiresAt: null,
         bundleId: "prepared-bundle",
@@ -238,9 +250,11 @@ describe("PreparedCallStore", () => {
     });
     expect(prepared.value.calls).toEqual([{ target: TARGET, value: "0", data: "0x1234" }]);
     expect(prepared.value.keyHint.publicKey).toBe(`0x04${"66".repeat(64)}`);
+    expect(prepared.value.validityTimeRange).toEqual({ validAfter: "5", validUntil: "90" });
     expect(prepared.value.digest).toBe(prepared.value.prepared.userOperationHash);
     expect(Object.isFrozen(prepared.value.calls)).toBe(true);
     expect(Object.isFrozen(prepared.value.calls[0])).toBe(true);
+    expect(Object.isFrozen(prepared.value.validityTimeRange)).toBe(true);
 
     const consumed = requireCommitted(
       await store.consume({
@@ -259,6 +273,8 @@ describe("PreparedCallStore", () => {
       publicationExpiresAt: 50,
     });
     expect(consumed.value).not.toHaveProperty("terminalAt");
+    expect(consumed.value.validityTimeRange).toEqual(prepared.value.validityTimeRange);
+    expect(Object.isFrozen(consumed.value.validityTimeRange)).toBe(true);
     expect(await store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID })).toEqual(
       consumed,
     );
@@ -306,8 +322,7 @@ describe("PreparedCallStore", () => {
   });
 
   it("retains expiration and stale invalidation as incompatible terminal tombstones", async () => {
-    const adapter = new MemoryPreparedCallAdapter();
-    const store = new PreparedCallStore(adapter.adapter);
+    const store = new PreparedCallStore(createMemoryPreparedCallStoreAdapter());
     const expiredPrepared = requireCommitted(await store.reservePrepared(reservation()));
     const stalePrepared = requireCommitted(
       await store.reservePrepared(
@@ -322,6 +337,7 @@ describe("PreparedCallStore", () => {
             route: "direct",
             feePayer: { address: addressOf("45"), balance: "1000000000000000" },
           },
+          validityTimeRange: null,
         }),
       ),
     );
@@ -331,7 +347,7 @@ describe("PreparedCallStore", () => {
         store.markExpired({
           key: { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
           expectedStoreRevision: expiredPrepared.storeRevision,
-          terminalAt: 99,
+          terminalAt: 89,
         }),
       "store_input_invalid",
     );
@@ -374,6 +390,8 @@ describe("PreparedCallStore", () => {
     });
     expect(expired.value).not.toHaveProperty("consumedAt");
     expect(stale.value).not.toHaveProperty("consumedAt");
+    expect(expired.value.validityTimeRange).toEqual({ validAfter: "5", validUntil: "90" });
+    expect(stale.value.validityTimeRange).toBeNull();
 
     for (const terminal of [expired, stale]) {
       const transition = await store.consume({
@@ -394,6 +412,122 @@ describe("PreparedCallStore", () => {
     );
     await expectStoreError(
       () => parsePreparedCallRecord({ ...stale.value, publicationExpiresAt: 50 }),
+      "store_record_invalid",
+    );
+  });
+
+  it("rejects invalid validity evidence and every v1 durable shape", async () => {
+    expect(OAATH_PREPARED_CALL_CONTEXT_VERSION).toBe("oaath.prepared-call-context/v2");
+    expect(OAATH_PREPARED_CALL_STORE_RECORD_VERSION).toBe("oaath.prepared-call-store-record/v2");
+    const adapter = new MemoryPreparedCallAdapter();
+    const store = new PreparedCallStore(adapter.adapter);
+    const missingRange = reservation();
+    delete missingRange.validityTimeRange;
+    const invalidRanges: readonly unknown[] = [
+      undefined,
+      "0:1",
+      { validAfter: "0", validUntil: "1", unexpected: true },
+      { validAfter: "00", validUntil: "1" },
+      { validAfter: "0", validUntil: "01" },
+      { validAfter: (1n << 48n).toString(10), validUntil: "1" },
+      { validAfter: "0", validUntil: (1n << 48n).toString(10) },
+      { validAfter: "0", validUntil: "0" },
+      { validAfter: "1", validUntil: "1" },
+      { validAfter: "2", validUntil: "1" },
+    ];
+
+    await expectStoreError(() => store.reservePrepared(missingRange), "store_input_invalid");
+    for (const validityTimeRange of invalidRanges) {
+      await expectStoreError(
+        () => store.reservePrepared(reservation({ validityTimeRange })),
+        "store_input_invalid",
+      );
+    }
+    expect(adapter.compareAndSwapCalls).toBe(0);
+
+    await expectStoreError(
+      () =>
+        store.reservePrepared(
+          reservation({
+            validityTimeRange: null,
+            expiresAt: 10 + OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS + 1,
+          }),
+        ),
+      "store_input_invalid",
+    );
+    await expectStoreError(
+      () =>
+        store.reservePrepared(
+          reservation({
+            expiresAt: 92,
+            validityTimeRange: { validAfter: "5", validUntil: "90" },
+          }),
+        ),
+      "store_input_invalid",
+    );
+    expect(adapter.compareAndSwapCalls).toBe(0);
+
+    const committed = requireCommitted(await store.reservePrepared(reservation()));
+    await expectStoreError(
+      () =>
+        parsePreparedCallRecord({
+          ...committed.value,
+          version: "oaath.prepared-call-context/v1",
+        }),
+      "store_record_invalid",
+    );
+    adapter.overwrite(
+      { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
+      {
+        ...committed,
+        value: { ...committed.value, version: "oaath.prepared-call-context/v1" },
+      },
+    );
+    await expectStoreError(
+      () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
+      "store_record_invalid",
+    );
+
+    for (const validityTimeRange of invalidRanges) {
+      const planted = clone(committed) as unknown as {
+        value: Record<string, unknown>;
+      };
+      planted.value.validityTimeRange = validityTimeRange;
+      adapter.overwrite({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }, planted);
+      await expectStoreError(
+        () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
+        "store_record_invalid",
+      );
+    }
+
+    for (const value of [
+      {
+        ...committed.value,
+        validityTimeRange: null,
+        expiresAt: committed.value.createdAt + OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS + 1,
+      },
+      {
+        ...committed.value,
+        expiresAt: 92,
+        validityTimeRange: { validAfter: "5", validUntil: "90" },
+      },
+    ]) {
+      adapter.overwrite(
+        { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
+        { ...committed, value },
+      );
+      await expectStoreError(
+        () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
+        "store_record_invalid",
+      );
+    }
+
+    adapter.overwrite(
+      { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
+      { ...committed, version: "oaath.prepared-call-store-record/v1" },
+    );
+    await expectStoreError(
+      () => store.get({ providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID }),
       "store_record_invalid",
     );
   });
@@ -569,34 +703,57 @@ for (const backendCase of PREPARED_CALL_BACKENDS) {
 }
 
 describe("IndexedDB prepared-call durability", () => {
-  it("recreates the lifecycle owner and keeps a consumed context non-reusable", async () => {
+  it("retains exact v2 ranges across independent lifecycle-owner connections", async () => {
     const factory = new IDBFactory();
     const firstDatabase = await openOaathDatabase({ factory });
     const firstStore = new PreparedCallStore(
       createIndexedDbPreparedCallStoreAdapter(firstDatabase),
     );
-    const prepared = requireCommitted(await firstStore.reservePrepared(reservation()));
-    const consumed = requireCommitted(
-      await firstStore.consume({
-        key: { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID },
-        expectedStoreRevision: prepared.storeRevision,
-        consumedAt: 20,
-        publicationExpiresAt: 40,
-      }),
+    const rangedPrepared = requireCommitted(await firstStore.reservePrepared(reservation()));
+    const nullPrepared = requireCommitted(
+      await firstStore.reservePrepared(
+        reservation({
+          key: { providerScopeId: PROVIDER_SCOPE_ID, contextId: SECOND_CONTEXT_ID },
+          bundleId: "null-range-bundle",
+          bundleGeneration: hashOf("89"),
+          validityTimeRange: null,
+        }),
+      ),
     );
-    await firstStore.close();
-    firstDatabase.close();
 
     let secondDatabase: OaathDatabase | undefined;
     let secondStore: PreparedCallStore | undefined;
     try {
       secondDatabase = await openOaathDatabase({ factory });
       secondStore = new PreparedCallStore(createIndexedDbPreparedCallStoreAdapter(secondDatabase));
-      const key = { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID };
-      await expect(secondStore.get(key)).resolves.toEqual(consumed);
+      const rangedKey = { providerScopeId: PROVIDER_SCOPE_ID, contextId: CONTEXT_ID };
+      const nullKey = { providerScopeId: PROVIDER_SCOPE_ID, contextId: SECOND_CONTEXT_ID };
+      await expect(secondStore.get(rangedKey)).resolves.toEqual(rangedPrepared);
+      await expect(secondStore.get(nullKey)).resolves.toEqual(nullPrepared);
+
+      const consumed = requireCommitted(
+        await secondStore.consume({
+          key: rangedKey,
+          expectedStoreRevision: rangedPrepared.storeRevision,
+          consumedAt: 20,
+          publicationExpiresAt: 40,
+        }),
+      );
+      const stale = requireCommitted(
+        await firstStore.markStale({
+          key: nullKey,
+          expectedStoreRevision: nullPrepared.storeRevision,
+          terminalAt: 20,
+        }),
+      );
+      expect(consumed.value.validityTimeRange).toEqual({ validAfter: "5", validUntil: "90" });
+      expect(Object.isFrozen(consumed.value.validityTimeRange)).toBe(true);
+      expect(stale.value.validityTimeRange).toBeNull();
+      await expect(firstStore.get(rangedKey)).resolves.toEqual(consumed);
+      await expect(secondStore.get(nullKey)).resolves.toEqual(stale);
       await expect(
         secondStore.consume({
-          key,
+          key: rangedKey,
           expectedStoreRevision: consumed.storeRevision,
           consumedAt: 30,
           publicationExpiresAt: 50,
@@ -605,6 +762,49 @@ describe("IndexedDB prepared-call durability", () => {
     } finally {
       await secondStore?.close();
       secondDatabase?.close();
+      await firstStore.close();
+      firstDatabase.close();
+    }
+  });
+
+  it("wipes every v9 store when opening the v10 database without migration", async () => {
+    expect(OAATH_INDEXEDDB_VERSION).toBe(10);
+    const factory = new IDBFactory();
+    await new Promise<void>((resolve, reject) => {
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 9);
+      request.onupgradeneeded = () => {
+        for (const storeName of Object.values(OAATH_INDEXEDDB_STORES)) {
+          request.result.createObjectStore(storeName).put({ source: "v9" }, "stale");
+        }
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const database = await openOaathDatabase({ factory });
+    try {
+      expect(database.version).toBe(10);
+      const counts = await database.transact(
+        Object.values(OAATH_INDEXEDDB_STORES),
+        "readonly",
+        (stores) =>
+          Promise.all(
+            stores.map(
+              (store) =>
+                new Promise<number>((resolve, reject) => {
+                  const request = store.count();
+                  request.onsuccess = () => resolve(request.result);
+                  request.onerror = () => reject(request.error);
+                }),
+            ),
+          ),
+      );
+      expect(counts).toEqual(Object.values(OAATH_INDEXEDDB_STORES).map(() => 0));
+    } finally {
+      database.close();
     }
   });
 });

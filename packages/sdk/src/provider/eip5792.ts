@@ -126,7 +126,8 @@ function generatedBundleId(): string {
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function validityTimeRangeConfirmation(
+/** Shared inclusive seconds/UTC projection for every wallet-call confirmation flow. */
+export function projectValidityTimeRangeConfirmation(
   range: Readonly<{ validAfter: string; validUntil: string }>,
 ): NonNullable<OaathCallsConfirmation["validityTimeRange"]> | null {
   function utc(seconds: string): string | null {
@@ -381,7 +382,7 @@ export function createEip5792Orchestrator(
           })
           .catch(() => UNSUPPORTED_VALIDITY_ADMISSION);
         if (admitted.status === "accepted") {
-          presentedValidity = validityTimeRangeConfirmation(requestedValidity) ?? undefined;
+          presentedValidity = projectValidityTimeRangeConfirmation(requestedValidity) ?? undefined;
           if (presentedValidity !== undefined) validityAdmission = admitted.admission;
         }
         if (validityAdmission === null && !requestedValidity.optional) {
