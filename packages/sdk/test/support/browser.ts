@@ -34,6 +34,10 @@ import type {
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
 import {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+} from "../../src/kernel/modules.js";
+import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
   ecdsaKey,
@@ -397,6 +401,9 @@ function word(value: bigint): string {
 
 function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+    return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+  }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
     return selectedDeployment.implementationDeployment.runtimeCodeHash;
   }

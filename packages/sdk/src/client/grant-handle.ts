@@ -926,12 +926,18 @@ export function createGrantHandle(
    * account state observed at bind time, so reusing one after the account's first
    * operation deployed it would carry stale factory evidence.
    */
-  async function accountDescriptor(chainId: number): Promise<Readonly<KernelV4AccountDescriptor>> {
-    const runtime = ownerRuntime(chainId);
+  async function accountDescriptor(
+    chainId: number,
+    bindingRuntime?: Readonly<KernelRuntime>,
+  ): Promise<Readonly<KernelV4AccountDescriptor>> {
+    const owner = ownerRuntime(chainId);
+    const runtime = bindingRuntime ?? owner;
     try {
       return await runtime.bindAccount({
         accountIndex: input.binding.account.accountIndex,
-        initialPackages: [...runtime.packages],
+        // Account identity always comes from the owner; a session runtime only
+        // performs the bind so its signer and exact policy runtime are proven.
+        initialPackages: [...owner.packages],
       });
     } catch (error) {
       return mapClientFailure(error, "Kernel account could not be bound");
@@ -1061,7 +1067,7 @@ export function createGrantHandle(
     requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
     requireKernelCapability(chainId, "hook_call");
     const runtime = sessionRuntime(chainId);
-    const descriptor = await accountDescriptor(chainId);
+    const descriptor = await accountDescriptor(chainId, runtime);
     requireExecutionPublication();
     let publicationSnapshot = await requireActive();
     requireExecutionPublication();

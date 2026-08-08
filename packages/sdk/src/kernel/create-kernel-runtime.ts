@@ -28,7 +28,11 @@ import {
   runtimeFail,
   sameInstall,
 } from "./internal.js";
-import { exactKernelDeployment } from "./modules.js";
+import {
+  exactKernelDeployment,
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+} from "./modules.js";
 import type {
   CreateKernelRuntimeInput,
   KernelRuntime,
@@ -135,6 +139,12 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
   // asking the same question.
   const reachableModes: readonly KernelRuntimeValidationMode[] =
     validation.kind === "root" ? Object.freeze(["standard" as const]) : RUNTIME_MODES;
+  const hasValidityPolicy =
+    operator.authority === "session" &&
+    packages.some(
+      (install) => install.moduleType === 5 && install.module === OAATH_KERNEL_V4_VALIDITY_POLICY,
+    );
+  const validityPolicyProvenDescriptors = new WeakSet<object>();
 
   /**
    * Proves this authority's module carries code on the action chain. An owner's
@@ -144,12 +154,11 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
    * here. A caller-bound module carries no pinned review at all, which is why
    * code presence is proven before this runtime's bindAccount returns.
    *
-   * Boundary, stated exactly: this proof runs only in bindAccount. The
-   * permission ID is derived locally before any chain read can exist, and a
-   * descriptor bound by a DIFFERENT runtime reaches prepareOperation with this
-   * runtime's module unproven. Both fall through to Kernel's on-chain
-   * validation, where a codeless module reverts instead of validating — the
-   * refusal is fail-closed, merely later and costlier than this read.
+   * Boundary, stated exactly: this proof runs only in bindAccount. A session
+   * descriptor bound by a different runtime therefore cannot prove this
+   * runtime's signer or policy deployment. Requested validity ranges below are
+   * accepted only for descriptors returned by this runtime after the exact
+   * policy hash was observed.
    */
   async function proveAuthorityModule(): Promise<void> {
     const unavailable =
@@ -171,10 +180,34 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     }
   }
 
+  async function proveValidityPolicy(): Promise<void> {
+    if (!hasValidityPolicy) return;
+    let observed: unknown;
+    try {
+      observed = await read({
+        type: "runtime_code_hash",
+        chainId: deployment.chainId,
+        address: OAATH_KERNEL_V4_VALIDITY_POLICY,
+      });
+    } catch {
+      return runtimeFail(
+        "kernel_runtime_policy_unavailable",
+        "Kernel validity policy runtime code could not be read",
+      );
+    }
+    if (observed !== OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH) {
+      return runtimeFail(
+        "kernel_runtime_policy_unavailable",
+        "Kernel validity policy runtime code does not match the pinned artifact",
+      );
+    }
+  }
+
   async function bindAccount(
     input: KernelRuntimeBindAccountInput,
   ): Promise<Readonly<KernelV4AccountDescriptor>> {
     await proveAuthorityModule();
+    await proveValidityPolicy();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
     // field below; each caller field is read exactly once into its argument.
     const descriptor = await bindKernelV4Account({
@@ -194,16 +227,28 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
         "Kernel account root packages do not install this owner authority",
       );
     }
+    if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
     return descriptor;
   }
 
   function prepareOperation(input: KernelRuntimePrepareInput): PreparedUserOperation {
+    const requestsValidityRange = Object.hasOwn(input, "validityTimeRange");
+    const account = input.account;
+    if (
+      requestsValidityRange &&
+      (!hasValidityPolicy || !account || !validityPolicyProvenDescriptors.has(account))
+    ) {
+      return runtimeFail(
+        "kernel_runtime_policy_unavailable",
+        "Kernel requested validity range has no proven OAAth validity policy binding",
+      );
+    }
     // prepareKernelV4UserOperation owns exact capture of the account descriptor,
     // calls, gas, and nonce; this axis only binds the authority's validation.
     return prepareKernelV4UserOperation({
       kind: input.kind,
       grantId: input.grantId,
-      account: input.account,
+      account,
       nonce: {
         mode: runtimeMode(input.mode),
         validation,
@@ -212,6 +257,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       },
       calls: input.calls,
       gas: input.gas,
+      ...(requestsValidityRange ? { validityTimeRange: input.validityTimeRange } : {}),
       paymaster: input.paymaster ?? null,
     });
   }

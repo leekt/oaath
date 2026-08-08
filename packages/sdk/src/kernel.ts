@@ -102,6 +102,7 @@ export type {
   KernelV4UserOperationNonceInput,
   KernelV4Validation,
   KernelV4ValidationMode,
+  KernelV4ValidityTimeRange,
 } from "./kernel-v4.js";
 export {
   bindKernelV4Account,

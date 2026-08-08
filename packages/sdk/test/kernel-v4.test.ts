@@ -694,6 +694,41 @@ describe("Kernel v4 prepared UserOperation", () => {
     ).toBe(sponsored.userOperationHash);
   });
 
+  it("binds a requested validity range into calldata before the operation hash", async () => {
+    const base = {
+      kind: "execution" as const,
+      grantId: "kernel-v4-validity-range",
+      account: await descriptor("deployed"),
+      nonce: {
+        mode: "standard" as const,
+        validation: { kind: "permission" as const, permissionId },
+        nonceKey: "0",
+        sequence: "0",
+      },
+      calls: [{ target, value: "0", data: "0x" as const }],
+      gas,
+    };
+    const omitted = prepareKernelV4UserOperation(base);
+    const ranged = prepareKernelV4UserOperation({
+      ...base,
+      validityTimeRange: { validAfter: "200", validUntil: "900" },
+    });
+    const changed = prepareKernelV4UserOperation({
+      ...base,
+      validityTimeRange: { validAfter: "200", validUntil: "899" },
+    });
+
+    expect(omitted.userOperation.callData).toBe(encodeKernelV4Execution({ calls: base.calls }));
+    expect(ranged.userOperation.callData).toBe(
+      encodeKernelV4Execution({
+        calls: base.calls,
+        validityTimeRange: { validAfter: "200", validUntil: "900" },
+      }),
+    );
+    expect(ranged.userOperationHash).not.toBe(omitted.userOperationHash);
+    expect(changed.userOperationHash).not.toBe(ranged.userOperationHash);
+  });
+
   it("rejects hostile paymaster inputs instead of preparing a distorted identity", async () => {
     const accountDescriptor = await descriptor("deployed");
     const base = {
@@ -894,6 +929,51 @@ describe("Kernel v4 ERC-7579 execution codec", () => {
         ],
       ),
     );
+  });
+
+  it.each([
+    [
+      "single",
+      [{ target, value: "0", data: "0x1234" }],
+      "0x0000000000001ba8f4150000000000c800000000038400000000000000000000",
+    ],
+    [
+      "batch",
+      [
+        { target, value: "0", data: "0x1234" },
+        { target: validator, value: "1", data: "0xabcd" },
+      ],
+      "0x0100000000001ba8f4150000000000c800000000038400000000000000000000",
+    ],
+  ] as const)("encodes the exact signed validity range in %s mode", (_kind, calls, mode) => {
+    const decoded = decodeFunctionData({
+      abi: kernelAbi,
+      data: encodeKernelV4Execution({
+        calls,
+        validityTimeRange: { validAfter: "200", validUntil: "900" },
+      }),
+    });
+    expect(decoded.args?.[0]).toBe(mode);
+  });
+
+  it.each([
+    null,
+    undefined,
+    {},
+    { validAfter: "0", validUntil: "0" },
+    { validAfter: "1", validUntil: "1" },
+    { validAfter: "2", validUntil: "1" },
+    { validAfter: "01", validUntil: "2" },
+    { validAfter: "0x1", validUntil: "2" },
+    { validAfter: "0", validUntil: "281474976710656" },
+    { validAfter: "0", validUntil: "2", extra: true },
+  ])("rejects malformed requested validity range %#", (validityTimeRange) => {
+    expect(() =>
+      asHostile(encodeKernelV4Execution)({
+        calls: [{ target, value: "0", data: "0x" }],
+        validityTimeRange,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
   });
 
   it.each([

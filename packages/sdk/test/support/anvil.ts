@@ -82,7 +82,7 @@ export interface DeploymentFixture {
   /** The Daimo P-256 verifier the pinned WebAuthnSigner depends on. */
   p256Verifier: VerifierFixture;
   callPolicy: ModuleFixture;
-  timestampPolicy: ModuleFixture;
+  validityPolicy: ModuleFixture;
   rateLimitPolicy: ModuleFixture;
 }
 

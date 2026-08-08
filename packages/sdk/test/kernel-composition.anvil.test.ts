@@ -155,7 +155,7 @@ async function createHarness() {
       [pinnedSignerModule("ecdsa"), fixture.ecdsaSigner],
       [pinnedSignerModule("webauthn"), fixture.webAuthnSigner],
       [pinnedPolicyModule("call"), fixture.callPolicy],
-      [pinnedPolicyModule("expiry"), fixture.timestampPolicy],
+      [pinnedPolicyModule("expiry"), fixture.validityPolicy],
       [pinnedPolicyModule("operation-limit"), fixture.rateLimitPolicy],
     ] as const) {
       expect(pinned).toBe(module.expectedAddress);
@@ -1230,14 +1230,14 @@ async function createHarness() {
     expect(await client.getBalance({ address: ownerTarget })).toBe(55n);
   }, 90_000);
 
-  it("enforces a multi-package session, its validity window, and its operation count", async () => {
+  it("enforces a multi-package session, requested validity, and its operation count", async () => {
     const harness = await createHarness();
     const { fixture, client, wallet, submitter, reads, deployModule, deployValidator, send } =
       harness;
     await deployKernelStack(harness);
     for (const module of [
       fixture.callPolicy,
-      fixture.timestampPolicy,
+      fixture.validityPolicy,
       fixture.rateLimitPolicy,
       fixture.ecdsaSigner,
     ]) {
@@ -1281,12 +1281,14 @@ async function createHarness() {
     expect(deployed).toMatchObject({ state: "deployed", account });
 
     const latest = await client.getBlock({ blockTag: "latest" });
-    const validUntil = Number(latest.timestamp) + 3_600;
+    const ceilingUntil = Number(latest.timestamp) + 3_600;
+    const requestedUntil = Number(latest.timestamp) + 600;
     const expiryTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     // Two policy packages under one permission: CallPolicy for the call and value
-    // axes, TimestampPolicy for the window. This is the exact shape Kernel refused
-    // with FailedOpWithRevert(0, "AA23 reverted", InvalidSignature()) while the
-    // permission envelope carried a fixed two-slice signature.
+    // axes, OaathKernelV4ValidityPolicy for the window. This is the exact shape
+    // Kernel refused with FailedOpWithRevert(0, "AA23 reverted",
+    // InvalidSignature()) while the permission envelope carried a fixed
+    // two-slice signature.
     const expiryRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
@@ -1299,7 +1301,7 @@ async function createHarness() {
             kind: "call",
             permissions: [{ target: expiryTarget, selector: "0x00000000", valueLimit: "500" }],
           },
-          { kind: "expiry", validAfter: "0", validUntil: validUntil.toString(10) },
+          { kind: "expiry", validAfter: "0", validUntil: ceilingUntil.toString(10) },
         ],
       }),
       reads,
@@ -1307,9 +1309,17 @@ async function createHarness() {
     expect(expiryRuntime.packages.map((entry) => entry.moduleType)).toEqual([5, 5, 6]);
     expect(expiryRuntime.packages.map((entry) => entry.module)).toEqual([
       fixture.callPolicy.expectedAddress,
-      fixture.timestampPolicy.expectedAddress,
+      fixture.validityPolicy.expectedAddress,
       fixture.ecdsaSigner.expectedAddress,
     ]);
+    // Bind through the session runtime, while preserving the owner's initial
+    // packages and therefore the same account identity. This exact bind proves
+    // both the signer code and the OAAth policy's pinned runtime hash.
+    const sessionBound = await expiryRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(sessionBound.account).toBe(account);
     expect(
       await send(
         ownerRuntime,
@@ -1331,14 +1341,15 @@ async function createHarness() {
       ),
     ).toBe("success");
 
-    // The regression itself: a two-package session executes its covered call.
+    // Omitted range bytes retain the installed ceiling and execute through the
+    // original zero mode byte-for-byte.
     expect(
       await send(
         expiryRuntime,
         expiryRuntime.prepareOperation({
           kind: "execution",
           grantId: "kernel-composition-expiry-covered",
-          account: deployed,
+          account: sessionBound,
           nonceKey: "0",
           sequence: "0",
           calls: [{ target: expiryTarget, value: "500", data: "0x" }],
@@ -1348,28 +1359,72 @@ async function createHarness() {
     ).toBe("success");
     expect(await client.getBalance({ address: expiryTarget })).toBe(500n);
 
-    // Past the installed validUntil, EntryPoint itself refuses the same session:
-    // TimestampPolicy returns the packed range and EntryPoint enforces it, so the
-    // window is a chain fact, not a client-side refusal.
-    const expired = expiryRuntime.prepareOperation({
+    // A tighter per-operation range is part of callData before userOpHash and
+    // remains executable inside the installed ceiling.
+    const tighter = expiryRuntime.prepareOperation({
       kind: "execution",
-      grantId: "kernel-composition-expiry-expired",
-      account: deployed,
+      grantId: "kernel-composition-expiry-tighter",
+      account: sessionBound,
       nonceKey: "0",
       sequence: "1",
       calls: [{ target: expiryTarget, value: "1", data: "0x" }],
       gas,
+      validityTimeRange: { validAfter: "0", validUntil: requestedUntil.toString(10) },
     });
-    await client.request({
-      method: "evm_increaseTime" as "eth_chainId",
-      params: [3_601] as never,
+    const tighterSignature = await expiryRuntime.signOperation(tighter);
+
+    // Mutating only the signed range changes the operation identity. Reusing the
+    // old signature is rejected by signer validation even though both ranges are
+    // within the installed ceiling.
+    const mutated = expiryRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-expiry-tighter",
+      account: sessionBound,
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target: expiryTarget, value: "1", data: "0x" }],
+      gas,
+      validityTimeRange: { validAfter: "1", validUntil: requestedUntil.toString(10) },
     });
+    expect(mutated.userOperationHash).not.toBe(tighter.userOperationHash);
+    expect(await harness.rejectionOf(mutated, tighterSignature)).toMatchObject({
+      errorName: "FailedOp",
+      args: [0n, "AA24 signature error"],
+    });
+    expect(await send(expiryRuntime, tighter)).toBe("success");
+    expect(await client.getBalance({ address: expiryTarget })).toBe(501n);
+
+    // Sign a fresh sequence-2 operation while its requested subrange is still
+    // live, then advance only beyond that subrange. EntryPoint must refuse those
+    // exact already-signed bytes as AA22 while the installed ceiling remains live.
+    const expired = expiryRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "kernel-composition-expiry-expired",
+      account: sessionBound,
+      nonceKey: "0",
+      sequence: "2",
+      calls: [{ target: expiryTarget, value: "1", data: "0x" }],
+      gas,
+      validityTimeRange: { validAfter: "0", validUntil: requestedUntil.toString(10) },
+    });
+    const expiredSignature = await expiryRuntime.signOperation(expired);
+    const beforeExpiry = await client.getBlock({ blockTag: "latest" });
+    const increase = BigInt(requestedUntil + 1) - beforeExpiry.timestamp;
+    if (increase > 0n) {
+      await client.request({
+        method: "evm_increaseTime" as "eth_chainId",
+        params: [Number(increase)] as never,
+      });
+    }
     await client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
-    expect(await harness.rejection(expiryRuntime, expired)).toMatchObject({
+    const afterRequestedRange = await client.getBlock({ blockTag: "latest" });
+    expect(afterRequestedRange.timestamp).toBeGreaterThan(BigInt(requestedUntil));
+    expect(afterRequestedRange.timestamp).toBeLessThan(BigInt(ceilingUntil));
+    expect(await harness.rejectionOf(expired, expiredSignature)).toMatchObject({
       errorName: "FailedOp",
       args: [0n, "AA22 expired or not due"],
     });
-    expect(await client.getBalance({ address: expiryTarget })).toBe(500n);
+    expect(await client.getBalance({ address: expiryTarget })).toBe(501n);
 
     // One session limited to two operations: the second still executes, the third
     // is refused because RateLimitPolicy's count is exhausted.

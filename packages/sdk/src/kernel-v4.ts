@@ -31,9 +31,11 @@ const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const NO_HOOK = `0x${"00".repeat(19)}01` as const;
 const MAX_UINT16 = (1n << 16n) - 1n;
+const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT64 = (1n << 64n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const BOUND_ACCOUNTS = new WeakSet<object>();
+const VALIDITY_TIME_RANGE_MODE_SELECTOR = "0x1ba8f415" as const;
 
 export const KERNEL_V4_ENTRY_POINT_V07 = "0x0000000071727de22e5e9d8baf0edac6f37da032" as const;
 export const KERNEL_V4_UUPS_IMPLEMENTATION_V07 =
@@ -173,6 +175,8 @@ export interface KernelV4UserOperationInput {
   readonly nonce: KernelV4UserOperationNonceInput;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
+  /** Optional request-time attenuation enforced by the installed OAAth validity policy. */
+  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
   /**
    * Optional EntryPoint 0.7 paymaster sponsorship. Absent or null prepares a
    * self-funded operation. The fields are hashed into the operation identity,
@@ -198,6 +202,15 @@ export interface KernelV4ReplayableInstallDigestInput {
 
 export interface KernelV4ExecutionInput {
   readonly calls: readonly KernelV4Call[];
+  /** Optional exact ERC-7579 mode range; omission preserves the existing zero mode. */
+  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+}
+
+export interface KernelV4ValidityTimeRange {
+  /** Inclusive lower endpoint, as canonical decimal uint48 seconds. */
+  readonly validAfter: string;
+  /** Inclusive nonzero upper endpoint, strictly greater than validAfter. */
+  readonly validUntil: string;
 }
 
 export type KernelV4AccountReadRequest =
@@ -1027,15 +1040,12 @@ export function prepareKernelV4UserOperation(
 ): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
   const captured = captureRecord(value, "Kernel UserOperation", context, fail);
-  // The paymaster axis is optional at this boundary; every other key is exact.
-  const record = exactCapturedRecord(
-    captured,
-    Object.hasOwn(captured, "paymaster")
-      ? ["kind", "grantId", "account", "nonce", "calls", "gas", "paymaster"]
-      : ["kind", "grantId", "account", "nonce", "calls", "gas"],
-    "Kernel UserOperation",
-    fail,
-  );
+  // Validity attenuation and paymaster sponsorship are the two optional axes;
+  // every present field is still captured exactly at this boundary.
+  const keys = ["kind", "grantId", "account", "nonce", "calls", "gas"];
+  if (Object.hasOwn(captured, "validityTimeRange")) keys.push("validityTimeRange");
+  if (Object.hasOwn(captured, "paymaster")) keys.push("paymaster");
+  const record = exactCapturedRecord(captured, keys, "Kernel UserOperation", fail);
   if (record.kind !== "execution" && record.kind !== "revocation") {
     return fail("Kernel UserOperation kind is invalid");
   }
@@ -1060,7 +1070,14 @@ export function prepareKernelV4UserOperation(
     sequence: uint(nonceRecord.sequence, MAX_UINT64, "Kernel nonce sequence").toString(10),
   });
   const calls = captureCalls(record.calls, context);
-  const execution = encodeKernelV4Execution({ calls });
+  const execution = encodeKernelV4Execution(
+    Object.hasOwn(record, "validityTimeRange")
+      ? {
+          calls,
+          validityTimeRange: record.validityTimeRange as Readonly<KernelV4ValidityTimeRange>,
+        }
+      : { calls },
+  );
   const gasRecord = exact(
     record.gas,
     [
@@ -1368,13 +1385,49 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
   );
 }
 
+function captureValidityTimeRange(
+  value: unknown,
+  context: CaptureContext,
+): Readonly<KernelV4ValidityTimeRange> {
+  const record = exact(value, ["validAfter", "validUntil"], "Kernel validity time range", context);
+  const validAfter = uint(record.validAfter, MAX_UINT48, "Kernel validity range validAfter");
+  const validUntil = uint(record.validUntil, MAX_UINT48, "Kernel validity range validUntil");
+  if (validUntil === 0n || validAfter >= validUntil) {
+    return fail("Kernel validity time range is invalid");
+  }
+  return Object.freeze({
+    validAfter: validAfter.toString(10),
+    validUntil: validUntil.toString(10),
+  });
+}
+
 /** Encodes one or more calls through Kernel v4's ERC-7579 execute entrypoint. */
 export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
   const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["calls"], "Kernel execution", context);
+  const captured = captureRecord(value, "Kernel execution", context, fail);
+  const record = exactCapturedRecord(
+    captured,
+    Object.hasOwn(captured, "validityTimeRange") ? ["calls", "validityTimeRange"] : ["calls"],
+    "Kernel execution",
+    fail,
+  );
   const calls = captureCalls(record.calls, context);
   const single = calls.length === 1 ? calls[0] : undefined;
-  const mode = single ? (`0x${"00".repeat(32)}` as const) : (`0x0100${"00".repeat(30)}` as const);
+  const validityTimeRange = Object.hasOwn(record, "validityTimeRange")
+    ? captureValidityTimeRange(record.validityTimeRange, context)
+    : null;
+  const mode = validityTimeRange
+    ? concat([
+        single ? "0x00" : "0x01",
+        `0x${"00".repeat(5)}`,
+        VALIDITY_TIME_RANGE_MODE_SELECTOR,
+        toHex(BigInt(validityTimeRange.validAfter), { size: 6 }),
+        toHex(BigInt(validityTimeRange.validUntil), { size: 6 }),
+        `0x${"00".repeat(10)}`,
+      ])
+    : single
+      ? (`0x${"00".repeat(32)}` as const)
+      : (`0x0100${"00".repeat(30)}` as const);
   const executionData = single
     ? concat([single.target, toHex(BigInt(single.value), { size: 32 }), single.data])
     : encodeAbiParameters(

@@ -130,20 +130,21 @@ const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}
 const CALL_POLICY = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2" as const;
 
 /**
- * ZeroDev's reviewed TimestampPolicy (moduleType 5), which returns the ERC-4337
- * packed validAfter/validUntil range EntryPoint enforces, so an expired session
- * is refused on-chain with AA22 rather than by client-side refusal. Package
- * `zerodev-kernel-timestamp-policy` 0.0.1, source mirrored at
- * https://github.com/cartesi/erc-4337-devnet
- * (zerodev/kernel-timestamp-policy/0.0.1/src/TimestampPolicy.sol) with its own
- * vendored Kernel v3 dependencies and build profile (solc 0.8.24+commit.e11b9ed9,
- * via-IR, optimizer 200 runs, EVM paris, bytecode hash and CBOR metadata
- * disabled). Recompiling that source with that profile reproduces the package's
- * own cannon `expected` address bit for bit, so this address is ZeroDev's, not
- * ours. Its PolicyBase.onInstall takes `id ‖ abi.encode(ValidAfter, ValidUntil)`,
- * two uint48 words, which is exactly what permission/compile.ts emits.
+ * OAAth's Kernel v4 validity policy (moduleType 5). Its accepted deterministic
+ * artifact lives in @oaath/contracts and pins the source, compiler profile,
+ * zero-salt singleton-deployer input, address and runtime hash. The address alone
+ * is not deployment evidence: a session bind reads the action chain and requires
+ * this exact runtime hash before the permission can prepare a requested range.
+ *
+ * onInstall takes `id ‖ abi.encode(uint48 validAfter,uint48 validUntil)`, exactly
+ * what permission/compile.ts emits. A zero execution-mode selector returns that
+ * immutable ceiling; selector 0x1ba8f415 returns only a signed per-operation
+ * subrange. checkSignaturePolicy always fails, keeping the module execution-only.
  */
-const TIMESTAMP_POLICY = "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f" as const;
+export const OAATH_KERNEL_V4_VALIDITY_POLICY =
+  "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152" as const;
+export const OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH =
+  "0xb52f33e68aecb57bda6a5edeae51adbd01587b4b834766027d7b510a30354151" as const;
 
 /**
  * ZeroDev's reviewed RateLimitPolicy (moduleType 5), which caps how many
@@ -176,8 +177,9 @@ const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
  * All four axes are bound, which took one SDK-side fix. Recorded history, because
  * the failure mode is not obvious from the ABI: a permission carrying two policy
  * packages installed correctly — `validationInfo(vId)` read
- * `policies = [CallPolicy, TimestampPolicy]`, `signer = ECDSASigner`, hook = the
- * no-hook sentinel — yet its first operation was rejected with EntryPoint
+ * `policies = [CallPolicy, OaathKernelV4ValidityPolicy]`, `signer =
+ * ECDSASigner`, hook = the no-hook sentinel — yet its first operation was
+ * rejected with EntryPoint
  * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, Kernel's
  * `InvalidSignature()`, because `ValidationManager._validateUserOpPermission`
  * requires `permissionSignature.signatures.length == vInfo.policies.length + 1`
@@ -191,7 +193,7 @@ const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
 const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x${string}`>>> =
   Object.freeze({
     call: CALL_POLICY,
-    expiry: TIMESTAMP_POLICY,
+    expiry: OAATH_KERNEL_V4_VALIDITY_POLICY,
     "operation-limit": RATE_LIMIT_POLICY,
   });
 

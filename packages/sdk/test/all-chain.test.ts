@@ -1,6 +1,12 @@
 import { concat, encodeAbiParameters, hashTypedData, keccak256, recoverAddress, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+// Internal on purpose: requested-range authorization depends on the exact
+// deterministic policy runtime, while the public surface exposes its meaning.
+import {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+} from "../src/kernel/modules.js";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
@@ -47,6 +53,9 @@ function runtimeCodeHash(
   chain: typeof chainId | typeof otherChainId,
 ): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+    return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+  }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
     return kernelV4Deployment(chain).implementationDeployment.runtimeCodeHash;
   }
@@ -368,6 +377,50 @@ describe("all-chain permission materialization", () => {
     expect(remoteMaterialized.prepared.chainId).toBe(otherChainId);
     expect(remoteMaterialized.prepared.userOperationHash).not.toBe(
       materialized.prepared.userOperationHash,
+    );
+  });
+
+  it("forwards a requested validity range without changing the approved package ceiling", async () => {
+    const runtime = createKernelRuntime({
+      deployment: kernelV4Deployment(chainId),
+      operator: sessionOperator({
+        key: ecdsaKey({ account: sessionAccount, validator }),
+        policies: [
+          { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "500" }] },
+          { kind: "expiry", validAfter: "0", validUntil: "2000" },
+        ],
+      }),
+      reads: reads(),
+    });
+    const approval = await approve(runtime.packages);
+    const bound = await runtime.bindAccount({
+      accountIndex: "0",
+      initialPackages: local.owner.packages,
+    });
+    const request = {
+      approval,
+      runtime,
+      grantId: "all-chain-validity-range",
+      account: bound,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" as const }],
+      gas,
+    };
+    const first = await materializeKernelPermission({
+      ...request,
+      validityTimeRange: { validAfter: "100", validUntil: "1000" },
+    });
+    const second = await materializeKernelPermission({
+      ...request,
+      validityTimeRange: { validAfter: "100", validUntil: "999" },
+    });
+
+    expect(first.prepared.userOperation.callData).toContain("1ba8f415");
+    expect(first.prepared.userOperationHash).not.toBe(second.prepared.userOperationHash);
+    expect(approval.packages).toEqual(runtime.packages);
+    expect(approval.digest).toBe(
+      kernelV4ReplayableInstallDigest({ account, nonce: "0", packages: runtime.packages }),
     );
   });
 

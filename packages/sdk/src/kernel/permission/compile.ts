@@ -11,7 +11,7 @@
  * spend carries a zero ceiling rather than an unlimited sentinel.
  *
  * Each axis resolves to its own reviewed module: calls to CallPolicy, the
- * validity window to TimestampPolicy, the per-chain operation count to
+ * validity window to OaathKernelV4ValidityPolicy, the per-chain operation count to
  * RateLimitPolicy. Expiry is therefore enforced on-chain through the ERC-4337
  * validationData time range that Kernel intersects across policies, not by
  * client-side refusal. An axis with no pinned module fails closed with
@@ -158,8 +158,8 @@ export function compileCapturedKernelPermissionPolicy(
       );
       const after = inputUint(record.validAfter, MAX_UINT48, "Kernel expiry policy validAfter");
       const until = inputUint(record.validUntil, MAX_UINT48, "Kernel expiry policy validUntil");
-      // An unbounded or inverted window is not a scope: TimestampPolicy reads
-      // validUntil 0 as no expiry at all, which is what expiry exists to prevent.
+      // An unbounded or inverted window is not a scope: the OAAth validity
+      // policy requires one finite increasing immutable ceiling.
       if (until === 0n || until <= after) {
         return inputInvalid("Kernel expiry policy validity window is invalid");
       }
