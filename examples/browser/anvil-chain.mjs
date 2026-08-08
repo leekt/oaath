@@ -121,6 +121,7 @@ export async function createAnvilChain(chainId) {
                   blockHash: receipt.blockHash,
                   transactionIndex: receipt.transactionIndex,
                   status: receipt.status,
+                  gasUsed: receipt.gasUsed,
                   logs: receipt.logs.map(logEvidence),
                 };
           }
@@ -258,6 +259,8 @@ export async function createAnvilChain(chainId) {
         address: stack.submitter.address.toLowerCase(),
         balance: feePayerBalance.toString(10),
       },
+      paymasterService: null,
+      staticPaymasterConfigurationHash: null,
     },
   };
 }

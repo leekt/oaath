@@ -1,7 +1,7 @@
 /**
  EXPERIMENTAL PREVIEW — the shared golden wire fixture, decoded byte for byte.
 
- ONE committed fixture, two consumers: `exactSignatureProjectionBytes` is one
+ ONE committed fixture, two consumers: `exactOwnerSigningProjectionBytes` is one
  exact JSON string whose UTF-8 bytes the relay route test and this Swift test
  both consume before decoding. The object entries cover every remaining closed
  union branch. A byte or shape drift fails at least one consumer.
@@ -50,17 +50,66 @@ final class GoldenFixtureTests: XCTestCase {
         XCTAssertEqual(scope.calls.count, 1)
         XCTAssertEqual(scope.perChainOperationLimit, 10)
 
-        guard let exactText = fixture["exactSignatureProjectionBytes"] as? String else {
-            return XCTFail("golden exact signature projection bytes are missing")
+        guard let exactText = fixture["exactOwnerSigningProjectionBytes"] as? String else {
+            return XCTFail("golden exact owner-signing projection bytes are missing")
         }
         let exactBytes = Data(exactText.utf8)
         XCTAssertEqual(String(decoding: exactBytes, as: UTF8.self), exactText)
-        let signature = try OwnerPhoneRequestProjection.decode(exactBytes)
-        guard case let .signatureRequest(request) = signature.scope else {
-            return XCTFail("golden signatureRequest did not decode structurally")
+        let signing = try OwnerPhoneRequestProjection.decode(exactBytes)
+        guard case let .ownerSigningRequest(scope) = signing.scope,
+              case let .eip712(request) = scope.request
+        else {
+            return XCTFail("golden ownerSigningRequest did not decode structurally")
         }
-        XCTAssertEqual(request.digest, "0x" + String(repeating: "4b", count: 32))
-        XCTAssertTrue(request.display.contains("kernel-enable-digest"))
+        XCTAssertEqual(
+            scope.requestHash,
+            "0x1588b0d137ab76a1f63adc58befd1137642312ea71cdca34659851e4796488ba")
+        XCTAssertEqual(request.purpose, .application)
+        XCTAssertEqual(request.signer.account, "0x1111111111111111111111111111111111111111")
+        XCTAssertEqual(request.typedData.primaryType, "Mail")
+        XCTAssertEqual(
+            request.expectedDigest,
+            "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2")
+        guard case let .matches(derived) = request.digestComparison else {
+            return XCTFail("golden owner-signing digest did not match locally")
+        }
+        XCTAssertEqual(derived.canonicalHex, request.expectedDigest)
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
+
+        let kernelEnable = try OwnerPhoneRequestProjection.decode(
+            try bytes(fixture, "projection", "kernelEnableOwnerSigningRequest"))
+        guard case let .ownerSigningRequest(kernelScope) = kernelEnable.scope,
+              case let .eip712(kernelRequest) = kernelScope.request
+        else {
+            return XCTFail("golden kernelEnableOwnerSigningRequest did not decode structurally")
+        }
+        XCTAssertEqual(
+            kernelScope.requestHash,
+            "0xa00d9d6245f9adb00f254c6ea1295c9fb7e6bba1adfd479e6dc51fe4fa5538e4")
+        XCTAssertEqual(kernelRequest.purpose, .kernelEnable)
+        XCTAssertEqual(kernelRequest.typedData.primaryType, "InstallPackages")
+        XCTAssertEqual(
+            kernelRequest.expectedDigest,
+            "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03")
+        guard case let .matches(kernelDerived) = kernelRequest.digestComparison else {
+            return XCTFail("golden Kernel enable digest did not match locally")
+        }
+        XCTAssertEqual(kernelDerived.canonicalHex, kernelRequest.expectedDigest)
+        XCTAssertEqual(kernelScope.decisionCapability, .approveOrReject)
+
+        let rawDigest = try OwnerPhoneRequestProjection.decode(
+            try bytes(fixture, "projection", "rawDigestOwnerSigningRequest"))
+        guard case let .ownerSigningRequest(rawScope) = rawDigest.scope,
+              case let .rawDigest(rawRequest) = rawScope.request
+        else {
+            return XCTFail("golden raw-digest request did not decode structurally")
+        }
+        XCTAssertEqual(
+            rawScope.requestHash,
+            "0xc54b4026d0a405712135675831934bf49451ca293a1d0d528d26979e7c0fc40a")
+        XCTAssertEqual(rawRequest.digest, "0x" + String(repeating: "44", count: 32))
+        XCTAssertEqual(rawRequest.reason, "No device-side derivation is available")
+        XCTAssertEqual(rawScope.decisionCapability, .rejectOnly)
 
         let raw = try OwnerPhoneRequestProjection.decode(try bytes(fixture, "projection", "raw"))
         guard case .raw = raw.scope else {

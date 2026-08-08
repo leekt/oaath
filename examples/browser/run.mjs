@@ -41,6 +41,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
@@ -192,6 +193,7 @@ const stores = {
   grants: createMemoryGrantStoreAdapter(),
   operations: createMemoryOperationStoreAdapter(),
   walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
+  preparedCallContexts: createMemoryPreparedCallStoreAdapter(),
   keys: createMemoryKeyStore(),
   cleanup: createMemoryCleanupStore(),
   context: createMemoryContextStore(),

@@ -619,6 +619,74 @@ describe("OperationRunner", () => {
     await operationRunner.close();
   });
 
+  it("resumes one exact prepared identity after producer recreation", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    await seedPreparedOperation(store, snapshot);
+    const count = counters();
+    let reservations = 0;
+    const recreated = runner({
+      store,
+      prepared: snapshot,
+      counters: count,
+      async reserveOperation(exact) {
+        expect(exact).toEqual(snapshot);
+        reservations += 1;
+      },
+    });
+
+    const result = await recreated.resumePreparedOperation({
+      ...runInput("execution"),
+      expectedUserOperationHash: snapshot.userOperationHash,
+    });
+
+    expect(result).toMatchObject({
+      status: "started",
+      record: {
+        value: {
+          state: "submitted",
+          identity: { userOperationHash: snapshot.userOperationHash },
+        },
+      },
+    });
+    expect(reservations).toBe(1);
+    expect(count).toMatchObject({ prepares: 1, authorizes: 1, opens: 1, sends: 1 });
+    await recreated.close();
+  });
+
+  it("never reopens submission when an exact resumed identity was already attempted", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const store = memoryStore(control);
+    const snapshot = prepared("execution");
+    const seeded = await seedPreparedOperation(store, snapshot);
+    const attempted = advanceOperation(seeded.value, {
+      type: "mark_submission_attempted",
+      identity: seeded.value.identity,
+      attemptedAt: 11,
+    });
+    const committed = await store.compareAndSwap({
+      key,
+      expectedStoreRevision: seeded.storeRevision,
+      next: attempted,
+    });
+    expect(committed.status).toBe("committed");
+    const count = counters();
+    const recreated = runner({ store, prepared: snapshot, counters: count });
+
+    const result = await recreated.resumePreparedOperation({
+      ...runInput("execution"),
+      expectedUserOperationHash: snapshot.userOperationHash,
+    });
+
+    expect(result).toMatchObject({
+      status: "started",
+      record: { value: { state: "submission_attempted" } },
+    });
+    expect(count).toMatchObject({ prepares: 1, authorizes: 0, opens: 0, sends: 0 });
+    await recreated.close();
+  });
+
   it("fences publication before submission and persists request provenance", async () => {
     const events: string[] = [];
     const control: MemoryControl = {

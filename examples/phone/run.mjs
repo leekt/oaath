@@ -16,7 +16,14 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { p256 } from "@noble/curves/nist.js";
-import { deriveCodeChallenge, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  deriveCodeChallenge,
+  hashCanonicalEip712TypedData,
+  hashOwnerSigningRequest,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_SIGNING_REQUEST_VERSION,
+  parseOwnerSigningRequest,
+} from "@oaath/protocol";
 import { prepareSponsoredKernelOperation } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
@@ -27,6 +34,8 @@ import {
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
   kernelV4Deployment,
+  kernelV4ReplayableInstallDigest,
+  kernelV4ReplayableInstallTypedData,
   materializeKernelPermission,
   ownerOperator,
   p256Key,
@@ -34,7 +43,6 @@ import {
 } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
-import { OAATH_SIGNATURE_REQUEST_SCOPE_VERSION } from "@oaath/server/native";
 import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { build } from "esbuild";
 import QRCode from "qrcode";
@@ -46,8 +54,6 @@ import {
   AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
-  canonicalDisplay,
-  captureCanonicalDisplay,
   captureZeroDevSponsorship,
   createLiveUserOperationObserver,
   createStackOperationObserver,
@@ -66,11 +72,13 @@ import {
   validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
 } from "./operation.mjs";
+import { captureKernelOwnerSignature } from "./owner-signing.mjs";
 
 const SIMULATE = process.env.OAATH_PHONE_SIMULATE === "1";
 const LIVE = process.env.OAATH_ZERODEV_LIVE === "1";
 const CHAIN_ID = 421_614;
 const CHAIN_NAME = "Arbitrum Sepolia";
+const INSTALL_NONCE = "0";
 const GAS = Object.freeze({
   callGasLimit: "900000",
   verificationGasLimit: "3000000",
@@ -101,6 +109,9 @@ if (LIVE && !process.env.ZERODEV_PROJECT_ID)
 const MODE = LIVE ? "zerodev-bundler-paymaster" : "anvil";
 const say = (...parts) => console.log(...parts);
 const event = (name, fields = {}) => {
+  if (SIMULATE && (name === "signature.approved" || name === "permission.approved")) {
+    throw new Error("simulation emitted a phone-consent approval claim");
+  }
   const details = Object.entries(fields)
     .filter(([, value]) => value !== undefined && value !== null)
     .map(([key, value]) => `${key}=${value}`)
@@ -257,15 +268,15 @@ async function relayCall(method, path, token, body) {
   if (!response.ok) throw new Error(payload.error?.code ?? `relay_${response.status}`);
   return payload;
 }
-function p256Profile(publicMaterial, sign) {
-  return p256Key({
-    credential: {
-      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-      kind: "p256",
-      publicKey: `0x04${publicMaterial.slice(2)}`,
-    },
-    sign,
+function pairedP256Credential(publicMaterial) {
+  return Object.freeze({
+    version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+    kind: "p256",
+    publicKey: `0x04${publicMaterial.slice(2)}`,
   });
+}
+function p256Profile(publicMaterial, sign) {
+  return p256Key({ credential: pairedP256Credential(publicMaterial), sign });
 }
 async function bindOwner(publicMaterial) {
   ownerRuntime = createKernelRuntime({
@@ -355,13 +366,38 @@ async function maybePush(projection) {
     session.close();
   }
 }
-async function createSignatureRequest(
+function injectTestOnlySimulationSignature(record) {
+  expect(SIMULATE, "local signature fixture escaped simulation");
+  expect(simulatedOwnerSecret !== null, "simulation owner fixture is unavailable");
+  expect(
+    record.artifact === null && record.code === null && record.outcome === null,
+    "simulation signature fixture would overwrite request state",
+  );
+  const signature = `0x${p256.sign(hexToBytes(record.digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
+  record.artifact = signature;
+  markInboxTerminal(signatureRequests, record.requestId);
+  return signature;
+}
+async function createOwnerSigningRequest(
+  ownerSigningRequestInput,
   digest,
-  display,
   purpose,
-  simulationCommand = "approve",
+  simulationCommand = "inject-test-signature",
   reserved = null,
 ) {
+  const ownerSigningRequest = parseOwnerSigningRequest(ownerSigningRequestInput);
+  if (
+    simulationCommand !== "pending" &&
+    simulationCommand !== "reject" &&
+    simulationCommand !== "inject-test-signature"
+  )
+    throw new Error("simulation_command_invalid");
+  expect(
+    (ownerSigningRequest.kind === "raw-digest"
+      ? ownerSigningRequest.digest
+      : ownerSigningRequest.expectedDigest) === digest,
+    "owner signing request digest drifted",
+  );
   const reservationToken = reserved?.token ?? randomBytes(18).toString("base64url");
   const ownsReservation = reserved === null;
   if (ownsReservation) signatureRequestLane.reserve(reservationToken, { purpose });
@@ -378,12 +414,7 @@ async function createSignatureRequest(
     const requestBody = {
       redirectUri,
       codeChallenge: deriveCodeChallenge(verifier),
-      requestedScope: JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: captureCanonicalDisplay(display, digest),
-      }),
+      requestedScope: JSON.stringify(ownerSigningRequest),
     };
     relayCreates += 1;
     const pendingCreate = relayCall("POST", "/authorization/requests", CLIENT_TOKEN, requestBody);
@@ -406,6 +437,7 @@ async function createSignatureRequest(
     digest,
     verifier,
     purpose,
+    ownerSigningRequest,
     artifact: null,
     code: null,
     outcome: null,
@@ -433,28 +465,73 @@ async function createSignatureRequest(
   }
   event("signature.requested", { purpose, requestId: created.requestId });
   if (SIMULATE) {
-    expect(projection.scope?.kind === "signature-request", "simulation projection was not signed");
-    expect(projection.scope.digest === digest, "simulation projection digest drifted");
-    expect(projection.scope.display === display, "simulation projection display bytes drifted");
+    const expectedDecision =
+      ownerSigningRequest.kind === "eip712" ? "approve-or-reject" : "reject-only";
+    expect(
+      projection.scope?.kind === "owner-signing-request" &&
+        projection.scope.decision === expectedDecision,
+      "simulation owner signing decision capability drifted",
+    );
+    expect(
+      projection.scope.requestHash === hashOwnerSigningRequest(ownerSigningRequest),
+      "simulation owner signing request hash drifted",
+    );
+    expect(
+      JSON.stringify(projection.scope.request) === JSON.stringify(ownerSigningRequest),
+      "simulation owner signing request drifted",
+    );
+    if (purpose === "owner-operation" || purpose === "inbox-regression") {
+      expect(
+        ownerSigningRequest.kind === "raw-digest",
+        `${purpose} request stopped being raw-digest`,
+      );
+    }
     if (simulationCommand === "reject") {
       await relayCall("POST", `/native/decisions/${created.requestId}`, activeDevice.credential, {
         command: "reject",
       });
-    } else if (simulationCommand === "approve") {
-      const signature = `0x${p256.sign(hexToBytes(digest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
-      const decision = await relayCall(
-        "POST",
-        `/native/decisions/${created.requestId}`,
-        activeDevice.credential,
-        { command: "approve", artifact: signature },
-      );
-      record.code = decision.release.code;
+    } else if (simulationCommand === "inject-test-signature") {
+      // Test-only chain evidence: the synthetic phone key signs locally and no
+      // server decision API approves or releases this request. This preserves
+      // operation/race coverage without claiming consent or clear signing.
+      injectTestOnlySimulationSignature(record);
     }
   }
   return record;
 }
+function createRawDigestSignatureRequest(
+  digest,
+  reason,
+  purpose,
+  simulationCommand = "inject-test-signature",
+  reserved = null,
+) {
+  return createOwnerSigningRequest(
+    {
+      version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+      kind: "raw-digest",
+      digest,
+      reason,
+      decision: "reject-only",
+    },
+    digest,
+    purpose,
+    simulationCommand,
+    reserved,
+  );
+}
 async function resolveSignature(record) {
-  if (record.artifact !== null) return record.artifact;
+  if (record.artifact !== null) {
+    if (record.outcome !== "approved") {
+      record.outcome = "approved";
+      signatureRequestLane.terminate(record.reservationToken, "completed");
+      event(SIMULATE ? "signature.fixture_provided" : "signature.approved", {
+        purpose: record.purpose,
+        requestId: record.requestId,
+      });
+    }
+    return record.artifact;
+  }
   if (record.outcome === "rejected") return null;
   if (record.code === null) {
     const state = await relayCall(
@@ -482,10 +559,13 @@ async function resolveSignature(record) {
     `/authorization/artifacts/${consumed.artifactId}/claim`,
     CLIENT_TOKEN,
   );
-  record.artifact = claimed.artifact;
+  record.artifact = captureKernelOwnerSignature(record.ownerSigningRequest, claimed.artifact);
   record.outcome = "approved";
   signatureRequestLane.terminate(record.reservationToken, "completed");
-  event("signature.approved", { purpose: record.purpose, requestId: record.requestId });
+  event(SIMULATE ? "signature.fixture_provided" : "signature.approved", {
+    purpose: record.purpose,
+    requestId: record.requestId,
+  });
   return record.artifact;
 }
 async function sequence(runtime, mode) {
@@ -588,16 +668,6 @@ const operationInput = (input, prepared) => ({
   },
   paymaster: prepared.userOperation.paymaster,
 });
-const displayOperation = (prepared, kind) =>
-  canonicalDisplay({
-    kind,
-    chainId: CHAIN_ID,
-    account: prepared.userOperation.sender,
-    digest: prepared.userOperationHash,
-    userOperationHash: prepared.userOperationHash,
-    userOperation: prepared.userOperation,
-  });
-
 function terminalize(operation, evidence) {
   expect(evidence.chainId === CHAIN_ID, "observation chain mismatch");
   expect(
@@ -771,6 +841,7 @@ async function handleDemo(method, path, body, outgoing) {
       reservationToken,
       state: "pre-submit",
       sessionAddress: value.sessionAddress,
+      installNonce: INSTALL_NONCE,
       request: null,
       approval: null,
       materialized: false,
@@ -784,26 +855,35 @@ async function handleDemo(method, path, body, outgoing) {
         initialPackages: ownerRuntime.packages,
       });
       expect(descriptor.account === accountDescriptor.account, "session bound another account");
-      // Derive without signing; the SDK owner is authoritative for the digest formula.
-      const { kernelV4ReplayableInstallDigest } = await import("@oaath/sdk/kernel");
-      const exactDigest = kernelV4ReplayableInstallDigest({
+      // Capture one exact SDK-owned install scope before creating relay consent.
+      const installScope = Object.freeze({
         account: descriptor.account,
-        nonce: "0",
+        nonce: permission.installNonce,
         packages: runtime.packages,
       });
-      const request = await createSignatureRequest(
-        exactDigest,
-        canonicalDisplay({
-          kind: "kernel-enable-digest",
-          chainScope: "all",
+      const typedData = kernelV4ReplayableInstallTypedData(installScope);
+      const exactDigest = kernelV4ReplayableInstallDigest(installScope);
+      expect(
+        hashCanonicalEip712TypedData(typedData) === exactDigest,
+        "Kernel install typed data digest drifted",
+      );
+      const ownerSigningRequest = {
+        version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+        kind: "eip712",
+        purpose: "kernel-enable",
+        signer: {
           account: descriptor.account,
-          digest: exactDigest,
-          installNonce: "0",
-          sessionAddress: value.sessionAddress,
-          policies: runtime.operator?.policy ?? { call: { target, valueLimit: "10" } },
-        }),
+          ownerCredential: pairedP256Credential(activeDevice.publicMaterial),
+        },
+        typedData,
+        expectedDigest: exactDigest,
+        replay: { nonce: permission.installNonce, deadline: null },
+      };
+      const request = await createOwnerSigningRequest(
+        ownerSigningRequest,
+        exactDigest,
         "permission",
-        "approve",
+        "pending",
         {
           token: reservationToken,
           markPossiblySubmitted() {
@@ -853,10 +933,10 @@ async function handleDemo(method, path, body, outgoing) {
           return artifact;
         }),
         account: permission.descriptor.account,
-        installNonce: "0",
+        installNonce: permission.installNonce,
         packages: permission.runtime.packages,
       });
-      event("permission.approved", {
+      event(SIMULATE ? "permission.fixture_derived" : "permission.approved", {
         requestId: permission.request.requestId,
         account: permission.descriptor.account,
         sessionAddress: permission.sessionAddress,
@@ -1127,11 +1207,11 @@ async function handleDemo(method, path, body, outgoing) {
         request: null,
         input: operationInput(input, prepared),
       });
-      const request = await createSignatureRequest(
+      const request = await createRawDigestSignatureRequest(
         prepared.userOperationHash,
-        displayOperation(prepared, "owner-user-operation"),
+        "Kernel user operation digest is not device-derivable",
         "owner-operation",
-        "approve",
+        "inject-test-signature",
         { token: preparingId },
       );
       ownerOperationLane.replace(preparingId, request.requestId);
@@ -1456,9 +1536,9 @@ async function simulate() {
   // signature records. It neither decides the request nor touches its release
   // path, lane, operation state, or relay-create count.
   const inboxDigest = `0x${"59".repeat(32)}`;
-  const inboxRequest = await createSignatureRequest(
+  const inboxRequest = await createRawDigestSignatureRequest(
     inboxDigest,
-    canonicalDisplay({ digest: inboxDigest, kind: "inbox-regression" }),
+    "Inbox regression digest is not device-derivable",
     "inbox-regression",
     "pending",
   );
@@ -1512,28 +1592,23 @@ async function simulate() {
     inboxRequest.artifact === artifactBeforePull && inboxRequest.code === codeBeforePull,
     "inbox pull changed release state",
   );
-  const inboxSignature = `0x${p256.sign(hexToBytes(inboxDigest), simulatedOwnerSecret, { lowS: true, prehash: false }).toCompactHex()}`;
-  const inboxDecision = await relayCall(
-    "POST",
-    `/native/decisions/${inboxRequest.requestId}`,
-    activeDevice.credential,
-    { command: "approve", artifact: inboxSignature },
-  );
-  inboxRequest.code = inboxDecision.release.code;
+  // As above, this fixture supplies local bytes only to retain inbox/operation
+  // regression coverage. The relay request remains unapproved server-side.
+  const inboxSignature = injectTestOnlySimulationSignature(inboxRequest);
   expect(
     (await (await inboxFetch(activeDevice.credential)).json()).requests.length === 0,
-    "approved request remained in inbox",
+    "fixture-resolved request remained in inbox",
   );
   expect(
-    inboxRequest.artifact === null && inboxRequest.code !== null,
-    "inbox terminal marker stole release",
+    inboxRequest.artifact === inboxSignature && inboxRequest.code === null,
+    "inbox terminal marker changed the local fixture",
   );
-  expect((await resolveSignature(inboxRequest)) !== null, "approved inbox request did not deliver");
+  expect((await resolveSignature(inboxRequest)) !== null, "inbox fixture did not deliver");
 
   const rejectedDigest = `0x${"5a".repeat(32)}`;
-  const rejectedRequest = await createSignatureRequest(
+  const rejectedRequest = await createRawDigestSignatureRequest(
     rejectedDigest,
-    canonicalDisplay({ digest: rejectedDigest, kind: "reject-regression" }),
+    "Rejection regression digest is not device-derivable",
     "reject-regression",
     "reject",
   );
@@ -1667,8 +1742,102 @@ async function simulate() {
       permission?.request?.requestId === requested.requestId,
     "permission/shared-lane representations diverged",
   );
-  const approved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
-  expect(approved.status === "approved", "permission did not approve");
+  const projectedPermission = await relayCall(
+    "GET",
+    `/native/projections/${requested.requestId}`,
+    activeDevice.credential,
+  );
+  const projectedScope = projectedPermission.scope;
+  expect(
+    projectedScope?.kind === "owner-signing-request" &&
+      projectedScope.decision === "approve-or-reject" &&
+      projectedScope.request?.kind === "eip712" &&
+      projectedScope.request.purpose === "kernel-enable",
+    "permission route did not project an approvable Kernel enable request",
+  );
+  const projectedRequest = projectedScope.request;
+  const installScope = Object.freeze({
+    account: permission.descriptor.account,
+    nonce: permission.installNonce,
+    packages: permission.runtime.packages,
+  });
+  const expectedTypedData = kernelV4ReplayableInstallTypedData(installScope);
+  const expectedDigest = kernelV4ReplayableInstallDigest(installScope);
+  const expectedCredential = pairedP256Credential(activeDevice.publicMaterial);
+  expect(
+    requested.account === permission.descriptor.account && requested.digest === expectedDigest,
+    "permission route response drifted from the bound install",
+  );
+  expect(
+    projectedRequest.signer.account === permission.descriptor.account &&
+      projectedRequest.typedData.domain.verifyingContract === permission.descriptor.account,
+    "Kernel enable signer account drifted from the bound descriptor",
+  );
+  expect(
+    JSON.stringify(projectedRequest.signer.ownerCredential) === JSON.stringify(expectedCredential),
+    "Kernel enable request drifted from the paired P-256 credential",
+  );
+  expect(
+    projectedRequest.typedData.primaryType === expectedTypedData.primaryType &&
+      JSON.stringify(projectedRequest.typedData.domain) ===
+        JSON.stringify(expectedTypedData.domain) &&
+      JSON.stringify(projectedRequest.typedData.message.packages) ===
+        JSON.stringify(expectedTypedData.message.packages),
+    "Kernel enable request drifted from the SDK typed-data facts",
+  );
+  expect(
+    projectedRequest.typedData.message.nonce === permission.installNonce &&
+      projectedRequest.replay.nonce === permission.installNonce &&
+      projectedRequest.replay.deadline === null,
+    "Kernel enable install nonce or replay facts drifted",
+  );
+  expect(
+    projectedRequest.expectedDigest === expectedDigest &&
+      hashCanonicalEip712TypedData(projectedRequest.typedData) === expectedDigest,
+    "Kernel enable expected digest drifted from its typed data",
+  );
+  expect(
+    projectedScope.requestHash === hashOwnerSigningRequest(projectedRequest) &&
+      JSON.stringify(projectedRequest) === JSON.stringify(permission.request.ownerSigningRequest),
+    "Kernel enable request hash or canonical request drifted",
+  );
+  const stillPending = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
+  expect(stillPending.status === "pending", "permission route produced an owner artifact");
+  expect(
+    permission.request.artifact === null &&
+      permission.request.code === null &&
+      permission.request.outcome === null,
+    "permission route produced local release state before fixture injection",
+  );
+  const invalidApproval = await fetch(
+    `http://127.0.0.1:${relayPort}/native/decisions/${requested.requestId}`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${activeDevice.credential}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ command: "approve", artifact: "must-not-be-released" }),
+    },
+  );
+  const invalidApprovalBody = await invalidApproval.json();
+  expect(
+    !invalidApproval.ok && invalidApprovalBody.error?.code === "relay_request_invalid",
+    "server accepted an invalid Kernel owner artifact",
+  );
+  const serverRequest = await relayCall(
+    "GET",
+    `/authorization/requests/${requested.requestId}`,
+    OWNER_TOKEN,
+  );
+  expect(serverRequest.decision === null, "invalid Kernel enable approval created a decision");
+  injectTestOnlySimulationSignature(permission.request);
+  expect(
+    permission.request.artifact !== null && permission.request.code === null,
+    "permission fixture did not remain local to simulation",
+  );
+  const resolved = await relayCall("GET", `/demo/permission/${requested.requestId}`, null);
+  expect(resolved.status === "approved", "permission fixture did not resolve");
   const prepareSession = async () => {
     const prepared = await relayCall("POST", "/demo/session/prepare", null, { sessionAddress });
     const signed = secp256k1.sign(hexToBytes(prepared.userOperationHash), sessionSecret, {

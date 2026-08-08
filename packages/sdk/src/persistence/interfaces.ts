@@ -44,13 +44,17 @@ import {
   type KernelAllChainApproval,
   parseKernelAllChainApproval,
 } from "../kernel/permission/materialize.js";
+import {
+  captureWalletCallResultCapabilities,
+  type OaathWalletCallResultCapabilities,
+} from "../provider/result-capabilities.js";
 import type { StoreRecord } from "../store.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
-export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v4" as const;
+export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v7" as const;
 export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
-  "oaath.wallet-call-bundle-store-record/v4" as const;
+  "oaath.wallet-call-bundle-store-record/v7" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
@@ -172,7 +176,7 @@ function walletCallBundleOperation(
 ): Readonly<WalletCallBundleOperation> {
   const record = exactRecord(
     value,
-    ["identity"],
+    ["identity", "resultCapabilities"],
     "wallet call bundle operation binding",
     context,
     failFor(code),
@@ -192,17 +196,23 @@ function walletCallBundleOperation(
   ) {
     return persistenceFail(code, "wallet call bundle operation identity contradicts its bundle");
   }
-  return Object.freeze({ identity });
+  const resultCapabilities =
+    record.resultCapabilities === null
+      ? null
+      : captureWalletCallResultCapabilities(record.resultCapabilities, context, failFor(code));
+  return Object.freeze({ identity, resultCapabilities });
 }
 
-/** The exact durable uniqueness key. Grant, account, and chain are deliberately not axes. */
+/** The exact durable uniqueness key. Grant and chain are deliberately not axes. */
 export interface WalletCallBundleKey {
   readonly providerScopeId: Hash;
+  readonly account: Address;
   readonly id: string;
 }
 
 export interface WalletCallBundleOperation {
   readonly identity: Readonly<OperationIdentity>;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
 }
 
 export interface WalletCallBundleRecord {
@@ -214,14 +224,26 @@ export interface WalletCallBundleRecord {
   readonly account: Address;
   readonly chainId: number;
   readonly createdAt: number;
+  /** Exclusive deadline for a durable preconfirmation, or null when none was required. */
+  readonly confirmationExpiresAt: number | null;
   /** Earliest time another realm may conclusively abandon pre-submission publication. */
-  readonly publicationExpiresAt: number;
+  readonly publicationExpiresAt: number | null;
   /** Null while the originating sender may still advance pre-submission state. */
   readonly publicationReleasedAt: number | null;
   readonly requestHash: Hash;
   readonly operation: Readonly<WalletCallBundleOperation> | null;
-  readonly state: "accepted" | "operation_reserved" | "operation_bound" | "terminal";
-  readonly terminalFrom: "accepted" | "operation_reserved" | "operation_bound" | null;
+  readonly state:
+    | "confirmation_pending"
+    | "accepted"
+    | "operation_reserved"
+    | "operation_bound"
+    | "terminal";
+  readonly terminalFrom:
+    | "confirmation_pending"
+    | "accepted"
+    | "operation_reserved"
+    | "operation_bound"
+    | null;
 }
 
 export type WalletCallBundleStoreRecord = Readonly<
@@ -248,7 +270,7 @@ export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBun
   const code: PersistenceErrorCode = "persistence_input_invalid";
   const record = exactRecord(
     value,
-    ["providerScopeId", "id"],
+    ["providerScopeId", "account", "id"],
     "wallet call bundle key",
     new WeakSet(),
     failFor(code),
@@ -259,6 +281,7 @@ export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBun
       "wallet call bundle providerScopeId",
       code,
     ),
+    account: walletCallBundleAddress(record.account, "wallet call bundle account", code),
     id: walletCallBundleId(record.id, "wallet call bundle id", code),
   });
 }
@@ -278,6 +301,7 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
       "account",
       "chainId",
       "createdAt",
+      "confirmationExpiresAt",
       "publicationExpiresAt",
       "publicationReleasedAt",
       "requestHash",
@@ -311,13 +335,28 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
     code,
     0,
   );
-  const publicationExpiresAt = walletCallBundleSafeInteger(
-    record.publicationExpiresAt,
-    "wallet call bundle publicationExpiresAt",
-    code,
-    1,
-  );
-  if (publicationExpiresAt <= createdAt) {
+  const confirmationExpiresAt =
+    record.confirmationExpiresAt === null
+      ? null
+      : walletCallBundleSafeInteger(
+          record.confirmationExpiresAt,
+          "wallet call bundle confirmationExpiresAt",
+          code,
+          1,
+        );
+  if (confirmationExpiresAt !== null && confirmationExpiresAt <= createdAt) {
+    return persistenceFail(code, "wallet call bundle confirmation deadline is invalid");
+  }
+  const publicationExpiresAt =
+    record.publicationExpiresAt === null
+      ? null
+      : walletCallBundleSafeInteger(
+          record.publicationExpiresAt,
+          "wallet call bundle publicationExpiresAt",
+          code,
+          1,
+        );
+  if (publicationExpiresAt !== null && publicationExpiresAt <= createdAt) {
     return persistenceFail(code, "wallet call bundle publication lease is invalid");
   }
   const publicationReleasedAt =
@@ -334,6 +373,7 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
   }
   const state = record.state;
   if (
+    state !== "confirmation_pending" &&
     state !== "accepted" &&
     state !== "operation_reserved" &&
     state !== "operation_bound" &&
@@ -341,13 +381,24 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
   ) {
     return persistenceFail(code, "wallet call bundle state is unsupported");
   }
-  if (state === "accepted" && operation !== null) {
-    return persistenceFail(code, "an accepted wallet call bundle cannot bind an operation");
+  if (state === "confirmation_pending") {
+    if (confirmationExpiresAt === null || publicationExpiresAt !== null || operation !== null) {
+      return persistenceFail(code, "a pending confirmation has contradictory evidence");
+    }
   }
-  if ((state === "accepted" || state === "operation_reserved") && publicationReleasedAt !== null) {
+  if (state === "accepted" && (publicationExpiresAt === null || operation !== null)) {
+    return persistenceFail(code, "an accepted wallet call bundle has contradictory evidence");
+  }
+  if (
+    (state === "confirmation_pending" || state === "accepted" || state === "operation_reserved") &&
+    publicationReleasedAt !== null
+  ) {
     return persistenceFail(code, "wallet call bundle publication released before binding");
   }
-  if ((state === "operation_reserved" || state === "operation_bound") && operation === null) {
+  if (
+    (state === "operation_reserved" || state === "operation_bound") &&
+    (operation === null || publicationExpiresAt === null)
+  ) {
     return persistenceFail(
       code,
       "an operation-reserved or bound wallet call bundle requires an operation",
@@ -356,6 +407,7 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
   let terminalFrom: WalletCallBundleRecord["terminalFrom"];
   if (state === "terminal") {
     if (
+      record.terminalFrom !== "confirmation_pending" &&
       record.terminalFrom !== "accepted" &&
       record.terminalFrom !== "operation_reserved" &&
       record.terminalFrom !== "operation_bound"
@@ -364,8 +416,11 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
     }
     terminalFrom = record.terminalFrom;
     if (
-      (terminalFrom === "accepted" && operation !== null) ||
-      (terminalFrom !== "accepted" && operation === null)
+      (terminalFrom === "confirmation_pending" &&
+        (confirmationExpiresAt === null || publicationExpiresAt !== null || operation !== null)) ||
+      (terminalFrom === "accepted" && (publicationExpiresAt === null || operation !== null)) ||
+      ((terminalFrom === "operation_reserved" || terminalFrom === "operation_bound") &&
+        (publicationExpiresAt === null || operation === null))
     ) {
       return persistenceFail(code, "wallet call bundle terminal origin contradicts its operation");
     }
@@ -395,6 +450,7 @@ export function parseWalletCallBundleRecord(value: unknown): Readonly<WalletCall
     account,
     chainId,
     createdAt,
+    confirmationExpiresAt,
     publicationExpiresAt,
     publicationReleasedAt,
     requestHash: persistenceHash(record.requestHash, "wallet call bundle requestHash", code),

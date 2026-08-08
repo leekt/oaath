@@ -22,8 +22,16 @@ published to npm.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
-  the structured permission scope, or a signature request's exact digest and
-  full display JSON — with explicit Approve/Reject for both signature flows.
+  the structured permission scope, or the full current-version owner-signing
+  request. Every structured-permission fact carries one closed evidence label:
+  relay-bound client/redirect facts are visually distinct from requested scope
+  and requested constraints. The projection contains no materialization,
+  onchain-install, or simulation evidence, so it labels no constraint
+  guaranteed. Structured permission requests expose explicit Approve/Reject
+  actions. Owner-signing requests expose every captured purpose, signer,
+  versioned credential, typed-data, expected digest, replay, and request-hash
+  fact. Only an exact Kernel/P-256 request with a current local pairing exposes
+  Approve; every other owner-signing request remains reject-only.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
@@ -35,6 +43,25 @@ published to npm.
 - Keeps an ambiguous submission as an explicit unresolved intent. Nothing is
   ever auto-resubmitted; an explicit retry is safe only because the server
   saga is replay-only.
+
+## EIP-712 derivation and Kernel approval
+
+`OwnerPhone` uses a package-internal, non-authorizing EIP-712 primitive to
+capture the projection's already-parsed canonical typed-data value and compare
+its device-derived Ethereum Keccak-256 digest with the request's expected
+digest. The UI renders a match or mismatch from that same immutable capture.
+Shared protocol/viem/Swift vectors cover the official Mail example, nested
+fixed and dynamic arrays, signed and unsigned integers, fixed and dynamic
+bytes, strings, booleans, addresses, and domain subsets.
+
+The live v4 exact Kernel/P-256 branch creates a sealed
+`VerifiedSignableDigest` only after the current pending review, expiry,
+foreground state, paired account/key, Kernel semantics, and device-derived
+digest all agree. `requestHash` is authenticated server/protocol evidence and
+is not independently re-derived by this build; the server recomputes it before
+accepting the signed artifact. Other EIP-712 purposes and protocol raw-digest
+requests remain reject-only. The semantic decoder does not claim preservation
+of raw JSON bytes; the relay owns canonical protocol capture before projection.
 
 ## Transport is deployment-wired
 
@@ -80,18 +107,23 @@ struct OwnerPhoneDemoApp: App {
 ## Key custody
 
 On physical iOS, the demo exclusively creates or loads a persistent P-256
-Secure Enclave key with `kSecAttrTokenIDSecureEnclave` and `.privateKeyUsage`.
+Secure Enclave key with `kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`,
+and `.userPresence`.
 An Enclave failure leaves the owner key unavailable; it never authorizes
 software custody. Simulator and macOS host builds instead select a separately
 tagged, non-synchronizable keychain P-256 key with
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
-simulator/fallback banner. Both modes intentionally omit a
-user-presence/biometry requirement because Approve is the consent gate. The app
-registers 64-byte `x ‖ y` public material and returns DER signatures as raw
-low-S `r ‖ s`. Host tests pin the software attributes and platform-selection
-policy and prove the
-pure DER conversion, low-S arithmetic and real CryptoKit verification; they do
-not prove physical Enclave custody.
+simulator/fallback banner. The app registers 64-byte `x ‖ y` public material,
+and custody accepts only the library's sealed verified-signable type. An exact
+Kernel replayable-install request can reach artifact generation only from a
+current authenticated review whose account, P-256 key, locally derived
+EIP-712 digest, pairing, foreground state, and expiry all agree. Raw network
+digests and every other owner-signing request remain reject-only and reach
+neither custody nor an approval POST.
+Host tests pin the software attributes, Enclave creation flags, and
+platform-selection policy and prove the pure DER conversion, low-S arithmetic
+and real CryptoKit verification; they do not prove a physical user-presence
+prompt, Enclave custody, or live clear signing.
 
 ## Provenance
 
@@ -130,3 +162,11 @@ Apple provisioning and entitlements, physical Secure Enclave key creation,
 hosted relay interoperability, a simulator run, or any
 signed physical-device install/run (see [Demo/README.md](Demo/README.md)). The unsigned
 generic simulator build is a compile/link proof only.
+
+## Dependency acknowledgment
+
+Ethereum Keccak-256 is provided by
+[CryptoSwift 1.10.0](https://github.com/krzyzanowskim/CryptoSwift/releases/tag/1.10.0),
+pinned exactly in `Package.swift`. This product includes software developed by
+Marcin Krzyżanowski (`https://krzyzanowskim.com/`). OAAth does not use
+CryptoSwift for key custody or signing.

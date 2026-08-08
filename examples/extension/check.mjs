@@ -12,6 +12,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatWalletCallStatus, showWalletCallStatus } from "./status-presentation.js";
+import {
+  confirmWalletCalls,
+  decideWalletCallConfirmation,
+  formatWalletCallConfirmation,
+  rejectClosedWalletCallConfirmation,
+} from "./transaction-confirmation-presentation.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +56,9 @@ for (const piece of [
   "status.html",
   "status.js",
   "status-presentation.js",
+  "transaction-confirmation.html",
+  "transaction-confirmation.js",
+  "transaction-confirmation-presentation.js",
 ]) {
   readFileSync(join(HERE, "dist", piece));
 }
@@ -103,6 +112,161 @@ expect(
   presentationEvents[1]?.value?.url.startsWith("chrome-extension://oaath/status.html#"),
   "status presentation must open the extension-owned status page",
 );
+
+const confirmationRecords = new Map();
+const confirmationEvents = [];
+let nextConfirmationTab = 41;
+const confirmationExtension = {
+  runtime: { getURL: (path) => `chrome-extension://oaath/${path}` },
+  storage: {
+    session: {
+      async set(value) {
+        for (const [key, record] of Object.entries(value)) confirmationRecords.set(key, record);
+        confirmationEvents.push({ kind: "stored", value });
+      },
+      async get(key) {
+        return confirmationRecords.has(key) ? { [key]: confirmationRecords.get(key) } : {};
+      },
+      async remove(key) {
+        confirmationRecords.delete(key);
+        confirmationEvents.push({ kind: "removed", key });
+      },
+    },
+  },
+  tabs: {
+    async create(value) {
+      const tab = { id: nextConfirmationTab };
+      nextConfirmationTab += 1;
+      confirmationEvents.push({ kind: "opened", value, tab });
+      return tab;
+    },
+  },
+};
+const exactCalls = Object.freeze({
+  account: `0x${"11".repeat(20)}`,
+  chainId: "0x1",
+  confirmationExpiresAt: Math.floor(Date.now() / 1_000) + 300,
+  calls: Object.freeze([
+    Object.freeze({ target: `0x${"44".repeat(20)}`, value: "0", data: "0xabcd" }),
+  ]),
+});
+const approval = confirmWalletCalls(confirmationExtension, "https://example.test", exactCalls);
+await Promise.resolve();
+await Promise.resolve();
+const approvalOpen = confirmationEvents.find((event) => event.kind === "opened");
+const approvalToken = decodeURIComponent(approvalOpen?.value?.url.split("#")[1] ?? "");
+const approvalKey = `wallet-call-confirmation:${approvalToken}`;
+const approvalRecord = confirmationRecords.get(approvalKey);
+expect(approvalRecord?.origin === "https://example.test", "confirmation must bind page origin");
+expect(Object.isFrozen(approvalRecord), "confirmation display must be frozen");
+expect(Object.isFrozen(approvalRecord?.calls), "confirmation calls must be frozen");
+expect(Object.isFrozen(approvalRecord?.calls?.[0]), "each confirmation call must be frozen");
+expect(
+  Object.keys(approvalRecord ?? {}).join(",") ===
+    "origin,account,chainId,calls,confirmationExpiresAt",
+  "session storage must contain public display fields only",
+);
+expect(
+  formatWalletCallConfirmation(approvalRecord).includes(`target   0x${"44".repeat(20)}`) &&
+    formatWalletCallConfirmation(approvalRecord).includes(
+      `approve before ${exactCalls.confirmationExpiresAt} seconds`,
+    ),
+  "confirmation page must render the exact ordered call and approval deadline",
+);
+expect(
+  await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved"),
+  "the pending approval must settle",
+);
+expect((await approval) === "approved", "the presenter must return the exact approval");
+expect(!confirmationRecords.has(approvalKey), "settlement must remove public display state");
+expect(
+  !(await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved")),
+  "a decision token must be one-use",
+);
+
+const rejection = confirmWalletCalls(confirmationExtension, "https://example.test", exactCalls);
+await Promise.resolve();
+await Promise.resolve();
+expect(
+  await rejectClosedWalletCallConfirmation(confirmationExtension, 42),
+  "closing the confirmation tab must find its pending decision",
+);
+expect((await rejection) === "rejected", "closing the confirmation tab must reject");
+
+const beforeExpiredPresentation = confirmationEvents.length;
+expect(
+  (await confirmWalletCalls(confirmationExtension, "https://example.test", {
+    ...exactCalls,
+    confirmationExpiresAt: Math.floor(Date.now() / 1_000),
+  })) === "rejected",
+  "an expired confirmation must reject without opening presentation",
+);
+expect(
+  confirmationEvents.length === beforeExpiredPresentation,
+  "an expired confirmation must not write session state or open a tab",
+);
+
+const realDateNow = Date.now;
+let controlledNow = realDateNow();
+Date.now = () => controlledNow;
+try {
+  const lateDeadline = Math.floor(controlledNow / 1_000) + 1;
+  const lateApproval = confirmWalletCalls(confirmationExtension, "https://example.test", {
+    ...exactCalls,
+    confirmationExpiresAt: lateDeadline,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  const lateOpen = confirmationEvents.filter((event) => event.kind === "opened").at(-1);
+  const lateToken = decodeURIComponent(lateOpen?.value?.url.split("#")[1] ?? "");
+  controlledNow = lateDeadline * 1_000;
+  expect(
+    !(await decideWalletCallConfirmation(confirmationExtension, lateToken, "approved")),
+    "approval at the exclusive deadline must be refused",
+  );
+  expect((await lateApproval) === "rejected", "late approval must settle only as rejection");
+} finally {
+  Date.now = realDateNow;
+}
+
+const rangedConfirmation = confirmWalletCalls(confirmationExtension, "https://example.test", {
+  ...exactCalls,
+  validityTimeRange: Object.freeze({
+    validAfter: "1800000010",
+    validUntil: "1800000100",
+    validAfterUtc: "2027-01-15T08:00:10.000Z",
+    validUntilUtc: "2027-01-15T08:01:40.000Z",
+    inclusive: true,
+  }),
+});
+await Promise.resolve();
+await Promise.resolve();
+const rangedOpen = confirmationEvents.filter((event) => event.kind === "opened").at(-1);
+const rangedToken = decodeURIComponent(rangedOpen?.value?.url.split("#")[1] ?? "");
+const rangedKey = `wallet-call-confirmation:${rangedToken}`;
+const rangedRecord = confirmationRecords.get(rangedKey);
+expect(Object.isFrozen(rangedRecord?.validityTimeRange), "validity display must be frozen");
+const rangedText = formatWalletCallConfirmation(rangedRecord);
+expect(
+  rangedText.includes("validity (inclusive)") &&
+    rangedText.includes("after    1800000010 seconds (2027-01-15T08:00:10.000Z)") &&
+    rangedText.includes("until    1800000100 seconds (2027-01-15T08:01:40.000Z)"),
+  "confirmation page must render exact inclusive seconds and UTC endpoints",
+);
+expect(
+  await decideWalletCallConfirmation(confirmationExtension, rangedToken, "approved"),
+  "the ranged approval must settle",
+);
+expect((await rangedConfirmation) === "approved", "the ranged presenter must return approval");
+
+const orphanToken = "11111111-1111-4111-8111-111111111111";
+const orphanKey = `wallet-call-confirmation:${orphanToken}`;
+await confirmationExtension.storage.session.set({ [orphanKey]: approvalRecord });
+expect(
+  !(await decideWalletCallConfirmation(confirmationExtension, orphanToken, "approved")),
+  "a restarted worker must not recover approval authority from display state",
+);
+expect(!confirmationRecords.has(orphanKey), "an orphaned display must be removed");
 // The page-world provider announces the EIP-6963 identity dapps discover by.
 const injected = readFileSync(join(HERE, "dist", "injected.js"), "utf8");
 expect(injected.includes("eip6963:announceProvider"), "injected provider must announce EIP-6963");

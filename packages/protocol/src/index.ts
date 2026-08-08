@@ -176,6 +176,20 @@ export {
   exactRecord,
 } from "./internal/exact-record.js";
 export type {
+  KernelV4Install,
+  KernelV4ModuleType,
+  KernelV4ReplayableInstallOwnerSigningRequest,
+  KernelV4ReplayableInstallPackage,
+  KernelV4ReplayableInstallTypedData,
+  KernelV4ReplayableInstallTypedDataInput,
+} from "./kernel-v4-replayable-install.js";
+export {
+  createKernelV4ReplayableInstallTypedData,
+  KERNEL_V4_INSTALL_COMPONENTS,
+  parseKernelV4InstallPackages,
+  parseKernelV4ReplayableInstallOwnerSigningRequest,
+} from "./kernel-v4-replayable-install.js";
+export type {
   AbandonedOperation,
   DroppedOperation,
   FinalizedOperation,
@@ -208,6 +222,12 @@ export {
   parseOperation,
   parseOperationIdentity,
 } from "./operation.js";
+export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
+export {
+  OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
+  parseOwnerSigningArtifact,
+  serializeOwnerSigningArtifact,
+} from "./owner-signing-artifact.js";
 export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,
@@ -238,6 +258,7 @@ export type {
   ServiceBootstrap,
   ServiceBootstrapApplication,
   ServiceBootstrapChain,
+  ServiceBootstrapPaymasterService,
   ServiceBootstrapSessionSigner,
   ServiceBootstrapSessionSignerMode,
 } from "./service-bootstrap.js";
@@ -246,6 +267,30 @@ export {
   OAATH_SERVICE_BOOTSTRAP_VERSION,
   parseServiceBootstrap,
 } from "./service-bootstrap.js";
+export type {
+  CanonicalEip712Array,
+  CanonicalEip712Field,
+  CanonicalEip712Object,
+  CanonicalEip712TypedData,
+  CanonicalEip712Value,
+  Eip712OwnerSigningRequest,
+  Eip712SigningPurpose,
+  OwnerSigningReplayFacts,
+  OwnerSigningRequest,
+  OwnerSigningRequestSigner,
+  RawDigestOwnerSigningRequest,
+} from "./signing-request.js";
+export {
+  captureCanonicalEip712TypedData,
+  captureOwnerSigningRequest,
+  encodeOwnerSigningRequest,
+  hashCanonicalEip712TypedData,
+  hashOwnerSigningRequest,
+  OAATH_OWNER_SIGNING_REQUEST_HASH_DOMAIN,
+  OAATH_OWNER_SIGNING_REQUEST_VERSION,
+  parseCanonicalEip712TypedData,
+  parseOwnerSigningRequest,
+} from "./signing-request.js";
 export type { Duration, Timestamp } from "./time.js";
 export {
   durationBetween,

@@ -5,16 +5,25 @@
  * ones tests should reach for when durability is not the subject. They keep the
  * exact same rules as the IndexedDB backends — one current version, key custody
  * refuses extractable handles, and compare-and-swap compares the stored
- * revision and generation — so a test that passes here proves the contract,
- * not the medium.
+ * revision (and generation where that fact owns one) — so a test that passes
+ * here proves the contract, not the medium.
  *
- * ponytail: one file for six small backends; split when one grows past its
+ * ponytail: one file for seven small backends; split when one grows past its
  * factory.
  *
  * @author taek <leekt216@gmail.com>
  */
+
+import {
+  type PreparedCallKey,
+  type PreparedCallStoreAdapter,
+  parsePreparedCallKey,
+} from "../../provider/prepared-call-store.js";
 import type { GrantStoreAdapter, OperationStoreAdapter, StoreRecord } from "../../store.js";
-import { matchesExpectedRevisionAndGeneration } from "../indexeddb/database.js";
+import {
+  matchesExpectedRevision,
+  matchesExpectedRevisionAndGeneration,
+} from "../indexeddb/database.js";
 import {
   type OaathCleanupCheckpoint,
   type OaathCleanupCheckpointStore,
@@ -67,7 +76,12 @@ function operationArchiveKey(
 
 function walletCallBundleKey(input: Readonly<WalletCallBundleKey>): string {
   const key = parseWalletCallBundleKey(input);
-  return JSON.stringify([key.providerScopeId, key.id]);
+  return JSON.stringify([key.providerScopeId, key.account, key.id]);
+}
+
+function preparedCallKey(input: Readonly<PreparedCallKey>): string {
+  const key = parsePreparedCallKey(input);
+  return JSON.stringify([key.providerScopeId, key.contextId]);
 }
 
 function compareAndSwap(
@@ -186,6 +200,29 @@ export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStor
       ) {
         return false;
       }
+      records.set(key, input.next);
+      return true;
+    },
+    async close() {
+      closed = true;
+    },
+  };
+  return Object.freeze(adapter);
+}
+
+export function createMemoryPreparedCallStoreAdapter(): PreparedCallStoreAdapter {
+  const records = new Map<string, Readonly<StoreRecord<unknown>>>();
+  let closed = false;
+  const adapter: PreparedCallStoreAdapter = {
+    async get(key: Readonly<PreparedCallKey>) {
+      assertOpen(closed);
+      return records.get(preparedCallKey(key));
+    },
+    async compareAndSwap(input) {
+      assertOpen(closed);
+      const key = preparedCallKey(input.key);
+      const current = records.get(key);
+      if (!matchesExpectedRevision(current, input.expectedStoreRevision)) return false;
       records.set(key, input.next);
       return true;
     },

@@ -15,7 +15,10 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
+  type OperatorCredentialProfile,
   parseGrantPolicy,
+  parseOperatorCredentialProfile,
+  sameOperatorCredentialProfile,
 } from "@oaath/protocol";
 import {
   createMemoryRelayStore,
@@ -26,9 +29,18 @@ import {
 } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { OaathChainCapability } from "../../src/advanced.js";
+import type {
+  Erc7677GasEstimationRequest,
+  OaathChainCapability,
+  OaathRegisteredPaymasterService,
+} from "../../src/advanced.js";
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
+import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
+import {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+} from "../../src/kernel/modules.js";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
@@ -39,6 +51,7 @@ import {
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelAllChainApproval,
   type KernelV4AccountReadRequest,
+  type KeyProfile,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   ownerOperator,
@@ -51,6 +64,7 @@ import {
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
+  createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "../../src/testing.js";
 
@@ -72,6 +86,10 @@ export const CAPABILITY_HASH = keccak256(stringToBytes("oaath-test-capability"))
 
 const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"12".repeat(32)}`);
+export const SESSION_PUBLIC_KEY = sessionAccount.publicKey.toLowerCase() as `0x${string}`;
+export async function signPreparedDigest(hash: `0x${string}`): Promise<`0x${string}`> {
+  return (await sessionAccount.sign({ hash })).toLowerCase() as `0x${string}`;
+}
 const ZERO_ADDRESS = `0x${"00".repeat(20)}` as const;
 const EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f" as const;
 const BEFORE_EXECUTION_TOPIC =
@@ -199,7 +217,27 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     chainId: capability.chainId,
     reads: (request: unknown) => capability.reads.read(request as never),
     observation: (request: unknown) => capability.observation.read(request as never),
-    bundler: (request: unknown) => capability.bundler.probe(request as never),
+    bundler: (request: unknown) => {
+      if (
+        request !== null &&
+        typeof request === "object" &&
+        (request as { readonly version?: unknown }).version === "oaath.erc7677-gas-estimation/v1"
+      ) {
+        const paymasterService = capability.paymasterService ?? null;
+        if (paymasterService === null) throw new Error("paymaster estimator is unavailable");
+        const captured = request as Readonly<{
+          prepared: Erc7677GasEstimationRequest["prepared"];
+          userOperation: Erc7677GasEstimationRequest["userOperation"];
+        }>;
+        return paymasterService.estimate(
+          Object.freeze({
+            prepared: captured.prepared,
+            userOperation: captured.userOperation,
+          }),
+        );
+      }
+      return capability.bundler.probe(request as never);
+    },
     quote: (request: unknown) => capability.quote(request as never),
     // One submission settles per call: open, send once, close.
     submission: async (request: unknown) => {
@@ -216,6 +254,7 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     usage:
       capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
     feePayer: capability.feePayer,
+    staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
   };
 }
 
@@ -232,6 +271,30 @@ export interface OwnerDecision {
   readonly policy?: (requested: unknown) => unknown;
   /** Replaces the decision envelope entirely, for hostile artifacts. */
   readonly artifact?: (decision: Record<string, unknown>) => unknown;
+  /** Test-only non-ECDSA operator identity the owner reviewed. */
+  readonly operatorKey?: Readonly<KeyProfile>;
+}
+
+function ownerApprovedOperatorKey(
+  approved: Readonly<OperatorCredentialProfile>,
+  supplied: Readonly<KeyProfile> | undefined,
+): Readonly<KeyProfile> {
+  if (supplied !== undefined) {
+    const derived = deriveOperatorCredentialProfile(supplied);
+    if (derived === null || !sameOperatorCredentialProfile(derived, approved)) {
+      throw new Error("owner fixture operator key does not match the reviewed credential");
+    }
+    return supplied;
+  }
+  if (approved.kind !== "ecdsa") {
+    throw new Error("owner fixture requires the reviewed non-ECDSA operator key");
+  }
+  return ecdsaKey({
+    account: { address: approved.address, sign: async () => "0x" },
+    // Session composition resolves the pinned signer module and never consults
+    // this syntactic validator member.
+    validator: `0x${"01".repeat(20)}`,
+  });
 }
 
 /**
@@ -243,9 +306,11 @@ export interface OwnerDecision {
 async function ownerInstallApproval(
   reads: OaathChainCapability["reads"],
   approvedPolicy: unknown,
-  operatorAddress: `0x${string}`,
+  operatorCredential: Readonly<OperatorCredentialProfile>,
+  operatorKey: Readonly<KeyProfile> | undefined,
+  validator: `0x${string}`,
 ): Promise<Readonly<KernelAllChainApproval>> {
-  const owner = ecdsaKey({ account: ownerAccount, validator: VALIDATOR });
+  const owner = ecdsaKey({ account: ownerAccount, validator });
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({ key: owner }),
@@ -261,10 +326,7 @@ async function ownerInstallApproval(
   const sessionRuntime = createKernelRuntime({
     deployment,
     operator: sessionOperator({
-      key: ecdsaKey({
-        account: { address: operatorAddress, sign: async () => "0x" },
-        validator: `0x${"01".repeat(20)}`,
-      }),
+      key: ownerApprovedOperatorKey(operatorCredential, operatorKey),
       policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
     }),
     reads,
@@ -287,6 +349,7 @@ export function createOwnerAuthorization(
   clock: SecondsClock,
   options: OwnerDecision = {},
   reads: OaathChainCapability["reads"] = createChainFixture().capability.reads,
+  validator: `0x${string}` = VALIDATOR,
 ) {
   const calls: string[] = [];
   return {
@@ -315,11 +378,13 @@ export function createOwnerAuthorization(
           };
         } else {
           const approvedPolicy = options.policy ? options.policy(scope.policy) : scope.policy;
-          const operator = scope.operatorCredential as { readonly address: `0x${string}` };
+          const operator = parseOperatorCredentialProfile(scope.operatorCredential);
           const installApproval = await ownerInstallApproval(
             reads,
             approvedPolicy,
-            operator.address,
+            operator,
+            options.operatorKey,
+            validator,
           );
           decision = {
             version: OAATH_PERMISSION_DECISION_VERSION,
@@ -367,6 +432,9 @@ function word(value: bigint): string {
 
 function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+    return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+  }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
     return selectedDeployment.implementationDeployment.runtimeCodeHash;
   }
@@ -385,6 +453,8 @@ export interface ChainFixtureOptions {
   readonly usage?: boolean;
   readonly bundler?: "available" | "absent" | "unsupported" | "unreadable";
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
+  readonly paymasterService?: Readonly<OaathRegisteredPaymasterService> | null;
+  readonly staticPaymasterConfigurationHash?: `0x${string}` | null;
   /** Injected crash inside the send boundary, after the transport accepted it. */
   readonly crashOnSend?: () => boolean;
   /**
@@ -472,7 +542,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       entryPoint: prepared.entryPoint.address,
       sender: prepared.userOperation.sender,
       nonce: quantity(nonce),
-      paymaster: ZERO_ADDRESS,
+      paymaster: prepared.userOperation.paymaster?.address ?? ZERO_ADDRESS,
       actualGasCost: "0x9",
       actualGasUsed: "0xa",
       success,
@@ -493,6 +563,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       blockHash: blockHash(currentIndex()),
       transactionIndex: "0x0",
       status: "0x1",
+      gasUsed: "0x2a",
       logs: [
         {
           address: prepared.entryPoint.address,
@@ -517,7 +588,9 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             EVENT_TOPIC,
             prepared.userOperationHash,
             `0x${"0".repeat(24)}${prepared.userOperation.sender.slice(2)}`,
-            `0x${"0".repeat(24)}${ZERO_ADDRESS.slice(2)}`,
+            `0x${"0".repeat(24)}${(prepared.userOperation.paymaster?.address ?? ZERO_ADDRESS).slice(
+              2,
+            )}`,
           ],
           data: `0x${word(nonce)}${word(success ? 1n : 0n)}${word(9n)}${word(10n)}`,
         },
@@ -654,6 +727,8 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           })
         : null,
     feePayer: options.feePayer ?? null,
+    paymasterService: options.paymasterService ?? null,
+    staticPaymasterConfigurationHash: options.staticPaymasterConfigurationHash ?? null,
   });
 
   return Object.freeze({
@@ -670,26 +745,40 @@ export interface RealmStores {
   readonly grants: ReturnType<typeof createMemoryGrantStoreAdapter>;
   readonly operations: ReturnType<typeof createMemoryOperationStoreAdapter>;
   readonly walletCallBundles: ReturnType<typeof createMemoryWalletCallBundleStoreAdapter>;
+  readonly preparedCallContexts?: ReturnType<typeof createMemoryPreparedCallStoreAdapter>;
   readonly keys: ReturnType<typeof createMemoryKeyStore>;
   readonly cleanup: ReturnType<typeof createMemoryCleanupStore>;
   readonly context: ReturnType<typeof createMemoryContextStore>;
 }
 
-export function createMemoryStores(): RealmStores {
+export type CompleteRealmStores = RealmStores &
+  Readonly<{
+    preparedCallContexts: ReturnType<typeof createMemoryPreparedCallStoreAdapter>;
+  }>;
+
+export function createMemoryStores(): CompleteRealmStores {
   return {
     grants: createMemoryGrantStoreAdapter(),
     operations: createMemoryOperationStoreAdapter(),
     walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
+    preparedCallContexts: createMemoryPreparedCallStoreAdapter(),
     keys: createMemoryKeyStore(),
     cleanup: createMemoryCleanupStore(),
     context: createMemoryContextStore(),
   };
 }
 
-export function signingProfiles() {
+function completeRealmStores(stores: RealmStores): CompleteRealmStores {
   return {
-    owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
-    session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
+    ...stores,
+    preparedCallContexts: stores.preparedCallContexts ?? createMemoryPreparedCallStoreAdapter(),
+  };
+}
+
+export function signingProfiles(validator: `0x${string}` = VALIDATOR) {
+  return {
+    owner: ecdsaKey({ account: ownerAccount, validator }),
+    session: ecdsaKey({ account: sessionAccount, validator }),
   };
 }
 
@@ -711,13 +800,21 @@ export interface UrlRealmOptions {
     providerId: string;
     provider: unknown;
   }>;
+  readonly paymasterService?: Readonly<{
+    providerId: string;
+    requestTimeoutMs: number;
+    provider: Readonly<{
+      getPaymasterStubData: (request: unknown) => Promise<unknown>;
+      getPaymasterData: (request: unknown) => Promise<unknown>;
+    }>;
+  }>;
 }
 
 export interface UrlRealm {
   readonly oaath: Readonly<Oaath>;
   readonly clock: SecondsClock;
   readonly chain: ChainFixture;
-  readonly stores: RealmStores;
+  readonly stores: CompleteRealmStores;
   readonly relay: (request: Request) => Promise<Response>;
   readonly invalidations: () => number;
   readonly fetched: readonly string[];
@@ -732,7 +829,7 @@ export interface UrlRealm {
 export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   const clock = options.clock ?? createClock();
   const chain = options.chain ?? createChainFixture();
-  const stores = options.stores ?? createMemoryStores();
+  const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const relay =
     options.relay ??
     createRelay(clock, {
@@ -749,6 +846,23 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
       },
       chains: [relayChainPort(chain)],
       ...(options.sessionSigner ? { sessionSigner: options.sessionSigner } : {}),
+      ...(options.paymasterService
+        ? {
+            rateLimit: {
+              async check() {
+                return "allowed" as const;
+              },
+            },
+            paymasterServices: [
+              {
+                chainId: chain.capability.chainId,
+                providerId: options.paymasterService.providerId,
+                requestTimeoutMs: options.paymasterService.requestTimeoutMs,
+                provider: options.paymasterService.provider,
+              },
+            ],
+          }
+        : {}),
     });
   const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
   let invalidations = 0;
@@ -804,6 +918,8 @@ export interface RealmOptions {
   readonly chains?: readonly ChainFixture[];
   readonly binding?: unknown;
   readonly owner?: OwnerDecision;
+  /** ECDSA validator deployed by a real local chain fixture. */
+  readonly validator?: `0x${string}`;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
   readonly signing?: ReturnType<typeof signingProfiles>;
   readonly issuerSignOut?: (() => Promise<unknown>) | null;
@@ -816,7 +932,7 @@ export interface Realm {
   readonly oaath: Readonly<Oaath>;
   readonly clock: SecondsClock;
   readonly relay: (request: Request) => Promise<Response>;
-  readonly stores: RealmStores;
+  readonly stores: CompleteRealmStores;
   readonly chain: ChainFixture;
   readonly ownerCalls: readonly string[];
   readonly signOutCalls: () => number;
@@ -827,10 +943,17 @@ export interface Realm {
 export function createRealm(options: RealmOptions = {}): Realm {
   const clock = options.clock ?? createClock();
   const relay = options.relay ?? createRelay(clock);
-  const stores = options.stores ?? createMemoryStores();
+  const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
   const chains = options.chains ?? [chain];
-  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
+  const validator = options.validator ?? VALIDATOR;
+  const owner = createOwnerAuthorization(
+    relay,
+    clock,
+    options.owner ?? {},
+    chain.capability.reads,
+    validator,
+  );
   let signOuts = 0;
   let invalidations = 0;
 
@@ -863,7 +986,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
     },
     stores,
     chains: chains.map((entry) => entry.capability),
-    signing: options.signing ?? signingProfiles(),
+    signing: options.signing ?? signingProfiles(validator),
     localKeyIds: ["session-key"],
     now: clock.now,
   });

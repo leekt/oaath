@@ -18,7 +18,11 @@ import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
-import { pinnedValidatorModule } from "../src/kernel/modules.js";
+import {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  pinnedValidatorModule,
+} from "../src/kernel/modules.js";
 import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
@@ -97,6 +101,9 @@ function base64Url(value: Uint8Array): string {
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+    return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+  }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
     return deployment.implementationDeployment.runtimeCodeHash;
   }
@@ -248,6 +255,17 @@ function ecdsaRuntime(authority: KernelOperatorAuthority, state?: "counterfactua
 async function ecdsaAccountDescriptor() {
   const runtime = ecdsaRuntime("owner");
   return runtime.bindAccount({ accountIndex: "0", initialPackages: runtime.packages });
+}
+
+function ecdsaValidityRuntime(runtimeReads = reads()) {
+  return createKernelRuntime({
+    deployment,
+    operator: sessionOperator({
+      key: keyProfiles.ecdsa(),
+      policies: [sessionScope, { kind: "expiry", validAfter: "0", validUntil: "1750003600" }],
+    }),
+    reads: runtimeReads,
+  });
 }
 
 describe("Kernel composition matrix", () => {
@@ -501,6 +519,67 @@ describe("Kernel composition matrix", () => {
     await expect(
       session.bindAccount({ accountIndex: "0", initialPackages: owner.packages }),
     ).resolves.toMatchObject({ account });
+  });
+
+  it("prepares a requested range only after this session proves the exact policy runtime", async () => {
+    const owner = ecdsaRuntime("owner");
+    const session = ecdsaValidityRuntime();
+    const descriptor = await session.bindAccount({
+      accountIndex: "0",
+      initialPackages: owner.packages,
+    });
+    const operation = {
+      kind: "execution" as const,
+      grantId: "kernel-composition-validity-range",
+      account: descriptor,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "0", data: "0x" as const }],
+      gas,
+      validityTimeRange: { validAfter: "100", validUntil: "200" },
+    };
+
+    const prepared = session.prepareOperation(operation);
+    expect(prepared.userOperation.callData).toContain("1ba8f415");
+    expect(session.packages).toContainEqual(
+      expect.objectContaining({ moduleType: 5, module: OAATH_KERNEL_V4_VALIDITY_POLICY }),
+    );
+
+    const ownerBound = await owner.bindAccount({
+      accountIndex: "0",
+      initialPackages: owner.packages,
+    });
+    expect(() => session.prepareOperation({ ...operation, account: ownerBound })).toThrowError(
+      expect.objectContaining({ code: "kernel_runtime_policy_unavailable" }),
+    );
+    expect(() =>
+      ecdsaRuntime("session").prepareOperation({ ...operation, account: ownerBound }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_policy_unavailable" }));
+    expect(() => owner.prepareOperation({ ...operation, account: ownerBound })).toThrowError(
+      expect.objectContaining({ code: "kernel_runtime_policy_unavailable" }),
+    );
+  });
+
+  it("refuses to bind a validity session when the pinned policy runtime hash differs", async () => {
+    const ordinary = reads();
+    const session = ecdsaValidityRuntime({
+      async read(request: KernelV4AccountReadRequest): Promise<unknown> {
+        if (
+          request.type === "runtime_code_hash" &&
+          request.address === OAATH_KERNEL_V4_VALIDITY_POLICY
+        ) {
+          return `0x${"ff".repeat(32)}`;
+        }
+        return ordinary.read(request);
+      },
+    });
+    const owner = ecdsaRuntime("owner");
+    await expect(
+      session.bindAccount({ accountIndex: "0", initialPackages: owner.packages }),
+    ).rejects.toMatchObject({
+      code: "kernel_runtime_policy_unavailable",
+      message: "Kernel validity policy runtime code does not match the pinned artifact",
+    });
   });
 
   it("refuses to sign an operation prepared for another authority", async () => {
@@ -1155,7 +1234,7 @@ describe("Kernel module registry", () => {
       (["call", "expiry", "operation-limit"] as const).map((kind) => pinnedPolicyModule(kind)),
     ).toEqual([
       "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
-      "0xb9f8f524be6ecd8c945b1b87f9ae5c192fdce20f",
+      "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
       "0xf63d4139b25c836334edd76641356c6b74c86873",
     ]);
   });
@@ -1244,10 +1323,9 @@ describe("Kernel permission policy compilation", () => {
     ).toEqual([0n]);
   });
 
-  it("compiles the expiry axis into the exact TimestampPolicy install payload", () => {
-    // TimestampPolicy._policyOninstall decodes abi.encode(ValidAfter, ValidUntil),
-    // two uint48 words; checkUserOpPolicy returns them as the ERC-4337 packed
-    // range, so EntryPoint refuses an expired session with AA22.
+  it("compiles the expiry axis into the exact OAAth validity-policy install payload", () => {
+    // OaathKernelV4ValidityPolicy.onInstall decodes abi.encode(validAfter,
+    // validUntil), two uint48 words, as the immutable Grant ceiling.
     const policy = compileKernelPermissionPolicy([
       { kind: "call", permissions },
       { kind: "expiry", validAfter: "1750000000", validUntil: "1750003600" },

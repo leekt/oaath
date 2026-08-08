@@ -21,16 +21,20 @@ The page has one **Pair phone** action plus four account actions:
    address. It asks for no owner authorization.
 2. **Request permission** creates a secp256k1 session private key in the page
    (`crypto.getRandomValues` through noble), retains it in `localStorage`, and
-   sends only its public key/address. The relay asks the phone to sign the SDK's
-   replayable Kernel enable digest after displaying the full JSON.
+   sends only its public key/address. The relay binds the actual Kernel account,
+   install nonce, exact runtime packages, and paired P-256 credential into a
+   closed EIP-712 `kernel-enable` owner-signing request. The authenticated phone
+   projection carries that request and its exact protocol request hash. Only an
+   exact current Kernel/P-256 review can expose Approve; the phone derives the
+   digest, requires its current paired key and user presence, and the server
+   independently verifies the canonical artifact before releasing it.
 3. **Send tx with session key** gets the validation nonce from EntryPoint,
    prepares the CallPolicy/value-bounded operation server-side, signs its exact
    UserOperation hash in the page, and submits. In default local mode it is
    repeatable.
-4. **Send tx with owner key** prepares a UserOperation, projects its full JSON
-   and exact hash to the phone, and submits only the signature released after
-   explicit approval. Live ZeroDev mode obtains and hash-binds sponsorship
-   before it creates this single phone request.
+4. **Send tx with owner key** prepares a UserOperation and may project its full
+   JSON and exact hash for inspection. It cannot submit through owner consent
+   until a closed request lets the device derive and verify that hash itself.
 
 The demo owns independent in-memory owner and session operation lanes for its
 paired account and chain. Each retains the exact prepared hash, bundler
@@ -57,10 +61,16 @@ Its owned transport and local chain
 provide the complete strict four-account-action evidence path: transaction membership
 and index, the exact EntryPoint event, ancestry, endpoint rebound, and finality.
 This is owned local evidence, not Byzantine RPC verification.
-`OAATH_PHONE_SIMULATE=1` pairs a noble P-256 phone, signs both phone requests,
-exercises Pair plus all four account actions, sends the session action twice with getNonce-derived
-sequences, and contacts neither Apple nor ZeroDev. `pnpm examples:check` owns
-this unattended path.
+`OAATH_PHONE_SIMULATE=1` pairs a noble P-256 test fixture and exercises Pair
+plus all four account actions, sending the session action twice with
+getNonce-derived sequences, while contacting neither Apple nor ZeroDev. The
+actual permission route first proves the structured Kernel request is
+approvable and digest-consistent, then proves an invalid artifact leaves it
+pending with no server release. Only then does the fixture inject owner
+signatures locally to preserve chain and race evidence; it does not simulate
+Secure Enclave user presence, approve the relay request, or provide physical
+phone-consent evidence.
+`pnpm examples:check` owns this unattended path.
 
 ## ZeroDev Arbitrum Sepolia mode (explicit live opt-in)
 
@@ -83,11 +93,12 @@ simulation without valid session evidence (`AA23`). Core SDK sponsorship
 preparation then re-prepares so every returned field is hash-bound; the browser
 signs that distinct final hash, and the relay sends only the final operation through
 `eth_sendUserOperation([signedUserOp, entryPoint])`. Acceptance must return the
-prepared hash exactly. The owner path applies the same two-hash rule with two
-preparation phases internally: a validation-shaped dummy signature obtains the
-sponsorship, then the phone sees and signs only the final sponsored hash. Live
-calls transfer zero ETH because the paymaster sponsors gas, not call value;
-local Anvil mode retains its small value transfers.
+prepared hash exactly. The owner path can prepare the same two-hash sequence
+internally, but the native phone will not sign the final network-supplied
+sponsored hash. A future live owner flow must first supply a closed request that
+the device can derive and verify. Live calls transfer zero ETH because the
+paymaster sponsors gas, not call value; local Anvil mode retains its small value
+transfers.
 At most **four** one-second-spaced transaction-discovery polls may retain the first canonical
 transaction hash.
 
@@ -123,12 +134,16 @@ path. While paired, the app polls `GET /demo/inbox` about every two seconds and
 offers Refresh. The endpoint accepts only the exact active paired-device bearer
 and returns at most 20 sorted, undecided, unexpired opaque summaries (operation
 id, match code, expiry). Selecting one only fetches the existing full
-authenticated projection; Approve/Reject remain explicit. Listing never creates,
-decides, submits, observes, or releases anything.
+authenticated projection. Structured permission approvals, exact
+Kernel/P-256 owner signing, and all rejections remain explicit. Every other
+owner-signing request stays reject-only. Listing never creates, decides,
+submits, observes, or releases anything.
 
 APNs is an optional physical-device enhancement: set `APNS_KEY_PEM` (or
 `APNS_KEY_PEM_PATH`), `APNS_KEY_ID`, `APPLE_TEAM_ID`, and `APNS_TOPIC`. Exactly
-one opaque notification is attempted per signature request against Apple's
-sandbox host with a 10-second timeout. Without those values, use the pull inbox
-(or manual operation-id fallback); full consent still travels over the
-authenticated projection, never through push.
+one opaque notification is attempted per owner-signing request against Apple's
+sandbox host with a 10-second timeout. Without those values, use the
+pull inbox (or manual operation-id fallback). Full review detail still travels
+over the authenticated projection, never through push. A notification grants
+nothing: only an exact Kernel/P-256 projection with a current local pairing can
+expose approval; every other owner-signing request remains reject-only.

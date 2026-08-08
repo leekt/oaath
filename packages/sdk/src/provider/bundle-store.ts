@@ -1,9 +1,10 @@
 /**
  * Durable fact owner for Final EIP-5792 wallet-call bundle identities.
  *
- * A present provider-scoped key permanently reserves the application-provided
- * ID regardless of Grant, account, or chain. State advances monotonically
- * through compare-and-swap, and terminal records remain durable tombstones.
+ * A present provider-and-account-scoped key permanently reserves the
+ * application-provided ID regardless of Grant or chain. A confirmation-pending
+ * record owns no publication lease; approval starts a fresh lease through CAS.
+ * State advances monotonically and terminal records remain durable tombstones.
  * Adapter acknowledgements are never trusted without a retained-record read.
  *
  * @author taek <leekt216@gmail.com>
@@ -26,8 +27,10 @@ import {
   type WalletCallBundleStoreRecord,
 } from "../persistence/interfaces.js";
 import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
+import { captureWalletCallResultCapabilities } from "./result-capabilities.js";
 
 export const WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS = 30;
+export const WALLET_CALL_BUNDLE_CONFIRMATION_LIFETIME_SECONDS = 300;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
@@ -128,7 +131,7 @@ function inputOperation(value: unknown): Readonly<WalletCallBundleOperation> {
   const context: CaptureContext = new WeakSet();
   const operation = exactRecord(
     value,
-    ["identity"],
+    ["identity", "resultCapabilities"],
     "Wallet call bundle operation reservation",
     "store_input_invalid",
     context,
@@ -141,7 +144,13 @@ function inputOperation(value: unknown): Readonly<WalletCallBundleOperation> {
         "Wallet call bundle operation must be a provider execution identity",
       );
     }
-    return Object.freeze({ identity });
+    const resultCapabilities =
+      operation.resultCapabilities === null
+        ? null
+        : captureWalletCallResultCapabilities(operation.resultCapabilities, context, (message) =>
+            invalid("store_input_invalid", message),
+          );
+    return Object.freeze({ identity, resultCapabilities });
   } catch (error) {
     if (error instanceof OaathStoreError) throw error;
     return invalid("store_input_invalid", "Wallet call bundle operation identity is invalid");
@@ -165,7 +174,11 @@ function storedBundleRecord(value: unknown): Readonly<WalletCallBundleRecord> {
 }
 
 function sameKey(left: WalletCallBundleKey, right: WalletCallBundleKey): boolean {
-  return left.providerScopeId === right.providerScopeId && left.id === right.id;
+  return (
+    left.providerScopeId === right.providerScopeId &&
+    left.account === right.account &&
+    left.id === right.id
+  );
 }
 
 function sameOperation(
@@ -173,7 +186,7 @@ function sameOperation(
   right: Readonly<WalletCallBundleOperation> | null,
 ): boolean {
   if (left === null || right === null) return left === right;
-  return JSON.stringify(left.identity) === JSON.stringify(right.identity);
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function sameValue(left: WalletCallBundleRecord, right: WalletCallBundleRecord): boolean {
@@ -186,6 +199,7 @@ function sameValue(left: WalletCallBundleRecord, right: WalletCallBundleRecord):
     left.account === right.account &&
     left.chainId === right.chainId &&
     left.createdAt === right.createdAt &&
+    left.confirmationExpiresAt === right.confirmationExpiresAt &&
     left.publicationExpiresAt === right.publicationExpiresAt &&
     left.publicationReleasedAt === right.publicationReleasedAt &&
     left.requestHash === right.requestHash &&
@@ -221,25 +235,33 @@ function sameImmutableIdentity(
     left.account === right.account &&
     left.chainId === right.chainId &&
     left.createdAt === right.createdAt &&
-    left.publicationExpiresAt === right.publicationExpiresAt &&
+    left.confirmationExpiresAt === right.confirmationExpiresAt &&
     left.requestHash === right.requestHash
   );
 }
 
 function stateRank(state: WalletCallBundleRecord["state"]): number {
-  if (state === "accepted") return 0;
-  if (state === "operation_reserved") return 1;
-  if (state === "operation_bound") return 2;
-  return 3;
+  if (state === "confirmation_pending") return 0;
+  if (state === "accepted") return 1;
+  if (state === "operation_reserved") return 2;
+  if (state === "operation_bound") return 3;
+  return 4;
 }
 
 function requiredStoreRevision(value: WalletCallBundleRecord): number {
+  if (value.state === "confirmation_pending") return 0;
   const releaseRevision = value.publicationReleasedAt === null ? 0 : 1;
-  if (value.state !== "terminal") return stateRank(value.state) + releaseRevision;
+  const approvalRevision = value.confirmationExpiresAt === null ? 0 : 1;
+  if (value.state === "accepted") return approvalRevision;
+  if (value.state === "operation_reserved") return approvalRevision + 1;
+  if (value.state === "operation_bound") return approvalRevision + 2 + releaseRevision;
   if (value.terminalFrom === null) {
     return invalid("store_record_invalid", "Wallet call bundle terminal origin is missing");
   }
-  return stateRank(value.terminalFrom) + releaseRevision + 1;
+  if (value.terminalFrom === "confirmation_pending") return 1;
+  if (value.terminalFrom === "accepted") return approvalRevision + 1;
+  if (value.terminalFrom === "operation_reserved") return approvalRevision + 2;
+  return approvalRevision + 3 + releaseRevision;
 }
 
 function requireCompatibleHistory(
@@ -282,6 +304,19 @@ function requireCompatibleHistory(
     invalid("store_identity_mismatch", "Wallet call bundle operation binding changed");
   }
   if (
+    previous.value.publicationExpiresAt !== null &&
+    current.value.publicationExpiresAt !== previous.value.publicationExpiresAt
+  ) {
+    invalid("store_identity_mismatch", "Wallet call bundle publication lease changed");
+  }
+  if (
+    previous.value.publicationExpiresAt === null &&
+    current.value.publicationExpiresAt !== null &&
+    previous.value.state !== "confirmation_pending"
+  ) {
+    invalid("store_record_invalid", "Wallet call bundle publication lease changed");
+  }
+  if (
     previous.value.publicationReleasedAt !== null &&
     current.value.publicationReleasedAt !== previous.value.publicationReleasedAt
   ) {
@@ -302,22 +337,36 @@ function nextStoreRevision(current: number | null): number {
   return current === null ? 0 : current + 1;
 }
 
-function reserveInput(value: unknown): Readonly<{
+function reserveInput(
+  value: unknown,
+  confirmationPending: boolean,
+): Readonly<{
   key: Readonly<WalletCallBundleKey>;
   record: Readonly<WalletCallBundleRecord>;
 }> {
   const input = exactRecord(
     value,
-    [
-      "key",
-      "grantId",
-      "generation",
-      "account",
-      "chainId",
-      "createdAt",
-      "publicationExpiresAt",
-      "requestHash",
-    ],
+    confirmationPending
+      ? [
+          "key",
+          "grantId",
+          "generation",
+          "account",
+          "chainId",
+          "createdAt",
+          "confirmationExpiresAt",
+          "requestHash",
+        ]
+      : [
+          "key",
+          "grantId",
+          "generation",
+          "account",
+          "chainId",
+          "createdAt",
+          "publicationExpiresAt",
+          "requestHash",
+        ],
     "Wallet call bundle reservation",
     "store_input_invalid",
   );
@@ -331,14 +380,63 @@ function reserveInput(value: unknown): Readonly<{
     account: input.account,
     chainId: input.chainId,
     createdAt: input.createdAt,
-    publicationExpiresAt: input.publicationExpiresAt,
+    confirmationExpiresAt: confirmationPending ? input.confirmationExpiresAt : null,
+    publicationExpiresAt: confirmationPending ? null : input.publicationExpiresAt,
     publicationReleasedAt: null,
     requestHash: input.requestHash,
     operation: null,
-    state: "accepted",
+    state: confirmationPending ? "confirmation_pending" : "accepted",
     terminalFrom: null,
   });
+  if (record.account !== key.account) {
+    return invalid("store_input_invalid", "Wallet call bundle account contradicts its key");
+  }
   return Object.freeze({ key, record });
+}
+
+function approveConfirmationInput(value: unknown): Readonly<{
+  key: Readonly<WalletCallBundleKey>;
+  expectedStoreRevision: number;
+  expectedGeneration: Hash;
+  approvedAt: number;
+  publicationExpiresAt: number;
+}> {
+  const input = exactRecord(
+    value,
+    ["key", "expectedStoreRevision", "expectedGeneration", "approvedAt", "publicationExpiresAt"],
+    "Wallet call bundle confirmation approval",
+    "store_input_invalid",
+  );
+  const approvedAt = safeInteger(
+    input.approvedAt,
+    "Wallet call bundle approval time",
+    "store_input_invalid",
+    0,
+  );
+  const publicationExpiresAt = safeInteger(
+    input.publicationExpiresAt,
+    "Wallet call bundle publication expiry",
+    "store_input_invalid",
+    1,
+  );
+  if (
+    approvedAt > Number.MAX_SAFE_INTEGER - WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS ||
+    publicationExpiresAt !== approvedAt + WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS
+  ) {
+    return invalid("store_input_invalid", "Wallet call bundle publication lease is invalid");
+  }
+  return Object.freeze({
+    key: inputKey(input.key),
+    expectedStoreRevision: safeInteger(
+      input.expectedStoreRevision,
+      "Wallet call bundle expected store revision",
+      "store_input_invalid",
+      0,
+    ),
+    expectedGeneration: hash(input.expectedGeneration, "Wallet call bundle expected generation"),
+    approvedAt,
+    publicationExpiresAt,
+  });
 }
 
 function reserveOperationInput(value: unknown): Readonly<{
@@ -428,11 +526,49 @@ export class WalletCallBundleStore {
   }
 
   async reserveAccepted(value: unknown): Promise<WalletCallBundleMutationResult> {
-    const input = reserveInput(value);
+    const input = reserveInput(value, false);
     this.#assertOpen();
     const current = await this.#read(input.key);
     if (current !== undefined) return conflict(current);
     return this.#compareAndSwap(input.key, null, null, input.record, input.record.createdAt);
+  }
+
+  async reservePendingConfirmation(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = reserveInput(value, true);
+    this.#assertOpen();
+    const current = await this.#read(input.key);
+    if (current !== undefined) return conflict(current);
+    return this.#compareAndSwap(input.key, null, null, input.record, input.record.createdAt);
+  }
+
+  async approveConfirmation(value: unknown): Promise<WalletCallBundleMutationResult> {
+    const input = approveConfirmationInput(value);
+    this.#assertOpen();
+    const current = await this.#read(input.key);
+    if (
+      current === undefined ||
+      current.storeRevision !== input.expectedStoreRevision ||
+      current.value.generation !== input.expectedGeneration ||
+      current.value.state !== "confirmation_pending" ||
+      current.value.confirmationExpiresAt === null ||
+      input.approvedAt < current.updatedAt ||
+      input.approvedAt >= current.value.confirmationExpiresAt
+    ) {
+      return conflict(current);
+    }
+    const next = inputBundleRecord({
+      ...current.value,
+      publicationExpiresAt: input.publicationExpiresAt,
+      state: "accepted",
+    });
+    return this.#compareAndSwap(
+      input.key,
+      input.expectedStoreRevision,
+      input.expectedGeneration,
+      next,
+      input.approvedAt,
+      current,
+    );
   }
 
   async reserveOperation(value: unknown): Promise<WalletCallBundleMutationResult> {
@@ -606,6 +742,7 @@ export class WalletCallBundleStore {
     }
     const valueKey = Object.freeze({
       providerScopeId: value.providerScopeId,
+      account: value.account,
       id: value.id,
     });
     if (!sameKey(valueKey, key)) {

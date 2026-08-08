@@ -274,6 +274,9 @@ function prepareKernelPermission(value: MaterializeKernelPermissionInput): Reado
     sequence: value.sequence,
     calls: value.calls,
     gas: value.gas,
+    ...(Object.hasOwn(value, "validityTimeRange")
+      ? { validityTimeRange: value.validityTimeRange }
+      : {}),
     paymaster: value.paymaster ?? null,
   });
   if (prepared.userOperation.sender !== scope.account) {

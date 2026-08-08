@@ -99,6 +99,7 @@ function chainPort(capability) {
     },
     usage: capability.usage === null ? null : (request) => capability.usage(request),
     feePayer: capability.feePayer,
+    staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
   };
 }
 
@@ -265,6 +266,7 @@ async function ownerConsole() {
         signer: "owner",
         account: bound.account,
         calls,
+        paymaster: null,
       });
       const prepared = ownerRuntime.prepareOperation({
         kind: "revocation",

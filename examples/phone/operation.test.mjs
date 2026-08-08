@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { p256 } from "@noble/curves/nist.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import {
+  createKernelV4ReplayableInstallTypedData,
+  hashCanonicalEip712TypedData,
+  hashOwnerSigningRequest,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
+  OAATH_OWNER_SIGNING_REQUEST_VERSION,
+  serializeOwnerSigningArtifact,
+} from "@oaath/protocol";
 import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { encodeAbiParameters, encodeEventTopics } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
@@ -12,8 +23,6 @@ import {
   AtomicPermissionReservation,
   AtomicReservationLane,
   cacheImmutableKernelReads,
-  canonicalDisplay,
-  captureCanonicalDisplay,
   captureOperationTransactionHash,
   captureZeroDevSponsorship,
   createLiveUserOperationObserver,
@@ -35,6 +44,7 @@ import {
   validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
 } from "./operation.mjs";
+import { captureKernelOwnerSignature } from "./owner-signing.mjs";
 
 const validSponsorship = Object.freeze({
   callGasLimit: 1n,
@@ -46,6 +56,127 @@ const validSponsorship = Object.freeze({
   paymasterData: "0xABCD",
   maxFeePerGas: 6n,
   maxPriorityFeePerGas: 7n,
+});
+
+function createKernelOwnerArtifactInput() {
+  const privateKey = p256.utils.randomPrivateKey();
+  try {
+    const account = `0x${"66".repeat(20)}`;
+    const typedData = createKernelV4ReplayableInstallTypedData({
+      account,
+      nonce: "0",
+      packages: [
+        {
+          moduleType: 1,
+          module: `0x${"77".repeat(20)}`,
+          moduleData: "0x",
+          internalData: "0x",
+        },
+      ],
+    });
+    const expectedDigest = hashCanonicalEip712TypedData(typedData);
+    const request = Object.freeze({
+      version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+      kind: "eip712",
+      purpose: "kernel-enable",
+      signer: Object.freeze({
+        account,
+        ownerCredential: Object.freeze({
+          version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+          kind: "p256",
+          publicKey: `0x${bytesToHex(p256.getPublicKey(privateKey, false))}`,
+        }),
+      }),
+      typedData,
+      expectedDigest,
+      replay: Object.freeze({ nonce: "0", deadline: null }),
+    });
+    const signature = `0x${p256
+      .sign(hexToBytes(expectedDigest.slice(2)), privateKey, { lowS: true, prehash: false })
+      .toCompactHex()}`;
+    const artifact = Object.freeze({
+      version: OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
+      kind: "p256",
+      requestHash: hashOwnerSigningRequest(request),
+      signature,
+    });
+    return Object.freeze({
+      request,
+      artifact,
+      canonical: serializeOwnerSigningArtifact(artifact),
+    });
+  } finally {
+    privateKey.fill(0);
+  }
+}
+
+function rejectsKernelOwnerArtifact(request, artifact) {
+  assert.throws(() => captureKernelOwnerSignature(request, artifact), {
+    message: "owner_signing_artifact_invalid",
+  });
+}
+
+test("captures only the canonical artifact bound to the exact Kernel request", () => {
+  const input = createKernelOwnerArtifactInput();
+  assert.equal(
+    captureKernelOwnerSignature(input.request, input.canonical) === input.artifact.signature,
+    true,
+  );
+
+  rejectsKernelOwnerArtifact(input.request, null);
+  rejectsKernelOwnerArtifact(input.request, "not-json");
+  rejectsKernelOwnerArtifact(input.request, ` ${input.canonical}`);
+  rejectsKernelOwnerArtifact(
+    input.request,
+    JSON.stringify({
+      kind: input.artifact.kind,
+      version: input.artifact.version,
+      requestHash: input.artifact.requestHash,
+      signature: input.artifact.signature,
+    }),
+  );
+  rejectsKernelOwnerArtifact(
+    input.request,
+    serializeOwnerSigningArtifact({
+      ...input.artifact,
+      requestHash: `0x${"55".repeat(32)}`,
+    }),
+  );
+});
+
+test("rejects non-Kernel and non-P256 request authority", () => {
+  const input = createKernelOwnerArtifactInput();
+  const application = structuredClone(input.request);
+  application.purpose = "application";
+  rejectsKernelOwnerArtifact(application, input.canonical);
+
+  const ecdsa = structuredClone(input.request);
+  ecdsa.signer.ownerCredential = {
+    version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+    kind: "ecdsa",
+    address: `0x${"44".repeat(20)}`,
+  };
+  rejectsKernelOwnerArtifact(ecdsa, input.canonical);
+
+  const webauthn = structuredClone(input.request);
+  webauthn.signer.ownerCredential = {
+    version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+    kind: "webauthn",
+    publicKey: input.request.signer.ownerCredential.publicKey,
+    authenticatorIdHash: `0x${"33".repeat(32)}`,
+  };
+  rejectsKernelOwnerArtifact(webauthn, input.canonical);
+
+  rejectsKernelOwnerArtifact(
+    {
+      version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+      kind: "raw-digest",
+      digest: input.request.expectedDigest,
+      reason: "No device-side derivation is available",
+      decision: "reject-only",
+    },
+    input.canonical,
+  );
 });
 
 test("instruments the exact worst-case live RPC call graph under one hard budget", () => {
@@ -197,22 +328,6 @@ test("rejects malformed SDK sponsorship results", () => {
   ])
     assert.throws(() => captureZeroDevSponsorship({ ...validSponsorship, ...change }), {
       message: "zerodev_sponsorship_invalid",
-    });
-});
-
-test("canonical display pins every exact byte and binds the digest", () => {
-  const digest = `0x${"4b".repeat(32)}`;
-  const display = canonicalDisplay({ z: "last", digest, nested: { b: 2, a: 1 } });
-  assert.equal(display, `{"digest":"${digest}","nested":{"a":1,"b":2},"z":"last"}`);
-  assert.equal(captureCanonicalDisplay(display, digest), display);
-  for (const drift of [
-    ` ${display}`,
-    display.replace('"z":"last"', '"z":"gone","z":"last"'),
-    display.replace(digest, `0x${"4c".repeat(32)}`),
-    display.replace('"a":1,"b":2', '"b":2,"a":1'),
-  ])
-    assert.throws(() => captureCanonicalDisplay(drift, digest), {
-      message: "signature_display_invalid",
     });
 });
 

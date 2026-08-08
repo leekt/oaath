@@ -2,7 +2,7 @@
  * Provider-scoped EIP-5792 wallet-call bundles in IndexedDB.
  *
  * The adapter moves opaque envelopes under the exact composite
- * `[providerScopeId, id]` key. `WalletCallBundleStore` owns all record
+ * `[providerScopeId, account, id]` key. `WalletCallBundleStore` owns all record
  * parsing and lifecycle rules; this backend only compares the envelope's store
  * revision and generation before conditionally writing in one transaction.
  *
@@ -24,7 +24,7 @@ import {
 
 function bundleKey(value: Readonly<WalletCallBundleKey>): IDBValidKey {
   const key = parseWalletCallBundleKey(value);
-  return [key.providerScopeId, key.id];
+  return [key.providerScopeId, key.account, key.id];
 }
 
 export function createIndexedDbWalletCallBundleStoreAdapter(

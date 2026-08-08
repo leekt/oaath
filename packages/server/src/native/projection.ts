@@ -29,9 +29,14 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { parsePermissionRequest } from "@oaath/protocol";
+import {
+  hashOwnerSigningRequest,
+  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type OwnerSigningRequest,
+} from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
+import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import type { RelayClock } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
@@ -41,26 +46,14 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v1" as const;
-
-/**
- * The versioned scope envelope a client stores to ask the owner's phone for one
- * signature over one 32-byte digest. It rides the existing kind-agnostic
- * authorization routes: `requestedScope` carries this JSON, the phone approves
- * with the signature as the decision artifact, and the one-time code/artifact
- * machinery releases it to the client exactly once. The relay never verifies or
- * interprets the signature; the requesting client's own key profile does.
- */
-export const OAATH_SIGNATURE_REQUEST_SCOPE_VERSION = "oaath.signature-request/v1" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v4" as const;
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
-const DIGEST = /^0x[0-9a-f]{64}$/u;
 
 /**
- * Whether the phone may offer approval for one projected scope. A recognized,
- * fully projected scope is approvable; an unknown or malformed one stays
- * inspectable but is reject-only — a production consent surface never offers
- * an Approve button over authority it could not read.
+ * Whether the phone may offer approval for one projected scope. Permission
+ * requests and exact Kernel replayable-install P-256 signing are approvable;
+ * every other owner-signing, unknown, and malformed scope remains reject-only.
  */
 export type OwnerPhoneDecisionCapability = "approve-or-reject" | "reject-only";
 
@@ -74,9 +67,9 @@ export type OwnerPhoneCredentialProjection =
  * The requested scope as the phone renders it. When the stored scope parses as
  * an `@oaath/protocol` permission request, every fact that determines who
  * receives authority, over which account, and under what limits is projected
- * structurally; anything else is returned as an explicitly labeled raw string
- * for the owner to review. Neither shape is a failure, but only a recognized
- * shape is approvable.
+ * structurally. A valid owner-signing request is also projected in full with
+ * its protocol-owned hash; only exact Kernel replayable-install P-256 signing
+ * is approvable. Anything else is returned as explicitly labeled raw text.
  */
 export type OwnerPhoneScopeProjection =
   | Readonly<{
@@ -126,17 +119,20 @@ export type OwnerPhoneScopeProjection =
       perChainOperationLimit: number;
     }>
   | Readonly<{
-      kind: "signature-request";
+      kind: "owner-signing-request";
       decision: "approve-or-reject";
-      /** The exact 32-byte digest the owner's key is asked to sign. */
-      digest: `0x${string}`;
-      /**
-       * The full display JSON as one recursively key-sorted compact canonical
-       * string. Ambiguous/noncanonical bytes fail closed to `raw`. The phone
-       * renders these exact bytes, including the independently supplied digest,
-       * before the owner decides.
-       */
-      display: string;
+      /** Canonical hash binding every captured request fact. */
+      requestHash: `0x${string}`;
+      /** Exact Kernel request independently refined by the protocol owner. */
+      request: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+    }>
+  | Readonly<{
+      kind: "owner-signing-request";
+      decision: "reject-only";
+      /** Canonical hash binding every captured request fact. */
+      requestHash: `0x${string}`;
+      /** Full immutable protocol request for independent device review. */
+      request: Readonly<OwnerSigningRequest>;
     }>
   | Readonly<{ kind: "raw"; decision: "reject-only"; text: string }>;
 
@@ -207,118 +203,77 @@ export async function projectOwnerPhoneScope(
   operationId: string,
 ): Promise<OwnerPhoneScopeProjection> {
   try {
-    const parsed: unknown = JSON.parse(requestedScope);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
-    }
-    const signatureRequest = projectSignatureRequestScope(parsed);
-    if (signatureRequest) return signatureRequest;
-    const request = parsePermissionRequest({ ...parsed, requestId: operationId });
-    return Object.freeze({
-      kind: "permission-request",
-      decision: "approve-or-reject",
-      application: Object.freeze({
-        applicationId: request.application.applicationId,
-        clientId: request.application.clientId,
-        origin: request.application.origin,
-        deviceFingerprint: (
-          await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
-        ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
-      }),
-      account: Object.freeze({
-        accountIndex: request.logicalAccount.accountIndex,
-        kernelVersion: request.logicalAccount.kernelVersion,
-        factoryRoute: request.logicalAccount.factoryRoute,
-        entryPointVersion: request.logicalAccount.entryPoint.version,
-        ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
-      }),
-      operatorCredential: projectCredential(request.operatorCredential),
-      sessionSigner:
-        request.sessionSigner === null
-          ? null
-          : Object.freeze({
-              mode: request.sessionSigner.mode,
-              providerId: request.sessionSigner.providerId,
-            }),
-      chainScope: request.chainScope,
-      calls: Object.freeze(
-        request.policy.calls.map((call) =>
-          Object.freeze({
-            target: call.target,
-            selector: call.selector,
-            valueLimit: call.valueLimit,
-            argumentEquals: Object.freeze(
-              call.argumentEquals.map((rule) =>
-                Object.freeze({ index: rule.index, value: rule.value }),
+    const classified = classifyStoredAuthorizationScope(requestedScope, operationId);
+    if (classified.kind === "permission-request") {
+      const request = classified.request;
+      return Object.freeze({
+        kind: "permission-request",
+        decision: "approve-or-reject",
+        application: Object.freeze({
+          applicationId: request.application.applicationId,
+          clientId: request.application.clientId,
+          origin: request.application.origin,
+          deviceFingerprint: (
+            await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
+          ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+        }),
+        account: Object.freeze({
+          accountIndex: request.logicalAccount.accountIndex,
+          kernelVersion: request.logicalAccount.kernelVersion,
+          factoryRoute: request.logicalAccount.factoryRoute,
+          entryPointVersion: request.logicalAccount.entryPoint.version,
+          ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
+        }),
+        operatorCredential: projectCredential(request.operatorCredential),
+        sessionSigner:
+          request.sessionSigner === null
+            ? null
+            : Object.freeze({
+                mode: request.sessionSigner.mode,
+                providerId: request.sessionSigner.providerId,
+              }),
+        chainScope: request.chainScope,
+        calls: Object.freeze(
+          request.policy.calls.map((call) =>
+            Object.freeze({
+              target: call.target,
+              selector: call.selector,
+              valueLimit: call.valueLimit,
+              argumentEquals: Object.freeze(
+                call.argumentEquals.map((rule) =>
+                  Object.freeze({ index: rule.index, value: rule.value }),
+                ),
               ),
-            ),
-          }),
+            }),
+          ),
         ),
-      ),
-      requestedAt: request.requestedAt,
-      expiresAt: request.expiresAt,
-      policyValidAfter: request.policy.validAfter,
-      policyValidUntil: request.policy.validUntil,
-      perChainOperationLimit: request.policy.perChainOperationLimit,
-    });
+        requestedAt: request.requestedAt,
+        expiresAt: request.expiresAt,
+        policyValidAfter: request.policy.validAfter,
+        policyValidUntil: request.policy.validUntil,
+        perChainOperationLimit: request.policy.perChainOperationLimit,
+      });
+    }
+    if (classified.kind === "kernel-owner-signing-request") {
+      return Object.freeze({
+        kind: "owner-signing-request",
+        decision: "approve-or-reject",
+        requestHash: hashOwnerSigningRequest(classified.request),
+        request: classified.request,
+      });
+    }
+    if (classified.kind === "owner-signing-request") {
+      return Object.freeze({
+        kind: "owner-signing-request",
+        decision: "reject-only",
+        requestHash: hashOwnerSigningRequest(classified.request),
+        request: classified.request,
+      });
+    }
+    return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   } catch {
     return Object.freeze({ kind: "raw", decision: "reject-only", text: requestedScope });
   }
-}
-
-/**
- * Projects a stored signature-request scope structurally, or returns null so a
- * malformed one falls through to the labeled raw text: the owner still reviews
- * exactly what was stored, and the phone simply has no digest to sign.
- */
-function sortedJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortedJsonValue);
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.keys(record)
-        .sort()
-        .map((key) => [key, sortedJsonValue(record[key])]),
-    );
-  }
-  return value;
-}
-
-function projectSignatureRequestScope(parsed: object): OwnerPhoneScopeProjection | null {
-  const record = parsed as Record<string, unknown>;
-  if (
-    record.version !== OAATH_SIGNATURE_REQUEST_SCOPE_VERSION ||
-    record.kind !== "signature-request"
-  )
-    return null;
-  if (Object.keys(record).sort().join(",") !== "digest,display,kind,version") return null;
-  const digest = record.digest;
-  const display = record.display;
-  if (typeof digest !== "string" || !DIGEST.test(digest)) return null;
-  if (typeof display !== "string" || display.length < 1) return null;
-  // Parse and re-encode the actual consent bytes using the same recursively
-  // sorted compact codec the Swift decoder pins. This rejects whitespace,
-  // duplicate-key collapse, noncanonical escapes, and any display that does
-  // not visibly bind the independently supplied digest.
-  try {
-    const displayed: unknown = JSON.parse(display);
-    if (
-      displayed === null ||
-      typeof displayed !== "object" ||
-      Array.isArray(displayed) ||
-      (displayed as Record<string, unknown>).digest !== digest ||
-      JSON.stringify(sortedJsonValue(displayed)) !== display
-    )
-      return null;
-  } catch {
-    return null;
-  }
-  return Object.freeze({
-    kind: "signature-request",
-    decision: "approve-or-reject",
-    digest: digest as `0x${string}`,
-    display,
-  });
 }
 
 /**

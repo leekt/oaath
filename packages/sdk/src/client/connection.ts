@@ -61,6 +61,7 @@ import {
   parseClientContext,
 } from "../persistence/interfaces.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
+import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { GrantStore, GrantStoreRecord, OperationStoreAdapter } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import {
@@ -80,6 +81,19 @@ import {
 const MAX_PERMISSIONS = 16;
 const MAX_EXPIRES_IN = 86_400;
 const VERIFIER_BYTES = 32;
+
+function sameSessionSigner(
+  approved: Readonly<PermissionSessionSigner> | null,
+  current: Readonly<PermissionSessionSigner> | null,
+): boolean {
+  return (
+    (approved === null && current === null) ||
+    (approved !== null &&
+      current !== null &&
+      approved.mode === current.mode &&
+      approved.providerId === current.providerId)
+  );
+}
 
 /**
  * The issuer transport. The caller owns credentials: its `fetch` adds whatever
@@ -140,6 +154,7 @@ export interface CreateConnectionInput {
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly keys: OaathKeyStore;
   readonly contexts: OaathContextStore;
   readonly chains: ReadonlyMap<number, Readonly<OaathChainCapability>>;
@@ -271,6 +286,7 @@ export function createConnection(
     input.grants,
     input.operations,
     input.walletCallBundles,
+    input.preparedCallContexts,
     input.keys,
     input.contexts,
   ].map((resource) => ({ resource, closed: false }));
@@ -390,6 +406,7 @@ export function createConnection(
       grants: input.grants,
       operations: input.operations,
       walletCallBundles: input.walletCallBundles,
+      preparedCallContexts: input.preparedCallContexts,
       chains: input.chains,
       ownerKey: input.ownerKey,
       sessionKey: input.sessionKey,
@@ -653,6 +670,13 @@ export function createConnection(
         "oaath_client_state_conflict",
         "the persisted Grant does not match its reviewed request",
         "grant_identity_mismatch",
+      );
+    }
+    if (!sameSessionSigner(context.request.sessionSigner, input.sessionSigner)) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the current session signer does not match the reviewed Grant",
+        "session_signer_binding_mismatch",
       );
     }
 

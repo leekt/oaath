@@ -18,6 +18,14 @@ const OTHER_TRANSACTION_HASH = `0x${"12".repeat(32)}` as `0x${string}`;
 const BLOCK_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 const FIRST_TOPIC = `0x${"33".repeat(32)}` as `0x${string}`;
 const SECOND_TOPIC = `0x${"44".repeat(32)}` as `0x${string}`;
+const RESULT_CAPABILITIES = Object.freeze({
+  paymasterService: Object.freeze({
+    sponsor: Object.freeze({
+      name: "Example Sponsor",
+      icon: "data:image/png;base64,AQ==",
+    }),
+  }),
+});
 const ABANDONED_IDENTITY: OperationIdentity = {
   kind: "execution",
   grantId: "abandoned-status",
@@ -64,6 +72,7 @@ function operationReceipt(
     blockHash: BLOCK_HASH,
     blockNumber: "2748",
     gasUsed: "3567",
+    transactionStatus: "success",
     status,
     logs: [
       {
@@ -92,6 +101,24 @@ function project(
 }
 
 describe("Final EIP-5792 status projection", () => {
+  it("projects the already-captured display capability without changing status meaning", () => {
+    const result = projectEip5792Status({
+      id: "sponsored",
+      chainId: 421_614,
+      outcome: operationOutcome(),
+      resultCapabilities: RESULT_CAPABILITIES,
+    });
+
+    expect(result).toEqual({
+      version: "2.0.0",
+      id: "sponsored",
+      chainId: "0x66eee",
+      atomic: true,
+      capabilities: RESULT_CAPABILITIES,
+      status: 100,
+    });
+  });
+
   it("projects the operation handle outcome from exact abandonment evidence", () => {
     const abandoned = advanceOperation(
       createOperation({ identity: ABANDONED_IDENTITY, preparedAt: 10 }),
@@ -197,11 +224,11 @@ describe("Final EIP-5792 status projection", () => {
     });
   });
 
-  it("projects finalized full revert as 500 with receipt status 0x0", () => {
+  it("projects finalized full UserOperation revert as 500 with containing receipt status 0x1", () => {
     const result = project(finalizedOutcome("reverted"), operationReceipt("reverted"));
 
     expect(result.status).toBe(500);
-    expect("receipts" in result && result.receipts[0].status).toBe("0x0");
+    expect("receipts" in result && result.receipts[0].status).toBe("0x1");
   });
 
   it.each([

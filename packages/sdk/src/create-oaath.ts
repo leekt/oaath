@@ -70,6 +70,10 @@ import type {
 } from "./persistence/interfaces.js";
 import { persistenceId } from "./persistence/interfaces.js";
 import { WalletCallBundleStore } from "./provider/bundle-store.js";
+import {
+  PreparedCallStore,
+  type PreparedCallStoreAdapter,
+} from "./provider/prepared-call-store.js";
 import { GrantStore, type GrantStoreAdapter, type OperationStoreAdapter } from "./store.js";
 
 const MAX_CHAINS = 32;
@@ -79,6 +83,7 @@ export interface OaathStoreConfiguration {
   readonly grants: GrantStoreAdapter;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStoreAdapter;
+  readonly preparedCallContexts: PreparedCallStoreAdapter;
   readonly keys: OaathKeyStore;
   readonly cleanup: OaathCleanupCheckpointStore;
   readonly context: OaathContextStore;
@@ -157,6 +162,7 @@ const STORE_KEYS: readonly string[] = Object.freeze([
   "grants",
   "operations",
   "walletCallBundles",
+  "preparedCallContexts",
   "keys",
   "cleanup",
   "context",
@@ -321,6 +327,12 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       "wallet call bundle store",
       context,
     ),
+    preparedCallContexts: storePort<PreparedCallStoreAdapter>(
+      storeRecord.preparedCallContexts,
+      ["get", "compareAndSwap", "close"],
+      "prepared call context store",
+      context,
+    ),
     keys: storePort<OaathKeyStore>(
       storeRecord.keys,
       ["store", "get", "delete", "close"],
@@ -363,6 +375,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     stores.grants,
     stores.operations,
     stores.walletCallBundles,
+    stores.preparedCallContexts,
     stores.keys,
     stores.context,
   ].map((resource) => ({ resource, closed: false }));
@@ -392,6 +405,13 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
         stores.walletCallBundles.compareAndSwap(input),
       close: async () => undefined,
     }),
+    preparedCallContexts: Object.freeze({
+      get: (key: Parameters<PreparedCallStoreAdapter["get"]>[0]) =>
+        stores.preparedCallContexts.get(key),
+      compareAndSwap: (input: Parameters<PreparedCallStoreAdapter["compareAndSwap"]>[0]) =>
+        stores.preparedCallContexts.compareAndSwap(input),
+      close: async () => undefined,
+    }),
     keys: Object.freeze({
       store: (input: Parameters<OaathKeyStore["store"]>[0]) => stores.keys.store(input),
       get: (keyId: Parameters<OaathKeyStore["get"]>[0]) => stores.keys.get(keyId),
@@ -416,6 +436,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       grants: new GrantStore(connectionStores.grants),
       operations: connectionStores.operations,
       walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),
+      preparedCallContexts: new PreparedCallStore(connectionStores.preparedCallContexts),
       keys: connectionStores.keys,
       contexts: connectionStores.context,
       chains,

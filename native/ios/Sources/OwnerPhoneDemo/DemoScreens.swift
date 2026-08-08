@@ -422,26 +422,40 @@ public final class DemoModel: ObservableObject {
             onUnauthorized: { [weak self] rejectedPairing in
                 await self?.rejectIfCurrent(rejectedPairing)
             })
-        // The signing boundary: a signature-request approval signs the
-        // projected digest with the platform-authorized owner key (Secure
-        // Enclave on physical iOS) — the artifact IS the signature. Other scopes keep
-        // the demo's opaque placeholder artifact.
         let pairings = self.pairings
-        let model = ApprovalModel(relay: client, approvalArtifact: { projection in
+        let pairingIsCurrent: @Sendable () -> Bool = {
             guard pairings.load() == .stored(boundPairing),
-                  let publicMaterial = OwnerPublicMaterial(try ownerKey.publicMaterialHex()),
-                  publicMaterial == boundPairing.ownerPublicMaterial
-            else {
+                  let publicMaterialText = try? ownerKey.publicMaterialHex(),
+                  let publicMaterial = OwnerPublicMaterial(publicMaterialText),
+                  publicMaterial == boundPairing.ownerPublicMaterial,
+                  pairings.load() == .stored(boundPairing)
+            else { return false }
+            return true
+        }
+        let kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding?
+        if let account = boundPairing.account {
+            kernelP256ApprovalBinding = try? OwnerPhoneKernelP256ApprovalBinding(
+                account: account,
+                p256PublicMaterial: boundPairing.ownerPublicMaterial.hex,
+                pairingIsCurrent: pairingIsCurrent,
+                sign: { digest in
+                    guard pairingIsCurrent() else {
+                        throw DemoOwnerKeyBindingError.mismatch
+                    }
+                    return try ownerKey.sign(digest)
+                })
+        } else {
+            kernelP256ApprovalBinding = nil
+        }
+        // Permission consent keeps its existing non-signature demo artifact.
+        // Exact Kernel owner signing uses only the separate sealed binding;
+        // the current server projection remains reject-only.
+        let model = ApprovalModel(relay: client, approvalArtifact: { projection in
+            guard pairingIsCurrent() else {
                 throw DemoOwnerKeyBindingError.mismatch
             }
-            if case let .signatureRequest(scope) = projection.scope {
-                return try verifiedDemoOwnerSignature(
-                    ownerKey.signDigestHex(scope.digest),
-                    digestHex: scope.digest,
-                    ownerPublicMaterial: boundPairing.ownerPublicMaterial)
-            }
             return demoApprovalArtifact()
-        })
+        }, kernelP256ApprovalBinding: kernelP256ApprovalBinding)
         approval = model
         paired = true
         phaseSink = model.$phase

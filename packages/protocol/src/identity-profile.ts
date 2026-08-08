@@ -1,4 +1,5 @@
 import { p256 } from "@noble/curves/nist.js";
+import { encodeAbiParameters, type Hex, keccak256 } from "viem";
 import {
   type CaptureContext,
   type CaptureFailure,
@@ -11,6 +12,8 @@ export const OAATH_OWNER_CREDENTIAL_PROFILE_VERSION = "oaath.owner-credential-pr
 export const OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION =
   "oaath.operator-credential-profile/v1" as const;
 export const OAATH_KERNEL_ACCOUNT_PROFILE_VERSION = "oaath.kernel-account-profile/v1" as const;
+const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
+  "@oaath/protocol:owner-credential-profile" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -295,6 +298,52 @@ export function parseOwnerCredentialProfile(value: unknown): Readonly<OwnerCrede
       "owner credential profile could not be captured safely",
     );
   }
+}
+
+function encodeCapturedOwnerCredentialProfile(profile: OwnerCredentialProfile): Hex {
+  if (profile.kind === "ecdsa") {
+    return encodeAbiParameters(
+      [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "address" }],
+      [OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN, profile.version, profile.kind, profile.address],
+    );
+  }
+  if (profile.kind === "p256") {
+    return encodeAbiParameters(
+      [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "bytes" }],
+      [
+        OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN,
+        profile.version,
+        profile.kind,
+        profile.publicKey,
+      ],
+    );
+  }
+  return encodeAbiParameters(
+    [
+      { type: "string" },
+      { type: "string" },
+      { type: "string" },
+      { type: "bytes" },
+      { type: "bytes32" },
+    ],
+    [
+      OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN,
+      profile.version,
+      profile.kind,
+      profile.publicKey,
+      profile.authenticatorIdHash,
+    ],
+  );
+}
+
+/** Canonical identity-owner encoding reused by every request that binds an owner credential. */
+export function encodeOwnerCredentialProfile(value: unknown): Hex {
+  return encodeCapturedOwnerCredentialProfile(parseOwnerCredentialProfile(value));
+}
+
+/** Stable owner-credential identity hash; it grants no authority by itself. */
+export function hashOwnerCredentialProfile(value: unknown): `0x${string}` {
+  return keccak256(encodeOwnerCredentialProfile(value));
 }
 
 export function parseOperatorCredentialProfile(

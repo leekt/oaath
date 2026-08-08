@@ -1,12 +1,10 @@
 /**
- EXPERIMENTAL PREVIEW — the demo's approval artifact for NON-signature scopes.
+ EXPERIMENTAL PREVIEW — the demo's structured-permission approval artifact.
 
- The signing boundary is real now: a signature-request scope's approval signs
- the projected digest with the on-device owner key (`DemoOwnerKey`, Secure
- Enclave where available) and the artifact IS that signature. This placeholder
- remains only for the other scope kinds (permission-request consent, raw
- text), whose demo approvals authorize via the relay's one-shot decision and
- seal no device material.
+ Permission consent authorizes through the relay's one-shot decision and seals
+ no device signature. Raw and non-Kernel owner-signing scopes are reject-only
+ before this placeholder can be requested; exact Kernel owner signing uses its
+ separate verified P-256 artifact owner.
 
  @author taek <leekt216@gmail.com>
  */

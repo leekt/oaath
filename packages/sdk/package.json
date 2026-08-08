@@ -86,7 +86,8 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-composition.anvil.test.ts test/all-chain.anvil.test.ts",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-composition.anvil.test.ts test/all-chain.anvil.test.ts test/provider-eip5792.anvil.test.ts",
+    "test:provider-anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/provider-eip5792.anvil.test.ts",
     "lint": "node scripts/check-package-boundary.mjs"
   },
   "devDependencies": {

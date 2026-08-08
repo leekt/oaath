@@ -5,8 +5,8 @@
  * ```text
  * state and owner     the numeric database version and exact store set carry
  *                     the one current schema; an upgrade wipes before recreating
- * persisted evidence  grants, operations, wallet-call bundles, keys, cleanup,
- *                     and context object stores
+ * persisted evidence  grants, operations, wallet-call bundles, prepared-call
+ *                     contexts, keys, cleanup, and context object stores
  * resource occupied?  one connection per realm, closed by the realm
  * retry safe?         current-schema opens do not mutate; every upgrade wipes
  *                     all stores before recreating the exact current set
@@ -18,7 +18,8 @@
  *
  * Records are moved, never interpreted: every value is handed back as `unknown`
  * to the fact's owner (`GrantStore`, `OperationStore`, `WalletCallBundleStore`,
- * `parseCleanupCheckpoint`, `parseClientContext`, `requireNonExtractableKey`).
+ * `PreparedCallStore`, `parseCleanupCheckpoint`, `parseClientContext`,
+ * `requireNonExtractableKey`).
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -33,12 +34,13 @@ import { persistenceFail } from "../interfaces.js";
  */
 export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
 /** Bumped on any schema change; the upgrade wipes, it never migrates. */
-export const OAATH_INDEXEDDB_VERSION = 7;
+export const OAATH_INDEXEDDB_VERSION = 13;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({
   grants: "grants",
   operations: "operations",
   walletCallBundles: "walletCallBundles",
+  preparedCallContexts: "preparedCallContexts",
   keys: "keys",
   cleanup: "cleanup",
   context: "context",

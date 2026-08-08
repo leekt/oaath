@@ -19,13 +19,18 @@
 
  @author taek <leekt216@gmail.com>
  */
+import CryptoKit
 import Foundation
 
 /// `NATIVE_DISPLAY_PAYLOAD_LENGTH` in `native/projection.ts`.
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v1"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v4"
+
+/// Current protocol versions embedded in the v4 owner-signing projection.
+public let ownerPhoneSigningRequestVersion = "oaath.owner-signing-request/v1"
+public let ownerPhoneOwnerCredentialVersion = "oaath.owner-credential-profile/v1"
 
 /// The bounded 8-character base64url match code the phone renders.
 public struct MatchCode: Equatable, Sendable {
@@ -208,43 +213,138 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     }
 }
 
-/// One signature request: the relay asks this device's owner key to sign one
-/// 32-byte digest. `display` is the server-validated canonical display JSON;
-/// the UI renders its exact authenticated bytes before the owner decides. Approving
-/// returns the signature as the decision artifact — the artifact IS the
-/// signature, released to the client through the one-shot code/artifact flow.
-public struct OwnerPhoneSignatureRequestScope: Equatable, Sendable {
-    /// Lowercase `0x`-prefixed 32-byte digest the owner key signs on approval.
-    public let digest: String
-    /// The full display JSON, exactly as the requesting client stored it.
-    public let display: String
+/// The protocol-versioned owner credential bound into an owner-signing
+/// request. The nested credential is public material only.
+public struct OwnerPhoneSigningCredential: Equatable, Sendable {
+    public let version: String
+    public let credential: OwnerPhoneCredential
 
-    public init(digest: String, display: String) {
+    init(version: String, credential: OwnerPhoneCredential) {
+        self.version = version
+        self.credential = credential
+    }
+}
+
+public enum OwnerPhoneSigningPurpose: String, Equatable, Sendable {
+    case permit
+    case permit2
+    case application
+    case kernelEnable = "kernel-enable"
+}
+
+public struct OwnerPhoneSigningSigner: Equatable, Sendable {
+    public let account: String
+    public let ownerCredential: OwnerPhoneSigningCredential
+
+    init(account: String, ownerCredential: OwnerPhoneSigningCredential) {
+        self.account = account
+        self.ownerCredential = ownerCredential
+    }
+}
+
+public struct OwnerPhoneSigningReplayFacts: Equatable, Sendable {
+    public let nonce: String?
+    public let deadline: String?
+
+    init(nonce: String?, deadline: String?) {
+        self.nonce = nonce
+        self.deadline = deadline
+    }
+}
+
+/// A fully captured semantic EIP-712 request. `digestComparison` is neutral
+/// evidence derived by this device; it grants no signing or approval authority.
+public struct OwnerPhoneEIP712SigningRequest: Equatable, Sendable {
+    public let version: String
+    public let purpose: OwnerPhoneSigningPurpose
+    public let signer: OwnerPhoneSigningSigner
+    let typedData: CanonicalEIP712TypedData
+    public let expectedDigest: String
+    let digestComparison: EIP712DigestComparison
+    public let replay: OwnerPhoneSigningReplayFacts
+
+    init(
+        version: String,
+        purpose: OwnerPhoneSigningPurpose,
+        signer: OwnerPhoneSigningSigner,
+        typedData: CanonicalEIP712TypedData,
+        expectedDigest: String,
+        digestComparison: EIP712DigestComparison,
+        replay: OwnerPhoneSigningReplayFacts
+    ) {
+        self.version = version
+        self.purpose = purpose
+        self.signer = signer
+        self.typedData = typedData
+        self.expectedDigest = expectedDigest
+        self.digestComparison = digestComparison
+        self.replay = replay
+    }
+}
+
+/// A protocol raw digest stays readable solely to explain why it must be
+/// rejected. It is never converted into device-derived digest evidence.
+public struct OwnerPhoneRawDigestSigningRequest: Equatable, Sendable {
+    public let version: String
+    public let digest: String
+    public let reason: String
+
+    init(version: String, digest: String, reason: String) {
+        self.version = version
         self.digest = digest
-        self.display = display
+        self.reason = reason
+    }
+}
+
+public enum OwnerPhoneSigningRequest: Equatable, Sendable {
+    case eip712(OwnerPhoneEIP712SigningRequest)
+    case rawDigest(OwnerPhoneRawDigestSigningRequest)
+}
+
+/// The one closed discriminator used by both the consent surface and the
+/// approval action. Kernel owner signing is available only when authenticated
+/// wire semantics and the separately injected local binding both agree.
+enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
+    case permission
+    case kernelP256OwnerSigning
+    case rejectOnly
+}
+
+/// Authenticated wire semantics only. The decoder grants `.approveOrReject`
+/// solely after the exact Kernel/P-256 request has passed local semantic
+/// refinement; this never embeds custody capability in wire evidence.
+enum OwnerPhoneSigningDecisionCapability: Equatable, Sendable {
+    case rejectOnly
+    case approveOrReject
+}
+
+/// The server/protocol request commitment plus its exact captured request.
+/// `requestHash` is authenticated projection evidence; this device does not
+/// independently reproduce `hashOwnerSigningRequest` in this child.
+public struct OwnerPhoneSigningRequestScope: Equatable, Sendable {
+    public let requestHash: String
+    public let request: OwnerPhoneSigningRequest
+    let decisionCapability: OwnerPhoneSigningDecisionCapability
+
+    init(
+        requestHash: String,
+        request: OwnerPhoneSigningRequest,
+        decisionCapability: OwnerPhoneSigningDecisionCapability = .rejectOnly
+    ) {
+        self.requestHash = requestHash
+        self.request = request
+        self.decisionCapability = decisionCapability
     }
 }
 
 /// Closed scope union mirroring `OwnerPhoneScopeProjection`. A scope that is
-/// not a protocol permission request or a signature request arrives as `.raw`
+/// not a protocol permission request or an owner-signing request arrives as `.raw`
 /// and the UI must show it as an explicit "unstructured scope" state — an
 /// unknown `kind` fails closed.
 public enum OwnerPhoneScope: Equatable, Sendable {
     case permissionRequest(OwnerPhonePermissionScope)
-    case signatureRequest(OwnerPhoneSignatureRequestScope)
+    case ownerSigningRequest(OwnerPhoneSigningRequestScope)
     case raw(String)
-
-    /// Whether this scope may be approved at all. A raw scope is reject-only:
-    /// the UI never renders an Approve control for authority it could not
-    /// read, and the relay refuses such an approval independently.
-    public var approvable: Bool {
-        switch self {
-        case .permissionRequest, .signatureRequest:
-            return true
-        case .raw:
-            return false
-        }
-    }
 }
 
 /// Mirrors `OwnerPhoneRequestProjection` in `native/projection.ts`.
@@ -364,19 +464,34 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 perChainOperationLimit: try Wire.timestamp(
                     object["perChainOperationLimit"], label: "perChainOperationLimit")
             ))
-        case "signature-request":
-            try Wire.exactKeys(object, ["kind", "decision", "digest", "display"], label: "scope")
-            guard object["decision"] as? String == "approve-or-reject" else {
+        case "owner-signing-request":
+            try Wire.exactKeys(
+                object,
+                ["kind", "decision", "requestHash", "request"],
+                label: "scope")
+            guard let decision = object["decision"] as? String,
+                  decision == "reject-only" || decision == "approve-or-reject"
+            else {
                 throw OwnerPhoneWireError.invalidField("scope decision")
             }
-            let digest = try Wire.lowercaseHex(
-                object["digest"], byteLength: 32, label: "digest")
-            let display = try Wire.text(
-                object["display"], maximum: WireLimits.requestedScope, label: "display")
-            try validateCanonicalDisplay(display, digest: digest)
-            return .signatureRequest(OwnerPhoneSignatureRequestScope(
-                digest: digest,
-                display: display
+            let captured = OwnerPhoneSigningRequestScope(
+                requestHash: try Wire.lowercaseHex(
+                    object["requestHash"], byteLength: 32, label: "requestHash"),
+                request: try decodeSigningRequest(object["request"]),
+                decisionCapability: .rejectOnly
+            )
+            if decision == "reject-only" {
+                return .ownerSigningRequest(captured)
+            }
+            do {
+                _ = try refineKernelEnableSigningScope(captured)
+            } catch {
+                throw OwnerPhoneWireError.invalidField("scope decision")
+            }
+            return .ownerSigningRequest(OwnerPhoneSigningRequestScope(
+                requestHash: captured.requestHash,
+                request: captured.request,
+                decisionCapability: .approveOrReject
             ))
         case "raw":
             try Wire.exactKeys(object, ["kind", "decision", "text"], label: "scope")
@@ -462,20 +577,171 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         }
     }
 
-    /// The server accepts only recursively sorted, compact JSON display bytes.
-    /// Re-encoding with the same closed codec rejects duplicate-key collapse,
-    /// whitespace/escape drift, and a display that omits or changes the digest.
-    private static func validateCanonicalDisplay(_ display: String, digest: String) throws {
-        let bytes = Data(display.utf8)
-        guard let value = try? JSONSerialization.jsonObject(with: bytes),
-              let object = value as? [String: Any],
-              object["digest"] as? String == digest,
-              let canonical = try? JSONSerialization.data(
-                  withJSONObject: object, options: [.sortedKeys]),
-              canonical == bytes
-        else {
-            throw OwnerPhoneWireError.invalidField("display")
+    private static func decodeSigningRequest(_ value: Any?) throws -> OwnerPhoneSigningRequest {
+        let object = try Wire.object(value, label: "owner signing request")
+        switch object["kind"] as? String {
+        case "eip712":
+            try Wire.exactKeys(
+                object,
+                ["version", "kind", "purpose", "signer", "typedData", "expectedDigest", "replay"],
+                label: "owner signing request")
+            guard object["version"] as? String == ownerPhoneSigningRequestVersion,
+                  let purposeText = object["purpose"] as? String,
+                  let purpose = OwnerPhoneSigningPurpose(rawValue: purposeText)
+            else {
+                throw OwnerPhoneWireError.invalidField("owner signing request version or purpose")
+            }
+            let expectedDigest = try Wire.lowercaseHex(
+                object["expectedDigest"], byteLength: 32, label: "expectedDigest")
+            let typedData: CanonicalEIP712TypedData
+            let derived: DerivedEIP712Digest
+            do {
+                guard let semanticValue = object["typedData"] else {
+                    throw OwnerPhoneWireError.invalidField("typedData")
+                }
+                typedData = try captureCanonicalEIP712TypedData(jsonValue: semanticValue)
+                derived = try deriveEIP712Digest(from: typedData)
+            } catch {
+                throw OwnerPhoneWireError.invalidField("typedData")
+            }
+            let comparison: EIP712DigestComparison = derived.canonicalHex == expectedDigest
+                ? .matches(derived)
+                : .mismatch(expectedCanonicalHex: expectedDigest, derived: derived)
+            return .eip712(OwnerPhoneEIP712SigningRequest(
+                version: ownerPhoneSigningRequestVersion,
+                purpose: purpose,
+                signer: try decodeSigningSigner(object["signer"]),
+                typedData: typedData,
+                expectedDigest: expectedDigest,
+                digestComparison: comparison,
+                replay: try decodeSigningReplay(object["replay"])
+            ))
+        case "raw-digest":
+            try Wire.exactKeys(
+                object,
+                ["version", "kind", "digest", "reason", "decision"],
+                label: "owner signing request")
+            guard object["version"] as? String == ownerPhoneSigningRequestVersion,
+                  object["decision"] as? String == "reject-only"
+            else {
+                throw OwnerPhoneWireError.invalidField("owner signing request version or decision")
+            }
+            return .rawDigest(OwnerPhoneRawDigestSigningRequest(
+                version: ownerPhoneSigningRequestVersion,
+                digest: try Wire.lowercaseHex(
+                    object["digest"], byteLength: 32, label: "raw digest"),
+                reason: try Wire.text(
+                    object["reason"], maximum: 256, label: "raw digest reason")
+            ))
+        default:
+            throw OwnerPhoneWireError.invalidField("owner signing request kind")
         }
+    }
+
+    private static func decodeSigningSigner(_ value: Any?) throws -> OwnerPhoneSigningSigner {
+        let object = try Wire.object(value, label: "owner signing signer")
+        try Wire.exactKeys(
+            object, ["account", "ownerCredential"], label: "owner signing signer")
+        let account = try Wire.lowercaseHex(
+            object["account"], byteLength: 20, label: "owner signing account")
+        guard account != "0x" + String(repeating: "00", count: 20) else {
+            throw OwnerPhoneWireError.invalidField("owner signing account")
+        }
+        return OwnerPhoneSigningSigner(
+            account: account,
+            ownerCredential: try decodeSigningCredential(object["ownerCredential"])
+        )
+    }
+
+    private static func decodeSigningCredential(_ value: Any?) throws -> OwnerPhoneSigningCredential {
+        let object = try Wire.object(value, label: "owner signing credential")
+        guard object["version"] as? String == ownerPhoneOwnerCredentialVersion else {
+            throw OwnerPhoneWireError.invalidField("owner signing credential version")
+        }
+        let credential: OwnerPhoneCredential
+        switch object["kind"] as? String {
+        case "ecdsa":
+            try Wire.exactKeys(
+                object, ["version", "kind", "address"], label: "owner signing credential")
+            let address = try Wire.lowercaseHex(
+                object["address"], byteLength: 20, label: "owner signing credential address")
+            guard address != "0x" + String(repeating: "00", count: 20) else {
+                throw OwnerPhoneWireError.invalidField("owner signing credential address")
+            }
+            credential = .ecdsa(address: address)
+        case "p256":
+            try Wire.exactKeys(
+                object, ["version", "kind", "publicKey"], label: "owner signing credential")
+            credential = .p256(publicKey: try signingP256PublicKey(object["publicKey"]))
+        case "webauthn":
+            try Wire.exactKeys(
+                object,
+                ["version", "kind", "publicKey", "authenticatorIdHash"],
+                label: "owner signing credential")
+            credential = .webauthn(
+                publicKey: try signingP256PublicKey(object["publicKey"]),
+                authenticatorIdHash: try Wire.lowercaseHex(
+                    object["authenticatorIdHash"],
+                    byteLength: 32,
+                    label: "owner signing credential authenticatorIdHash"))
+        default:
+            throw OwnerPhoneWireError.invalidField("owner signing credential kind")
+        }
+        return OwnerPhoneSigningCredential(
+            version: ownerPhoneOwnerCredentialVersion,
+            credential: credential)
+    }
+
+    private static func signingP256PublicKey(_ value: Any?) throws -> String {
+        let publicKey = try Wire.lowercaseHex(
+            value, byteLength: 65, label: "owner signing credential publicKey")
+        guard publicKey.hasPrefix("0x04"),
+              let bytes = signingHexBytes(publicKey),
+              (try? P256.Signing.PublicKey(x963Representation: Data(bytes))) != nil
+        else {
+            throw OwnerPhoneWireError.invalidField("owner signing credential publicKey")
+        }
+        return publicKey
+    }
+
+    private static func signingHexBytes(_ value: String) -> [UInt8]? {
+        let source = Array(value.utf8.dropFirst(2))
+        guard source.count.isMultiple(of: 2) else { return nil }
+        var result = [UInt8]()
+        result.reserveCapacity(source.count / 2)
+        var index = 0
+        while index < source.count {
+            func nibble(_ byte: UInt8) -> UInt8? {
+                if (48...57).contains(byte) { return byte - 48 }
+                if (97...102).contains(byte) { return byte - 87 }
+                return nil
+            }
+            guard let high = nibble(source[index]), let low = nibble(source[index + 1]) else {
+                return nil
+            }
+            result.append(high << 4 | low)
+            index += 2
+        }
+        return result
+    }
+
+    private static func decodeSigningReplay(_ value: Any?) throws -> OwnerPhoneSigningReplayFacts {
+        let object = try Wire.object(value, label: "owner signing replay")
+        try Wire.exactKeys(object, ["nonce", "deadline"], label: "owner signing replay")
+        return OwnerPhoneSigningReplayFacts(
+            nonce: try signingDecimalOrNil(object["nonce"], label: "replay nonce"),
+            deadline: try signingDecimalOrNil(object["deadline"], label: "replay deadline")
+        )
+    }
+
+    private static func signingDecimalOrNil(_ value: Any?, label: String) throws -> String? {
+        if value is NSNull { return nil }
+        let text = try Wire.decimalUint(value, label: label)
+        let maximum = "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        guard text.count < maximum.count || (text.count == maximum.count && text <= maximum) else {
+            throw OwnerPhoneWireError.invalidField(label)
+        }
+        return text
     }
 
     private static func decodeCall(_ value: Any) throws -> OwnerPhonePermittedCall {

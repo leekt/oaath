@@ -364,7 +364,7 @@ describe("URL-only golden path", () => {
       (document: Record<string, unknown>) => ({ ...document, extra: 1 }),
       (document: Record<string, unknown>) => ({
         ...document,
-        version: "oaath.service-bootstrap/v2",
+        version: "oaath.service-bootstrap/v1",
       }),
       (document: Record<string, unknown>) => ({ ...document, chains: [] }),
       // A redirect target on another origin never binds this page.

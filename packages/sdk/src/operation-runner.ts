@@ -170,6 +170,15 @@ export interface OperationRunner {
   readonly close: () => Promise<void>;
 }
 
+export interface PreparedOperationRunner extends OperationRunner {
+  /**
+   * Starts or resumes one caller-retained exact prepared identity without
+   * observing it. Once submission was attempted, this method only returns the
+   * retained record; it never opens another submission session.
+   */
+  readonly resumePreparedOperation: (input: unknown) => Promise<OperationStartResult>;
+}
+
 type CapturedObserver = Readonly<OperationObserver>;
 type CapturedPreparation = Readonly<OperationPreparationCapability>;
 type CapturedSubmission = Readonly<OperationSubmissionCapability>;
@@ -786,7 +795,7 @@ async function withTimeout<Value>(action: () => Promise<Value>, timeoutMs: numbe
 }
 
 /** Transfers ownership of the dedicated store, observer, preparation, and submission resources. */
-export function createOperationRunner(configurationValue: unknown): OperationRunner {
+export function createOperationRunner(configurationValue: unknown): PreparedOperationRunner {
   const configuration = captureConfiguration(configurationValue);
   const sessions: CloseResource[] = [];
   const resources: CloseResource[] = [
@@ -1115,12 +1124,21 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
   }
 
   function executeOperation(inputValue: unknown, mode: "start"): Promise<OperationStartResult>;
+  function executeOperation(inputValue: unknown, mode: "resume"): Promise<OperationStartResult>;
   function executeOperation(inputValue: unknown, mode: "run"): Promise<OperationRunResult>;
   async function executeOperation(
     inputValue: unknown,
-    mode: "start" | "run",
+    mode: "start" | "resume" | "run",
   ): Promise<OperationStartResult | OperationRunResult> {
-    const input = parseRunInput(inputValue);
+    let input: OperationRunInput;
+    let expectedUserOperationHash: `0x${string}` | null = null;
+    if (mode === "resume") {
+      const captured = parseObserveInput(inputValue);
+      input = captured;
+      expectedUserOperationHash = captured.expectedUserOperationHash;
+    } else {
+      input = parseRunInput(inputValue);
+    }
     let record = await getRecord(input.key);
     let prepared: PreparedUserOperation | undefined;
 
@@ -1134,6 +1152,34 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       prepared = await prepareExact(input);
       await reservePreparedOperation(prepared);
       record = await publishPrepared(input, record, prepared, "reject");
+    } else if (mode === "resume") {
+      prepared = await prepareExact(input);
+      const expectedIdentity = deriveOperationId(prepared, configuration.requestHash);
+      if (expectedIdentity.userOperationHash !== expectedUserOperationHash) {
+        return runnerError(
+          "operation_runner_identity_mismatch",
+          "prepared Operation does not match the expected UserOperation hash",
+        );
+      }
+      if (record && operationOccupiesLane(record.value)) {
+        requireLane(record.value, input);
+        if (!sameIdentity(record.value.identity, expectedIdentity)) {
+          return runnerError(
+            "operation_runner_state_conflict",
+            "another Operation occupies the requested lane",
+          );
+        }
+        if (record.value.state !== "prepared") {
+          return frozenResult({ status: "started", record });
+        }
+        // A recreated producer must reacquire its caller-owned publication
+        // reference before the retained prepared Operation can advance. The
+        // reference owner decides whether this is an idempotent reacquisition.
+        await reservePreparedOperation(prepared);
+      } else {
+        await reservePreparedOperation(prepared);
+        record = await publishPrepared(input, record, prepared, "resume");
+      }
     } else {
       if (
         record &&
@@ -1160,6 +1206,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
           "fresh Operation did not retain the requested lane",
         );
       }
+      if (mode === "resume") return frozenResult({ status: "started", record });
       return observe(record, input);
     }
     prepared ??= await prepareExact(input, record.value.identity);
@@ -1179,6 +1226,15 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
           "operation_runner_state_conflict",
           "fresh Operation lost the requested lane",
         );
+      }
+      if (mode === "resume") {
+        if (current.value.state === "prepared") {
+          return runnerError(
+            "operation_runner_state_conflict",
+            "prepared Operation did not advance to submission",
+          );
+        }
+        return frozenResult({ status: "started", record: current });
       }
       return current.value.state === "prepared"
         ? frozenResult({ status: "state_conflict", record: current })
@@ -1257,13 +1313,17 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
       // submission acknowledgement converge against the retained revision.
       submittedRecord = requireConflictIdentity(submittedCommit.current, record.value.identity);
     }
-    return mode === "start"
+    return mode === "start" || mode === "resume"
       ? frozenResult({ status: "started", record: submittedRecord })
       : observe(submittedRecord, input);
   }
 
   async function startOperation(inputValue: unknown): Promise<OperationStartResult> {
     return withActiveRun(() => executeOperation(inputValue, "start"));
+  }
+
+  async function resumePreparedOperation(inputValue: unknown): Promise<OperationStartResult> {
+    return withActiveRun(() => executeOperation(inputValue, "resume"));
   }
 
   async function observeOperation(inputValue: unknown): Promise<OperationObserveResult> {
@@ -1377,6 +1437,7 @@ export function createOperationRunner(configurationValue: unknown): OperationRun
 
   return Object.freeze({
     startOperation,
+    resumePreparedOperation,
     observeOperation,
     abandonPreparedOperation,
     runOperation,

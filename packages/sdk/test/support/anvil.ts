@@ -82,7 +82,7 @@ export interface DeploymentFixture {
   /** The Daimo P-256 verifier the pinned WebAuthnSigner depends on. */
   p256Verifier: VerifierFixture;
   callPolicy: ModuleFixture;
-  timestampPolicy: ModuleFixture;
+  validityPolicy: ModuleFixture;
   rateLimitPolicy: ModuleFixture;
 }
 
@@ -178,6 +178,7 @@ async function waitForAnvil(process_: ChildProcess, url: string, chainId: number
 export async function startAnvil(
   chainId: number,
   hardfork: "prague" | "osaka" = "prague",
+  slotsInEpoch?: number,
 ): Promise<AnvilChain> {
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
@@ -194,6 +195,7 @@ export async function startAnvil(
       hardfork,
       "--accounts",
       "0",
+      ...(slotsInEpoch === undefined ? [] : ["--slots-in-an-epoch", slotsInEpoch.toString(10)]),
       "--silent",
     ],
     { env: scrubLiveProviderEnvironment(process.env), stdio: "ignore" },

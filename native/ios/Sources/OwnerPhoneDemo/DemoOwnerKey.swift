@@ -3,22 +3,19 @@
 
  First use creates the key once and keeps it. On a physical iPhone the key is
  created INSIDE the Secure Enclave
- (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry requirement
- for the demo — the explicit Approve tap is the consent gate). Where the
+ (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, `.userPresence`). Where the
  simulator and macOS host builds use an ordinary, separately tagged keychain
  P-256 key and say so honestly:
  `secureEnclave` drives the app's banner, never a silent downgrade.
 
  The public key is exposed as the SDK's `publicMaterial` encoding —
  `abi.encode(x, y)`, 64 bytes — which is exactly what the relay registers at
- pairing and what the pinned Kernel P-256 validator installs. Signatures are
- DER from the platform, converted to raw r‖s and low-S-normalized
- (`OwnerPhone/Signing.swift`) before leaving the device, for BOTH consent
- flows: the Kernel replayable enable digest and a UserOperation hash.
+ pairing and what the pinned Kernel P-256 validator installs. The demo app
+ exposes no raw-digest signing API: custody accepts only OwnerPhone's sealed
+ verified-signable type, and live v3 network projections remain reject-only.
 
  @author taek <leekt216@gmail.com>
  */
-import CryptoKit
 import Foundation
 import OwnerPhone
 import Security
@@ -27,47 +24,7 @@ import Security
 public protocol DemoOwnerSigning: Sendable {
     var secureEnclave: Bool { get }
     func publicMaterialHex() throws -> String
-    func signDigestHex(_ digestHex: String) throws -> String
-}
-
-enum DemoOwnerSignatureVerificationError: Error, Equatable {
-    case invalidPublicKey
-    case invalidSignature
-}
-
-/// Verifies the caller-injected signer at the trust boundary before a decision
-/// can move. The returned artifact must be the exact canonical raw low-S P-256
-/// signature for the captured digest and persisted owner public key.
-func verifiedDemoOwnerSignature(
-    _ signatureHex: String,
-    digestHex: String,
-    ownerPublicMaterial: OwnerPublicMaterial
-) throws -> String {
-    let digest = try decodeDigestHex(digestHex)
-    let raw = try decodeP256RawSignatureHex(signatureHex)
-    guard try p256LowSNormalized(raw: raw) == raw,
-          let signature = try? P256.Signing.ECDSASignature(rawRepresentation: raw)
-    else { throw DemoOwnerSignatureVerificationError.invalidSignature }
-    let attributes: [CFString: Any] = [
-        kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
-        kSecAttrKeyClass: kSecAttrKeyClassPublic,
-        kSecAttrKeySizeInBits: 256
-    ]
-    var createError: Unmanaged<CFError>?
-    guard let publicKey = SecKeyCreateWithData(
-        ownerPublicMaterial.x963Representation as CFData,
-        attributes as CFDictionary,
-        &createError)
-    else { throw DemoOwnerSignatureVerificationError.invalidPublicKey }
-    var verifyError: Unmanaged<CFError>?
-    guard SecKeyVerifySignature(
-        publicKey,
-        .ecdsaSignatureDigestX962SHA256,
-        digest as CFData,
-        signature.derRepresentation as CFData,
-        &verifyError)
-    else { throw DemoOwnerSignatureVerificationError.invalidSignature }
-    return signatureHex
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data
 }
 
 public struct DemoOwnerKey: DemoOwnerSigning, Sendable {
@@ -87,11 +44,8 @@ public struct DemoOwnerKey: DemoOwnerSigning, Sendable {
         hexEncode(try custody.publicKey().dropFirst())
     }
 
-    /// Signs one lowercase `0x`-prefixed 32-byte digest and returns the
-    /// normalized raw low-S signature as `0x` + 128 hex characters.
-    public func signDigestHex(_ digestHex: String) throws -> String {
-        let der = try custody.signDigest(try decodeDigestHex(digestHex))
-        return hexEncode(try p256LowSNormalized(raw: try p256RawSignature(der: der)))
+    public func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        try custody.sign(digest)
     }
 }
 
@@ -111,6 +65,15 @@ enum DemoOwnerKeyEnvironment: Equatable {
 enum DemoOwnerKeyStorage: Equatable {
     case secureEnclave
     case softwareFallback
+
+    var applicationTag: String {
+        switch self {
+        case .secureEnclave:
+            return "org.oaath.owner-phone.p256.v3.enclave"
+        case .softwareFallback:
+            return "org.oaath.owner-phone.p256.v3.software"
+        }
+    }
 }
 
 /// Pure policy seam: physical iOS has no transition from an Enclave failure
@@ -135,28 +98,25 @@ public func resolveDemoOwnerKey(createIfMissing: Bool = true) -> DemoOwnerKey? {
         environment: .current,
         createIfMissing: createIfMissing
     ) { storage, mayCreate in
-        let applicationTag: String
         let useSecureEnclave: Bool
         let secureEnclave: Bool
         switch storage {
         case .secureEnclave:
-            applicationTag = "org.oaath.owner-phone.p256.v2.enclave"
             useSecureEnclave = true
             secureEnclave = true
         case .softwareFallback:
-            applicationTag = "org.oaath.owner-phone.p256.v2.software"
             useSecureEnclave = false
             secureEnclave = false
         }
         let probe = KeychainKeyCustodyStub(
-            applicationTag: applicationTag,
+            applicationTag: storage.applicationTag,
             useSecureEnclave: useSecureEnclave,
             createIfMissing: mayCreate)
         guard (try? probe.publicKey()) != nil else { return nil }
         // Once resolved, every later public-key read and signature is
         // load-only. Deletion or unreadability fails instead of rotating keys.
         let loadOnly = KeychainKeyCustodyStub(
-            applicationTag: applicationTag,
+            applicationTag: storage.applicationTag,
             useSecureEnclave: useSecureEnclave,
             createIfMissing: false)
         return DemoOwnerKey(custody: loadOnly, secureEnclave: secureEnclave)

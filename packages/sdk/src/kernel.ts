@@ -34,6 +34,8 @@ export type {
 } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
 export {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
 } from "./kernel/modules.js";
@@ -102,6 +104,7 @@ export type {
   KernelV4UserOperationNonceInput,
   KernelV4Validation,
   KernelV4ValidationMode,
+  KernelV4ValidityTimeRange,
 } from "./kernel-v4.js";
 export {
   bindKernelV4Account,
@@ -132,6 +135,7 @@ export {
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
+  kernelV4ReplayableInstallTypedData,
   OaathKernelV4Error,
   prepareKernelV4UserOperation,
 } from "./kernel-v4.js";

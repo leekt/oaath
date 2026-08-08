@@ -14,6 +14,7 @@ import {
 } from "../src/index.js";
 
 const VALIDATOR = `0x${"22".repeat(20)}`;
+const STATIC_PAYMASTER_HASH = `0x${"44".repeat(32)}`;
 
 function document(): Record<string, unknown> {
   return {
@@ -39,7 +40,16 @@ function document(): Record<string, unknown> {
       },
     },
     ownerValidator: VALIDATOR,
-    chains: [{ chainId: 31_337, usage: true, feePayer: null }],
+    chains: [
+      {
+        chainId: 31_337,
+        usage: true,
+        feePayer: null,
+        paymasterService: null,
+        staticPaymasterConfigurationHash: null,
+      },
+    ],
+    sessionSigner: { mode: "frontend", providerId: null },
   };
 }
 
@@ -49,7 +59,15 @@ describe("service bootstrap", () => {
     expect(bootstrap.application.clientId).toBe("client-a");
     expect(bootstrap.account.ownerCredential.kind).toBe("ecdsa");
     expect(bootstrap.ownerValidator).toBe(VALIDATOR);
-    expect(bootstrap.chains).toEqual([{ chainId: 31_337, usage: true, feePayer: null }]);
+    expect(bootstrap.chains).toEqual([
+      {
+        chainId: 31_337,
+        usage: true,
+        feePayer: null,
+        paymasterService: null,
+        staticPaymasterConfigurationHash: null,
+      },
+    ]);
     expect(Object.isFrozen(bootstrap)).toBe(true);
     expect(Object.isFrozen(bootstrap.chains)).toBe(true);
   });
@@ -62,6 +80,8 @@ describe("service bootstrap", () => {
           chainId: 1,
           usage: false,
           feePayer: { address: `0x${"77".repeat(20)}`, balance: "1000" },
+          paymasterService: { providerId: "paymaster-primary" },
+          staticPaymasterConfigurationHash: STATIC_PAYMASTER_HASH,
         },
       ],
     });
@@ -69,19 +89,67 @@ describe("service bootstrap", () => {
       address: `0x${"77".repeat(20)}`,
       balance: "1000",
     });
+    expect(bootstrap.chains[0]?.paymasterService).toEqual({
+      providerId: "paymaster-primary",
+    });
+    expect(bootstrap.chains[0]?.staticPaymasterConfigurationHash).toBe(STATIC_PAYMASTER_HASH);
   });
 
   it.each([
-    ["a wrong version", { version: "oaath.service-bootstrap/v2" }],
+    ["the retired v2 version", { version: "oaath.service-bootstrap/v2" }],
     ["an unknown field", { extra: 1 }],
     ["a missing user handle", { userHandle: "" }],
     ["no chains", { chains: [] }],
     [
+      "a chain without explicit paymaster policies",
+      { chains: [{ chainId: 1, usage: false, feePayer: null }] },
+    ],
+    [
+      "a malformed paymaster provider",
+      {
+        chains: [
+          {
+            chainId: 1,
+            usage: false,
+            feePayer: null,
+            paymasterService: { providerId: "" },
+            staticPaymasterConfigurationHash: null,
+          },
+        ],
+      },
+    ],
+    [
+      "a malformed static paymaster commitment",
+      {
+        chains: [
+          {
+            chainId: 1,
+            usage: false,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: `0x${"AA".repeat(32)}`,
+          },
+        ],
+      },
+    ],
+    [
       "a repeated chain",
       {
         chains: [
-          { chainId: 1, usage: false, feePayer: null },
-          { chainId: 1, usage: true, feePayer: null },
+          {
+            chainId: 1,
+            usage: false,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: null,
+          },
+          {
+            chainId: 1,
+            usage: true,
+            feePayer: null,
+            paymasterService: null,
+            staticPaymasterConfigurationHash: null,
+          },
         ],
       },
     ],
@@ -100,18 +168,14 @@ describe("service bootstrap", () => {
     // The deployment fact and the credential kind must agree: an ecdsa owner
     // requires the caller-bound validator, any other kind must carry none.
     ["a missing ecdsa owner validator", { ownerValidator: null }],
+    ["a missing session signer", { sessionSigner: undefined }],
   ] as const)("fails closed on %s", (_label, override) => {
     expect(() => parseServiceBootstrap({ ...document(), ...override })).toThrowError(
       expect.objectContaining({ code: "service_bootstrap_invalid" }),
     );
   });
 
-  it("defaults absent session-signer custody to frontend and captures declared custody exactly", () => {
-    // Absence means the one custody this document version ever implied.
-    expect(parseServiceBootstrap(document()).sessionSigner).toEqual({
-      mode: "frontend",
-      providerId: null,
-    });
+  it("captures the one explicitly declared session-signer custody", () => {
     expect(
       parseServiceBootstrap({
         ...document(),

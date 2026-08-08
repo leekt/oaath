@@ -11,6 +11,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { hashOwnerSigningRequest } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { createAuthorizationRequest } from "../src/authorization/request.js";
 import type { RelayClock } from "../src/clock.js";
@@ -18,7 +19,6 @@ import { submitOwnerPhoneDecision } from "../src/native/decision.js";
 import {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
-  OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
   projectOwnerPhoneRequest,
 } from "../src/native/projection.js";
 import type { RelayCaller } from "../src/security/authentication.js";
@@ -26,7 +26,9 @@ import type { RelayKms } from "../src/security/kms.js";
 import type { RelayStore } from "../src/store/interface.js";
 import { withRelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
+import { createKernelOwnerApprovalInput } from "./kernel-owner-signing-input.js";
 import {
+  APPROVABLE_PERMISSION_SCOPE,
   CLIENT_TOKEN,
   codeChallenge,
   createHarness,
@@ -45,61 +47,14 @@ import {
 
 /** An opaque scope string: projected as the labeled raw text, never dropped. */
 const RAW_SCOPE = '{"permission":"erc20-transfer","token":"0xdeadbeefcafe","chainScope":"all"}';
-/**
- * A real `@oaath/protocol` permission scope, exactly as `@oaath/sdk` serializes
- * it into `requestedScope` (a permission request without its `requestId`).
- */
-const PERMISSION_SCOPE = JSON.stringify({
-  version: "oaath.permission-request/v1",
-  application: {
-    applicationId: "oaath-native-tests",
-    clientId: "client-a",
-    origin: "https://app.example",
-    deviceId: "device-1",
-  },
-  chainScope: "all",
-  logicalAccount: {
-    version: "oaath.kernel-account-profile/v1",
-    kind: "kernel",
-    accountIndex: "7",
-    kernelVersion: "0.4.0",
-    factoryRoute: "meta_factory",
-    entryPoint: { version: "0.7" },
-    ownerCredential: {
-      version: "oaath.owner-credential-profile/v1",
-      kind: "ecdsa",
-      address: `0x${"33".repeat(20)}`,
-    },
-  },
-  operatorCredential: {
-    version: "oaath.operator-credential-profile/v1",
-    kind: "ecdsa",
-    address: `0x${"44".repeat(20)}`,
-  },
-  policy: {
-    version: "oaath.grant-policy/v1",
-    calls: [
-      {
-        target: `0x${"11".repeat(20)}`,
-        selector: "0x12345678",
-        valueLimit: "100",
-        argumentEquals: [],
-      },
-    ],
-    validAfter: 100,
-    validUntil: 190,
-    perChainOperationLimit: 10,
-  },
-  requestedAt: 100,
-  expiresAt: 200,
-});
+const PERMISSION_SCOPE = APPROVABLE_PERMISSION_SCOPE;
 const REQUEST_TTL_MS = 300_000;
 const CODE_TTL_MS = 60_000;
 
 /**
  * The ONE golden wire fixture shared with the strict Swift decoders
  * (`native/ios/Tests/OwnerPhoneTests/GoldenFixtureTests.swift` reads the same
- * file). Its exact signature projection string is consumed as UTF-8 by both
+ * file). Its exact owner-signing projection string is consumed as UTF-8 by both
  * languages; object entries cover the other union/decision variants.
  */
 const GOLDEN = JSON.parse(
@@ -107,19 +62,31 @@ const GOLDEN = JSON.parse(
 ) as {
   readonly projection: Record<string, Record<string, unknown>>;
   readonly decision: Record<string, Record<string, unknown>>;
-  readonly exactSignatureProjectionBytes: string;
+  readonly exactOwnerSigningProjectionBytes: string;
 };
 
-const GOLDEN_SIGNATURE_SCOPE_FIELDS = GOLDEN.projection.signatureRequest?.scope as {
-  readonly digest: string;
-  readonly display: string;
+const GOLDEN_OWNER_SIGNING_SCOPE = GOLDEN.projection.ownerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
+};
+const GOLDEN_KERNEL_ENABLE_SCOPE = GOLDEN.projection.kernelEnableOwnerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
+};
+const GOLDEN_RAW_DIGEST_SCOPE = GOLDEN.projection.rawDigestOwnerSigningRequest?.scope as {
+  readonly requestHash: `0x${string}`;
+  readonly request: Record<string, unknown>;
 };
 /** Serialized exactly as a requesting client stores it into requestedScope. */
-const SIGNATURE_SCOPE = JSON.stringify({
-  version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
+const OWNER_SIGNING_SCOPE = JSON.stringify(GOLDEN_OWNER_SIGNING_SCOPE.request);
+const KERNEL_ENABLE_SCOPE = JSON.stringify(GOLDEN_KERNEL_ENABLE_SCOPE.request);
+const RAW_DIGEST_REQUEST = GOLDEN_RAW_DIGEST_SCOPE.request;
+const RAW_DIGEST_SCOPE = JSON.stringify(RAW_DIGEST_REQUEST);
+const LEGACY_SIGNATURE_SCOPE = JSON.stringify({
+  version: "oaath.signature-request/v1",
   kind: "signature-request",
-  digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
-  display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
+  digest: `0x${"4b".repeat(32)}`,
+  display: "{}",
 });
 
 const CLIENT: RelayCaller = Object.freeze({
@@ -140,12 +107,22 @@ interface Fixture {
   readonly store: RelayStore;
   readonly clock: TestClock;
   readonly kms: RelayKms;
+  readonly kmsEncryptions: () => number;
   readonly requestId: string;
 }
 
 async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixture> {
   const store = createMemoryRelayStore();
   const clock = createTestClock();
+  const baseKms = createTestKms();
+  let encryptions = 0;
+  const kms: RelayKms = {
+    async encrypt(plaintext) {
+      encryptions += 1;
+      return baseKms.encrypt(plaintext);
+    },
+    decrypt: (ciphertextRef) => baseKms.decrypt(ciphertextRef),
+  };
   const created = await createAuthorizationRequest({
     store,
     clock,
@@ -155,7 +132,7 @@ async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixtu
     requestedScope,
     requestTtlMs: REQUEST_TTL_MS,
   });
-  return { store, clock, kms: createTestKms(), requestId: created.requestId };
+  return { store, clock, kms, kmsEncryptions: () => encryptions, requestId: created.requestId };
 }
 
 function project(
@@ -191,6 +168,7 @@ describe("experimental owner-phone projection", () => {
     const fixed = await fixture();
     const projection = await project(fixed);
 
+    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v4");
     expect(projection.version).toBe(OAATH_NATIVE_PROJECTION_VERSION);
     expect(projection.operationId).toBe(fixed.requestId);
     expect(projection.displayPayload).toHaveLength(NATIVE_DISPLAY_PAYLOAD_LENGTH);
@@ -268,94 +246,66 @@ describe("experimental owner-phone projection", () => {
     });
   });
 
-  it("projects a signature-request scope structurally", async () => {
-    const fixed = await fixture(SIGNATURE_SCOPE);
-    const projection = await project(fixed);
-    expect(projection.scope).toEqual({
-      kind: "signature-request",
-      decision: "approve-or-reject",
-      digest: GOLDEN_SIGNATURE_SCOPE_FIELDS.digest,
-      display: GOLDEN_SIGNATURE_SCOPE_FIELDS.display,
-    });
+  it.each([
+    ["EIP-712", OWNER_SIGNING_SCOPE, GOLDEN_OWNER_SIGNING_SCOPE.request, "reject-only"],
+    ["Kernel enable", KERNEL_ENABLE_SCOPE, GOLDEN_KERNEL_ENABLE_SCOPE.request, "approve-or-reject"],
+    ["raw digest", RAW_DIGEST_SCOPE, RAW_DIGEST_REQUEST, "reject-only"],
+  ])(
+    "projects a complete %s owner-signing request and its exact hash",
+    async (_, stored, request, decision) => {
+      const fixed = await fixture(stored);
+      const projection = await project(fixed);
+      expect(projection.scope).toEqual({
+        kind: "owner-signing-request",
+        decision,
+        requestHash: hashOwnerSigningRequest(request),
+        request,
+      });
+    },
+  );
+
+  it("keeps non-P256 Kernel signer profiles reject-only", async () => {
+    const original = GOLDEN_KERNEL_ENABLE_SCOPE.request as {
+      signer: { ownerCredential: { version: string; publicKey: string } };
+    };
+    const credentials = [
+      {
+        version: original.signer.ownerCredential.version,
+        kind: "ecdsa",
+        address: `0x${"55".repeat(20)}`,
+      },
+      {
+        version: original.signer.ownerCredential.version,
+        kind: "webauthn",
+        publicKey: original.signer.ownerCredential.publicKey,
+        authenticatorIdHash: `0x${"44".repeat(32)}`,
+      },
+    ];
+
+    for (const ownerCredential of credentials) {
+      const request = structuredClone(GOLDEN_KERNEL_ENABLE_SCOPE.request) as {
+        signer: { ownerCredential: unknown };
+      };
+      request.signer.ownerCredential = ownerCredential;
+      const fixed = await fixture(JSON.stringify(request));
+      expect((await project(fixed)).scope).toMatchObject({
+        kind: "owner-signing-request",
+        decision: "reject-only",
+      });
+    }
   });
 
-  it("fails a malformed signature-request scope closed to labeled raw text", async () => {
-    const digest = `0x${"4b".repeat(32)}`;
+  it("fails malformed and legacy signing scopes closed to labeled raw text", async () => {
+    const wrongVersion = JSON.parse(OWNER_SIGNING_SCOPE) as Record<string, unknown>;
+    wrongVersion.version = "oaath.owner-signing-request/v2";
+    const extraField = JSON.parse(OWNER_SIGNING_SCOPE) as Record<string, unknown>;
+    extraField.extra = true;
+    const wrongDecision = { ...RAW_DIGEST_REQUEST, decision: "approve-or-reject" };
     for (const stored of [
-      // Wrong version/kind, extra field, missing field, malformed digest, and a
-      // display whose control characters would brick the strict phone capture.
-      JSON.stringify({
-        version: "oaath.signature-request/v2",
-        kind: "signature-request",
-        digest,
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "other",
-        digest,
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "{}",
-        extra: 1,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest: digest.toUpperCase(),
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest: "0x4b4b",
-        display: "{}",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: 7,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: "line\nbreak",
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: '{"kind":"owner-user-operation"}',
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: `{"digest":"${digest}","kind":"gone","kind":"owner-user-operation"}`,
-      }),
-      JSON.stringify({
-        version: OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
-        kind: "signature-request",
-        digest,
-        display: `{"kind":"owner-user-operation","digest":"${digest}"}`,
-      }),
+      JSON.stringify(wrongVersion),
+      JSON.stringify(extraField),
+      JSON.stringify(wrongDecision),
+      LEGACY_SIGNATURE_SCOPE,
     ]) {
       const fixed = await fixture(stored);
       const projection = await project(fixed);
@@ -395,6 +345,48 @@ describe("experimental owner-phone projection", () => {
 });
 
 describe("experimental owner-phone decision saga", () => {
+  it("verifies one Kernel artifact and replays without a second release", async () => {
+    const input = createKernelOwnerApprovalInput();
+    const fixed = await fixture(input.requestedScope);
+    const projection = await project(fixed);
+    expect(projection.scope).toMatchObject({
+      kind: "owner-signing-request",
+      decision: "approve-or-reject",
+    });
+
+    const decided = await submitOwnerPhoneDecision({
+      store: fixed.store,
+      clock: fixed.clock,
+      kms: fixed.kms,
+      caller: OWNER,
+      operationId: fixed.requestId,
+      command: { outcome: "approved", artifact: input.canonicalArtifact },
+      codeTtlMs: CODE_TTL_MS,
+    });
+    expect(decided).toMatchObject({
+      settlement: "decided",
+      outcome: "approved",
+    });
+    expect(decided.release?.outcome).toBe("approved");
+    expect(fixed.kmsEncryptions()).toBe(2);
+
+    const replayed = await submitOwnerPhoneDecision({
+      store: fixed.store,
+      clock: fixed.clock,
+      kms: fixed.kms,
+      caller: OWNER,
+      operationId: fixed.requestId,
+      command: { outcome: "approved", artifact: "{}" },
+      codeTtlMs: CODE_TTL_MS,
+    });
+    expect(replayed).toMatchObject({
+      settlement: "replayed",
+      outcome: "approved",
+      release: null,
+    });
+    expect(fixed.kmsEncryptions()).toBe(2);
+  });
+
   it("decides once and releases the one-time material to that call only", async () => {
     const fixed = await fixture();
     const decided = await decide(fixed, "approved");
@@ -444,14 +436,29 @@ describe("experimental owner-phone decision saga", () => {
     expect(replayed.decidedAt).toBe(decided.decidedAt);
   });
 
-  it("refuses to approve a reject-only scope and still records its rejection", async () => {
-    // An unrecognized scope is inspectable but never approvable: the phone
-    // hides the Approve control and the relay refuses independently.
-    const fixed = await fixture(RAW_SCOPE);
-    await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
-    const rejected = await decide(fixed, "rejected");
-    expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });
-  });
+  it.each([
+    ["raw", RAW_SCOPE],
+    ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
+    ["raw-digest owner signing", RAW_DIGEST_SCOPE],
+    ["legacy digest", LEGACY_SIGNATURE_SCOPE],
+  ])(
+    "refuses to approve a reject-only %s scope and still records its rejection",
+    async (_label, requestedScope) => {
+      const fixed = await fixture(requestedScope);
+      await expectRelayFailure(() => decide(fixed, "approved"), "relay_request_invalid");
+      expect(fixed.kmsEncryptions()).toBe(0);
+      expect((await project(fixed)).scope).toMatchObject({ decision: "reject-only" });
+
+      const rejected = await decide(fixed, "rejected");
+      expect(rejected).toMatchObject({ settlement: "decided", outcome: "rejected" });
+      expect(fixed.kmsEncryptions()).toBe(0);
+
+      const replayed = await decide(fixed, "approved");
+      expect(replayed).toMatchObject({ settlement: "replayed", outcome: "rejected" });
+      expect(replayed.release).toBeNull();
+      expect(fixed.kmsEncryptions()).toBe(0);
+    },
+  );
 
   it("never decides for the wrong caller, an unknown operation, or after expiry", async () => {
     const fixed = await fixture();
@@ -480,13 +487,15 @@ async function createOverWire(harness: Harness, requestedScope: string): Promise
 }
 
 describe("experimental owner-phone preview routes", () => {
-  it("serves every projection shape and pins shared signature bytes", async () => {
-    // The exact signature bytes are shared with Swift. Other variants compare
+  it("serves every projection shape and pins shared owner-signing bytes", async () => {
+    // The exact owner-signing bytes are shared with Swift. Other variants compare
     // closed decoded shapes after normalizing only the two store-random fields.
     const harness = createHarness();
     for (const [variant, requestedScope] of [
       ["permissionRequest", PERMISSION_SCOPE],
-      ["signatureRequest", SIGNATURE_SCOPE],
+      ["ownerSigningRequest", OWNER_SIGNING_SCOPE],
+      ["kernelEnableOwnerSigningRequest", KERNEL_ENABLE_SCOPE],
+      ["rawDigestOwnerSigningRequest", RAW_DIGEST_SCOPE],
       ["raw", RAW_SCOPE],
     ] as const) {
       const golden = GOLDEN.projection[variant];
@@ -502,8 +511,8 @@ describe("experimental owner-phone preview routes", () => {
       body.operationId = golden.operationId;
       body.displayPayload = golden.displayPayload;
       expect(body).toEqual(golden);
-      if (variant === "signatureRequest") {
-        const exactBytes = new TextEncoder().encode(GOLDEN.exactSignatureProjectionBytes);
+      if (variant === "ownerSigningRequest") {
+        const exactBytes = new TextEncoder().encode(GOLDEN.exactOwnerSigningProjectionBytes);
         expect(new TextDecoder().decode(exactBytes)).toBe(JSON.stringify(body));
         expect(JSON.parse(new TextDecoder().decode(exactBytes))).toEqual(golden);
       }
@@ -560,6 +569,56 @@ describe("experimental owner-phone preview routes", () => {
     expect(rejected.operationId).toBe(rejectedId);
     rejected.operationId = GOLDEN.decision.decidedRejected?.operationId;
     expect(rejected).toEqual(GOLDEN.decision.decidedRejected);
+  });
+
+  it.each([
+    ["raw", RAW_SCOPE],
+    ["EIP-712 owner signing", OWNER_SIGNING_SCOPE],
+    ["raw-digest owner signing", RAW_DIGEST_SCOPE],
+    ["legacy digest", LEGACY_SIGNATURE_SCOPE],
+  ])("keeps a %s scope reject-only over the native HTTP route", async (_label, requestedScope) => {
+    const baseKms = createTestKms();
+    let encryptions = 0;
+    const harness = createHarness({
+      kms: {
+        async encrypt(plaintext) {
+          encryptions += 1;
+          return baseKms.encrypt(plaintext);
+        },
+        decrypt: (ciphertextRef) => baseKms.decrypt(ciphertextRef),
+      },
+    });
+    const requestId = await createOverWire(harness, requestedScope);
+
+    await expectFailure(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
+          command: "approve",
+          artifact: "must-not-be-sealed",
+        }),
+      ),
+      "relay_request_invalid",
+    );
+    expect(encryptions).toBe(0);
+
+    const rejected = await expectOk<{ outcome: string; settlement: string }>(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, { command: "reject" }),
+      ),
+      200,
+    );
+    expect(rejected).toMatchObject({ outcome: "rejected", settlement: "decided" });
+    const replayed = await expectOk<{ outcome: string; settlement: string; release: unknown }>(
+      await harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
+          command: "approve",
+          artifact: "must-not-be-sealed",
+        }),
+      ),
+      200,
+    );
+    expect(replayed).toMatchObject({ outcome: "rejected", settlement: "replayed", release: null });
+    expect(encryptions).toBe(0);
   });
 
   it("enforces the owner role on both preview routes", async () => {

@@ -11,12 +11,16 @@
    The demo app selects it exclusively on physical iOS and fails closed if it
    cannot be created or loaded; only simulator and host builds select software
    custody (`OwnerPhoneDemo/DemoOwnerKey.swift`).
+ - Secure Enclave signing requires the platform's user-presence policy in
+   addition to private-key usage. The physical prompt itself still requires
+   device evidence; host tests can pin only the creation policy.
  - Signatures are returned in the platform's DER form. ECDSA normalization
    (raw r‖s, low-S) is owned by `Signing.swift`, mirroring the SDK's
-   `kernel/key/p256.ts` rule; the demo key applies it before any byte leaves
-   the device.
- - Nothing here composes an operation, account, or chain; the custody boundary
-   signs only a caller-supplied, already-domain-separated 32-byte digest.
+   `kernel/key/p256.ts` rule.
+ - Nothing here composes an operation, account, or chain. This low-level
+   scaffold is not reachable from the native network-request approval path;
+   custody accepts only the device-derived verified-signable type, while the
+   live v3 projection remains reject-only.
 
  @author taek <leekt216@gmail.com>
  */
@@ -26,7 +30,6 @@ import Security
 #endif
 
 public enum OwnerPhoneKeyCustodyError: Error, Equatable, Sendable {
-    case invalidDigest
     case keyCreationFailed
     case keyUnavailable
     case signatureFailed
@@ -34,12 +37,13 @@ public enum OwnerPhoneKeyCustodyError: Error, Equatable, Sendable {
 
 /// Custody of the owner's persistent platform P-256 credential. Secure Enclave
 /// instances are non-exportable; the simulator/host key is only a device-local
-/// keychain development fallback. WebAuthn-style verification comes later.
+/// keychain development fallback. This low-level primitive is not authority to
+/// sign a network-supplied digest; the app has no such approval path.
 public protocol OwnerPhoneKeyCustody: Sendable {
     /// X9.63 uncompressed public key (65 bytes, leading 0x04).
     func publicKey() throws -> Data
-    /// Signs one already-domain-separated 32-byte digest; returns DER ECDSA.
-    func signDigest(_ digest: Data) throws -> Data
+    /// Signs only an exact request refined by `OwnerPhone`; returns DER ECDSA.
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data
 }
 
 #if canImport(Security)
@@ -47,8 +51,8 @@ public protocol OwnerPhoneKeyCustody: Sendable {
 /// `useSecureEnclave: true` the private key is created inside the Secure
 /// Enclave; simulator and host builds use a non-synchronizable keychain key
 /// available only while this device is unlocked. The demo
-/// intentionally requires no biometry or user-presence prompt: its explicit
-/// Approve tap is the consent gate. Neither mode is production-qualified.
+/// requires the platform user-presence policy before each signing effect.
+/// Neither mode is production-qualified.
 public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
     public let applicationTag: Data
     public let useSecureEnclave: Bool
@@ -81,18 +85,13 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
         return data
     }
 
-    public func signDigest(_ digest: Data) throws -> Data {
-        // Validated before any keychain access, so a malformed digest never
-        // triggers a user-presence prompt.
-        guard digest.count == 32 else {
-            throw OwnerPhoneKeyCustodyError.invalidDigest
-        }
+    public func sign(_ digest: VerifiedSignableDigest) throws -> Data {
         let privateKey = try ensureKey()
         var error: Unmanaged<CFError>?
         guard let signature = SecKeyCreateSignature(
             privateKey,
             .ecdsaSignatureDigestX962SHA256,
-            digest as CFData,
+            digest.platformSigningBytes as CFData,
             &error
         ) as Data? else {
             throw OwnerPhoneKeyCustodyError.signatureFailed
@@ -107,6 +106,13 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
             kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
     }
+
+    /// Exact physical-key consent policy. Kept as one owned value so host
+    /// evidence can prove the creation flags without claiming a device prompt.
+    static let secureEnclaveAccessControlFlags: SecAccessControlCreateFlags = [
+        .privateKeyUsage,
+        .userPresence
+    ]
 
     /// Host-testable claim check used on creation and every reload. These are
     /// the identity and capability attributes documented for
@@ -165,14 +171,10 @@ public struct KeychainKeyCustodyStub: OwnerPhoneKeyCustody {
         ]
         if useSecureEnclave {
             var accessError: Unmanaged<CFError>?
-            // `.privateKeyUsage` only, no biometry/user-presence requirement:
-            // the demo's explicit Approve tap is the consent gate, and a
-            // presence prompt on top of it would double-ask. A production
-            // deployment adds `.userPresence`/biometry policy here.
             guard let access = SecAccessControlCreateWithFlags(
                 nil,
                 kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                [.privateKeyUsage],
+                Self.secureEnclaveAccessControlFlags,
                 &accessError
             ) else {
                 throw OwnerPhoneKeyCustodyError.keyCreationFailed

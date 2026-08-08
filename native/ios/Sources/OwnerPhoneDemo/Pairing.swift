@@ -235,9 +235,10 @@ public enum PairingStoreError: Error, Equatable, Sendable {
 /// The one authoritative persisted pairing identity. Endpoint and bearer are
 /// encoded in the same exact versioned value and can never be loaded apart.
 public struct PersistedPairing: Equatable, Sendable {
-    /// Version 2 rejects pairings registered with the retired physical-device
-    /// software fallback. Re-pairing binds the credential to the v2 key tags.
-    public static let version = 2
+    /// Version 3 binds the relay credential to the user-presence owner-key
+    /// generation. Earlier custody is rejected and must be explicitly
+    /// forgotten before re-pairing; there is no migration or old reader.
+    public static let version = 3
     private static let maxEncodedBytes = 2_048
     public let endpoint: DemoRelayEndpoint
     public let credential: String
@@ -523,6 +524,9 @@ public struct KeychainPairingStore: DevicePairingStore {
     private static let account = "pairing"
     public let service: String
 
+    /// The slot intentionally remains unchanged across the v3 schema cut.
+    /// Therefore an old v2 value is observed as unreadable evidence and
+    /// blocks replacement until the user explicitly clears it.
     public init(service: String = "org.oaath.owner-phone.pairing-v2") {
         self.service = service
     }

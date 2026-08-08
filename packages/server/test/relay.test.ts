@@ -11,6 +11,7 @@ import { createKmsSessionSignerProvider } from "../src/session-signer/kms-provid
 import type { RelayStore, RelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
+  APPROVABLE_PERMISSION_SCOPE,
   approve,
   CLIENT_TOKEN,
   claim,
@@ -63,7 +64,7 @@ describe("relay handler", () => {
       requestId: created.requestId,
       clientId: "client-a",
       redirectUri: REDIRECT_URI,
-      requestedScope: '{"chainScope":"all"}',
+      requestedScope: APPROVABLE_PERMISSION_SCOPE,
       expired: false,
       decision: null,
     });
@@ -612,6 +613,7 @@ describe("URL-only service surface", () => {
       submission: async () => ({ userOperationHash: `0x${"aa".repeat(32)}` }),
       usage: async () => ({ status: "complete" }),
       feePayer: null,
+      staticPaymasterConfigurationHash: null,
       ...overrides,
     };
   }
@@ -717,15 +719,27 @@ describe("URL-only service surface", () => {
   });
 
   it("serves the exact versioned bootstrap document to a client", async () => {
-    const harness = createHarness(bootstrapOptions());
+    const staticPaymasterConfigurationHash = `0x${"44".repeat(32)}`;
+    const harness = createHarness(
+      bootstrapOptions({ chains: [chainPort({ staticPaymasterConfigurationHash })] }),
+    );
     const document = await expectOk<Record<string, unknown>>(
       await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
       200,
     );
     expect(document).toMatchObject({
-      version: "oaath.service-bootstrap/v1",
+      version: "oaath.service-bootstrap/v3",
       userHandle: "user-1",
-      chains: [{ chainId: 31_337, usage: true, feePayer: null }],
+      chains: [
+        {
+          chainId: 31_337,
+          usage: true,
+          feePayer: null,
+          paymasterService: null,
+          staticPaymasterConfigurationHash,
+        },
+      ],
+      sessionSigner: { mode: "frontend", providerId: null },
     });
     await expectFailure(await harness.handler(get("/bootstrap", OWNER_TOKEN)), "relay_forbidden");
     await expectFailure(await harness.handler(get("/bootstrap", null)), "relay_unauthenticated");
@@ -746,6 +760,15 @@ describe("URL-only service surface", () => {
         createHarness(
           bootstrapOptions({
             bootstrap: { application: {}, userHandle: "", account: {}, ownerValidator: null },
+          }),
+        ),
+      "relay_internal",
+    );
+    expectConstructionFailure(
+      () =>
+        createHarness(
+          bootstrapOptions({
+            chains: [chainPort({ staticPaymasterConfigurationHash: "0x01" })],
           }),
         ),
       "relay_internal",
@@ -808,6 +831,203 @@ describe("URL-only service surface", () => {
       await harness.handler(post("/chains/31337/reads", CLIENT_TOKEN, { extra: 1 })),
       "relay_request_invalid",
     );
+  });
+
+  it("binds one bootstrap descriptor to both authenticated paymaster methods", async () => {
+    const calls: Array<{ method: string; request: unknown }> = [];
+    const limitedRoutes: string[] = [];
+    const harness = createHarness(
+      bootstrapOptions({
+        rateLimit: {
+          async check(input: { readonly route: string; readonly clientId: string }) {
+            limitedRoutes.push(input.route);
+            return "allowed" as const;
+          },
+        },
+        paymasterServices: [
+          {
+            chainId: 31_337,
+            providerId: "paymaster-primary",
+            requestTimeoutMs: 1_000,
+            provider: {
+              async getPaymasterStubData(request: unknown) {
+                calls.push({ method: "stub-data", request });
+                return { paymaster: `0x${"33".repeat(20)}` };
+              },
+              async getPaymasterData(request: unknown) {
+                calls.push({ method: "data", request });
+                return { paymasterData: "0x1234" };
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const document = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    expect(document.chains).toEqual([
+      {
+        chainId: 31_337,
+        usage: true,
+        feePayer: null,
+        paymasterService: { providerId: "paymaster-primary" },
+        staticPaymasterConfigurationHash: null,
+      },
+    ]);
+
+    const params = [{ sender: `0x${"11".repeat(20)}` }, `0x${"22".repeat(20)}`, "0x7a69", {}];
+    const stubbed = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/chains/31337/paymaster/stub-data", CLIENT_TOKEN, { params })),
+      200,
+    );
+    expect(stubbed).toEqual({ present: true, result: { paymaster: `0x${"33".repeat(20)}` } });
+    const finalized = await expectOk<Record<string, unknown>>(
+      await harness.handler(post("/chains/31337/paymaster/data", CLIENT_TOKEN, { params })),
+      200,
+    );
+    expect(finalized).toEqual({ present: true, result: { paymasterData: "0x1234" } });
+    expect(limitedRoutes).toEqual([
+      "bootstrap.fetch",
+      "chains.paymaster.stub-data",
+      "chains.paymaster.data",
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(calls.map((entry) => entry.method)).toEqual(["stub-data", "data"]);
+    for (const entry of calls) {
+      expect(entry.request).toMatchObject({
+        caller: { clientId: "client-a", subject: "subject-1" },
+        params,
+        signal: expect.any(AbortSignal),
+      });
+    }
+  });
+
+  it("never invokes a paymaster for an unauthorized, malformed, absent, or limited request", async () => {
+    let calls = 0;
+    const provider = {
+      async getPaymasterStubData() {
+        calls += 1;
+        return {};
+      },
+      async getPaymasterData() {
+        calls += 1;
+        return {};
+      },
+    };
+    const configured = createHarness(
+      bootstrapOptions({
+        rateLimit: {
+          async check() {
+            return "allowed" as const;
+          },
+        },
+        paymasterServices: [
+          { chainId: 31_337, providerId: "paymaster-primary", requestTimeoutMs: 1_000, provider },
+        ],
+      }),
+    );
+    await expectFailure(
+      await configured.handler(
+        post("/chains/31337/paymaster/stub-data", OWNER_TOKEN, { params: [] }),
+      ),
+      "relay_forbidden",
+    );
+    await expectFailure(
+      await configured.handler(post("/chains/31337/paymaster/stub-data", null, { params: [] })),
+      "relay_unauthenticated",
+    );
+    await expectFailure(
+      await configured.handler(
+        post("/chains/31337/paymaster/stub-data", CLIENT_TOKEN, {
+          params: [],
+          url: "https://attacker.example/paymaster",
+        }),
+      ),
+      "relay_request_invalid",
+    );
+    await expectFailure(
+      await configured.handler(
+        post("/chains/31337/paymaster/unknown", CLIENT_TOKEN, { params: [] }),
+      ),
+      "relay_not_found",
+    );
+    const absent = createHarness(bootstrapOptions());
+    await expectFailure(
+      await absent.handler(post("/chains/31337/paymaster/data", CLIENT_TOKEN, { params: [] })),
+      "relay_not_found",
+    );
+    const limited = createHarness(
+      bootstrapOptions({
+        rateLimit: {
+          async check() {
+            return "limited" as const;
+          },
+        },
+        paymasterServices: [
+          { chainId: 31_337, providerId: "paymaster-primary", requestTimeoutMs: 1_000, provider },
+        ],
+      }),
+    );
+    await expectFailure(
+      await limited.handler(post("/chains/31337/paymaster/data", CLIENT_TOKEN, { params: [] })),
+      "relay_rate_limited",
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("requires a bounded paymaster deadline and aborts an unanswered provider once", async () => {
+    let calls = 0;
+    const provider = {
+      async getPaymasterStubData(request: { readonly signal: AbortSignal }) {
+        calls += 1;
+        await new Promise<never>((_resolve, reject) => {
+          request.signal.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+        });
+      },
+      async getPaymasterData() {
+        return {};
+      },
+    };
+    expectConstructionFailure(
+      () =>
+        createHarness(
+          bootstrapOptions({
+            paymasterServices: [
+              {
+                chainId: 31_337,
+                providerId: "paymaster-primary",
+                requestTimeoutMs: 1_000,
+                provider,
+              },
+            ],
+          }),
+        ),
+      "relay_internal",
+    );
+    const harness = createHarness(
+      bootstrapOptions({
+        rateLimit: {
+          async check() {
+            return "allowed" as const;
+          },
+        },
+        paymasterServices: [
+          { chainId: 31_337, providerId: "paymaster-primary", requestTimeoutMs: 1, provider },
+        ],
+      }),
+    );
+    await expectFailure(
+      await harness.handler(
+        post("/chains/31337/paymaster/stub-data", CLIENT_TOKEN, { params: [] }),
+      ),
+      "relay_chain_unavailable",
+    );
+    expect(calls).toBe(1);
   });
 
   it("records invalidations durably and enforces them on the chain routes", async () => {

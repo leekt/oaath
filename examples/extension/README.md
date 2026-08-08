@@ -17,6 +17,16 @@ per origin, the owner approves the scope on their own device, and
   Chrome reports it — never anything a message claims. One Grant per origin,
   in that origin's own IndexedDB database, keyed by service URL, so no dapp
   can reach another's authority and a service change starts fresh.
+- Every `wallet_sendCalls` request waits on an extension-owned confirmation tab
+  showing that browser-bound origin, the exact account and chain, and every
+  ordered call. When the request uses the supported ERC-7902 validity range,
+  the same page also shows both inclusive endpoints as exact Unix seconds and
+  UTC. Before session display state is written or a tab opens, the SDK durably
+  reserves the bundle ID with an exclusive five-minute confirmation deadline.
+  Approval exists only in the current worker's one-use memory; rejection,
+  expiry, or closing the tab returns `4001`, while a worker restart cannot
+  recover an approval or start the operation. Rejected and expired explicit IDs
+  remain durable tombstones and cannot be reused.
 - **URL mode never holds owner authority.** Pairing routes the owner's review
   through the service's authorization flow (the phone); revocation from the
   extension invalidates the capability and leaves the Grant durably `revoking`
@@ -53,5 +63,9 @@ Exactly `@oaath/sdk/viem`: `eth_chainId`, `eth_accounts`,
 `wallet_sendCalls` / `wallet_getCallsStatus` / `wallet_showCallsStatus` /
 `wallet_getCapabilities`. `wallet_showCallsStatus` opens a read-only extension
 page backed by the same durable bundle lookup as `wallet_getCallsStatus`.
+`wallet_sendCalls` CAS-reserves its bundle before presentation, but performs no
+quote, signature, or send until its extension-owned confirmation returns
+`approved`. Approval receives a fresh 30-second operation-publication lease;
+the presentation deadline never consumes that lease.
 Everything else is refused with code 4200 — this provider is a Grant, not a
 general-purpose RPC node.

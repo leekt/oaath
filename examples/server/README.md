@@ -50,17 +50,19 @@ RELAY=http://127.0.0.1:8787
 CLIENT='authorization: Bearer demo-client-token'
 OWNER='authorization: Bearer demo-owner-token'
 JSON='content-type: application/json'
+SCOPE='<paste the exact requested scope printed by the server>'
 ```
 
 **1. The client creates an authorization request.** `codeChallenge` is the S256
 PKCE challenge; the client keeps the verifier. The server prints both at startup.
 
 ```sh
-curl -s -X POST $RELAY/authorization/requests -H "$CLIENT" -H "$JSON" -d '{
-  "redirectUri": "https://app.example/callback",
-  "codeChallenge": "rzIqQ2KxRJ5ve6FCu99ha1woowqIcgvINFZjQDPPtz4",
-  "requestedScope": "{\"chainScope\":\"all\"}"
-}'
+BODY=$(node -e 'process.stdout.write(JSON.stringify({
+  redirectUri: "https://app.example/callback",
+  codeChallenge: "rzIqQ2KxRJ5ve6FCu99ha1woowqIcgvINFZjQDPPtz4",
+  requestedScope: process.argv[1]
+}))' "$SCOPE")
+curl -s -X POST $RELAY/authorization/requests -H "$CLIENT" -H "$JSON" -d "$BODY"
 # {"requestId":"ECdLnW2ydoVhfWJywrosinpkRKuDHxj27gFP0NxMDeA","expiresAt":1785810279241}
 export REQUEST_ID=ECdLnW2ydoVhfWJywrosinpkRKuDHxj27gFP0NxMDeA
 ```
@@ -70,7 +72,7 @@ the same call with `$CLIENT` returns `403 relay_forbidden`.
 
 ```sh
 curl -s $RELAY/authorization/requests/$REQUEST_ID -H "$OWNER"
-# {"requestId":"…","clientId":"demo-client","requestedScope":"{\"chainScope\":\"all\"}",
+# {"requestId":"…","clientId":"demo-client","requestedScope":"{\"version\":\"oaath.permission-request/v1\",…}",
 #  "expiresAt":1785810279241,"expired":false,"decision":null}
 ```
 

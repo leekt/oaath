@@ -50,6 +50,7 @@ CI:
 ```sh
 pnpm check:public-surface
 pnpm smoke:browser    # packed tarball consumer, golden path, realm recreation
+pnpm smoke:extension  # packed MV3 extension, worker death, durable status recovery
 pnpm smoke:server     # packed tarball consumer, relay round-trip, ./postgres
 pnpm smoke:all-chain  # two local Anvil chains, one replayable owner approval
 ```

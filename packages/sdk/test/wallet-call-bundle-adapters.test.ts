@@ -71,9 +71,9 @@ const BACKENDS: readonly BackendCase[] = [
 function key(
   id = "bundle",
   providerScopeId: WalletCallBundleKey["providerScopeId"] = SCOPE,
-  _account: `0x${string}` = ACCOUNT,
+  account: WalletCallBundleKey["account"] = ACCOUNT,
 ): Readonly<WalletCallBundleKey> {
-  return Object.freeze({ providerScopeId, id });
+  return Object.freeze({ providerScopeId, account, id });
 }
 
 function operation(grantId = GRANT_ID): Readonly<WalletCallBundleOperation> {
@@ -88,6 +88,7 @@ function operation(grantId = GRANT_ID): Readonly<WalletCallBundleOperation> {
       userOperationHash: USER_OPERATION_HASH,
       requestHash: REQUEST_HASH,
     }),
+    resultCapabilities: null,
   });
 }
 
@@ -98,7 +99,7 @@ function reserve(
   createdAt = 10,
   requestHash: WalletCallBundleRecord["requestHash"] = REQUEST_HASH,
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
-  account: WalletCallBundleRecord["account"] = ACCOUNT,
+  account: WalletCallBundleRecord["account"] = bundleKey.account,
   grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
 ): Promise<WalletCallBundleMutationResult> {
   return store.reserveAccepted({
@@ -110,6 +111,21 @@ function reserve(
     createdAt,
     publicationExpiresAt: createdAt + 30,
     requestHash,
+  });
+}
+
+function reservePendingConfirmation(
+  store: WalletCallBundleStore,
+): Promise<WalletCallBundleMutationResult> {
+  return store.reservePendingConfirmation({
+    key: key(),
+    grantId: GRANT_ID,
+    generation: GENERATION_A,
+    account: ACCOUNT,
+    chainId: CHAIN_ID,
+    createdAt: 10,
+    confirmationExpiresAt: 310,
+    requestHash: REQUEST_HASH,
   });
 }
 
@@ -157,7 +173,7 @@ for (const backendCase of BACKENDS) {
       }
     });
 
-    it("uses only provider scope and ID as physical key axes", async () => {
+    it("uses provider scope, account, and ID as physical key axes", async () => {
       const backend = await backendCase.open();
       try {
         const firstKey = key("same-id");
@@ -170,6 +186,11 @@ for (const backendCase of BACKENDS) {
         const otherGrant: Readonly<StoreRecord<unknown>> = Object.freeze({
           ...first,
           value: Object.freeze({ marker: "other-grant" }),
+        });
+        const otherAccountKey = key("same-id", SCOPE, OTHER_ACCOUNT);
+        const otherAccount: Readonly<StoreRecord<unknown>> = Object.freeze({
+          ...first,
+          value: Object.freeze({ marker: "other-account" }),
         });
         await expect(
           backend.adapter.compareAndSwap({
@@ -187,7 +208,16 @@ for (const backendCase of BACKENDS) {
             next: otherGrant,
           }),
         ).resolves.toBe(false);
+        await expect(
+          backend.adapter.compareAndSwap({
+            key: otherAccountKey,
+            expectedStoreRevision: null,
+            expectedGeneration: null,
+            next: otherAccount,
+          }),
+        ).resolves.toBe(true);
         await expect(backend.adapter.get(firstKey)).resolves.toEqual(first);
+        await expect(backend.adapter.get(otherAccountKey)).resolves.toEqual(otherAccount);
       } finally {
         backend.dispose();
       }
@@ -261,6 +291,37 @@ for (const backendCase of BACKENDS) {
         expect(results.find((result) => result.status === "conflict")).toMatchObject({
           status: "conflict",
           current: { storeRevision: 0, value: { state: "accepted" } },
+        });
+      } finally {
+        backend.dispose();
+      }
+    });
+
+    it("lets one store reserve and approve a preconfirmation while its peer only conflicts", async () => {
+      const backend = await backendCase.open();
+      try {
+        const stores = [
+          new WalletCallBundleStore(backend.adapter),
+          new WalletCallBundleStore(backend.adapter),
+        ];
+        const results = await Promise.all(stores.map(reservePendingConfirmation));
+        expect(results.filter((result) => result.status === "committed")).toHaveLength(1);
+        expect(results.filter((result) => result.status === "conflict")).toHaveLength(1);
+        const pending = results.find((result) => result.status === "committed");
+        if (pending?.status !== "committed") throw new Error("expected one pending winner");
+        const approved = await stores[0]?.approveConfirmation({
+          key: key(),
+          expectedStoreRevision: pending.record.storeRevision,
+          expectedGeneration: pending.record.value.generation,
+          approvedAt: 300,
+          publicationExpiresAt: 330,
+        });
+        expect(approved).toMatchObject({
+          status: "committed",
+          record: {
+            storeRevision: 1,
+            value: { state: "accepted", publicationExpiresAt: 330 },
+          },
         });
       } finally {
         backend.dispose();
@@ -392,11 +453,15 @@ for (const backendCase of BACKENDS) {
       }
     });
 
-    it("isolates the same ID by provider scope while Grant and account stay record evidence", async () => {
+    it("isolates the same ID by provider scope and account while Grant stays record evidence", async () => {
       const backend = await backendCase.open();
       try {
         const store = new WalletCallBundleStore(backend.adapter);
-        const keys = [key("same-id"), key("same-id", OTHER_SCOPE)] as const;
+        const keys = [
+          key("same-id"),
+          key("same-id", OTHER_SCOPE),
+          key("same-id", SCOPE, OTHER_ACCOUNT),
+        ] as const;
         for (const [index, bundleKey] of keys.entries()) {
           requireCommitted(await reserve(store, bundleKey, CHAIN_ID + index));
         }
@@ -415,23 +480,15 @@ for (const backendCase of BACKENDS) {
           status: "conflict",
           current: { value: { grantId: GRANT_ID } },
         });
-        await expect(
-          reserve(
-            store,
-            key("same-id", SCOPE, OTHER_ACCOUNT),
-            CHAIN_ID + 2,
-            10,
-            REQUEST_HASH,
-            GENERATION_B,
-            OTHER_ACCOUNT,
-          ),
-        ).resolves.toMatchObject({
-          status: "conflict",
-          current: { value: { account: ACCOUNT } },
-        });
         await expect(Promise.all(keys.map((bundleKey) => store.get(bundleKey)))).resolves.toEqual([
           expect.objectContaining({ value: expect.objectContaining({ chainId: CHAIN_ID }) }),
           expect.objectContaining({ value: expect.objectContaining({ chainId: CHAIN_ID + 1 }) }),
+          expect.objectContaining({
+            value: expect.objectContaining({
+              account: OTHER_ACCOUNT,
+              chainId: CHAIN_ID + 2,
+            }),
+          }),
         ]);
       } finally {
         backend.dispose();

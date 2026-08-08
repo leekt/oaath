@@ -5,8 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  captureWalletGetCapabilitiesParams,
+  captureWalletPrepareCallsParams,
   captureWalletSendCallsParams,
   EIP5792_CAPTURE_LIMITS,
+  hashCapturedWalletSendCallsRequest,
   isCanonicalChainId,
   isCanonicalQuantity,
   isHexBytes,
@@ -47,8 +50,44 @@ function baseBundle(overrides: Readonly<Record<string, unknown>> = {}): Record<s
   };
 }
 
+function staticPaymasterConfiguration(optional = false): Record<string, unknown> {
+  return {
+    paymaster: `0x${"33".repeat(20)}`,
+    paymasterData: "0xdeadbeef",
+    paymasterValidationGasLimit: "0x9c40",
+    paymasterPostOpGasLimit: "0xc350",
+    ...(optional ? { optional: true } : {}),
+  };
+}
+
+function validityTimeRange(optional = false): Record<string, unknown> {
+  return {
+    validAfter: "0xa",
+    validUntil: "0x10",
+    ...(optional ? { optional: true } : {}),
+  };
+}
+
 function captureBundle(bundle: unknown = baseBundle(), configuredChain: number = CHAIN) {
   return captureWalletSendCallsParams([bundle], configuredChain);
+}
+
+function capturePrepareWithCapabilities(capabilities: unknown) {
+  return captureWalletPrepareCallsParams(
+    [
+      {
+        version: "1",
+        calls: [{ to: TARGET_A }],
+        capabilities,
+        key: {
+          type: "secp256k1",
+          publicKey: `0x04${"11".repeat(64)}`,
+          prehash: false,
+        },
+      },
+    ],
+    CHAIN,
+  );
 }
 
 function expectRpcError(action: () => unknown, code: OaathProviderErrorCode): void {
@@ -287,13 +326,24 @@ describe("canonical fields and identifiers", () => {
     expect(isCanonicalQuantity("0x00")).toBe(false);
     expect(isCanonicalChainId("0x1")).toBe(true);
     expect(isCanonicalChainId("0xabc")).toBe(true);
+    expect(isCanonicalChainId("0xAbC")).toBe(true);
     expect(isCanonicalChainId("0x0")).toBe(false);
   });
 
-  it("accepts only lowercase positive no-leading-zero chain ids", () => {
+  it("accepts compact positive chain ids and normalizes mixed-case digits once", () => {
     expect(captureBundle(baseBundle({ chainId: "0x1" }), 1).chainId).toBe("0x1");
-    expect(captureBundle(baseBundle({ chainId: "0xabcdef" }), 0xab_cdef).chainId).toBe("0xabcdef");
-    for (const chainId of ["0x0", "0x00", "0x01", "0xA", "0X1", "1", "0x", "0x-1", 1]) {
+    const lowercase = captureBundle(baseBundle({ chainId: "0xabcdef" }), 0xab_cdef);
+    const mixedCase = captureBundle(baseBundle({ chainId: "0xAbCdEf" }), 0xab_cdef);
+    expect(lowercase.chainId).toBe("0xabcdef");
+    expect(mixedCase.chainId).toBe("0xabcdef");
+    expect(hashCapturedWalletSendCallsRequest(mixedCase, "same-id")).toBe(
+      hashCapturedWalletSendCallsRequest(lowercase, "same-id"),
+    );
+    expect(captureWalletGetCapabilitiesParams([TARGET_A, ["0xA", "0xAbCdEf"]]).chainIds).toEqual([
+      "0xa",
+      "0xabcdef",
+    ]);
+    for (const chainId of ["0x0", "0x00", "0x01", "0x0A", "0X1", "1", "0x", "0x-1", 1]) {
       expectRpcError(() => captureBundle(baseBundle({ chainId }), 1), INVALID_PARAMS);
     }
   });
@@ -426,6 +476,280 @@ describe("owned capture limits", () => {
 });
 
 describe("capability semantics", () => {
+  it("derives one immutable validity range while retaining exact request hash material", () => {
+    const range = validityTimeRange(true);
+    const captured = captureBundle(baseBundle({ capabilities: { validityTimeRange: range } }));
+
+    expect(captured.capabilities).toEqual({
+      values: { validityTimeRange: range },
+      ignored: [],
+      validityTimeRange: {
+        optional: true,
+        validAfter: "10",
+        validUntil: "16",
+      },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const required = captureBundle(
+      baseBundle({ capabilities: { validityTimeRange: validityTimeRange() } }),
+    );
+    expect(hashCapturedWalletSendCallsRequest(required, "validity-request")).not.toBe(
+      hashCapturedWalletSendCallsRequest(captured, "validity-request"),
+    );
+  });
+
+  it("maps malformed known validity ranges to invalid params even when optional", () => {
+    for (const range of [
+      { validAfter: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: true, extra: true },
+      { validAfter: "0xA", validUntil: "0x10", optional: true },
+      { validAfter: "0xa", validUntil: "0xa", optional: true },
+      { validAfter: "0xa", validUntil: "0x10", optional: "true" },
+    ]) {
+      expectRpcError(
+        () => captureBundle(baseBundle({ capabilities: { validityTimeRange: range } })),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps validity bundle-scoped while capturing prepared-call bundle metadata", () => {
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({
+            calls: [
+              {
+                to: TARGET_A,
+                capabilities: { validityTimeRange: validityTimeRange() },
+              },
+            ],
+          }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+    expect(
+      capturePrepareWithCapabilities({ validityTimeRange: validityTimeRange() }).capabilities,
+    ).toEqual({
+      values: { validityTimeRange: validityTimeRange() },
+      ignored: [],
+      validityTimeRange: { optional: false, validAfter: "10", validUntil: "16" },
+    });
+
+    const optionalCall = validityTimeRange(true);
+    const capturedCall = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { validityTimeRange: optionalCall },
+          },
+        ],
+      }),
+    );
+    expect(capturedCall.calls[0]?.capabilities).toEqual({
+      values: { validityTimeRange: optionalCall },
+      ignored: ["validityTimeRange"],
+    });
+
+    const optionalPrepare = validityTimeRange(true);
+    expect(
+      capturePrepareWithCapabilities({ validityTimeRange: optionalPrepare }).capabilities,
+    ).toEqual({
+      values: { validityTimeRange: optionalPrepare },
+      ignored: [],
+      validityTimeRange: { optional: true, validAfter: "10", validUntil: "16" },
+    });
+  });
+
+  it("derives one static paymaster selection while retaining exact request hash material", () => {
+    const configuration = staticPaymasterConfiguration(true);
+    const captured = captureBundle(
+      baseBundle({ capabilities: { staticPaymasterConfiguration: configuration } }),
+    );
+
+    expect(captured.capabilities).toEqual({
+      values: { staticPaymasterConfiguration: configuration },
+      ignored: [],
+      staticPaymasterConfiguration: {
+        optional: true,
+        paymaster: {
+          address: `0x${"33".repeat(20)}`,
+          data: "0xdeadbeef",
+          verificationGasLimit: "40000",
+          postOpGasLimit: "50000",
+        },
+        configurationHash: "0x70a35e6c247838ac3ef02bdd886943bec3426ceed1692726aee6da0de816a031",
+      },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const required = captureBundle(
+      baseBundle({
+        capabilities: { staticPaymasterConfiguration: staticPaymasterConfiguration() },
+      }),
+    );
+    expect(required.capabilities?.staticPaymasterConfiguration?.configurationHash).toBe(
+      captured.capabilities?.staticPaymasterConfiguration?.configurationHash,
+    );
+    expect(hashCapturedWalletSendCallsRequest(required, "static-paymaster-request")).not.toBe(
+      hashCapturedWalletSendCallsRequest(captured, "static-paymaster-request"),
+    );
+  });
+
+  it("maps malformed handled static paymaster configurations to invalid params", () => {
+    const alias = staticPaymasterConfiguration();
+    delete alias.paymasterValidationGasLimit;
+    alias.paymasterVerificationGasLimit = "0x9c40";
+    for (const configurationValue of [
+      { ...staticPaymasterConfiguration(), extra: true },
+      { ...staticPaymasterConfiguration(), optional: "true" },
+      alias,
+    ]) {
+      expectRpcError(
+        () =>
+          captureBundle(
+            baseBundle({ capabilities: { staticPaymasterConfiguration: configurationValue } }),
+          ),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps static paymasters unsupported at call scope unless optional", () => {
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({
+            calls: [
+              {
+                to: TARGET_A,
+                capabilities: {
+                  staticPaymasterConfiguration: staticPaymasterConfiguration(),
+                },
+              },
+            ],
+          }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+
+    const optional = staticPaymasterConfiguration(true);
+    const captured = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { staticPaymasterConfiguration: optional },
+          },
+        ],
+      }),
+    );
+    expect(captured.calls[0]?.capabilities).toEqual({
+      values: { staticPaymasterConfiguration: optional },
+      ignored: ["staticPaymasterConfiguration"],
+    });
+  });
+
+  it("captures one exact bundle paymaster selection and retains its request hash material", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    const context = { policy: "sponsored", nested: { quota: 2 } };
+    const captured = captureBundle(
+      baseBundle({
+        capabilities: {
+          paymasterService: { url, context, optional: true },
+        },
+      }),
+    );
+
+    expect(captured.capabilities).toEqual({
+      values: {
+        paymasterService: { url, context, optional: true },
+      },
+      ignored: [],
+      paymasterService: { url, context, optional: true },
+    });
+    expectDeepFrozen(captured.capabilities);
+
+    const hash = hashCapturedWalletSendCallsRequest(captured, "paymaster-request");
+    const changedContext = captureBundle(
+      baseBundle({
+        capabilities: {
+          paymasterService: { url, context: { policy: "self-funded" }, optional: true },
+        },
+      }),
+    );
+    const required = captureBundle(
+      baseBundle({ capabilities: { paymasterService: { url, context } } }),
+    );
+    expect(hashCapturedWalletSendCallsRequest(changedContext, "paymaster-request")).not.toBe(hash);
+    expect(hashCapturedWalletSendCallsRequest(required, "paymaster-request")).not.toBe(hash);
+
+    expect(
+      captureBundle(
+        baseBundle({
+          capabilities: {
+            paymasterService: {
+              url: "http://localhost:8787/chains/421614/paymaster",
+              context: {},
+            },
+          },
+        }),
+      ).capabilities?.paymasterService?.url,
+    ).toBe("http://localhost:8787/chains/421614/paymaster");
+  });
+
+  it("rejects malformed handled paymaster selections at the bundle boundary", () => {
+    const url = "https://relay.example/chains/421614/paymaster";
+    for (const paymasterService of [
+      { context: {} },
+      { url },
+      { url, context: {}, extra: true },
+      { url: `${url}/`, context: {} },
+      { url: "https://Relay.example/chains/421614/paymaster", context: {} },
+      { url: "http://relay.example/chains/421614/paymaster", context: {} },
+      { url: `${url}?mode=test`, context: {} },
+      { url, context: null },
+      { url, context: [] },
+      { url, context: "opaque" },
+    ]) {
+      expectRpcError(
+        () => captureBundle(baseBundle({ capabilities: { paymasterService } })),
+        INVALID_PARAMS,
+      );
+    }
+  });
+
+  it("keeps paymasterService unsupported at call scope", () => {
+    const paymasterService = {
+      url: "https://relay.example/chains/421614/paymaster",
+      context: {},
+    };
+    expectRpcError(
+      () =>
+        captureBundle(
+          baseBundle({ calls: [{ to: TARGET_A, capabilities: { paymasterService } }] }),
+        ),
+      UNSUPPORTED_CAPABILITY,
+    );
+
+    const captured = captureBundle(
+      baseBundle({
+        calls: [
+          {
+            to: TARGET_A,
+            capabilities: { paymasterService: { ...paymasterService, optional: true } },
+          },
+        ],
+      }),
+    );
+    expect(captured.calls[0]?.capabilities).toEqual({
+      values: { paymasterService: { ...paymasterService, optional: true } },
+      ignored: ["paymasterService"],
+    });
+  });
+
   it("retains unknown optional top-level and call capabilities explicitly as ignored", () => {
     const captured = captureBundle(
       baseBundle({
@@ -627,7 +951,7 @@ describe("hostile object rejection", () => {
 
 describe("semantic EIP-5792 refusals", () => {
   it("classifies a valid configured-chain mismatch as 5710", () => {
-    expectRpcError(() => captureBundle(baseBundle({ chainId: "0x1" }), 2), UNSUPPORTED_CHAIN);
+    expectRpcError(() => captureBundle(baseBundle({ chainId: "0xA" }), 11), UNSUPPORTED_CHAIN);
   });
 
   it("uses the generic execution refusal for syntactically valid contract creation", () => {

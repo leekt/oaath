@@ -63,6 +63,15 @@ importers:
         specifier: 2.55.8
         version: 2.55.8(typescript@7.0.2)
 
+  packages/contracts:
+    devDependencies:
+      '@account-abstraction/contracts':
+        specifier: 0.7.0
+        version: 0.7.0
+      viem:
+        specifier: 2.55.8
+        version: 2.55.8(typescript@7.0.2)
+
   packages/protocol:
     dependencies:
       '@noble/curves':

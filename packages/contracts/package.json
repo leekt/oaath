@@ -1,0 +1,22 @@
+{
+  "name": "@oaath/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OAAth-owned Kernel policy contracts and deterministic deployment artifacts.",
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "artifact:check": "forge build && node scripts/artifact.mjs --check",
+    "artifact:generate": "forge build && node scripts/artifact.mjs --write",
+    "build": "forge build && node scripts/artifact.mjs --check",
+    "lint": "forge fmt --check && node scripts/artifact.mjs --check",
+    "test": "forge test"
+  },
+  "devDependencies": {
+    "@account-abstraction/contracts": "0.7.0",
+    "viem": "2.55.8"
+  }
+}

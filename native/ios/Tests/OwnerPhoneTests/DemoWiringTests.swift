@@ -58,121 +58,68 @@ private actor PairingCapture {
     func read() -> PersistedPairing? { value }
 }
 
-private struct FakeOwnerSigning: DemoOwnerSigning {
-    let secureEnclave = false
-    let publicMaterial: String
-
-    init(publicMaterial: String = fakeOwnerPublicMaterial.hex) {
-        self.publicMaterial = publicMaterial
-    }
-
-    func publicMaterialHex() throws -> String { publicMaterial }
-    func signDigestHex(_ digestHex: String) throws -> String {
-        "0x" + String(repeating: "22", count: 64)
-    }
-}
-
-private enum VerifiableOwnerSigningError: Error {
-    case keyCreationFailed
-    case publicKeyUnavailable
-    case signatureFailed
-}
-
-/// Real ephemeral P-256 signer for proving the injected-signer verification
-/// boundary. It signs the already-computed digest, matching Secure Enclave
-/// semantics, but has no keychain or device dependency.
-private final class VerifiableOwnerSigning: DemoOwnerSigning, @unchecked Sendable {
-    let secureEnclave = false
-    private let privateKey: SecKey
-
-    init() throws {
-        let attributes: [CFString: Any] = [
-            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits: 256
-        ]
-        var error: Unmanaged<CFError>?
-        guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
-            throw VerifiableOwnerSigningError.keyCreationFailed
-        }
-        self.privateKey = privateKey
-    }
-
-    func publicMaterialHex() throws -> String {
-        guard let publicKey = SecKeyCopyPublicKey(privateKey) else {
-            throw VerifiableOwnerSigningError.publicKeyUnavailable
-        }
-        var error: Unmanaged<CFError>?
-        guard let external = SecKeyCopyExternalRepresentation(publicKey, &error) as Data?,
-              external.count == 65,
-              external.first == 0x04
-        else { throw VerifiableOwnerSigningError.publicKeyUnavailable }
-        return hexEncode(Data(external.dropFirst()))
-    }
-
-    func signDigestHex(_ digestHex: String) throws -> String {
-        let digest = try decodeDigestHex(digestHex)
-        var error: Unmanaged<CFError>?
-        guard let der = SecKeyCreateSignature(
-            privateKey,
-            .ecdsaSignatureDigestX962SHA256,
-            digest as CFData,
-            &error) as Data?
-        else { throw VerifiableOwnerSigningError.signatureFailed }
-        return hexEncode(try p256LowSNormalized(raw: try p256RawSignature(der: der)))
-    }
-}
-
-private enum MutableOwnerSigningError: Error {
+private enum FakeOwnerSigningError: Error {
     case unavailable
 }
 
-private final class MutableOwnerSigning: DemoOwnerSigning, @unchecked Sendable {
-    let secureEnclave = false
+private final class OwnerSigningAttemptRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private var available = true
+    private var count = 0
 
-    func setAvailable(_ value: Bool) {
-        lock.lock()
-        available = value
-        lock.unlock()
+    func record() { lock.withLock { count += 1 } }
+    func recordedCount() -> Int { lock.withLock { count } }
+}
+
+private struct FakeOwnerSigning: DemoOwnerSigning {
+    let secureEnclave = false
+    let publicMaterial: String
+    let signingAttempts: OwnerSigningAttemptRecorder?
+
+    init(
+        publicMaterial: String = fakeOwnerPublicMaterial.hex,
+        signingAttempts: OwnerSigningAttemptRecorder? = nil
+    ) {
+        self.publicMaterial = publicMaterial
+        self.signingAttempts = signingAttempts
     }
 
-    func publicMaterialHex() throws -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        guard available else { throw MutableOwnerSigningError.unavailable }
-        return fakeOwnerPublicMaterial.hex
-    }
-
-    func signDigestHex(_ digestHex: String) throws -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        guard available else { throw MutableOwnerSigningError.unavailable }
-        return "0x" + String(repeating: "22", count: 64)
+    func publicMaterialHex() throws -> String { publicMaterial }
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        signingAttempts?.record()
+        throw FakeOwnerSigningError.unavailable
     }
 }
 
 private final class StoreMutatingOwnerSigning: DemoOwnerSigning, @unchecked Sendable {
     let secureEnclave = false
     private let lock = NSLock()
-    private var didMutate = false
+    private var publicMaterialReads = 0
+    private let mutateAtRead: Int
     private let mutate: @Sendable () -> Void
+    private let signingAttempts: OwnerSigningAttemptRecorder?
 
-    init(mutate: @escaping @Sendable () -> Void) {
+    init(
+        mutateAtRead: Int = 1,
+        signingAttempts: OwnerSigningAttemptRecorder? = nil,
+        mutate: @escaping @Sendable () -> Void
+    ) {
+        self.mutateAtRead = mutateAtRead
+        self.signingAttempts = signingAttempts
         self.mutate = mutate
     }
 
     func publicMaterialHex() throws -> String {
         lock.lock()
-        let shouldMutate = !didMutate
-        didMutate = true
+        publicMaterialReads += 1
+        let shouldMutate = publicMaterialReads == mutateAtRead
         lock.unlock()
         if shouldMutate { mutate() }
         return fakeOwnerPublicMaterial.hex
     }
 
-    func signDigestHex(_ digestHex: String) throws -> String {
-        "0x" + String(repeating: "22", count: 64)
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        signingAttempts?.record()
+        throw FakeOwnerSigningError.unavailable
     }
 }
 
@@ -310,37 +257,84 @@ private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
     }
 }
 
-private final class SignatureRecordingHTTP: DemoHTTP, @unchecked Sendable {
+private final class OwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [URLRequest] = []
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
         lock.withLock { recorded.append(request) }
         guard request.httpMethod == "GET" else { return (Data(), 500) }
-        let operationId = request.url?.lastPathComponent ?? "signature-request"
-        let digest = "0x" + String(repeating: "4b", count: 32)
-        return (try JSONSerialization.data(withJSONObject: [
-            "version": "oaath.native-projection/v1",
-            "operationId": operationId,
-            "displayPayload": "Ab1-_9Zz",
-            "expiresAt": 2_000_000_000_000,
-            "client": [
-                "clientId": "demo-web-app",
-                "redirectUri": "https://app.example/callback"
-            ],
-            "scope": [
-                "kind": "signature-request",
-                "decision": "approve-or-reject",
-                "digest": digest,
-                "display": #"{"digest":"\#(digest)","kind":"user-operation"}"#
-            ]
-        ]), 200)
+        let operationId = request.url?.lastPathComponent ?? "owner-signing-request"
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: fixtureURL)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            var projection = projections["ownerSigningRequest"] as? [String: Any],
+            var scope = projection["scope"] as? [String: Any],
+            var signingRequest = scope["request"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("owner signing test fixture")
+        }
+        // The typed data remains the accepted Mail vector, while the expected
+        // digest is substituted. The phone must display the mismatch but keep
+        // artifact generation and the decision POST unreachable.
+        signingRequest["expectedDigest"] = "0x" + String(repeating: "55", count: 32)
+        scope["request"] = signingRequest
+        projection["scope"] = scope
+        projection["operationId"] = operationId
+        projection["expiresAt"] = 2_000_000_000_000
+        return (try JSONSerialization.data(withJSONObject: projection), 200)
     }
 
     func requests() -> [URLRequest] {
         lock.lock()
         defer { lock.unlock() }
         return recorded
+    }
+}
+
+private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [URLRequest] = []
+    private let decision: String?
+
+    init(decision: String? = nil) {
+        self.decision = decision
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, Int) {
+        lock.withLock { recorded.append(request) }
+        guard request.httpMethod == "GET" else { return (Data(), 500) }
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: fixtureURL)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            var projection = projections["kernelEnableOwnerSigningRequest"] as? [String: Any],
+            var scope = projection["scope"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("Kernel owner signing test fixture")
+        }
+        if let decision { scope["decision"] = decision }
+        projection["scope"] = scope
+        projection["operationId"] = request.url?.lastPathComponent ?? "kernel-owner-signing"
+        projection["expiresAt"] = 2_000_000_000_000
+        return (try JSONSerialization.data(withJSONObject: projection), 200)
+    }
+
+    func requests() -> [URLRequest] {
+        lock.withLock { recorded }
     }
 }
 
@@ -713,6 +707,7 @@ final class PairingClientTests: XCTestCase {
         XCTAssertTrue(try store.installIfAbsent(pairing))
         XCTAssertEqual(store.load(), .stored(pairing))
         XCTAssertEqual(pairing.endpoint.baseURL.absoluteString, "http://relay.example:8787")
+        XCTAssertEqual(PersistedPairing.version, 3)
         XCTAssertEqual(try PersistedPairing.decode(pairing.encoded()), pairing)
         XCTAssertTrue(store.clear())
         XCTAssertEqual(store.load(), .absent)
@@ -730,6 +725,7 @@ final class PairingClientTests: XCTestCase {
         for changed in [
             valid.merging(["extra": true]) { _, right in right },
             valid.merging(["version": 1]) { _, right in right },
+            valid.merging(["version": 2]) { _, right in right },
             valid.merging(["ownerPublicMaterial": "0x00"]) { _, right in right },
             valid.merging(["endpoint": "http://RELAY-A:8787/"]) { _, right in right }
         ] {
@@ -753,6 +749,48 @@ final class PairingClientTests: XCTestCase {
                 XCTAssertEqual($0 as? PairingStoreError, .invalidRecord)
             }
         }
+    }
+
+    func testOldV2PairingOccupiesTheSameSlotUntilExplicitClearAndRePair() throws {
+        XCTAssertEqual(
+            KeychainPairingStore().service,
+            "org.oaath.owner-phone.pairing-v2")
+
+        let service = "org.oaath.tests.pairing.v3.\(UUID().uuidString)"
+        let store = KeychainPairingStore(service: service)
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: deviceCredentialA,
+            account: nil,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        var oldObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: pairing.encoded()) as? [String: Any])
+        oldObject["version"] = 2
+        let oldData = try JSONSerialization.data(
+            withJSONObject: oldObject,
+            options: [.sortedKeys])
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: "pairing"
+        ]
+        SecItemDelete(query as CFDictionary)
+        defer { SecItemDelete(query as CFDictionary) }
+
+        let attributes = query.merging([
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecValueData: oldData
+        ]) { _, right in right }
+        XCTAssertEqual(SecItemAdd(attributes as CFDictionary, nil), errSecSuccess)
+
+        XCTAssertEqual(store.load(), .unreadable)
+        XCTAssertFalse(try store.installIfAbsent(pairing))
+        XCTAssertEqual(store.load(), .unreadable)
+
+        XCTAssertTrue(store.clear())
+        XCTAssertEqual(store.load(), .absent)
+        XCTAssertTrue(try store.installIfAbsent(pairing))
+        XCTAssertEqual(store.load(), .stored(pairing))
     }
 
     func testPairingCodeCanonicalizesExactlyLikeTheRelay() {
@@ -1073,48 +1111,109 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(store.load(), .stored(pairingB))
     }
 
-    func testUnavailableBoundKeyCannotFallThroughToAPlaceholderSignature() async throws {
+    func testDemoComposesCurrentKernelBindingAndKeepsExplicitRejectOnlyScopeInert() async throws {
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: deviceCredentialA,
+            account: "0x" + String(repeating: "66", count: 20),
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+
+        let currentHTTP = KernelOwnerSigningRecordingHTTP()
+        let currentSigning = OwnerSigningAttemptRecorder()
+        let current = DemoModel(
+            pairings: InMemoryPairingStore(result: .stored(pairing)),
+            http: currentHTTP,
+            ownerKey: FakeOwnerSigning(signingAttempts: currentSigning))
+        current.operationIdText = "current-kernel-owner-signing"
+        await current.openManually()
+        let currentApproval = try XCTUnwrap(current.approval)
+        guard case let .review(currentReview) = currentApproval.phase else {
+            return XCTFail("expected the current Kernel review")
+        }
+        XCTAssertEqual(
+            currentApproval.approvalAvailability(for: currentReview.projection),
+            .kernelP256OwnerSigning)
+        XCTAssertEqual(currentSigning.recordedCount(), 0)
+        XCTAssertEqual(currentHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
+
+        let rejectedHTTP = KernelOwnerSigningRecordingHTTP(decision: "reject-only")
+        let rejectedSigning = OwnerSigningAttemptRecorder()
+        let rejected = DemoModel(
+            pairings: InMemoryPairingStore(result: .stored(pairing)),
+            http: rejectedHTTP,
+            ownerKey: FakeOwnerSigning(signingAttempts: rejectedSigning))
+        rejected.operationIdText = "reject-only-kernel-owner-signing"
+        await rejected.openManually()
+        let rejectedApproval = try XCTUnwrap(rejected.approval)
+        guard case let .review(rejectedReview) = rejectedApproval.phase else {
+            return XCTFail("expected the reject-only Kernel review")
+        }
+        XCTAssertEqual(
+            rejectedApproval.approvalAvailability(for: rejectedReview.projection),
+            .rejectOnly)
+
+        await rejectedApproval.approve()
+
+        XCTAssertEqual(rejectedSigning.recordedCount(), 0)
+        XCTAssertEqual(rejectedHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
+        guard case let .review(afterApproval) = rejectedApproval.phase else {
+            return XCTFail("reject-only approval must remain pending")
+        }
+        XCTAssertEqual(afterApproval.state, .pending)
+    }
+
+    func testKernelBindingRechecksPairingImmediatelyBeforeCustody() async throws {
+        let account = "0x" + String(repeating: "66", count: 20)
+        let pairingA = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
+            credential: deviceCredentialA,
+            account: account,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        let pairingB = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-b.example:8787"),
+            credential: deviceCredentialB,
+            account: account,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        let store = InMemoryPairingStore(result: .stored(pairingA))
+        let signingAttempts = OwnerSigningAttemptRecorder()
+        let ownerKey = StoreMutatingOwnerSigning(
+            mutateAtRead: 3,
+            signingAttempts: signingAttempts
+        ) {
+            _ = store.clear()
+            _ = try? store.installIfAbsent(pairingB)
+        }
+        let http = KernelOwnerSigningRecordingHTTP(decision: "approve-or-reject")
+        let model = DemoModel(pairings: store, http: http, ownerKey: ownerKey)
+        model.operationIdText = "pairing-replaced-before-custody"
+        await model.openManually()
+        let approval = try XCTUnwrap(model.approval)
+        approval.setForeground(true)
+
+        await approval.approve()
+
+        XCTAssertEqual(store.load(), .stored(pairingB))
+        XCTAssertEqual(signingAttempts.recordedCount(), 0)
+        XCTAssertEqual(http.requests().map { $0.httpMethod ?? "" }, ["GET"])
+        guard case let .review(review) = approval.phase else {
+            return XCTFail("a pre-custody mismatch must leave the review pending")
+        }
+        XCTAssertEqual(review.state, .pending)
+    }
+
+    func testMismatchedEIP712ApprovalNeverReachesTheDemoArtifactOrDecisionRoute() async throws {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
             account: nil,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
-        let store = InMemoryPairingStore(result: .stored(pairing))
-        let signer = MutableOwnerSigning()
-        let http = SignatureRecordingHTTP()
-        let model = DemoModel(pairings: store, http: http, ownerKey: signer)
-        model.operationIdText = "signature-request"
-        await model.openManually()
-        let approval = try XCTUnwrap(model.approval)
-        guard case .review = approval.phase else {
-            return XCTFail("signature projection did not open")
-        }
-
-        signer.setAvailable(false)
-        await approval.approve()
-
-        XCTAssertEqual(
-            http.requests().map { $0.httpMethod ?? "" },
-            ["GET"],
-            "key loss must fail before any decision submission")
-        guard case let .review(review) = approval.phase else {
-            return XCTFail("failed signing must leave the review pending")
-        }
-        XCTAssertEqual(review.state, .pending)
-    }
-
-    func testInvalidSignatureFromTheBoundSignerNeverReachesSubmission() async throws {
-        let pairing = try PersistedPairing(
-            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
-            credential: deviceCredentialA,
-            account: nil,
-            ownerPublicMaterial: fakeOwnerPublicMaterial)
-        let http = SignatureRecordingHTTP()
+        let http = OwnerSigningRecordingHTTP()
+        let signingAttempts = OwnerSigningAttemptRecorder()
         let model = DemoModel(
             pairings: InMemoryPairingStore(result: .stored(pairing)),
             http: http,
-            ownerKey: FakeOwnerSigning())
-        model.operationIdText = "signature-request"
+            ownerKey: FakeOwnerSigning(signingAttempts: signingAttempts))
+        model.operationIdText = "owner-signing-request"
         await model.openManually()
         let approval = try XCTUnwrap(model.approval)
 
@@ -1123,33 +1222,23 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(
             http.requests().map { $0.httpMethod ?? "" },
             ["GET"],
-            "a signature that does not verify under the persisted key must not be submitted")
+            "a mismatched reject-only request must not submit an approval")
+        XCTAssertEqual(signingAttempts.recordedCount(), 0)
         guard case let .review(review) = approval.phase else {
-            return XCTFail("invalid signing output must leave the review pending")
+            return XCTFail("mismatched request must remain reviewable")
         }
         XCTAssertEqual(review.state, .pending)
-    }
-
-    func testValidSignatureFromTheExactBoundKeyReachesSubmission() async throws {
-        let signer = try VerifiableOwnerSigning()
-        let publicMaterial = try XCTUnwrap(OwnerPublicMaterial(signer.publicMaterialHex()))
-        let pairing = try PersistedPairing(
-            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
-            credential: deviceCredentialA,
-            account: nil,
-            ownerPublicMaterial: publicMaterial)
-        let http = SignatureRecordingHTTP()
-        let model = DemoModel(
-            pairings: InMemoryPairingStore(result: .stored(pairing)),
-            http: http,
-            ownerKey: signer)
-        model.operationIdText = "signature-request"
-        await model.openManually()
-        let approval = try XCTUnwrap(model.approval)
-
-        await approval.approve()
-
-        XCTAssertEqual(http.requests().map { $0.httpMethod ?? "" }, ["GET", "POST"])
+        guard case let .ownerSigningRequest(scope) = review.projection.scope,
+              case let .eip712(request) = scope.request,
+              case let .mismatch(expected, derived) = request.digestComparison
+        else {
+            return XCTFail("expected a locally derived digest mismatch")
+        }
+        XCTAssertEqual(scope.decisionCapability, .rejectOnly)
+        XCTAssertEqual(expected, "0x" + String(repeating: "55", count: 32))
+        XCTAssertEqual(
+            derived.canonicalHex,
+            "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2")
     }
 
     func testPairingAttemptSurvivesFullStateRecreationAndBlocksResubmission() async throws {

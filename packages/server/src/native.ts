@@ -33,6 +33,5 @@ export type {
 export {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
-  OAATH_SIGNATURE_REQUEST_SCOPE_VERSION,
   projectOwnerPhoneRequest,
 } from "./native/projection.js";

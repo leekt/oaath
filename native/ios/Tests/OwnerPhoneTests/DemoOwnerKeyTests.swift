@@ -7,6 +7,15 @@ import XCTest
 @testable import OwnerPhoneDemo
 
 final class DemoOwnerKeyTests: XCTestCase {
+    func testCustodyGenerationUsesExactV3Tags() {
+        XCTAssertEqual(
+            DemoOwnerKeyStorage.secureEnclave.applicationTag,
+            "org.oaath.owner-phone.p256.v3.enclave")
+        XCTAssertEqual(
+            DemoOwnerKeyStorage.softwareFallback.applicationTag,
+            "org.oaath.owner-phone.p256.v3.software")
+    }
+
     func testPhysicalIOSUsesOnlyTheSecureEnclave() {
         var attempts: [DemoOwnerKeyStorage] = []
         let selected: String? = resolveDemoOwnerKey(

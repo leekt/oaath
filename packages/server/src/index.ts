@@ -38,6 +38,9 @@ export { OaathRelayError, RELAY_ERROR_STATUS } from "./relay/errors.js";
 export type {
   RelayHandler,
   RelayHandlerOptions,
+  RelayPaymasterServiceConfiguration,
+  RelayPaymasterServiceProvider,
+  RelayPaymasterServiceRequest,
   RelaySessionSignerConfiguration,
 } from "./relay/handler.js";
 export { createRelayHandler } from "./relay/handler.js";

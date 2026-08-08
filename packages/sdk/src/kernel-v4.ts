@@ -1,9 +1,16 @@
 import {
+  type CanonicalEip712TypedData,
   type CaptureContext,
   captureDenseArray,
   captureRecord,
+  createKernelV4ReplayableInstallTypedData,
   type ExactRecord,
   exactCapturedRecord,
+  KERNEL_V4_INSTALL_COMPONENTS,
+  OaathProtocolError,
+  type KernelV4Install as ProtocolKernelV4Install,
+  type KernelV4ModuleType as ProtocolKernelV4ModuleType,
+  parseKernelV4InstallPackages,
 } from "@oaath/protocol";
 import {
   concat,
@@ -16,6 +23,7 @@ import {
   hexToBigInt,
   keccak256,
   pad,
+  type TypedData,
   toHex,
 } from "viem";
 import {
@@ -31,9 +39,11 @@ const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const NO_HOOK = `0x${"00".repeat(19)}01` as const;
 const MAX_UINT16 = (1n << 16n) - 1n;
+const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT64 = (1n << 64n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const BOUND_ACCOUNTS = new WeakSet<object>();
+const VALIDITY_TIME_RANGE_MODE_SELECTOR = "0x1ba8f415" as const;
 
 export const KERNEL_V4_ENTRY_POINT_V07 = "0x0000000071727de22e5e9d8baf0edac6f37da032" as const;
 export const KERNEL_V4_UUPS_IMPLEMENTATION_V07 =
@@ -62,7 +72,7 @@ export const KERNEL_V4_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
 export const KERNEL_V4_EXECUTE_USER_OP_SELECTOR = "0x8dd7712f" as const;
 
 export type KernelV4SupportedChainId = 46_630 | 421_614 | 11_155_111;
-export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
+export type KernelV4ModuleType = ProtocolKernelV4ModuleType;
 export type KernelV4ValidationMode =
   | "standard"
   | "enable"
@@ -106,12 +116,7 @@ export interface KernelV4Deployment {
   }>;
 }
 
-export interface KernelV4Install {
-  readonly moduleType: KernelV4ModuleType;
-  readonly module: `0x${string}`;
-  readonly moduleData: `0x${string}`;
-  readonly internalData: `0x${string}`;
-}
+export type KernelV4Install = ProtocolKernelV4Install;
 
 export interface KernelV4Call {
   readonly target: `0x${string}`;
@@ -173,6 +178,8 @@ export interface KernelV4UserOperationInput {
   readonly nonce: KernelV4UserOperationNonceInput;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
+  /** Optional request-time attenuation enforced by the installed OAAth validity policy. */
+  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
   /**
    * Optional EntryPoint 0.7 paymaster sponsorship. Absent or null prepares a
    * self-funded operation. The fields are hashed into the operation identity,
@@ -198,6 +205,15 @@ export interface KernelV4ReplayableInstallDigestInput {
 
 export interface KernelV4ExecutionInput {
   readonly calls: readonly KernelV4Call[];
+  /** Optional exact ERC-7579 mode range; omission preserves the existing zero mode. */
+  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+}
+
+export interface KernelV4ValidityTimeRange {
+  /** Inclusive lower endpoint, as canonical decimal uint48 seconds. */
+  readonly validAfter: string;
+  /** Inclusive nonzero upper endpoint, strictly greater than validAfter. */
+  readonly validUntil: string;
 }
 
 export type KernelV4AccountReadRequest =
@@ -324,41 +340,10 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
   }),
 });
 
-const INSTALL_COMPONENTS = [
-  { name: "moduleType", type: "uint256" },
-  { name: "module", type: "address" },
-  { name: "moduleData", type: "bytes" },
-  { name: "internalData", type: "bytes" },
-] as const;
-
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
   type: "tuple[]",
-  components: INSTALL_COMPONENTS,
-} as const;
-
-/**
- * The EIP-712 struct Kernel v4 hashes an enable-mode install under. The encoded
- * type strings reproduce the two constants pinned in src/types/Constants.sol at
- * the vendored Kernel commit:
- *
- * - `INSTALL_PACKAGES_STRUCT_HASH` =
- *   keccak256("InstallPackages(uint256 nonce,Install[] packages)Install(uint256
- *   moduleType,address module,bytes moduleData,bytes internalData)")
- *   = 0x633d6810f7f4053622dad4c187707d9c3cd7f57b8b68943473d3437060aefc6d
- * - `INSTALL_STRUCT_HASH` = keccak256("Install(uint256 moduleType,address
- *   module,bytes moduleData,bytes internalData)")
- *   = 0x50c63c739a5f8d2e99954b3d4c7008fcdcef795a1b755ab9287372b01d6ac239
- *
- * `Install`'s member list is the same one the install ABI parameter carries, so
- * the digest and the calldata can never describe different packages.
- */
-const INSTALL_PACKAGES_TYPES = {
-  InstallPackages: [
-    { name: "nonce", type: "uint256" },
-    { name: "packages", type: "Install[]" },
-  ],
-  Install: INSTALL_COMPONENTS,
+  components: KERNEL_V4_INSTALL_COMPONENTS,
 } as const;
 
 const ENTRY_POINT_GET_NONCE_ABI = [
@@ -536,57 +521,19 @@ async function readEvidence(
   }
 }
 
-function moduleType(value: unknown): KernelV4ModuleType {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 6) {
-    return fail("Kernel module type is invalid");
-  }
-  return value as KernelV4ModuleType;
-}
-
-function captureInstall(
-  value: unknown,
-  context: CaptureContext,
-  index: number,
-): Readonly<KernelV4Install> {
-  const record = exact(
-    value,
-    ["moduleType", "module", "moduleData", "internalData"],
-    `Kernel install package ${index}`,
-    context,
-  );
-  return Object.freeze({
-    moduleType: moduleType(record.moduleType),
-    module: address(record.module, "Kernel install module"),
-    moduleData: bytes(record.moduleData, "Kernel install module data"),
-    internalData: bytes(record.internalData, "Kernel install internal data"),
-  });
-}
-
 function captureInstalls(
   value: unknown,
-  context: CaptureContext,
+  _context: CaptureContext,
   label: string,
 ): readonly Readonly<KernelV4Install>[] {
-  const values = captureDenseArray(value, label, context, fail);
-  if (values.length < 1 || values.length > 256) {
-    return fail("Kernel install package count is invalid");
-  }
-  const packages = values.map((entry, index) => captureInstall(entry, context, index));
-  let pendingPermission: string | undefined;
-  for (const pkg of packages) {
-    if (pkg.moduleType !== 5 && pkg.moduleType !== 6) continue;
-    if (pkg.internalData.length < 10) return fail("Kernel permission package is invalid");
-    const permission = pkg.internalData.slice(0, 10);
-    if (pendingPermission && pendingPermission !== permission) {
-      return fail("Kernel permission package sequence is invalid");
+  try {
+    return parseKernelV4InstallPackages(value);
+  } catch (error) {
+    if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
+      return fail(`${label} is invalid`);
     }
-    if (pkg.moduleType === 6 && !pendingPermission) {
-      return fail("Kernel permission package sequence is invalid");
-    }
-    pendingPermission = pkg.moduleType === 5 ? permission : undefined;
+    throw error;
   }
-  if (pendingPermission) return fail("Kernel permission package sequence is incomplete");
-  return Object.freeze(packages);
 }
 
 function captureInitialPackages(
@@ -1027,15 +974,12 @@ export function prepareKernelV4UserOperation(
 ): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
   const captured = captureRecord(value, "Kernel UserOperation", context, fail);
-  // The paymaster axis is optional at this boundary; every other key is exact.
-  const record = exactCapturedRecord(
-    captured,
-    Object.hasOwn(captured, "paymaster")
-      ? ["kind", "grantId", "account", "nonce", "calls", "gas", "paymaster"]
-      : ["kind", "grantId", "account", "nonce", "calls", "gas"],
-    "Kernel UserOperation",
-    fail,
-  );
+  // Validity attenuation and paymaster sponsorship are the two optional axes;
+  // every present field is still captured exactly at this boundary.
+  const keys = ["kind", "grantId", "account", "nonce", "calls", "gas"];
+  if (Object.hasOwn(captured, "validityTimeRange")) keys.push("validityTimeRange");
+  if (Object.hasOwn(captured, "paymaster")) keys.push("paymaster");
+  const record = exactCapturedRecord(captured, keys, "Kernel UserOperation", fail);
   if (record.kind !== "execution" && record.kind !== "revocation") {
     return fail("Kernel UserOperation kind is invalid");
   }
@@ -1060,7 +1004,14 @@ export function prepareKernelV4UserOperation(
     sequence: uint(nonceRecord.sequence, MAX_UINT64, "Kernel nonce sequence").toString(10),
   });
   const calls = captureCalls(record.calls, context);
-  const execution = encodeKernelV4Execution({ calls });
+  const execution = encodeKernelV4Execution(
+    Object.hasOwn(record, "validityTimeRange")
+      ? {
+          calls,
+          validityTimeRange: record.validityTimeRange as Readonly<KernelV4ValidityTimeRange>,
+        }
+      : { calls },
+  );
   const gasRecord = exact(
     record.gas,
     [
@@ -1267,8 +1218,8 @@ export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[
 }
 
 /**
- * The digest one owner signature must cover to authorize a replayable
- * enable-mode install, computed the way Kernel v4 computes it.
+ * The canonical EIP-712 value one owner signature must cover to authorize a
+ * replayable enable-mode install, computed the way Kernel v4 computes it.
  *
  * Derivation, against the vendored Kernel v4 source:
  * `Kernel._processUserOp` reads the enable-signature-replayable flag from the
@@ -1297,7 +1248,9 @@ export function encodeKernelV4PermissionSignature(value: readonly `0x${string}`[
  * operation hash with a chain-agnostic one under the separate `isReplayable`
  * flag (bit `0x40`), which this SDK never sets.
  */
-export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
+export function kernelV4ReplayableInstallTypedData(
+  value: KernelV4ReplayableInstallDigestInput,
+): Readonly<CanonicalEip712TypedData> {
   const context: CaptureContext = new WeakSet();
   const record = exact(
     value,
@@ -1305,25 +1258,27 @@ export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstall
     "Kernel replayable install",
     context,
   );
+  const account = address(record.account, "Kernel replayable install account");
+  const nonce = uint(record.nonce, MAX_UINT256, "Kernel install nonce").toString(10);
+  const packages = captureInstalls(record.packages, context, "Kernel enable packages");
+  try {
+    return createKernelV4ReplayableInstallTypedData({ account, nonce, packages });
+  } catch (error) {
+    if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
+      return fail("Kernel replayable install typed data is invalid");
+    }
+    throw error;
+  }
+}
+
+/** The digest of the canonical replayable install typed data. */
+export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
+  const typedData = kernelV4ReplayableInstallTypedData(value);
   return hashTypedData({
-    domain: {
-      name: "Kernel",
-      version: "0.4.0",
-      verifyingContract: address(record.account, "Kernel replayable install account"),
-    },
-    types: INSTALL_PACKAGES_TYPES,
-    primaryType: "InstallPackages",
-    message: {
-      nonce: uint(record.nonce, MAX_UINT256, "Kernel install nonce"),
-      packages: captureInstalls(record.packages, context, "Kernel enable packages").map(
-        (install) => ({
-          moduleType: BigInt(install.moduleType),
-          module: install.module,
-          moduleData: install.moduleData,
-          internalData: install.internalData,
-        }),
-      ),
-    },
+    types: typedData.types as TypedData,
+    primaryType: typedData.primaryType,
+    domain: typedData.domain as never,
+    message: typedData.message as never,
   });
 }
 
@@ -1368,13 +1323,49 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
   );
 }
 
+function captureValidityTimeRange(
+  value: unknown,
+  context: CaptureContext,
+): Readonly<KernelV4ValidityTimeRange> {
+  const record = exact(value, ["validAfter", "validUntil"], "Kernel validity time range", context);
+  const validAfter = uint(record.validAfter, MAX_UINT48, "Kernel validity range validAfter");
+  const validUntil = uint(record.validUntil, MAX_UINT48, "Kernel validity range validUntil");
+  if (validUntil === 0n || validAfter >= validUntil) {
+    return fail("Kernel validity time range is invalid");
+  }
+  return Object.freeze({
+    validAfter: validAfter.toString(10),
+    validUntil: validUntil.toString(10),
+  });
+}
+
 /** Encodes one or more calls through Kernel v4's ERC-7579 execute entrypoint. */
 export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
   const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["calls"], "Kernel execution", context);
+  const captured = captureRecord(value, "Kernel execution", context, fail);
+  const record = exactCapturedRecord(
+    captured,
+    Object.hasOwn(captured, "validityTimeRange") ? ["calls", "validityTimeRange"] : ["calls"],
+    "Kernel execution",
+    fail,
+  );
   const calls = captureCalls(record.calls, context);
   const single = calls.length === 1 ? calls[0] : undefined;
-  const mode = single ? (`0x${"00".repeat(32)}` as const) : (`0x0100${"00".repeat(30)}` as const);
+  const validityTimeRange = Object.hasOwn(record, "validityTimeRange")
+    ? captureValidityTimeRange(record.validityTimeRange, context)
+    : null;
+  const mode = validityTimeRange
+    ? concat([
+        single ? "0x00" : "0x01",
+        `0x${"00".repeat(5)}`,
+        VALIDITY_TIME_RANGE_MODE_SELECTOR,
+        toHex(BigInt(validityTimeRange.validAfter), { size: 6 }),
+        toHex(BigInt(validityTimeRange.validUntil), { size: 6 }),
+        `0x${"00".repeat(10)}`,
+      ])
+    : single
+      ? (`0x${"00".repeat(32)}` as const)
+      : (`0x0100${"00".repeat(30)}` as const);
   const executionData = single
     ? concat([single.target, toHex(BigInt(single.value), { size: 32 }), single.data])
     : encodeAbiParameters(

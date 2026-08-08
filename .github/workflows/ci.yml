@@ -16,8 +16,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # The packaging gates add two clean `npm install`s from tarballs.
-    timeout-minutes: 15
+    # The packaging gates add three clean `npm install`s from tarballs.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -43,6 +43,11 @@ jobs:
       # so they prove the published artifacts rather than the workspace links.
       - run: pnpm check:public-surface
       - run: pnpm smoke:browser
+      # The extension smoke is headful so Chrome runs its real MV3 worker and
+      # IndexedDB implementation; Puppeteer then force-closes that worker.
+      - run: xvfb-run --auto-servernum pnpm smoke:extension
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
       - run: pnpm smoke:server
       # Its own step, so a two-chain materialization failure names itself instead
       # of hiding inside the single-chain anvil suites above.

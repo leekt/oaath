@@ -10,13 +10,18 @@
 import type {
   OaathGrantProviderPort,
   OaathProviderOperationPointer,
+  OaathProviderOperationReservation,
+  OaathProviderValidityAdmission,
 } from "../client/grant-handle.js";
 import { kernelV4Deployment } from "../kernel-v4.js";
 import type {
   WalletCallBundleKey,
   WalletCallBundleStoreRecord,
 } from "../persistence/interfaces.js";
-import { WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS } from "./bundle-store.js";
+import {
+  WALLET_CALL_BUNDLE_CONFIRMATION_LIFETIME_SECONDS,
+  WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS,
+} from "./bundle-store.js";
 import { advertiseWalletCapabilities, applyWalletCapabilities } from "./capabilities.js";
 import {
   captureWalletCallsStatusParams,
@@ -34,21 +39,73 @@ import {
   rpcFail,
   UNAUTHORIZED,
   UNKNOWN_BUNDLE_ID,
+  UNSUPPORTED_CAPABILITY,
   UNSUPPORTED_METHOD,
+  USER_REJECTED_REQUEST,
 } from "./errors.js";
+import type { OaathWalletCallResultCapabilities } from "./result-capabilities.js";
 import { type Eip5792CallsStatus, projectEip5792Status } from "./status.js";
 
 const GENERATED_ID_ATTEMPTS = 8;
 const HASH = /^0x[0-9a-f]{64}$/u;
+const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000n;
+const UNSUPPORTED_VALIDITY_ADMISSION = Object.freeze({ status: "unsupported" as const });
+
+function isSupportedValidityTimeRangeProbe(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 1 || keys[0] !== "status") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "status");
+    return descriptor !== undefined && "value" in descriptor && descriptor.value === "supported";
+  } catch {
+    return false;
+  }
+}
 
 export type OaathCallsStatusPresenter = (
   this: void,
   status: Readonly<Eip5792CallsStatus>,
 ) => void | Promise<void>;
 
+/** One exact call the wallet presents before admitting an EIP-5792 bundle. */
+export interface OaathCallsConfirmationCall {
+  readonly target: `0x${string}`;
+  /** Canonical decimal wei, including `"0"` for an omitted value. */
+  readonly value: string;
+  /** Lowercase calldata, including `"0x"` for omitted data. */
+  readonly data: `0x${string}`;
+}
+
+/** Public execution facts a wallet may require its user to approve. */
+export interface OaathCallsConfirmation {
+  readonly account: `0x${string}`;
+  readonly chainId: `0x${string}`;
+  readonly calls: readonly Readonly<OaathCallsConfirmationCall>[];
+  /** Exclusive Unix-second deadline when this execution owns a durable preconfirmation. */
+  readonly confirmationExpiresAt?: number;
+  readonly validityTimeRange?: Readonly<{
+    /** Canonical decimal inclusive lower endpoint, in Unix seconds. */
+    readonly validAfter: string;
+    /** Canonical decimal inclusive upper endpoint, in Unix seconds. */
+    readonly validUntil: string;
+    readonly validAfterUtc: string;
+    readonly validUntilUtc: string;
+    readonly inclusive: true;
+  }>;
+}
+
+export type OaathCallsConfirmationDecision = "approved" | "rejected";
+
+export type OaathCallsConfirmer = (
+  this: void,
+  confirmation: Readonly<OaathCallsConfirmation>,
+) => OaathCallsConfirmationDecision | Promise<OaathCallsConfirmationDecision>;
+
 interface CreateEip5792OrchestratorInput {
   readonly port: Readonly<OaathGrantProviderPort>;
   readonly chain: number;
+  readonly confirmCalls?: OaathCallsConfirmer;
   readonly showCallsStatus?: OaathCallsStatusPresenter;
 }
 
@@ -68,7 +125,12 @@ function projectProviderStatus(
 }
 
 export interface Eip5792Orchestrator {
-  readonly sendCalls: (params: unknown) => Promise<Readonly<{ id: string }>>;
+  readonly sendCalls: (params: unknown) => Promise<
+    Readonly<{
+      id: string;
+      capabilities?: Readonly<OaathWalletCallResultCapabilities>;
+    }>
+  >;
   readonly getCallsStatus: (params: unknown) => Promise<Readonly<Eip5792CallsStatus>>;
   readonly showCallsStatus: (params: unknown) => Promise<undefined>;
   readonly getCapabilities: (params: unknown) => Promise<Readonly<Record<string, unknown>>>;
@@ -88,10 +150,40 @@ function generatedBundleId(): string {
   return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function pendingStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> {
+/** Shared inclusive seconds/UTC projection for every wallet-call confirmation flow. */
+export function projectValidityTimeRangeConfirmation(
+  range: Readonly<{ validAfter: string; validUntil: string }>,
+): NonNullable<OaathCallsConfirmation["validityTimeRange"]> | null {
+  function utc(seconds: string): string | null {
+    const milliseconds = BigInt(seconds) * 1_000n;
+    if (milliseconds > MAX_DATE_MILLISECONDS) return null;
+    try {
+      return new Date(Number(milliseconds)).toISOString();
+    } catch {
+      return null;
+    }
+  }
+  const validAfterUtc = utc(range.validAfter);
+  const validUntilUtc = utc(range.validUntil);
+  if (validAfterUtc === null || validUntilUtc === null) return null;
+  return Object.freeze({
+    validAfter: range.validAfter,
+    validUntil: range.validUntil,
+    validAfterUtc,
+    validUntilUtc,
+    inclusive: true as const,
+  });
+}
+
+function pendingStatus(
+  id: string,
+  chain: number,
+  resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null,
+): Readonly<Eip5792CallsStatus> {
   return projectProviderStatus({
     id,
     chainId: chain,
+    resultCapabilities,
     outcome: Object.freeze({
       status: "pending",
       state: "prepared",
@@ -103,10 +195,15 @@ function pendingStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> 
   });
 }
 
-function offchainFailureStatus(id: string, chain: number): Readonly<Eip5792CallsStatus> {
+function offchainFailureStatus(
+  id: string,
+  chain: number,
+  resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null,
+): Readonly<Eip5792CallsStatus> {
   return projectProviderStatus({
     id,
     chainId: chain,
+    resultCapabilities,
     outcome: Object.freeze({
       status: "abandoned",
       state: "abandoned",
@@ -138,6 +235,7 @@ export function createEip5792Orchestrator(
   input: Readonly<CreateEip5792OrchestratorInput>,
 ): Readonly<Eip5792Orchestrator> {
   const chainId = `0x${input.chain.toString(16)}`;
+  const confirmer = input.confirmCalls;
   const presenter = input.showCallsStatus;
   const store = input.port.walletCallBundles;
 
@@ -160,9 +258,10 @@ export function createEip5792Orchestrator(
     return value;
   }
 
-  function key(id: string): Readonly<WalletCallBundleKey> {
+  function key(id: string, accountAddress: `0x${string}`): Readonly<WalletCallBundleKey> {
     if (
       !HASH.test(input.port.providerScopeId) ||
+      !isWalletAddress(accountAddress) ||
       input.port.grantId.length < 1 ||
       input.port.grantId.length > 256 ||
       input.port.grantId !== input.port.grantId.trim()
@@ -171,6 +270,7 @@ export function createEip5792Orchestrator(
     }
     return Object.freeze({
       providerScopeId: input.port.providerScopeId as `0x${string}`,
+      account: accountAddress,
       id,
     });
   }
@@ -178,6 +278,7 @@ export function createEip5792Orchestrator(
   async function reserve(
     captured: ReturnType<typeof captureWalletSendCallsParams>,
     accountAddress: `0x${string}`,
+    confirmationRequired: boolean,
   ): Promise<
     Readonly<{
       id: string;
@@ -187,25 +288,37 @@ export function createEip5792Orchestrator(
     }>
   > {
     const createdAt = now();
-    const publicationExpiresAt = createdAt + WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS;
-    if (!Number.isSafeInteger(publicationExpiresAt)) return rpcFail(INTERNAL_ERROR);
+    const expiresAt =
+      createdAt +
+      (confirmationRequired
+        ? WALLET_CALL_BUNDLE_CONFIRMATION_LIFETIME_SECONDS
+        : WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS);
+    if (!Number.isSafeInteger(expiresAt)) return rpcFail(INTERNAL_ERROR);
     const attempts = captured.id === undefined ? GENERATED_ID_ATTEMPTS : 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const id = captured.id ?? generatedBundleId();
-      const bundleKey = key(id);
+      const bundleKey = key(id, accountAddress);
       const requestHash = hashCapturedWalletSendCallsRequest(captured, id);
       const generation = generatedBundleId();
       const operationRequestHash = hashWalletCallBundleProvenance(requestHash, generation);
-      const result = await store.reserveAccepted({
+      const reservation = {
         key: bundleKey,
         grantId: input.port.grantId,
         generation,
         account: accountAddress,
         chainId: input.chain,
         createdAt,
-        publicationExpiresAt,
         requestHash,
-      });
+      } as const;
+      const result = confirmationRequired
+        ? await store.reservePendingConfirmation({
+            ...reservation,
+            confirmationExpiresAt: expiresAt,
+          })
+        : await store.reserveAccepted({
+            ...reservation,
+            publicationExpiresAt: expiresAt,
+          });
       if (result.status === "committed") {
         return Object.freeze({
           id,
@@ -255,42 +368,156 @@ export function createEip5792Orchestrator(
     return binding;
   }
 
-  async function sendCalls(params: unknown): Promise<Readonly<{ id: string }>> {
+  function publicationExpiry(record: WalletCallBundleStoreRecord): number {
+    const expiresAt = record.value.publicationExpiresAt;
+    if (expiresAt === null) return rpcFail(INTERNAL_ERROR);
+    return expiresAt;
+  }
+
+  async function sendCalls(params: unknown): Promise<
+    Readonly<{
+      id: string;
+      capabilities?: Readonly<OaathWalletCallResultCapabilities>;
+    }>
+  > {
     const captured = captureWalletSendCallsParams(params, input.chain);
     const capabilityEffect = applyWalletCapabilities({
       atomic: Object.freeze({ atomicRequired: captured.atomicRequired }),
       calls: captured.calls,
       chainId: input.chain,
       atomicExecution: true,
+      ...(captured.capabilities === undefined ? {} : { capabilities: captured.capabilities }),
+      registeredPaymasterServiceUrl: input.port.registeredPaymasterServiceUrl(input.chain),
+      staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
     });
     if (!capabilityEffect.atomic) return rpcFail(INTERNAL_ERROR);
-    if (captured.id !== undefined && (await store.get(key(captured.id))) !== undefined) {
-      return rpcFail(DUPLICATE_ID);
-    }
     const accountAddress = await account();
     if (captured.from !== undefined && captured.from !== accountAddress) {
       return rpcFail(UNAUTHORIZED);
     }
+    if (
+      captured.id !== undefined &&
+      (await store.get(key(captured.id, accountAddress))) !== undefined
+    ) {
+      return rpcFail(DUPLICATE_ID);
+    }
 
-    const accepted = await reserve(captured, accountAddress);
+    const calls = Object.freeze(
+      capabilityEffect.calls.map((call) =>
+        Object.freeze({
+          target: call.to,
+          value: BigInt(call.value ?? "0x0").toString(10),
+          data: call.data ?? "0x",
+        }),
+      ),
+    );
+    const requestedValidity = capabilityEffect.validityTimeRange;
+    if (requestedValidity !== null && confirmer === undefined && !requestedValidity.optional) {
+      return rpcFail(UNSUPPORTED_CAPABILITY);
+    }
+    let validityAdmission: Readonly<OaathProviderValidityAdmission> | null = null;
+    let accepted: Awaited<ReturnType<typeof reserve>>;
+    let presentedValidity: OaathCallsConfirmation["validityTimeRange"];
+    if (requestedValidity !== null && confirmer !== undefined) {
+      const admitted = await input.port
+        .admitValidityTimeRange({
+          chain: input.chain,
+          range: Object.freeze({
+            validAfter: requestedValidity.validAfter,
+            validUntil: requestedValidity.validUntil,
+          }),
+        })
+        .catch(() => UNSUPPORTED_VALIDITY_ADMISSION);
+      if (admitted.status === "accepted") {
+        presentedValidity = projectValidityTimeRangeConfirmation(requestedValidity) ?? undefined;
+        if (presentedValidity !== undefined) validityAdmission = admitted.admission;
+      }
+      if (validityAdmission === null && !requestedValidity.optional) {
+        return rpcFail(UNSUPPORTED_CAPABILITY);
+      }
+    }
+    accepted = await reserve(captured, accountAddress, confirmer !== undefined);
+    if (confirmer !== undefined) {
+      const confirmationExpiresAt = accepted.record.value.confirmationExpiresAt;
+      if (
+        accepted.record.value.state !== "confirmation_pending" ||
+        confirmationExpiresAt === null
+      ) {
+        return rpcFail(INTERNAL_ERROR);
+      }
+      let decision: unknown;
+      try {
+        decision = await confirmer(
+          Object.freeze({
+            account: accountAddress,
+            chainId: captured.chainId,
+            calls,
+            confirmationExpiresAt,
+            ...(presentedValidity === undefined ? {} : { validityTimeRange: presentedValidity }),
+          }),
+        );
+      } catch {
+        await terminalize(accepted.key, accepted.record).catch(() => undefined);
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (decision !== "approved") {
+        await terminalize(accepted.key, accepted.record).catch(() => undefined);
+        if (decision === "rejected") return rpcFail(USER_REJECTED_REQUEST);
+        return rpcFail(INTERNAL_ERROR);
+      }
+      const approvedAt = now();
+      if (approvedAt >= confirmationExpiresAt) {
+        await terminalize(accepted.key, accepted.record).catch(() => undefined);
+        return rpcFail(USER_REJECTED_REQUEST);
+      }
+      const publicationExpiresAt = approvedAt + WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS;
+      if (!Number.isSafeInteger(publicationExpiresAt)) {
+        await terminalize(accepted.key, accepted.record).catch(() => undefined);
+        return rpcFail(INTERNAL_ERROR);
+      }
+      const approved = await store.approveConfirmation({
+        key: accepted.key,
+        expectedStoreRevision: accepted.record.storeRevision,
+        expectedGeneration: accepted.record.value.generation,
+        approvedAt,
+        publicationExpiresAt,
+      });
+      if (approved.status !== "committed") {
+        if (
+          approved.current?.value.generation === accepted.record.value.generation &&
+          approved.current.value.state === "accepted"
+        ) {
+          await terminalize(accepted.key, approved.current).catch(() => undefined);
+        } else {
+          await terminalize(accepted.key, accepted.record).catch(() => undefined);
+        }
+        if (
+          approved.current?.value.generation === accepted.record.value.generation &&
+          approved.current.value.state === "terminal" &&
+          approved.current.value.terminalFrom === "confirmation_pending"
+        ) {
+          return rpcFail(USER_REJECTED_REQUEST);
+        }
+        return rpcFail(INTERNAL_ERROR);
+      }
+      accepted = Object.freeze({ ...accepted, record: approved.record });
+    }
     let reservationStarted = false;
     let reserved: WalletCallBundleStoreRecord | null = null;
     let reservedPointer: OaathProviderOperationPointer | null = null;
 
     try {
-      const calls = Object.freeze(
-        capabilityEffect.calls.map((call) =>
-          Object.freeze({
-            target: call.to,
-            value: BigInt(call.value ?? "0x0").toString(10),
-            data: call.data ?? "0x",
-          }),
-        ),
-      );
       const operation = await input.port.startCalls(
-        Object.freeze({ chain: input.chain, calls, requestHash: accepted.operationRequestHash }),
         Object.freeze({
-          reserve: async (exact: OaathProviderOperationPointer) => {
+          chain: input.chain,
+          calls,
+          requestHash: accepted.operationRequestHash,
+          paymaster: capabilityEffect.paymaster,
+          ...(validityAdmission === null ? {} : { validityAdmission }),
+        }),
+        Object.freeze({
+          reserve: async (reservation: Readonly<OaathProviderOperationReservation>) => {
+            const exact = reservation.operation;
             const identity = exact.identity;
             if (
               identity.grantId !== input.port.grantId ||
@@ -307,7 +534,10 @@ export function createEip5792Orchestrator(
               key: accepted.key,
               expectedStoreRevision: accepted.record.storeRevision,
               expectedGeneration: accepted.record.value.generation,
-              operation: Object.freeze({ identity }),
+              operation: Object.freeze({
+                identity,
+                resultCapabilities: reservation.resultCapabilities,
+              }),
               updatedAt: now(),
             });
             if (result.status !== "committed") return rpcFail(INTERNAL_ERROR);
@@ -380,7 +610,14 @@ export function createEip5792Orchestrator(
       // Status reconstructs from durable exact identity, so this start handle
       // owns no provider authority after wallet_sendCalls returns.
       await operation.close().catch(() => undefined);
-      return Object.freeze({ id: accepted.id });
+      const binding = operationBinding(released.record);
+      if (binding === null) return rpcFail(INTERNAL_ERROR);
+      return Object.freeze({
+        id: accepted.id,
+        ...(binding.resultCapabilities === null
+          ? {}
+          : { capabilities: binding.resultCapabilities }),
+      });
     } catch (error) {
       // Before the reservation callback, the runner cannot have published, signed,
       // or submitted. The failed reservation remains terminal and cannot be
@@ -409,27 +646,31 @@ export function createEip5792Orchestrator(
         ? offchainFailureStatus(record.value.id, record.value.chainId)
         : rpcFail(INTERNAL_ERROR);
     }
+    const resultCapabilities = binding.resultCapabilities;
+    const operationPointer: OaathProviderOperationPointer = Object.freeze({
+      identity: binding.identity,
+    });
     if (
       (record.value.state === "operation_reserved" || record.value.state === "operation_bound") &&
       record.value.publicationReleasedAt === null &&
-      now() < record.value.publicationExpiresAt
+      now() < publicationExpiry(record)
     ) {
-      return pendingStatus(record.value.id, record.value.chainId);
+      return pendingStatus(record.value.id, record.value.chainId, resultCapabilities);
     }
-    let recovered = await input.port.recoverOperation(binding);
-    if (recovered.status === "prepared" && now() >= record.value.publicationExpiresAt) {
-      recovered = await input.port.abandonPreparedOperation(binding);
+    let recovered = await input.port.recoverOperation(operationPointer);
+    if (recovered.status === "prepared" && now() >= publicationExpiry(record)) {
+      recovered = await input.port.abandonPreparedOperation(operationPointer);
     }
     if (recovered.status === "absent") {
       // A publication CAS may still be in progress. Missing evidence never
       // authorizes resubmission. The durable lease may, however, prove the
       // pre-submission producer lost its fenced publication window.
       if (record.value.state === "terminal" && record.value.terminalFrom === "operation_reserved") {
-        return offchainFailureStatus(record.value.id, record.value.chainId);
+        return offchainFailureStatus(record.value.id, record.value.chainId, resultCapabilities);
       }
       if (record.value.state !== "operation_reserved") return rpcFail(INTERNAL_ERROR);
-      if (now() < record.value.publicationExpiresAt) {
-        return pendingStatus(record.value.id, record.value.chainId);
+      if (now() < publicationExpiry(record)) {
+        return pendingStatus(record.value.id, record.value.chainId, resultCapabilities);
       }
       const terminal = await terminalize(bundleKey, record);
       if (
@@ -438,7 +679,7 @@ export function createEip5792Orchestrator(
       ) {
         return rpcFail(INTERNAL_ERROR);
       }
-      return offchainFailureStatus(record.value.id, record.value.chainId);
+      return offchainFailureStatus(record.value.id, record.value.chainId, resultCapabilities);
     }
     if (recovered.status === "request_conflict") {
       if (
@@ -456,7 +697,7 @@ export function createEip5792Orchestrator(
           return rpcFail(INTERNAL_ERROR);
         }
       }
-      return offchainFailureStatus(record.value.id, record.value.chainId);
+      return offchainFailureStatus(record.value.id, record.value.chainId, resultCapabilities);
     }
     if (recovered.status === "abandoned") {
       if (
@@ -479,11 +720,11 @@ export function createEip5792Orchestrator(
           return rpcFail(INTERNAL_ERROR);
         }
       }
-      return offchainFailureStatus(record.value.id, record.value.chainId);
+      return offchainFailureStatus(record.value.id, record.value.chainId, resultCapabilities);
     }
     if (recovered.status === "prepared") {
       if (record.value.state === "terminal") return rpcFail(INTERNAL_ERROR);
-      return pendingStatus(record.value.id, record.value.chainId);
+      return pendingStatus(record.value.id, record.value.chainId, resultCapabilities);
     }
 
     if (
@@ -502,12 +743,14 @@ export function createEip5792Orchestrator(
           ? projectProviderStatus({
               id: record.value.id,
               chainId: record.value.chainId,
+              resultCapabilities,
               outcome,
               receipt: await operation.receipt(),
             })
           : projectProviderStatus({
               id: record.value.id,
               chainId: record.value.chainId,
+              resultCapabilities,
               outcome,
             });
       if (status.status === 100) {
@@ -525,12 +768,27 @@ export function createEip5792Orchestrator(
   }
 
   async function readStatus(id: string): Promise<Readonly<Eip5792CallsStatus>> {
-    const bundleKey = key(id);
+    const bundleKey = key(id, await account());
     let record = await retainedBundle(bundleKey);
     if (record === undefined) return rpcFail(UNKNOWN_BUNDLE_ID);
     if (record.value.grantId !== input.port.grantId) return rpcFail(UNKNOWN_BUNDLE_ID);
+    if (record.value.state === "confirmation_pending") {
+      const confirmationExpiresAt = record.value.confirmationExpiresAt;
+      if (confirmationExpiresAt === null) return rpcFail(INTERNAL_ERROR);
+      if (now() < confirmationExpiresAt) {
+        return pendingStatus(id, record.value.chainId);
+      }
+      record = await terminalize(bundleKey, record);
+      // Approval and expiry race on the same revision/generation fence. If
+      // approval won, continue from that retained state and project its fresh
+      // publication lease (or any later operation evidence). Only a record
+      // that somehow remained confirmation-pending is contradictory here.
+      if (record.value.state === "confirmation_pending") {
+        return rpcFail(INTERNAL_ERROR);
+      }
+    }
     if (record.value.state === "accepted") {
-      if (now() < record.value.publicationExpiresAt) {
+      if (now() < publicationExpiry(record)) {
         return pendingStatus(id, record.value.chainId);
       }
       record = await terminalize(bundleKey, record);
@@ -561,13 +819,29 @@ export function createEip5792Orchestrator(
 
   async function getCapabilities(params: unknown): Promise<Readonly<Record<string, unknown>>> {
     const captured = captureWalletGetCapabilitiesParams(params);
-    const accountAddress = await account();
+    const accountAddress = (await input.port.authorizedAccount(input.chain)).toLowerCase();
+    if (!isWalletAddress(accountAddress)) return rpcFail(INTERNAL_ERROR);
     if (captured.address !== accountAddress) return rpcFail(UNAUTHORIZED);
 
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);
     if (requested.includes(chainId)) {
-      result[chainId] = advertiseWalletCapabilities({ atomicExecution: true });
+      let validityTimeRange = false;
+      if (confirmer !== undefined) {
+        try {
+          validityTimeRange = isSupportedValidityTimeRangeProbe(
+            await input.port.probeValidityTimeRangeSupport(input.chain),
+          );
+        } catch {
+          validityTimeRange = false;
+        }
+      }
+      result[chainId] = advertiseWalletCapabilities({
+        atomicExecution: true,
+        paymasterService: input.port.registeredPaymasterServiceUrl(input.chain) !== null,
+        staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
+        validityTimeRange,
+      });
     }
     return Object.freeze(result);
   }

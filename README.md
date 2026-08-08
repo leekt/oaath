@@ -54,6 +54,21 @@ carries the concrete SQLite test stores and is never a production dependency.
 and the experimental phone and APNs preview surfaces. Remaining capabilities land
 as bounded, independently reviewed child PRs.
 
+The wallet-RPC surface intentionally distinguishes finalized standards from
+experiments:
+
+| Surface | Standards status | OAAth status |
+| --- | --- | --- |
+| EIP-5792 `wallet_sendCalls` / status / capabilities | Final (`2.0.0`) | Implemented PoC path |
+| ERC-7836 `wallet_prepareCalls` / `wallet_sendPreparedCalls` | Draft (`1`) | Experimental OAAth profile; approved secp256k1 or WebAuthn external signer in `frontend` or `application_backend` custody, current-version opaque five-minute context, one-time durable consumption and reload recovery; `oaath_hosted` custody is rejected |
+| ERC-7677 `paymasterService` | Review | Experimental `wallet_sendCalls` and prepared-call paths for a deployment-registered same-service proxy and bundler estimator |
+| ERC-7902 `staticPaymasterConfiguration` | Draft | Experimental bundled `wallet_sendCalls` path for one authenticated per-chain configuration commitment |
+| ERC-7902 `validityTimeRange` | Draft | Experimental `wallet_sendCalls` and prepared-call paths only with a configured transaction confirmer and proof of the configured chain's pinned OAAth validity-policy runtime; `validAfter` and `validUntil` are inclusive |
+
+The Draft profiles are not advertised as stable or as generic conformance.
+ERC-7902 `multidimensionalNonce`, AA gas parameter overrides, and
+`eip7702Auth` are explicitly unsupported and deferred.
+
 ## Browser golden path
 
 `createOAAth` is the one supported constructor, and the OAAth service URL is
@@ -185,11 +200,12 @@ account state observed at bind time: after a counterfactual account's first
 operation deploys it, rebind before preparing the next operation, or EntryPoint
 rejects the stale factory evidence (`AA10 sender already constructed`).
 
-Gas values are caller-supplied decimal strings. Gas and fee estimation is an
-explicit non-goal of this package; bring values from your own estimation
-source. `createKernelV4Reads` adapts any viem-style public client into the
-account read capability, and `asViemUserOperation` maps a prepared operation
-into viem's shape for signing and submission.
+Gas values in the low-level Kernel helpers are caller-supplied decimal strings;
+bring them from your own estimation source. The experimental URL-mode ERC-7677
+path makes one post-stub estimate through the deployment's registered bundler
+port. `createKernelV4Reads` adapts any viem-style public client into the account
+read capability, and `asViemUserOperation` maps a prepared operation into viem's
+shape for signing and submission.
 
 ## Examples
 
@@ -216,9 +232,8 @@ The remaining release blockers have one durable ledger here:
 
 - owner-authorized changeset for the fixed `0.x` release group;
 - revocation send/return crash proof, including reload without resubmission;
-- real-Chromium IndexedDB proof across independent realm recreation;
 - PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
-- pin or explicitly remove the unsupported `session_p256` / WebAuthn signer
+- pin or explicitly remove the unsupported raw P-256 `session_p256` signer
   surface before release.
 
 ## Development
@@ -250,15 +265,21 @@ workspace:
 ```sh
 pnpm check:public-surface # no node:/pg leakage into a browser graph; one-way deps
 pnpm smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
+pnpm smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
 pnpm smoke:server         # packed server, relay round-trip, ./postgres under node
 pnpm smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
-The two packed smokes build, pack, and `npm install` the tarballs into a
-throwaway consumer outside the workspace, so nothing resolves through a workspace
-link and no `src` path is reachable. `smoke:all-chain` runs the two-chain
-materialization proof with `OAATH_REQUIRE_ANVIL` set, so it can never report an
-all-chain proof that skipped itself.
+The browser, extension, and server smokes build, pack, and `npm install` the
+tarballs into a throwaway consumer outside the workspace, so nothing resolves
+through a workspace link and no `src` path is reachable. `smoke:extension`
+loads the actual example artifact in headful Chrome, kills its MV3 worker, and
+requires a distinct worker lifetime to recover the same IndexedDB-backed bundle
+without resubmission; it uses only a loopback relay and an owned chain fixture.
+CI supplies Xvfb; a local run requires Google Chrome.
+`smoke:all-chain` runs the two-chain materialization proof with
+`OAATH_REQUIRE_ANVIL` set, so it can never report an all-chain proof that skipped
+itself.
 
 ## Release
 

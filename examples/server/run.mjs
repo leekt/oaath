@@ -36,6 +36,52 @@ const SUBJECT = "demo-subject";
 const REDIRECT_URI = "https://app.example/callback";
 /** PKCE: the client keeps the verifier and sends only the challenge. */
 const CODE_VERIFIER = "demo-code-verifier-that-is-long-enough-0123456789";
+const REQUESTED_AT = Math.floor(Date.now() / 1_000);
+/** One exact protocol scope the shared decision owner can approve. */
+const DEMO_PERMISSION_SCOPE = JSON.stringify({
+  version: "oaath.permission-request/v1",
+  application: {
+    applicationId: "oaath-relay-demo",
+    clientId: CLIENT_ID,
+    origin: "https://app.example",
+    deviceId: "relay-demo-device",
+  },
+  chainScope: "all",
+  logicalAccount: {
+    version: "oaath.kernel-account-profile/v1",
+    kind: "kernel",
+    accountIndex: "0",
+    kernelVersion: "0.4.0",
+    factoryRoute: "meta_factory",
+    entryPoint: { version: "0.7" },
+    ownerCredential: {
+      version: "oaath.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: `0x${"33".repeat(20)}`,
+    },
+  },
+  operatorCredential: {
+    version: "oaath.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"44".repeat(20)}`,
+  },
+  policy: {
+    version: "oaath.grant-policy/v1",
+    calls: [
+      {
+        target: `0x${"11".repeat(20)}`,
+        selector: "0x12345678",
+        valueLimit: "0",
+        argumentEquals: [],
+      },
+    ],
+    validAfter: REQUESTED_AT,
+    validUntil: REQUESTED_AT + 599,
+    perChainOperationLimit: 10,
+  },
+  requestedAt: REQUESTED_AT,
+  expiresAt: REQUESTED_AT + 600,
+});
 
 const say = (...parts) => console.log(...parts);
 
@@ -154,6 +200,7 @@ say(`client token     Bearer ${CLIENT_TOKEN}`);
 say(`owner token      Bearer ${OWNER_TOKEN}`);
 say(`code_challenge   ${deriveCodeChallenge(CODE_VERIFIER)}`);
 say(`code_verifier    ${CODE_VERIFIER}`);
+say(`requested scope  ${DEMO_PERMISSION_SCOPE}`);
 say("");
 
 if (!SMOKE) {
@@ -180,7 +227,7 @@ if (!SMOKE) {
   const created = await call("create", "POST", "/authorization/requests", CLIENT_TOKEN, {
     redirectUri: REDIRECT_URI,
     codeChallenge: deriveCodeChallenge(CODE_VERIFIER),
-    requestedScope: JSON.stringify({ chainScope: "all" }),
+    requestedScope: DEMO_PERMISSION_SCOPE,
   });
   expect(created.status === 201, "the client could not create an authorization request");
   const { requestId } = created.payload;

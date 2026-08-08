@@ -1,8 +1,8 @@
 {
-  "note": "One committed fixture consumed by both TypeScript and Swift. exactSignatureProjectionBytes is the authoritative exact UTF-8 projection string: both languages consume those same bytes first and then strictly decode them. The object variants cover the remaining closed union branches.",
+  "note": "One committed fixture consumed by both TypeScript and Swift. exactOwnerSigningProjectionBytes is the authoritative exact UTF-8 application-purpose projection string: both languages consume those same bytes first and then strictly decode them. kernelEnableOwnerSigningRequest copies the accepted Kernel InstallPackages typed-data value and digest as cross-language protocol evidence. The object variants cover the remaining closed union branches.",
   "projection": {
     "permissionRequest": {
-      "version": "oaath.native-projection/v1",
+      "version": "oaath.native-projection/v4",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -50,8 +50,8 @@
         "perChainOperationLimit": 10
       }
     },
-    "signatureRequest": {
-      "version": "oaath.native-projection/v1",
+    "ownerSigningRequest": {
+      "version": "oaath.native-projection/v4",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -60,14 +60,219 @@
         "redirectUri": "https://app.example/callback"
       },
       "scope": {
-        "kind": "signature-request",
+        "kind": "owner-signing-request",
+        "decision": "reject-only",
+        "requestHash": "0x1588b0d137ab76a1f63adc58befd1137642312ea71cdca34659851e4796488ba",
+        "request": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "application",
+          "signer": {
+            "account": "0x1111111111111111111111111111111111111111",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "p256",
+              "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "chainId",
+                  "type": "uint256"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Mail": [
+                {
+                  "name": "from",
+                  "type": "Person"
+                },
+                {
+                  "name": "to",
+                  "type": "Person"
+                },
+                {
+                  "name": "contents",
+                  "type": "string"
+                }
+              ],
+              "Person": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "wallet",
+                  "type": "address"
+                }
+              ]
+            },
+            "primaryType": "Mail",
+            "domain": {
+              "name": "Ether Mail",
+              "version": "1",
+              "chainId": "1",
+              "verifyingContract": "0xcccccccccccccccccccccccccccccccccccccccc"
+            },
+            "message": {
+              "from": {
+                "name": "Cow",
+                "wallet": "0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826"
+              },
+              "to": {
+                "name": "Bob",
+                "wallet": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              },
+              "contents": "Hello, Bob!"
+            }
+          },
+          "expectedDigest": "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
+          "replay": {
+            "nonce": "0",
+            "deadline": null
+          }
+        }
+      }
+    },
+    "kernelEnableOwnerSigningRequest": {
+      "version": "oaath.native-projection/v4",
+      "operationId": "fixture-operation-id",
+      "displayPayload": "Ab1-_9Zz",
+      "expiresAt": 1700000300000,
+      "client": {
+        "clientId": "client-a",
+        "redirectUri": "https://app.example/callback"
+      },
+      "scope": {
+        "kind": "owner-signing-request",
         "decision": "approve-or-reject",
-        "digest": "0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
-        "display": "{\"account\":\"0x6666666666666666666666666666666666666666\",\"chainScope\":\"all supported chains\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"installNonce\":\"0\",\"kind\":\"kernel-enable-digest\"}"
+        "requestHash": "0xa00d9d6245f9adb00f254c6ea1295c9fb7e6bba1adfd479e6dc51fe4fa5538e4",
+        "request": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0x6666666666666666666666666666666666666666",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "p256",
+              "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0x6666666666666666666666666666666666666666"
+            },
+            "message": {
+              "nonce": "0",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x7208c8980000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004444444444444444444444444444444444444444000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x7208c898"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+                  "moduleData": "0x7208c898000000000000000000000000000000000000000000000000000000003333333333333333333333333333333333333333",
+                  "internalData": "0x7208c8980000000000000000000000000000000000000001e9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03",
+          "replay": {
+            "nonce": "0",
+            "deadline": null
+          }
+        }
+      }
+    },
+    "rawDigestOwnerSigningRequest": {
+      "version": "oaath.native-projection/v4",
+      "operationId": "fixture-operation-id",
+      "displayPayload": "Ab1-_9Zz",
+      "expiresAt": 1700000300000,
+      "client": {
+        "clientId": "client-a",
+        "redirectUri": "https://app.example/callback"
+      },
+      "scope": {
+        "kind": "owner-signing-request",
+        "decision": "reject-only",
+        "requestHash": "0xc54b4026d0a405712135675831934bf49451ca293a1d0d528d26979e7c0fc40a",
+        "request": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "raw-digest",
+          "digest": "0x4444444444444444444444444444444444444444444444444444444444444444",
+          "reason": "No device-side derivation is available",
+          "decision": "reject-only"
+        }
       }
     },
     "raw": {
-      "version": "oaath.native-projection/v1",
+      "version": "oaath.native-projection/v4",
       "operationId": "fixture-operation-id",
       "displayPayload": "Ab1-_9Zz",
       "expiresAt": 1700000300000,
@@ -115,5 +320,5 @@
       }
     }
   },
-  "exactSignatureProjectionBytes": "{\"version\":\"oaath.native-projection/v1\",\"operationId\":\"fixture-operation-id\",\"displayPayload\":\"Ab1-_9Zz\",\"expiresAt\":1700000300000,\"client\":{\"clientId\":\"client-a\",\"redirectUri\":\"https://app.example/callback\"},\"scope\":{\"kind\":\"signature-request\",\"decision\":\"approve-or-reject\",\"digest\":\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\",\"display\":\"{\\\"account\\\":\\\"0x6666666666666666666666666666666666666666\\\",\\\"chainScope\\\":\\\"all supported chains\\\",\\\"digest\\\":\\\"0x4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\\\",\\\"installNonce\\\":\\\"0\\\",\\\"kind\\\":\\\"kernel-enable-digest\\\"}\"}}"
+  "exactOwnerSigningProjectionBytes": "{\"version\":\"oaath.native-projection/v4\",\"operationId\":\"fixture-operation-id\",\"displayPayload\":\"Ab1-_9Zz\",\"expiresAt\":1700000300000,\"client\":{\"clientId\":\"client-a\",\"redirectUri\":\"https://app.example/callback\"},\"scope\":{\"kind\":\"owner-signing-request\",\"decision\":\"reject-only\",\"requestHash\":\"0x1588b0d137ab76a1f63adc58befd1137642312ea71cdca34659851e4796488ba\",\"request\":{\"version\":\"oaath.owner-signing-request/v1\",\"kind\":\"eip712\",\"purpose\":\"application\",\"signer\":{\"account\":\"0x1111111111111111111111111111111111111111\",\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"p256\",\"publicKey\":\"0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5\"}},\"typedData\":{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"contents\":\"Hello, Bob!\"}},\"expectedDigest\":\"0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2\",\"replay\":{\"nonce\":\"0\",\"deadline\":null}}}}"
 }

@@ -30,6 +30,8 @@ describe("package boundary", () => {
       "KERNEL_V4_IMPLEMENTATION_SLOT",
       "KERNEL_V4_UUPS_IMPLEMENTATION_V07",
       "OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION",
+      "OAATH_KERNEL_V4_VALIDITY_POLICY",
+      "OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH",
       "OAATH_PREPARED_USER_OPERATION_VERSION",
       "OaathKernelRuntimeError",
       "OaathKernelV4Error",
@@ -61,6 +63,7 @@ describe("package boundary", () => {
       "kernelAllChainCapabilityHash",
       "kernelV4Deployment",
       "kernelV4ReplayableInstallDigest",
+      "kernelV4ReplayableInstallTypedData",
       "materializeKernelPermission",
       "ownerOperator",
       "p256Key",
@@ -77,6 +80,8 @@ describe("package boundary", () => {
 
   it("exposes custom-deployment ports on /advanced", () => {
     expect(Object.keys(advanced).sort()).toEqual([
+      "ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN",
+      "ERC7902_STATIC_PAYMASTER_LIMITS",
       "GrantStore",
       "OAATH_BINDING_HASH_DOMAIN",
       "OAATH_BINDING_VERSION",
@@ -90,11 +95,13 @@ describe("package boundary", () => {
       "OaathRoutingError",
       "OaathStoreError",
       "OperationStore",
+      "captureErc7902StaticPaymasterConfiguration",
       "captureOaathBinding",
       "captureRoutingCapabilities",
       "classifyBundlerAcceptance",
       "classifyBundlerProbe",
       "closeEffect",
+      "createErc7677SponsorshipCapability",
       "createOperationObserver",
       "createOperationRunner",
       "decideExecution",
@@ -103,6 +110,7 @@ describe("package boundary", () => {
       "deriveSessionPolicyProfiles",
       "encodeHandleOps",
       "forgetLocalEffect",
+      "hashErc7902StaticPaymasterConfiguration",
       "prepareSponsoredKernelOperation",
       "probeBundlerCapability",
       "revokeEffect",
@@ -126,6 +134,7 @@ describe("package boundary", () => {
       "createIndexedDbGrantStoreAdapter",
       "createIndexedDbKeyStore",
       "createIndexedDbOperationStoreAdapter",
+      "createIndexedDbPreparedCallStoreAdapter",
       "createIndexedDbWalletCallBundleStoreAdapter",
       "isCleanupEffectName",
       "openOaathDatabase",
@@ -142,6 +151,7 @@ describe("package boundary", () => {
       "createMemoryGrantStoreAdapter",
       "createMemoryKeyStore",
       "createMemoryOperationStoreAdapter",
+      "createMemoryPreparedCallStoreAdapter",
       "createMemoryWalletCallBundleStoreAdapter",
     ]);
   });

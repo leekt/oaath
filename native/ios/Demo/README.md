@@ -2,9 +2,10 @@
 
 A runnable SwiftUI app over the `OwnerPhone` + `OwnerPhoneDemo` package
 targets. It pairs with the demo relay (`examples/phone`), receives the real
-APNs approval push, shows the full consent screen, and delivers the released
-one-time code back to the waiting web example. Preview means: no stability
-guarantee and no production qualification.
+APNs review push, and shows the full consent screen. Structured permission
+requests and exact Kernel/P-256 owner signing may release a one-time approval;
+every other owner-signing request remains reject-only. Preview means: no
+stability guarantee and no production qualification.
 
 ## Run on a physical iPhone (primary target)
 
@@ -30,7 +31,7 @@ guarantee and no production qualification.
 
 The device keeps the normalized relay endpoint and its issued credential as one
 versioned Keychain value after pairing; neither can be loaded or used apart.
-Installs paired before the v2 custody fix must pair once again; the app rejects
+Installs paired before the v3 custody fix must pair once again; the app rejects
 the old software-fallback-bound pairing instead of reusing contradictory state.
 While paired, new pairing links are ignored until **Clear pairing** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
@@ -60,7 +61,9 @@ With a paid membership:
    receive SANDBOX device tokens, and pushing the production host instead is
    the classic silent failure.
 5. Tapping the notification only **opens** the consent screen. Nothing is ever
-   decided by a tap: Approve and Reject are explicit buttons, always.
+   decided by a tap. Structured permission requests and an exact current
+   Kernel/P-256 review show explicit Approve and Reject buttons; every other
+   owner-signing request is reject-only.
 
 ## Simulator fallback
 
@@ -83,14 +86,19 @@ deployment serves https and deletes the key.
 ## Owner key and signing boundary
 
 First launch generates a persistent P-256 key in the Secure Enclave on a
-physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry
-requirement because Approve is already the explicit consent gate). Pairing
-registers its `x ‖ y` public material. The web half derives the chain-independent
-CREATE2 account and returns it; the phone labels the server-side derivation
-honestly. For both the replayable enable digest and owner UserOperation hash,
-Approve signs the exact projected 32 bytes, converts platform DER to raw
-`r ‖ s`, low-S normalizes, and releases that signature once. Reject signs
-nothing. Push/tap only opens review.
+physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`,
+`.userPresence`). Pairing registers its `x ‖ y` public material. The web half
+derives the chain-independent CREATE2 account and returns it; the phone labels
+the server-side derivation honestly. Host tests pin that creation policy but do
+not prove a physical prompt.
+
+The native app does not sign a digest supplied by the relay. An exact Kernel
+replayable-install request can expose approval only after the device derives
+the same EIP-712 digest and the current paired account/P-256 key, review,
+foreground state, and expiry all agree. Custody accepts only that sealed
+verified digest and requires Secure Enclave user presence on a physical phone.
+Raw digests, owner-UserOperation requests, and every other EIP-712 purpose stay
+visible for diagnosis and rejection but cannot reach custody or approval.
 
 ## Provenance
 

@@ -175,6 +175,7 @@ describe("durable provider recreation", () => {
     const port = grantProviderPort(secondGrant);
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "memory-reload",
     });
     expect(retained?.value.operation?.identity.userOperationHash).toBe(exactHash);
@@ -227,6 +228,7 @@ describe("durable provider recreation", () => {
     const port = grantProviderPort(secondGrant);
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "indexeddb-reload",
     });
     expect(retained?.value.operation?.identity.userOperationHash).toBe(exactHash);
@@ -416,7 +418,11 @@ describe("durable ID uniqueness", () => {
     if (rejectedId === undefined) throw new Error("expected one rejected bundle ID");
     const port = grantProviderPort(grant);
     await expect(
-      port.walletCallBundles.get({ providerScopeId: port.providerScopeId, id: rejectedId }),
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id: rejectedId,
+      }),
     ).resolves.toMatchObject({
       value: {
         state: "terminal",
@@ -492,7 +498,7 @@ describe("durable ID uniqueness", () => {
     await connection.close();
   });
 
-  it("keeps historical IDs stable across permanent account rebinding", async () => {
+  it("does not expose historical IDs after permanent account rebinding", async () => {
     const base = createChainFixture();
     let rebound = false;
     let factoryReads = 0;
@@ -515,22 +521,44 @@ describe("durable ID uniqueness", () => {
     rebound = true;
     const readsBeforeStatus = factoryReads;
 
-    await expect(
+    await providerError(
       provider.request({ method: "wallet_getCallsStatus", params: ["stable-account-history"] }),
-    ).resolves.toMatchObject({ status: 200 });
-    expect(factoryReads).toBe(readsBeforeStatus);
+      5730,
+    );
+    expect(factoryReads).toBe(readsBeforeStatus + 1);
     await providerError(
       provider.request({
         method: "wallet_sendCalls",
         params: [bundle(account, "stable-account-history")],
       }),
-      5720,
+      4100,
     );
     await providerError(
       provider.request({ method: "wallet_getCallsStatus", params: ["unknown-after-rebind"] }),
       5730,
     );
-    expect(factoryReads).toBe(readsBeforeStatus);
+    expect(factoryReads).toBe(readsBeforeStatus + 3);
+    expect(chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("validates a foreign sender before revealing an occupied ID", async () => {
+    const chain = createChainFixture();
+    const { connection, provider, account } = await activeProvider({ chain });
+    await provider.request({
+      method: "wallet_sendCalls",
+      params: [bundle(account, "sender-private-id")],
+    });
+    const quotes = chain.quotes;
+
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(OTHER_ACCOUNT, "sender-private-id")],
+      }),
+      4100,
+    );
+    expect(chain.quotes).toBe(quotes);
     expect(chain.sends).toHaveLength(1);
     await connection.close();
   });
@@ -568,7 +596,7 @@ describe("durable ID uniqueness", () => {
     await connection.close();
   });
 
-  it("allows the same ID across bindings but not across Grants or accounts in one scope", async () => {
+  it("isolates the same ID by provider binding and sender account", async () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
     const relay = createRelay(clock);
@@ -623,16 +651,21 @@ describe("durable ID uniqueness", () => {
         params: [bundle(accounts[1] ?? ACCOUNT, "isolated-id")],
       }),
     ).resolves.toEqual({ id: "isolated-id" });
-    await providerError(
+    await expect(
       otherAccountProvider.request({
         method: "wallet_sendCalls",
         params: [bundle(accounts[2] ?? OTHER_ACCOUNT, "isolated-id")],
       }),
-      5720,
-    );
+    ).resolves.toEqual({ id: "isolated-id" });
+    await expect(
+      otherAccountProvider.request({
+        method: "wallet_getCallsStatus",
+        params: ["isolated-id"],
+      }),
+    ).resolves.toMatchObject({ id: "isolated-id", status: 200 });
     expect(firstChain.sends).toHaveLength(1);
     expect(otherBindingChain.sends).toHaveLength(1);
-    expect(otherAccountChain.sends).toHaveLength(0);
+    expect(otherAccountChain.sends).toHaveLength(1);
     for (const connection of connections) await connection.close();
   });
 
@@ -689,6 +722,80 @@ function operationCrashStores(mode: OperationCrash): RealmStores {
 }
 
 describe("durable crash boundaries", () => {
+  it("cannot recover approval authority after a pending confirmation realm is recreated", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const chain = createChainFixture();
+    const first = await indexedDbStores(factory);
+    const before = createUrlRealm({ stores: first.stores, clock, chain });
+    const firstConnection = await before.oaath.connect();
+    const firstGrant = await firstConnection.requestPermission(permissionInput());
+    const account = await firstGrant.account(CHAIN_ID);
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const firstProvider = oaathProvider({
+      grant: firstGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        entered();
+        return decision;
+      },
+    });
+    const id = "confirmation-realm-crash";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, id)],
+    };
+    const sending = firstProvider.request(request);
+    await confirmationEntered;
+    await firstConnection.close();
+    first.database.close();
+    opened.splice(opened.indexOf(first.database), 1);
+
+    const second = await indexedDbStores(factory);
+    const after = createUrlRealm({
+      stores: second.stores,
+      clock,
+      relay: before.relay,
+      chain,
+    });
+    const secondConnection = await after.oaath.connect();
+    const secondGrant = await secondConnection.resume();
+    if (secondGrant === null) throw new Error("expected the confirmation Grant to resume");
+    let recreatedPresentations = 0;
+    const secondProvider = oaathProvider({
+      grant: secondGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        recreatedPresentations += 1;
+        return "approved" as const;
+      },
+    });
+    await providerError(secondProvider.request(request), 5720);
+    expect(recreatedPresentations).toBe(0);
+    await expect(
+      secondProvider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 100 });
+
+    clock.advance(300);
+    await expect(
+      secondProvider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
+    approve("approved");
+    await providerError(sending, 4001);
+    await providerError(secondProvider.request(request), 5720);
+    expect(chain.quotes).toBe(0);
+    expect(chain.signatures).toHaveLength(0);
+    expect(chain.sends).toHaveLength(0);
+    await secondConnection.close();
+  });
+
   it("keeps a recreated accepted request pending without letting status cancel its sender", async () => {
     const base = createChainFixture();
     let enterQuote!: () => void;
@@ -1266,6 +1373,7 @@ describe("terminal retention and exact history", () => {
     const port = grantProviderPort(grant);
     const firstRecord = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "pointer-reuse",
     });
     if (firstRecord === undefined) throw new Error("expected the first bundle record");
@@ -1282,6 +1390,7 @@ describe("terminal retention and exact history", () => {
     );
     const retained = await port.walletCallBundles.get({
       providerScopeId: port.providerScopeId,
+      account,
       id: "pointer-reuse",
     });
     expect(retained?.value.generation).toBe(firstRecord.value.generation);

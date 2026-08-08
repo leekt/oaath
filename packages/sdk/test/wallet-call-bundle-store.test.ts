@@ -36,13 +36,21 @@ const GENERATION_B = `0x${"56".repeat(32)}` as const;
 const CHAIN_ID = 31_337;
 const GRANT_ID = "grant";
 const OTHER_GRANT_ID = "other-grant";
+const RESULT_CAPABILITIES = Object.freeze({
+  paymasterService: Object.freeze({
+    sponsor: Object.freeze({
+      name: "Example Sponsor",
+      icon: "data:image/png;base64,AQ==",
+    }),
+  }),
+});
 
 function key(
   id = "bundle",
   providerScopeId: WalletCallBundleKey["providerScopeId"] = SCOPE,
-  _account: `0x${string}` = ACCOUNT,
+  account: WalletCallBundleKey["account"] = ACCOUNT,
 ): Readonly<WalletCallBundleKey> {
-  return Object.freeze({ providerScopeId, id });
+  return Object.freeze({ providerScopeId, account, id });
 }
 
 function operation(
@@ -51,6 +59,7 @@ function operation(
   grantId = GRANT_ID,
   account: `0x${string}` = ACCOUNT,
   requestHash: `0x${string}` = REQUEST_HASH,
+  resultCapabilities: WalletCallBundleOperation["resultCapabilities"] = null,
 ): Readonly<WalletCallBundleOperation> {
   return Object.freeze({
     identity: Object.freeze({
@@ -63,6 +72,7 @@ function operation(
       userOperationHash,
       requestHash,
     }),
+    resultCapabilities,
   });
 }
 
@@ -78,6 +88,7 @@ function bundleRecord(
     account: ACCOUNT,
     chainId: CHAIN_ID,
     createdAt: 10,
+    confirmationExpiresAt: null,
     publicationExpiresAt: 40,
     publicationReleasedAt: null,
     requestHash: REQUEST_HASH,
@@ -107,7 +118,7 @@ function clone<Value>(value: Value): Value {
 }
 
 function mapKey(value: Readonly<WalletCallBundleKey>): string {
-  return JSON.stringify([value.providerScopeId, value.id]);
+  return JSON.stringify([value.providerScopeId, value.account, value.id]);
 }
 
 function storedGeneration(value: unknown): unknown {
@@ -200,7 +211,7 @@ async function reserve(
   createdAt = 10,
   requestHash: WalletCallBundleRecord["requestHash"] = REQUEST_HASH,
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
-  account: WalletCallBundleRecord["account"] = ACCOUNT,
+  account: WalletCallBundleRecord["account"] = entryKey.account,
   grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
 ): Promise<WalletCallBundleMutationResult> {
   return store.reserveAccepted({
@@ -215,8 +226,25 @@ async function reserve(
   });
 }
 
+async function reservePendingConfirmation(
+  store: WalletCallBundleStore,
+  entryKey: Readonly<WalletCallBundleKey> = key(),
+  createdAt = 10,
+): Promise<WalletCallBundleMutationResult> {
+  return store.reservePendingConfirmation({
+    key: entryKey,
+    grantId: GRANT_ID,
+    generation: GENERATION_A,
+    account: entryKey.account,
+    chainId: CHAIN_ID,
+    createdAt,
+    confirmationExpiresAt: createdAt + 300,
+    requestHash: REQUEST_HASH,
+  });
+}
+
 describe("wallet-call bundle persistence parser", () => {
-  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v4 record", () => {
+  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v7 record", () => {
     const id = " app:\u0000/日本語/😀/not-hex ";
     const capturedKey = parseWalletCallBundleKey(key(id));
     expect(capturedKey.id).toBe(id);
@@ -228,7 +256,14 @@ describe("wallet-call bundle persistence parser", () => {
       () => parseWalletCallBundleKey(key(`${exactBoundary}a`)),
       "persistence_input_invalid",
     );
-    const binding = operation();
+    const binding = operation(
+      CHAIN_ID,
+      USER_OPERATION_HASH,
+      GRANT_ID,
+      ACCOUNT,
+      REQUEST_HASH,
+      RESULT_CAPABILITIES,
+    );
     const captured = parseWalletCallBundleRecord(
       bundleRecord({ id, operation: binding, state: "operation_bound" }),
     );
@@ -236,6 +271,11 @@ describe("wallet-call bundle persistence parser", () => {
     expect(Object.isFrozen(captured)).toBe(true);
     expect(Object.isFrozen(captured.operation)).toBe(true);
     expect(Object.isFrozen(captured.operation?.identity)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities?.paymasterService)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities?.paymasterService.sponsor)).toBe(
+      true,
+    );
   });
 
   it("rejects hostile records without invoking accessors", () => {
@@ -273,7 +313,7 @@ describe("wallet-call bundle persistence parser", () => {
     const missingTerminalFromRecord: Record<string, unknown> = { ...bundleRecord() };
     delete missingTerminalFromRecord.terminalFrom;
     const wrongValues: unknown[] = [
-      { ...bundleRecord(), version: "oaath.wallet-call-bundle/v1" },
+      { ...bundleRecord(), version: "oaath.wallet-call-bundle/v6" },
       missingGrantRecord,
       missingGenerationRecord,
       missingTerminalFromRecord,
@@ -285,6 +325,8 @@ describe("wallet-call bundle persistence parser", () => {
       { ...bundleRecord(), chainId: 0 },
       { ...bundleRecord(), chainId: Number.MAX_SAFE_INTEGER + 1 },
       { ...bundleRecord(), createdAt: -0 },
+      { ...bundleRecord(), confirmationExpiresAt: -0 },
+      { ...bundleRecord(), confirmationExpiresAt: 10 },
       { ...bundleRecord(), publicationExpiresAt: -0 },
       { ...bundleRecord(), publicationExpiresAt: 10 },
       { ...bundleRecord(), publicationReleasedAt: -0 },
@@ -292,6 +334,18 @@ describe("wallet-call bundle persistence parser", () => {
       { ...bundleRecord(), publicationReleasedAt: 20 },
       { ...bundleRecord(), requestHash: REQUEST_HASH.toUpperCase() },
       { ...bundleRecord(), state: "unknown" },
+      { ...bundleRecord(), publicationExpiresAt: null, state: "accepted" },
+      {
+        ...bundleRecord(),
+        confirmationExpiresAt: null,
+        publicationExpiresAt: null,
+        state: "confirmation_pending",
+      },
+      {
+        ...bundleRecord(),
+        confirmationExpiresAt: 310,
+        state: "confirmation_pending",
+      },
       { ...bundleRecord(), terminalFrom: "accepted" },
       { ...bundleRecord(), operation: operation(), state: "accepted" },
       { ...bundleRecord(), operation: null, state: "operation_reserved" },
@@ -308,12 +362,33 @@ describe("wallet-call bundle persistence parser", () => {
             ...operation().identity,
             userOperationHash: USER_OPERATION_HASH.toUpperCase(),
           },
+          resultCapabilities: null,
         },
         state: "operation_bound",
       },
       {
         ...bundleRecord(),
-        operation: { identity: { ...operation().identity, kind: "revocation" } },
+        operation: {
+          identity: { ...operation().identity, kind: "revocation" },
+          resultCapabilities: null,
+        },
+        state: "operation_bound",
+      },
+      {
+        ...bundleRecord(),
+        operation: { identity: operation().identity },
+        state: "operation_bound",
+      },
+      {
+        ...bundleRecord(),
+        operation: {
+          ...operation(),
+          resultCapabilities: {
+            paymasterService: {
+              sponsor: { name: "Example Sponsor", icon: "https://example.com/icon.png" },
+            },
+          },
+        },
         state: "operation_bound",
       },
       {
@@ -347,7 +422,8 @@ describe("wallet-call bundle persistence parser", () => {
     for (const invalidKey of [
       { ...key(), providerScopeId: SCOPE.toUpperCase() },
       { ...key(), grantId: " grant " },
-      { ...key(), account: ACCOUNT },
+      { providerScopeId: SCOPE, id: "bundle" },
+      { ...key(), account: ACCOUNT.toUpperCase() },
       { ...key(), id: "" },
       { ...key(), extra: true },
     ]) {
@@ -361,6 +437,25 @@ describe("wallet-call bundle persistence parser", () => {
       parseWalletCallBundleRecord(bundleRecord({ state: "terminal", terminalFrom: "accepted" }))
         .terminalFrom,
     ).toBe("accepted");
+    expect(
+      parseWalletCallBundleRecord(
+        bundleRecord({
+          confirmationExpiresAt: 310,
+          publicationExpiresAt: null,
+          state: "confirmation_pending",
+        }),
+      ).state,
+    ).toBe("confirmation_pending");
+    expect(
+      parseWalletCallBundleRecord(
+        bundleRecord({
+          confirmationExpiresAt: 310,
+          publicationExpiresAt: null,
+          state: "terminal",
+          terminalFrom: "confirmation_pending",
+        }),
+      ).terminalFrom,
+    ).toBe("confirmation_pending");
     expect(
       parseWalletCallBundleRecord(
         bundleRecord({ operation: operation(), state: "operation_reserved" }),
@@ -405,27 +500,38 @@ describe("wallet-call bundle persistence parser", () => {
         }),
       "store_input_invalid",
     );
+    await expectStoreError(
+      () =>
+        store.reserveAccepted({
+          key: key("account-mismatch"),
+          grantId: GRANT_ID,
+          account: OTHER_ACCOUNT,
+          generation: GENERATION_A,
+          chainId: CHAIN_ID,
+          createdAt: 10,
+          publicationExpiresAt: 40,
+          requestHash: REQUEST_HASH,
+        }),
+      "store_input_invalid",
+    );
 
     memory.set(key(), { ...envelope(), value: {} });
     await expectStoreError(() => store.get(key()), "store_record_invalid");
 
     memory.set(key(), {
       ...envelope(),
-      version: "oaath.wallet-call-bundle-store-record/v1",
+      version: "oaath.wallet-call-bundle-store-record/v6",
     });
     await expectStoreError(() => store.get(key()), "store_record_invalid");
 
     for (const value of [
       bundleRecord({ providerScopeId: OTHER_SCOPE }),
+      bundleRecord({ account: OTHER_ACCOUNT }),
       bundleRecord({ id: "other" }),
     ]) {
       memory.set(key(), envelope(value));
       await expectStoreError(() => store.get(key()), "store_key_mismatch");
     }
-    memory.set(key(), envelope(bundleRecord({ account: OTHER_ACCOUNT })));
-    await expect(store.get(key())).resolves.toMatchObject({
-      value: { account: OTHER_ACCOUNT },
-    });
     memory.set(key(), envelope(bundleRecord({ grantId: OTHER_GRANT_ID })));
     await expect(store.get(key())).resolves.toMatchObject({
       value: { grantId: OTHER_GRANT_ID },
@@ -474,9 +580,98 @@ describe("wallet-call bundle persistence parser", () => {
 });
 
 describe("wallet-call bundle transitions and uniqueness", () => {
+  it("fences pending confirmation approval and starts a fresh publication lease", async () => {
+    const store = new WalletCallBundleStore(memoryAdapter().adapter);
+    const pending = requireCommitted(await reservePendingConfirmation(store));
+    expect(pending).toMatchObject({
+      storeRevision: 0,
+      value: {
+        confirmationExpiresAt: 310,
+        publicationExpiresAt: null,
+        state: "confirmation_pending",
+      },
+    });
+    await expectStoreError(
+      () =>
+        store.approveConfirmation({
+          key: key(),
+          expectedStoreRevision: pending.storeRevision,
+          expectedGeneration: pending.value.generation,
+          approvedAt: 300,
+          publicationExpiresAt: 331,
+        }),
+      "store_input_invalid",
+    );
+
+    const approved = requireCommitted(
+      await store.approveConfirmation({
+        key: key(),
+        expectedStoreRevision: pending.storeRevision,
+        expectedGeneration: pending.value.generation,
+        approvedAt: 300,
+        publicationExpiresAt: 330,
+      }),
+    );
+    expect(approved).toMatchObject({
+      storeRevision: 1,
+      updatedAt: 300,
+      value: {
+        confirmationExpiresAt: 310,
+        publicationExpiresAt: 330,
+        state: "accepted",
+      },
+    });
+    await expect(
+      store.approveConfirmation({
+        key: key(),
+        expectedStoreRevision: pending.storeRevision,
+        expectedGeneration: pending.value.generation,
+        approvedAt: 301,
+        publicationExpiresAt: 331,
+      }),
+    ).resolves.toMatchObject({ status: "conflict", current: approved });
+  });
+
+  it("terminalizes rejection and refuses approval at the exclusive deadline", async () => {
+    const rejectedStore = new WalletCallBundleStore(memoryAdapter().adapter);
+    const rejected = requireCommitted(await reservePendingConfirmation(rejectedStore));
+    const terminal = requireCommitted(
+      await rejectedStore.markTerminal({
+        key: key(),
+        expectedStoreRevision: rejected.storeRevision,
+        expectedGeneration: rejected.value.generation,
+        updatedAt: 20,
+      }),
+    );
+    expect(terminal).toMatchObject({
+      storeRevision: 1,
+      value: { state: "terminal", terminalFrom: "confirmation_pending" },
+    });
+
+    const expiredStore = new WalletCallBundleStore(memoryAdapter().adapter);
+    const expired = requireCommitted(await reservePendingConfirmation(expiredStore));
+    await expect(
+      expiredStore.approveConfirmation({
+        key: key(),
+        expectedStoreRevision: expired.storeRevision,
+        expectedGeneration: expired.value.generation,
+        approvedAt: 310,
+        publicationExpiresAt: 340,
+      }),
+    ).resolves.toMatchObject({ status: "conflict", current: expired });
+  });
+
   it("commits accepted, reserved, bound, released, and terminal in order", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
+    const sponsoredOperation = operation(
+      CHAIN_ID,
+      USER_OPERATION_HASH,
+      GRANT_ID,
+      ACCOUNT,
+      REQUEST_HASH,
+      RESULT_CAPABILITIES,
+    );
 
     const accepted = requireCommitted(await reserve(store));
     expect(accepted).toEqual(envelope());
@@ -499,12 +694,12 @@ describe("wallet-call bundle transitions and uniqueness", () => {
         key: key(),
         expectedStoreRevision: accepted.storeRevision,
         expectedGeneration: accepted.value.generation,
-        operation: operation(),
+        operation: sponsoredOperation,
         updatedAt: 20,
       }),
     );
     expect(reserved).toEqual(
-      envelope(bundleRecord({ operation: operation(), state: "operation_reserved" }), 1, 20),
+      envelope(bundleRecord({ operation: sponsoredOperation, state: "operation_reserved" }), 1, 20),
     );
 
     const bound = requireCommitted(
@@ -516,7 +711,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
       }),
     );
     expect(bound).toEqual(
-      envelope(bundleRecord({ operation: operation(), state: "operation_bound" }), 2, 30),
+      envelope(bundleRecord({ operation: sponsoredOperation, state: "operation_bound" }), 2, 30),
     );
 
     const released = requireCommitted(
@@ -530,7 +725,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(released).toEqual(
       envelope(
         bundleRecord({
-          operation: operation(),
+          operation: sponsoredOperation,
           state: "operation_bound",
           publicationReleasedAt: 31,
         }),
@@ -550,7 +745,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(terminal).toEqual(
       envelope(
         bundleRecord({
-          operation: operation(),
+          operation: sponsoredOperation,
           state: "terminal",
           terminalFrom: "operation_bound",
           publicationReleasedAt: 31,
@@ -559,7 +754,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
         40,
       ),
     );
-    expect((await store.get(key()))?.value.operation).toEqual(operation());
+    expect((await store.get(key()))?.value.operation).toEqual(sponsoredOperation);
   });
 
   it("supports conclusive accepted-to-terminal failure without an operation", async () => {
@@ -782,7 +977,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(memory.casCalls()).toBe(1);
   });
 
-  it("keeps exact IDs and isolates scope while Grant, account, and chain are not key axes", async () => {
+  it("keeps exact IDs and isolates scope and account while Grant and chain are not key axes", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
     const unicode = " 日本語/😀/\u0000 ";
@@ -793,11 +988,12 @@ describe("wallet-call bundle transitions and uniqueness", () => {
 
     requireCommitted(await reserve(store, first, 1));
     requireCommitted(await reserve(store, anotherScope, 1));
-    await expect(
-      reserve(store, anotherAccount, 1, 10, REQUEST_HASH, GENERATION_B, OTHER_ACCOUNT),
-    ).resolves.toMatchObject({
-      status: "conflict",
-      current: { value: { account: ACCOUNT } },
+    requireCommitted(
+      await reserve(store, anotherAccount, 1, 10, REQUEST_HASH, GENERATION_B, OTHER_ACCOUNT),
+    );
+    await expect(store.get(first)).resolves.toMatchObject({ value: { account: ACCOUNT } });
+    await expect(store.get(anotherAccount)).resolves.toMatchObject({
+      value: { account: OTHER_ACCOUNT },
     });
     await expect(
       reserve(store, first, 1, 10, REQUEST_HASH, GENERATION_B, ACCOUNT, OTHER_GRANT_ID),
@@ -1296,6 +1492,10 @@ describe("wallet-call bundle races and retained-write verification", () => {
         "store_identity_mismatch",
       ],
       [
+        bundleRecord({ account: OTHER_ACCOUNT, state: "terminal", terminalFrom: "accepted" }),
+        "store_commit_indeterminate",
+      ],
+      [
         bundleRecord({ id: "other", state: "terminal", terminalFrom: "accepted" }),
         "store_commit_indeterminate",
       ],
@@ -1322,37 +1522,6 @@ describe("wallet-call bundle races and retained-write verification", () => {
         expectedCode,
       );
     }
-    reads = 0;
-    const accountMutation = new WalletCallBundleStore({
-      async get() {
-        reads += 1;
-        return reads === 1
-          ? envelope()
-          : envelope(
-              bundleRecord({
-                account: OTHER_ACCOUNT,
-                state: "terminal",
-                terminalFrom: "accepted",
-              }),
-              1,
-              20,
-            );
-      },
-      async compareAndSwap() {
-        return false;
-      },
-      async close() {},
-    });
-    await expectStoreError(
-      () =>
-        accountMutation.markTerminal({
-          key: key(),
-          expectedStoreRevision: 0,
-          expectedGeneration: GENERATION_A,
-          updatedAt: 20,
-        }),
-      "store_identity_mismatch",
-    );
   });
 
   it("rejects backward state and transition-time evidence from a racing writer", async () => {

@@ -5,9 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
+  OaathProviderRpcError,
 } from "../src/provider/errors.js";
 import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
 import {
@@ -16,8 +18,11 @@ import {
   type ChainFixture,
   type ChainFixtureOptions,
   createChainFixture,
+  createClock,
+  createMemoryStores,
   createRealm,
   permissionInput,
+  type RealmStores,
   TARGET,
 } from "./support/browser.js";
 
@@ -79,6 +84,7 @@ function countingChain(options: ChainFixtureOptions = {}): Readonly<{
 async function activeProvider(
   chain: ChainFixture = createChainFixture(),
   showCallsStatus?: NonNullable<OaathProviderInput["showCallsStatus"]>,
+  confirmCalls?: NonNullable<OaathProviderInput["confirmCalls"]>,
 ) {
   const realm = createRealm({ chain });
   const connection = await realm.oaath.connect();
@@ -86,6 +92,7 @@ async function activeProvider(
   const provider = oaathProvider({
     grant,
     chain: CHAIN_ID,
+    ...(confirmCalls === undefined ? {} : { confirmCalls }),
     ...(showCallsStatus === undefined ? {} : { showCallsStatus }),
   });
   const account = await grant.account(CHAIN_ID);
@@ -116,6 +123,403 @@ async function providerError(
 }
 
 describe("wallet_sendCalls orchestration", () => {
+  it("CAS-reserves before one frozen exact confirmation and starts with a fresh lease", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    let presented: unknown;
+    let presenterThis: unknown = "not-called";
+    const confirmCalls: NonNullable<OaathProviderInput["confirmCalls"]> = async function (
+      this: void,
+      confirmation,
+    ) {
+      presenterThis = this;
+      presented = confirmation;
+      entered();
+      return decision;
+    };
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      confirmCalls,
+    );
+    const id = "confirm-before-effects";
+    const sending = provider.request({
+      method: "wallet_sendCalls",
+      params: [
+        bundle(account, {
+          id,
+          chainId: `0x${CHAIN_HEX.slice(2).toUpperCase()}`,
+          calls: [
+            {
+              to: `0x${TARGET.slice(2).toUpperCase()}`,
+              data: `0x${CALL_DATA.slice(2).toUpperCase()}`,
+            },
+            { to: TARGET, data: CALL_DATA, value: "0x0" },
+          ],
+        }),
+      ],
+    });
+    await confirmationEntered;
+
+    expect(presenterThis).toBeUndefined();
+    expect(presented).toEqual({
+      account,
+      chainId: CHAIN_HEX,
+      confirmationExpiresAt: 1_800_000_300,
+      calls: [
+        { target: TARGET, value: "0", data: CALL_DATA },
+        { target: TARGET, value: "0", data: CALL_DATA },
+      ],
+    });
+    expect(Object.isFrozen(presented)).toBe(true);
+    const exact = presented as { readonly calls: readonly unknown[] };
+    expect(Object.isFrozen(exact.calls)).toBe(true);
+    expect(exact.calls.every((call) => Object.isFrozen(call))).toBe(true);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toMatchObject({
+      storeRevision: 0,
+      value: {
+        state: "confirmation_pending",
+        confirmationExpiresAt: 1_800_000_300,
+        publicationExpiresAt: null,
+        operation: null,
+      },
+    });
+    realm.clock.advance(290);
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 100 });
+
+    approve("approved");
+    await expect(sending).resolves.toEqual({ id });
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.signatures).toHaveLength(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toMatchObject({
+      value: {
+        confirmationExpiresAt: 1_800_000_300,
+        publicationExpiresAt: 1_800_000_320,
+        state: "operation_bound",
+      },
+    });
+    await connection.close();
+  });
+
+  it("maps rejection to 4001 with zero effects and permanently tombstones the explicit ID", async () => {
+    let presentations = 0;
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        presentations += 1;
+        return "rejected" as const;
+      },
+    );
+    const id = "retry-after-rejection";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    };
+
+    await providerError(provider.request(request), 4001);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toMatchObject({
+      storeRevision: 1,
+      value: {
+        state: "terminal",
+        terminalFrom: "confirmation_pending",
+        operation: null,
+      },
+    });
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
+
+    await providerError(provider.request(request), 5720);
+    expect(presentations).toBe(1);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("expires a pending confirmation and never lets its late approval start execution", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const { realm, connection, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        entered();
+        return decision;
+      },
+    );
+    const id = "expired-confirmation";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    };
+    const sending = provider.request(request);
+    await confirmationEntered;
+
+    realm.clock.advance(300);
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
+    approve("approved");
+    await providerError(sending, 4001);
+    await providerError(provider.request(request), 5720);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("follows the approved winner when expiry races the same preconfirmation CAS", async () => {
+    const base = createChainFixture();
+    let enterQuote!: () => void;
+    let releaseQuote!: () => void;
+    const quoteEntered = new Promise<void>((resolve) => {
+      enterQuote = resolve;
+    });
+    const quoteReleased = new Promise<void>((resolve) => {
+      releaseQuote = resolve;
+    });
+    const chain = replaceChain(base, {
+      async quote(request) {
+        enterQuote();
+        await quoteReleased;
+        return base.capability.quote(request);
+      },
+    });
+    const stores = createMemoryStores();
+    const bundles = stores.walletCallBundles;
+    let enterTerminalCas!: () => void;
+    let releaseTerminalCas!: () => void;
+    const terminalCasEntered = new Promise<void>((resolve) => {
+      enterTerminalCas = resolve;
+    });
+    const terminalCasReleased = new Promise<void>((resolve) => {
+      releaseTerminalCas = resolve;
+    });
+    let approvalCasResult: unknown;
+    let terminalCasResult: unknown;
+    const racedStores: RealmStores = {
+      ...stores,
+      walletCallBundles: Object.freeze({
+        ...bundles,
+        async compareAndSwap(input: Parameters<typeof bundles.compareAndSwap>[0]) {
+          const next = input.next as {
+            readonly value?: {
+              readonly state?: unknown;
+              readonly terminalFrom?: unknown;
+            };
+          };
+          if (
+            next.value?.state === "terminal" &&
+            next.value.terminalFrom === "confirmation_pending"
+          ) {
+            enterTerminalCas();
+            await terminalCasReleased;
+            terminalCasResult = await bundles.compareAndSwap(input);
+            return terminalCasResult;
+          }
+          const result = await bundles.compareAndSwap(input);
+          if (next.value?.state === "accepted") approvalCasResult = result;
+          return result;
+        },
+      }),
+    };
+    const senderClock = createClock();
+    const senderRealm = createRealm({ stores: racedStores, clock: senderClock, chain });
+    const senderConnection = await senderRealm.oaath.connect();
+    const senderGrant = await senderConnection.requestPermission(permissionInput());
+    const account = await senderGrant.account(CHAIN_ID);
+    let approve!: (decision: "approved") => void;
+    let enterConfirmation!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      enterConfirmation = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const sender = oaathProvider({
+      grant: senderGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        enterConfirmation();
+        return decision;
+      },
+    });
+    const id = "approval-expiry-race";
+    const sending = sender.request({
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    });
+    await confirmationEntered;
+    senderClock.advance(299);
+
+    const statusClock = createClock(senderClock.now() + 1);
+    const statusRealm = createRealm({
+      stores: racedStores,
+      clock: statusClock,
+      relay: senderRealm.relay,
+      chain,
+    });
+    const statusConnection = await statusRealm.oaath.connect();
+    const statusGrant = await statusConnection.resume();
+    if (statusGrant === null) throw new Error("expected the racing Grant to resume");
+    const statusProvider = oaathProvider({ grant: statusGrant, chain: CHAIN_ID });
+    const reading = statusProvider.request({ method: "wallet_getCallsStatus", params: [id] });
+    await terminalCasEntered;
+
+    approve("approved");
+    await quoteEntered;
+    releaseTerminalCas();
+    await expect(reading).resolves.toMatchObject({ id, status: 100 });
+    expect(approvalCasResult).toBe(true);
+    expect(terminalCasResult).toBe(false);
+    expect(base.quotes).toBe(0);
+    expect(base.signatures).toHaveLength(0);
+    expect(base.sends).toHaveLength(0);
+
+    releaseQuote();
+    await expect(sending).resolves.toEqual({ id });
+    expect(base.sends).toHaveLength(1);
+    await statusConnection.close();
+    await senderConnection.close();
+  });
+
+  it("refuses a concurrent explicit duplicate before invoking a second presenter", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    let presentations = 0;
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        presentations += 1;
+        entered();
+        return decision;
+      },
+    );
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id: "pending-confirmation-duplicate" })],
+    };
+    const otherProvider = oaathProvider({
+      grant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        presentations += 1;
+        return decision;
+      },
+    });
+
+    const first = provider.request(request);
+    await confirmationEntered;
+    await providerError(otherProvider.request(request), 5720);
+    expect(presentations).toBe(1);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+
+    approve("approved");
+    await expect(first).resolves.toEqual({ id: "pending-confirmation-duplicate" });
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("maps every thrown and malformed presenter result to internal error with zero effects", async () => {
+    let mode: "throw" | "provider-error" | "malformed" = "throw";
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        if (mode === "throw") throw new Error("private presenter channel detail");
+        if (mode === "provider-error") throw new OaathProviderRpcError(4100);
+        return "malformed" as never;
+      },
+    );
+    const port = grantProviderPort(grant);
+
+    for (const [id, next] of [
+      ["presenter-throw", "provider-error"],
+      ["presenter-provider-error", "malformed"],
+      ["presenter-malformed", "malformed"],
+    ] as const) {
+      await providerError(
+        provider.request({
+          method: "wallet_sendCalls",
+          params: [bundle(account, { id })],
+        }),
+        -32603,
+      );
+      await expect(
+        port.walletCallBundles.get({
+          providerScopeId: port.providerScopeId,
+          account,
+          id,
+        }),
+      ).resolves.toMatchObject({
+        value: { state: "terminal", terminalFrom: "confirmation_pending", operation: null },
+      });
+      await providerError(
+        provider.request({ method: "wallet_sendCalls", params: [bundle(account, { id })] }),
+        5720,
+      );
+      await expect(
+        provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+      ).resolves.toMatchObject({ id, status: 400 });
+      mode = next;
+    }
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
   it("preserves an exact app ID and safely defaults omitted values", async () => {
     const { realm, connection, provider, account } = await activeProvider();
     const id = " app-owned:\u0000/日本語/Keep-Exact ";
@@ -136,6 +540,23 @@ describe("wallet_sendCalls orchestration", () => {
     expect(result).toEqual({ id });
     expect(result.id).toBe(id);
     expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("accepts mixed-case chain digits while retaining one lowercase identity", async () => {
+    const { realm, connection, provider, account } = await activeProvider();
+    const mixedCaseChain = `0x${CHAIN_HEX.slice(2).toUpperCase()}`;
+
+    await expect(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id: "mixed-case-chain", chainId: mixedCaseChain })],
+      }),
+    ).resolves.toEqual({ id: "mixed-case-chain" });
+
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.signatures).toHaveLength(1);
     expect(realm.chain.sends).toHaveLength(1);
     await connection.close();
   });
@@ -221,14 +642,21 @@ describe("wallet_sendCalls orchestration", () => {
     await connection.close();
   });
 
-  it("returns 5710 for another chain and 4100 for another sender, then releases the ID", async () => {
+  it("refuses malformed chains, another chain, and another sender without consuming the ID", async () => {
     const { realm, connection, provider, account } = await activeProvider();
     const id = "retry-after-conclusive-refusal";
 
     await providerError(
       provider.request({
         method: "wallet_sendCalls",
-        params: [bundle(account, { id, chainId: "0x1" })],
+        params: [bundle(account, { id, chainId: "0x0A" })],
+      }),
+      -32602,
+    );
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id, chainId: "0xA" })],
       }),
       5710,
     );
@@ -240,6 +668,7 @@ describe("wallet_sendCalls orchestration", () => {
       4100,
     );
     expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
 
     await expect(
@@ -482,6 +911,7 @@ describe("wallet_getCapabilities authorization and parsing", () => {
   it("advertises atomic only for the configured requested chain", async () => {
     const { connection, provider, account } = await activeProvider();
     const uppercaseAccount = `0x${account.slice(2).toUpperCase()}`;
+    const uppercaseChain = `0x${CHAIN_HEX.slice(2).toUpperCase()}`;
 
     await expect(
       provider.request({ method: "wallet_getCapabilities", params: [uppercaseAccount] }),
@@ -490,12 +920,12 @@ describe("wallet_getCapabilities authorization and parsing", () => {
     });
     const mixed = (await provider.request({
       method: "wallet_getCapabilities",
-      params: [account, ["0x1", CHAIN_HEX]],
+      params: [account, ["0xA", uppercaseChain, CHAIN_HEX]],
     })) as Record<string, unknown>;
     expect(mixed).toEqual({ [CHAIN_HEX]: { atomic: { status: "supported" } } });
     expect(mixed).not.toHaveProperty("0x0");
     await expect(
-      provider.request({ method: "wallet_getCapabilities", params: [account, ["0x1"]] }),
+      provider.request({ method: "wallet_getCapabilities", params: [account, ["0xA"]] }),
     ).resolves.toEqual({});
     await connection.close();
   });
@@ -512,7 +942,8 @@ describe("wallet_getCapabilities authorization and parsing", () => {
       [],
       [account, ["0x0"]],
       [account, ["0x01"]],
-      [account, ["0xA"]],
+      [account, ["0x0A"]],
+      [account, ["0X1"]],
       [account, new Array(1)],
     ]) {
       await providerError(provider.request({ method: "wallet_getCapabilities", params }), -32602);
@@ -524,5 +955,40 @@ describe("wallet_getCapabilities authorization and parsing", () => {
       -32602,
     );
     await connection.close();
+  });
+
+  it("does not advertise capabilities for expired or revoked Grants", async () => {
+    const expired = await activeProvider();
+    expired.realm.clock.advance(expired.grant.expiresAt - expired.realm.clock.now());
+
+    await providerError(
+      expired.provider.request({
+        method: "wallet_getCapabilities",
+        params: [expired.account],
+      }),
+      4100,
+    );
+    expect(expired.realm.chain.quotes).toBe(0);
+    expect(expired.realm.chain.signatures).toHaveLength(0);
+    expect(expired.realm.chain.sends).toHaveLength(0);
+    await expired.connection.close();
+
+    const revoked = await activeProvider();
+    await revoked.grant.revoke();
+    const quotes = revoked.realm.chain.quotes;
+    const signatures = revoked.realm.chain.signatures.length;
+    const sends = revoked.realm.chain.sends.length;
+
+    await providerError(
+      revoked.provider.request({
+        method: "wallet_getCapabilities",
+        params: [revoked.account],
+      }),
+      4100,
+    );
+    expect(revoked.realm.chain.quotes).toBe(quotes);
+    expect(revoked.realm.chain.signatures).toHaveLength(signatures);
+    expect(revoked.realm.chain.sends).toHaveLength(sends);
+    await revoked.connection.close();
   });
 });

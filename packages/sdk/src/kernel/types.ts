@@ -14,6 +14,7 @@ import type {
   KernelV4Install,
   KernelV4UserOperationGas,
   KernelV4Validation,
+  KernelV4ValidityTimeRange,
 } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 
@@ -206,6 +207,8 @@ export interface KernelRuntimePrepareInput {
   readonly sequence: string;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
+  /** Optional signed request-time attenuation within an installed session ceiling. */
+  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
   /**
    * Defaults to `standard`. Only kernel/permission/materialize.ts prepares
    * `enable-replayable`, because only it holds the owner enable signature the

@@ -16,7 +16,12 @@ import {
 } from "@oaath/protocol";
 import { clientFail } from "./client/errors.js";
 import { grantProviderPort, type OaathGrantHandle } from "./client/grant-handle.js";
-import { createEip5792Orchestrator, type OaathCallsStatusPresenter } from "./provider/eip5792.js";
+import {
+  createEip5792Orchestrator,
+  type OaathCallsConfirmer,
+  type OaathCallsStatusPresenter,
+} from "./provider/eip5792.js";
+import { createErc7836Orchestrator } from "./provider/erc7836.js";
 import {
   INTERNAL_ERROR,
   INVALID_PARAMS,
@@ -39,6 +44,8 @@ export interface OaathProviderInput {
   readonly grant: Readonly<OaathGrantHandle>;
   /** The one chain this provider speaks for; a second chain is a second provider. */
   readonly chain: number;
+  /** Optional wallet-owned decision UI for each exactly captured EIP-5792 bundle. */
+  readonly confirmCalls?: OaathCallsConfirmer;
   /** Optional wallet-owned UI. It receives only a frozen public status value. */
   readonly showCallsStatus?: OaathCallsStatusPresenter;
 }
@@ -111,12 +118,15 @@ function captureTransaction(
 function captureProviderInput(input: unknown): Readonly<{
   grant: Readonly<OaathGrantHandle>;
   chain: number;
+  confirmCalls?: OaathCallsConfirmer;
   showCallsStatus?: OaathCallsStatusPresenter;
 }> {
   const fail = (message: string): never => clientFail("oaath_client_input_invalid", message);
   const record = captureRecord(input, "OAAth provider input", new WeakSet(), fail);
   for (const key of Object.keys(record)) {
-    if (key !== "grant" && key !== "chain" && key !== "showCallsStatus") fail("unknown field");
+    if (key !== "grant" && key !== "chain" && key !== "confirmCalls" && key !== "showCallsStatus") {
+      fail("unknown field");
+    }
   }
   if (!Object.hasOwn(record, "grant") || !Object.hasOwn(record, "chain")) {
     return fail("missing field");
@@ -129,6 +139,10 @@ function captureProviderInput(input: unknown): Readonly<{
   // This lookup, rather than a structural method check, is the proof that the
   // handle was minted by the Grant owner in this SDK instance.
   grantProviderPort(grant);
+  const confirmCalls = Object.hasOwn(record, "confirmCalls") ? record.confirmCalls : undefined;
+  if (confirmCalls !== undefined && typeof confirmCalls !== "function") {
+    return fail("confirmCalls must be a function");
+  }
   const showCallsStatus = Object.hasOwn(record, "showCallsStatus")
     ? record.showCallsStatus
     : undefined;
@@ -138,6 +152,7 @@ function captureProviderInput(input: unknown): Readonly<{
   return Object.freeze({
     grant: grant as Readonly<OaathGrantHandle>,
     chain,
+    ...(confirmCalls === undefined ? {} : { confirmCalls: confirmCalls as OaathCallsConfirmer }),
     ...(showCallsStatus === undefined
       ? {}
       : { showCallsStatus: showCallsStatus as OaathCallsStatusPresenter }),
@@ -152,9 +167,15 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
   const wallet = createEip5792Orchestrator({
     port,
     chain,
+    ...(captured.confirmCalls === undefined ? {} : { confirmCalls: captured.confirmCalls }),
     ...(captured.showCallsStatus === undefined
       ? {}
       : { showCallsStatus: captured.showCallsStatus }),
+  });
+  const preparedWallet = createErc7836Orchestrator({
+    port,
+    chain,
+    ...(captured.confirmCalls === undefined ? {} : { confirmCalls: captured.confirmCalls }),
   });
 
   async function account(): Promise<`0x${string}`> {
@@ -198,6 +219,10 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
             return await sendTransaction(request.params);
           case "wallet_sendCalls":
             return await wallet.sendCalls(request.params);
+          case "wallet_prepareCalls":
+            return await preparedWallet.prepareCalls(request.params);
+          case "wallet_sendPreparedCalls":
+            return await preparedWallet.sendPreparedCalls(request.params);
           case "wallet_getCallsStatus":
             return await wallet.getCallsStatus(request.params);
           case "wallet_showCallsStatus":

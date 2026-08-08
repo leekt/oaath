@@ -31,18 +31,23 @@ import {
   type CaptureContext,
   type ChainPermissionEvidence,
   captureDenseArray,
+  captureRecord,
   evaluateGrantPolicyCoverage,
+  exactCapturedRecord,
   type FinalizedOperation,
   type Grant,
   type GrantPolicy,
   type GrantPolicyCoverageResult,
   type GrantState,
   type GrantTransition,
+  OAATH_ISSUER_VERSION,
   type OperationIdentity,
   type OperationKind,
   type PermissionRequest,
+  parseIssuerIdentity,
   parseOperationIdentity,
 } from "@oaath/protocol";
+import { publicKeyToAddress } from "viem/accounts";
 import {
   diagnoseKernelCapability,
   type KernelCapability,
@@ -53,7 +58,12 @@ import { sameInstall } from "../kernel/internal.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
-import type { KernelPolicyProfile, KernelRuntime, KeyProfile } from "../kernel/types.js";
+import type {
+  KernelPolicyProfile,
+  KernelRuntime,
+  KernelRuntimePrepareInput,
+  KeyProfile,
+} from "../kernel/types.js";
 import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
@@ -62,6 +72,7 @@ import {
   type KernelV4AccountReadCapability,
   type KernelV4Call,
   type KernelV4UserOperationGas,
+  type KernelV4ValidityTimeRange,
   kernelV4Deployment,
 } from "../kernel-v4.js";
 import {
@@ -76,11 +87,31 @@ import {
   type OperationStartResult,
   type OperationSubmissionSession,
 } from "../operation-runner.js";
-import { deriveOperationId, type PreparedUserOperation } from "../prepared-user-operation.js";
+import {
+  deriveOperationId,
+  type PreparedPaymaster,
+  type PreparedUserOperation,
+} from "../prepared-user-operation.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
+import {
+  createErc7677SponsorshipCapability,
+  type Erc7677GasEstimator,
+  type Erc7677RegisteredPaymasterService,
+  readCompletedErc7677ResultCapabilities,
+} from "../provider/erc7677.js";
+import {
+  captureErc7902StaticPaymasterConfiguration,
+  hashCapturedErc7902PreparedPaymaster,
+} from "../provider/erc7902.js";
+import type { PreparedCallStore } from "../provider/prepared-call-store.js";
+import type { OaathWalletCallResultCapabilities } from "../provider/result-capabilities.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import { feePayerDescriptor, type OaathSessionCoverage } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
+import {
+  type OaathKernelSponsorshipCapability,
+  prepareSponsoredKernelOperation,
+} from "../routing/sponsorship.js";
 import type {
   OaathExecutionDecision,
   OaathExecutionRoute,
@@ -96,7 +127,13 @@ import {
   type OperationStoreRecord,
 } from "../store.js";
 import type { OaathBinding } from "./binding.js";
-import { clientCapability, clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
+import {
+  clientCapability,
+  clientFail,
+  exactClientRecord,
+  mapClientFailure,
+  OaathClientError,
+} from "./errors.js";
 import {
   createOperationHandle,
   type OaathOperationHandle,
@@ -107,16 +144,41 @@ const SUBMISSION_TIMEOUT_MS = 30_000;
 const MAX_CALLS = 64;
 const USER_OPERATION_HASH = /^0x[0-9a-f]{64}$/u;
 const PROVIDER_ACCOUNT = /^0x[0-9a-f]{40}$/u;
+const DECIMAL_UINT48 = /^(?:0|[1-9][0-9]{0,14})$/u;
+const MAX_UINT48 = (1n << 48n) - 1n;
 
 export type OaathProviderOperationPointer = Readonly<{
   identity: Readonly<OperationIdentity>;
 }>;
 
+export interface OaathProviderOperationReservation {
+  readonly operation: OaathProviderOperationPointer;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
+}
+
 export interface OaathProviderOperationPublication {
-  readonly reserve: (operation: OaathProviderOperationPointer) => Promise<void>;
+  readonly reserve: (reservation: Readonly<OaathProviderOperationReservation>) => Promise<void>;
   readonly confirm: (operation: OaathProviderOperationPointer) => Promise<void>;
   readonly abandon: (operation: OaathProviderOperationPointer) => Promise<void>;
 }
+
+/**
+ * One handle-local, one-use proof that the requested range is enforceable by
+ * the exact OAAth validity policy on the action chain. Structural lookalikes
+ * carry no authority; the issuing Grant port retains the only membership map.
+ */
+export interface OaathProviderValidityAdmission {
+  readonly kind: "oaath_provider_validity_admission";
+}
+
+export type OaathProviderValidityAdmissionResult =
+  | Readonly<{ status: "accepted"; admission: Readonly<OaathProviderValidityAdmission> }>
+  | Readonly<{ status: "unsupported" }>;
+
+/** Read-only proof result used only to project current provider support. */
+export type OaathProviderValidityTimeRangeSupportResult =
+  | Readonly<{ status: "supported" }>
+  | Readonly<{ status: "unsupported" }>;
 
 function sameProviderOperationPointer(
   left: OaathProviderOperationPointer,
@@ -148,6 +210,53 @@ export interface OaathSendCallsInput {
   readonly calls: readonly Readonly<OaathCallInput>[];
 }
 
+/** OAAth's explicit experimental ERC-7836 external-key profile. */
+export interface OaathExternalPreparedCallKey {
+  readonly type: "secp256k1" | "webauthn-p256";
+  readonly publicKey: `0x${string}`;
+  readonly prehash: false;
+}
+
+/** Ephemeral provider selection; only the final prepared paymaster is durable. */
+export type OaathExternalPreparedCallPaymasterSelection = Readonly<{
+  readonly kind: "erc7677";
+  readonly url: string;
+  readonly context: unknown;
+}> | null;
+
+/** Exact preparation facts persisted by the prepared-call context owner. */
+export interface OaathExternalPreparedCallPlan {
+  readonly grantId: string;
+  readonly account: `0x${string}`;
+  readonly chainId: number;
+  readonly calls: readonly Readonly<OaathCallInput>[];
+  readonly key: Readonly<OaathExternalPreparedCallKey>;
+  readonly custody: Readonly<{
+    mode: "frontend" | "application_backend";
+    providerId: string | null;
+  }>;
+  readonly materialization: Readonly<{
+    mode: "standard" | "enable-replayable";
+    permissionId: `0x${string}`;
+  }>;
+  readonly quote: Readonly<{ nonceKey: string; sequence: string }>;
+  readonly decision: Readonly<{
+    route: "bundler" | "direct";
+    feePayer: Readonly<OaathFeePayerDescriptor> | null;
+  }>;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
+  readonly prepared: Readonly<PreparedUserOperation>;
+  /** Exact applied request range, or null when preparation retained the Grant ceiling. */
+  readonly validityTimeRange: Readonly<KernelV4ValidityTimeRange> | null;
+  /** Exclusive bound imposed by the Grant owner or the shorter context lifetime. */
+  readonly expiresAt: number;
+}
+
+/** An in-memory, locally verified capability; its signature is never persisted. */
+export interface OaathValidatedPreparedCalls {
+  readonly plan: Readonly<OaathExternalPreparedCallPlan>;
+}
+
 /** The exact snapshot a submission transport receives. It replaces nothing. */
 export interface OaathSubmissionRequest {
   readonly prepared: Readonly<PreparedUserOperation>;
@@ -171,11 +280,25 @@ export interface OaathQuoteRequest {
   readonly signer: OaathExecutionSigner;
   readonly account: `0x${string}`;
   readonly calls: readonly Readonly<KernelV4Call>[];
+  /** Exact static sponsorship selected before quoting, or null. */
+  readonly paymaster: Readonly<PreparedPaymaster> | null;
 }
 
 /** Nonce sequence and gas are deployment facts; the SDK never invents them. */
 export interface OaathQuoteCapability {
   readonly quote: (request: Readonly<OaathQuoteRequest>) => Promise<unknown>;
+}
+
+/**
+ * One deployment-owned ERC-7677 service and bundler estimator. These are
+ * explicit external-service capabilities: the deployment must hard-bound
+ * their time and request budget and must not retry. OAAth invokes each stage
+ * at most once for one preparation.
+ */
+export interface OaathRegisteredPaymasterService {
+  readonly url: string;
+  readonly request: Erc7677RegisteredPaymasterService["request"];
+  readonly estimate: Erc7677GasEstimator["estimate"];
 }
 
 export interface OaathChainCapability {
@@ -193,6 +316,10 @@ export interface OaathChainCapability {
     | ((request: Readonly<{ grantId: string; chainId: number }>) => Promise<unknown>)
     | null;
   readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
+  /** Null means this chain does not advertise ERC-7677. */
+  readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
+  /** Authenticated commitment to one exact ERC-7902 static paymaster, or null. */
+  readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
 /** Proves the replayable approval capability can no longer authorize anything. */
@@ -222,10 +349,43 @@ export interface OaathGrantProviderPort {
   readonly providerScopeId: string;
   readonly grantId: string;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly now: () => number;
   readonly account: OaathGrantHandle["account"];
+  readonly authorizedAccount: OaathGrantHandle["account"];
+  readonly registeredPaymasterServiceUrl: (chain: number) => string | null;
+  readonly staticPaymasterConfigurationHash: (chain: number) => `0x${string}` | null;
+  readonly probeValidityTimeRangeSupport: (
+    chain: number,
+  ) => Promise<Readonly<OaathProviderValidityTimeRangeSupportResult>>;
+  readonly admitValidityTimeRange: (
+    input: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ) => Promise<Readonly<OaathProviderValidityAdmissionResult>>;
   readonly startCalls: (
     input: unknown,
+    publication: OaathProviderOperationPublication,
+  ) => Promise<Readonly<OaathOperationHandle>>;
+  readonly prepareCalls: (
+    input: Readonly<{
+      chain: number;
+      calls: readonly Readonly<OaathCallInput>[];
+      key: Readonly<OaathExternalPreparedCallKey>;
+      paymaster: OaathExternalPreparedCallPaymasterSelection;
+      validityAdmission?: Readonly<OaathProviderValidityAdmission>;
+    }>,
+  ) => Promise<Readonly<OaathExternalPreparedCallPlan>>;
+  readonly validatePreparedCalls: (
+    input: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ) => Promise<Readonly<OaathValidatedPreparedCalls>>;
+  readonly startPreparedCalls: (
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
     publication: OaathProviderOperationPublication,
   ) => Promise<Readonly<OaathOperationHandle>>;
   readonly recoverOperation: (input: unknown) => Promise<Readonly<OaathProviderOperationRecovery>>;
@@ -266,6 +426,7 @@ export interface CreateGrantHandleInput {
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
+  readonly preparedCallContexts: PreparedCallStore;
   readonly chains: ReadonlyMap<number, Readonly<OaathChainCapability>>;
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
@@ -290,6 +451,8 @@ const CHAIN_KEYS: readonly string[] = Object.freeze([
   "quote",
   "usage",
   "feePayer",
+  "paymasterService",
+  "staticPaymasterConfigurationHash",
 ]);
 
 function unsupported(source: string): never {
@@ -337,6 +500,47 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return clientFail("oaath_client_capability_invalid", "chain capability chainId is invalid");
   }
+  let paymasterService: Readonly<OaathRegisteredPaymasterService> | null = null;
+  if (record.paymasterService !== null) {
+    const service = exactClientRecord(
+      record.paymasterService,
+      ["url", "request", "estimate"],
+      "registered paymaster service",
+      context,
+      "oaath_client_capability_invalid",
+    );
+    let url: string;
+    try {
+      url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: service.url }).url;
+    } catch {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "registered paymaster service URL is invalid",
+      );
+    }
+    paymasterService = Object.freeze({
+      url,
+      request: clientCapability<Erc7677RegisteredPaymasterService["request"]>(
+        service.request,
+        "registered paymaster request",
+      ),
+      estimate: clientCapability<Erc7677GasEstimator["estimate"]>(
+        service.estimate,
+        "registered paymaster estimate",
+      ),
+    });
+  }
+  const staticPaymasterConfigurationHash = record.staticPaymasterConfigurationHash;
+  if (
+    staticPaymasterConfigurationHash !== null &&
+    (typeof staticPaymasterConfigurationHash !== "string" ||
+      !USER_OPERATION_HASH.test(staticPaymasterConfigurationHash))
+  ) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "static paymaster configuration commitment is invalid",
+    );
+  }
   return Object.freeze({
     chainId,
     reads: capabilityObject<KernelV4AccountReadCapability>(
@@ -372,6 +576,8 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
     feePayer: feePayerDescriptor(record.feePayer, context, (message) =>
       clientFail("oaath_client_capability_invalid", message),
     ),
+    paymasterService,
+    staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,
   });
 }
 
@@ -455,6 +661,61 @@ function captureProviderPublication(value: unknown): Readonly<OaathProviderOpera
       record.abandon,
       "provider operation abandonment",
     ),
+  });
+}
+
+function captureProviderValidityAdmissionInput(value: unknown): Readonly<{
+  chain: number;
+  range: Readonly<KernelV4ValidityTimeRange>;
+}> {
+  const context: CaptureContext = new WeakSet();
+  const record = exactClientRecord(
+    value,
+    ["chain", "range"],
+    "provider validity admission",
+    context,
+    "oaath_client_capability_invalid",
+  );
+  if (typeof record.chain !== "number" || !Number.isSafeInteger(record.chain) || record.chain < 1) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider validity admission chain is invalid",
+    );
+  }
+  const range = exactClientRecord(
+    record.range,
+    ["validAfter", "validUntil"],
+    "provider validity range",
+    context,
+    "oaath_client_capability_invalid",
+  );
+  if (
+    typeof range.validAfter !== "string" ||
+    !DECIMAL_UINT48.test(range.validAfter) ||
+    typeof range.validUntil !== "string" ||
+    !DECIMAL_UINT48.test(range.validUntil)
+  ) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider validity range endpoints are invalid",
+    );
+  }
+  const validAfter = BigInt(range.validAfter);
+  const validUntil = BigInt(range.validUntil);
+  if (
+    validAfter > MAX_UINT48 ||
+    validUntil > MAX_UINT48 ||
+    validUntil === 0n ||
+    validAfter >= validUntil
+  ) {
+    return clientFail("oaath_client_capability_invalid", "provider validity range is invalid");
+  }
+  return Object.freeze({
+    chain: record.chain,
+    range: Object.freeze({
+      validAfter: validAfter.toString(10),
+      validUntil: validUntil.toString(10),
+    }),
   });
 }
 
@@ -565,6 +826,13 @@ function captureSubmissionSession(value: unknown): Readonly<OperationSubmissionS
 export function createGrantHandle(
   input: Readonly<CreateGrantHandleInput>,
 ): Readonly<OaathGrantHandle> {
+  interface ValidityAdmissionEvidence {
+    readonly chainId: number;
+    readonly range: Readonly<KernelV4ValidityTimeRange>;
+    readonly runtime: Readonly<KernelRuntime>;
+    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+  }
+
   let record = input.record;
   let closed = false;
   let closeRequested = false;
@@ -577,6 +845,18 @@ export function createGrantHandle(
   const activityWaiters = new Set<() => void>();
   const observers = new Map<number, OperationObserver>();
   const handles = new Set<Readonly<OaathOperationHandle>>();
+  const validatedPreparedCalls = new WeakMap<
+    object,
+    Readonly<{
+      shape: Readonly<ExecutionShape>;
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>
+  >();
+  const validityAdmissions = new WeakMap<object, Readonly<ValidityAdmissionEvidence>>();
+  const unsupportedValidityAdmission = Object.freeze({ status: "unsupported" as const });
+  const supportedValidityTimeRange = Object.freeze({ status: "supported" as const });
+  const unsupportedValidityTimeRange = Object.freeze({ status: "unsupported" as const });
 
   function assertOpen(): void {
     if (closed || closeRequested) clientFail("oaath_client_closed", "Grant handle is closed");
@@ -753,12 +1033,18 @@ export function createGrantHandle(
    * account state observed at bind time, so reusing one after the account's first
    * operation deployed it would carry stale factory evidence.
    */
-  async function accountDescriptor(chainId: number): Promise<Readonly<KernelV4AccountDescriptor>> {
-    const runtime = ownerRuntime(chainId);
+  async function accountDescriptor(
+    chainId: number,
+    bindingRuntime?: Readonly<KernelRuntime>,
+  ): Promise<Readonly<KernelV4AccountDescriptor>> {
+    const owner = ownerRuntime(chainId);
+    const runtime = bindingRuntime ?? owner;
     try {
       return await runtime.bindAccount({
         accountIndex: input.binding.account.accountIndex,
-        initialPackages: [...runtime.packages],
+        // Account identity always comes from the owner; a session runtime only
+        // performs the bind so its signer and exact policy runtime are proven.
+        initialPackages: [...owner.packages],
       });
     } catch (error) {
       return mapClientFailure(error, "Kernel account could not be bound");
@@ -824,6 +1110,297 @@ export function createGrantHandle(
     }
   }
 
+  interface ExecutionShape {
+    readonly chainId: number;
+    readonly chain: Readonly<OaathChainCapability>;
+    readonly runtime: Readonly<KernelRuntime>;
+    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+    readonly calls: readonly Readonly<KernelV4Call>[];
+    readonly mode: "standard" | "enable-replayable";
+    readonly decision: Readonly<OaathExecutionDecision>;
+    readonly binding: Readonly<{
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+    }>;
+    readonly grantId: string;
+    readonly grantExpiresAt: number;
+    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+  }
+
+  async function resolveExecutionShape(
+    chainId: number,
+    calls: readonly Readonly<KernelV4Call>[],
+    validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
+  ): Promise<Readonly<ExecutionShape>> {
+    const grantSnapshot = await requireActive();
+    const grant = grantSnapshot.value;
+    const chain = chainCapability(chainId);
+    const deployment = (() => {
+      try {
+        return kernelV4Deployment(chainId);
+      } catch (error) {
+        return mapClientFailure(error, "chain is not a supported Kernel deployment");
+      }
+    })();
+
+    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
+    const coverage = await sessionCoverage(grant, chainId, calls);
+    if (coverage !== "covered") {
+      return clientFail(
+        "oaath_client_scope_denied",
+        coverage === "uncovered"
+          ? "the calls are outside the approved Grant scope"
+          : "Grant scope coverage could not be conclusively evaluated",
+        coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
+      );
+    }
+    const bundler = await probeBundlerCapability({
+      capability: chain.bundler,
+      request: { chainId, entryPoint: deployment.entryPoint.address },
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
+    const decision = decideExecution({
+      operationKind: "execution",
+      sessionCoverage: coverage,
+      bundler,
+      feePayer: chain.feePayer,
+    });
+    if (decision.route === "none") {
+      return clientFail(
+        "oaath_client_route_unavailable",
+        "no safe submission route is available",
+        decision.reasons.join(","),
+      );
+    }
+    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
+    requireKernelCapability(chainId, "hook_call");
+    const runtime = validityAdmission?.runtime ?? sessionRuntime(chainId);
+    const descriptor = validityAdmission?.descriptor ?? (await accountDescriptor(chainId, runtime));
+    requireExecutionPublication();
+    let publicationSnapshot = await requireActive();
+    requireExecutionPublication();
+    if (publicationSnapshot.storeRevision !== grantSnapshot.storeRevision) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the Grant advanced before operation publication",
+        "grant_store_conflict",
+      );
+    }
+    let publicationGrant = publicationSnapshot.value;
+    if (runtime.validation.kind !== "permission") {
+      return unsupported("session_validation_not_permission");
+    }
+    const binding = Object.freeze({
+      chainId,
+      account: descriptor.account,
+      permissionId: runtime.validation.permissionId,
+    });
+    let materialization = publicationGrant.materializations.find(
+      (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+    );
+    if (materialization?.state === "installing") {
+      publicationSnapshot = await reconcileInstallingMaterialization(
+        publicationSnapshot,
+        binding,
+        materialization.operationId,
+      );
+      publicationGrant = publicationSnapshot.value;
+      materialization = publicationGrant.materializations.find(
+        (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+      );
+    }
+    let mode: "standard" | "enable-replayable" = "standard";
+    let latest = publicationSnapshot;
+    if (materialization === undefined || materialization.state === "unmaterialized") {
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+      if (materialization === undefined) {
+        latest = await commit(
+          latest,
+          transition(latest.value, {
+            type: "record_unmaterialized",
+            identity: latest.value.identity,
+            binding,
+            recordedAt: input.now(),
+          }),
+        );
+        publicationGrant = latest.value;
+      }
+    } else if (materialization.state === "installing") {
+      if (input.installApproval === null) {
+        return unsupported("grant_capability_unavailable");
+      }
+      mode = "enable-replayable";
+    } else if (materialization.state !== "installed") {
+      return unsupported(`grant_materialization_${materialization.state}`);
+    }
+
+    return Object.freeze({
+      chainId,
+      chain,
+      runtime,
+      descriptor,
+      calls,
+      mode,
+      decision,
+      binding,
+      grantId: publicationGrant.identity.grantId,
+      grantExpiresAt: publicationGrant.expiresAt,
+      ...(validityAdmission === null ? {} : { validityTimeRange: validityAdmission.range }),
+    });
+  }
+
+  function requireBoundEnableApproval(
+    runtime: Readonly<KernelRuntime>,
+    account: `0x${string}`,
+    approval: Readonly<KernelAllChainApproval> | null,
+  ): Readonly<KernelAllChainApproval> {
+    if (approval === null) return unsupported("grant_capability_unavailable");
+    const packages = captureKernelV4Installs(runtime.packages);
+    if (
+      approval.account !== account ||
+      approval.packages.length !== packages.length ||
+      !packages.every((install, index) => {
+        const approved = approval.packages[index];
+        return approved !== undefined && sameInstall(install, approved);
+      })
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the install approval does not bind this permission runtime",
+        "kernel_runtime_binding_mismatch",
+      );
+    }
+    return approval;
+  }
+
+  function requireEnableApproval(
+    shape: Readonly<ExecutionShape>,
+  ): Readonly<KernelAllChainApproval> {
+    return requireBoundEnableApproval(
+      shape.runtime,
+      shape.descriptor.account,
+      input.installApproval,
+    );
+  }
+
+  function enableSimulationSignature(
+    runtime: Readonly<KernelRuntime>,
+    account: `0x${string}`,
+    approval: Readonly<KernelAllChainApproval> | null,
+  ): `0x${string}` {
+    const retained = requireBoundEnableApproval(runtime, account, approval);
+    return encodeKernelV4EnableSignature({
+      nonce: retained.installNonce,
+      packages: retained.packages,
+      enableSignature: retained.enableSignature,
+      userOperationSignature: runtime.dummySignature,
+    });
+  }
+
+  type PreparedCallPaymasterSource =
+    | Readonly<{
+        kind: "resolve-erc7677";
+        sponsorship: Readonly<OaathKernelSponsorshipCapability>;
+        resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
+      }>
+    | Readonly<{ kind: "retained"; paymaster: Readonly<PreparedPaymaster> }>
+    | null;
+
+  async function prepareExecutionShape(
+    shape: Readonly<ExecutionShape>,
+    options: Readonly<{
+      gas?: Readonly<KernelV4UserOperationGas>;
+      paymaster?: PreparedCallPaymasterSource;
+    }> = {},
+  ): Promise<
+    Readonly<{
+      prepared: Readonly<PreparedUserOperation>;
+      quote: Readonly<{ nonceKey: string; sequence: string }>;
+      resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
+    }>
+  > {
+    const quote = quoteFields(
+      await shape.chain.quote({
+        chainId: shape.chainId,
+        kind: "execution",
+        signer: "session",
+        account: shape.descriptor.account,
+        calls: shape.calls,
+        paymaster: null,
+      }),
+    );
+    const fields = {
+      grantId: shape.grantId,
+      account: shape.descriptor,
+      nonceKey: quote.nonceKey,
+      sequence: quote.sequence,
+      calls: [...shape.calls],
+      gas: options.gas ?? quote.gas,
+      paymaster: options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null,
+      ...(shape.validityTimeRange === undefined
+        ? {}
+        : { validityTimeRange: shape.validityTimeRange }),
+    };
+    let operation: KernelRuntimePrepareInput;
+    let simulationSignature = shape.runtime.dummySignature;
+    if (shape.mode === "enable-replayable") {
+      simulationSignature = enableSimulationSignature(
+        shape.runtime,
+        shape.descriptor.account,
+        input.installApproval,
+      );
+      operation = {
+        ...fields,
+        kind: "execution",
+        mode: "enable-replayable",
+      };
+    } else {
+      operation = { kind: "execution", ...fields };
+    }
+    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
+    const prepared =
+      options.paymaster?.kind === "resolve-erc7677"
+        ? await prepareSponsoredKernelOperation({
+            runtime: shape.runtime,
+            operation,
+            simulationSignature,
+            sponsorship: options.paymaster.sponsorship,
+          })
+        : shape.runtime.prepareOperation(operation);
+    if (options.paymaster?.kind === "resolve-erc7677") {
+      resultCapabilities = options.paymaster.resultCapabilities();
+    }
+    return Object.freeze({
+      prepared,
+      quote: Object.freeze({ nonceKey: quote.nonceKey, sequence: quote.sequence }),
+      resultCapabilities,
+    });
+  }
+
+  async function finalExternalSignature(
+    shape: Readonly<ExecutionShape>,
+    prepared: Readonly<PreparedUserOperation>,
+    signature: `0x${string}`,
+  ): Promise<`0x${string}`> {
+    try {
+      const inner = await shape.runtime.encodeVerifiedSignature(prepared, signature);
+      if (shape.mode !== "enable-replayable") return inner;
+      const approval = requireEnableApproval(shape);
+      return encodeKernelV4EnableSignature({
+        nonce: approval.installNonce,
+        packages: approval.packages,
+        enableSignature: approval.enableSignature,
+        userOperationSignature: inner,
+      });
+    } catch (error) {
+      return mapClientFailure(error, "prepared-call signature could not be verified");
+    }
+  }
+
   function runner(spec: {
     readonly chainId: number;
     readonly kind: OperationKind;
@@ -844,13 +1421,27 @@ export function createGrantHandle(
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
     readonly requestHash: `0x${string}` | null;
+    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
     readonly publication?: Readonly<OaathProviderOperationPublication>;
     readonly authorizeOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly abandonOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
+    readonly prepared?: Readonly<PreparedUserOperation>;
+    /** Display-only facts retained with an already prepared operation. */
+    readonly preparedResultCapabilities?: Readonly<OaathWalletCallResultCapabilities> | null;
+    /** Already locally verified and fully wrapped; retained in memory only. */
+    readonly externalSignature?: `0x${string}`;
+    /** Present only while one final sponsored identity is being prepared. */
+    readonly sponsorship?: Readonly<OaathKernelSponsorshipCapability>;
+    /** Display-only result facts available after that sponsorship completed. */
+    readonly sponsorshipResultCapabilities?: () => Readonly<OaathWalletCallResultCapabilities> | null;
+    /** Present only for one authenticated ERC-7902 static configuration. */
+    readonly staticPaymaster?: Readonly<PreparedPaymaster>;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
     let reservedOperation: OaathProviderOperationPointer | null = null;
+    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null =
+      spec.preparedResultCapabilities ?? null;
     let publicationConfirmed = false;
     try {
       return createOperationRunner({
@@ -866,6 +1457,7 @@ export function createGrantHandle(
         },
         preparation: {
           prepare: async () => {
+            if (spec.prepared !== undefined) return spec.prepared;
             const quote = quoteFields(
               await chain.quote({
                 chainId: spec.chainId,
@@ -873,6 +1465,7 @@ export function createGrantHandle(
                 signer: spec.signer,
                 account: spec.descriptor.account,
                 calls: spec.calls,
+                paymaster: spec.staticPaymaster ?? null,
               }),
             );
             const fields = {
@@ -882,34 +1475,37 @@ export function createGrantHandle(
               sequence: quote.sequence,
               calls: [...spec.calls],
               gas: quote.gas,
+              paymaster: spec.staticPaymaster ?? null,
+              ...(spec.validityTimeRange === undefined
+                ? {}
+                : { validityTimeRange: spec.validityTimeRange }),
             };
-            let prepared: PreparedUserOperation;
+            let operation: KernelRuntimePrepareInput;
+            let simulationSignature = spec.runtime.dummySignature;
             if (spec.mode === "enable-replayable") {
-              const approval = spec.installApproval;
-              if (approval === null) return unsupported("grant_capability_unavailable");
-              const packages = captureKernelV4Installs(spec.runtime.packages);
-              if (
-                approval.account !== spec.descriptor.account ||
-                approval.packages.length !== packages.length ||
-                !packages.every((install, index) => {
-                  const approved = approval.packages[index];
-                  return approved !== undefined && sameInstall(install, approved);
-                })
-              ) {
-                return clientFail(
-                  "oaath_client_state_conflict",
-                  "the install approval does not bind this permission runtime",
-                  "kernel_runtime_binding_mismatch",
-                );
-              }
-              prepared = spec.runtime.prepareOperation({
+              operation = {
                 ...fields,
                 kind: spec.kind,
                 mode: "enable-replayable",
-              });
+              };
+              simulationSignature = enableSimulationSignature(
+                spec.runtime,
+                spec.descriptor.account,
+                spec.installApproval,
+              );
             } else {
-              prepared = spec.runtime.prepareOperation({ kind: spec.kind, ...fields });
+              operation = { kind: spec.kind, ...fields };
             }
+            if (spec.sponsorship === undefined) {
+              return spec.runtime.prepareOperation(operation);
+            }
+            const prepared = await prepareSponsoredKernelOperation({
+              runtime: spec.runtime,
+              operation,
+              simulationSignature,
+              sponsorship: spec.sponsorship,
+            });
+            resultCapabilities = spec.sponsorshipResultCapabilities?.() ?? null;
             return prepared;
           },
           reserveOperation: async (prepared: PreparedUserOperation) => {
@@ -922,7 +1518,7 @@ export function createGrantHandle(
             }
             const identity = deriveOperationId(prepared, spec.requestHash);
             const exact: OaathProviderOperationPointer = Object.freeze({ identity });
-            await spec.publication.reserve(exact);
+            await spec.publication.reserve(Object.freeze({ operation: exact, resultCapabilities }));
             reservedOperation = exact;
           },
           releaseOperationReservation: async (prepared: PreparedUserOperation) => {
@@ -991,16 +1587,19 @@ export function createGrantHandle(
             // enable envelope is minted here, after provider binding and the
             // runner's durable submission-attempt transition, for this exact
             // snapshot and nothing else.
-            const userOperationSignature = await spec.runtime.signOperation(prepared);
-            let signature = userOperationSignature;
-            if (spec.mode === "enable-replayable") {
+            let signature = spec.externalSignature;
+            if (signature === undefined) {
+              const userOperationSignature = await spec.runtime.signOperation(prepared);
+              signature = userOperationSignature;
+            }
+            if (spec.externalSignature === undefined && spec.mode === "enable-replayable") {
               const approval = spec.installApproval;
               if (approval === null) return unsupported("grant_capability_unavailable");
               signature = encodeKernelV4EnableSignature({
                 nonce: approval.installNonce,
                 packages: approval.packages,
                 enableSignature: approval.enableSignature,
-                userOperationSignature,
+                userOperationSignature: signature,
               });
             }
             return captureSubmissionSession(
@@ -1275,6 +1874,28 @@ export function createGrantHandle(
     }
   }
 
+  async function resumePreparedOnce(
+    created: ReturnType<typeof createOperationRunner>,
+    key: Readonly<OperationStoreKey>,
+    expectedUserOperationHash: `0x${string}`,
+  ): Promise<OperationStartResult> {
+    const at = input.now();
+    try {
+      return await created.resumePreparedOperation({
+        kind: "execution",
+        key,
+        preparedAt: at,
+        attemptedAt: at,
+        submittedAt: at,
+        observedAt: at,
+        timeoutMs: SUBMISSION_TIMEOUT_MS,
+        expectedUserOperationHash,
+      });
+    } catch (error) {
+      return mapClientFailure(error, "prepared operation resume failed");
+    }
+  }
+
   async function recordFinalizedMaterialization(
     binding: Readonly<{
       chainId: number;
@@ -1414,56 +2035,90 @@ export function createGrantHandle(
     operation: OaathProviderOperationPointer,
   ): Promise<void> {
     const operationId = requireMaterializationOperation(binding, operation);
-    requireExecutionPublication();
-    const snapshot = await requireActive();
-    const current = snapshot.value.materializations.find(
-      (entry) => entry.chainId === binding.chainId && entry.state !== "unsupported",
-    );
-    if (
-      !current ||
-      current.state === "unsupported" ||
-      current.account !== binding.account ||
-      current.permissionId !== binding.permissionId
-    ) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant materialization binding changed before signing",
-        "grant_materialization_binding_mismatch",
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      requireExecutionPublication();
+      const snapshot = await requireActive();
+      const current = snapshot.value.materializations.find(
+        (entry) => entry.chainId === binding.chainId && entry.state !== "unsupported",
       );
-    }
-
-    if (mode === "enable-replayable") {
-      if (current.state === "unmaterialized") {
-        await commit(
-          snapshot,
-          transition(snapshot.value, {
-            type: "begin_materialization",
-            identity: snapshot.value.identity,
-            binding,
-            operationId,
-            startedAt: input.now(),
-          }),
-        );
-        return;
-      }
-      if (current.state !== "installing" || current.operationId !== operationId) {
+      if (
+        !current ||
+        current.state === "unsupported" ||
+        current.account !== binding.account ||
+        current.permissionId !== binding.permissionId
+      ) {
         return clientFail(
           "oaath_client_state_conflict",
-          "another operation owns Grant materialization",
-          "grant_materialization_operation_mismatch",
+          "the Grant materialization binding changed before signing",
+          "grant_materialization_binding_mismatch",
         );
       }
-    } else if (current.state !== "installed") {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant permission is not installed",
-        "grant_materialization_not_installed",
-      );
-    }
 
-    // Even when the aggregate value is unchanged, this CAS is the durable
-    // admission linearization point against another handle beginning revocation.
-    await commit(snapshot, snapshot.value);
+      if (mode === "enable-replayable") {
+        if (current.state === "installing" && current.operationId === operationId) {
+          // Another exact producer already admitted this same operation. Its
+          // begin-materialization CAS is the shared linearization point.
+          return;
+        }
+        if (current.state !== "unmaterialized") {
+          return clientFail(
+            "oaath_client_state_conflict",
+            "another operation owns Grant materialization",
+            "grant_materialization_operation_mismatch",
+          );
+        }
+        try {
+          await commit(
+            snapshot,
+            transition(snapshot.value, {
+              type: "begin_materialization",
+              identity: snapshot.value.identity,
+              binding,
+              operationId,
+              startedAt: input.now(),
+            }),
+          );
+          return;
+        } catch (error) {
+          if (
+            error instanceof OaathClientError &&
+            error.source === "grant_store_conflict" &&
+            attempt < 2
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (current.state !== "installed") {
+        return clientFail(
+          "oaath_client_state_conflict",
+          "the Grant permission is not installed",
+          "grant_materialization_not_installed",
+        );
+      }
+      // Even when the aggregate value is unchanged, this CAS is the durable
+      // admission linearization point against another handle beginning revocation.
+      try {
+        await commit(snapshot, snapshot.value);
+        return;
+      } catch (error) {
+        if (
+          error instanceof OaathClientError &&
+          error.source === "grant_store_conflict" &&
+          attempt < 2
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    return clientFail(
+      "oaath_client_state_conflict",
+      "the Grant could not admit the exact operation",
+      "grant_store_conflict",
+    );
   }
 
   function materializationReleaseTime(grant: Grant): number {
@@ -1636,6 +2291,15 @@ export function createGrantHandle(
     action: "run" | "start",
     requestHash: `0x${string}` | null,
     publication?: Readonly<OaathProviderOperationPublication>,
+    paymaster: Readonly<
+      | {
+          readonly kind: "erc7677";
+          readonly sponsorship: OaathKernelSponsorshipCapability;
+          readonly resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
+        }
+      | { readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }
+    > | null = null,
+    validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -1644,149 +2308,39 @@ export function createGrantHandle(
       return clientFail("oaath_client_input_invalid", "sendCalls chain is invalid");
     }
     const calls = captureCalls(request.calls, context);
-    const grantSnapshot = await requireActive();
-    const grant = grantSnapshot.value;
-    const chain = chainCapability(chainId);
-    const deployment = (() => {
-      try {
-        return kernelV4Deployment(chainId);
-      } catch (error) {
-        return mapClientFailure(error, "chain is not a supported Kernel deployment");
-      }
-    })();
-
-    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
-    const coverage = await sessionCoverage(grant, chainId, calls);
-    // A Grant may authorize at most the owner-approved scope. Denial happens
-    // here — before the bundler probe, the quote, the durable journal, any
-    // signature, and any send — and it is conclusive: unreadable or missing
-    // usage evidence is not coverage.
-    if (coverage !== "covered") {
+    const resolved = await resolveExecutionShape(chainId, calls, validityAdmission);
+    if (paymaster !== null && resolved.decision.route !== "bundler") {
       return clientFail(
-        "oaath_client_scope_denied",
-        coverage === "uncovered"
-          ? "the calls are outside the approved Grant scope"
-          : "Grant scope coverage could not be conclusively evaluated",
-        coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
+        "oaath_client_capability_unsupported",
+        "paymaster sponsorship requires the bundler route",
+        `${paymaster.kind}_bundler_unavailable`,
       );
     }
-    const bundler = await probeBundlerCapability({
-      capability: chain.bundler,
-      request: { chainId, entryPoint: deployment.entryPoint.address },
-      timeoutMs: SUBMISSION_TIMEOUT_MS,
-    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
-    const decision = decideExecution({
-      operationKind: "execution",
-      sessionCoverage: coverage,
-      bundler,
-      feePayer: chain.feePayer,
-    });
-    if (decision.route === "none") {
-      return clientFail(
-        "oaath_client_route_unavailable",
-        "no safe submission route is available",
-        decision.reasons.join(","),
-      );
-    }
-    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
-    requireKernelCapability(chainId, "hook_call");
-    // Coverage was proven above and the decision table maps covered execution
-    // to the session signer, so this handle never composes owner authority for
-    // a send. `ownerRuntime` remains only for account identity binding.
-    const runtime = sessionRuntime(chainId);
-    const descriptor = await accountDescriptor(chainId);
-    requireExecutionPublication();
-    let publicationSnapshot = await requireActive();
-    requireExecutionPublication();
-    if (publicationSnapshot.storeRevision !== grantSnapshot.storeRevision) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the Grant advanced before operation publication",
-        "grant_store_conflict",
-      );
-    }
-    let publicationGrant = publicationSnapshot.value;
     const key = Object.freeze({
-      grantId: publicationGrant.identity.grantId,
+      grantId: resolved.grantId,
       chainId,
       kind: "execution" as const,
     });
-
-    // One approval, materialized independently per chain: the first covered
-    // execution on an unmaterialized chain spends the owner's replayable
-    // install approval in enable mode and executes together with it; every
-    // later operation validates through the standard permission path. The
-    // durable Grant record owns each chain's state, committed before any
-    // signature or send exists.
-    if (runtime.validation.kind !== "permission") {
-      return unsupported("session_validation_not_permission");
-    }
-    const binding = Object.freeze({
-      chainId,
-      account: descriptor.account,
-      permissionId: runtime.validation.permissionId,
-    });
-    let materialization = publicationGrant.materializations.find(
-      (entry) => entry.chainId === chainId && entry.state !== "unsupported",
-    );
-    if (materialization?.state === "installing") {
-      publicationSnapshot = await reconcileInstallingMaterialization(
-        publicationSnapshot,
-        binding,
-        materialization.operationId,
-      );
-      publicationGrant = publicationSnapshot.value;
-      materialization = publicationGrant.materializations.find(
-        (entry) => entry.chainId === chainId && entry.state !== "unsupported",
-      );
-    }
-    let mode: "standard" | "enable-replayable" = "standard";
-    let latest = publicationSnapshot;
-    if (materialization === undefined || materialization.state === "unmaterialized") {
-      if (input.installApproval === null) {
-        return unsupported("grant_capability_unavailable");
-      }
-      mode = "enable-replayable";
-      if (materialization === undefined) {
-        latest = await commit(
-          latest,
-          transition(latest.value, {
-            type: "record_unmaterialized",
-            identity: latest.value.identity,
-            binding,
-            recordedAt: input.now(),
-          }),
-        );
-      }
-    } else if (materialization.state === "installing") {
-      // A prior materialization attempt exists; the lane below owns its exact
-      // identity and never submits twice. Re-entering enable mode can only
-      // observe or, on a terminal lane, mint an operation the chain refuses
-      // because the install nonce is spent — never a second authority.
-      if (input.installApproval === null) {
-        return unsupported("grant_capability_unavailable");
-      }
-      mode = "enable-replayable";
-    } else if (materialization.state !== "installed") {
-      return unsupported(`grant_materialization_${materialization.state}`);
-    }
 
     const shape = {
       chainId,
       kind: "execution" as const,
-      runtime,
-      descriptor,
+      runtime: resolved.runtime,
+      descriptor: resolved.descriptor,
       calls,
       signer: "session" as const,
-      mode,
+      mode: resolved.mode,
       installApproval: input.installApproval,
-      decision,
-      grantId: publicationGrant.identity.grantId,
+      decision: resolved.decision,
+      grantId: resolved.grantId,
       requestHash,
+      ...(resolved.validityTimeRange === undefined
+        ? {}
+        : { validityTimeRange: resolved.validityTimeRange }),
       authorizeOperation: (operation: OaathProviderOperationPointer) =>
-        authorizeExecutionOperation(binding, mode, operation),
+        authorizeExecutionOperation(resolved.binding, resolved.mode, operation),
       abandonOperation: (operation: OaathProviderOperationPointer) =>
-        abandonExecutionOperation(binding, mode, operation),
+        abandonExecutionOperation(resolved.binding, resolved.mode, operation),
     };
     // The sender may replace a terminal lane, while the returned handle receives
     // a separate read-only runner and pins the exact hash below. Neither can
@@ -1795,6 +2349,13 @@ export function createGrantHandle(
       ...shape,
       terminalBehavior: "replace",
       ...(publication ? { publication } : {}),
+      ...(paymaster?.kind === "erc7677"
+        ? {
+            sponsorship: paymaster.sponsorship,
+            sponsorshipResultCapabilities: paymaster.resultCapabilities,
+          }
+        : {}),
+      ...(paymaster?.kind === "erc7902-static" ? { staticPaymaster: paymaster.paymaster } : {}),
     });
     let result: OperationRunResult | OperationStartResult;
     try {
@@ -1808,8 +2369,8 @@ export function createGrantHandle(
     }
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
-    if (action === "run" && mode === "enable-replayable") {
-      await recordFinalizedMaterialization(binding, result).catch(() => undefined);
+    if (action === "run" && resolved.mode === "enable-replayable") {
+      await recordFinalizedMaterialization(resolved.binding, result).catch(() => undefined);
     }
     return trackedOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
@@ -1818,11 +2379,335 @@ export function createGrantHandle(
       timeoutMs: SUBMISSION_TIMEOUT_MS,
       now: input.now,
       initial: result,
-      observation: (readRequest) => chain.observation.read(readRequest),
-      ...(mode === "enable-replayable"
+      observation: (readRequest) => resolved.chain.observation.read(readRequest),
+      ...(resolved.mode === "enable-replayable"
         ? {
             onObserved: (observed: OperationObserveResult) =>
-              recordFinalizedMaterialization(binding, observed),
+              recordFinalizedMaterialization(resolved.binding, observed),
+          }
+        : {}),
+    });
+  }
+
+  function approvedExternalKey(value: Readonly<OaathExternalPreparedCallKey>): void {
+    if (value.prehash !== false || typeof value.publicKey !== "string") {
+      clientFail("oaath_client_input_invalid", "prepared-call key is invalid");
+    }
+    const approved = input.binding.operatorCredential;
+    if (value.type === "secp256k1" && approved.kind === "ecdsa") {
+      let address: string;
+      try {
+        address = publicKeyToAddress(value.publicKey).toLowerCase();
+      } catch {
+        clientFail("oaath_client_input_invalid", "prepared-call public key is invalid");
+      }
+      if (address === approved.address && input.sessionKey.kind === "ecdsa") return;
+    }
+    if (
+      value.type === "webauthn-p256" &&
+      approved.kind === "webauthn" &&
+      input.sessionKey.kind === "webauthn" &&
+      value.publicKey === approved.publicKey
+    ) {
+      return;
+    }
+    clientFail(
+      "oaath_client_capability_invalid",
+      "prepared-call key is not the approved operator credential",
+      "operator_credential_mismatch",
+    );
+  }
+
+  function preparedCustody(): Readonly<OaathExternalPreparedCallPlan["custody"]> {
+    const signer = input.request.sessionSigner;
+    if (signer === null) return Object.freeze({ mode: "frontend", providerId: null });
+    if (signer.mode === "application_backend") {
+      return Object.freeze({ mode: signer.mode, providerId: signer.providerId });
+    }
+    return unsupported("prepared_calls_hosted_custody_unsupported");
+  }
+
+  function storedGas(
+    prepared: Readonly<PreparedUserOperation>,
+  ): Readonly<KernelV4UserOperationGas> {
+    const operation = prepared.userOperation;
+    return Object.freeze({
+      callGasLimit: operation.callGasLimit,
+      verificationGasLimit: operation.verificationGasLimit,
+      preVerificationGas: operation.preVerificationGas,
+      maxFeePerGas: operation.maxFeePerGas,
+      maxPriorityFeePerGas: operation.maxPriorityFeePerGas,
+    });
+  }
+
+  function sameFeePayer(
+    left: Readonly<OaathFeePayerDescriptor> | null,
+    right: Readonly<OaathFeePayerDescriptor> | null,
+  ): boolean {
+    return (
+      (left === null && right === null) ||
+      (left !== null &&
+        right !== null &&
+        left.address === right.address &&
+        left.balance === right.balance)
+    );
+  }
+
+  function samePreparedCalls(
+    left: readonly Readonly<OaathCallInput>[],
+    right: readonly Readonly<KernelV4Call>[],
+  ): boolean {
+    return (
+      left.length === right.length &&
+      left.every((call, index) => {
+        const retained = right[index];
+        return (
+          retained !== undefined &&
+          call.target === retained.target &&
+          call.value === retained.value &&
+          call.data === retained.data
+        );
+      })
+    );
+  }
+
+  function externalPlan(
+    shape: Readonly<ExecutionShape>,
+    key: Readonly<OaathExternalPreparedCallKey>,
+    custody: Readonly<OaathExternalPreparedCallPlan["custody"]>,
+    result: Awaited<ReturnType<typeof prepareExecutionShape>>,
+  ): Readonly<OaathExternalPreparedCallPlan> {
+    return Object.freeze({
+      grantId: shape.grantId,
+      account: shape.descriptor.account,
+      chainId: shape.chainId,
+      calls: Object.freeze(
+        shape.calls.map((call) =>
+          Object.freeze({ target: call.target, value: call.value, data: call.data }),
+        ),
+      ),
+      key: Object.freeze({ ...key }),
+      custody,
+      materialization: Object.freeze({
+        mode: shape.mode,
+        permissionId: shape.binding.permissionId,
+      }),
+      quote: result.quote,
+      decision: Object.freeze({
+        route: shape.decision.route === "bundler" ? ("bundler" as const) : ("direct" as const),
+        feePayer: shape.decision.feePayer,
+      }),
+      resultCapabilities: result.resultCapabilities,
+      prepared: result.prepared,
+      validityTimeRange: shape.validityTimeRange ?? null,
+      expiresAt: shape.grantExpiresAt,
+    });
+  }
+
+  async function prepareCallsWork(
+    value: unknown,
+  ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
+    const context: CaptureContext = new WeakSet();
+    const invalidInput = (message: string): never =>
+      clientFail("oaath_client_input_invalid", message);
+    const captured = captureRecord(value, "provider prepareCalls input", context, invalidInput);
+    const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
+    const request = exactCapturedRecord(
+      captured,
+      hasValidityAdmission
+        ? ["chain", "calls", "key", "paymaster", "validityAdmission"]
+        : ["chain", "calls", "key", "paymaster"],
+      "provider prepareCalls input",
+      invalidInput,
+    );
+    if (
+      typeof request.chain !== "number" ||
+      !Number.isSafeInteger(request.chain) ||
+      request.chain < 1
+    ) {
+      return clientFail("oaath_client_input_invalid", "prepared-call chain is invalid");
+    }
+    const validityAdmission = hasValidityAdmission
+      ? consumeValidityAdmission(request.validityAdmission, request.chain)
+      : null;
+    const keyRecord = exactClientRecord(
+      request.key,
+      ["type", "publicKey", "prehash"],
+      "provider prepared-call key",
+      context,
+    );
+    const key = Object.freeze({
+      type: keyRecord.type,
+      publicKey: keyRecord.publicKey,
+      prehash: keyRecord.prehash,
+    }) as Readonly<OaathExternalPreparedCallKey>;
+    approvedExternalKey(key);
+    const custody = preparedCustody();
+    const calls = captureCalls(request.calls, context);
+    const paymaster = providerPaymaster(request.chain, request.paymaster, context);
+    if (paymaster?.kind === "erc7902-static") {
+      return unsupported("prepared_calls_static_paymaster_unsupported");
+    }
+    const shape = await resolveExecutionShape(request.chain, calls, validityAdmission);
+    if (paymaster !== null && shape.decision.route !== "bundler") {
+      return unsupported("erc7677_bundler_unavailable");
+    }
+    return externalPlan(
+      shape,
+      key,
+      custody,
+      await prepareExecutionShape(shape, {
+        paymaster:
+          paymaster === null
+            ? null
+            : Object.freeze({
+                kind: "resolve-erc7677" as const,
+                sponsorship: paymaster.sponsorship,
+                resultCapabilities: paymaster.resultCapabilities,
+              }),
+      }),
+    );
+  }
+
+  async function validatePreparedCallsWork(
+    value: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ): Promise<Readonly<OaathValidatedPreparedCalls>> {
+    const plan = value.plan;
+    approvedExternalKey(plan.key);
+    const custody = preparedCustody();
+    if (
+      plan.grantId !== record.value.identity.grantId ||
+      plan.custody.mode !== custody.mode ||
+      plan.custody.providerId !== custody.providerId
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "prepared-call authority changed",
+        "prepared_call_authority_changed",
+      );
+    }
+    const calls = captureCalls(plan.calls, new WeakSet());
+    const retainedValidityTimeRange = plan.validityTimeRange;
+    let validityEvidence: Readonly<ValidityAdmissionEvidence> | null = null;
+    if (retainedValidityTimeRange !== null) {
+      try {
+        validityEvidence = await proveValidityTimeRange({
+          chain: plan.chainId,
+          range: retainedValidityTimeRange,
+        });
+      } catch {
+        validityEvidence = null;
+      }
+      if (validityEvidence === null) {
+        return clientFail(
+          "oaath_client_state_conflict",
+          "prepared-call validity evidence is stale",
+          "prepared_call_stale",
+        );
+      }
+    }
+    const shape = await resolveExecutionShape(plan.chainId, calls, validityEvidence);
+    const retainedPaymaster = plan.prepared.userOperation.paymaster;
+    const current = await prepareExecutionShape(shape, {
+      gas: storedGas(plan.prepared),
+      paymaster:
+        retainedPaymaster === null
+          ? null
+          : Object.freeze({ kind: "retained" as const, paymaster: retainedPaymaster }),
+    });
+    const expectedRoute = shape.decision.route === "bundler" ? "bundler" : "direct";
+    if (
+      plan.account !== shape.descriptor.account ||
+      plan.expiresAt > shape.grantExpiresAt ||
+      !samePreparedCalls(plan.calls, shape.calls) ||
+      plan.materialization.mode !== shape.mode ||
+      plan.materialization.permissionId !== shape.binding.permissionId ||
+      plan.quote.nonceKey !== current.quote.nonceKey ||
+      plan.quote.sequence !== current.quote.sequence ||
+      plan.decision.route !== expectedRoute ||
+      !sameFeePayer(plan.decision.feePayer, shape.decision.feePayer) ||
+      (retainedPaymaster !== null &&
+        (plan.decision.route !== "bundler" || expectedRoute !== "bundler")) ||
+      current.prepared.userOperationHash !== plan.prepared.userOperationHash
+    ) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "prepared-call context is stale",
+        "prepared_call_stale",
+      );
+    }
+    const signature = await finalExternalSignature(shape, plan.prepared, value.signature);
+    const validated: Readonly<OaathValidatedPreparedCalls> = Object.freeze({ plan });
+    validatedPreparedCalls.set(validated, Object.freeze({ shape, plan, signature }));
+    return validated;
+  }
+
+  async function startPreparedCallsWork(
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
+    publicationValue: OaathProviderOperationPublication,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    const retained = validatedPreparedCalls.get(validated);
+    if (!retained || !USER_OPERATION_HASH.test(requestHash)) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "validated prepared-call capability is invalid",
+      );
+    }
+    const publication = captureProviderPublication(publicationValue);
+    const { shape, plan, signature } = retained;
+    const key = Object.freeze({
+      grantId: shape.grantId,
+      chainId: shape.chainId,
+      kind: "execution" as const,
+    });
+    const runnerShape = {
+      chainId: shape.chainId,
+      kind: "execution" as const,
+      runtime: shape.runtime,
+      descriptor: shape.descriptor,
+      calls: shape.calls,
+      signer: "session" as const,
+      mode: shape.mode,
+      installApproval: input.installApproval,
+      decision: shape.decision,
+      grantId: shape.grantId,
+      requestHash,
+      prepared: plan.prepared,
+      preparedResultCapabilities: plan.resultCapabilities,
+      externalSignature: signature,
+      authorizeOperation: (operation: OaathProviderOperationPointer) =>
+        authorizeExecutionOperation(shape.binding, shape.mode, operation),
+      abandonOperation: (operation: OaathProviderOperationPointer) =>
+        abandonExecutionOperation(shape.binding, shape.mode, operation),
+    };
+    const sender = runner({
+      ...runnerShape,
+      terminalBehavior: "replace",
+      publication,
+    });
+    let result: OperationStartResult;
+    try {
+      result = await resumePreparedOnce(sender, key, plan.prepared.userOperationHash);
+    } finally {
+      await sender.close().catch(() => undefined);
+    }
+    operationOutcome(result);
+    return trackedOperationHandle({
+      runner: runner({ ...runnerShape, terminalBehavior: "reuse_same_kind" }),
+      key,
+      kind: "execution",
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+      now: input.now,
+      initial: result,
+      observation: shape.chain.observation.read,
+      ...(shape.mode === "enable-replayable"
+        ? {
+            onObserved: (observed: OperationObserveResult) =>
+              recordFinalizedMaterialization(shape.binding, observed),
           }
         : {}),
     });
@@ -1832,18 +2717,270 @@ export function createGrantHandle(
     return withExecution(() => executeCalls(value, "run", null));
   }
 
+  function registeredPaymasterServiceUrl(chainId: number): string | null {
+    return chainCapability(chainId).paymasterService?.url ?? null;
+  }
+
+  function staticPaymasterConfigurationHash(chainId: number): `0x${string}` | null {
+    return chainCapability(chainId).staticPaymasterConfigurationHash;
+  }
+
+  function approvedValidityTimeRange(at: number): Readonly<KernelV4ValidityTimeRange> | null {
+    const validAfter = input.approvedPolicy.validAfter;
+    const validUntil = input.approvedPolicy.validUntil;
+    if (
+      !Number.isSafeInteger(at) ||
+      Object.is(at, -0) ||
+      at < 0 ||
+      !Number.isSafeInteger(validAfter) ||
+      Object.is(validAfter, -0) ||
+      validAfter < 0 ||
+      validUntil === null ||
+      !Number.isSafeInteger(validUntil) ||
+      Object.is(validUntil, -0) ||
+      validUntil < 1 ||
+      BigInt(validAfter) > MAX_UINT48 ||
+      BigInt(validUntil) > MAX_UINT48 ||
+      validAfter >= validUntil ||
+      at > validUntil
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      validAfter: validAfter.toString(10),
+      validUntil: validUntil.toString(10),
+    });
+  }
+
+  async function proveValidityTimeRange(
+    value: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ): Promise<Readonly<ValidityAdmissionEvidence> | null> {
+    const requested = captureProviderValidityAdmissionInput(value);
+    if (revocationRequested || !input.chains.has(requested.chain)) return null;
+    try {
+      await requireActive();
+      const at = input.now();
+      const ceiling = approvedValidityTimeRange(at);
+      if (ceiling === null) return null;
+      const validAfter = BigInt(requested.range.validAfter);
+      const validUntil = BigInt(requested.range.validUntil);
+      if (
+        BigInt(at) > validUntil ||
+        validAfter < BigInt(ceiling.validAfter) ||
+        validUntil > BigInt(ceiling.validUntil)
+      ) {
+        return null;
+      }
+      const runtime = sessionRuntime(requested.chain);
+      const descriptor = await accountDescriptor(requested.chain, runtime);
+      return Object.freeze({
+        chainId: requested.chain,
+        range: requested.range,
+        runtime,
+        descriptor,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  function probeValidityTimeRangeSupport(
+    chain: number,
+  ): Promise<Readonly<OaathProviderValidityTimeRangeSupportResult>> {
+    return withActivity(async () => {
+      if (
+        !Number.isSafeInteger(chain) ||
+        chain < 1 ||
+        revocationRequested ||
+        !input.chains.has(chain)
+      ) {
+        return unsupportedValidityTimeRange;
+      }
+      const range = approvedValidityTimeRange(input.now());
+      if (range === null) return unsupportedValidityTimeRange;
+      const evidence = await proveValidityTimeRange({ chain, range });
+      return evidence === null ? unsupportedValidityTimeRange : supportedValidityTimeRange;
+    });
+  }
+
+  function admitValidityTimeRange(
+    value: Readonly<{
+      chain: number;
+      range: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+  ): Promise<Readonly<OaathProviderValidityAdmissionResult>> {
+    return withActivity(async () => {
+      const evidence = await proveValidityTimeRange(value);
+      if (evidence === null) return unsupportedValidityAdmission;
+      const admission = Object.freeze({
+        kind: "oaath_provider_validity_admission" as const,
+      });
+      validityAdmissions.set(admission, evidence);
+      return Object.freeze({ status: "accepted" as const, admission });
+    });
+  }
+
+  function consumeValidityAdmission(
+    value: unknown,
+    chainId: number,
+  ): Readonly<ValidityAdmissionEvidence> {
+    if (value === null || typeof value !== "object") {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider validity admission is invalid",
+      );
+    }
+    const retained = validityAdmissions.get(value);
+    validityAdmissions.delete(value);
+    if (retained === undefined || retained.chainId !== chainId) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider validity admission is unavailable",
+      );
+    }
+    return retained;
+  }
+
+  function providerSponsorship(
+    chainId: number,
+    value: unknown,
+    context: CaptureContext,
+  ): Readonly<OaathKernelSponsorshipCapability> | null {
+    if (value === null) return null;
+    const requested = exactClientRecord(
+      value,
+      ["url", "context"],
+      "provider paymaster service",
+      context,
+    );
+    if (typeof requested.url !== "string") {
+      return clientFail("oaath_client_input_invalid", "provider paymaster URL is invalid");
+    }
+    const registered = chainCapability(chainId).paymasterService ?? null;
+    if (registered === null || requested.url !== registered.url) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider paymaster service is not registered",
+        "erc7677_service_unregistered",
+      );
+    }
+    try {
+      return createErc7677SponsorshipCapability({
+        requested: { url: requested.url, context: requested.context },
+        service: Object.freeze({ url: registered.url, request: registered.request }),
+        estimator: Object.freeze({ estimate: registered.estimate }),
+      });
+    } catch (error) {
+      return mapClientFailure(error, "provider paymaster service could not be selected");
+    }
+  }
+
+  function providerPaymaster(
+    chainId: number,
+    value: unknown,
+    context: CaptureContext,
+  ):
+    | Readonly<{
+        readonly kind: "erc7677";
+        readonly sponsorship: OaathKernelSponsorshipCapability;
+        readonly resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
+      }>
+    | Readonly<{ readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }>
+    | null {
+    if (value === null) return null;
+    const fail = (message: string): never => clientFail("oaath_client_capability_invalid", message);
+    const captured = captureRecord(value, "provider paymaster selection", context, fail);
+    if (captured.kind === "erc7677") {
+      const selection = exactCapturedRecord(
+        captured,
+        ["kind", "url", "context"],
+        "provider ERC-7677 selection",
+        fail,
+      );
+      const sponsorship = providerSponsorship(
+        chainId,
+        Object.freeze({ url: selection.url, context: selection.context }),
+        context,
+      );
+      if (sponsorship === null) {
+        return clientFail(
+          "oaath_client_capability_invalid",
+          "provider ERC-7677 selection is empty",
+        );
+      }
+      return Object.freeze({
+        kind: "erc7677" as const,
+        sponsorship,
+        resultCapabilities: () => readCompletedErc7677ResultCapabilities(sponsorship),
+      });
+    }
+    if (captured.kind === "erc7902-static") {
+      const selection = exactCapturedRecord(
+        captured,
+        ["kind", "configuration"],
+        "provider ERC-7902 selection",
+        fail,
+      );
+      try {
+        const configuration = captureErc7902StaticPaymasterConfiguration(selection.configuration);
+        if (
+          hashCapturedErc7902PreparedPaymaster(configuration.paymaster) !==
+          chainCapability(chainId).staticPaymasterConfigurationHash
+        ) {
+          return clientFail(
+            "oaath_client_capability_invalid",
+            "provider ERC-7902 selection does not match the authenticated policy",
+            "erc7902_static_policy_mismatch",
+          );
+        }
+        return Object.freeze({
+          kind: "erc7902-static" as const,
+          paymaster: configuration.paymaster,
+        });
+      } catch {
+        return clientFail(
+          "oaath_client_capability_invalid",
+          "provider ERC-7902 selection is invalid",
+        );
+      }
+    }
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "provider paymaster selection kind is unsupported",
+    );
+  }
+
   function startCalls(
     value: unknown,
     publicationValue: OaathProviderOperationPublication,
   ): Promise<Readonly<OaathOperationHandle>> {
     return withExecution(() => {
       const context: CaptureContext = new WeakSet();
-      const request = exactClientRecord(
-        value,
-        ["chain", "calls", "requestHash"],
+      const invalidInput = (message: string): never =>
+        clientFail("oaath_client_input_invalid", message);
+      const captured = captureRecord(value, "provider sendCalls input", context, invalidInput);
+      const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
+      const request = exactCapturedRecord(
+        captured,
+        hasValidityAdmission
+          ? ["chain", "calls", "requestHash", "paymaster", "validityAdmission"]
+          : ["chain", "calls", "requestHash", "paymaster"],
         "provider sendCalls input",
-        context,
+        invalidInput,
       );
+      if (
+        typeof request.chain !== "number" ||
+        !Number.isSafeInteger(request.chain) ||
+        request.chain < 1
+      ) {
+        return clientFail("oaath_client_input_invalid", "provider chain is invalid");
+      }
+      const validityAdmission = hasValidityAdmission
+        ? consumeValidityAdmission(request.validityAdmission, request.chain)
+        : null;
       if (
         typeof request.requestHash !== "string" ||
         !USER_OPERATION_HASH.test(request.requestHash)
@@ -1858,8 +2995,39 @@ export function createGrantHandle(
         "start",
         request.requestHash as `0x${string}`,
         captureProviderPublication(publicationValue),
+        providerPaymaster(request.chain, request.paymaster, context),
+        validityAdmission,
       );
     });
+  }
+
+  function prepareCalls(
+    value: Readonly<{
+      chain: number;
+      calls: readonly Readonly<OaathCallInput>[];
+      key: Readonly<OaathExternalPreparedCallKey>;
+      paymaster: OaathExternalPreparedCallPaymasterSelection;
+      validityAdmission?: Readonly<OaathProviderValidityAdmission>;
+    }>,
+  ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
+    return withExecution(() => prepareCallsWork(value));
+  }
+
+  function validatePreparedCalls(
+    value: Readonly<{
+      plan: Readonly<OaathExternalPreparedCallPlan>;
+      signature: `0x${string}`;
+    }>,
+  ): Promise<Readonly<OaathValidatedPreparedCalls>> {
+    return withExecution(() => validatePreparedCallsWork(value));
+  }
+
+  function startPreparedCalls(
+    validated: Readonly<OaathValidatedPreparedCalls>,
+    requestHash: `0x${string}`,
+    publication: OaathProviderOperationPublication,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    return withExecution(() => startPreparedCallsWork(validated, requestHash, publication));
   }
 
   function recoverOperation(value: unknown): Promise<Readonly<OaathProviderOperationRecovery>> {
@@ -2261,6 +3429,19 @@ export function createGrantHandle(
     return (await accountDescriptor(chain)).account;
   }
 
+  async function authorizedAccount(chain: unknown): Promise<`0x${string}`> {
+    assertOpen();
+    if (revocationRequested) {
+      return clientFail(
+        "oaath_client_grant_inactive",
+        "the Grant is being revoked",
+        "grant_revocation_requested",
+      );
+    }
+    await requireActive();
+    return account(chain);
+  }
+
   const handle: Readonly<OaathGrantHandle> = Object.freeze({
     get state(): GrantState {
       return record.value.state;
@@ -2312,9 +3493,18 @@ export function createGrantHandle(
       providerScopeId: input.binding.bindingId,
       grantId: record.value.identity.grantId,
       walletCallBundles: input.walletCallBundles,
+      preparedCallContexts: input.preparedCallContexts,
       now: input.now,
       account,
+      authorizedAccount,
+      registeredPaymasterServiceUrl,
+      staticPaymasterConfigurationHash,
+      probeValidityTimeRangeSupport,
+      admitValidityTimeRange,
       startCalls,
+      prepareCalls,
+      validatePreparedCalls,
+      startPreparedCalls,
       recoverOperation,
       abandonPreparedOperation,
     }),

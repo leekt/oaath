@@ -13,7 +13,7 @@ import Security
 
 func projectionJson(operationId: String) -> [String: Any] {
     [
-        "version": "oaath.native-projection/v1",
+        "version": ownerPhoneProjectionVersion,
         "operationId": operationId,
         "displayPayload": "Ab1-_9Zz",
         "expiresAt": 1_754_000_000_000,
@@ -111,6 +111,13 @@ final class RelayClientTests: XCTestCase {
 
 #if canImport(Security)
 final class KeyCustodyTests: XCTestCase {
+    func testSecureEnclaveCreationPinsPrivateKeyUsageAndUserPresenceExactly() {
+        let expected: SecAccessControlCreateFlags = [.privateKeyUsage, .userPresence]
+        XCTAssertEqual(
+            KeychainKeyCustodyStub.secureEnclaveAccessControlFlags.rawValue,
+            expected.rawValue)
+    }
+
     func testSoftwareFallbackPinsDeviceOnlyUnlockedAttributes() {
         let attributes = KeychainKeyCustodyStub.softwarePrivateKeyAttributes(
             applicationTag: Data("test".utf8))
@@ -215,14 +222,5 @@ final class KeyCustodyTests: XCTestCase {
         XCTAssertEqual(try reloaded.publicKey(), originalPublicKey)
     }
 
-    func testANonDigestInputFailsBeforeAnyKeychainAccess() {
-        let custody = KeychainKeyCustodyStub()
-        XCTAssertThrowsError(try custody.signDigest(Data(count: 31))) {
-            XCTAssertEqual($0 as? OwnerPhoneKeyCustodyError, .invalidDigest)
-        }
-        XCTAssertThrowsError(try custody.signDigest(Data())) {
-            XCTAssertEqual($0 as? OwnerPhoneKeyCustodyError, .invalidDigest)
-        }
-    }
 }
 #endif

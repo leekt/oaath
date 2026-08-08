@@ -130,10 +130,10 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     reason: "signer_module_deployment_unproven",
   }),
   session_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  // CallPolicy enforces calls and their per-call value ceilings, TimestampPolicy
-  // the validity window, RateLimitPolicy the per-chain operation count: all three
-  // are pinned reviewed modules, so a session can express every axis the Grant
-  // policy holds.
+  // CallPolicy enforces calls and their per-call value ceilings; the OAAth
+  // validity policy enforces the window; RateLimitPolicy enforces the per-chain
+  // operation count. All three are pinned reviewed modules, so a session can
+  // express every axis the Grant policy holds.
   hook_call: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_expiry: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   hook_operation_limit: Object.freeze({
