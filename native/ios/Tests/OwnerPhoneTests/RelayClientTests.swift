@@ -13,7 +13,7 @@ import Security
 
 func projectionJson(operationId: String) -> [String: Any] {
     [
-        "version": "oaath.native-projection/v3",
+        "version": ownerPhoneProjectionVersion,
         "operationId": operationId,
         "displayPayload": "Ab1-_9Zz",
         "expiresAt": 1_754_000_000_000,

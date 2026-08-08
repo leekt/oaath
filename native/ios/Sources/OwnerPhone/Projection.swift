@@ -26,9 +26,9 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v3"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v4"
 
-/// Current protocol versions embedded in the v3 owner-signing projection.
+/// Current protocol versions embedded in the v4 owner-signing projection.
 public let ownerPhoneSigningRequestVersion = "oaath.owner-signing-request/v1"
 public let ownerPhoneOwnerCredentialVersion = "oaath.owner-credential-profile/v1"
 
@@ -302,7 +302,7 @@ public enum OwnerPhoneSigningRequest: Equatable, Sendable {
 }
 
 /// The one closed discriminator used by both the consent surface and the
-/// approval action. A decoded v3 owner-signing scope is always `.rejectOnly`;
+/// approval action. A decoded v4 owner-signing scope is always `.rejectOnly`;
 /// the Kernel case exists only for the sealed, package-internal future binding.
 enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
     case permission
@@ -310,7 +310,7 @@ enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
     case rejectOnly
 }
 
-/// Authenticated wire semantics only. Current v3 decoding accepts exactly the
+/// Authenticated wire semantics only. Current v4 decoding accepts exactly the
 /// reject-only value; a future decoder may opt an exact owner-signing request
 /// into approval without embedding any custody capability in wire evidence.
 enum OwnerPhoneSigningDecisionCapability: Equatable, Sendable {

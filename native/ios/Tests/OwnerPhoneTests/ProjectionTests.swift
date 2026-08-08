@@ -140,7 +140,7 @@ final class ProjectionTests: XCTestCase {
 
     private var valid: [String: Any] {
         [
-            "version": "oaath.native-projection/v3",
+            "version": ownerPhoneProjectionVersion,
             "operationId": "req-1",
             "displayPayload": "Ab1-_9Zz",
             "expiresAt": 1_754_000_000_000,
@@ -467,6 +467,14 @@ final class ProjectionTests: XCTestCase {
         object["scope"] = rawScope.merging(["extra": 1]) { _, new in new }
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .unexpectedFields("scope"))
+        }
+    }
+
+    func testRejectsTheRetiredV3Projection() {
+        var object = valid
+        object["version"] = "oaath.native-projection/v3"
+        XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
+            XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("version"))
         }
     }
 

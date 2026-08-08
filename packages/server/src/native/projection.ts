@@ -42,7 +42,7 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v3" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v4" as const;
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 

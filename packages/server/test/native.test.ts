@@ -167,6 +167,7 @@ describe("experimental owner-phone projection", () => {
     const fixed = await fixture();
     const projection = await project(fixed);
 
+    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v4");
     expect(projection.version).toBe(OAATH_NATIVE_PROJECTION_VERSION);
     expect(projection.operationId).toBe(fixed.requestId);
     expect(projection.displayPayload).toHaveLength(NATIVE_DISPLAY_PAYLOAD_LENGTH);
