@@ -155,7 +155,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   for (const module of [
     fixture.ecdsaSigner,
     fixture.callPolicy,
-    fixture.timestampPolicy,
+    fixture.validityPolicy,
     fixture.rateLimitPolicy,
     // The pinned P-256 validator's constructor probes the RIP-7212 precompile
     // and reverts without it, so it deploys only on an osaka chain that asked.

@@ -20,6 +20,8 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "@oaath/sdk/kernel";
 
 const ACCOUNT = `0x${"66".repeat(20)}`;
@@ -133,6 +135,9 @@ export function createFakeChain(chainId) {
           if (request.type === "runtime_code_hash") {
             if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
               return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+            }
+            if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+              return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
             }
             return request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07
               ? deployment.implementationDeployment.runtimeCodeHash

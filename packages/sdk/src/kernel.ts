@@ -34,6 +34,8 @@ export type {
 } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
 export {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
 } from "./kernel/modules.js";

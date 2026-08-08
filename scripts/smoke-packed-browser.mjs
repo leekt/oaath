@@ -52,6 +52,8 @@ import {
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   sessionOperator,
 } from "@oaath/sdk/kernel";
 import {
@@ -244,6 +246,9 @@ const chain = {
       if (request.type === "runtime_code_hash") {
         if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
           return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+        }
+        if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+          return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
         }
         if (request.address === KERNEL_V4_FACTORY_V07) return KERNEL_V4_FACTORY_V07_CODE_HASH;
         if (request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
