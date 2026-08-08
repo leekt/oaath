@@ -16,8 +16,9 @@
  *   2. Direction: production edges match the declared table exactly, so
  *      protocol depends on nothing internal, sdk only on protocol, and
  *      `@oaath/testing` is never a production dependency of anything.
- *   3. Provenance: no published entry points at `src`, so a consumer resolves
- *      built artifacts only.
+ *   3. Provenance: every published entry points at built artifacts, never
+ *      `src`, so a consumer resolves built artifacts only. Private packages
+ *      are never published and are exempt from the provenance rule.
  *
  * `@oaath/server`'s own entries are owned by `packages/server/test/package.test.ts`;
  * this gate covers the graphs that cross a package boundary.
@@ -52,6 +53,7 @@ const DIRECTION = {
   "@oaath/sdk": ["@oaath/protocol"],
   "@oaath/server": ["@oaath/protocol"],
   "@oaath/testing": ["@oaath/protocol", "@oaath/sdk"],
+  "@oaath/contracts": [],
 };
 
 /** Production groups only: a devDependency never reaches a consumer. */
@@ -181,6 +183,9 @@ function checkDirection(workspace) {
 
 function checkPublishedEntries(workspace) {
   for (const [name, { manifest }] of workspace) {
+    // A private package is never published, so it has no published surface to
+    // resolve from src; the provenance rule applies only to released packages.
+    if (manifest.private === true) continue;
     const published = manifest.publishConfig;
     if (published === undefined) {
       fail(`${name}: no publishConfig; published entries would resolve to source`);
