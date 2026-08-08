@@ -93,23 +93,32 @@ private struct FakeOwnerSigning: DemoOwnerSigning {
 private final class StoreMutatingOwnerSigning: DemoOwnerSigning, @unchecked Sendable {
     let secureEnclave = false
     private let lock = NSLock()
-    private var didMutate = false
+    private var publicMaterialReads = 0
+    private let mutateAtRead: Int
     private let mutate: @Sendable () -> Void
+    private let signingAttempts: OwnerSigningAttemptRecorder?
 
-    init(mutate: @escaping @Sendable () -> Void) {
+    init(
+        mutateAtRead: Int = 1,
+        signingAttempts: OwnerSigningAttemptRecorder? = nil,
+        mutate: @escaping @Sendable () -> Void
+    ) {
+        self.mutateAtRead = mutateAtRead
+        self.signingAttempts = signingAttempts
         self.mutate = mutate
     }
 
     func publicMaterialHex() throws -> String {
         lock.lock()
-        let shouldMutate = !didMutate
-        didMutate = true
+        publicMaterialReads += 1
+        let shouldMutate = publicMaterialReads == mutateAtRead
         lock.unlock()
         if shouldMutate { mutate() }
         return fakeOwnerPublicMaterial.hex
     }
 
     func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        signingAttempts?.record()
         throw FakeOwnerSigningError.unavailable
     }
 }
@@ -287,6 +296,45 @@ private final class OwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return recorded
+    }
+}
+
+private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [URLRequest] = []
+    private let decision: String
+
+    init(decision: String) {
+        self.decision = decision
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, Int) {
+        lock.withLock { recorded.append(request) }
+        guard request.httpMethod == "GET" else { return (Data(), 500) }
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("packages/server/test/fixtures/owner-phone-golden.json")
+        guard let fixture = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: fixtureURL)) as? [String: Any],
+            let projections = fixture["projection"] as? [String: Any],
+            var projection = projections["kernelEnableOwnerSigningRequest"] as? [String: Any],
+            var scope = projection["scope"] as? [String: Any]
+        else {
+            throw OwnerPhoneWireError.invalidField("Kernel owner signing test fixture")
+        }
+        scope["decision"] = decision
+        projection["scope"] = scope
+        projection["operationId"] = request.url?.lastPathComponent ?? "kernel-owner-signing"
+        projection["expiresAt"] = 2_000_000_000_000
+        return (try JSONSerialization.data(withJSONObject: projection), 200)
+    }
+
+    func requests() -> [URLRequest] {
+        lock.withLock { recorded }
     }
 }
 
@@ -1061,6 +1109,96 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertNil(model.approval)
         XCTAssertTrue(model.storedPairingBlocked)
         XCTAssertEqual(store.load(), .stored(pairingB))
+    }
+
+    func testDemoComposesKernelBindingWhileCurrentServerScopeRemainsRejectOnly() async throws {
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: deviceCredentialA,
+            account: "0x" + String(repeating: "66", count: 20),
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+
+        let currentHTTP = KernelOwnerSigningRecordingHTTP(decision: "reject-only")
+        let currentSigning = OwnerSigningAttemptRecorder()
+        let current = DemoModel(
+            pairings: InMemoryPairingStore(result: .stored(pairing)),
+            http: currentHTTP,
+            ownerKey: FakeOwnerSigning(signingAttempts: currentSigning))
+        current.operationIdText = "current-kernel-owner-signing"
+        await current.openManually()
+        let currentApproval = try XCTUnwrap(current.approval)
+        guard case let .review(currentReview) = currentApproval.phase else {
+            return XCTFail("expected the current Kernel review")
+        }
+        XCTAssertEqual(
+            currentApproval.approvalAvailability(for: currentReview.projection),
+            .rejectOnly)
+
+        await currentApproval.approve()
+
+        XCTAssertEqual(currentSigning.recordedCount(), 0)
+        XCTAssertEqual(currentHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
+        guard case let .review(afterApproval) = currentApproval.phase else {
+            return XCTFail("reject-only approval must remain pending")
+        }
+        XCTAssertEqual(afterApproval.state, .pending)
+
+        let futureHTTP = KernelOwnerSigningRecordingHTTP(decision: "approve-or-reject")
+        let futureSigning = OwnerSigningAttemptRecorder()
+        let future = DemoModel(
+            pairings: InMemoryPairingStore(result: .stored(pairing)),
+            http: futureHTTP,
+            ownerKey: FakeOwnerSigning(signingAttempts: futureSigning))
+        future.operationIdText = "future-kernel-owner-signing"
+        await future.openManually()
+        let futureApproval = try XCTUnwrap(future.approval)
+        guard case let .review(futureReview) = futureApproval.phase else {
+            return XCTFail("expected the future Kernel review")
+        }
+        XCTAssertEqual(
+            futureApproval.approvalAvailability(for: futureReview.projection),
+            .kernelP256OwnerSigning)
+        XCTAssertEqual(futureSigning.recordedCount(), 0)
+        XCTAssertEqual(futureHTTP.requests().map { $0.httpMethod ?? "" }, ["GET"])
+    }
+
+    func testKernelBindingRechecksPairingImmediatelyBeforeCustody() async throws {
+        let account = "0x" + String(repeating: "66", count: 20)
+        let pairingA = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
+            credential: deviceCredentialA,
+            account: account,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        let pairingB = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-b.example:8787"),
+            credential: deviceCredentialB,
+            account: account,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        let store = InMemoryPairingStore(result: .stored(pairingA))
+        let signingAttempts = OwnerSigningAttemptRecorder()
+        let ownerKey = StoreMutatingOwnerSigning(
+            mutateAtRead: 3,
+            signingAttempts: signingAttempts
+        ) {
+            _ = store.clear()
+            _ = try? store.installIfAbsent(pairingB)
+        }
+        let http = KernelOwnerSigningRecordingHTTP(decision: "approve-or-reject")
+        let model = DemoModel(pairings: store, http: http, ownerKey: ownerKey)
+        model.operationIdText = "pairing-replaced-before-custody"
+        await model.openManually()
+        let approval = try XCTUnwrap(model.approval)
+        approval.setForeground(true)
+
+        await approval.approve()
+
+        XCTAssertEqual(store.load(), .stored(pairingB))
+        XCTAssertEqual(signingAttempts.recordedCount(), 0)
+        XCTAssertEqual(http.requests().map { $0.httpMethod ?? "" }, ["GET"])
+        guard case let .review(review) = approval.phase else {
+            return XCTFail("a pre-custody mismatch must leave the review pending")
+        }
+        XCTAssertEqual(review.state, .pending)
     }
 
     func testMismatchedEIP712ApprovalNeverReachesTheDemoArtifactOrDecisionRoute() async throws {
