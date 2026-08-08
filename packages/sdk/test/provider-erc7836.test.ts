@@ -3,12 +3,18 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import { p256 } from "@noble/curves/nist.js";
+import {
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+} from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
+import { bytesToHex, concat, hexToBytes, keccak256, sha256, stringToBytes, toHex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
+import { ecdsaKey, type WebAuthnAssertionRequest, webauthnKey } from "../src/kernel.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -22,6 +28,7 @@ import {
 import { INTERNAL_ERROR } from "../src/provider/errors.js";
 import { oaathProvider } from "../src/viem.js";
 import {
+  bindingInput,
   CALL_DATA,
   CHAIN_ID,
   createChainFixture,
@@ -30,11 +37,13 @@ import {
   createRealm,
   createRelay,
   createUrlRealm,
+  ORIGIN,
   permissionInput,
   SESSION_PUBLIC_KEY,
   signingProfiles,
   signPreparedDigest,
   TARGET,
+  VALIDATOR,
 } from "./support/browser.js";
 
 const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}` as const;
@@ -46,7 +55,7 @@ interface PreparedRpcResponse {
   readonly capabilities: Readonly<Record<string, unknown>>;
   readonly context: Readonly<{ version: string; id: `0x${string}` }>;
   readonly key: Readonly<{
-    type: "secp256k1";
+    type: "secp256k1" | "webauthn-p256";
     publicKey: `0x${string}`;
     prehash: false;
   }>;
@@ -106,6 +115,108 @@ async function indexedDbPreparedRealmStores(factory: IDBFactory) {
       context: createIndexedDbContextStore(database),
     },
   };
+}
+
+function base64Url(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
+}
+
+function createWebAuthnCredentialFixture() {
+  const privateKey = p256.utils.randomPrivateKey();
+  const publicKey = bytesToHex(p256.getPublicKey(privateKey, false));
+  const credentialIdBytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const credentialId = base64Url(credentialIdBytes);
+  const authenticatorIdHash = keccak256(bytesToHex(credentialIdBytes));
+  const rpId = "app.example";
+  const ownerCredential = Object.freeze({
+    version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+    kind: "webauthn" as const,
+    publicKey,
+    authenticatorIdHash,
+  });
+  const operatorCredential = Object.freeze({
+    version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+    kind: "webauthn" as const,
+    publicKey,
+    authenticatorIdHash,
+  });
+  let injectedAuthenticatorCalls = 0;
+  let externalAuthenticatorCalls = 0;
+
+  const keyInput = Object.freeze({
+    credential: ownerCredential,
+    credentialId,
+    rpId,
+    origin: ORIGIN,
+  });
+
+  return Object.freeze({
+    publicKey,
+    operatorCredential,
+    verificationKey() {
+      return webauthnKey({
+        ...keyInput,
+        async authenticate() {
+          injectedAuthenticatorCalls += 1;
+          throw new Error("the SDK must not invoke an authenticator for an external signature");
+        },
+      });
+    },
+    externalKey() {
+      return webauthnKey({
+        ...keyInput,
+        async authenticate(request: WebAuthnAssertionRequest) {
+          externalAuthenticatorCalls += 1;
+          const clientDataJSON = JSON.stringify({
+            type: "webauthn.get",
+            challenge: request.challenge,
+            origin: ORIGIN,
+            crossOrigin: false,
+          });
+          const authenticatorData = concat([
+            sha256(stringToBytes(rpId)),
+            toHex(0x05, { size: 1 }),
+            "0x00000001",
+          ]);
+          const message = sha256(
+            concat([authenticatorData, sha256(stringToBytes(clientDataJSON))]),
+          );
+          const signature = p256.sign(hexToBytes(message), privateKey, {
+            lowS: true,
+            prehash: false,
+          });
+          privateKey.fill(0);
+          return Object.freeze({
+            authenticatorData,
+            clientDataJSON,
+            responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+            r: toHex(signature.r, { size: 32 }),
+            s: toHex(signature.s, { size: 32 }),
+          });
+        },
+      });
+    },
+    injectedAuthenticatorCalls: () => injectedAuthenticatorCalls,
+    externalAuthenticatorCalls: () => externalAuthenticatorCalls,
+  });
+}
+
+function countPreparedContextWrites(stores: ReturnType<typeof createMemoryStores>) {
+  const durable = stores.preparedCallContexts;
+  let writes = 0;
+  return Object.freeze({
+    adapter: Object.freeze({
+      get: (key: Parameters<typeof durable.get>[0]) => durable.get(key),
+      compareAndSwap(input: Parameters<typeof durable.compareAndSwap>[0]) {
+        writes += 1;
+        return durable.compareAndSwap(input);
+      },
+      close: () => durable.close(),
+    }),
+    writes: () => writes,
+  });
 }
 
 describe("experimental wallet prepared calls", () => {
@@ -386,6 +497,235 @@ describe("experimental wallet prepared calls", () => {
     expect(consumed?.value.state).toBe("consumed");
     await restoredConnection.close();
     third.database.close();
+  });
+
+  it("recreates a WebAuthn frontend realm and submits one externally signed retained digest", async () => {
+    const credential = createWebAuthnCredentialFixture();
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const chain = createChainFixture();
+    const first = await indexedDbPreparedRealmStores(factory);
+    const firstSessionKey = credential.verificationKey();
+    const firstSigning = signingProfiles();
+    const before = createRealm({
+      stores: first.stores,
+      clock,
+      chain,
+      binding: { ...bindingInput, operatorCredential: credential.operatorCredential },
+      owner: { operatorKey: firstSessionKey },
+      signing: { owner: firstSigning.owner, session: firstSessionKey },
+    });
+    const firstConnection = await before.oaath.connect();
+    const firstGrant = await firstConnection.requestPermission(permissionInput());
+    const account = await firstGrant.account(CHAIN_ID);
+    const firstProvider = oaathProvider({ grant: firstGrant, chain: CHAIN_ID });
+    const prepared = (await firstProvider.request(
+      providerPrepareRequest(account, {
+        type: "webauthn-p256",
+        publicKey: credential.publicKey,
+        prehash: false,
+      }),
+    )) as PreparedRpcResponse;
+    const firstPort = grantProviderPort(firstGrant);
+    const contextKey = Object.freeze({
+      providerScopeId: firstPort.providerScopeId as `0x${string}`,
+      contextId: prepared.context.id,
+    });
+    const preparedRecord = await firstPort.preparedCallContexts.get(contextKey);
+    if (preparedRecord === undefined) throw new Error("expected one durable WebAuthn context");
+
+    expect(prepared).toMatchObject({
+      version: "1",
+      chainId: CHAIN_HEX,
+      key: {
+        type: "webauthn-p256",
+        publicKey: credential.publicKey,
+        prehash: false,
+      },
+      digest: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+    });
+    expect(preparedRecord.value).toMatchObject({
+      state: "prepared",
+      keyHint: prepared.key,
+      custody: { mode: "frontend", providerId: null },
+      digest: prepared.digest,
+    });
+    expect(credential.injectedAuthenticatorCalls()).toBe(0);
+    expect(credential.externalAuthenticatorCalls()).toBe(0);
+    expect(chain.quotes).toBe(1);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await firstConnection.close();
+    first.database.close();
+
+    const second = await indexedDbPreparedRealmStores(factory);
+    const secondSessionKey = credential.verificationKey();
+    const secondSigning = signingProfiles();
+    const after = createRealm({
+      stores: second.stores,
+      clock,
+      chain,
+      relay: before.relay,
+      binding: { ...bindingInput, operatorCredential: credential.operatorCredential },
+      owner: { operatorKey: secondSessionKey },
+      signing: { owner: secondSigning.owner, session: secondSessionKey },
+    });
+    const secondConnection = await after.oaath.connect();
+    const secondGrant = await secondConnection.resume();
+    if (secondGrant === null) throw new Error("expected the WebAuthn Grant to resume");
+    const secondProvider = oaathProvider({ grant: secondGrant, chain: CHAIN_ID });
+    const secondPort = grantProviderPort(secondGrant);
+
+    expect(secondSessionKey).not.toBe(firstSessionKey);
+    await expect(secondPort.preparedCallContexts.get(contextKey)).resolves.toEqual(preparedRecord);
+    expect(credential.injectedAuthenticatorCalls()).toBe(0);
+
+    const externalSignature = await credential.externalKey().sign(prepared.digest);
+    expect(credential.externalAuthenticatorCalls()).toBe(1);
+    expect(credential.injectedAuthenticatorCalls()).toBe(0);
+
+    const sent = await secondProvider.request(
+      providerSendRequest(prepared, externalSignature.toLowerCase() as `0x${string}`),
+    );
+    const consumed = await secondPort.preparedCallContexts.get(contextKey);
+
+    expect(sent).toMatchObject({ id: expect.stringMatching(/^0x[0-9a-f]{64}$/u) });
+    expect(credential.externalAuthenticatorCalls()).toBe(1);
+    expect(credential.injectedAuthenticatorCalls()).toBe(0);
+    expect(chain.quotes).toBe(2);
+    expect(chain.signatures.length).toBe(1);
+    expect(chain.sends).toHaveLength(1);
+    expect(chain.sends[0]?.userOperationHash).toBe(prepared.digest);
+    expect(consumed?.storeRevision).toBe(preparedRecord.storeRevision + 1);
+    expect(consumed?.value.state).toBe("consumed");
+    await secondConnection.close();
+    second.database.close();
+  });
+
+  it("refuses a wrong secp256k1 key before effects and still prepares with the approved key", async () => {
+    const approved = privateKeyToAccount(generatePrivateKey());
+    const wrong = privateKeyToAccount(generatePrivateKey());
+    const approvedBaseKey = ecdsaKey({ account: approved, validator: VALIDATOR });
+    let injectedSignCalls = 0;
+    const approvedKey = Object.freeze({
+      ...approvedBaseKey,
+      async sign(hash: `0x${string}`) {
+        injectedSignCalls += 1;
+        return approvedBaseKey.sign(hash);
+      },
+    });
+    const stores = createMemoryStores();
+    const contexts = countPreparedContextWrites(stores);
+    const chain = createChainFixture();
+    const ownerSigning = signingProfiles();
+    const realm = createRealm({
+      stores: { ...stores, preparedCallContexts: contexts.adapter },
+      chain,
+      binding: {
+        ...bindingInput,
+        operatorCredential: {
+          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa",
+          address: approved.address.toLowerCase(),
+        },
+      },
+      signing: { owner: ownerSigning.owner, session: approvedKey },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const account = await grant.account(CHAIN_ID);
+    const provider = oaathProvider({ grant, chain: CHAIN_ID });
+
+    await expect(
+      provider.request(
+        providerPrepareRequest(account, {
+          type: "secp256k1",
+          publicKey: wrong.publicKey.toLowerCase() as `0x${string}`,
+          prehash: false,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: "OaathProviderRpcError", code: 4100 });
+    expect(contexts.writes()).toBe(0);
+    expect(chain.quotes).toBe(0);
+    expect(injectedSignCalls).toBe(0);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+
+    const prepared = (await provider.request(
+      providerPrepareRequest(account, {
+        type: "secp256k1",
+        publicKey: approved.publicKey.toLowerCase() as `0x${string}`,
+        prehash: false,
+      }),
+    )) as PreparedRpcResponse;
+    const port = grantProviderPort(grant);
+    const retained = await port.preparedCallContexts.get({
+      providerScopeId: port.providerScopeId,
+      contextId: prepared.context.id,
+    });
+
+    expect(prepared.key).toEqual({
+      type: "secp256k1",
+      publicKey: approved.publicKey.toLowerCase(),
+      prehash: false,
+    });
+    expect(retained?.value.state).toBe("prepared");
+    expect(contexts.writes()).toBe(1);
+    expect(chain.quotes).toBe(1);
+    expect(injectedSignCalls).toBe(0);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("refuses oaath_hosted custody before context reservation or execution effects", async () => {
+    const hosted = privateKeyToAccount(generatePrivateKey());
+    let hostedSignCalls = 0;
+    const hostedProvider = Object.freeze({
+      async credential() {
+        return Object.freeze({
+          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa" as const,
+          address: hosted.address.toLowerCase(),
+        });
+      },
+      async sign(request: Readonly<{ hash: `0x${string}` }>) {
+        hostedSignCalls += 1;
+        return hosted.sign({ hash: request.hash });
+      },
+    });
+    const stores = createMemoryStores();
+    const contexts = countPreparedContextWrites(stores);
+    const chain = createChainFixture();
+    const realm = createUrlRealm({
+      stores: { ...stores, preparedCallContexts: contexts.adapter },
+      chain,
+      sessionSigner: {
+        mode: "oaath_hosted",
+        providerId: "hosted-primary",
+        provider: hostedProvider,
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const account = await grant.account(CHAIN_ID);
+    const provider = oaathProvider({ grant, chain: CHAIN_ID });
+
+    await expect(
+      provider.request(
+        providerPrepareRequest(account, {
+          type: "secp256k1",
+          publicKey: hosted.publicKey.toLowerCase() as `0x${string}`,
+          prehash: false,
+        }),
+      ),
+    ).rejects.toMatchObject({ name: "OaathProviderRpcError", code: 5700 });
+    expect(contexts.writes()).toBe(0);
+    expect(chain.quotes).toBe(0);
+    expect(hostedSignCalls).toBe(0);
+    expect(chain.signatures.length).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await connection.close();
   });
 
   it("keeps an invalid external signature unconsumed and submits nothing", async () => {

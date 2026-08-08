@@ -15,7 +15,10 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
+  type OperatorCredentialProfile,
   parseGrantPolicy,
+  parseOperatorCredentialProfile,
+  sameOperatorCredentialProfile,
 } from "@oaath/protocol";
 import {
   createMemoryRelayStore,
@@ -32,6 +35,7 @@ import type {
   OaathRegisteredPaymasterService,
 } from "../../src/advanced.js";
 import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
+import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
 import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
@@ -47,6 +51,7 @@ import {
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelAllChainApproval,
   type KernelV4AccountReadRequest,
+  type KeyProfile,
   kernelAllChainCapabilityHash,
   kernelV4Deployment,
   ownerOperator,
@@ -266,6 +271,30 @@ export interface OwnerDecision {
   readonly policy?: (requested: unknown) => unknown;
   /** Replaces the decision envelope entirely, for hostile artifacts. */
   readonly artifact?: (decision: Record<string, unknown>) => unknown;
+  /** Test-only non-ECDSA operator identity the owner reviewed. */
+  readonly operatorKey?: Readonly<KeyProfile>;
+}
+
+function ownerApprovedOperatorKey(
+  approved: Readonly<OperatorCredentialProfile>,
+  supplied: Readonly<KeyProfile> | undefined,
+): Readonly<KeyProfile> {
+  if (supplied !== undefined) {
+    const derived = deriveOperatorCredentialProfile(supplied);
+    if (derived === null || !sameOperatorCredentialProfile(derived, approved)) {
+      throw new Error("owner fixture operator key does not match the reviewed credential");
+    }
+    return supplied;
+  }
+  if (approved.kind !== "ecdsa") {
+    throw new Error("owner fixture requires the reviewed non-ECDSA operator key");
+  }
+  return ecdsaKey({
+    account: { address: approved.address, sign: async () => "0x" },
+    // Session composition resolves the pinned signer module and never consults
+    // this syntactic validator member.
+    validator: `0x${"01".repeat(20)}`,
+  });
 }
 
 /**
@@ -277,7 +306,8 @@ export interface OwnerDecision {
 async function ownerInstallApproval(
   reads: OaathChainCapability["reads"],
   approvedPolicy: unknown,
-  operatorAddress: `0x${string}`,
+  operatorCredential: Readonly<OperatorCredentialProfile>,
+  operatorKey: Readonly<KeyProfile> | undefined,
   validator: `0x${string}`,
 ): Promise<Readonly<KernelAllChainApproval>> {
   const owner = ecdsaKey({ account: ownerAccount, validator });
@@ -296,12 +326,7 @@ async function ownerInstallApproval(
   const sessionRuntime = createKernelRuntime({
     deployment,
     operator: sessionOperator({
-      key: ecdsaKey({
-        account: { address: operatorAddress, sign: async () => "0x" },
-        // Session composition resolves the pinned signer module and never
-        // consults this syntactic validator member.
-        validator: `0x${"01".repeat(20)}`,
-      }),
+      key: ownerApprovedOperatorKey(operatorCredential, operatorKey),
       policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
     }),
     reads,
@@ -353,11 +378,12 @@ export function createOwnerAuthorization(
           };
         } else {
           const approvedPolicy = options.policy ? options.policy(scope.policy) : scope.policy;
-          const operator = scope.operatorCredential as { readonly address: `0x${string}` };
+          const operator = parseOperatorCredentialProfile(scope.operatorCredential);
           const installApproval = await ownerInstallApproval(
             reads,
             approvedPolicy,
-            operator.address,
+            operator,
+            options.operatorKey,
             validator,
           );
           decision = {
