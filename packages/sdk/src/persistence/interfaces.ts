@@ -44,13 +44,17 @@ import {
   type KernelAllChainApproval,
   parseKernelAllChainApproval,
 } from "../kernel/permission/materialize.js";
+import {
+  captureWalletCallResultCapabilities,
+  type OaathWalletCallResultCapabilities,
+} from "../provider/result-capabilities.js";
 import type { StoreRecord } from "../store.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
-export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v5" as const;
+export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v6" as const;
 export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
-  "oaath.wallet-call-bundle-store-record/v5" as const;
+  "oaath.wallet-call-bundle-store-record/v6" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
@@ -172,7 +176,7 @@ function walletCallBundleOperation(
 ): Readonly<WalletCallBundleOperation> {
   const record = exactRecord(
     value,
-    ["identity"],
+    ["identity", "resultCapabilities"],
     "wallet call bundle operation binding",
     context,
     failFor(code),
@@ -192,7 +196,11 @@ function walletCallBundleOperation(
   ) {
     return persistenceFail(code, "wallet call bundle operation identity contradicts its bundle");
   }
-  return Object.freeze({ identity });
+  const resultCapabilities =
+    record.resultCapabilities === null
+      ? null
+      : captureWalletCallResultCapabilities(record.resultCapabilities, context, failFor(code));
+  return Object.freeze({ identity, resultCapabilities });
 }
 
 /** The exact durable uniqueness key. Grant and chain are deliberately not axes. */
@@ -204,6 +212,7 @@ export interface WalletCallBundleKey {
 
 export interface WalletCallBundleOperation {
   readonly identity: Readonly<OperationIdentity>;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
 }
 
 export interface WalletCallBundleRecord {

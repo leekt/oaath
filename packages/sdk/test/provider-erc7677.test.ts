@@ -14,6 +14,7 @@ import {
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   prepareUserOperation,
 } from "../src/kernel.js";
+import { readCompletedErc7677ResultCapabilities } from "../src/provider/erc7677.js";
 
 const SERVICE_URL = "https://service.example/chains/421614/paymaster";
 const OTHER_URL = "https://attacker.example/paymaster";
@@ -179,6 +180,10 @@ describe("ERC-7677 sponsorship adapter", () => {
     requestedContext.policyId = "mutated";
     requestedContext.nested.tier = 9;
 
+    expect(() => readCompletedErc7677ResultCapabilities(sponsorship)).toThrowError(
+      expect.objectContaining({ code: "routing_capability_invalid" }),
+    );
+
     const final = await prepareSponsoredKernelOperation({
       runtime: runtime(preparations),
       operation: operation(),
@@ -196,6 +201,15 @@ describe("ERC-7677 sponsorship adapter", () => {
       expect(Object.isFrozen(request.params[3])).toBe(true);
     }
     expect(preparations).toHaveLength(2);
+    const resultCapabilities = readCompletedErc7677ResultCapabilities(sponsorship);
+    expect(resultCapabilities).toEqual({
+      paymasterService: {
+        sponsor: { name: "Example Sponsor", icon: "data:image/png;base64,AQ==" },
+      },
+    });
+    expect(Object.isFrozen(resultCapabilities)).toBe(true);
+    expect(Object.isFrozen(resultCapabilities?.paymasterService)).toBe(true);
+    expect(Object.isFrozen(resultCapabilities?.paymasterService.sponsor)).toBe(true);
     expect(preparations[1]?.mode).toBe("enable-replayable");
     expect(final).toMatchObject({
       kind: "execution",
@@ -220,6 +234,16 @@ describe("ERC-7677 sponsorship adapter", () => {
         },
       },
     });
+    await expect(
+      prepareSponsoredKernelOperation({
+        runtime: runtime(preparations),
+        operation: operation(),
+        simulationSignature: SIMULATION_SIGNATURE,
+        sponsorship,
+      }),
+    ).rejects.toMatchObject({ code: "routing_sponsorship_invalid" });
+    expect(stages).toEqual(["stub", "estimate", "final"]);
+    expect(readCompletedErc7677ResultCapabilities(sponsorship)).toBe(resultCapabilities);
   });
 
   it("uses final stub data but still estimates when the service marks the stub final", async () => {
@@ -233,7 +257,11 @@ describe("ERC-7677 sponsorship adapter", () => {
         async request(request) {
           serviceCalls += 1;
           expect(request.method).toBe("pm_getPaymasterStubData");
-          return stub({ paymasterVerificationGasLimit: "0x32", isFinal: true });
+          return stub({
+            sponsor: { name: "One Padding Sponsor", icon: "data:image/png;base64,AQI=" },
+            paymasterVerificationGasLimit: "0x32",
+            isFinal: true,
+          });
         },
       },
       estimator: {
@@ -261,6 +289,11 @@ describe("ERC-7677 sponsorship adapter", () => {
       verificationGasLimit: "50",
       postOpGasLimit: "60",
       data: "0x01020304",
+    });
+    expect(readCompletedErc7677ResultCapabilities(sponsorship)).toEqual({
+      paymasterService: {
+        sponsor: { name: "One Padding Sponsor", icon: "data:image/png;base64,AQI=" },
+      },
     });
   });
 
@@ -328,6 +361,45 @@ describe("ERC-7677 sponsorship adapter", () => {
   });
 
   it.each([
+    ["a remote URL", "https://service.example/icon.png"],
+    ["SVG", "data:image/svg+xml;base64,PHN2Zz4="],
+    ["noncanonical base64", "data:image/png;base64,AQ"],
+    ["noncanonical two-padding bits AR", "data:image/png;base64,AR=="],
+    ["noncanonical two-padding bits AZ", "data:image/png;base64,AZ=="],
+    ["noncanonical two-padding bits Af", "data:image/png;base64,Af=="],
+    ["noncanonical one-padding bits", "data:image/png;base64,AQJ="],
+    ["a fragment", "data:image/png;base64,AQ==#fragment"],
+    ["an oversized payload", `data:image/png;base64,${"AAAA".repeat(8_193)}`],
+  ])("rejects %s sponsor icon before estimation", async (_label, icon) => {
+    let estimateCalls = 0;
+    const sponsorship = createErc7677SponsorshipCapability({
+      requested: { url: SERVICE_URL, context: {} },
+      service: {
+        url: SERVICE_URL,
+        async request() {
+          return stub({ sponsor: { name: "Example Sponsor", icon } });
+        },
+      },
+      estimator: {
+        async estimate() {
+          estimateCalls += 1;
+          return estimate();
+        },
+      },
+    });
+    await expect(
+      prepareSponsoredKernelOperation({
+        runtime: runtime([]),
+        operation: operation(),
+        simulationSignature: SIMULATION_SIGNATURE,
+        sponsorship,
+      }),
+    ).rejects.toMatchObject({ code: "routing_sponsorship_invalid" });
+    expect(estimateCalls).toBe(0);
+    expect(() => readCompletedErc7677ResultCapabilities(sponsorship)).toThrow();
+  });
+
+  it.each([
     ["a different paymaster", { paymaster: OTHER_PAYMASTER, paymasterData: "0x01020305" }],
     ["a different data length", { paymaster: PAYMASTER, paymasterData: "0x010203" }],
     ["a stub with too many zero bytes", { paymaster: PAYMASTER, paymasterData: "0x01020305" }],
@@ -358,5 +430,6 @@ describe("ERC-7677 sponsorship adapter", () => {
       }),
     ).rejects.toMatchObject({ code: "routing_sponsorship_invalid" });
     expect(preparations).toHaveLength(1);
+    expect(() => readCompletedErc7677ResultCapabilities(sponsorship)).toThrow();
   });
 });

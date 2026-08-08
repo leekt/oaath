@@ -97,12 +97,14 @@ import {
   createErc7677SponsorshipCapability,
   type Erc7677GasEstimator,
   type Erc7677RegisteredPaymasterService,
+  readCompletedErc7677ResultCapabilities,
 } from "../provider/erc7677.js";
 import {
   captureErc7902StaticPaymasterConfiguration,
   hashCapturedErc7902PreparedPaymaster,
 } from "../provider/erc7902.js";
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
+import type { OaathWalletCallResultCapabilities } from "../provider/result-capabilities.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import { feePayerDescriptor, type OaathSessionCoverage } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
@@ -149,8 +151,13 @@ export type OaathProviderOperationPointer = Readonly<{
   identity: Readonly<OperationIdentity>;
 }>;
 
+export interface OaathProviderOperationReservation {
+  readonly operation: OaathProviderOperationPointer;
+  readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
+}
+
 export interface OaathProviderOperationPublication {
-  readonly reserve: (operation: OaathProviderOperationPointer) => Promise<void>;
+  readonly reserve: (reservation: Readonly<OaathProviderOperationReservation>) => Promise<void>;
   readonly confirm: (operation: OaathProviderOperationPointer) => Promise<void>;
   readonly abandon: (operation: OaathProviderOperationPointer) => Promise<void>;
 }
@@ -1415,12 +1422,15 @@ export function createGrantHandle(
     readonly externalSignature?: `0x${string}`;
     /** Present only while one final sponsored identity is being prepared. */
     readonly sponsorship?: Readonly<OaathKernelSponsorshipCapability>;
+    /** Display-only result facts available after that sponsorship completed. */
+    readonly sponsorshipResultCapabilities?: () => Readonly<OaathWalletCallResultCapabilities> | null;
     /** Present only for one authenticated ERC-7902 static configuration. */
     readonly staticPaymaster?: Readonly<PreparedPaymaster>;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
     const shared = observer(spec.chainId);
     let reservedOperation: OaathProviderOperationPointer | null = null;
+    let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
     let publicationConfirmed = false;
     try {
       return createOperationRunner({
@@ -1478,12 +1488,14 @@ export function createGrantHandle(
             if (spec.sponsorship === undefined) {
               return spec.runtime.prepareOperation(operation);
             }
-            return prepareSponsoredKernelOperation({
+            const prepared = await prepareSponsoredKernelOperation({
               runtime: spec.runtime,
               operation,
               simulationSignature,
               sponsorship: spec.sponsorship,
             });
+            resultCapabilities = spec.sponsorshipResultCapabilities?.() ?? null;
+            return prepared;
           },
           reserveOperation: async (prepared: PreparedUserOperation) => {
             if (!spec.publication) return;
@@ -1495,7 +1507,7 @@ export function createGrantHandle(
             }
             const identity = deriveOperationId(prepared, spec.requestHash);
             const exact: OaathProviderOperationPointer = Object.freeze({ identity });
-            await spec.publication.reserve(exact);
+            await spec.publication.reserve(Object.freeze({ operation: exact, resultCapabilities }));
             reservedOperation = exact;
           },
           releaseOperationReservation: async (prepared: PreparedUserOperation) => {
@@ -2269,7 +2281,11 @@ export function createGrantHandle(
     requestHash: `0x${string}` | null,
     publication?: Readonly<OaathProviderOperationPublication>,
     paymaster: Readonly<
-      | { readonly kind: "erc7677"; readonly sponsorship: OaathKernelSponsorshipCapability }
+      | {
+          readonly kind: "erc7677";
+          readonly sponsorship: OaathKernelSponsorshipCapability;
+          readonly resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
+        }
       | { readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }
     > | null = null,
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
@@ -2322,7 +2338,12 @@ export function createGrantHandle(
       ...shape,
       terminalBehavior: "replace",
       ...(publication ? { publication } : {}),
-      ...(paymaster?.kind === "erc7677" ? { sponsorship: paymaster.sponsorship } : {}),
+      ...(paymaster?.kind === "erc7677"
+        ? {
+            sponsorship: paymaster.sponsorship,
+            sponsorshipResultCapabilities: paymaster.resultCapabilities,
+          }
+        : {}),
       ...(paymaster?.kind === "erc7902-static" ? { staticPaymaster: paymaster.paymaster } : {}),
     });
     let result: OperationRunResult | OperationStartResult;
@@ -2851,6 +2872,7 @@ export function createGrantHandle(
     | Readonly<{
         readonly kind: "erc7677";
         readonly sponsorship: OaathKernelSponsorshipCapability;
+        readonly resultCapabilities: () => Readonly<OaathWalletCallResultCapabilities> | null;
       }>
     | Readonly<{ readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }>
     | null {
@@ -2875,7 +2897,11 @@ export function createGrantHandle(
           "provider ERC-7677 selection is empty",
         );
       }
-      return Object.freeze({ kind: "erc7677" as const, sponsorship });
+      return Object.freeze({
+        kind: "erc7677" as const,
+        sponsorship,
+        resultCapabilities: () => readCompletedErc7677ResultCapabilities(sponsorship),
+      });
     }
     if (captured.kind === "erc7902-static") {
       const selection = exactCapturedRecord(

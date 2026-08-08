@@ -13,6 +13,7 @@ import {
   grantProviderPort,
   type OaathGrantProviderPort,
   type OaathProviderOperationPointer,
+  type OaathProviderOperationReservation,
 } from "../src/client/grant-handle.js";
 import type { OaathGrantHandle } from "../src/index.js";
 import * as publicSdk from "../src/index.js";
@@ -152,9 +153,10 @@ describe("private Grant provider port", () => {
     const starting = port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (operation: OaathProviderOperationPointer) => {
+        reserve: async (reservation: OaathProviderOperationReservation) => {
           bindCalls += 1;
-          binding = operation;
+          binding = reservation.operation;
+          expect(reservation.resultCapabilities).toBeNull();
           enterBinding();
           await bindingReleased;
         },
@@ -195,8 +197,8 @@ describe("private Grant provider port", () => {
       port.startCalls(
         providerCallsInput(),
         Object.freeze({
-          reserve: async (operation: OaathProviderOperationPointer) => {
-            binding = operation;
+          reserve: async (reservation: OaathProviderOperationReservation) => {
+            binding = reservation.operation;
             throw new Error("provider registry refused the binding");
           },
           confirm: async () => undefined,
@@ -346,8 +348,8 @@ describe("private Grant provider port", () => {
     const starting = port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (operation: OaathProviderOperationPointer) => {
-          binding = operation;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => {
@@ -431,8 +433,8 @@ describe("private Grant provider port", () => {
     const first = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (operation: OaathProviderOperationPointer) => {
-          binding = operation;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,
@@ -503,8 +505,8 @@ describe("private Grant provider port", () => {
     const operation = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (exact: OaathProviderOperationPointer) => {
-          binding = exact;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,
@@ -612,8 +614,8 @@ describe("private Grant provider port", () => {
     const operation = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (exact: OaathProviderOperationPointer) => {
-          binding = exact;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,
@@ -645,8 +647,8 @@ describe("private Grant provider port", () => {
     const operation = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (exact: OaathProviderOperationPointer) => {
-          binding = exact;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,
@@ -755,8 +757,8 @@ describe("private Grant provider port", () => {
     const operation = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (exact: OaathProviderOperationPointer) => {
-          binding = exact;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,
@@ -836,8 +838,8 @@ describe("private Grant provider port", () => {
     const started = await port.startCalls(
       providerCallsInput(),
       Object.freeze({
-        reserve: async (operation: OaathProviderOperationPointer) => {
-          binding = operation;
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
         },
         confirm: async () => undefined,
         abandon: async () => undefined,

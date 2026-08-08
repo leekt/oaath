@@ -14,6 +14,7 @@ import { hashErc7902StaticPaymasterConfiguration } from "../src/advanced.js";
 import {
   grantProviderPort,
   type OaathProviderOperationPointer,
+  type OaathProviderOperationReservation,
 } from "../src/client/grant-handle.js";
 import { encodeKernelV4Execution, OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel.js";
 import { createEip5792Orchestrator } from "../src/provider/eip5792.js";
@@ -170,7 +171,7 @@ function providerCallsInput(admission: unknown): Readonly<Record<string, unknown
 }
 
 const publication = Object.freeze({
-  async reserve(_operation: OaathProviderOperationPointer) {},
+  async reserve(_reservation: OaathProviderOperationReservation) {},
   async confirm(_operation: OaathProviderOperationPointer) {},
   async abandon(_operation: OaathProviderOperationPointer) {},
 });

@@ -23,6 +23,12 @@ import {
 } from "../prepared-user-operation.js";
 import type { OaathKernelSponsorshipCapability } from "../routing/sponsorship.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "../routing/types.js";
+import {
+  captureErc7677SponsorDisplayMetadata,
+  type OaathErc7677SponsorDisplayMetadata,
+  type OaathWalletCallResultCapabilities,
+  walletCallSponsorResultCapabilities,
+} from "./result-capabilities.js";
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
@@ -37,9 +43,14 @@ const LIMITS = Object.freeze({
   contextDepth: 32,
   contextNodes: 4_096,
   paymasterDataBytes: 64 * 1_024,
-  sponsorNameBytes: 256,
-  sponsorIconBytes: 32 * 1_024,
 });
+
+interface SponsorshipResultState {
+  started: boolean;
+  resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null | undefined;
+}
+
+const sponsorshipResultStates = new WeakMap<object, SponsorshipResultState>();
 
 export type Erc7677JsonValue =
   | null
@@ -240,40 +251,13 @@ function decimalQuantity(value: string): `0x${string}` {
   return `0x${BigInt(value).toString(16)}`;
 }
 
-function boundedUtf8(value: unknown, maximum: number, label: string): string {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    new TextEncoder().encode(value).byteLength > maximum
-  ) {
-    return invalidEvidence(`${label} is invalid`);
-  }
-  return value;
-}
-
-function sponsorMetadata(value: unknown, context: CaptureContext): void {
-  const sponsor = allowedRecord(value, ["name", "icon"], ["name"], "ERC-7677 sponsor", context);
-  boundedUtf8(sponsor.name, LIMITS.sponsorNameBytes, "ERC-7677 sponsor name");
-  if (Object.hasOwn(sponsor, "icon")) {
-    const icon = boundedUtf8(sponsor.icon, LIMITS.sponsorIconBytes, "ERC-7677 sponsor icon");
-    let parsed: URL;
-    try {
-      parsed = new URL(icon);
-    } catch {
-      invalidEvidence("ERC-7677 sponsor icon is invalid");
-    }
-    if (parsed.protocol !== "data:" || parsed.hash !== "" || !icon.startsWith("data:image/")) {
-      invalidEvidence("ERC-7677 sponsor icon is invalid");
-    }
-  }
-}
-
 interface CapturedStub {
   readonly address: `0x${string}`;
   readonly data: `0x${string}`;
   readonly verificationGasLimit: string | null;
   readonly postOpGasLimit: string;
   readonly isFinal: boolean;
+  readonly sponsor: Readonly<OaathErc7677SponsorDisplayMetadata> | null;
 }
 
 function captureStub(value: unknown): Readonly<CapturedStub> {
@@ -292,7 +276,9 @@ function captureStub(value: unknown): Readonly<CapturedStub> {
     "ERC-7677 stub result",
     context,
   );
-  if (Object.hasOwn(record, "sponsor")) sponsorMetadata(record.sponsor, context);
+  const sponsor = Object.hasOwn(record, "sponsor")
+    ? captureErc7677SponsorDisplayMetadata(record.sponsor, context, invalidEvidence)
+    : null;
   let isFinal = false;
   if (Object.hasOwn(record, "isFinal")) {
     if (typeof record.isFinal !== "boolean") {
@@ -308,6 +294,7 @@ function captureStub(value: unknown): Readonly<CapturedStub> {
       : null,
     postOpGasLimit: quantity(record.paymasterPostOpGasLimit, "ERC-7677 stub paymaster post-op gas"),
     isFinal,
+    sponsor,
   });
 }
 
@@ -463,6 +450,17 @@ async function invokeEstimator(
   }
 }
 
+/** Reads display-only facts after this exact adapter capability completed. */
+export function readCompletedErc7677ResultCapabilities(
+  capability: Readonly<OaathKernelSponsorshipCapability>,
+): Readonly<OaathWalletCallResultCapabilities> | null {
+  const state = sponsorshipResultStates.get(capability);
+  if (state === undefined || state.resultCapabilities === undefined) {
+    return invalidConfiguration("ERC-7677 sponsorship result metadata is unavailable");
+  }
+  return state.resultCapabilities;
+}
+
 /**
  * Creates the one ERC-7677 translation accepted by
  * `prepareSponsoredKernelOperation`. URL authorization and context capture
@@ -512,9 +510,12 @@ export function createErc7677SponsorshipCapability(
   const paymasterContext = capturedContext(requested.context, context);
   const serviceRequest = service.request as Erc7677RegisteredPaymasterService["request"];
   const estimateGas = estimator.estimate as Erc7677GasEstimator["estimate"];
-
-  return Object.freeze({
+  const state: SponsorshipResultState = { started: false, resultCapabilities: undefined };
+  const capability: Readonly<OaathKernelSponsorshipCapability> = Object.freeze({
     async sponsor(value: unknown) {
+      if (state.started) return invalidEvidence("ERC-7677 sponsorship capability was already used");
+      state.started = true;
+      state.resultCapabilities = undefined;
       const sponsorInput = exactRoutingRecord(
         value,
         ["prepared", "simulationSignature"],
@@ -592,7 +593,11 @@ export function createErc7677SponsorshipCapability(
         postOpGasLimit: stub.postOpGasLimit,
         data: finalData.data,
       });
+      state.resultCapabilities =
+        stub.sponsor === null ? null : walletCallSponsorResultCapabilities(stub.sponsor);
       return Object.freeze({ gas, paymaster });
     },
   });
+  sponsorshipResultStates.set(capability, state);
+  return capability;
 }

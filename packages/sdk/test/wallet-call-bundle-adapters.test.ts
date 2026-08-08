@@ -88,6 +88,7 @@ function operation(grantId = GRANT_ID): Readonly<WalletCallBundleOperation> {
       userOperationHash: USER_OPERATION_HASH,
       requestHash: REQUEST_HASH,
     }),
+    resultCapabilities: null,
   });
 }
 

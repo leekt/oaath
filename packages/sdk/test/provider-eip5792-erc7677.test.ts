@@ -32,6 +32,13 @@ const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}`;
 const SERVICE_URL = `https://issuer.example/chains/${CHAIN_ID}/paymaster`;
 const FOREIGN_URL = "https://attacker.example/paymaster";
 const PAYMASTER = `0x${"33".repeat(20)}` as const;
+const SPONSOR = Object.freeze({
+  name: "Example Sponsor",
+  icon: "data:image/png;base64,AQ==",
+});
+const RESULT_CAPABILITIES = Object.freeze({
+  paymasterService: Object.freeze({ sponsor: SPONSOR }),
+});
 
 function bundle(
   account: `0x${string}`,
@@ -61,7 +68,12 @@ function replaceChain(base: ChainFixture, overrides: Partial<OaathChainCapabilit
   });
 }
 
-function registeredService(options: Readonly<{ malformedEstimate?: boolean }> = {}): Readonly<{
+function registeredService(
+  options: Readonly<{
+    malformedEstimate?: boolean;
+    sponsor?: Readonly<{ name: string; icon?: string }>;
+  }> = {},
+): Readonly<{
   service: Readonly<OaathRegisteredPaymasterService>;
   stages: readonly string[];
   serviceRequests: readonly Readonly<Erc7677PaymasterServiceRequest>[];
@@ -77,6 +89,7 @@ function registeredService(options: Readonly<{ malformedEstimate?: boolean }> = 
       stages.push(request.method === "pm_getPaymasterStubData" ? "stub" : "final");
       if (request.method === "pm_getPaymasterStubData") {
         return {
+          ...(options.sponsor === undefined ? {} : { sponsor: options.sponsor }),
           paymaster: PAYMASTER,
           paymasterData: "0x01020304",
           paymasterPostOpGasLimit: "0x3c",
@@ -122,7 +135,7 @@ async function providerError(
 describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("finalizes sponsorship before durable identity, signing, and one submission", async () => {
     const base = createChainFixture();
-    const registered = registeredService();
+    const registered = registeredService({ sponsor: SPONSOR });
     const chain = replaceChain(base, { paymasterService: registered.service });
     const { connection, grant, provider, account } = await activeProvider(chain);
 
@@ -136,7 +149,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
           }),
         ],
       }),
-    ).resolves.toEqual({ id: "sponsored" });
+    ).resolves.toEqual({ id: "sponsored", capabilities: RESULT_CAPABILITIES });
 
     expect(registered.stages).toEqual(["stub", "estimate", "final"]);
     expect(registered.serviceRequests).toHaveLength(2);
@@ -167,6 +180,14 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     expect(retained?.value.operation?.identity.userOperationHash).toBe(
       submitted?.userOperationHash,
     );
+    expect(retained?.value.operation?.resultCapabilities).toEqual(RESULT_CAPABILITIES);
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: ["sponsored"] }),
+    ).resolves.toMatchObject({
+      id: "sponsored",
+      status: 200,
+      capabilities: RESULT_CAPABILITIES,
+    });
     await connection.close();
   });
 
@@ -335,6 +356,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
           async getPaymasterStubData() {
             stages.push("stub");
             return {
+              sponsor: SPONSOR,
               paymaster: PAYMASTER,
               paymasterData: "0x01020304",
               paymasterPostOpGasLimit: "0x3c",
@@ -378,7 +400,10 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
           }),
         ],
       }),
-    ).resolves.toEqual({ id: "url-sponsored" });
+    ).resolves.toEqual({
+      id: "url-sponsored",
+      capabilities: RESULT_CAPABILITIES,
+    });
     expect(stages).toEqual(["stub", "estimate", "final"]);
     expect(first.fetched.filter((entry) => entry.endsWith("/paymaster/stub-data"))).toHaveLength(1);
     expect(first.fetched.filter((entry) => entry.endsWith("/paymaster/data"))).toHaveLength(1);
@@ -396,10 +421,27 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     const reconnected = await second.oaath.connect();
     const resumed = await reconnected.resume();
     if (resumed === null) throw new Error("expected the sponsored Grant to resume");
-    const resumedProvider = oaathProvider({ grant: resumed, chain: CHAIN_ID });
+    const presented: unknown[] = [];
+    const resumedProvider = oaathProvider({
+      grant: resumed,
+      chain: CHAIN_ID,
+      showCallsStatus(status) {
+        presented.push(status);
+      },
+    });
+    const status = await resumedProvider.request({
+      method: "wallet_getCallsStatus",
+      params: ["url-sponsored"],
+    });
+    expect(status).toMatchObject({
+      id: "url-sponsored",
+      status: 200,
+      capabilities: RESULT_CAPABILITIES,
+    });
     await expect(
-      resumedProvider.request({ method: "wallet_getCallsStatus", params: ["url-sponsored"] }),
-    ).resolves.toMatchObject({ id: "url-sponsored", status: 200 });
+      resumedProvider.request({ method: "wallet_showCallsStatus", params: ["url-sponsored"] }),
+    ).resolves.toBeUndefined();
+    expect(presented).toEqual([status]);
     expect(stages).toEqual(["stub", "estimate", "final"]);
     expect(base.signatures).toHaveLength(1);
     expect(base.sends).toHaveLength(1);

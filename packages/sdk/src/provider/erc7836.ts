@@ -13,6 +13,7 @@ import type {
   OaathExternalPreparedCallPlan,
   OaathGrantProviderPort,
   OaathProviderOperationPointer,
+  OaathProviderOperationReservation,
   OaathProviderValidityAdmission,
   OaathValidatedPreparedCalls,
 } from "../client/grant-handle.js";
@@ -309,7 +310,7 @@ export function createErc7836Orchestrator(
     initial: WalletCallBundleStoreRecord,
   ): Readonly<{
     publication: Readonly<{
-      reserve: (pointer: OaathProviderOperationPointer) => Promise<void>;
+      reserve: (reservation: Readonly<OaathProviderOperationReservation>) => Promise<void>;
       confirm: (pointer: OaathProviderOperationPointer) => Promise<void>;
       abandon: (pointer: OaathProviderOperationPointer) => Promise<void>;
     }>;
@@ -330,7 +331,9 @@ export function createErc7836Orchestrator(
 
     return Object.freeze({
       publication: Object.freeze({
-        reserve: async (pointer: OaathProviderOperationPointer) => {
+        reserve: async (reservation: Readonly<OaathProviderOperationReservation>) => {
+          const pointer = reservation.operation;
+          if (reservation.resultCapabilities !== null) return rpcFail(INTERNAL_ERROR);
           requirePointer(pointer);
           retained = (await bundles.get(key)) ?? retained;
           if (retained.value.operation !== null) {
@@ -342,7 +345,10 @@ export function createErc7836Orchestrator(
             key,
             expectedStoreRevision: retained.storeRevision,
             expectedGeneration: context.bundleGeneration,
-            operation: exact,
+            operation: Object.freeze({
+              identity: exact.identity,
+              resultCapabilities: null,
+            }),
             updatedAt: Math.max(now(), retained.updatedAt),
           });
           if (result.status === "committed") {
@@ -667,7 +673,9 @@ export function createErc7836Orchestrator(
     // producer advanced it and therefore need no preparation callbacks of its
     // own. Idempotently converge the public bundle binding before release.
     const exactPointer = expectedPointer(retained.value);
-    await callbacks.publication.reserve(exactPointer);
+    await callbacks.publication.reserve(
+      Object.freeze({ operation: exactPointer, resultCapabilities: null }),
+    );
     await callbacks.publication.confirm(exactPointer);
     await releasePublication(retained.value, callbacks.retained());
     await operation.close().catch(() => undefined);

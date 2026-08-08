@@ -36,6 +36,14 @@ const GENERATION_B = `0x${"56".repeat(32)}` as const;
 const CHAIN_ID = 31_337;
 const GRANT_ID = "grant";
 const OTHER_GRANT_ID = "other-grant";
+const RESULT_CAPABILITIES = Object.freeze({
+  paymasterService: Object.freeze({
+    sponsor: Object.freeze({
+      name: "Example Sponsor",
+      icon: "data:image/png;base64,AQ==",
+    }),
+  }),
+});
 
 function key(
   id = "bundle",
@@ -51,6 +59,7 @@ function operation(
   grantId = GRANT_ID,
   account: `0x${string}` = ACCOUNT,
   requestHash: `0x${string}` = REQUEST_HASH,
+  resultCapabilities: WalletCallBundleOperation["resultCapabilities"] = null,
 ): Readonly<WalletCallBundleOperation> {
   return Object.freeze({
     identity: Object.freeze({
@@ -63,6 +72,7 @@ function operation(
       userOperationHash,
       requestHash,
     }),
+    resultCapabilities,
   });
 }
 
@@ -216,7 +226,7 @@ async function reserve(
 }
 
 describe("wallet-call bundle persistence parser", () => {
-  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v5 record", () => {
+  it("captures arbitrary bounded UTF-8 IDs exactly and freezes the current v6 record", () => {
     const id = " app:\u0000/日本語/😀/not-hex ";
     const capturedKey = parseWalletCallBundleKey(key(id));
     expect(capturedKey.id).toBe(id);
@@ -228,7 +238,14 @@ describe("wallet-call bundle persistence parser", () => {
       () => parseWalletCallBundleKey(key(`${exactBoundary}a`)),
       "persistence_input_invalid",
     );
-    const binding = operation();
+    const binding = operation(
+      CHAIN_ID,
+      USER_OPERATION_HASH,
+      GRANT_ID,
+      ACCOUNT,
+      REQUEST_HASH,
+      RESULT_CAPABILITIES,
+    );
     const captured = parseWalletCallBundleRecord(
       bundleRecord({ id, operation: binding, state: "operation_bound" }),
     );
@@ -236,6 +253,11 @@ describe("wallet-call bundle persistence parser", () => {
     expect(Object.isFrozen(captured)).toBe(true);
     expect(Object.isFrozen(captured.operation)).toBe(true);
     expect(Object.isFrozen(captured.operation?.identity)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities?.paymasterService)).toBe(true);
+    expect(Object.isFrozen(captured.operation?.resultCapabilities?.paymasterService.sponsor)).toBe(
+      true,
+    );
   });
 
   it("rejects hostile records without invoking accessors", () => {
@@ -273,7 +295,7 @@ describe("wallet-call bundle persistence parser", () => {
     const missingTerminalFromRecord: Record<string, unknown> = { ...bundleRecord() };
     delete missingTerminalFromRecord.terminalFrom;
     const wrongValues: unknown[] = [
-      { ...bundleRecord(), version: "oaath.wallet-call-bundle/v1" },
+      { ...bundleRecord(), version: "oaath.wallet-call-bundle/v5" },
       missingGrantRecord,
       missingGenerationRecord,
       missingTerminalFromRecord,
@@ -308,12 +330,33 @@ describe("wallet-call bundle persistence parser", () => {
             ...operation().identity,
             userOperationHash: USER_OPERATION_HASH.toUpperCase(),
           },
+          resultCapabilities: null,
         },
         state: "operation_bound",
       },
       {
         ...bundleRecord(),
-        operation: { identity: { ...operation().identity, kind: "revocation" } },
+        operation: {
+          identity: { ...operation().identity, kind: "revocation" },
+          resultCapabilities: null,
+        },
+        state: "operation_bound",
+      },
+      {
+        ...bundleRecord(),
+        operation: { identity: operation().identity },
+        state: "operation_bound",
+      },
+      {
+        ...bundleRecord(),
+        operation: {
+          ...operation(),
+          resultCapabilities: {
+            paymasterService: {
+              sponsor: { name: "Example Sponsor", icon: "https://example.com/icon.png" },
+            },
+          },
+        },
         state: "operation_bound",
       },
       {
@@ -426,7 +469,7 @@ describe("wallet-call bundle persistence parser", () => {
 
     memory.set(key(), {
       ...envelope(),
-      version: "oaath.wallet-call-bundle-store-record/v1",
+      version: "oaath.wallet-call-bundle-store-record/v5",
     });
     await expectStoreError(() => store.get(key()), "store_record_invalid");
 
@@ -489,6 +532,14 @@ describe("wallet-call bundle transitions and uniqueness", () => {
   it("commits accepted, reserved, bound, released, and terminal in order", async () => {
     const memory = memoryAdapter();
     const store = new WalletCallBundleStore(memory.adapter);
+    const sponsoredOperation = operation(
+      CHAIN_ID,
+      USER_OPERATION_HASH,
+      GRANT_ID,
+      ACCOUNT,
+      REQUEST_HASH,
+      RESULT_CAPABILITIES,
+    );
 
     const accepted = requireCommitted(await reserve(store));
     expect(accepted).toEqual(envelope());
@@ -511,12 +562,12 @@ describe("wallet-call bundle transitions and uniqueness", () => {
         key: key(),
         expectedStoreRevision: accepted.storeRevision,
         expectedGeneration: accepted.value.generation,
-        operation: operation(),
+        operation: sponsoredOperation,
         updatedAt: 20,
       }),
     );
     expect(reserved).toEqual(
-      envelope(bundleRecord({ operation: operation(), state: "operation_reserved" }), 1, 20),
+      envelope(bundleRecord({ operation: sponsoredOperation, state: "operation_reserved" }), 1, 20),
     );
 
     const bound = requireCommitted(
@@ -528,7 +579,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
       }),
     );
     expect(bound).toEqual(
-      envelope(bundleRecord({ operation: operation(), state: "operation_bound" }), 2, 30),
+      envelope(bundleRecord({ operation: sponsoredOperation, state: "operation_bound" }), 2, 30),
     );
 
     const released = requireCommitted(
@@ -542,7 +593,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(released).toEqual(
       envelope(
         bundleRecord({
-          operation: operation(),
+          operation: sponsoredOperation,
           state: "operation_bound",
           publicationReleasedAt: 31,
         }),
@@ -562,7 +613,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
     expect(terminal).toEqual(
       envelope(
         bundleRecord({
-          operation: operation(),
+          operation: sponsoredOperation,
           state: "terminal",
           terminalFrom: "operation_bound",
           publicationReleasedAt: 31,
@@ -571,7 +622,7 @@ describe("wallet-call bundle transitions and uniqueness", () => {
         40,
       ),
     );
-    expect((await store.get(key()))?.value.operation).toEqual(operation());
+    expect((await store.get(key()))?.value.operation).toEqual(sponsoredOperation);
   });
 
   it("supports conclusive accepted-to-terminal failure without an operation", async () => {

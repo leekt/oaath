@@ -26,6 +26,7 @@ import {
   type WalletCallBundleStoreRecord,
 } from "../persistence/interfaces.js";
 import { OaathStoreError, type StoreErrorCode, type StoreRecord } from "../store.js";
+import { captureWalletCallResultCapabilities } from "./result-capabilities.js";
 
 export const WALLET_CALL_BUNDLE_PUBLICATION_LEASE_SECONDS = 30;
 
@@ -128,7 +129,7 @@ function inputOperation(value: unknown): Readonly<WalletCallBundleOperation> {
   const context: CaptureContext = new WeakSet();
   const operation = exactRecord(
     value,
-    ["identity"],
+    ["identity", "resultCapabilities"],
     "Wallet call bundle operation reservation",
     "store_input_invalid",
     context,
@@ -141,7 +142,13 @@ function inputOperation(value: unknown): Readonly<WalletCallBundleOperation> {
         "Wallet call bundle operation must be a provider execution identity",
       );
     }
-    return Object.freeze({ identity });
+    const resultCapabilities =
+      operation.resultCapabilities === null
+        ? null
+        : captureWalletCallResultCapabilities(operation.resultCapabilities, context, (message) =>
+            invalid("store_input_invalid", message),
+          );
+    return Object.freeze({ identity, resultCapabilities });
   } catch (error) {
     if (error instanceof OaathStoreError) throw error;
     return invalid("store_input_invalid", "Wallet call bundle operation identity is invalid");
@@ -177,7 +184,7 @@ function sameOperation(
   right: Readonly<WalletCallBundleOperation> | null,
 ): boolean {
   if (left === null || right === null) return left === right;
-  return JSON.stringify(left.identity) === JSON.stringify(right.identity);
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function sameValue(left: WalletCallBundleRecord, right: WalletCallBundleRecord): boolean {

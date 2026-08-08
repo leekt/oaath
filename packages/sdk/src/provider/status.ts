@@ -9,6 +9,7 @@ import type {
   OaathOperationReceipt,
 } from "../client/operation-handle.js";
 import { INVALID_PARAMS, rpcFail } from "./errors.js";
+import type { OaathWalletCallResultCapabilities } from "./result-capabilities.js";
 
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]*)$/u;
 
@@ -28,6 +29,7 @@ interface Eip5792StatusBase {
   readonly id: string;
   readonly chainId: `0x${string}`;
   readonly atomic: true;
+  readonly capabilities?: Readonly<OaathWalletCallResultCapabilities>;
 }
 
 export type Eip5792CallsStatus =
@@ -45,6 +47,7 @@ export interface ProjectEip5792StatusInput {
   readonly chainId: number;
   readonly outcome: Readonly<OaathOperationOutcome>;
   readonly receipt?: Readonly<OaathOperationReceipt> | null;
+  readonly resultCapabilities?: Readonly<OaathWalletCallResultCapabilities> | null;
 }
 
 function invalidEvidence(): never {
@@ -78,6 +81,7 @@ export function projectEip5792Status(
     id: input.id,
     chainId: `0x${input.chainId.toString(16)}` as const,
     atomic: true,
+    ...(input.resultCapabilities == null ? {} : { capabilities: input.resultCapabilities }),
   } as const;
   const outcome = input.outcome;
 
