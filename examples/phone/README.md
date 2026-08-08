@@ -24,9 +24,10 @@ The page has one **Pair phone** action plus four account actions:
    sends only its public key/address. The relay binds the actual Kernel account,
    install nonce, exact runtime packages, and paired P-256 credential into a
    closed EIP-712 `kernel-enable` owner-signing request. The authenticated phone
-   projection carries that request and its exact protocol request hash, but both
-   server and phone remain reject-only: neither approves, signs, nor releases an
-   artifact.
+   projection carries that request and its exact protocol request hash. Only an
+   exact current Kernel/P-256 review can expose Approve; the phone derives the
+   digest, requires its current paired key and user presence, and the server
+   independently verifies the canonical artifact before releasing it.
 3. **Send tx with session key** gets the validation nonce from EntryPoint,
    prepares the CallPolicy/value-bounded operation server-side, signs its exact
    UserOperation hash in the page, and submits. In default local mode it is
@@ -64,10 +65,11 @@ This is owned local evidence, not Byzantine RPC verification.
 plus all four account actions, sending the session action twice with
 getNonce-derived sequences, while contacting neither Apple nor ZeroDev. The
 actual permission route first proves the structured Kernel request is
-reject-only, digest-consistent, and still pending with no server artifact. Only
-then does the fixture inject owner signatures locally to preserve chain and race
-evidence; it does not approve a relay request, create a
-`VerifiedSignableDigest`, or provide phone-consent or clear-signing evidence.
+approvable and digest-consistent, then proves an invalid artifact leaves it
+pending with no server release. Only then does the fixture inject owner
+signatures locally to preserve chain and race evidence; it does not simulate
+Secure Enclave user presence, approve the relay request, or provide physical
+phone-consent evidence.
 `pnpm examples:check` owns this unattended path.
 
 ## ZeroDev Arbitrum Sepolia mode (explicit live opt-in)
@@ -132,15 +134,16 @@ path. While paired, the app polls `GET /demo/inbox` about every two seconds and
 offers Refresh. The endpoint accepts only the exact active paired-device bearer
 and returns at most 20 sorted, undecided, unexpired opaque summaries (operation
 id, match code, expiry). Selecting one only fetches the existing full
-authenticated projection. Structured permission approvals and all rejections
-remain explicit; owner-signing requests remain reject-only and have no Approve
-action. Listing never creates, decides, submits, observes, or releases
-anything.
+authenticated projection. Structured permission approvals, exact
+Kernel/P-256 owner signing, and all rejections remain explicit. Every other
+owner-signing request stays reject-only. Listing never creates, decides,
+submits, observes, or releases anything.
 
 APNs is an optional physical-device enhancement: set `APNS_KEY_PEM` (or
 `APNS_KEY_PEM_PATH`), `APNS_KEY_ID`, `APPLE_TEAM_ID`, and `APNS_TOPIC`. Exactly
 one opaque notification is attempted per owner-signing request against Apple's
 sandbox host with a 10-second timeout. Without those values, use the
 pull inbox (or manual operation-id fallback). Full review detail still travels
-over the authenticated projection, never through push, and those requests
-remain reject-only.
+over the authenticated projection, never through push. A notification grants
+nothing: only an exact Kernel/P-256 projection with a current local pairing can
+expose approval; every other owner-signing request remains reject-only.

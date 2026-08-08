@@ -5,11 +5,11 @@
  relay sends it — application, client, origin, redirect target, device,
  account, credentials, custody, every permitted call and argument constraint,
  validity window, and operation limit — so the owner sees exactly the
- authority they grant before tapping approve. Unstructured and current v3
- owner-signing scopes are rendered for explicit rejection, never silently,
- and expose no approval action. The permission approval artifact is
- deployment-injected: composing what the client will claim is not this app's
- job.
+ authority they grant before tapping approve. Exact Kernel/P-256 owner signing
+ is labeled approvable only while the local verified binding agrees; every
+ other owner-signing scope is rendered for explicit rejection and exposes no
+ approval action. The permission approval artifact is deployment-injected:
+ composing what the client will claim is not this app's job.
 
  Approval is always an explicit tap on this screen. A push notification only
  opens the review; nothing decides on tap, foreground, or notification action.
@@ -331,14 +331,24 @@ struct OwnerSigningConsentPresentation: Equatable, Sendable {
     let sections: [OwnerSigningConsentSection]
 
     init(scope: OwnerPhoneSigningRequestScope) {
+        let title: String
+        let decision: String
+        switch scope.decisionCapability {
+        case .approveOrReject:
+            title = "Kernel owner-signing request"
+            decision = "approve or reject"
+        case .rejectOnly:
+            title = "Reject-only owner-signing request"
+            decision = "reject only"
+        }
         var sections = [OwnerSigningConsentSection(
             id: "request",
-            title: "Reject-only owner-signing request",
+            title: title,
             facts: [
                 .init(
                     id: "request.decision",
                     label: "Decision capability",
-                    value: "reject only"),
+                    value: decision),
                 .init(
                     id: "request.requestHash",
                     label: "Server/protocol request hash (not device-derived)",
@@ -463,13 +473,21 @@ struct OwnerSigningConsentPresentation: Equatable, Sendable {
                 facts: facts))
         }
 
+        var domainFacts = valueFacts(
+            id: "domain",
+            label: "domain",
+            value: .object(request.typedData.domain))
+        for field in ["chainId", "verifyingContract"]
+        where request.typedData.domain[field] == nil {
+            domainFacts.append(.init(
+                id: "domain.field.\(field)",
+                label: "domain.\(field)",
+                value: "absent"))
+        }
         result.append(OwnerSigningConsentSection(
             id: "domain",
             title: "Domain values",
-            facts: valueFacts(
-                id: "domain",
-                label: "domain",
-                value: .object(request.typedData.domain))))
+            facts: domainFacts))
         result.append(OwnerSigningConsentSection(
             id: "message",
             title: "Message values",

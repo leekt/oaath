@@ -53,11 +53,11 @@ final class ProjectionTests: XCTestCase {
         return result
     }
 
-    private func approvingKernelProjection() throws -> [String: Any] {
+    private func rejectOnlyKernelProjection() throws -> [String: Any] {
         try replacing(
             kernelProjection(),
             at: ["scope", "decision"],
-            with: "approve-or-reject")
+            with: "reject-only")
     }
 
     private let rawScope: [String: Any] = [
@@ -377,23 +377,23 @@ final class ProjectionTests: XCTestCase {
         XCTAssertEqual(scope.decisionCapability, .rejectOnly)
     }
 
-    func testExactKernelRequestMayCaptureApproveOrRejectCapability() throws {
-        let projection = try OwnerPhoneRequestProjection.decode(
-            json(try approvingKernelProjection()))
+    func testExactKernelRequestCapturesCurrentAndRejectOnlyCapabilities() throws {
+        let projection = try OwnerPhoneRequestProjection.decode(json(try kernelProjection()))
         guard case let .ownerSigningRequest(scope) = projection.scope else {
             return XCTFail("expected an owner-signing request")
         }
         XCTAssertEqual(scope.decisionCapability, .approveOrReject)
 
-        let current = try OwnerPhoneRequestProjection.decode(json(try kernelProjection()))
-        guard case let .ownerSigningRequest(currentScope) = current.scope else {
-            return XCTFail("expected the current Kernel owner-signing request")
+        let rejectOnly = try OwnerPhoneRequestProjection.decode(
+            json(try rejectOnlyKernelProjection()))
+        guard case let .ownerSigningRequest(rejectOnlyScope) = rejectOnly.scope else {
+            return XCTFail("expected the reject-only Kernel owner-signing request")
         }
-        XCTAssertEqual(currentScope.decisionCapability, .rejectOnly)
+        XCTAssertEqual(rejectOnlyScope.decisionCapability, .rejectOnly)
     }
 
     func testApproveDecisionFailsClosedForEveryNonKernelP256Semantic() throws {
-        let base = try approvingKernelProjection()
+        let base = try kernelProjection()
         let rawRequest: [String: Any] = [
             "version": ownerPhoneSigningRequestVersion,
             "kind": "raw-digest",
@@ -709,8 +709,14 @@ final class OwnerSigningConsentPresentationTests: XCTestCase {
             scope: try signingScope(projection(named: "kernelEnableOwnerSigningRequest")))
         let rendered = facts(presentation)
 
+        XCTAssertEqual(presentation.sections.first?.title, "Kernel owner-signing request")
+        XCTAssertEqual(rendered["request.decision"]?.value, "approve or reject")
         XCTAssertEqual(rendered["identity.purpose"]?.value, "kernel-enable")
         XCTAssertEqual(rendered["typedData.primaryType"]?.value, "InstallPackages")
+        XCTAssertEqual(rendered["domain.field.chainId"]?.value, "absent")
+        XCTAssertEqual(
+            rendered["domain.field.verifyingContract"]?.value,
+            rendered["identity.account"].map { String(reflecting: $0.value) })
         XCTAssertEqual(
             rendered["digest.derived"]?.value,
             "0x72781421bec5030685dd2cde6d64eb4e63ea204ddb9951bd74986b0edd69ed03")

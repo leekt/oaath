@@ -2,8 +2,9 @@
  EXPERIMENTAL PREVIEW — the demo's structured-permission approval artifact.
 
  Permission consent authorizes through the relay's one-shot decision and seals
- no device signature. Raw and owner-signing scopes are reject-only before
- this placeholder can be requested.
+ no device signature. Raw and non-Kernel owner-signing scopes are reject-only
+ before this placeholder can be requested; exact Kernel owner signing uses its
+ separate verified P-256 artifact owner.
 
  @author taek <leekt216@gmail.com>
  */

@@ -30,7 +30,8 @@ published to npm.
   guaranteed. Structured permission requests expose explicit Approve/Reject
   actions. Owner-signing requests expose every captured purpose, signer,
   versioned credential, typed-data, expected digest, replay, and request-hash
-  fact, but remain reject-only.
+  fact. Only an exact Kernel/P-256 request with a current local pairing exposes
+  Approve; every other owner-signing request remains reject-only.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
@@ -43,7 +44,7 @@ published to npm.
   ever auto-resubmitted; an explicit retry is safe only because the server
   saga is replay-only.
 
-## EIP-712 derivation prerequisite
+## EIP-712 derivation and Kernel approval
 
 `OwnerPhone` uses a package-internal, non-authorizing EIP-712 primitive to
 capture the projection's already-parsed canonical typed-data value and compare
@@ -53,13 +54,14 @@ Shared protocol/viem/Swift vectors cover the official Mail example, nested
 fixed and dynamic arrays, signed and unsigned integers, fixed and dynamic
 bytes, strings, booleans, addresses, and domain subsets.
 
-The live comparison remains disconnected from approval and key custody.
-Package-internal Kernel refinement can create a sealed
-`VerifiedSignableDigest`, but the live v3 projection cannot reach it;
-requestHash is authenticated server/protocol evidence and is not independently
-re-derived by this build. EIP-712 and protocol raw-digest requests are both
-reject-only. The semantic decoder does not claim preservation of raw JSON
-bytes; the relay owns canonical protocol capture before projection.
+The live v4 exact Kernel/P-256 branch creates a sealed
+`VerifiedSignableDigest` only after the current pending review, expiry,
+foreground state, paired account/key, Kernel semantics, and device-derived
+digest all agree. `requestHash` is authenticated server/protocol evidence and
+is not independently re-derived by this build; the server recomputes it before
+accepting the signed artifact. Other EIP-712 purposes and protocol raw-digest
+requests remain reject-only. The semantic decoder does not claim preservation
+of raw JSON bytes; the relay owns canonical protocol capture before projection.
 
 ## Transport is deployment-wired
 
@@ -112,10 +114,12 @@ software custody. Simulator and macOS host builds instead select a separately
 tagged, non-synchronizable keychain P-256 key with
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
 simulator/fallback banner. The app registers 64-byte `x ‖ y` public material,
-and custody accepts only the library's sealed verified-signable type; the live
-app still exposes no network-digest signing path because owner-signing
-requests cannot reach artifact generation, key custody, or an
-approval POST.
+and custody accepts only the library's sealed verified-signable type. An exact
+Kernel replayable-install request can reach artifact generation only from a
+current authenticated review whose account, P-256 key, locally derived
+EIP-712 digest, pairing, foreground state, and expiry all agree. Raw network
+digests and every other owner-signing request remain reject-only and reach
+neither custody nor an approval POST.
 Host tests pin the software attributes, Enclave creation flags, and
 platform-selection policy and prove the pure DER conversion, low-S arithmetic
 and real CryptoKit verification; they do not prove a physical user-presence
