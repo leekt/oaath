@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Confirm wallet calls</title>
+    <style>
+      body {
+        max-width: 760px;
+        margin: 48px auto;
+        padding: 0 20px;
+        background: #1a1a2e;
+        color: #e5e7eb;
+        font: 14px/1.5 ui-monospace, monospace;
+      }
+      h1 {
+        color: #4ade80;
+      }
+      #confirmation {
+        padding: 16px;
+        overflow-wrap: anywhere;
+        background: #0f0f1a;
+        border-radius: 6px;
+        white-space: pre-wrap;
+      }
+      button {
+        margin: 16px 8px 0 0;
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 4px;
+        background: #4ade80;
+        color: #0f0f1a;
+        font: bold 14px ui-monospace, monospace;
+        cursor: pointer;
+      }
+      #reject {
+        background: #374151;
+        color: #e5e7eb;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
+      #result {
+        color: #fca5a5;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Confirm wallet calls</h1>
+    <div id="confirmation">reading…</div>
+    <button type="button" id="approve" disabled>approve</button>
+    <button type="button" id="reject" disabled>reject</button>
+    <p id="result"></p>
+    <script type="module" src="transaction-confirmation.js"></script>
+  </body>
+</html>

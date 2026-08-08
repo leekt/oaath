@@ -5,9 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
+  OaathProviderRpcError,
 } from "../src/provider/errors.js";
 import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
 import {
@@ -79,6 +81,7 @@ function countingChain(options: ChainFixtureOptions = {}): Readonly<{
 async function activeProvider(
   chain: ChainFixture = createChainFixture(),
   showCallsStatus?: NonNullable<OaathProviderInput["showCallsStatus"]>,
+  confirmCalls?: NonNullable<OaathProviderInput["confirmCalls"]>,
 ) {
   const realm = createRealm({ chain });
   const connection = await realm.oaath.connect();
@@ -86,6 +89,7 @@ async function activeProvider(
   const provider = oaathProvider({
     grant,
     chain: CHAIN_ID,
+    ...(confirmCalls === undefined ? {} : { confirmCalls }),
     ...(showCallsStatus === undefined ? {} : { showCallsStatus }),
   });
   const account = await grant.account(CHAIN_ID);
@@ -116,6 +120,194 @@ async function providerError(
 }
 
 describe("wallet_sendCalls orchestration", () => {
+  it("waits on one frozen exact confirmation before any durable or chain effect", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    let presented: unknown;
+    let presenterThis: unknown = "not-called";
+    const confirmCalls: NonNullable<OaathProviderInput["confirmCalls"]> = async function (
+      this: void,
+      confirmation,
+    ) {
+      presenterThis = this;
+      presented = confirmation;
+      entered();
+      return decision;
+    };
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      confirmCalls,
+    );
+    const id = "confirm-before-effects";
+    const sending = provider.request({
+      method: "wallet_sendCalls",
+      params: [
+        bundle(account, {
+          id,
+          chainId: `0x${CHAIN_HEX.slice(2).toUpperCase()}`,
+          calls: [
+            {
+              to: `0x${TARGET.slice(2).toUpperCase()}`,
+              data: `0x${CALL_DATA.slice(2).toUpperCase()}`,
+            },
+            { to: TARGET, data: CALL_DATA, value: "0x0" },
+          ],
+        }),
+      ],
+    });
+    await confirmationEntered;
+
+    expect(presenterThis).toBeUndefined();
+    expect(presented).toEqual({
+      account,
+      chainId: CHAIN_HEX,
+      calls: [
+        { target: TARGET, value: "0", data: CALL_DATA },
+        { target: TARGET, value: "0", data: CALL_DATA },
+      ],
+    });
+    expect(Object.isFrozen(presented)).toBe(true);
+    const exact = presented as { readonly calls: readonly unknown[] };
+    expect(Object.isFrozen(exact.calls)).toBe(true);
+    expect(exact.calls.every((call) => Object.isFrozen(call))).toBe(true);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toBeUndefined();
+
+    approve("approved");
+    await expect(sending).resolves.toEqual({ id });
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.signatures).toHaveLength(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("maps rejection to 4001 with zero effects and leaves the explicit ID reusable", async () => {
+    let decision: "approved" | "rejected" = "rejected";
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => decision,
+    );
+    const id = "retry-after-rejection";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    };
+
+    await providerError(provider.request(request), 4001);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toBeUndefined();
+
+    decision = "approved";
+    await expect(provider.request(request)).resolves.toEqual({ id });
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("refuses a concurrent explicit duplicate before invoking a second presenter", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    let presentations = 0;
+    const { realm, connection, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        presentations += 1;
+        entered();
+        return decision;
+      },
+    );
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id: "pending-confirmation-duplicate" })],
+    };
+
+    const first = provider.request(request);
+    await confirmationEntered;
+    await providerError(provider.request(request), 5720);
+    expect(presentations).toBe(1);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+
+    approve("approved");
+    await expect(first).resolves.toEqual({ id: "pending-confirmation-duplicate" });
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("maps every thrown and malformed presenter result to internal error with zero effects", async () => {
+    let mode: "throw" | "provider-error" | "malformed" = "throw";
+    const { realm, connection, grant, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        if (mode === "throw") throw new Error("private presenter channel detail");
+        if (mode === "provider-error") throw new OaathProviderRpcError(4100);
+        return "malformed" as never;
+      },
+    );
+    const port = grantProviderPort(grant);
+
+    for (const [id, next] of [
+      ["presenter-throw", "provider-error"],
+      ["presenter-provider-error", "malformed"],
+      ["presenter-malformed", "malformed"],
+    ] as const) {
+      await providerError(
+        provider.request({
+          method: "wallet_sendCalls",
+          params: [bundle(account, { id })],
+        }),
+        -32603,
+      );
+      await expect(
+        port.walletCallBundles.get({
+          providerScopeId: port.providerScopeId,
+          account,
+          id,
+        }),
+      ).resolves.toBeUndefined();
+      mode = next;
+    }
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
   it("preserves an exact app ID and safely defaults omitted values", async () => {
     const { realm, connection, provider, account } = await activeProvider();
     const id = " app-owned:\u0000/日本語/Keep-Exact ";

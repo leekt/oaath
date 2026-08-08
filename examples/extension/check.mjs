@@ -12,6 +12,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatWalletCallStatus, showWalletCallStatus } from "./status-presentation.js";
+import {
+  confirmWalletCalls,
+  decideWalletCallConfirmation,
+  formatWalletCallConfirmation,
+  rejectClosedWalletCallConfirmation,
+} from "./transaction-confirmation-presentation.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +56,9 @@ for (const piece of [
   "status.html",
   "status.js",
   "status-presentation.js",
+  "transaction-confirmation.html",
+  "transaction-confirmation.js",
+  "transaction-confirmation-presentation.js",
 ]) {
   readFileSync(join(HERE, "dist", piece));
 }
@@ -103,6 +112,90 @@ expect(
   presentationEvents[1]?.value?.url.startsWith("chrome-extension://oaath/status.html#"),
   "status presentation must open the extension-owned status page",
 );
+
+const confirmationRecords = new Map();
+const confirmationEvents = [];
+let nextConfirmationTab = 41;
+const confirmationExtension = {
+  runtime: { getURL: (path) => `chrome-extension://oaath/${path}` },
+  storage: {
+    session: {
+      async set(value) {
+        for (const [key, record] of Object.entries(value)) confirmationRecords.set(key, record);
+        confirmationEvents.push({ kind: "stored", value });
+      },
+      async get(key) {
+        return confirmationRecords.has(key) ? { [key]: confirmationRecords.get(key) } : {};
+      },
+      async remove(key) {
+        confirmationRecords.delete(key);
+        confirmationEvents.push({ kind: "removed", key });
+      },
+    },
+  },
+  tabs: {
+    async create(value) {
+      const tab = { id: nextConfirmationTab };
+      nextConfirmationTab += 1;
+      confirmationEvents.push({ kind: "opened", value, tab });
+      return tab;
+    },
+  },
+};
+const exactCalls = Object.freeze({
+  account: `0x${"11".repeat(20)}`,
+  chainId: "0x1",
+  calls: Object.freeze([
+    Object.freeze({ target: `0x${"44".repeat(20)}`, value: "0", data: "0xabcd" }),
+  ]),
+});
+const approval = confirmWalletCalls(confirmationExtension, "https://example.test", exactCalls);
+await Promise.resolve();
+await Promise.resolve();
+const approvalOpen = confirmationEvents.find((event) => event.kind === "opened");
+const approvalToken = decodeURIComponent(approvalOpen?.value?.url.split("#")[1] ?? "");
+const approvalKey = `wallet-call-confirmation:${approvalToken}`;
+const approvalRecord = confirmationRecords.get(approvalKey);
+expect(approvalRecord?.origin === "https://example.test", "confirmation must bind page origin");
+expect(Object.isFrozen(approvalRecord), "confirmation display must be frozen");
+expect(Object.isFrozen(approvalRecord?.calls), "confirmation calls must be frozen");
+expect(Object.isFrozen(approvalRecord?.calls?.[0]), "each confirmation call must be frozen");
+expect(
+  Object.keys(approvalRecord ?? {}).join(",") === "origin,account,chainId,calls",
+  "session storage must contain public display fields only",
+);
+expect(
+  formatWalletCallConfirmation(approvalRecord).includes(`target   0x${"44".repeat(20)}`),
+  "confirmation page must render the exact ordered call",
+);
+expect(
+  await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved"),
+  "the pending approval must settle",
+);
+expect((await approval) === "approved", "the presenter must return the exact approval");
+expect(!confirmationRecords.has(approvalKey), "settlement must remove public display state");
+expect(
+  !(await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved")),
+  "a decision token must be one-use",
+);
+
+const rejection = confirmWalletCalls(confirmationExtension, "https://example.test", exactCalls);
+await Promise.resolve();
+await Promise.resolve();
+expect(
+  await rejectClosedWalletCallConfirmation(confirmationExtension, 42),
+  "closing the confirmation tab must find its pending decision",
+);
+expect((await rejection) === "rejected", "closing the confirmation tab must reject");
+
+const orphanToken = "11111111-1111-4111-8111-111111111111";
+const orphanKey = `wallet-call-confirmation:${orphanToken}`;
+await confirmationExtension.storage.session.set({ [orphanKey]: approvalRecord });
+expect(
+  !(await decideWalletCallConfirmation(confirmationExtension, orphanToken, "approved")),
+  "a restarted worker must not recover approval authority from display state",
+);
+expect(!confirmationRecords.has(orphanKey), "an orphaned display must be removed");
 // The page-world provider announces the EIP-6963 identity dapps discover by.
 const injected = readFileSync(join(HERE, "dist", "injected.js"), "utf8");
 expect(injected.includes("eip6963:announceProvider"), "injected provider must announce EIP-6963");

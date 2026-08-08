@@ -17,6 +17,11 @@ per origin, the owner approves the scope on their own device, and
   Chrome reports it — never anything a message claims. One Grant per origin,
   in that origin's own IndexedDB database, keyed by service URL, so no dapp
   can reach another's authority and a service change starts fresh.
+- Every `wallet_sendCalls` request waits on an extension-owned confirmation tab
+  showing that browser-bound origin, the exact account and chain, and every
+  ordered call. Approval exists only in the current worker's one-use memory;
+  rejection or closing the tab returns `4001`, while a worker restart cannot
+  recover an approval or start the operation.
 - **URL mode never holds owner authority.** Pairing routes the owner's review
   through the service's authorization flow (the phone); revocation from the
   extension invalidates the capability and leaves the Grant durably `revoking`
@@ -53,5 +58,7 @@ Exactly `@oaath/sdk/viem`: `eth_chainId`, `eth_accounts`,
 `wallet_sendCalls` / `wallet_getCallsStatus` / `wallet_showCallsStatus` /
 `wallet_getCapabilities`. `wallet_showCallsStatus` opens a read-only extension
 page backed by the same durable bundle lookup as `wallet_getCallsStatus`.
+`wallet_sendCalls` reserves no bundle and performs no quote, signature, or send
+until its extension-owned confirmation returns `approved`.
 Everything else is refused with code 4200 — this provider is a Grant, not a
 general-purpose RPC node.

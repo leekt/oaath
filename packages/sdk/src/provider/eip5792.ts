@@ -35,6 +35,7 @@ import {
   UNAUTHORIZED,
   UNKNOWN_BUNDLE_ID,
   UNSUPPORTED_METHOD,
+  USER_REJECTED_REQUEST,
 } from "./errors.js";
 import { type Eip5792CallsStatus, projectEip5792Status } from "./status.js";
 
@@ -46,9 +47,33 @@ export type OaathCallsStatusPresenter = (
   status: Readonly<Eip5792CallsStatus>,
 ) => void | Promise<void>;
 
+/** One exact call the wallet presents before admitting an EIP-5792 bundle. */
+export interface OaathCallsConfirmationCall {
+  readonly target: `0x${string}`;
+  /** Canonical decimal wei, including `"0"` for an omitted value. */
+  readonly value: string;
+  /** Lowercase calldata, including `"0x"` for omitted data. */
+  readonly data: `0x${string}`;
+}
+
+/** Public execution facts a wallet may require its user to approve. */
+export interface OaathCallsConfirmation {
+  readonly account: `0x${string}`;
+  readonly chainId: `0x${string}`;
+  readonly calls: readonly Readonly<OaathCallsConfirmationCall>[];
+}
+
+export type OaathCallsConfirmationDecision = "approved" | "rejected";
+
+export type OaathCallsConfirmer = (
+  this: void,
+  confirmation: Readonly<OaathCallsConfirmation>,
+) => OaathCallsConfirmationDecision | Promise<OaathCallsConfirmationDecision>;
+
 interface CreateEip5792OrchestratorInput {
   readonly port: Readonly<OaathGrantProviderPort>;
   readonly chain: number;
+  readonly confirmCalls?: OaathCallsConfirmer;
   readonly showCallsStatus?: OaathCallsStatusPresenter;
 }
 
@@ -138,8 +163,10 @@ export function createEip5792Orchestrator(
   input: Readonly<CreateEip5792OrchestratorInput>,
 ): Readonly<Eip5792Orchestrator> {
   const chainId = `0x${input.chain.toString(16)}`;
+  const confirmer = input.confirmCalls;
   const presenter = input.showCallsStatus;
   const store = input.port.walletCallBundles;
+  const confirmingExplicitIds = new Set<string>();
 
   function now(): number {
     const value = input.port.now();
@@ -280,21 +307,53 @@ export function createEip5792Orchestrator(
       return rpcFail(DUPLICATE_ID);
     }
 
-    const accepted = await reserve(captured, accountAddress);
+    const calls = Object.freeze(
+      capabilityEffect.calls.map((call) =>
+        Object.freeze({
+          target: call.to,
+          value: BigInt(call.value ?? "0x0").toString(10),
+          data: call.data ?? "0x",
+        }),
+      ),
+    );
+    let confirmingKey: string | null = null;
+    if (confirmer !== undefined) {
+      confirmingKey = captured.id === undefined ? null : `${accountAddress}\u0000${captured.id}`;
+      if (confirmingKey !== null) {
+        if (confirmingExplicitIds.has(confirmingKey)) return rpcFail(DUPLICATE_ID);
+        confirmingExplicitIds.add(confirmingKey);
+      }
+      let decision: unknown;
+      try {
+        decision = await confirmer(
+          Object.freeze({
+            account: accountAddress,
+            chainId: captured.chainId,
+            calls,
+          }),
+        );
+      } catch {
+        if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
+        return rpcFail(INTERNAL_ERROR);
+      }
+      if (decision !== "approved") {
+        if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
+        if (decision === "rejected") return rpcFail(USER_REJECTED_REQUEST);
+        return rpcFail(INTERNAL_ERROR);
+      }
+    }
+
+    let accepted: Awaited<ReturnType<typeof reserve>>;
+    try {
+      accepted = await reserve(captured, accountAddress);
+    } finally {
+      if (confirmingKey !== null) confirmingExplicitIds.delete(confirmingKey);
+    }
     let reservationStarted = false;
     let reserved: WalletCallBundleStoreRecord | null = null;
     let reservedPointer: OaathProviderOperationPointer | null = null;
 
     try {
-      const calls = Object.freeze(
-        capabilityEffect.calls.map((call) =>
-          Object.freeze({
-            target: call.to,
-            value: BigInt(call.value ?? "0x0").toString(10),
-            data: call.data ?? "0x",
-          }),
-        ),
-      );
       const operation = await input.port.startCalls(
         Object.freeze({
           chain: input.chain,

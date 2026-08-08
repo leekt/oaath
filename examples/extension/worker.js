@@ -24,6 +24,11 @@ import {
 } from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
 import { showWalletCallStatus } from "./status-presentation.js";
+import {
+  confirmWalletCalls,
+  decideWalletCallConfirmation,
+  rejectClosedWalletCallConfirmation,
+} from "./transaction-confirmation-presentation.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
   url: "http://127.0.0.1:8787",
@@ -100,6 +105,7 @@ function providerFor(realm, grant) {
   const provider = oaathProvider({
     grant,
     chain: realm.chain,
+    confirmCalls: (confirmation) => confirmWalletCalls(chrome, realm.origin, confirmation),
     showCallsStatus: (status) => showWalletCallStatus(chrome, realm.origin, status),
   });
   realm.providers.set(realm.chain, provider);
@@ -191,6 +197,10 @@ async function handlePopup(message) {
   return rpcError(-32601, "unknown popup command");
 }
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void rejectClosedWalletCallConfirmation(chrome, tabId);
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const respond = (value) => {
     try {
@@ -221,6 +231,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return rpcError(4100, "popup commands must come from the extension");
       }
       return handlePopup(message);
+    }
+    if (message.type === "transaction-confirmation") {
+      if (sender.origin !== `chrome-extension://${chrome.runtime.id}`) {
+        return rpcError(4100, "call decisions must come from the extension");
+      }
+      const settled = await decideWalletCallConfirmation(chrome, message.token, message.decision);
+      return settled
+        ? { ok: true, result: { decision: message.decision } }
+        : rpcError(-32603, "wallet call confirmation is unavailable");
     }
     return rpcError(-32601, "unknown message type");
   })().then(respond, (error) =>

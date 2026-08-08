@@ -30,6 +30,9 @@ const EXTENSION_FILES = [
   "status-presentation.js",
   "status.html",
   "status.js",
+  "transaction-confirmation-presentation.js",
+  "transaction-confirmation.html",
+  "transaction-confirmation.js",
   "worker.js",
 ];
 
@@ -494,10 +497,40 @@ try {
     atomicRequired: true,
     calls: [{ to: TARGET, data: CALL_DATA, value: "0x5" }],
   };
-  const sent = await dapp.evaluate(
+  const confirmationTarget = browser.waitForTarget(
+    (target) =>
+      target.type() === "page" &&
+      target.url().startsWith(
+        "chrome-extension://" + extensionId + "/transaction-confirmation.html#",
+      ),
+    { timeout: TIMEOUT_MS },
+  );
+  const sending = dapp.evaluate(
     (bundle) => window.__oaathProvider.request({ method: "wallet_sendCalls", params: [bundle] }),
     request,
   );
+  const confirmation = await confirmationTarget;
+  const confirmationPage = await confirmation.page();
+  if (confirmationPage === null) fail("the wallet call confirmation page is unavailable");
+  await bounded(
+    confirmationPage.waitForSelector("#approve:not([disabled])"),
+    "wallet call confirmation",
+  );
+  const confirmationText = await confirmationPage.$eval(
+    "#confirmation",
+    (element) => element.textContent,
+  );
+  expect(confirmationText.includes("origin   " + serviceOrigin), "confirmation lost the origin");
+  expect(confirmationText.includes("account  " + account), "confirmation lost the account");
+  expect(
+    confirmationText.includes("chain    0x" + CHAIN_ID.toString(16)),
+    "confirmation lost the chain",
+  );
+  expect(confirmationText.includes("target   " + TARGET), "confirmation lost the exact call");
+  expect(counts.submissions === 0, "the extension submitted before wallet confirmation");
+  expect(chain.sends.length === 0, "the chain received a call before wallet confirmation");
+  await confirmationPage.click("#approve");
+  const sent = await bounded(sending, "approved wallet_sendCalls");
   expect(sent?.id === BUNDLE_ID, "wallet_sendCalls returned another ID");
   expect(counts.submissions === 1, "wallet_sendCalls did not submit exactly once");
   expect(chain.sends.length === 1, "the chain retained another submission count");
