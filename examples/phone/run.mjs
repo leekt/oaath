@@ -72,6 +72,7 @@ import {
   validateOwnedLocalFinalizedUserOperation,
   withFreshSequence,
 } from "./operation.mjs";
+import { captureKernelOwnerSignature } from "./owner-signing.mjs";
 
 const SIMULATE = process.env.OAATH_PHONE_SIMULATE === "1";
 const LIVE = process.env.OAATH_ZERODEV_LIVE === "1";
@@ -556,7 +557,7 @@ async function resolveSignature(record) {
     `/authorization/artifacts/${consumed.artifactId}/claim`,
     CLIENT_TOKEN,
   );
-  record.artifact = claimed.artifact;
+  record.artifact = captureKernelOwnerSignature(record.ownerSigningRequest, claimed.artifact);
   record.outcome = "approved";
   signatureRequestLane.terminate(record.reservationToken, "completed");
   event(SIMULATE ? "signature.fixture_provided" : "signature.approved", {
