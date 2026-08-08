@@ -5,6 +5,7 @@
  */
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
+import { OperationStore } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
   createIndexedDbCleanupStore,
@@ -25,8 +26,10 @@ import {
   createClock,
   createMemoryStores,
   createRealm,
+  createRelay,
   permissionInput,
   SESSION_PUBLIC_KEY,
+  signingProfiles,
   signPreparedDigest,
   TARGET,
 } from "./support/browser.js";
@@ -403,5 +406,157 @@ describe("experimental wallet prepared calls", () => {
     );
     expect(chain.sends).toHaveLength(1);
     await connection.close();
+  });
+
+  it("recovers one consumed ambiguous send after full IndexedDB realm recreation", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const relay = createRelay(clock);
+    let crash = true;
+    let sessionSigns = 0;
+    const countingSigningProfiles = () => {
+      const profiles = signingProfiles();
+      return {
+        owner: profiles.owner,
+        session: Object.freeze({
+          ...profiles.session,
+          async sign(hash: `0x${string}`) {
+            sessionSigns += 1;
+            return profiles.session.sign(hash);
+          },
+        }),
+      };
+    };
+    const chain = createChainFixture({ crashOnSend: () => crash });
+    const first = await indexedDbPreparedRealmStores(factory);
+    const before = createRealm({
+      stores: first.stores,
+      clock,
+      relay,
+      chain,
+      signing: countingSigningProfiles(),
+    });
+    const firstConnection = await before.oaath.connect();
+    const firstGrant = await firstConnection.requestPermission(permissionInput());
+    const account = await firstGrant.account(CHAIN_ID);
+    const firstProvider = oaathProvider({ grant: firstGrant, chain: CHAIN_ID });
+    const firstPort = grantProviderPort(firstGrant);
+    const prepared = (await firstProvider.request(
+      providerPrepareRequest(account),
+    )) as PreparedRpcResponse;
+    const signature = await signPreparedDigest(prepared.digest);
+
+    const ambiguous = (await firstProvider.request(
+      providerSendRequest(prepared, signature),
+    )) as Readonly<{ id: string }>;
+    const contextKey = Object.freeze({
+      providerScopeId: firstPort.providerScopeId,
+      contextId: prepared.context.id,
+    });
+    const bundleKey = Object.freeze({
+      providerScopeId: firstPort.providerScopeId,
+      account,
+      id: ambiguous.id,
+    });
+    const consumed = await firstPort.preparedCallContexts.get(contextKey);
+    const firstBundle = await firstPort.walletCallBundles.get(bundleKey);
+    const firstJournalStore = new OperationStore(first.stores.operations);
+    const firstJournal = await firstJournalStore.get({
+      grantId: firstPort.grantId,
+      chainId: CHAIN_ID,
+      kind: "execution",
+    });
+    await firstJournalStore.close();
+    if (
+      firstJournal === undefined ||
+      firstBundle === undefined ||
+      firstBundle.value.operation === null
+    ) {
+      throw new Error("expected the ambiguous prepared operation to be durably bound");
+    }
+    const exactIdentity = firstJournal.value.identity;
+    const quotesAfterAmbiguity = chain.quotes;
+
+    expect(ambiguous.id).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(consumed?.value).toMatchObject({
+      state: "consumed",
+      bundleId: ambiguous.id,
+      operationRequestHash: exactIdentity.requestHash,
+    });
+    expect(firstBundle?.value).toMatchObject({
+      state: "operation_bound",
+      publicationReleasedAt: expect.any(Number),
+    });
+    expect(firstBundle?.value.operation?.identity).toEqual(exactIdentity);
+    expect(firstJournal.value.state).toBe("submission_attempted");
+    expect(quotesAfterAmbiguity).toBe(2);
+    expect(sessionSigns).toBe(0);
+    expect(chain.signatures).toHaveLength(1);
+    expect(chain.sends).toHaveLength(1);
+    expect(chain.sends[0]?.userOperationHash).toBe(exactIdentity.userOperationHash);
+
+    await firstConnection.close();
+    await expect(firstPort.preparedCallContexts.get(contextKey)).rejects.toMatchObject({
+      code: "store_closed",
+    });
+    first.database.close();
+
+    // Recreate the database connection, adapters, stores, client, Grant,
+    // provider, and ERC-7836 orchestrator. Only the external relay and chain
+    // remain so the new realm can resume and observe the original submission.
+    crash = false;
+    const second = await indexedDbPreparedRealmStores(factory);
+    const after = createRealm({
+      stores: second.stores,
+      clock,
+      relay,
+      chain,
+      signing: countingSigningProfiles(),
+    });
+    const secondConnection = await after.oaath.connect();
+    const secondGrant = await secondConnection.resume();
+    if (secondGrant === null) throw new Error("expected the ambiguous Grant to resume");
+    const secondProvider = oaathProvider({ grant: secondGrant, chain: CHAIN_ID });
+    const secondPort = grantProviderPort(secondGrant);
+    const secondJournalStore = new OperationStore(second.stores.operations);
+    const reconstructedJournal = await secondJournalStore.get({
+      grantId: secondPort.grantId,
+      chainId: CHAIN_ID,
+      kind: "execution",
+    });
+    const reconstructedContext = await secondPort.preparedCallContexts.get({
+      providerScopeId: secondPort.providerScopeId,
+      contextId: prepared.context.id,
+    });
+    const reconstructedBundle = await secondPort.walletCallBundles.get({
+      providerScopeId: secondPort.providerScopeId,
+      account,
+      id: ambiguous.id,
+    });
+
+    expect(secondPort.providerScopeId).toBe(firstPort.providerScopeId);
+    expect(secondPort.grantId).toBe(firstPort.grantId);
+    expect(reconstructedContext?.value.state).toBe("consumed");
+    expect(reconstructedBundle?.value.operation?.identity).toEqual(exactIdentity);
+    expect(reconstructedJournal?.value.identity).toEqual(exactIdentity);
+    expect(reconstructedJournal?.value.state).toBe("submission_attempted");
+
+    const retried = await secondProvider.request(providerSendRequest(prepared, signature));
+    expect(retried).toEqual(ambiguous);
+    expect(chain.quotes).toBe(quotesAfterAmbiguity);
+    expect(sessionSigns).toBe(0);
+    expect(chain.signatures).toHaveLength(1);
+    expect(chain.sends).toHaveLength(1);
+    expect(chain.sends[0]?.userOperationHash).toBe(exactIdentity.userOperationHash);
+    const recoveredJournal = await secondJournalStore.get({
+      grantId: secondPort.grantId,
+      chainId: CHAIN_ID,
+      kind: "execution",
+    });
+    expect(recoveredJournal?.value.identity).toEqual(exactIdentity);
+
+    await secondJournalStore.close();
+    await secondConnection.close();
+    second.database.close();
   });
 });
