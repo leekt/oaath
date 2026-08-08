@@ -58,15 +58,36 @@ private actor PairingCapture {
     func read() -> PersistedPairing? { value }
 }
 
+private enum FakeOwnerSigningError: Error {
+    case unavailable
+}
+
+private final class OwnerSigningAttemptRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func record() { lock.withLock { count += 1 } }
+    func recordedCount() -> Int { lock.withLock { count } }
+}
+
 private struct FakeOwnerSigning: DemoOwnerSigning {
     let secureEnclave = false
     let publicMaterial: String
+    let signingAttempts: OwnerSigningAttemptRecorder?
 
-    init(publicMaterial: String = fakeOwnerPublicMaterial.hex) {
+    init(
+        publicMaterial: String = fakeOwnerPublicMaterial.hex,
+        signingAttempts: OwnerSigningAttemptRecorder? = nil
+    ) {
         self.publicMaterial = publicMaterial
+        self.signingAttempts = signingAttempts
     }
 
     func publicMaterialHex() throws -> String { publicMaterial }
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        signingAttempts?.record()
+        throw FakeOwnerSigningError.unavailable
+    }
 }
 
 private final class StoreMutatingOwnerSigning: DemoOwnerSigning, @unchecked Sendable {
@@ -88,6 +109,9 @@ private final class StoreMutatingOwnerSigning: DemoOwnerSigning, @unchecked Send
         return fakeOwnerPublicMaterial.hex
     }
 
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        throw FakeOwnerSigningError.unavailable
+    }
 }
 
 private enum DeferredHTTPError: Error {
@@ -635,6 +659,7 @@ final class PairingClientTests: XCTestCase {
         XCTAssertTrue(try store.installIfAbsent(pairing))
         XCTAssertEqual(store.load(), .stored(pairing))
         XCTAssertEqual(pairing.endpoint.baseURL.absoluteString, "http://relay.example:8787")
+        XCTAssertEqual(PersistedPairing.version, 3)
         XCTAssertEqual(try PersistedPairing.decode(pairing.encoded()), pairing)
         XCTAssertTrue(store.clear())
         XCTAssertEqual(store.load(), .absent)
@@ -652,6 +677,7 @@ final class PairingClientTests: XCTestCase {
         for changed in [
             valid.merging(["extra": true]) { _, right in right },
             valid.merging(["version": 1]) { _, right in right },
+            valid.merging(["version": 2]) { _, right in right },
             valid.merging(["ownerPublicMaterial": "0x00"]) { _, right in right },
             valid.merging(["endpoint": "http://RELAY-A:8787/"]) { _, right in right }
         ] {
@@ -675,6 +701,48 @@ final class PairingClientTests: XCTestCase {
                 XCTAssertEqual($0 as? PairingStoreError, .invalidRecord)
             }
         }
+    }
+
+    func testOldV2PairingOccupiesTheSameSlotUntilExplicitClearAndRePair() throws {
+        XCTAssertEqual(
+            KeychainPairingStore().service,
+            "org.oaath.owner-phone.pairing-v2")
+
+        let service = "org.oaath.tests.pairing.v3.\(UUID().uuidString)"
+        let store = KeychainPairingStore(service: service)
+        let pairing = try PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: deviceCredentialA,
+            account: nil,
+            ownerPublicMaterial: fakeOwnerPublicMaterial)
+        var oldObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: pairing.encoded()) as? [String: Any])
+        oldObject["version"] = 2
+        let oldData = try JSONSerialization.data(
+            withJSONObject: oldObject,
+            options: [.sortedKeys])
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: "pairing"
+        ]
+        SecItemDelete(query as CFDictionary)
+        defer { SecItemDelete(query as CFDictionary) }
+
+        let attributes = query.merging([
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecValueData: oldData
+        ]) { _, right in right }
+        XCTAssertEqual(SecItemAdd(attributes as CFDictionary, nil), errSecSuccess)
+
+        XCTAssertEqual(store.load(), .unreadable)
+        XCTAssertFalse(try store.installIfAbsent(pairing))
+        XCTAssertEqual(store.load(), .unreadable)
+
+        XCTAssertTrue(store.clear())
+        XCTAssertEqual(store.load(), .absent)
+        XCTAssertTrue(try store.installIfAbsent(pairing))
+        XCTAssertEqual(store.load(), .stored(pairing))
     }
 
     func testPairingCodeCanonicalizesExactlyLikeTheRelay() {
@@ -1002,10 +1070,11 @@ final class DemoPairingIdentityTests: XCTestCase {
             account: nil,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let http = OwnerSigningRecordingHTTP()
+        let signingAttempts = OwnerSigningAttemptRecorder()
         let model = DemoModel(
             pairings: InMemoryPairingStore(result: .stored(pairing)),
             http: http,
-            ownerKey: FakeOwnerSigning())
+            ownerKey: FakeOwnerSigning(signingAttempts: signingAttempts))
         model.operationIdText = "owner-signing-request"
         await model.openManually()
         let approval = try XCTUnwrap(model.approval)
@@ -1016,6 +1085,7 @@ final class DemoPairingIdentityTests: XCTestCase {
             http.requests().map { $0.httpMethod ?? "" },
             ["GET"],
             "a mismatched reject-only request must not submit an approval")
+        XCTAssertEqual(signingAttempts.recordedCount(), 0)
         guard case let .review(review) = approval.phase else {
             return XCTFail("mismatched request must remain reviewable")
         }

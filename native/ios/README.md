@@ -53,12 +53,13 @@ Shared protocol/viem/Swift vectors cover the official Mail example, nested
 fixed and dynamic arrays, signed and unsigned integers, fixed and dynamic
 bytes, strings, booleans, addresses, and domain subsets.
 
-The comparison remains disconnected from approval, key custody, and artifact
-creation. It does not create a `VerifiedSignableDigest`; requestHash is shown
-as authenticated server/protocol evidence and is not independently re-derived
-by this build. EIP-712 and protocol raw-digest requests are both reject-only.
-The semantic decoder does not claim preservation of raw JSON bytes; the relay
-owns canonical protocol capture before projection.
+The live comparison remains disconnected from approval and key custody.
+Package-internal Kernel refinement can create a sealed
+`VerifiedSignableDigest`, but the live v3 projection cannot reach it;
+requestHash is authenticated server/protocol evidence and is not independently
+re-derived by this build. EIP-712 and protocol raw-digest requests are both
+reject-only. The semantic decoder does not claim preservation of raw JSON
+bytes; the relay owns canonical protocol capture before projection.
 
 ## Transport is deployment-wired
 
@@ -104,21 +105,21 @@ struct OwnerPhoneDemoApp: App {
 ## Key custody
 
 On physical iOS, the demo exclusively creates or loads a persistent P-256
-Secure Enclave key with `kSecAttrTokenIDSecureEnclave` and `.privateKeyUsage`.
+Secure Enclave key with `kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`,
+and `.userPresence`.
 An Enclave failure leaves the owner key unavailable; it never authorizes
 software custody. Simulator and macOS host builds instead select a separately
 tagged, non-synchronizable keychain P-256 key with
 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and display an explicit
-simulator/fallback banner. Both modes intentionally omit a
-user-presence/biometry requirement. The app registers 64-byte `x ‖ y` public
-material, but it exposes no network-digest signing path: owner-signing
+simulator/fallback banner. The app registers 64-byte `x ‖ y` public material,
+and custody accepts only the library's sealed verified-signable type; the live
+app still exposes no network-digest signing path because owner-signing
 requests cannot reach artifact generation, key custody, or an
 approval POST.
-The low-level custody and DER-to-raw-low-S primitives remain scaffolding for a
-future device-derived verified signing request. Host tests pin the software
-attributes and platform-selection policy and prove the pure DER conversion,
-low-S arithmetic and real CryptoKit verification; they do not prove physical
-Enclave custody or clear signing.
+Host tests pin the software attributes, Enclave creation flags, and
+platform-selection policy and prove the pure DER conversion, low-S arithmetic
+and real CryptoKit verification; they do not prove a physical user-presence
+prompt, Enclave custody, or live clear signing.
 
 ## Provenance
 

@@ -85,17 +85,18 @@ deployment serves https and deletes the key.
 ## Owner key and signing boundary
 
 First launch generates a persistent P-256 key in the Secure Enclave on a
-physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, no biometry
-requirement in this experimental scaffold). Pairing registers its `x ‖ y`
-public material. The web half derives the chain-independent CREATE2 account and
-returns it; the phone labels the server-side derivation honestly.
+physical iPhone (`kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`,
+`.userPresence`). Pairing registers its `x ‖ y` public material. The web half
+derives the chain-independent CREATE2 account and returns it; the phone labels
+the server-side derivation honestly. Host tests pin that creation policy but do
+not prove a physical prompt.
 
 The native app does not sign a digest supplied by the relay. Legacy replayable
 enable and owner-UserOperation requests remain visible for diagnosis and
 rejection, but expose no Approve button and cannot reach artifact generation,
-key custody, or an approval POST. Retaining those signing flows requires a
-closed structured request whose digest the device independently derives and
-binds before custody can be invoked; that work is deliberately deferred.
+key custody, or an approval POST. Custody now accepts only the sealed digest
+produced by the package-internal exact Kernel refinement; activating that path
+in the live projection and approval state machine remains deferred.
 
 ## Provenance
 

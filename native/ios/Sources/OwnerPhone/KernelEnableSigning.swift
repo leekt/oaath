@@ -37,10 +37,11 @@ struct KernelEnablePairedIdentity: Equatable, Sendable {
     let p256XY: Data?
 }
 
-/// The only digest type accepted by the injected Kernel-enable signer.
-/// Construction and raw storage are private to this file: arbitrary network
-/// bytes cannot be promoted to signing authority by another caller.
-struct VerifiedSignableDigest: Digest {
+/// The only digest type accepted by owner-key custody. The type crosses the
+/// package boundary so demo custody can consume it, but construction and raw
+/// bytes remain owned by this module: arbitrary network bytes cannot be
+/// promoted to signing authority by another caller.
+public struct VerifiedSignableDigest: Sendable {
     static let byteCount = 32
 
     private let storage: Data
@@ -48,6 +49,24 @@ struct VerifiedSignableDigest: Digest {
     fileprivate init(derived: DerivedEIP712Digest) {
         precondition(derived.bytes.count == Self.byteCount)
         storage = derived.bytes
+    }
+
+    /// Package-only views for the two exact cryptographic consumers. Neither
+    /// is public API, so adopters can carry this authority but cannot inspect
+    /// or forge its digest bytes.
+    var platformSigningBytes: Data { storage }
+    var cryptoKitDigest: VerifiedCryptoKitDigest {
+        VerifiedCryptoKitDigest(storage: storage)
+    }
+}
+
+struct VerifiedCryptoKitDigest: Digest {
+    static let byteCount = VerifiedSignableDigest.byteCount
+    private let storage: Data
+
+    fileprivate init(storage: Data) {
+        precondition(storage.count == VerifiedSignableDigest.byteCount)
+        self.storage = storage
     }
 
     func withUnsafeBytes<Result>(
@@ -121,7 +140,10 @@ func makeKernelEnableOwnerSigningArtifact(
     } catch {
         throw KernelEnableSigningError.signatureInvalid
     }
-    guard verified.publicKey.isValidSignature(signature, for: verified.digest) else {
+    guard verified.publicKey.isValidSignature(
+        signature,
+        for: verified.digest.cryptoKitDigest)
+    else {
         throw KernelEnableSigningError.signatureVerificationFailed
     }
 

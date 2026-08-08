@@ -1,8 +1,9 @@
 /**
  Package-internal proofs for the disconnected Kernel-enable signing refinement.
 
- Keys and signatures exist only in memory for each test. Assertions expose
- booleans and artifact shape/order, never secret or signature material.
+ Keys and signatures are test-scoped; the one temporary keychain key is
+ deleted at test exit. Assertions expose booleans and artifact shape/order,
+ never secret or signature material.
 
  @author taek <leekt216@gmail.com>
  */
@@ -10,6 +11,9 @@ import CryptoKit
 import Foundation
 import XCTest
 @testable import OwnerPhone
+#if canImport(Security)
+import Security
+#endif
 
 private let signingTestNow = 1_800_000_000_000
 private let signingTestAccount = "0x" + String(repeating: "66", count: 20)
@@ -21,11 +25,100 @@ private struct KernelSigningHarness {
     let requestHash: String
 }
 
+private struct KernelReviewHarness {
+    let pairedIdentity: KernelEnablePairedIdentity
+    let review: OwnerPhoneReview
+    let requestHash: String
+}
+
 private enum InjectedSignerFailure: Error {
     case refused
 }
 
 final class KernelEnableSigningTests: XCTestCase {
+#if canImport(Security)
+    func testLoadOnlyKeychainCustodyConsumesOnlyTheVerifiedDigest() throws {
+        let tag = "org.oaath.tests.verified-signing.\(UUID().uuidString)"
+        let applicationTag = Data(tag.utf8)
+        defer {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassKey,
+                kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                kSecAttrApplicationTag: applicationTag
+            ]
+            SecItemDelete(query as CFDictionary)
+        }
+
+        let provisioned = KeychainKeyCustodyStub(applicationTag: tag)
+        let publicKey = try provisioned.publicKey()
+        let loadOnly = KeychainKeyCustodyStub(
+            applicationTag: tag,
+            createIfMissing: false)
+        XCTAssertTrue(try loadOnly.publicKey() == publicKey)
+        let harness = try makeReviewHarness(publicKeyX963: publicKey)
+        var custodyCalls = 0
+
+        let artifact = try makeKernelEnableOwnerSigningArtifact(
+            review: harness.review,
+            now: signingTestNow,
+            pairedIdentity: harness.pairedIdentity
+        ) { digest in
+            custodyCalls += 1
+            return try loadOnly.sign(digest)
+        }
+
+        XCTAssertTrue(custodyCalls == 1)
+        XCTAssertTrue(artifact.hasPrefix(
+            "{\"version\":\"oaath.owner-signing-artifact/v1\",\"kind\":\"p256\","))
+        XCTAssertTrue(artifact.hasSuffix("}"))
+    }
+
+    func testMissingLoadOnlyCustodyCreatesNeitherKeyNorArtifact() throws {
+        let tag = "org.oaath.tests.missing-verified-signing.\(UUID().uuidString)"
+        let applicationTag = Data(tag.utf8)
+        defer {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassKey,
+                kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                kSecAttrApplicationTag: applicationTag
+            ]
+            SecItemDelete(query as CFDictionary)
+        }
+        let missing = KeychainKeyCustodyStub(
+            applicationTag: tag,
+            createIfMissing: false)
+        let requestKey = P256.Signing.PrivateKey()
+        let harness = try makeReviewHarness(
+            publicKeyX963: requestKey.publicKey.x963Representation)
+        var custodyCalls = 0
+        var producedArtifact = false
+        var structuredError: KernelEnableSigningError?
+
+        do {
+            _ = try makeKernelEnableOwnerSigningArtifact(
+                review: harness.review,
+                now: signingTestNow,
+                pairedIdentity: harness.pairedIdentity
+            ) { digest in
+                custodyCalls += 1
+                return try missing.sign(digest)
+            }
+            producedArtifact = true
+        } catch {
+            structuredError = error as? KernelEnableSigningError
+        }
+
+        XCTAssertTrue(custodyCalls == 1)
+        XCTAssertTrue(!producedArtifact)
+        XCTAssertTrue(structuredError == .signerFailed)
+        XCTAssertThrowsError(try missing.publicKey()) {
+            XCTAssertTrue($0 as? OwnerPhoneKeyCustodyError == .keyUnavailable)
+        }
+    }
+#endif
+
     func testExactPendingKernelRequestSignsOnceAndEmitsCanonicalVerifiedArtifact() throws {
         let harness = try makeHarness()
         var signerCalls = 0
@@ -38,7 +131,7 @@ final class KernelEnableSigningTests: XCTestCase {
         ) { digest in
             signerCalls += 1
             signedDigest = digest
-            return try harness.key.signature(for: digest).derRepresentation
+            return try harness.key.signature(for: digest.cryptoKitDigest).derRepresentation
         }
 
         XCTAssertTrue(signerCalls == 1)
@@ -75,7 +168,9 @@ final class KernelEnableSigningTests: XCTestCase {
         let normalized = try p256LowSNormalized(raw: raw)
         let parsed = try P256.Signing.ECDSASignature(rawRepresentation: raw)
         XCTAssertTrue(normalized == raw)
-        XCTAssertTrue(harness.key.publicKey.isValidSignature(parsed, for: digest))
+        XCTAssertTrue(harness.key.publicKey.isValidSignature(
+            parsed,
+            for: digest.cryptoKitDigest))
     }
 
     func testEveryContradictoryReviewFailsBeforeSignerAndArtifact() throws {
@@ -280,7 +375,7 @@ final class KernelEnableSigningTests: XCTestCase {
                 pairedIdentity: harness.pairedIdentity
             ) { digest in
                 wrongKeyCalls += 1
-                return try wrongKey.signature(for: digest).derRepresentation
+                return try wrongKey.signature(for: digest.cryptoKitDigest).derRepresentation
             }
             wrongKeyProducedArtifact = true
         } catch {
@@ -349,7 +444,7 @@ final class KernelEnableSigningTests: XCTestCase {
                 pairedIdentity: pairedIdentity
             ) { digest in
                 calls += 1
-                return try key.signature(for: digest).derRepresentation
+                return try key.signature(for: digest.cryptoKitDigest).derRepresentation
             }
             producedArtifact = true
         } catch {
@@ -364,6 +459,15 @@ final class KernelEnableSigningTests: XCTestCase {
 private func makeHarness() throws -> KernelSigningHarness {
     let key = P256.Signing.PrivateKey()
     let x963 = key.publicKey.x963Representation
+    let reviewHarness = try makeReviewHarness(publicKeyX963: x963)
+    return KernelSigningHarness(
+        key: key,
+        pairedIdentity: reviewHarness.pairedIdentity,
+        review: reviewHarness.review,
+        requestHash: reviewHarness.requestHash)
+}
+
+private func makeReviewHarness(publicKeyX963 x963: Data) throws -> KernelReviewHarness {
     let typedData = validKernelTypedData()
     let digest = try deriveEIP712Digest(from: typedData)
     let request = OwnerPhoneEIP712SigningRequest(
@@ -390,8 +494,7 @@ private func makeHarness() throws -> KernelSigningHarness {
             clientId: "kernel-signing-test",
             redirectUri: "https://app.example/callback"),
         scope: .ownerSigningRequest(scope))
-    return KernelSigningHarness(
-        key: key,
+    return KernelReviewHarness(
         pairedIdentity: KernelEnablePairedIdentity(
             account: signingTestAccount,
             p256XY: Data(x963.dropFirst())),

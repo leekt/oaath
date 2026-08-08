@@ -15,6 +15,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the one-time OAAth pairing QR code shown by your browser.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Confirm an OAAth owner-signing approval with your protected owner key.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to the OAAth demo relay running on your Mac.</string>
 	<!--
