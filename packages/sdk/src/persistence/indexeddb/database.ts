@@ -34,7 +34,7 @@ import { persistenceFail } from "../interfaces.js";
  */
 export const OAATH_INDEXEDDB_NAME = "oaath.browser-state/v1" as const;
 /** Bumped on any schema change; the upgrade wipes, it never migrates. */
-export const OAATH_INDEXEDDB_VERSION = 12;
+export const OAATH_INDEXEDDB_VERSION = 13;
 
 export const OAATH_INDEXEDDB_STORES = Object.freeze({
   grants: "grants",

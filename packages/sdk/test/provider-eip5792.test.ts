@@ -18,8 +18,11 @@ import {
   type ChainFixture,
   type ChainFixtureOptions,
   createChainFixture,
+  createClock,
+  createMemoryStores,
   createRealm,
   permissionInput,
+  type RealmStores,
   TARGET,
 } from "./support/browser.js";
 
@@ -120,7 +123,7 @@ async function providerError(
 }
 
 describe("wallet_sendCalls orchestration", () => {
-  it("waits on one frozen exact confirmation before any durable or chain effect", async () => {
+  it("CAS-reserves before one frozen exact confirmation and starts with a fresh lease", async () => {
     let approve!: (decision: "approved") => void;
     let entered!: () => void;
     const confirmationEntered = new Promise<void>((resolve) => {
@@ -168,6 +171,7 @@ describe("wallet_sendCalls orchestration", () => {
     expect(presented).toEqual({
       account,
       chainId: CHAIN_HEX,
+      confirmationExpiresAt: 1_800_000_300,
       calls: [
         { target: TARGET, value: "0", data: CALL_DATA },
         { target: TARGET, value: "0", data: CALL_DATA },
@@ -187,22 +191,50 @@ describe("wallet_sendCalls orchestration", () => {
         account,
         id,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      storeRevision: 0,
+      value: {
+        state: "confirmation_pending",
+        confirmationExpiresAt: 1_800_000_300,
+        publicationExpiresAt: null,
+        operation: null,
+      },
+    });
+    realm.clock.advance(290);
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 100 });
 
     approve("approved");
     await expect(sending).resolves.toEqual({ id });
     expect(realm.chain.quotes).toBe(1);
     expect(realm.chain.signatures).toHaveLength(1);
     expect(realm.chain.sends).toHaveLength(1);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toMatchObject({
+      value: {
+        confirmationExpiresAt: 1_800_000_300,
+        publicationExpiresAt: 1_800_000_320,
+        state: "operation_bound",
+      },
+    });
     await connection.close();
   });
 
-  it("maps rejection to 4001 with zero effects and leaves the explicit ID reusable", async () => {
-    let decision: "approved" | "rejected" = "rejected";
+  it("maps rejection to 4001 with zero effects and permanently tombstones the explicit ID", async () => {
+    let presentations = 0;
     const { realm, connection, grant, provider, account } = await activeProvider(
       createChainFixture(),
       undefined,
-      async () => decision,
+      async () => {
+        presentations += 1;
+        return "rejected" as const;
+      },
     );
     const id = "retry-after-rejection";
     const request = {
@@ -221,13 +253,176 @@ describe("wallet_sendCalls orchestration", () => {
         account,
         id,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      storeRevision: 1,
+      value: {
+        state: "terminal",
+        terminalFrom: "confirmation_pending",
+        operation: null,
+      },
+    });
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
 
-    decision = "approved";
-    await expect(provider.request(request)).resolves.toEqual({ id });
-    expect(realm.chain.quotes).toBe(1);
-    expect(realm.chain.sends).toHaveLength(1);
+    await providerError(provider.request(request), 5720);
+    expect(presentations).toBe(1);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.sends).toHaveLength(0);
     await connection.close();
+  });
+
+  it("expires a pending confirmation and never lets its late approval start execution", async () => {
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const { realm, connection, provider, account } = await activeProvider(
+      createChainFixture(),
+      undefined,
+      async () => {
+        entered();
+        return decision;
+      },
+    );
+    const id = "expired-confirmation";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    };
+    const sending = provider.request(request);
+    await confirmationEntered;
+
+    realm.clock.advance(300);
+    await expect(
+      provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
+    approve("approved");
+    await providerError(sending, 4001);
+    await providerError(provider.request(request), 5720);
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("follows the approved winner when expiry races the same preconfirmation CAS", async () => {
+    const base = createChainFixture();
+    let enterQuote!: () => void;
+    let releaseQuote!: () => void;
+    const quoteEntered = new Promise<void>((resolve) => {
+      enterQuote = resolve;
+    });
+    const quoteReleased = new Promise<void>((resolve) => {
+      releaseQuote = resolve;
+    });
+    const chain = replaceChain(base, {
+      async quote(request) {
+        enterQuote();
+        await quoteReleased;
+        return base.capability.quote(request);
+      },
+    });
+    const stores = createMemoryStores();
+    const bundles = stores.walletCallBundles;
+    let enterTerminalCas!: () => void;
+    let releaseTerminalCas!: () => void;
+    const terminalCasEntered = new Promise<void>((resolve) => {
+      enterTerminalCas = resolve;
+    });
+    const terminalCasReleased = new Promise<void>((resolve) => {
+      releaseTerminalCas = resolve;
+    });
+    let approvalCasResult: unknown;
+    let terminalCasResult: unknown;
+    const racedStores: RealmStores = {
+      ...stores,
+      walletCallBundles: Object.freeze({
+        ...bundles,
+        async compareAndSwap(input: Parameters<typeof bundles.compareAndSwap>[0]) {
+          const next = input.next as {
+            readonly value?: {
+              readonly state?: unknown;
+              readonly terminalFrom?: unknown;
+            };
+          };
+          if (
+            next.value?.state === "terminal" &&
+            next.value.terminalFrom === "confirmation_pending"
+          ) {
+            enterTerminalCas();
+            await terminalCasReleased;
+            terminalCasResult = await bundles.compareAndSwap(input);
+            return terminalCasResult;
+          }
+          const result = await bundles.compareAndSwap(input);
+          if (next.value?.state === "accepted") approvalCasResult = result;
+          return result;
+        },
+      }),
+    };
+    const senderClock = createClock();
+    const senderRealm = createRealm({ stores: racedStores, clock: senderClock, chain });
+    const senderConnection = await senderRealm.oaath.connect();
+    const senderGrant = await senderConnection.requestPermission(permissionInput());
+    const account = await senderGrant.account(CHAIN_ID);
+    let approve!: (decision: "approved") => void;
+    let enterConfirmation!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      enterConfirmation = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const sender = oaathProvider({
+      grant: senderGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        enterConfirmation();
+        return decision;
+      },
+    });
+    const id = "approval-expiry-race";
+    const sending = sender.request({
+      method: "wallet_sendCalls",
+      params: [bundle(account, { id })],
+    });
+    await confirmationEntered;
+    senderClock.advance(299);
+
+    const statusClock = createClock(senderClock.now() + 1);
+    const statusRealm = createRealm({
+      stores: racedStores,
+      clock: statusClock,
+      relay: senderRealm.relay,
+      chain,
+    });
+    const statusConnection = await statusRealm.oaath.connect();
+    const statusGrant = await statusConnection.resume();
+    if (statusGrant === null) throw new Error("expected the racing Grant to resume");
+    const statusProvider = oaathProvider({ grant: statusGrant, chain: CHAIN_ID });
+    const reading = statusProvider.request({ method: "wallet_getCallsStatus", params: [id] });
+    await terminalCasEntered;
+
+    approve("approved");
+    await quoteEntered;
+    releaseTerminalCas();
+    await expect(reading).resolves.toMatchObject({ id, status: 100 });
+    expect(approvalCasResult).toBe(true);
+    expect(terminalCasResult).toBe(false);
+    expect(base.quotes).toBe(0);
+    expect(base.signatures).toHaveLength(0);
+    expect(base.sends).toHaveLength(0);
+
+    releaseQuote();
+    await expect(sending).resolves.toEqual({ id });
+    expect(base.sends).toHaveLength(1);
+    await statusConnection.close();
+    await senderConnection.close();
   });
 
   it("refuses a concurrent explicit duplicate before invoking a second presenter", async () => {
@@ -240,7 +435,7 @@ describe("wallet_sendCalls orchestration", () => {
       approve = resolve;
     });
     let presentations = 0;
-    const { realm, connection, provider, account } = await activeProvider(
+    const { realm, connection, grant, provider, account } = await activeProvider(
       createChainFixture(),
       undefined,
       async () => {
@@ -253,10 +448,18 @@ describe("wallet_sendCalls orchestration", () => {
       method: "wallet_sendCalls",
       params: [bundle(account, { id: "pending-confirmation-duplicate" })],
     };
+    const otherProvider = oaathProvider({
+      grant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        presentations += 1;
+        return decision;
+      },
+    });
 
     const first = provider.request(request);
     await confirmationEntered;
-    await providerError(provider.request(request), 5720);
+    await providerError(otherProvider.request(request), 5720);
     expect(presentations).toBe(1);
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.signatures).toHaveLength(0);
@@ -299,7 +502,16 @@ describe("wallet_sendCalls orchestration", () => {
           account,
           id,
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({
+        value: { state: "terminal", terminalFrom: "confirmation_pending", operation: null },
+      });
+      await providerError(
+        provider.request({ method: "wallet_sendCalls", params: [bundle(account, { id })] }),
+        5720,
+      );
+      await expect(
+        provider.request({ method: "wallet_getCallsStatus", params: [id] }),
+      ).resolves.toMatchObject({ id, status: 400 });
       mode = next;
     }
     expect(realm.chain.quotes).toBe(0);

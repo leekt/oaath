@@ -114,6 +114,21 @@ function reserve(
   });
 }
 
+function reservePendingConfirmation(
+  store: WalletCallBundleStore,
+): Promise<WalletCallBundleMutationResult> {
+  return store.reservePendingConfirmation({
+    key: key(),
+    grantId: GRANT_ID,
+    generation: GENERATION_A,
+    account: ACCOUNT,
+    chainId: CHAIN_ID,
+    createdAt: 10,
+    confirmationExpiresAt: 310,
+    requestHash: REQUEST_HASH,
+  });
+}
+
 function requireCommitted(result: WalletCallBundleMutationResult): WalletCallBundleStoreRecord {
   if (result.status !== "committed") throw new Error("expected a committed bundle mutation");
   return result.record;
@@ -276,6 +291,37 @@ for (const backendCase of BACKENDS) {
         expect(results.find((result) => result.status === "conflict")).toMatchObject({
           status: "conflict",
           current: { storeRevision: 0, value: { state: "accepted" } },
+        });
+      } finally {
+        backend.dispose();
+      }
+    });
+
+    it("lets one store reserve and approve a preconfirmation while its peer only conflicts", async () => {
+      const backend = await backendCase.open();
+      try {
+        const stores = [
+          new WalletCallBundleStore(backend.adapter),
+          new WalletCallBundleStore(backend.adapter),
+        ];
+        const results = await Promise.all(stores.map(reservePendingConfirmation));
+        expect(results.filter((result) => result.status === "committed")).toHaveLength(1);
+        expect(results.filter((result) => result.status === "conflict")).toHaveLength(1);
+        const pending = results.find((result) => result.status === "committed");
+        if (pending?.status !== "committed") throw new Error("expected one pending winner");
+        const approved = await stores[0]?.approveConfirmation({
+          key: key(),
+          expectedStoreRevision: pending.record.storeRevision,
+          expectedGeneration: pending.record.value.generation,
+          approvedAt: 300,
+          publicationExpiresAt: 330,
+        });
+        expect(approved).toMatchObject({
+          status: "committed",
+          record: {
+            storeRevision: 1,
+            value: { state: "accepted", publicationExpiresAt: 330 },
+          },
         });
       } finally {
         backend.dispose();

@@ -7,6 +7,7 @@ const approve = document.getElementById("approve");
 const reject = document.getElementById("reject");
 const token = decodeURIComponent(window.location.hash.slice(1));
 const key = `wallet-call-confirmation:${token}`;
+let expiryTimer = null;
 
 function disable() {
   approve.disabled = true;
@@ -15,6 +16,7 @@ function disable() {
 
 async function decide(decision) {
   disable();
+  if (expiryTimer !== null) clearTimeout(expiryTimer);
   try {
     const response = await chrome.runtime.sendMessage({
       type: "transaction-confirmation",
@@ -33,9 +35,23 @@ try {
     throw new Error("wallet call confirmation is unavailable");
   }
   const stored = await chrome.storage.session.get(key);
-  confirmation.textContent = formatWalletCallConfirmation(stored[key]);
-  approve.disabled = false;
-  reject.disabled = false;
+  const record = stored[key];
+  confirmation.textContent = formatWalletCallConfirmation(record);
+  const expiresAt = record.confirmationExpiresAt;
+  const remaining = expiresAt === undefined ? null : Math.max(0, expiresAt * 1_000 - Date.now());
+  if (remaining === 0) {
+    result.textContent = "wallet call confirmation expired";
+    disable();
+  } else {
+    approve.disabled = false;
+    reject.disabled = false;
+    if (remaining !== null) {
+      expiryTimer = setTimeout(() => {
+        disable();
+        result.textContent = "wallet call confirmation expired";
+      }, remaining);
+    }
+  }
   approve.addEventListener("click", () => void decide("approved"));
   reject.addEventListener("click", () => void decide("rejected"));
 } catch (error) {

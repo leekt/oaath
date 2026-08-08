@@ -413,6 +413,7 @@ describe("wallet_sendCalls ERC-7902 validity admission", () => {
     expect(presented).toEqual({
       account: active.account,
       chainId: CHAIN_HEX,
+      confirmationExpiresAt: 1_800_000_300,
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
     });
     expect(active.realm.chain.sends[0]?.userOperation.callData).not.toContain("1ba8f415");
@@ -492,6 +493,7 @@ describe("wallet_sendCalls ERC-7902 validity admission", () => {
     expect(presented).toEqual({
       account: active.account,
       chainId: CHAIN_HEX,
+      confirmationExpiresAt: 1_800_000_300,
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
       validityTimeRange: {
         validAfter: String(after),
@@ -508,7 +510,19 @@ describe("wallet_sendCalls ERC-7902 validity admission", () => {
           .validityTimeRange,
       ),
     ).toBe(true);
-    await expectNoEffects(active, id);
+    const port = grantProviderPort(active.grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId as `0x${string}`,
+        account: active.account,
+        id,
+      }),
+    ).resolves.toMatchObject({
+      value: { state: "terminal", terminalFrom: "confirmation_pending", operation: null },
+    });
+    expect(active.realm.chain.quotes).toBe(0);
+    expect(active.realm.chain.signatures).toHaveLength(0);
+    expect(active.realm.chain.sends).toHaveLength(0);
     await active.connection.close();
   });
 

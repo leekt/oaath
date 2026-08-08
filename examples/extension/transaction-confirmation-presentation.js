@@ -47,15 +47,14 @@ function utcSeconds(value) {
 
 function capturePublicConfirmation(origin, confirmation) {
   const hasValidityTimeRange = hasOwnField(confirmation, "validityTimeRange");
+  const hasConfirmationDeadline = hasOwnField(confirmation, "confirmationExpiresAt");
+  const confirmationKeys = ["account", "chainId", "calls"];
+  if (hasConfirmationDeadline) confirmationKeys.push("confirmationExpiresAt");
+  if (hasValidityTimeRange) confirmationKeys.push("validityTimeRange");
   if (
     typeof origin !== "string" ||
     !ORIGIN.test(origin) ||
-    !exactKeys(
-      confirmation,
-      hasValidityTimeRange
-        ? ["account", "chainId", "calls", "validityTimeRange"]
-        : ["account", "chainId", "calls"],
-    ) ||
+    !exactKeys(confirmation, confirmationKeys) ||
     typeof confirmation.account !== "string" ||
     !ADDRESS.test(confirmation.account) ||
     typeof confirmation.chainId !== "string" ||
@@ -63,6 +62,15 @@ function capturePublicConfirmation(origin, confirmation) {
     !Array.isArray(confirmation.calls) ||
     confirmation.calls.length === 0 ||
     confirmation.calls.length > 64
+  ) {
+    throw new Error("wallet call confirmation is unavailable");
+  }
+  const confirmationExpiresAt = hasConfirmationDeadline
+    ? confirmation.confirmationExpiresAt
+    : undefined;
+  if (
+    confirmationExpiresAt !== undefined &&
+    (!Number.isSafeInteger(confirmationExpiresAt) || confirmationExpiresAt < 1)
   ) {
     throw new Error("wallet call confirmation is unavailable");
   }
@@ -115,6 +123,7 @@ function capturePublicConfirmation(origin, confirmation) {
     account: confirmation.account,
     chainId: confirmation.chainId,
     calls: Object.freeze(calls),
+    ...(confirmationExpiresAt === undefined ? {} : { confirmationExpiresAt }),
     ...(validityTimeRange === undefined ? {} : { validityTimeRange }),
   });
 }
@@ -132,14 +141,37 @@ export async function confirmWalletCalls(extension, origin, confirmation) {
   const token = crypto.randomUUID();
   const key = storageKey(token);
   const display = capturePublicConfirmation(origin, confirmation);
+  if (
+    display.confirmationExpiresAt !== undefined &&
+    Date.now() >= display.confirmationExpiresAt * 1_000
+  ) {
+    return "rejected";
+  }
   let resolveDecision;
   const decision = new Promise((resolve) => {
     resolveDecision = resolve;
   });
-  const state = { tabId: null, resolve: resolveDecision };
+  const state = {
+    tabId: null,
+    resolve: resolveDecision,
+    confirmationExpiresAt: display.confirmationExpiresAt ?? null,
+    timeoutId: null,
+  };
   pending.set(token, state);
+  if (state.confirmationExpiresAt !== null) {
+    state.timeoutId = setTimeout(
+      () => {
+        void settleWalletCallConfirmation(extension, token, "rejected");
+      },
+      Math.max(0, state.confirmationExpiresAt * 1_000 - Date.now()),
+    );
+  }
   try {
     await extension.storage.session.set({ [key]: display });
+    if (pending.get(token) !== state) {
+      await extension.storage.session.remove(key).catch(() => undefined);
+      return await decision;
+    }
     const tab = await extension.tabs.create({
       active: true,
       url: extension.runtime.getURL(`transaction-confirmation.html#${encodeURIComponent(token)}`),
@@ -152,9 +184,23 @@ export async function confirmWalletCalls(extension, origin, confirmation) {
     return await decision;
   } catch (error) {
     pending.delete(token);
+    if (state.timeoutId !== null) clearTimeout(state.timeoutId);
     await extension.storage.session.remove(key).catch(() => undefined);
     throw error;
   }
+}
+
+async function settleWalletCallConfirmation(extension, token, decision) {
+  const state = pending.get(token);
+  if (state === undefined) {
+    await extension.storage.session.remove(storageKey(token)).catch(() => undefined);
+    return false;
+  }
+  pending.delete(token);
+  if (state.timeoutId !== null) clearTimeout(state.timeoutId);
+  state.resolve(decision);
+  await extension.storage.session.remove(storageKey(token)).catch(() => undefined);
+  return true;
 }
 
 /** Settles an extension-page decision exactly once; `false` means orphaned. */
@@ -167,20 +213,22 @@ export async function decideWalletCallConfirmation(extension, token, decision) {
     await extension.storage.session.remove(storageKey(token)).catch(() => undefined);
     return false;
   }
-  pending.delete(token);
-  state.resolve(decision);
-  await extension.storage.session.remove(storageKey(token)).catch(() => undefined);
-  return true;
+  if (
+    decision === "approved" &&
+    state.confirmationExpiresAt !== null &&
+    Date.now() >= state.confirmationExpiresAt * 1_000
+  ) {
+    await settleWalletCallConfirmation(extension, token, "rejected");
+    return false;
+  }
+  return settleWalletCallConfirmation(extension, token, decision);
 }
 
 /** Closing the wallet-owned tab is an explicit rejection, never an approval. */
 export async function rejectClosedWalletCallConfirmation(extension, tabId) {
   for (const [token, state] of pending) {
     if (state.tabId !== tabId) continue;
-    pending.delete(token);
-    state.resolve("rejected");
-    await extension.storage.session.remove(storageKey(token)).catch(() => undefined);
-    return true;
+    return settleWalletCallConfirmation(extension, token, "rejected");
   }
   return false;
 }
@@ -188,20 +236,18 @@ export async function rejectClosedWalletCallConfirmation(extension, tabId) {
 /** Validates and formats only the public model captured by the worker. */
 export function formatWalletCallConfirmation(record) {
   const hasValidityTimeRange = hasOwnField(record, "validityTimeRange");
-  if (
-    !exactKeys(
-      record,
-      hasValidityTimeRange
-        ? ["origin", "account", "chainId", "calls", "validityTimeRange"]
-        : ["origin", "account", "chainId", "calls"],
-    )
-  ) {
+  const hasConfirmationDeadline = hasOwnField(record, "confirmationExpiresAt");
+  const recordKeys = ["origin", "account", "chainId", "calls"];
+  if (hasConfirmationDeadline) recordKeys.push("confirmationExpiresAt");
+  if (hasValidityTimeRange) recordKeys.push("validityTimeRange");
+  if (!exactKeys(record, recordKeys)) {
     throw new Error("wallet call confirmation is unavailable");
   }
   const exact = capturePublicConfirmation(record.origin, {
     account: record.account,
     chainId: record.chainId,
     calls: record.calls,
+    ...(hasConfirmationDeadline ? { confirmationExpiresAt: record.confirmationExpiresAt } : {}),
     ...(hasValidityTimeRange ? { validityTimeRange: record.validityTimeRange } : {}),
   });
   const lines = [
@@ -210,6 +256,11 @@ export function formatWalletCallConfirmation(record) {
     `chain    ${exact.chainId}`,
     `calls    ${exact.calls.length}`,
   ];
+  if (exact.confirmationExpiresAt !== undefined) {
+    lines.push(
+      `approve before ${exact.confirmationExpiresAt} seconds (${utcSeconds(String(exact.confirmationExpiresAt))})`,
+    );
+  }
   if (exact.validityTimeRange !== undefined) {
     lines.push(
       "",

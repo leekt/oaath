@@ -817,14 +817,14 @@ describe("IndexedDB prepared-call durability", () => {
     }
   });
 
-  it("wipes every v11 store when opening the v12 database without migration", async () => {
-    expect(OAATH_INDEXEDDB_VERSION).toBe(12);
+  it("wipes every v12 store when opening the v13 database without migration", async () => {
+    expect(OAATH_INDEXEDDB_VERSION).toBe(13);
     const factory = new IDBFactory();
     await new Promise<void>((resolve, reject) => {
-      const request = factory.open(OAATH_INDEXEDDB_NAME, 11);
+      const request = factory.open(OAATH_INDEXEDDB_NAME, 12);
       request.onupgradeneeded = () => {
         for (const storeName of Object.values(OAATH_INDEXEDDB_STORES)) {
-          request.result.createObjectStore(storeName).put({ source: "v11" }, "stale");
+          request.result.createObjectStore(storeName).put({ source: "v12" }, "stale");
         }
       };
       request.onsuccess = () => {
@@ -836,7 +836,7 @@ describe("IndexedDB prepared-call durability", () => {
 
     const database = await openOaathDatabase({ factory });
     try {
-      expect(database.version).toBe(12);
+      expect(database.version).toBe(13);
       const counts = await database.transact(
         Object.values(OAATH_INDEXEDDB_STORES),
         "readonly",

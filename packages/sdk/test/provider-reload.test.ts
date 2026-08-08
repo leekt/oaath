@@ -722,6 +722,80 @@ function operationCrashStores(mode: OperationCrash): RealmStores {
 }
 
 describe("durable crash boundaries", () => {
+  it("cannot recover approval authority after a pending confirmation realm is recreated", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const chain = createChainFixture();
+    const first = await indexedDbStores(factory);
+    const before = createUrlRealm({ stores: first.stores, clock, chain });
+    const firstConnection = await before.oaath.connect();
+    const firstGrant = await firstConnection.requestPermission(permissionInput());
+    const account = await firstGrant.account(CHAIN_ID);
+    let approve!: (decision: "approved") => void;
+    let entered!: () => void;
+    const confirmationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const decision = new Promise<"approved">((resolve) => {
+      approve = resolve;
+    });
+    const firstProvider = oaathProvider({
+      grant: firstGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        entered();
+        return decision;
+      },
+    });
+    const id = "confirmation-realm-crash";
+    const request = {
+      method: "wallet_sendCalls",
+      params: [bundle(account, id)],
+    };
+    const sending = firstProvider.request(request);
+    await confirmationEntered;
+    await firstConnection.close();
+    first.database.close();
+    opened.splice(opened.indexOf(first.database), 1);
+
+    const second = await indexedDbStores(factory);
+    const after = createUrlRealm({
+      stores: second.stores,
+      clock,
+      relay: before.relay,
+      chain,
+    });
+    const secondConnection = await after.oaath.connect();
+    const secondGrant = await secondConnection.resume();
+    if (secondGrant === null) throw new Error("expected the confirmation Grant to resume");
+    let recreatedPresentations = 0;
+    const secondProvider = oaathProvider({
+      grant: secondGrant,
+      chain: CHAIN_ID,
+      confirmCalls: async () => {
+        recreatedPresentations += 1;
+        return "approved" as const;
+      },
+    });
+    await providerError(secondProvider.request(request), 5720);
+    expect(recreatedPresentations).toBe(0);
+    await expect(
+      secondProvider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 100 });
+
+    clock.advance(300);
+    await expect(
+      secondProvider.request({ method: "wallet_getCallsStatus", params: [id] }),
+    ).resolves.toMatchObject({ id, status: 400 });
+    approve("approved");
+    await providerError(sending, 4001);
+    await providerError(secondProvider.request(request), 5720);
+    expect(chain.quotes).toBe(0);
+    expect(chain.signatures).toHaveLength(0);
+    expect(chain.sends).toHaveLength(0);
+    await secondConnection.close();
+  });
+
   it("keeps a recreated accepted request pending without letting status cancel its sender", async () => {
     const base = createChainFixture();
     let enterQuote!: () => void;

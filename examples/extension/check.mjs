@@ -145,6 +145,7 @@ const confirmationExtension = {
 const exactCalls = Object.freeze({
   account: `0x${"11".repeat(20)}`,
   chainId: "0x1",
+  confirmationExpiresAt: Math.floor(Date.now() / 1_000) + 300,
   calls: Object.freeze([
     Object.freeze({ target: `0x${"44".repeat(20)}`, value: "0", data: "0xabcd" }),
   ]),
@@ -161,12 +162,16 @@ expect(Object.isFrozen(approvalRecord), "confirmation display must be frozen");
 expect(Object.isFrozen(approvalRecord?.calls), "confirmation calls must be frozen");
 expect(Object.isFrozen(approvalRecord?.calls?.[0]), "each confirmation call must be frozen");
 expect(
-  Object.keys(approvalRecord ?? {}).join(",") === "origin,account,chainId,calls",
+  Object.keys(approvalRecord ?? {}).join(",") ===
+    "origin,account,chainId,calls,confirmationExpiresAt",
   "session storage must contain public display fields only",
 );
 expect(
-  formatWalletCallConfirmation(approvalRecord).includes(`target   0x${"44".repeat(20)}`),
-  "confirmation page must render the exact ordered call",
+  formatWalletCallConfirmation(approvalRecord).includes(`target   0x${"44".repeat(20)}`) &&
+    formatWalletCallConfirmation(approvalRecord).includes(
+      `approve before ${exactCalls.confirmationExpiresAt} seconds`,
+    ),
+  "confirmation page must render the exact ordered call and approval deadline",
 );
 expect(
   await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved"),
@@ -187,6 +192,42 @@ expect(
   "closing the confirmation tab must find its pending decision",
 );
 expect((await rejection) === "rejected", "closing the confirmation tab must reject");
+
+const beforeExpiredPresentation = confirmationEvents.length;
+expect(
+  (await confirmWalletCalls(confirmationExtension, "https://example.test", {
+    ...exactCalls,
+    confirmationExpiresAt: Math.floor(Date.now() / 1_000),
+  })) === "rejected",
+  "an expired confirmation must reject without opening presentation",
+);
+expect(
+  confirmationEvents.length === beforeExpiredPresentation,
+  "an expired confirmation must not write session state or open a tab",
+);
+
+const realDateNow = Date.now;
+let controlledNow = realDateNow();
+Date.now = () => controlledNow;
+try {
+  const lateDeadline = Math.floor(controlledNow / 1_000) + 1;
+  const lateApproval = confirmWalletCalls(confirmationExtension, "https://example.test", {
+    ...exactCalls,
+    confirmationExpiresAt: lateDeadline,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  const lateOpen = confirmationEvents.filter((event) => event.kind === "opened").at(-1);
+  const lateToken = decodeURIComponent(lateOpen?.value?.url.split("#")[1] ?? "");
+  controlledNow = lateDeadline * 1_000;
+  expect(
+    !(await decideWalletCallConfirmation(confirmationExtension, lateToken, "approved")),
+    "approval at the exclusive deadline must be refused",
+  );
+  expect((await lateApproval) === "rejected", "late approval must settle only as rejection");
+} finally {
+  Date.now = realDateNow;
+}
 
 const rangedConfirmation = confirmWalletCalls(confirmationExtension, "https://example.test", {
   ...exactCalls,
