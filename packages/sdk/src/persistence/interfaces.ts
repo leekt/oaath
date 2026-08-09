@@ -62,6 +62,24 @@ const MAX_ID_LENGTH = 256;
 const MAX_WALLET_CALL_BUNDLE_ID_UTF8_BYTES = 4_096;
 const MAX_EFFECTS = 4;
 
+/**
+ * Durable wallet-call bundle records are permanent tombstones, so a provider
+ * scope cannot own an unbounded number of them. The adapter enforces this
+ * budget atomically inside its reservation transaction: one record per
+ * unique ID is retained forever, so a record-count bound bounds the shared
+ * storage an approved application can consume per scope.
+ */
+export const MAX_WALLET_CALL_BUNDLE_RECORDS_PER_SCOPE = 256;
+
+/**
+ * The atomic reservation signal a bundle adapter returns instead of a boolean
+ * when a fresh record would exceed its per-scope budget. `WalletCallBundleStore`
+ * maps it to a distinct `capacity_exhausted` result; no record is written.
+ */
+export const WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED: unique symbol = Symbol(
+  "oaath.wallet-call-bundle.scope-capacity-exhausted",
+);
+
 export type PersistenceErrorCode =
   | "persistence_unavailable"
   | "persistence_input_invalid"
@@ -253,7 +271,12 @@ export type WalletCallBundleStoreRecord = Readonly<
   >
 >;
 
-/** Raw persistence capability. Updates match revision and immutable generation atomically. */
+/**
+ * Raw persistence capability. Updates match revision and immutable generation
+ * atomically. A fresh reservation (`expectedStoreRevision === null`) that would
+ * exceed the adapter's per-scope record budget returns
+ * `WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED` without writing.
+ */
 export interface WalletCallBundleStoreAdapter {
   get(key: Readonly<WalletCallBundleKey>): Promise<unknown>;
   compareAndSwap(input: {

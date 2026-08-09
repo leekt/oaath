@@ -10,6 +10,7 @@ import {
   OaathPersistenceError,
   parseWalletCallBundleKey,
   parseWalletCallBundleRecord,
+  WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED,
   type WalletCallBundleKey,
   type WalletCallBundleOperation,
   type WalletCallBundleRecord,
@@ -17,10 +18,11 @@ import {
   type WalletCallBundleStoreRecord,
 } from "../src/persistence/interfaces.js";
 import {
-  type WalletCallBundleMutationResult,
+  type WalletCallBundleReservationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
 import { OaathStoreError, type StoreRecord } from "../src/store.js";
+import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 
 const SCOPE = `0x${"11".repeat(32)}` as const;
 const OTHER_SCOPE = `0x${"12".repeat(32)}` as const;
@@ -199,7 +201,7 @@ function expectPersistenceError(action: () => unknown, code: OaathPersistenceErr
   throw new Error(`Expected ${code}`);
 }
 
-function requireCommitted(result: WalletCallBundleMutationResult): WalletCallBundleStoreRecord {
+function requireCommitted(result: WalletCallBundleReservationResult): WalletCallBundleStoreRecord {
   if (result.status !== "committed") throw new Error("expected a committed bundle mutation");
   return result.record;
 }
@@ -213,7 +215,7 @@ async function reserve(
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
   account: WalletCallBundleRecord["account"] = entryKey.account,
   grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
-): Promise<WalletCallBundleMutationResult> {
+): Promise<WalletCallBundleReservationResult> {
   return store.reserveAccepted({
     key: entryKey,
     grantId,
@@ -230,7 +232,7 @@ async function reservePendingConfirmation(
   store: WalletCallBundleStore,
   entryKey: Readonly<WalletCallBundleKey> = key(),
   createdAt = 10,
-): Promise<WalletCallBundleMutationResult> {
+): Promise<WalletCallBundleReservationResult> {
   return store.reservePendingConfirmation({
     key: entryKey,
     grantId: GRANT_ID,
@@ -1245,7 +1247,7 @@ describe("wallet-call bundle races and retained-write verification", () => {
     await expect(store.get(key())).resolves.toEqual(terminal);
   });
 
-  it("returns the recreated generation when it wins after a stale transition read", async () => {
+  it("rejects a stale transition when a recreated generation wins the race", async () => {
     const generationA = envelope(
       bundleRecord({ operation: operation(), state: "operation_reserved" }),
       1,
@@ -1283,11 +1285,11 @@ describe("wallet-call bundle races and retained-write verification", () => {
         expectedGeneration: generationA.value.generation,
         updatedAt: 21,
       };
-      const result =
+      const mutate =
         transition === "confirmation"
-          ? await store.confirmOperationPublished(input)
-          : await store.markTerminal(input);
-      expect(result).toEqual({ status: "conflict", current: generationB });
+          ? () => store.confirmOperationPublished(input)
+          : () => store.markTerminal(input);
+      await expectStoreError(mutate, "store_identity_mismatch");
       await expect(store.get(key())).resolves.toEqual(generationB);
     }
   });
@@ -1578,6 +1580,89 @@ describe("wallet-call bundle races and retained-write verification", () => {
           updatedAt: 21,
         }),
       "store_record_invalid",
+    );
+  });
+});
+
+describe("wallet-call bundle scope capacity", () => {
+  it("rejects a fresh reservation with capacity_exhausted once the scope budget is full and writes nothing", async () => {
+    const store = new WalletCallBundleStore(
+      createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 1 }),
+    );
+    const first = requireCommitted(await reserve(store, key("first")));
+    expect(await reserve(store, key("second"))).toEqual({ status: "capacity_exhausted" });
+    expect(await reservePendingConfirmation(store, key("pending"))).toEqual({
+      status: "capacity_exhausted",
+    });
+    await expect(store.get(key("second"))).resolves.toBeUndefined();
+    await expect(store.get(key("pending"))).resolves.toBeUndefined();
+    await expect(store.get(key("first"))).resolves.toEqual(first);
+  });
+
+  it("keeps the conflict path for an existing key even when the scope budget is full", async () => {
+    const store = new WalletCallBundleStore(
+      createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 1 }),
+    );
+    const terminal = requireCommitted(await reserve(store, key("only")));
+    const stale = await store.reserveOperation({
+      key: key("only"),
+      expectedStoreRevision: 0,
+      expectedGeneration: GENERATION_B,
+      operation: operation(),
+      updatedAt: 20,
+    });
+    expect(stale).toMatchObject({ status: "conflict", current: { storeRevision: 0 } });
+    const reuse = await store.reserveAccepted({
+      key: key("only"),
+      grantId: GRANT_ID,
+      generation: GENERATION_B,
+      account: ACCOUNT,
+      chainId: CHAIN_ID,
+      createdAt: 30,
+      publicationExpiresAt: 60,
+      requestHash: OTHER_REQUEST_HASH,
+    });
+    expect(reuse).toMatchObject({ status: "conflict" });
+    await expect(store.get(key("only"))).resolves.toEqual(terminal);
+  });
+
+  it("enforces the budget per provider scope, not across scopes", async () => {
+    const store = new WalletCallBundleStore(
+      createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 1 }),
+    );
+    expect((await reserve(store, key("a", SCOPE))).status).toBe("committed");
+    expect((await reserve(store, key("b", OTHER_SCOPE))).status).toBe("committed");
+    expect(await reserve(store, key("c", SCOPE))).toEqual({ status: "capacity_exhausted" });
+  });
+
+  it("rejects a non-positive scope budget at adapter construction", () => {
+    expectPersistenceError(
+      () => createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 0 }),
+      "persistence_input_invalid",
+    );
+  });
+
+  it("maps a sentinel on a retained write to an indeterminate commit, never capacity_exhausted", async () => {
+    const adapter: WalletCallBundleStoreAdapter = {
+      async get() {
+        return envelope();
+      },
+      async compareAndSwap() {
+        return WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED;
+      },
+      async close() {},
+    };
+    const store = new WalletCallBundleStore(adapter);
+    await expectStoreError(
+      () =>
+        store.reserveOperation({
+          key: key(),
+          expectedStoreRevision: 0,
+          expectedGeneration: GENERATION_A,
+          operation: operation(),
+          updatedAt: 20,
+        }),
+      "store_commit_indeterminate",
     );
   });
 });

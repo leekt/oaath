@@ -25,6 +25,7 @@ import {
   matchesExpectedRevisionAndGeneration,
 } from "../indexeddb/database.js";
 import {
+  MAX_WALLET_CALL_BUNDLE_RECORDS_PER_SCOPE,
   type OaathCleanupCheckpoint,
   type OaathCleanupCheckpointStore,
   type OaathClientContext,
@@ -34,6 +35,7 @@ import {
   persistenceFail,
   persistenceId,
   requireNonExtractableKey,
+  WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED,
   type WalletCallBundleKey,
   type WalletCallBundleStoreAdapter,
 } from "../interfaces.js";
@@ -179,9 +181,31 @@ export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
   return Object.freeze(adapter);
 }
 
-export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStoreAdapter {
+export function createMemoryWalletCallBundleStoreAdapter(
+  options: Readonly<{ maxRecordsPerScope?: number }> = {},
+): WalletCallBundleStoreAdapter {
+  const maxRecordsPerScope = options.maxRecordsPerScope ?? MAX_WALLET_CALL_BUNDLE_RECORDS_PER_SCOPE;
+  if (!Number.isSafeInteger(maxRecordsPerScope) || maxRecordsPerScope < 1) {
+    persistenceFail(
+      "persistence_input_invalid",
+      "wallet call bundle scope budget must be a positive safe integer",
+    );
+  }
   const records = new Map<string, Readonly<StoreRecord<unknown>>>();
   let closed = false;
+  const scopeRecordCount = (scope: string): number => {
+    let count = 0;
+    for (const key of records.keys()) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(key);
+      } catch {
+        continue;
+      }
+      if (Array.isArray(parsed) && parsed[0] === scope) count += 1;
+    }
+    return count;
+  };
   const adapter: WalletCallBundleStoreAdapter = {
     async get(key: Readonly<WalletCallBundleKey>) {
       assertOpen(closed);
@@ -199,6 +223,11 @@ export function createMemoryWalletCallBundleStoreAdapter(): WalletCallBundleStor
         )
       ) {
         return false;
+      }
+      if (input.expectedStoreRevision === null && input.expectedGeneration === null) {
+        if (scopeRecordCount(input.key.providerScopeId) >= maxRecordsPerScope) {
+          return WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED;
+        }
       }
       records.set(key, input.next);
       return true;

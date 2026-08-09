@@ -11,6 +11,7 @@ import {
   type OaathProviderErrorCode,
   OaathProviderRpcError,
 } from "../src/provider/errors.js";
+import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
 import {
   CALL_DATA,
@@ -307,6 +308,38 @@ describe("wallet_sendCalls orchestration", () => {
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
+    await connection.close();
+  });
+
+  it("fails a fresh send with 5740 once the provider scope bundle budget is exhausted", async () => {
+    const stores = createMemoryStores();
+    const realm = createRealm({
+      chain: createChainFixture(),
+      stores: {
+        ...stores,
+        walletCallBundles: createMemoryWalletCallBundleStoreAdapter({
+          maxRecordsPerScope: 1,
+        }),
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const provider = oaathProvider({ grant, chain: CHAIN_ID });
+    const account = await grant.account(CHAIN_ID);
+    await expect(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id: "capacity-first" })],
+      }),
+    ).resolves.toMatchObject({ id: "capacity-first" });
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [bundle(account, { id: "capacity-second" })],
+      }),
+      5740,
+    );
+    expect(realm.chain.sends).toHaveLength(1);
     await connection.close();
   });
 

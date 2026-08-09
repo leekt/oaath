@@ -20,6 +20,7 @@ import {
   OAATH_WALLET_CALL_BUNDLE_VERSION,
   parseWalletCallBundleKey,
   parseWalletCallBundleRecord,
+  WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED,
   type WalletCallBundleKey,
   type WalletCallBundleOperation,
   type WalletCallBundleRecord,
@@ -51,6 +52,11 @@ interface AdapterCapabilities extends WalletCallBundleStoreAdapter {
 export type WalletCallBundleMutationResult =
   | Readonly<{ status: "committed"; record: WalletCallBundleStoreRecord }>
   | Readonly<{ status: "conflict"; current?: WalletCallBundleStoreRecord }>;
+
+/** A reservation may additionally be refused because the scope budget is full. */
+export type WalletCallBundleReservationResult =
+  | WalletCallBundleMutationResult
+  | Readonly<{ status: "capacity_exhausted" }>;
 
 function invalid(code: StoreErrorCode, message: string): never {
   throw new OaathStoreError(code, message);
@@ -525,7 +531,7 @@ export class WalletCallBundleStore {
     return this.#read(captured);
   }
 
-  async reserveAccepted(value: unknown): Promise<WalletCallBundleMutationResult> {
+  async reserveAccepted(value: unknown): Promise<WalletCallBundleReservationResult> {
     const input = reserveInput(value, false);
     this.#assertOpen();
     const current = await this.#read(input.key);
@@ -533,7 +539,7 @@ export class WalletCallBundleStore {
     return this.#compareAndSwap(input.key, null, null, input.record, input.record.createdAt);
   }
 
-  async reservePendingConfirmation(value: unknown): Promise<WalletCallBundleMutationResult> {
+  async reservePendingConfirmation(value: unknown): Promise<WalletCallBundleReservationResult> {
     const input = reserveInput(value, true);
     this.#assertOpen();
     const current = await this.#read(input.key);
@@ -561,13 +567,15 @@ export class WalletCallBundleStore {
       publicationExpiresAt: input.publicationExpiresAt,
       state: "accepted",
     });
-    return this.#compareAndSwap(
-      input.key,
-      input.expectedStoreRevision,
-      input.expectedGeneration,
-      next,
-      input.approvedAt,
-      current,
+    return this.#retained(
+      await this.#compareAndSwap(
+        input.key,
+        input.expectedStoreRevision,
+        input.expectedGeneration,
+        next,
+        input.approvedAt,
+        current,
+      ),
     );
   }
 
@@ -598,13 +606,15 @@ export class WalletCallBundleStore {
       operation: input.operation,
       state: "operation_reserved",
     });
-    return this.#compareAndSwap(
-      input.key,
-      input.expectedStoreRevision,
-      input.expectedGeneration,
-      next,
-      input.updatedAt,
-      current,
+    return this.#retained(
+      await this.#compareAndSwap(
+        input.key,
+        input.expectedStoreRevision,
+        input.expectedGeneration,
+        next,
+        input.updatedAt,
+        current,
+      ),
     );
   }
 
@@ -625,13 +635,15 @@ export class WalletCallBundleStore {
       return conflict(current);
     }
     const next = inputBundleRecord({ ...current.value, state: "operation_bound" });
-    return this.#compareAndSwap(
-      input.key,
-      input.expectedStoreRevision,
-      input.expectedGeneration,
-      next,
-      input.updatedAt,
-      current,
+    return this.#retained(
+      await this.#compareAndSwap(
+        input.key,
+        input.expectedStoreRevision,
+        input.expectedGeneration,
+        next,
+        input.updatedAt,
+        current,
+      ),
     );
   }
 
@@ -653,13 +665,15 @@ export class WalletCallBundleStore {
       ...current.value,
       publicationReleasedAt: input.updatedAt,
     });
-    return this.#compareAndSwap(
-      input.key,
-      input.expectedStoreRevision,
-      input.expectedGeneration,
-      next,
-      input.updatedAt,
-      current,
+    return this.#retained(
+      await this.#compareAndSwap(
+        input.key,
+        input.expectedStoreRevision,
+        input.expectedGeneration,
+        next,
+        input.updatedAt,
+        current,
+      ),
     );
   }
 
@@ -678,13 +692,15 @@ export class WalletCallBundleStore {
     const terminalFrom = current.value.state;
     if (terminalFrom === "terminal") return conflict(current);
     const next = inputBundleRecord({ ...current.value, state: "terminal", terminalFrom });
-    return this.#compareAndSwap(
-      input.key,
-      input.expectedStoreRevision,
-      input.expectedGeneration,
-      next,
-      input.updatedAt,
-      current,
+    return this.#retained(
+      await this.#compareAndSwap(
+        input.key,
+        input.expectedStoreRevision,
+        input.expectedGeneration,
+        next,
+        input.updatedAt,
+        current,
+      ),
     );
   }
 
@@ -777,6 +793,16 @@ export class WalletCallBundleStore {
     });
   }
 
+  #retained(result: WalletCallBundleReservationResult): WalletCallBundleMutationResult {
+    if (result.status === "capacity_exhausted") {
+      return invalid(
+        "store_commit_indeterminate",
+        "Wallet call bundle capacity was exhausted on a retained write",
+      );
+    }
+    return result;
+  }
+
   async #compareAndSwap(
     key: Readonly<WalletCallBundleKey>,
     expectedStoreRevision: number | null,
@@ -784,7 +810,7 @@ export class WalletCallBundleStore {
     value: Readonly<WalletCallBundleRecord>,
     updatedAt: number,
     previous?: WalletCallBundleStoreRecord,
-  ): Promise<WalletCallBundleMutationResult> {
+  ): Promise<WalletCallBundleReservationResult> {
     const next: WalletCallBundleStoreRecord = Object.freeze({
       version: OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
       storeRevision: nextStoreRevision(expectedStoreRevision),
@@ -801,6 +827,9 @@ export class WalletCallBundleStore {
         "store_commit_indeterminate",
         "Wallet call bundle compare-and-swap completion is indeterminate",
       );
+    }
+    if (swapped === WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED) {
+      return Object.freeze({ status: "capacity_exhausted" as const });
     }
     if (typeof swapped !== "boolean") {
       return invalid(
@@ -836,7 +865,10 @@ export class WalletCallBundleStore {
       return invalid("store_commit_indeterminate", "Wallet call bundle conflict is unverified");
     }
     if (expectedGeneration !== null && retained.value.generation !== expectedGeneration) {
-      return conflict(retained);
+      invalid(
+        "store_identity_mismatch",
+        "Wallet call bundle generation is not the expected generation",
+      );
     }
     if (expectedStoreRevision !== null && retained.storeRevision <= expectedStoreRevision) {
       return invalid("store_commit_indeterminate", "Wallet call bundle conflict is unverified");

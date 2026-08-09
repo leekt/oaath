@@ -43,6 +43,7 @@ import {
   projectValidityTimeRangeConfirmation,
 } from "./eip5792.js";
 import {
+  BUNDLE_TOO_LARGE,
   INTERNAL_ERROR,
   INVALID_PARAMS,
   rpcFail,
@@ -313,6 +314,7 @@ export function createErc7836Orchestrator(
       requestHash: record.bundleRequestHash,
     });
     if (reserved.status === "committed") return reserved.record;
+    if (reserved.status === "capacity_exhausted") return rpcFail(BUNDLE_TOO_LARGE);
     const current = reserved.current;
     if (
       current?.value.generation === record.bundleGeneration &&

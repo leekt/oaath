@@ -513,6 +513,8 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
         if (result.status === "committed") return true;
         current = result.current;
       }
+      if (current === undefined) return false;
+      if (current.value.state === "revoked" || current.value.state === "expired") return true;
       return false;
     } catch {
       return false;

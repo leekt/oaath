@@ -10,7 +10,9 @@
  */
 import type { StoreRecord } from "../../store.js";
 import {
+  MAX_WALLET_CALL_BUNDLE_RECORDS_PER_SCOPE,
   parseWalletCallBundleKey,
+  WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED,
   type WalletCallBundleKey,
   type WalletCallBundleStoreAdapter,
 } from "../interfaces.js";
@@ -27,9 +29,27 @@ function bundleKey(value: Readonly<WalletCallBundleKey>): IDBValidKey {
   return [key.providerScopeId, key.account, key.id];
 }
 
+function requestResult<Value>(request: IDBRequest<Value>): Promise<Value> {
+  return new Promise<Value>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
+async function scopeRecordCount(store: IDBObjectStore, scope: string): Promise<number> {
+  const keys = await requestResult(store.getAllKeys());
+  let count = 0;
+  for (const key of keys) {
+    if (Array.isArray(key) && key[0] === scope) count += 1;
+  }
+  return count;
+}
+
 export function createIndexedDbWalletCallBundleStoreAdapter(
   database: OaathDatabase,
+  options: Readonly<{ maxRecordsPerScope?: number }> = {},
 ): WalletCallBundleStoreAdapter {
+  const maxRecordsPerScope = options.maxRecordsPerScope ?? MAX_WALLET_CALL_BUNDLE_RECORDS_PER_SCOPE;
   const walletCallBundles = [OAATH_INDEXEDDB_STORES.walletCallBundles] as const;
   return Object.freeze({
     async get(key: Readonly<WalletCallBundleKey>): Promise<unknown> {
@@ -56,6 +76,11 @@ export function createIndexedDbWalletCallBundleStoreAdapter(
           )
         ) {
           return false;
+        }
+        if (input.expectedStoreRevision === null && input.expectedGeneration === null) {
+          if ((await scopeRecordCount(store, input.key.providerScopeId)) >= maxRecordsPerScope) {
+            return WALLET_CALL_BUNDLE_SCOPE_CAPACITY_EXHAUSTED;
+          }
         }
         await putRecord(store, compositeKey, input.next);
         return true;

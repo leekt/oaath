@@ -17,6 +17,7 @@ import {
 } from "../src/persistence.js";
 import {
   type WalletCallBundleMutationResult,
+  type WalletCallBundleReservationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
 import { OaathStoreError, type StoreRecord } from "../src/store.js";
@@ -101,7 +102,7 @@ function reserve(
   generation: WalletCallBundleRecord["generation"] = GENERATION_A,
   account: WalletCallBundleRecord["account"] = bundleKey.account,
   grantId: WalletCallBundleRecord["grantId"] = GRANT_ID,
-): Promise<WalletCallBundleMutationResult> {
+): Promise<WalletCallBundleReservationResult> {
   return store.reserveAccepted({
     key: bundleKey,
     grantId,
@@ -116,7 +117,7 @@ function reserve(
 
 function reservePendingConfirmation(
   store: WalletCallBundleStore,
-): Promise<WalletCallBundleMutationResult> {
+): Promise<WalletCallBundleReservationResult> {
   return store.reservePendingConfirmation({
     key: key(),
     grantId: GRANT_ID,
@@ -129,7 +130,7 @@ function reservePendingConfirmation(
   });
 }
 
-function requireCommitted(result: WalletCallBundleMutationResult): WalletCallBundleStoreRecord {
+function requireCommitted(result: WalletCallBundleReservationResult): WalletCallBundleStoreRecord {
   if (result.status !== "committed") throw new Error("expected a committed bundle mutation");
   return result.record;
 }
@@ -510,6 +511,73 @@ for (const backendCase of BACKENDS) {
     });
   });
 }
+
+describe("wallet-call bundle adapter scope budgets", () => {
+  it("memory: rejects a fresh insertion beyond the scope budget and writes nothing", async () => {
+    const backend = await createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 1 });
+    const store = new WalletCallBundleStore(backend);
+    const first = requireCommitted(await reserve(store, key("first")));
+    expect(await reserve(store, key("second"))).toEqual({ status: "capacity_exhausted" });
+    expect(await reserve(store, key("other-scope", OTHER_SCOPE))).toMatchObject({
+      status: "committed",
+    });
+    await expect(store.get(key("first"))).resolves.toEqual(first);
+    await expect(store.get(key("second"))).resolves.toBeUndefined();
+  });
+
+  it("IndexedDB: rejects a fresh insertion beyond the scope budget and writes nothing", async () => {
+    const database = await openOaathDatabase({ factory: new IDBFactory() });
+    try {
+      const store = new WalletCallBundleStore(
+        createIndexedDbWalletCallBundleStoreAdapter(database, { maxRecordsPerScope: 1 }),
+      );
+      const first = requireCommitted(await reserve(store, key("first")));
+      expect(await reserve(store, key("second"))).toEqual({ status: "capacity_exhausted" });
+      expect(await reserve(store, key("other-scope", OTHER_SCOPE))).toMatchObject({
+        status: "committed",
+      });
+      await expect(store.get(key("first"))).resolves.toEqual(first);
+      await expect(store.get(key("second"))).resolves.toBeUndefined();
+      await store.close();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("both backends keep the conflict path for an existing key when the budget is full", async () => {
+    const memory = createMemoryWalletCallBundleStoreAdapter({ maxRecordsPerScope: 1 });
+    const database = await openOaathDatabase({ factory: new IDBFactory() });
+    try {
+      const cases: readonly (readonly [string, WalletCallBundleStore])[] = [
+        ["memory", new WalletCallBundleStore(memory)],
+        [
+          "IndexedDB",
+          new WalletCallBundleStore(
+            createIndexedDbWalletCallBundleStoreAdapter(database, { maxRecordsPerScope: 1 }),
+          ),
+        ],
+      ];
+      for (const [name, store] of cases) {
+        const terminal = requireCommitted(await reserve(store, key(name)));
+        const reuse = await store.reserveAccepted({
+          key: key(name),
+          grantId: GRANT_ID,
+          generation: GENERATION_B,
+          account: ACCOUNT,
+          chainId: CHAIN_ID,
+          createdAt: 30,
+          publicationExpiresAt: 60,
+          requestHash: OTHER_REQUEST_HASH,
+        });
+        expect(reuse).toMatchObject({ status: "conflict" });
+        await expect(store.get(key(name))).resolves.toEqual(terminal);
+        await store.close();
+      }
+    } finally {
+      database.close();
+    }
+  });
+});
 
 describe("IndexedDB wallet-call bundle durability", () => {
   it("retains the exact record across database, adapter, and state-owner recreation", async () => {
