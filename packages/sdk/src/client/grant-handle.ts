@@ -3096,6 +3096,7 @@ export function createGrantHandle(
   async function observeChainPermission(
     binding: Readonly<{ chainId: number; account: `0x${string}`; permissionId: `0x${string}` }>,
     installedAtBlock: string,
+    notBefore?: Readonly<{ blockNumber: string; blockHash: `0x${string}` }>,
   ): Promise<
     | Readonly<{ status: "present" }>
     | Readonly<{ status: "absent"; removal: Readonly<ChainPermissionEvidence> }>
@@ -3124,6 +3125,16 @@ export function createGrantHandle(
       // The protocol requires removal evidence to follow the installation; a
       // chain that has not advanced past the install block proves nothing yet.
       if (BigInt(blockNumber) <= BigInt(installedAtBlock)) return null;
+      // Permission presence may only authorize a replacement after the block
+      // that proved a superseded uninstall: evidence a lagging provider serves
+      // from an earlier block names a chain state the supersession already
+      // displaced.
+      if (notBefore !== undefined) {
+        const fence = BigInt(notBefore.blockNumber);
+        const read = BigInt(blockNumber);
+        if (read < fence) return null;
+        if (read === fence && block.hash !== notBefore.blockHash) return null;
+      }
       const installed = await chain.observation.read({
         type: "kernel_permission_installed",
         chainId: binding.chainId,
@@ -3206,18 +3217,18 @@ export function createGrantHandle(
     let value: FinalizedOperation | null = null;
     let prior: OperationStoreRecord | undefined;
     let journalReadable = true;
+    const journal = new OperationStore({
+      get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
+      getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
+        input.operations.getArchived(value),
+      compareAndSwap: (record: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
+        input.operations.compareAndSwap(record),
+      close: async () => undefined,
+    });
     try {
       // A prior removal that already finalized successfully completes
       // directly — a Grant commit lost to a crash never mints a second
       // uninstall. The journal must remain readable before any retry decision.
-      const journal = new OperationStore({
-        get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
-        getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
-          input.operations.getArchived(value),
-        compareAndSwap: (record: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
-          input.operations.compareAndSwap(record),
-        close: async () => undefined,
-      } satisfies OperationStoreAdapter);
       prior = await journal.get(laneKey);
       if (
         prior !== undefined &&
@@ -3233,8 +3244,52 @@ export function createGrantHandle(
     let permissionObservation: Awaited<ReturnType<typeof observeChainPermission>> | undefined;
     let retryPositivelySafe = journalReadable;
     if (prior?.value.state === "superseded") {
-      permissionObservation = await observeChainPermission(binding, entry.installation.blockNumber);
+      permissionObservation = await observeChainPermission(
+        binding,
+        entry.installation.blockNumber,
+        {
+          blockNumber: prior.value.supersession.blockNumber,
+          blockHash: prior.value.supersession.blockHash,
+        },
+      );
       retryPositivelySafe = permissionObservation?.status === "present";
+    }
+    if (
+      value === null &&
+      prior !== undefined &&
+      (prior.value.state === "submission_attempted" ||
+        prior.value.state === "submitted" ||
+        prior.value.state === "included")
+    ) {
+      // Observation-first dispatch: an already submitted uninstall is proven
+      // or disproven by the current observer transport alone and never needs a
+      // fresh bundler route. Observation submits zero new operations; only
+      // finalized success of the retained operation completes the entry here.
+      const observing = observationOnlyRunner(chainId);
+      try {
+        const observed = await runOnce(observing, "revocation", laneKey);
+        if (
+          observed.status === "observed" &&
+          observed.record.value.state === "finalized" &&
+          observed.record.value.inclusion.outcome === "success"
+        ) {
+          value = observed.record.value;
+        } else if (observed.status === "observed" && observed.record.value.state === "superseded") {
+          // Observation proved the submitted uninstall superseded; fence a
+          // replacement exactly like a superseded journal record does.
+          permissionObservation ??= await observeChainPermission(
+            binding,
+            entry.installation.blockNumber,
+            {
+              blockNumber: observed.record.value.supersession.blockNumber,
+              blockHash: observed.record.value.supersession.blockHash,
+            },
+          );
+          retryPositivelySafe = permissionObservation?.status === "present";
+        }
+      } finally {
+        await observing.close().catch(() => undefined);
+      }
     }
     if (value === null && retryPositivelySafe) {
       let result: OperationRunResult | null = null;
@@ -3259,27 +3314,54 @@ export function createGrantHandle(
         });
         const descriptor = decision.route === "none" ? null : await accountDescriptor(chainId);
         if (descriptor !== null && descriptor.account === entry.account) {
-          const sender = runner({
-            chainId,
-            kind: "revocation",
-            runtime: ownerRuntime(chainId),
-            descriptor,
-            calls,
-            signer: "owner",
-            mode: "standard",
-            installApproval: null,
-            decision,
-            terminalBehavior: "replace",
-            grantId: latest.value.identity.grantId,
-            requestHash: null,
-            authorizeOperation: (operation: OaathProviderOperationPointer) =>
-              authorizeRevocationOperation(binding, operation),
-          });
-          try {
-            result = await runOnce(sender, "revocation", laneKey);
-          } finally {
-            // A cleanup failure never replaces the outcome of the run.
-            await sender.close().catch(() => undefined);
+          // The retry fence was decided against an earlier journal read.
+          // Re-read the lane now that the async bundler probe and account
+          // composition completed: a submitted uninstall a concurrent observer
+          // just proved superseded must be fenced by the same post-supersession
+          // permission evidence as a superseded journal record. A stale boolean
+          // never authorizes replacement publication.
+          const lane = (await journal.get(laneKey).catch(() => undefined)) ?? prior;
+          if (
+            lane?.value.state === "finalized" &&
+            lane.value.inclusion.outcome === "success" &&
+            lane.value.identity.account === entry.account
+          ) {
+            value = lane.value;
+          }
+          if (value === null && lane?.value.state === "superseded") {
+            permissionObservation ??= await observeChainPermission(
+              binding,
+              entry.installation.blockNumber,
+              {
+                blockNumber: lane.value.supersession.blockNumber,
+                blockHash: lane.value.supersession.blockHash,
+              },
+            );
+            retryPositivelySafe = permissionObservation?.status === "present";
+          }
+          if (value === null && retryPositivelySafe) {
+            const sender = runner({
+              chainId,
+              kind: "revocation",
+              runtime: ownerRuntime(chainId),
+              descriptor,
+              calls,
+              signer: "owner",
+              mode: "standard",
+              installApproval: null,
+              decision,
+              terminalBehavior: "replace",
+              grantId: latest.value.identity.grantId,
+              requestHash: null,
+              authorizeOperation: (operation: OaathProviderOperationPointer) =>
+                authorizeRevocationOperation(binding, operation),
+            });
+            try {
+              result = await runOnce(sender, "revocation", laneKey);
+            } finally {
+              // A cleanup failure never replaces the outcome of the run.
+              await sender.close().catch(() => undefined);
+            }
           }
         }
       } catch {
