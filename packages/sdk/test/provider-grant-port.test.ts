@@ -23,8 +23,10 @@ import {
   CHAIN_ID,
   type ChainFixture,
   createChainFixture,
+  createClock,
   createMemoryStores,
   createRealm,
+  createRelay,
   permissionInput,
   sendCallsInput,
 } from "./support/browser.js";
@@ -748,6 +750,191 @@ describe("private Grant provider port", () => {
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(3);
     await connection.close();
+  });
+
+  it("observes a submitted uninstall before requiring a fresh submission route", async () => {
+    let withhold = false;
+    let bundlerState: "available" | "absent" = "available";
+    let installed: boolean | null = null;
+    let blockOffset = 0;
+    const base = createChainFixture({
+      withholdReceipt: () => withhold,
+      permissionInstalled: () => installed,
+      blockOffset: () => blockOffset,
+    });
+    const probe: OaathChainCapability["bundler"]["probe"] = async (request) => ({
+      accepting: bundlerState !== "absent",
+      chainId: request.chainId,
+      supportedEntryPoints: [request.entryPoint],
+    });
+    const chain: ChainFixture = Object.freeze({
+      capability: Object.freeze({ ...base.capability, bundler: Object.freeze({ probe }) }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    });
+    const { realm, connection, grant } = await activeGrant(chain);
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+
+    withhold = true;
+    blockOffset = 1;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+
+    withhold = false;
+    installed = true;
+    bundlerState = "absent";
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("rejects permission presence evidence predating the supersession of a revoked uninstall", async () => {
+    let withhold = false;
+    let supersede = false;
+    let installed: boolean | null = null;
+    let blockOffset = 0;
+    const base = createChainFixture({
+      withholdReceipt: () => withhold,
+      entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
+      permissionInstalled: () => installed,
+      blockOffset: () => blockOffset,
+    });
+    const chain: ChainFixture = Object.freeze({
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          probe: async (request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) => ({
+            accepting: true,
+            chainId: request.chainId,
+            supportedEntryPoints: [request.entryPoint],
+          }),
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    });
+    const { realm, connection, grant } = await activeGrant(chain);
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+
+    // The submitted uninstall is observed as superseded at a later finalized
+    // block; the permission read is undecidable, so no replacement is sent.
+    withhold = true;
+    supersede = true;
+    installed = null;
+    blockOffset = 2;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+
+    // A lagging provider still reports the permission present, but only from a
+    // block that predates the supersession the observer already proved. That
+    // evidence never authorizes a replacement uninstall.
+    withhold = false;
+    supersede = false;
+    installed = true;
+    blockOffset = 0;
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+    await connection.close();
+  });
+
+  it("never lets a stale retry fence authorize a replacement past a supersession that lands while probing", async () => {
+    const clock = createClock();
+    const relay = createRelay(clock);
+    const stores = createMemoryStores();
+    let withhold = false;
+    let supersede = false;
+    let blockOffset = 0;
+    let gateProbe = false;
+    let enterProbe!: () => void;
+    let releaseProbe!: () => void;
+    const probeEntered = new Promise<void>((resolve) => {
+      enterProbe = resolve;
+    });
+    const probeReleased = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    const base = createChainFixture({
+      withholdReceipt: () => withhold,
+      entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
+      permissionInstalled: () => null,
+      blockOffset: () => blockOffset,
+    });
+    const chain: ChainFixture = Object.freeze({
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          probe: async (request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) => {
+            if (gateProbe) {
+              gateProbe = false;
+              enterProbe();
+              await probeReleased;
+            }
+            return {
+              accepting: true,
+              chainId: request.chainId,
+              supportedEntryPoints: [request.entryPoint],
+            };
+          },
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    });
+
+    const first = createRealm({ clock, relay, stores, chain });
+    const firstConnection = await first.oaath.connect();
+    const grant = await firstConnection.requestPermission(permissionInput());
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+
+    // The first retry submits the uninstall; the receipt stays missing so it
+    // remains observable and pending in the journal.
+    withhold = true;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+
+    // A second instance of the same durable Grant shares the journal and the
+    // chain. It proves the submitted uninstall superseded while the first
+    // instance is paused inside bundler probing — after that instance already
+    // decided its retry was positively safe.
+    const second = createRealm({ clock, relay, stores, chain });
+    const secondConnection = await second.oaath.connect();
+    const resumed = await secondConnection.resume();
+    if (!resumed) throw new Error("expected the Grant to resume");
+
+    gateProbe = true;
+    const stale = grant.revoke();
+    await probeEntered;
+    supersede = true;
+    blockOffset = 2;
+    await resumed.revoke();
+    expect(chain.sends).toHaveLength(2);
+
+    releaseProbe();
+    await stale;
+    expect(chain.sends).toHaveLength(2);
+    expect(grant.state).toBe("revoking");
+
+    await firstConnection.close();
+    await secondConnection.close();
   });
 
   it("rejects recovery pointers for another Grant or account before observation", async () => {

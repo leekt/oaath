@@ -32,6 +32,7 @@ import {
   isWalletAddress,
 } from "./capture.js";
 import {
+  BUNDLE_TOO_LARGE,
   DUPLICATE_ID,
   INTERNAL_ERROR,
   INVALID_PARAMS,
@@ -326,6 +327,9 @@ export function createEip5792Orchestrator(
           operationRequestHash,
           record: result.record,
         });
+      }
+      if (result.status === "capacity_exhausted") {
+        return rpcFail(BUNDLE_TOO_LARGE);
       }
       if (captured.id !== undefined) return rpcFail(DUPLICATE_ID);
     }

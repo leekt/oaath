@@ -4,6 +4,8 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
+import { advanceGrant } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import {
   closeEffect,
@@ -19,6 +21,7 @@ import {
   parseCleanupCheckpoint,
   requireNonExtractableKey,
 } from "../src/persistence.js";
+import type { GrantStoreRecord } from "../src/store.js";
 import { createMemoryCleanupStore } from "../src/testing.js";
 import {
   createChainFixture,
@@ -349,6 +352,73 @@ describe("cleanup coordinator", () => {
     expect(stale.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
     expect(tracked.closed).toHaveLength(6);
+  });
+
+  it("classifies the final retained expiry conflict so an expired Grant never starts revocation", async () => {
+    const clock = createClock();
+    const memory = createMemoryStores();
+    const script: GrantStoreRecord[] = [];
+    let armed = false;
+    const realm = createRealm({
+      clock,
+      stores: {
+        ...memory,
+        grants: {
+          async get(grantId: string) {
+            if (armed) {
+              const next = script.shift();
+              if (next !== undefined) return next;
+            }
+            return memory.grants.get(grantId);
+          },
+          async compareAndSwap(input) {
+            if (armed) return false;
+            return memory.grants.compareAndSwap(input);
+          },
+          close: () => memory.grants.close(),
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const grantId = grantProviderPort(grant).grantId;
+    const stored = (await memory.grants.get(grantId)) as GrantStoreRecord | undefined;
+    if (stored === undefined) throw new Error("expected a stored Grant");
+    const active = stored.value;
+    clock.advance(active.expiresAt - clock.now());
+    expect(grant.state).toBe("active");
+    const activeBump = (storeRevision: number) =>
+      ({
+        ...stored,
+        storeRevision,
+      }) as GrantStoreRecord;
+    const expired = advanceGrant(active, {
+      type: "expire",
+      identity: active.identity,
+      expiredAt: Math.max(clock.now(), active.expiresAt, active.updatedAt),
+    });
+    const expiredRecord = {
+      ...stored,
+      storeRevision: stored.storeRevision + 3,
+      updatedAt: expired.updatedAt,
+      value: expired,
+    } as GrantStoreRecord;
+    script.push(
+      stored,
+      stored,
+      activeBump(stored.storeRevision + 1),
+      activeBump(stored.storeRevision + 1),
+      activeBump(stored.storeRevision + 2),
+      activeBump(stored.storeRevision + 2),
+      expiredRecord,
+    );
+    armed = true;
+
+    const result = await realm.oaath.disconnect(grant);
+
+    expect(script).toEqual([]);
+    expect(result.completed).toEqual(["signOut", "forgetLocal", "close"]);
+    expect(realm.chain.sends).toHaveLength(0);
   });
 
   it("retries a failed owned store close instead of discarding the connection", async () => {
