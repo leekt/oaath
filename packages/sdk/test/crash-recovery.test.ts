@@ -116,6 +116,70 @@ describe("send/return crash recovery", () => {
     expect(finalized?.value.identity.nonce).toBe(attempted?.value.identity.nonce);
   });
 
+  it("recovers an accepted revocation after full recreation without resubmission", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const relay = createRelay(clock);
+    let crash = false;
+    // One transport across both realms, so its send count is the whole history.
+    const chain = createChainFixture({ crashOnSend: () => crash });
+
+    const first = await realmStores(factory);
+    const before = createRealm({ clock, relay, stores: first.stores, chain });
+    const connection = await before.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    const grantId = chain.sends[0]?.grantId;
+    if (!grantId) throw new Error("expected the installed Grant identity");
+
+    // The uninstall is accepted and its response is lost. The exact attempted
+    // identity must occupy the revocation lane before the transport is opened.
+    crash = true;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+    expect(chain.sends[1]?.kind).toBe("revocation");
+    const attempted = await new OperationStore(
+      createIndexedDbOperationStoreAdapter(first.database),
+    ).get({ grantId, chainId: CHAIN_ID, kind: "revocation" });
+    expect(attempted?.value.state).toBe("submission_attempted");
+    const revocationHash = attempted?.value.identity.userOperationHash;
+    const revocationNonce = attempted?.value.identity.nonce;
+    if (!revocationHash || revocationNonce === undefined) {
+      throw new Error("expected the retained revocation identity");
+    }
+
+    // Recreate every instance: connection, stores, adapters, database, OAAth,
+    // and Grant handle. Permission presence remains inconclusive, so only exact
+    // operation observation can complete revocation.
+    await connection.close();
+    first.database.close();
+    opened.splice(opened.indexOf(first.database), 1);
+    crash = false;
+
+    const second = await realmStores(factory);
+    const after = createRealm({ clock, relay, stores: second.stores, chain });
+    const secondConnection = await after.oaath.connect();
+    const restored = await secondConnection.resume();
+    if (!restored) throw new Error("expected the revoking Grant to resume");
+    expect(restored.state).toBe("revoking");
+    await restored.revoke();
+
+    expect(restored.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    const finalized = await new OperationStore(
+      createIndexedDbOperationStoreAdapter(second.database),
+    ).get({ grantId, chainId: CHAIN_ID, kind: "revocation" });
+    expect(finalized?.value.state).toBe("finalized");
+    if (finalized?.value.state !== "finalized") {
+      throw new Error("expected the retained revocation to finalize");
+    }
+    expect(finalized.value.identity.userOperationHash).toBe(revocationHash);
+    expect(finalized.value.identity.nonce).toBe(revocationNonce);
+    expect(finalized.value.submittedAt).toBeNull();
+    await secondConnection.close();
+  });
+
   it("keeps observing without submitting while the receipt is missing", async () => {
     let crash = true;
     let withhold = true;
