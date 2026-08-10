@@ -99,6 +99,12 @@ export function mapProviderFailure(error: unknown, appOwnedInput = false): never
     if (error.code === "oaath_client_input_invalid" && appOwnedInput) {
       return rpcFail(INVALID_PARAMS);
     }
+    if (
+      error.code === "oaath_client_capability_unsupported" &&
+      error.source === "chain_not_configured"
+    ) {
+      return rpcFail(UNSUPPORTED_CHAIN);
+    }
     if (UNAUTHORIZED_CLIENT_ERRORS.includes(error.code)) return rpcFail(UNAUTHORIZED);
     if (error.code === "oaath_client_permission_rejected") {
       return rpcFail(USER_REJECTED_REQUEST);
