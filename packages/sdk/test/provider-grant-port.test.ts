@@ -137,6 +137,53 @@ describe("private Grant provider port", () => {
     await connection.close();
   });
 
+  it("rejects forged and consumed execution-route admissions before another quote", async () => {
+    let probes = 0;
+    const base = createChainFixture();
+    const chain: ChainFixture = {
+      capability: Object.freeze({
+        ...base.capability,
+        bundler: Object.freeze({
+          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+            probes += 1;
+            return base.capability.bundler.probe(request);
+          },
+        }),
+      }),
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    };
+    const { realm, connection, port } = await activeGrant(chain);
+    const admitted = await port.admitExecutionRoute(CHAIN_ID);
+    expect(admitted.sponsorship).toBe("supported");
+    expect(probes).toBe(1);
+    const publication = Object.freeze({
+      async reserve(_reservation: OaathProviderOperationReservation) {},
+      async confirm(_operation: OaathProviderOperationPointer) {},
+      async abandon(_operation: OaathProviderOperationPointer) {},
+    });
+    const input = (executionRouteAdmission: unknown) =>
+      Object.freeze({ ...providerCallsInput(), executionRouteAdmission });
+
+    await expect(
+      port.startCalls(input({ kind: admitted.admission.kind }), publication),
+    ).rejects.toMatchObject({ code: "oaath_client_capability_invalid" });
+    expect(realm.chain.quotes).toBe(0);
+
+    const first = port.startCalls(input(admitted.admission), publication);
+    await expect(port.startCalls(input(admitted.admission), publication)).rejects.toMatchObject({
+      code: "oaath_client_capability_invalid",
+    });
+    await first;
+    expect(probes).toBe(1);
+    expect(realm.chain.quotes).toBe(1);
+    expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
   it("awaits one exact immutable binding before journal publication, signing, or send", async () => {
     const observed = countingChain();
     const { realm, connection, port } = await activeGrant(observed.chain);

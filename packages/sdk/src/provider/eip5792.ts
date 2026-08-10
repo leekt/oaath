@@ -9,6 +9,7 @@
  */
 import type {
   OaathGrantProviderPort,
+  OaathProviderExecutionRouteAdmission,
   OaathProviderOperationPointer,
   OaathProviderOperationReservation,
   OaathProviderValidityAdmission,
@@ -51,6 +52,38 @@ const GENERATED_ID_ATTEMPTS = 8;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000n;
 const UNSUPPORTED_VALIDITY_ADMISSION = Object.freeze({ status: "unsupported" as const });
+
+function captureExecutionRouteAdmissionResult(value: unknown): Readonly<{
+  sponsorship: "supported" | "unsupported";
+  admission: Readonly<OaathProviderExecutionRouteAdmission>;
+}> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 2 || !keys.includes("sponsorship") || !keys.includes("admission")) {
+      return null;
+    }
+    const sponsorship = Object.getOwnPropertyDescriptor(value, "sponsorship");
+    const admission = Object.getOwnPropertyDescriptor(value, "admission");
+    if (
+      sponsorship === undefined ||
+      !("value" in sponsorship) ||
+      (sponsorship.value !== "supported" && sponsorship.value !== "unsupported") ||
+      admission === undefined ||
+      !("value" in admission) ||
+      admission.value === null ||
+      typeof admission.value !== "object"
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      sponsorship: sponsorship.value,
+      admission: admission.value as Readonly<OaathProviderExecutionRouteAdmission>,
+    });
+  } catch {
+    return null;
+  }
+}
 
 function isSupportedValidityTimeRangeProbe(value: unknown): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -406,6 +439,24 @@ export function createEip5792Orchestrator(
       return rpcFail(DUPLICATE_ID);
     }
 
+    let paymaster = capabilityEffect.paymaster;
+    let executionRouteAdmission: Readonly<OaathProviderExecutionRouteAdmission> | null = null;
+    if (paymaster !== null) {
+      const admitted = captureExecutionRouteAdmissionResult(
+        await input.port.admitExecutionRoute(input.chain),
+      );
+      if (admitted === null) return rpcFail(INTERNAL_ERROR);
+      executionRouteAdmission = admitted.admission;
+      if (admitted.sponsorship === "unsupported") {
+        const optional =
+          paymaster.kind === "erc7677"
+            ? captured.capabilities?.paymasterService?.optional
+            : captured.capabilities?.staticPaymasterConfiguration?.optional;
+        if (optional !== true) return rpcFail(UNSUPPORTED_CAPABILITY);
+        paymaster = null;
+      }
+    }
+
     const calls = Object.freeze(
       capabilityEffect.calls.map((call) =>
         Object.freeze({
@@ -516,8 +567,9 @@ export function createEip5792Orchestrator(
           chain: input.chain,
           calls,
           requestHash: accepted.operationRequestHash,
-          paymaster: capabilityEffect.paymaster,
+          paymaster,
           ...(validityAdmission === null ? {} : { validityAdmission }),
+          ...(executionRouteAdmission === null ? {} : { executionRouteAdmission }),
         }),
         Object.freeze({
           reserve: async (reservation: Readonly<OaathProviderOperationReservation>) => {
@@ -830,6 +882,20 @@ export function createEip5792Orchestrator(
     const requested = captured.chainIds ?? Object.freeze([chainId]);
     const result: Record<string, unknown> = Object.create(null);
     if (requested.includes(chainId)) {
+      const registeredPaymasterServiceUrl = input.port.registeredPaymasterServiceUrl(input.chain);
+      const staticPaymasterConfigurationHash = input.port.staticPaymasterConfigurationHash(
+        input.chain,
+      );
+      let sponsorship = false;
+      if (registeredPaymasterServiceUrl !== null || staticPaymasterConfigurationHash !== null) {
+        try {
+          sponsorship =
+            captureExecutionRouteAdmissionResult(await input.port.admitExecutionRoute(input.chain))
+              ?.sponsorship === "supported";
+        } catch {
+          sponsorship = false;
+        }
+      }
       let validityTimeRange = false;
       if (confirmer !== undefined) {
         try {
@@ -842,8 +908,8 @@ export function createEip5792Orchestrator(
       }
       result[chainId] = advertiseWalletCapabilities({
         atomicExecution: true,
-        paymasterService: input.port.registeredPaymasterServiceUrl(input.chain) !== null,
-        staticPaymasterConfigurationHash: input.port.staticPaymasterConfigurationHash(input.chain),
+        paymasterService: sponsorship && registeredPaymasterServiceUrl !== null,
+        staticPaymasterConfigurationHash: sponsorship ? staticPaymasterConfigurationHash : null,
         validityTimeRange,
       });
     }

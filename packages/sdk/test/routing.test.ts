@@ -22,6 +22,7 @@ import {
   KERNEL_V4_ENTRY_POINT_V07,
   prepareUserOperation,
 } from "../src/kernel.js";
+import { supportsBundlerSponsorship } from "../src/routing/decide.js";
 
 const chainId = 421_614;
 const account = "0x00000000000000000000000000000000000000a1" as const;
@@ -142,6 +143,15 @@ function everyFactCombination() {
 }
 
 describe("routing decision", () => {
+  it("selects sponsorship exactly for bundler routes", () => {
+    expect(bundlers.map((bundler) => [bundler, supportsBundlerSponsorship(bundler)])).toEqual([
+      ["available", true],
+      ["absent", false],
+      ["unsupported", false],
+      ["unreadable", true],
+    ]);
+  });
+
   it("decides every fact combination exactly as the reviewed table", () => {
     const rows = everyFactCombination().map((input) => {
       const decision = decideExecution(input);

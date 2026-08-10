@@ -434,6 +434,59 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     },
   );
 
+  it("ignores optional sponsorship on a direct prepared-call route", async () => {
+    let probes = 0;
+    const registered = registeredService();
+    const base = createChainFixture({
+      bundler: "absent",
+      feePayer: {
+        address: `0x${"77".repeat(20)}`,
+        balance: "1000000000000000000",
+      },
+    });
+    const chain = replaceChain(base, {
+      bundler: Object.freeze({
+        async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+          probes += 1;
+          return base.capability.bundler.probe(request);
+        },
+      }),
+      paymasterService: registered.service,
+    });
+    const realm = createRealm({ chain });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const account = await grant.account(CHAIN_ID);
+    const provider = oaathProvider({ grant, chain: CHAIN_ID });
+
+    const prepared = (await provider.request(
+      prepareRequest(account, {
+        url: SERVICE_URL,
+        context: {},
+        optional: true,
+      }),
+    )) as PreparedRpcResponse;
+    const port = grantProviderPort(grant);
+    const retained = await port.preparedCallContexts.get({
+      providerScopeId: port.providerScopeId as `0x${string}`,
+      contextId: prepared.context.id,
+    });
+    expect(retained?.value.prepared.userOperation.paymaster).toBeNull();
+    expect(retained?.value.resultCapabilities).toBeNull();
+    expect(registered.stages).toEqual([]);
+    expect(base.quotes).toBe(1);
+    expect(probes).toBe(1);
+
+    const signature = await signPreparedDigest(prepared.digest);
+    await expect(provider.request(sendRequest(prepared, signature))).resolves.toEqual({
+      id: expect.stringMatching(/^0x[0-9a-f]{64}$/u),
+    });
+    expect(probes).toBe(2);
+    expect(base.sends).toHaveLength(1);
+    expect(base.sends[0]?.userOperation.paymaster).toBeNull();
+    await connection.close();
+  });
+
   it("does not fall back unsponsored after an optional selected service fails", async () => {
     const registered = registeredService({ malformedEstimate: true });
     const base = createChainFixture();
