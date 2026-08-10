@@ -10,6 +10,7 @@ import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
   OaathProviderRpcError,
+  UNSUPPORTED_CHAIN,
 } from "../src/provider/errors.js";
 import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
@@ -711,6 +712,42 @@ describe("wallet_sendCalls orchestration", () => {
       }),
     ).resolves.toEqual({ id });
     expect(realm.chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it("maps a provider chain absent from the connected Grant to 5710 before effects", async () => {
+    const realm = createRealm({ chain: createChainFixture() });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const account = await grant.account(CHAIN_ID);
+    const unsupportedChain = CHAIN_ID + 1;
+    const provider = oaathProvider({ grant, chain: unsupportedChain });
+    const id = "unsupported-connected-chain";
+
+    await providerError(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [
+          bundle(account, {
+            id,
+            chainId: `0x${unsupportedChain.toString(16)}`,
+          }),
+        ],
+      }),
+      UNSUPPORTED_CHAIN,
+    );
+
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId,
+        account,
+        id,
+      }),
+    ).resolves.toBeUndefined();
+    expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
     await connection.close();
   });
 
