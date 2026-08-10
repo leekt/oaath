@@ -18,6 +18,18 @@ jobs:
     runs-on: ubuntu-latest
     # The packaging gates add three clean `npm install`s from tarballs.
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+        env:
+          POSTGRES_PASSWORD: oaath-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres -t 1"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -33,6 +45,11 @@ jobs:
       # Covers the root config files as well as every package.
       - run: pnpm typecheck
       - run: pnpm -r test
+      - run: pnpm --filter @oaath/server test:postgres
+        timeout-minutes: 2
+        env:
+          OAATH_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/postgres
+          PGPASSWORD: oaath-ci-only
       - run: pnpm -r build
       - run: pnpm -r lint
       - run: pnpm lint

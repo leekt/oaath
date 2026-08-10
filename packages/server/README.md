@@ -71,8 +71,9 @@ database is dropped and recreated.
 
 ## Tests
 
-`pnpm test` never contacts a database. The PostgreSQL and restart proofs need an
-explicit opt-in:
+Ordinary local `pnpm test` never contacts a database. The default repository CI
+runs the PostgreSQL and restart proofs against its job-local service. Reproduce
+that gate locally with an explicit opt-in:
 
 ```sh
 OAATH_REQUIRE_POSTGRES=1 OAATH_POSTGRES_URL=postgres://localhost:5432/postgres pnpm test:postgres
