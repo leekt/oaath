@@ -10,8 +10,9 @@ but OAAth does not own a creation policy and refuses them with its fixed
 provider execution error (`-32000`).
 
 The Draft ERC-7836 prepared-call profile accepts only the approved operator's
-`secp256k1` or `webauthn-p256` external signature. Custody must be `frontend`
-or `application_backend`; `oaath_hosted` is rejected before preparation.
+external signature. `secp256k1` supports `frontend` or `application_backend`
+custody; `webauthn-p256` supports `frontend` custody only. `oaath_hosted` is
+rejected before preparation.
 
 Its opaque five-minute context is current-version-only, durable, and consumed
 once. A recreated IndexedDB realm resumes the retained prepared operation and
