@@ -68,6 +68,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts"
