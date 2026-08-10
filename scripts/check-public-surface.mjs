@@ -17,8 +17,9 @@
  *      protocol depends on nothing internal, sdk only on protocol, and
  *      `@oaath/testing` is never a production dependency of anything.
  *   3. Provenance: every published entry points at built artifacts, never
- *      `src`, so a consumer resolves built artifacts only. Private packages
- *      are never published and are exempt from the provenance rule.
+ *      `src`, and every public package builds those artifacts during `prepack`.
+ *      Private packages are never published and are exempt from the provenance
+ *      rule.
  *
  * `@oaath/server`'s own entries are owned by `packages/server/test/package.test.ts`;
  * this gate covers the graphs that cross a package boundary.
@@ -196,6 +197,9 @@ function checkPublishedEntries(workspace) {
     }
     if (!(manifest.files ?? []).includes("dist")) {
       fail(`${name}: files must publish dist`);
+    }
+    if (manifest.scripts?.prepack !== "pnpm build") {
+      fail(`${name}: prepack must build the published dist`);
     }
     // Every source entry needs a published counterpart, or the subpath 404s.
     for (const subpath of Object.keys(manifest.exports ?? {})) {

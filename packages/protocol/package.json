@@ -41,6 +41,7 @@
   ],
   "scripts": {
     "build": "tsdown src/index.ts --platform neutral",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

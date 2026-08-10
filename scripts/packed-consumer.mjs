@@ -45,11 +45,18 @@ export async function packWorkspacePackages(names, destination) {
   run("pnpm", [...filters, "build"], { cwd: WORKSPACE_ROOT });
   const tarballs = new Map();
   for (const name of names) {
-    const packed = JSON.parse(
-      run("pnpm", ["--filter", name, "pack", "--pack-destination", destination, "--json"], {
-        cwd: WORKSPACE_ROOT,
-      }),
+    const output = run(
+      "pnpm",
+      ["--filter", name, "pack", "--pack-destination", destination, "--json"],
+      { cwd: WORKSPACE_ROOT },
     );
+    const objectStart = output.lastIndexOf("\n{");
+    let packed;
+    try {
+      packed = JSON.parse(output.slice(objectStart === -1 ? 0 : objectStart + 1));
+    } catch {
+      throw new Error(`pnpm pack returned an unreadable result for ${name}`);
+    }
     if (packed.name !== name || typeof packed.filename !== "string") {
       throw new Error(`pnpm pack returned an invalid result for ${name}`);
     }
