@@ -205,6 +205,68 @@ describe("IndexedDB realm recreation", () => {
     expect(recovered.chain.sends[0]?.kind).toBe("revocation");
   });
 
+  it("observes an accepted revocation after a send-return crash and never resubmits it", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const relay = createRelay(clock);
+    let crashOnSend = false;
+    const chain = createChainFixture({ crashOnSend: () => crashOnSend });
+
+    const first = await openRealmDatabase(factory);
+    const firstStores = storesFor(first);
+    const before = createRealm({ clock, relay, stores: firstStores, chain });
+    const firstConnection = await before.oaath.connect();
+    const grant = await firstConnection.requestPermission(permissionInput());
+    expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    const grantId = chain.sends[0]?.grantId;
+    if (!grantId) throw new Error("expected the installed Grant identity");
+
+    // The revocation transport accepts the exact operation and then loses the
+    // response. The durable journal, not the thrown transport result, owns what
+    // may happen after recreation.
+    crashOnSend = true;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(chain.sends).toHaveLength(2);
+    expect(chain.sends[1]?.kind).toBe("revocation");
+    const attempted = await new OperationStore(firstStores.operations).get({
+      grantId,
+      chainId: CHAIN_ID,
+      kind: "revocation",
+    });
+    expect(attempted?.value.state).toBe("submission_attempted");
+    const revocationHash = attempted?.value.identity.userOperationHash;
+    if (!revocationHash) throw new Error("expected the retained revocation identity");
+
+    await firstConnection.close();
+    first.close();
+    opened.splice(opened.indexOf(first), 1);
+
+    // Recreate the database, every adapter, the realm, connection, and Grant.
+    // Recovery may only observe the retained identity; preparing or sending a
+    // replacement would make the send count exceed two.
+    crashOnSend = false;
+    const second = await openRealmDatabase(factory);
+    const secondStores = storesFor(second);
+    const after = createRealm({ clock, relay, stores: secondStores, chain });
+    const secondConnection = await after.oaath.connect();
+    const resumed = await secondConnection.resume();
+    if (!resumed) throw new Error("expected the revoking Grant to resume");
+    expect(resumed.state).toBe("revoking");
+    await resumed.revoke();
+
+    expect(resumed.state).toBe("revoked");
+    expect(chain.sends).toHaveLength(2);
+    const finalized = await new OperationStore(secondStores.operations).get({
+      grantId,
+      chainId: CHAIN_ID,
+      kind: "revocation",
+    });
+    expect(finalized?.value.state).toBe("finalized");
+    expect(finalized?.value.identity.userOperationHash).toBe(revocationHash);
+    await secondConnection.close();
+  });
+
   it("fails a compare-and-swap closed when another realm already advanced the record", async () => {
     const factory = new IDBFactory();
     const clock = createClock();

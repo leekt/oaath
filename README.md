@@ -231,7 +231,6 @@ the packed smokes below own that. Run them locally when a public surface changes
 The remaining release blockers have one durable ledger here:
 
 - owner-authorized changeset for the fixed `0.x` release group;
-- revocation send/return crash proof, including reload without resubmission;
 - PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
 
 ## Development
