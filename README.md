@@ -285,9 +285,10 @@ pnpm release:publish   # owner only: publish the fixed group and tag it
 ```
 
 `release:publish` is plain `changeset publish`, so it publishes only what
-`release:version` already committed and tags each published package. Set
-`NPM_CONFIG_PROVENANCE=true` to attach npm provenance when publishing from a
-trusted CI runner.
+`release:version` already committed and tags each published package. Every
+public package rebuilds its ignored `dist` during `prepack`, so a clean-checkout
+publish cannot omit or reuse its generated exports. Set `NPM_CONFIG_PROVENANCE=true`
+to attach npm provenance when publishing from a trusted CI runner.
 
 ## License
 
