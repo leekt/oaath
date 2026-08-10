@@ -686,7 +686,7 @@ describe("private Grant provider port", () => {
     await connection.close();
   });
 
-  it("keeps a nonce-superseded installation unresolved during revocation", async () => {
+  it("keeps a nonce-superseded installation unresolved when permission evidence is inconclusive", async () => {
     const chain = createChainFixture({
       withholdReceipt: () => true,
       entryPointNonce: (nonce) => String(BigInt(nonce) + 1n),
@@ -715,6 +715,104 @@ describe("private Grant provider port", () => {
     expect(chain.sends).toHaveLength(1);
     await connection.close();
   });
+
+  it("rejects stale permission absence from before installation supersession", async () => {
+    let supersede = true;
+    let withholdReceipt = true;
+    let blockOffset = 1;
+    const chain = createChainFixture({
+      withholdReceipt: () => withholdReceipt,
+      entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
+      permissionInstalled: () => false,
+      blockOffset: () => blockOffset,
+    });
+    const { realm, connection, grant, port } = await activeGrant(chain);
+    let binding: OperationBinding | null = null;
+    const operation = await port.startCalls(
+      providerCallsInput(),
+      Object.freeze({
+        reserve: async (reservation: OaathProviderOperationReservation) => {
+          binding = reservation.operation;
+        },
+        confirm: async () => undefined,
+        abandon: async () => undefined,
+      }),
+    );
+
+    await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({ status: "superseded" });
+    const exact = requireBinding(binding);
+    supersede = false;
+    withholdReceipt = false;
+    blockOffset = 0;
+    await grant.revoke();
+
+    expect(grant.state).toBe("revoking");
+    await expect(realm.stores.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+      value: { materializations: [{ state: "installing" }] },
+    });
+    expect(chain.sends).toHaveLength(1);
+    await connection.close();
+  });
+
+  it.each([
+    {
+      label: "present at the canonical supersession block",
+      installed: true,
+      observationBlockOffset: 0,
+      expectedSends: 2,
+      expectedMaterialization: "revoked",
+    },
+    {
+      label: "absent at a later finalized block",
+      installed: false,
+      observationBlockOffset: 1,
+      expectedSends: 1,
+      expectedMaterialization: "unmaterialized",
+    },
+  ] as const)(
+    "resolves a nonce-superseded installation when permission is $label",
+    async (test) => {
+      let supersede = true;
+      let withholdReceipt = true;
+      let blockOffset = 0;
+      const chain = createChainFixture({
+        withholdReceipt: () => withholdReceipt,
+        entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
+        permissionInstalled: () => test.installed,
+        blockOffset: () => blockOffset,
+      });
+      const { realm, connection, grant, port } = await activeGrant(chain);
+      let binding: OperationBinding | null = null;
+      const operation = await port.startCalls(
+        providerCallsInput(),
+        Object.freeze({
+          reserve: async (reservation: OaathProviderOperationReservation) => {
+            binding = reservation.operation;
+          },
+          confirm: async () => undefined,
+          abandon: async () => undefined,
+        }),
+      );
+
+      await expect(operation.wait({ attempts: 1 })).resolves.toMatchObject({
+        status: "superseded",
+      });
+      const exact = requireBinding(binding);
+      supersede = false;
+      withholdReceipt = false;
+      blockOffset = test.observationBlockOffset;
+      await grant.revoke();
+
+      expect(grant.state).toBe("revoked");
+      await expect(realm.stores.grants.get(exact.identity.grantId)).resolves.toMatchObject({
+        value: { materializations: [{ state: test.expectedMaterialization }] },
+      });
+      expect(chain.sends).toHaveLength(test.expectedSends);
+      await grant.revoke();
+      expect(chain.sends).toHaveLength(test.expectedSends);
+      await connection.close();
+    },
+  );
 
   it("does not mint an uninstall while the revocation journal is unreadable", async () => {
     const memory = createMemoryStores();

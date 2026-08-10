@@ -2268,6 +2268,38 @@ export function createGrantHandle(
         }),
       );
     }
+    if (operation.value.state === "superseded") {
+      const observation = await observeChainPermission(binding, {
+        installedAtBlock: null,
+        notBefore: {
+          blockNumber: operation.value.supersession.blockNumber,
+          blockHash: operation.value.supersession.blockHash,
+        },
+      });
+      if (observation?.status === "present") {
+        return commit(
+          snapshot,
+          transition(snapshot.value, {
+            type: "record_installed",
+            identity: snapshot.value.identity,
+            binding,
+            operationId,
+            installation: observation.installation,
+          }),
+        );
+      }
+      if (observation?.status !== "absent") return snapshot;
+      return commit(
+        snapshot,
+        transition(snapshot.value, {
+          type: "abandon_materialization",
+          identity: snapshot.value.identity,
+          binding,
+          operationId,
+          abandonedAt: observation.removal.observedAt,
+        }),
+      );
+    }
     const conclusivelyNotInstalled =
       operation.value.state === "abandoned" ||
       (operation.value.state === "dropped" && operation.value.priorInclusion === null);
@@ -3204,12 +3236,21 @@ export function createGrantHandle(
    * Fail closed everywhere: only an exact boolean at a block that rebinds to
    * the same finalized hash counts; every other answer is inconclusive.
    */
+  type ChainPermissionObservationFloor =
+    | Readonly<{
+        installedAtBlock: string;
+        notBefore?: Readonly<{ blockNumber: string; blockHash: `0x${string}` }>;
+      }>
+    | Readonly<{
+        installedAtBlock: null;
+        notBefore: Readonly<{ blockNumber: string; blockHash: `0x${string}` }>;
+      }>;
+
   async function observeChainPermission(
     binding: Readonly<{ chainId: number; account: `0x${string}`; permissionId: `0x${string}` }>,
-    installedAtBlock: string,
-    notBefore?: Readonly<{ blockNumber: string; blockHash: `0x${string}` }>,
+    floor: ChainPermissionObservationFloor,
   ): Promise<
-    | Readonly<{ status: "present" }>
+    | Readonly<{ status: "present"; installation: Readonly<ChainPermissionEvidence> }>
     | Readonly<{ status: "absent"; removal: Readonly<ChainPermissionEvidence> }>
     | null
   > {
@@ -3235,16 +3276,21 @@ export function createGrantHandle(
       const blockNumber = BigInt(block.number).toString(10);
       // The protocol requires removal evidence to follow the installation; a
       // chain that has not advanced past the install block proves nothing yet.
-      if (BigInt(blockNumber) <= BigInt(installedAtBlock)) return null;
+      if (
+        floor.installedAtBlock !== null &&
+        BigInt(blockNumber) <= BigInt(floor.installedAtBlock)
+      ) {
+        return null;
+      }
       // Permission presence may only authorize a replacement after the block
       // that proved a superseded uninstall: evidence a lagging provider serves
       // from an earlier block names a chain state the supersession already
       // displaced.
-      if (notBefore !== undefined) {
-        const fence = BigInt(notBefore.blockNumber);
+      if (floor.notBefore !== undefined) {
+        const fence = BigInt(floor.notBefore.blockNumber);
         const read = BigInt(blockNumber);
         if (read < fence) return null;
-        if (read === fence && block.hash !== notBefore.blockHash) return null;
+        if (read === fence && block.hash !== floor.notBefore.blockHash) return null;
       }
       const installed = await chain.observation.read({
         type: "kernel_permission_installed",
@@ -3263,7 +3309,18 @@ export function createGrantHandle(
         blockNumber,
       })) as { readonly number?: unknown; readonly hash?: unknown } | null;
       if (rebound?.hash !== block.hash || rebound.number !== block.number) return null;
-      if (installed) return Object.freeze({ status: "present" as const });
+      if (installed) {
+        return Object.freeze({
+          status: "present" as const,
+          installation: Object.freeze({
+            ...binding,
+            kind: "permission_present" as const,
+            blockNumber,
+            blockHash: block.hash as `0x${string}`,
+            observedAt: input.now(),
+          }),
+        });
+      }
       return Object.freeze({
         status: "absent" as const,
         removal: Object.freeze({
@@ -3355,14 +3412,13 @@ export function createGrantHandle(
     let permissionObservation: Awaited<ReturnType<typeof observeChainPermission>> | undefined;
     let retryPositivelySafe = journalReadable;
     if (prior?.value.state === "superseded") {
-      permissionObservation = await observeChainPermission(
-        binding,
-        entry.installation.blockNumber,
-        {
+      permissionObservation = await observeChainPermission(binding, {
+        installedAtBlock: entry.installation.blockNumber,
+        notBefore: {
           blockNumber: prior.value.supersession.blockNumber,
           blockHash: prior.value.supersession.blockHash,
         },
-      );
+      });
       retryPositivelySafe = permissionObservation?.status === "present";
     }
     if (
@@ -3388,14 +3444,13 @@ export function createGrantHandle(
         } else if (observed.status === "observed" && observed.record.value.state === "superseded") {
           // Observation proved the submitted uninstall superseded; fence a
           // replacement exactly like a superseded journal record does.
-          permissionObservation ??= await observeChainPermission(
-            binding,
-            entry.installation.blockNumber,
-            {
+          permissionObservation ??= await observeChainPermission(binding, {
+            installedAtBlock: entry.installation.blockNumber,
+            notBefore: {
               blockNumber: observed.record.value.supersession.blockNumber,
               blockHash: observed.record.value.supersession.blockHash,
             },
-          );
+          });
           retryPositivelySafe = permissionObservation?.status === "present";
         }
       } finally {
@@ -3440,14 +3495,13 @@ export function createGrantHandle(
             value = lane.value;
           }
           if (value === null && lane?.value.state === "superseded") {
-            permissionObservation ??= await observeChainPermission(
-              binding,
-              entry.installation.blockNumber,
-              {
+            permissionObservation ??= await observeChainPermission(binding, {
+              installedAtBlock: entry.installation.blockNumber,
+              notBefore: {
                 blockNumber: lane.value.supersession.blockNumber,
                 blockHash: lane.value.supersession.blockHash,
               },
-            );
+            });
             retryPositivelySafe = permissionObservation?.status === "present";
           }
           if (value === null && retryPositivelySafe) {
@@ -3509,7 +3563,9 @@ export function createGrantHandle(
     }
     // No owner operation completed here. If the owner's console or an ambiguous
     // prior attempt already removed the permission, the chain proves it.
-    permissionObservation ??= await observeChainPermission(binding, entry.installation.blockNumber);
+    permissionObservation ??= await observeChainPermission(binding, {
+      installedAtBlock: entry.installation.blockNumber,
+    });
     if (permissionObservation?.status !== "absent") return latest;
     latest = await refresh();
     return commit(
