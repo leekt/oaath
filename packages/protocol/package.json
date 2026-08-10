@@ -1,6 +1,6 @@
 {
   "name": "@oaath/protocol",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Runtime-neutral OAAth wire and durable contracts.",
   "type": "module",
   "sideEffects": false,

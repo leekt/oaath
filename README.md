@@ -39,7 +39,8 @@ never published to npm.
 
 ## Status
 
-Nothing is released. `@oaath/protocol` owns the runtime-neutral wire and
+The fixed package group is versioned for its first public proof-of-concept
+release, `0.1.0`. `@oaath/protocol` owns the runtime-neutral wire and
 durable contracts: grants, grant policies, identity profiles, the pure
 `Operation` aggregate, the permission protocol, and the exact hostile-input
 capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
@@ -225,12 +226,6 @@ pnpm examples:check # all four; skips all-chain when Anvil is absent
 
 They are documentation, not release evidence, and are deliberately not a CI gate;
 the packed smokes below own that. Run them locally when a public surface changes.
-
-## Before 0.1.0
-
-The remaining release blockers have one durable ledger here:
-
-- owner-authorized changeset for the fixed `0.x` release group;
 
 ## Development
 
