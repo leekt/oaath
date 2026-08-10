@@ -233,8 +233,6 @@ The remaining release blockers have one durable ledger here:
 - owner-authorized changeset for the fixed `0.x` release group;
 - revocation send/return crash proof, including reload without resubmission;
 - PostgreSQL as a default-gate persistence proof rather than an opt-in skip;
-- pin or explicitly remove the unsupported raw P-256 `session_p256` signer
-  surface before release.
 
 ## Development
 
