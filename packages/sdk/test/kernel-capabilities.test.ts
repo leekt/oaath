@@ -102,9 +102,10 @@ type Expectation =
 
 /**
  * The exact fact every capability carries on every supported chain: Kernel v4
- * pins a reviewed raw P-256 validator module but no WebAuthn one and no raw P-256
- * permission signer, every policy axis has a reviewed module, and the ECDSA
- * validator is caller-bound and code-proven when an account binds.
+ * pins a reviewed raw P-256 validator module but no WebAuthn one, every
+ * supported session credential has a reviewed signer, every policy axis has a
+ * reviewed module, and the ECDSA validator is caller-bound and code-proven when
+ * an account binds.
  */
 const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.freeze({
   owner_ecdsa: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
@@ -121,14 +122,10 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
   // on the action chain when an account binds.
   owner_custom: Object.freeze({ status: "available", evidence: "caller_bound_validator" }),
   session_custom: Object.freeze({ status: "available", evidence: "caller_bound_signer" }),
-  // A session is a permission, so its axis is the pinned signer module: ECDSA and
-  // WebAuthn have one, raw P-256 does not — the reviewed plugin set ships no raw
-  // P-256 signer, so an owner-only P-256 credential is exactly what is bound.
+  // A session is a permission, so its axis is the pinned signer module. The
+  // public capability vocabulary includes only the supported ECDSA and WebAuthn
+  // session credentials; raw P-256 is owner-only.
   session_ecdsa: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  session_p256: Object.freeze({
-    status: "unsupported",
-    reason: "signer_module_deployment_unproven",
-  }),
   session_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   // CallPolicy enforces calls and their per-call value ceilings; the OAAth
   // validity policy enforces the window; RateLimitPolicy enforces the per-chain
@@ -149,7 +146,6 @@ const capabilities = [
   "owner_webauthn",
   "owner_custom",
   "session_ecdsa",
-  "session_p256",
   "session_webauthn",
   "session_custom",
   "hook_call",
@@ -184,8 +180,6 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
       return sessionOperator({ key: customKey(), policies: [scope] });
     case "session_ecdsa":
       return sessionOperator({ key: keyProfiles.ecdsa(), policies: [scope] });
-    case "session_p256":
-      return sessionOperator({ key: keyProfiles.p256(), policies: [scope] });
     case "session_webauthn":
       return sessionOperator({ key: keyProfiles.webauthn(), policies: [scope] });
     case "hook_call":
@@ -249,11 +243,13 @@ describe("Kernel capability diagnosis", () => {
   it("names one capability per authority and kind, custom kinds included", () => {
     // The client asks for a capability by authority and key kind, so an unbounded
     // custom kind string must never become an unbounded capability name.
-    const named = (["owner", "session"] as const).flatMap((authority) =>
-      (["ecdsa", "p256", "webauthn", "custom:demo", "custom:other"] as const).map(
-        (kind) => kernelKeyCapability(authority, kind) satisfies KernelCapability,
-      ),
-    );
+    const named = (["ecdsa", "p256", "webauthn", "custom:demo", "custom:other"] as const)
+      .map((kind) => kernelKeyCapability("owner", kind) satisfies KernelCapability)
+      .concat(
+        (["ecdsa", "webauthn", "custom:demo", "custom:other"] as const).map(
+          (kind) => kernelKeyCapability("session", kind) satisfies KernelCapability,
+        ),
+      );
     expect(named).toEqual([
       "owner_ecdsa",
       "owner_p256",
@@ -261,11 +257,16 @@ describe("Kernel capability diagnosis", () => {
       "owner_custom",
       "owner_custom",
       "session_ecdsa",
-      "session_p256",
       "session_webauthn",
       "session_custom",
       "session_custom",
     ]);
+    expect(() => kernelKeyCapability("session", "p256")).toThrowError(
+      expect.objectContaining({
+        name: "OaathKernelRuntimeError",
+        code: "kernel_runtime_input_invalid",
+      }),
+    );
   });
 
   it.each(["p256", "webauthn"] as const)(
@@ -308,17 +309,19 @@ describe("Kernel capability diagnosis", () => {
           evidence: "pinned_reviewed_module",
         });
 
-        // A session resolves the signer axis instead, and raw P-256 has no
-        // reviewed signer, so it fails closed there rather than borrowing one.
+        // Raw P-256 is owner-only: constructing a session fails before any
+        // diagnosable capability can be named or another signer can be borrowed.
         expect(() => sessionOperator({ key, policies: [scope] })).toThrowError(
           expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }),
         );
-        expect(diagnoseKernelCapability({ chainId, capability: "session_p256" })).toEqual({
-          capability: "session_p256",
-          chainId,
-          status: "unsupported",
-          reason: "signer_module_deployment_unproven",
-        });
+        expect(() =>
+          diagnoseKernelCapability({ chainId, capability: "session_p256" } as never),
+        ).toThrowError(
+          expect.objectContaining({
+            name: "OaathKernelRuntimeError",
+            code: "kernel_runtime_input_invalid",
+          }),
+        );
         return;
       }
 

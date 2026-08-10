@@ -54,7 +54,6 @@ export type KernelCapability =
   | "owner_webauthn"
   | "owner_custom"
   | "session_ecdsa"
-  | "session_p256"
   | "session_webauthn"
   | "session_custom"
   | "hook_call"
@@ -156,8 +155,6 @@ function capturedCapability(value: unknown): CapabilityAxis {
     // never a validator that would carry whole-key authority.
     case "session_ecdsa":
       return Object.freeze({ capability: value, axis: "signer" as const, kind: "ecdsa" as const });
-    case "session_p256":
-      return Object.freeze({ capability: value, axis: "signer" as const, kind: "p256" as const });
     case "session_webauthn":
       return Object.freeze({
         capability: value,
@@ -234,6 +231,9 @@ export function kernelKeyCapability(
 ): KernelCapability {
   if (authority === "owner") {
     return isBuiltInKeyKind(kind) ? `owner_${kind}` : "owner_custom";
+  }
+  if (kind === "p256") {
+    return inputInvalid("raw P-256 session credentials are unsupported");
   }
   return isBuiltInKeyKind(kind) ? `session_${kind}` : "session_custom";
 }
