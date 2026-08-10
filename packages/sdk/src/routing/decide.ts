@@ -108,6 +108,11 @@ function decideRoute(
   };
 }
 
+/** Whether this exact classified bundler fact selects the sponsorship-capable route. */
+export function supportsBundlerSponsorship(bundler: OaathBundlerCapability): boolean {
+  return decideRoute(bundler, null).route === "bundler";
+}
+
 /**
  * Decides the signer and submission route before any signature exists. Facts are
  * captured exactly, so hostile or unsupported evidence fails closed with a

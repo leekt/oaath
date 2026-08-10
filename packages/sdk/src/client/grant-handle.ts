@@ -106,8 +106,12 @@ import {
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { OaathWalletCallResultCapabilities } from "../provider/result-capabilities.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
-import { feePayerDescriptor, type OaathSessionCoverage } from "../routing/capabilities.js";
-import { decideExecution } from "../routing/decide.js";
+import {
+  feePayerDescriptor,
+  type OaathBundlerCapability,
+  type OaathSessionCoverage,
+} from "../routing/capabilities.js";
+import { decideExecution, supportsBundlerSponsorship } from "../routing/decide.js";
 import {
   type OaathKernelSponsorshipCapability,
   prepareSponsoredKernelOperation,
@@ -174,6 +178,16 @@ export interface OaathProviderValidityAdmission {
 export type OaathProviderValidityAdmissionResult =
   | Readonly<{ status: "accepted"; admission: Readonly<OaathProviderValidityAdmission> }>
   | Readonly<{ status: "unsupported" }>;
+
+/** One handle-local, one-use classified execution-route fact. */
+export interface OaathProviderExecutionRouteAdmission {
+  readonly kind: "oaath_provider_execution_route_admission";
+}
+
+export type OaathProviderExecutionRouteAdmissionResult = Readonly<{
+  readonly sponsorship: "supported" | "unsupported";
+  readonly admission: Readonly<OaathProviderExecutionRouteAdmission>;
+}>;
 
 /** Read-only proof result used only to project current provider support. */
 export type OaathProviderValidityTimeRangeSupportResult =
@@ -355,6 +369,9 @@ export interface OaathGrantProviderPort {
   readonly authorizedAccount: OaathGrantHandle["account"];
   readonly registeredPaymasterServiceUrl: (chain: number) => string | null;
   readonly staticPaymasterConfigurationHash: (chain: number) => `0x${string}` | null;
+  readonly admitExecutionRoute: (
+    chain: number,
+  ) => Promise<Readonly<OaathProviderExecutionRouteAdmissionResult>>;
   readonly probeValidityTimeRangeSupport: (
     chain: number,
   ) => Promise<Readonly<OaathProviderValidityTimeRangeSupportResult>>;
@@ -375,6 +392,7 @@ export interface OaathGrantProviderPort {
       key: Readonly<OaathExternalPreparedCallKey>;
       paymaster: OaathExternalPreparedCallPaymasterSelection;
       validityAdmission?: Readonly<OaathProviderValidityAdmission>;
+      executionRouteAdmission?: Readonly<OaathProviderExecutionRouteAdmission>;
     }>,
   ) => Promise<Readonly<OaathExternalPreparedCallPlan>>;
   readonly validatePreparedCalls: (
@@ -833,6 +851,11 @@ export function createGrantHandle(
     readonly descriptor: Readonly<KernelV4AccountDescriptor>;
   }
 
+  interface ExecutionRouteAdmissionEvidence {
+    readonly chainId: number;
+    readonly bundler: OaathBundlerCapability;
+  }
+
   let record = input.record;
   let closed = false;
   let closeRequested = false;
@@ -854,6 +877,7 @@ export function createGrantHandle(
     }>
   >();
   const validityAdmissions = new WeakMap<object, Readonly<ValidityAdmissionEvidence>>();
+  const executionRouteAdmissions = new WeakMap<object, Readonly<ExecutionRouteAdmissionEvidence>>();
   const unsupportedValidityAdmission = Object.freeze({ status: "unsupported" as const });
   const supportedValidityTimeRange = Object.freeze({ status: "supported" as const });
   const unsupportedValidityTimeRange = Object.freeze({ status: "unsupported" as const });
@@ -928,6 +952,18 @@ export function createGrantHandle(
     const chain = input.chains.get(chainId);
     if (!chain) unsupported("chain_not_configured");
     return chain;
+  }
+
+  function classifiedBundler(
+    chainId: number,
+    chain: Readonly<OaathChainCapability>,
+    entryPoint: `0x${string}`,
+  ): Promise<OaathBundlerCapability> {
+    return probeBundlerCapability({
+      capability: chain.bundler,
+      request: { chainId, entryPoint },
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
   }
 
   async function refresh(): Promise<GrantStoreRecord> {
@@ -1132,6 +1168,7 @@ export function createGrantHandle(
     chainId: number,
     calls: readonly Readonly<KernelV4Call>[],
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
+    executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
   ): Promise<Readonly<ExecutionShape>> {
     const grantSnapshot = await requireActive();
     const grant = grantSnapshot.value;
@@ -1155,11 +1192,9 @@ export function createGrantHandle(
         coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
       );
     }
-    const bundler = await probeBundlerCapability({
-      capability: chain.bundler,
-      request: { chainId, entryPoint: deployment.entryPoint.address },
-      timeoutMs: SUBMISSION_TIMEOUT_MS,
-    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
+    const bundler =
+      executionRouteAdmission?.bundler ??
+      (await classifiedBundler(chainId, chain, deployment.entryPoint.address));
     const decision = decideExecution({
       operationKind: "execution",
       sessionCoverage: coverage,
@@ -2300,6 +2335,7 @@ export function createGrantHandle(
       | { readonly kind: "erc7902-static"; readonly paymaster: PreparedPaymaster }
     > | null = null,
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
+    executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -2308,7 +2344,12 @@ export function createGrantHandle(
       return clientFail("oaath_client_input_invalid", "sendCalls chain is invalid");
     }
     const calls = captureCalls(request.calls, context);
-    const resolved = await resolveExecutionShape(chainId, calls, validityAdmission);
+    const resolved = await resolveExecutionShape(
+      chainId,
+      calls,
+      validityAdmission,
+      executionRouteAdmission,
+    );
     if (paymaster !== null && resolved.decision.route !== "bundler") {
       return clientFail(
         "oaath_client_capability_unsupported",
@@ -2512,11 +2553,13 @@ export function createGrantHandle(
       clientFail("oaath_client_input_invalid", message);
     const captured = captureRecord(value, "provider prepareCalls input", context, invalidInput);
     const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
+    const hasExecutionRouteAdmission = Object.hasOwn(captured, "executionRouteAdmission");
+    const keys = ["chain", "calls", "key", "paymaster"];
+    if (hasValidityAdmission) keys.push("validityAdmission");
+    if (hasExecutionRouteAdmission) keys.push("executionRouteAdmission");
     const request = exactCapturedRecord(
       captured,
-      hasValidityAdmission
-        ? ["chain", "calls", "key", "paymaster", "validityAdmission"]
-        : ["chain", "calls", "key", "paymaster"],
+      keys,
       "provider prepareCalls input",
       invalidInput,
     );
@@ -2529,6 +2572,9 @@ export function createGrantHandle(
     }
     const validityAdmission = hasValidityAdmission
       ? consumeValidityAdmission(request.validityAdmission, request.chain)
+      : null;
+    const executionRouteAdmission = hasExecutionRouteAdmission
+      ? consumeExecutionRouteAdmission(request.executionRouteAdmission, request.chain)
       : null;
     const keyRecord = exactClientRecord(
       request.key,
@@ -2548,7 +2594,12 @@ export function createGrantHandle(
     if (paymaster?.kind === "erc7902-static") {
       return unsupported("prepared_calls_static_paymaster_unsupported");
     }
-    const shape = await resolveExecutionShape(request.chain, calls, validityAdmission);
+    const shape = await resolveExecutionShape(
+      request.chain,
+      calls,
+      validityAdmission,
+      executionRouteAdmission,
+    );
     if (paymaster !== null && shape.decision.route !== "bundler") {
       return unsupported("erc7677_bundler_unavailable");
     }
@@ -2723,6 +2774,64 @@ export function createGrantHandle(
 
   function staticPaymasterConfigurationHash(chainId: number): `0x${string}` | null {
     return chainCapability(chainId).staticPaymasterConfigurationHash;
+  }
+
+  function admitExecutionRoute(
+    chainId: number,
+  ): Promise<Readonly<OaathProviderExecutionRouteAdmissionResult>> {
+    return withActivity(async () => {
+      if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
+        return clientFail("oaath_client_input_invalid", "provider route chain is invalid");
+      }
+      if (revocationRequested) {
+        return clientFail(
+          "oaath_client_grant_inactive",
+          "the Grant is being revoked",
+          "grant_revocation_requested",
+        );
+      }
+      await requireActive();
+      const chain = chainCapability(chainId);
+      const deployment = (() => {
+        try {
+          return kernelV4Deployment(chainId);
+        } catch (error) {
+          return mapClientFailure(error, "chain is not a supported Kernel deployment");
+        }
+      })();
+      const bundler = await classifiedBundler(chainId, chain, deployment.entryPoint.address);
+      const admission = Object.freeze({
+        kind: "oaath_provider_execution_route_admission" as const,
+      });
+      executionRouteAdmissions.set(admission, Object.freeze({ chainId, bundler }));
+      return Object.freeze({
+        sponsorship: supportsBundlerSponsorship(bundler)
+          ? ("supported" as const)
+          : ("unsupported" as const),
+        admission,
+      });
+    });
+  }
+
+  function consumeExecutionRouteAdmission(
+    value: unknown,
+    chainId: number,
+  ): Readonly<ExecutionRouteAdmissionEvidence> {
+    if (value === null || typeof value !== "object") {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider execution-route admission is invalid",
+      );
+    }
+    const retained = executionRouteAdmissions.get(value);
+    executionRouteAdmissions.delete(value);
+    if (retained === undefined || retained.chainId !== chainId) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "provider execution-route admission is unavailable",
+      );
+    }
+    return retained;
   }
 
   function approvedValidityTimeRange(at: number): Readonly<KernelV4ValidityTimeRange> | null {
@@ -2963,14 +3072,11 @@ export function createGrantHandle(
         clientFail("oaath_client_input_invalid", message);
       const captured = captureRecord(value, "provider sendCalls input", context, invalidInput);
       const hasValidityAdmission = Object.hasOwn(captured, "validityAdmission");
-      const request = exactCapturedRecord(
-        captured,
-        hasValidityAdmission
-          ? ["chain", "calls", "requestHash", "paymaster", "validityAdmission"]
-          : ["chain", "calls", "requestHash", "paymaster"],
-        "provider sendCalls input",
-        invalidInput,
-      );
+      const hasExecutionRouteAdmission = Object.hasOwn(captured, "executionRouteAdmission");
+      const keys = ["chain", "calls", "requestHash", "paymaster"];
+      if (hasValidityAdmission) keys.push("validityAdmission");
+      if (hasExecutionRouteAdmission) keys.push("executionRouteAdmission");
+      const request = exactCapturedRecord(captured, keys, "provider sendCalls input", invalidInput);
       if (
         typeof request.chain !== "number" ||
         !Number.isSafeInteger(request.chain) ||
@@ -2980,6 +3086,9 @@ export function createGrantHandle(
       }
       const validityAdmission = hasValidityAdmission
         ? consumeValidityAdmission(request.validityAdmission, request.chain)
+        : null;
+      const executionRouteAdmission = hasExecutionRouteAdmission
+        ? consumeExecutionRouteAdmission(request.executionRouteAdmission, request.chain)
         : null;
       if (
         typeof request.requestHash !== "string" ||
@@ -2997,6 +3106,7 @@ export function createGrantHandle(
         captureProviderPublication(publicationValue),
         providerPaymaster(request.chain, request.paymaster, context),
         validityAdmission,
+        executionRouteAdmission,
       );
     });
   }
@@ -3008,6 +3118,7 @@ export function createGrantHandle(
       key: Readonly<OaathExternalPreparedCallKey>;
       paymaster: OaathExternalPreparedCallPaymasterSelection;
       validityAdmission?: Readonly<OaathProviderValidityAdmission>;
+      executionRouteAdmission?: Readonly<OaathProviderExecutionRouteAdmission>;
     }>,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
     return withExecution(() => prepareCallsWork(value));
@@ -3581,6 +3692,7 @@ export function createGrantHandle(
       authorizedAccount,
       registeredPaymasterServiceUrl,
       staticPaymasterConfigurationHash,
+      admitExecutionRoute,
       probeValidityTimeRangeSupport,
       admitValidityTimeRange,
       startCalls,

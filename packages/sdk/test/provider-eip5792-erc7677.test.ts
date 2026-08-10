@@ -273,26 +273,69 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     await connection.close();
   });
 
-  it("refuses the direct submission fallback before sponsorship or signing", async () => {
+  it("omits a direct route, refuses required sponsorship, and ignores optional sponsorship", async () => {
+    let probes = 0;
     const base = createChainFixture({
       bundler: "absent",
       feePayer: { address: `0x${"77".repeat(20)}`, balance: "1000000000000000000" },
     });
     const registered = registeredService();
-    const chain = replaceChain(base, { paymasterService: registered.service });
-    const { connection, provider, account } = await activeProvider(chain);
+    const chain = replaceChain(base, {
+      bundler: Object.freeze({
+        async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
+          probes += 1;
+          return base.capability.bundler.probe(request);
+        },
+      }),
+      paymasterService: registered.service,
+    });
+    const { connection, grant, provider, account } = await activeProvider(chain);
+    const id = "no-direct-sponsor";
+
+    await expect(
+      provider.request({ method: "wallet_getCapabilities", params: [account] }),
+    ).resolves.toEqual({
+      [CHAIN_HEX]: { atomic: { status: "supported" } },
+    });
 
     await providerError(
       provider.request({
         method: "wallet_sendCalls",
-        params: [bundle(account, "no-direct-sponsor", { url: SERVICE_URL, context: {} })],
+        params: [bundle(account, id, { url: SERVICE_URL, context: {} })],
       }),
-      -32603,
+      5700,
     );
+    const port = grantProviderPort(grant);
+    await expect(
+      port.walletCallBundles.get({
+        providerScopeId: port.providerScopeId as `0x${string}`,
+        account,
+        id,
+      }),
+    ).resolves.toBeUndefined();
     expect(registered.stages).toEqual([]);
     expect(base.quotes).toBe(0);
     expect(base.signatures).toHaveLength(0);
     expect(base.sends).toHaveLength(0);
+
+    await expect(
+      provider.request({
+        method: "wallet_sendCalls",
+        params: [
+          bundle(account, id, {
+            url: SERVICE_URL,
+            context: {},
+            optional: true,
+          }),
+        ],
+      }),
+    ).resolves.toEqual({ id });
+    expect(probes).toBe(3);
+    expect(registered.stages).toEqual([]);
+    expect(base.quotes).toBe(1);
+    expect(base.signatures).toHaveLength(1);
+    expect(base.sends).toHaveLength(1);
+    expect(base.sends[0]?.userOperation.paymaster).toBeNull();
     await connection.close();
   });
 

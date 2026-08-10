@@ -12,6 +12,7 @@ import { OaathClientError } from "../client/errors.js";
 import type {
   OaathExternalPreparedCallPlan,
   OaathGrantProviderPort,
+  OaathProviderExecutionRouteAdmission,
   OaathProviderOperationPointer,
   OaathProviderOperationReservation,
   OaathProviderValidityAdmission,
@@ -491,6 +492,18 @@ export function createErc7836Orchestrator(
     if (captured.from !== undefined && captured.from !== accountAddress) {
       return rpcFail(UNAUTHORIZED);
     }
+    let paymaster = capabilityEffect.paymaster;
+    let executionRouteAdmission: Readonly<OaathProviderExecutionRouteAdmission> | null = null;
+    if (paymaster !== null) {
+      const admitted = await input.port.admitExecutionRoute(input.chain);
+      executionRouteAdmission = admitted.admission;
+      if (admitted.sponsorship === "unsupported") {
+        if (captured.capabilities?.paymasterService?.optional !== true) {
+          return rpcFail(UNSUPPORTED_CAPABILITY);
+        }
+        paymaster = null;
+      }
+    }
     const preparedCalls = calls(capabilityEffect.calls);
     const requestedValidity = capabilityEffect.validityTimeRange;
     if (requestedValidity !== null && input.confirmCalls === undefined) {
@@ -539,8 +552,9 @@ export function createErc7836Orchestrator(
         chain: input.chain,
         calls: preparedCalls,
         key: captured.key,
-        paymaster: capabilityEffect.paymaster,
+        paymaster,
         ...(validityAdmission === null ? {} : { validityAdmission }),
+        ...(executionRouteAdmission === null ? {} : { executionRouteAdmission }),
       })
       .catch(mapPreparationFailure);
     const createdAt = now();
