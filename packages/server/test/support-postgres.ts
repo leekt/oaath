@@ -3,8 +3,9 @@
  * harness owns an independent pool, so a "restart" recreates every in-memory
  * instance instead of reusing a warm connection.
  *
- * Gated by `OAATH_REQUIRE_POSTGRES=1`; the default gate never contacts a
- * database. `OAATH_POSTGRES_URL` selects the local server.
+ * Gated by `OAATH_REQUIRE_POSTGRES=1`; ordinary local tests never contact a
+ * database, while repository CI opts in against its job-local service.
+ * `OAATH_POSTGRES_URL` selects the server.
  *
  * @author taek <leekt216@gmail.com>
  */
