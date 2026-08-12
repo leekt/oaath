@@ -29,6 +29,7 @@ export type ProtocolContractErrorCode =
   | "authorization_code_invalid"
   | "authorization_code_transition_forbidden"
   | "authorization_code_verifier_mismatch"
+  | "grant_reference_invalid"
   | "service_bootstrap_invalid"
   | "signing_artifact_invalid"
   | "signing_request_invalid"
@@ -58,6 +59,7 @@ const CODES = {
   authorization_code_invalid: true,
   authorization_code_transition_forbidden: true,
   authorization_code_verifier_mismatch: true,
+  grant_reference_invalid: true,
   service_bootstrap_invalid: true,
   signing_artifact_invalid: true,
   signing_request_invalid: true,

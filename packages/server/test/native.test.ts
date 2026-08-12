@@ -94,12 +94,14 @@ const CLIENT: RelayCaller = Object.freeze({
   clientId: "client-a",
   subject: "subject-1",
   redirectUris: Object.freeze([REDIRECT_URI]),
+  organizationAudience: "org-1",
 });
 const OWNER: RelayCaller = Object.freeze({
   role: "owner",
   clientId: "owner-console",
   subject: "subject-1",
   redirectUris: Object.freeze([]),
+  organizationAudience: null,
 });
 const OTHER_OWNER: RelayCaller = Object.freeze({ ...OWNER, subject: "subject-2" });
 

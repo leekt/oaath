@@ -27,6 +27,7 @@ const REQUEST = Object.freeze({
   requestId: "request-1",
   clientId: "client-a",
   subject: "subject-1",
+  organizationAudience: "org-1",
   redirectUri: "https://app.example/callback",
   codeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
   requestedScope: "{}",

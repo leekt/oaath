@@ -7,6 +7,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { hashGrantPolicyCalls } from "@oaath/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OAATH_RELAY_POSTGRES_SCHEMA_VERSION } from "../src/store/postgres/schema.js";
 import {
@@ -20,6 +21,8 @@ import {
   expectFailure,
   expectOk,
   get,
+  LIVE_PERMISSION_POLICY,
+  LIVE_PERMISSION_SCOPE,
   OWNER_TOKEN,
   post,
   REDIRECT_URI,
@@ -75,6 +78,33 @@ import {
     );
     expect(claimed.artifact).toBe('{"grant":"pg"}');
     await harness.shutdown();
+  });
+
+  it("verifies a grant reference from an independent connection", async () => {
+    const clock = createTestClock();
+    const issuing = createPostgresHarness(fixture, clock);
+    const created = await createRequest(issuing, LIVE_PERMISSION_SCOPE);
+    await approve(issuing, created.requestId);
+
+    // A separate pool answers the verification, so the captured audience and
+    // scope are proven durable, not a warm in-memory echo.
+    const verifier = createPostgresHarness(fixture, clock);
+    const response = await verifier.handler(
+      post("/grants/verify", CLIENT_TOKEN, {
+        grantId: created.requestId,
+        revision: 1,
+        subject: "subject-1",
+        clientId: "client-a",
+        organizationAudience: "org-1",
+        requiredCallsDigest: hashGrantPolicyCalls(LIVE_PERMISSION_POLICY.calls),
+      }),
+    );
+    const result = await expectOk<{ state: string; ref?: { organizationAudience: string } }>(
+      response,
+      200,
+    );
+    expect(result.state).toBe("authorized");
+    expect(result.ref?.organizationAudience).toBe("org-1");
   });
 
   it("releases a code once under concurrent consumes on independent stores", async () => {

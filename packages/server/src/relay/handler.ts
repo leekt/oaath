@@ -17,6 +17,7 @@
  * POST /authorization/resume                         client  fresh auth + recovery read
  * GET  /bootstrap                                    client  URL-only service context
  * POST /invalidations                                client  capability invalidation
+ * POST /grants/verify                                client  grant reference verification
  * POST /chains/{chainId}/{port}                      client  chain execution relay,
  *                                                            port in reads |
  *                                                            observation | bundler |
@@ -58,6 +59,7 @@ import {
   fetchAuthorizationRequest,
 } from "../authorization/request.js";
 import { resumeAuthorization } from "../authorization/resume.js";
+import { verifyGrantReference } from "../authorization/verify.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { submitOwnerPhoneDecision } from "../native/decision.js";
 import { projectOwnerPhoneRequest } from "../native/projection.js";
@@ -715,6 +717,22 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         return jsonResponse(200, { signature });
       }
       return relayFailure("relay_not_found", "route does not exist");
+    }
+
+    if (head === "grants" && segments.length === 2 && group === "verify") {
+      requireMethod(request, "POST");
+      const caller = await authenticate(request, "client", "grants.verify");
+      // The whole exact-captured body is the assertion; its owner is the
+      // protocol grant-reference contract, which re-captures it exactly.
+      // Every result state answers 200: the machine decision lives in the
+      // typed envelope, and a denial or unknown is a successful verification.
+      const result = await verifyGrantReference({
+        store: captured.store,
+        clock: captured.clock,
+        caller,
+        assertion: await bodyRecord(request, captured.maxBodyBytes),
+      });
+      return jsonResponse(200, result);
     }
 
     if (head === "invalidations" && segments.length === 1) {

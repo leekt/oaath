@@ -8,8 +8,8 @@
  */
 
 const REQUEST_COLUMNS = `
-  request_id, record_version, client_id, subject, redirect_uri,
-  code_challenge, requested_scope, created_at, expires_at
+  request_id, record_version, client_id, subject, organization_audience,
+  redirect_uri, code_challenge, requested_scope, created_at, expires_at
 `;
 
 const CODE_COLUMNS = `
@@ -31,7 +31,7 @@ export const LOCK_AUTHORIZATION_REQUEST = `
 
 export const INSERT_AUTHORIZATION_REQUEST = `
   INSERT INTO oaath_relay_authorization_request_v1 (${REQUEST_COLUMNS})
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
   ON CONFLICT (request_id) DO NOTHING
 `;
 

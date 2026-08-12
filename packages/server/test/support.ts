@@ -24,6 +24,7 @@ export const CLIENT_TOKEN = "client-token";
 export const OWNER_TOKEN = "owner-token";
 export const OTHER_CLIENT_TOKEN = "other-client-token";
 export const OTHER_OWNER_TOKEN = "other-owner-token";
+export const NO_AUDIENCE_CLIENT_TOKEN = "no-audience-client-token";
 
 /**
  * A real `@oaath/protocol` permission scope, exactly as `@oaath/sdk` stores it
@@ -76,6 +77,33 @@ export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
   expiresAt: 200,
 });
 
+/** Test clock start (`createTestClock`'s 1_700_000_000_000 ms) in protocol seconds. */
+export const TEST_CLOCK_SECONDS = 1_700_000_000;
+
+/** A policy whose window is live at the test clock, for verification tests. */
+export const LIVE_PERMISSION_POLICY = {
+  version: "oaath.grant-policy/v1",
+  calls: [
+    {
+      target: `0x${"11".repeat(20)}`,
+      selector: "0x12345678",
+      valueLimit: "100",
+      argumentEquals: [],
+    },
+  ],
+  validAfter: 100,
+  validUntil: TEST_CLOCK_SECONDS + 600,
+  perChainOperationLimit: 10,
+} as const;
+
+/** The approvable fixture scope, with times live at the test clock. */
+export const LIVE_PERMISSION_SCOPE = JSON.stringify({
+  ...(JSON.parse(APPROVABLE_PERMISSION_SCOPE) as Record<string, unknown>),
+  policy: LIVE_PERMISSION_POLICY,
+  requestedAt: TEST_CLOCK_SECONDS - 100,
+  expiresAt: TEST_CLOCK_SECONDS + 700,
+});
+
 export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
   [
     CLIENT_TOKEN,
@@ -84,6 +112,7 @@ export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
       clientId: "client-a",
       subject: "subject-1",
       redirectUris: [REDIRECT_URI],
+      organizationAudience: "org-1",
     } satisfies RelayCaller,
   ],
   [
@@ -93,6 +122,17 @@ export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
       clientId: "client-b",
       subject: "subject-1",
       redirectUris: [REDIRECT_URI],
+      organizationAudience: "org-2",
+    } satisfies RelayCaller,
+  ],
+  [
+    NO_AUDIENCE_CLIENT_TOKEN,
+    {
+      role: "client",
+      clientId: "client-a",
+      subject: "subject-1",
+      redirectUris: [REDIRECT_URI],
+      organizationAudience: null,
     } satisfies RelayCaller,
   ],
   [
@@ -102,6 +142,7 @@ export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
       clientId: "owner-console",
       subject: "subject-1",
       redirectUris: [],
+      organizationAudience: null,
     } satisfies RelayCaller,
   ],
   [
@@ -111,6 +152,7 @@ export const CALLERS: ReadonlyMap<string, RelayCaller> = new Map([
       clientId: "owner-console",
       subject: "subject-2",
       redirectUris: [],
+      organizationAudience: null,
     } satisfies RelayCaller,
   ],
 ]);

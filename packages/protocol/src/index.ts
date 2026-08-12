@@ -111,13 +111,30 @@ export {
   encodeGrantPolicy,
   evaluateGrantPolicyCoverage,
   hashGrantPolicy,
+  hashGrantPolicyCalls,
   isGrantPolicyAttenuation,
+  OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN,
   OAATH_GRANT_POLICY_HASH_DOMAIN,
   OAATH_GRANT_POLICY_USAGE_VERSION,
   OAATH_GRANT_POLICY_VERSION,
   OaathGrantPolicyError,
   parseGrantPolicy,
 } from "./grant-policy.js";
+export type {
+  GrantVerificationDeniedCode,
+  GrantVerificationResult,
+  GrantVerificationUnknownCode,
+  OaathGrantRef,
+  OaathGrantRefState,
+  VerifyGrantRevisionInput,
+} from "./grant-reference.js";
+export {
+  OAATH_GRANT_REFERENCE_APPROVED_REVISION,
+  OAATH_GRANT_REFERENCE_VERSION,
+  parseGrantVerificationResult,
+  parseOaathGrantRef,
+  parseVerifyGrantRevisionInput,
+} from "./grant-reference.js";
 export type {
   EcdsaOperatorCredentialProfile,
   EcdsaOwnerCredentialProfile,
