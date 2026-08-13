@@ -171,9 +171,24 @@ function relayAuthentication(): RelayAuthentication {
   const callers: ReadonlyMap<string, RelayCaller> = new Map([
     [
       CLIENT_TOKEN,
-      { role: "client", clientId: "client-a", subject: SUBJECT, redirectUris: [REDIRECT_URI] },
+      {
+        role: "client",
+        clientId: "client-a",
+        subject: SUBJECT,
+        redirectUris: [REDIRECT_URI],
+        organizationAudience: null,
+      },
     ],
-    [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: SUBJECT, redirectUris: [] }],
+    [
+      OWNER_TOKEN,
+      {
+        role: "owner",
+        clientId: "owner-console",
+        subject: SUBJECT,
+        redirectUris: [],
+        organizationAudience: null,
+      },
+    ],
   ]);
   return {
     async authenticate(request: Request) {

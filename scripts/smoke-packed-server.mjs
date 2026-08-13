@@ -15,6 +15,9 @@
  *   - one create, fetch, approve, consume, claim round-trip returns the sealed
  *     artifact, and a replayed claim fails closed with a structured code that
  *     leaks nothing;
+ *   - grant reference verification authorizes the approved exact revision with
+ *     immutable evidence, denies a newer revision with a typed code, and
+ *     replays identically, all through published package exports;
  *   - `./postgres` loads the deployment's own `pg` driver and publishes its
  *     schema with no connection opened;
  *   - all four subpaths' types resolve under `nodenext` strict.
@@ -40,11 +43,13 @@ const PG_VERSION = "8.22.0";
 const SMOKE = String.raw`
 import {
   deriveCodeChallenge,
+  hashGrantPolicyCalls,
   OAATH_GRANT_POLICY_VERSION,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_REQUEST_VERSION,
+  parseGrantVerificationResult,
 } from "@oaath/protocol";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { APNS_PAYLOAD_MAX_BYTES, createApnsSender } from "@oaath/server/apns";
@@ -93,6 +98,14 @@ for (const specifier of ENTRIES) {
 
 const clock = 1800000000000;
 const requestedAt = clock / 1000;
+const policyCalls = [
+  {
+    target: "0x" + "11".repeat(20),
+    selector: "0x12345678",
+    valueLimit: "0",
+    argumentEquals: [],
+  },
+];
 const requestedScope = JSON.stringify({
   version: OAATH_PERMISSION_REQUEST_VERSION,
   application: {
@@ -122,14 +135,7 @@ const requestedScope = JSON.stringify({
   },
   policy: {
     version: OAATH_GRANT_POLICY_VERSION,
-    calls: [
-      {
-        target: "0x" + "11".repeat(20),
-        selector: "0x12345678",
-        valueLimit: "0",
-        argumentEquals: [],
-      },
-    ],
+    calls: policyCalls,
     validAfter: requestedAt,
     validUntil: requestedAt + 599,
     perChainOperationLimit: 1,
@@ -141,8 +147,16 @@ const requestedScope = JSON.stringify({
 const callers = new Map([
   [
     CLIENT_TOKEN,
-    { role: "client", clientId: "client-a", subject: SUBJECT, redirectUris: [REDIRECT_URI] },
+    {
+      role: "client",
+      clientId: "client-a",
+      subject: SUBJECT,
+      redirectUris: [REDIRECT_URI],
+      organizationAudience: "org-1",
+    },
   ],
+  // The owner caller keeps the pre-audience port shape on purpose: a
+  // deployment that declares no audience must keep authenticating.
   [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: SUBJECT, redirectUris: [] }],
 ]);
 
@@ -253,6 +267,46 @@ const replayBody = await replayed.json();
 if (typeof replayBody.error?.code !== "string") fail("a failure must carry a structured code");
 if (JSON.stringify(replayBody).includes("approved")) fail("a failure leaked the artifact");
 
+// Grant reference verification over the published wire contract: an active
+// exact revision authorizes with immutable evidence; a newer revision denies
+// with a typed code; both parse through the published result parser.
+const verifyAssertion = {
+  grantId: created.requestId,
+  revision: 1,
+  subject: SUBJECT,
+  clientId: "client-a",
+  organizationAudience: "org-1",
+  requiredCallsDigest: hashGrantPolicyCalls(policyCalls),
+};
+const verified = parseGrantVerificationResult(
+  await ok(await handler(request("POST", "/grants/verify", CLIENT_TOKEN, verifyAssertion)), 200, "verify"),
+);
+if (verified.state !== "authorized") fail("verification answered " + verified.state);
+if (verified.ref.grantId !== created.requestId) fail("the reference names another grant");
+if (verified.ref.state !== "active") fail("the reference state is " + verified.ref.state);
+if (!/^0x[0-9a-f]{64}$/.test(verified.ref.policyDigest)) fail("policyDigest is malformed");
+
+const supersededResult = parseGrantVerificationResult(
+  await ok(
+    await handler(
+      request("POST", "/grants/verify", CLIENT_TOKEN, { ...verifyAssertion, revision: 2 }),
+    ),
+    200,
+    "verify newer revision",
+  ),
+);
+if (supersededResult.state !== "denied" || supersededResult.code !== "grant_revision_mismatch") {
+  fail("a newer revision must deny with grant_revision_mismatch");
+}
+
+// Replay safety: the same assertion answers the same evidence after denials.
+const replayVerified = parseGrantVerificationResult(
+  await ok(await handler(request("POST", "/grants/verify", CLIENT_TOKEN, verifyAssertion)), 200, "verify replay"),
+);
+if (JSON.stringify(replayVerified) !== JSON.stringify(verified)) {
+  fail("a replayed verification answered different evidence");
+}
+
 // The PostgreSQL subpath owns the driver and the schema; nothing connects here.
 if (typeof pg.Pool !== "function") fail("the consumer could not load the pg driver");
 if (typeof createPostgresRelayStore !== "function") fail("createPostgresRelayStore is missing");
@@ -280,6 +334,8 @@ process.stdout.write(
     exported,
     replayCode: replayBody.error.code,
     replayStatus: replayed.status,
+    verifyState: verified.state,
+    verifyDenialCode: supersededResult.code,
     schemaVersion: OAATH_RELAY_POSTGRES_SCHEMA_VERSION,
     schemaStatements: statements.length,
   }),
@@ -287,7 +343,14 @@ process.stdout.write(
 `;
 
 /** All four subpaths must resolve and compose under `nodenext` strict. */
-const TYPES = `import { deriveCodeChallenge } from "@oaath/protocol";
+const TYPES = `import {
+  deriveCodeChallenge,
+  type GrantVerificationResult,
+  hashGrantPolicyCalls,
+  type OaathGrantRef,
+  parseGrantVerificationResult,
+  type VerifyGrantRevisionInput,
+} from "@oaath/protocol";
 import {
   createMemoryRelayStore,
   createRelayHandler,
@@ -341,6 +404,23 @@ export const outbox = createMemoryApnsOutbox();
 export const sender = createApnsSender;
 
 export type Projection = OwnerPhoneRequestProjection;
+
+/** An adopter parses every verification response before acting on it. */
+export function verified(body: unknown): OaathGrantRef | null {
+  const result: GrantVerificationResult = parseGrantVerificationResult(body);
+  return result.state === "authorized" ? result.ref : null;
+}
+
+export function assertion(grantId: string, digestCalls: unknown): VerifyGrantRevisionInput {
+  return {
+    grantId,
+    revision: 1,
+    subject: "subject-1",
+    clientId: "client-a",
+    organizationAudience: "org-1",
+    requiredCallsDigest: hashGrantPolicyCalls(digestCalls),
+  };
+}
 `;
 
 const consumer = await createConsumer({
@@ -372,6 +452,11 @@ try {
     report.replayCode === "relay_artifact_already_claimed",
     `a replayed claim failed with ${report.replayCode}`,
   );
+  assert(report.verifyState === "authorized", `verification answered ${report.verifyState}`);
+  assert(
+    report.verifyDenialCode === "grant_revision_mismatch",
+    `a newer revision denied with ${report.verifyDenialCode}`,
+  );
   assert(report.schemaStatements > 0, "the relay schema executed no statements");
 
   console.log("smoke-packed-server: ok");
@@ -381,6 +466,9 @@ try {
     );
   }
   console.log("  relay            create, fetch, approve, consume, claim");
+  console.log(
+    `  verify           exact revision ${report.verifyState}, newer revision ${report.verifyDenialCode}, replay identical`,
+  );
   console.log(
     `  one-time claim   replay refused ${report.replayStatus} ${report.replayCode}, nothing leaked`,
   );

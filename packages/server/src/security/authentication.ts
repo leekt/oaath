@@ -8,7 +8,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { type CaptureContext, captureDenseArray, exactRecord } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  captureDenseArray,
+  captureRecord,
+  exactCapturedRecord,
+} from "@oaath/protocol";
 import { OaathRelayError, relayFailure } from "../relay/errors.js";
 import { boundedText, canonicalIdentifier, RELAY_LIMITS } from "../store/records.js";
 
@@ -28,6 +33,15 @@ export interface RelayCaller {
    * list; they never receive a code at a redirect URI.
    */
   readonly redirectUris: readonly string[];
+  /**
+   * The application organization/audience the deployment binds this caller to,
+   * or null when the deployment declares none. Like `clientId` and `subject`
+   * it comes only from the authentication port; wire input may never declare
+   * it. It is captured onto each authorization request, and Grant reference
+   * verification later denies any assertion that does not match the captured
+   * value — a deployment without audiences therefore never verifies one.
+   */
+  readonly organizationAudience: string | null;
 }
 
 export interface RelayAuthentication {
@@ -42,11 +56,16 @@ function captureCaller(value: unknown): RelayCaller {
   const context: CaptureContext = new WeakSet();
   // A port that breaks its own contract is an internal failure, not a 401.
   const fail = (message: string): never => relayFailure("relay_internal", message);
-  const record = exactRecord(
-    value,
-    ["role", "clientId", "subject", "redirectUris"],
+  const captured = captureRecord(value, "authenticated caller", context, fail);
+  // An absent field and an explicit null both mean "no audience declared", so
+  // ports written before audiences existed keep their exact shape.
+  const declaresAudience = Object.hasOwn(captured, "organizationAudience");
+  const record = exactCapturedRecord(
+    captured,
+    declaresAudience
+      ? ["role", "clientId", "subject", "redirectUris", "organizationAudience"]
+      : ["role", "clientId", "subject", "redirectUris"],
     "authenticated caller",
-    context,
     fail,
   );
   if (record.role !== "client" && record.role !== "owner") {
@@ -65,6 +84,14 @@ function captureCaller(value: unknown): RelayCaller {
         boundedText(uri, RELAY_LIMITS.redirectUri, "caller redirectUri", "relay_internal"),
       ),
     ),
+    organizationAudience:
+      declaresAudience && record.organizationAudience !== null
+        ? canonicalIdentifier(
+            record.organizationAudience,
+            "caller organizationAudience",
+            "relay_internal",
+          )
+        : null,
   });
 }
 

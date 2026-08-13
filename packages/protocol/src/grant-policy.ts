@@ -10,6 +10,7 @@ import {
 export const OAATH_GRANT_POLICY_VERSION = "oaath.grant-policy/v1" as const;
 export const OAATH_GRANT_POLICY_USAGE_VERSION = "oaath.grant-policy-usage/v1" as const;
 export const OAATH_GRANT_POLICY_HASH_DOMAIN = "@oaath/protocol:grant-policy" as const;
+export const OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN = "@oaath/protocol:grant-policy-calls" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const SELECTOR = /^0x[0-9a-f]{8}$/u;
@@ -403,6 +404,69 @@ export function encodeGrantPolicy(value: unknown): Hex {
 
 export function hashGrantPolicy(value: unknown): `0x${string}` {
   return keccak256(encodeGrantPolicy(value));
+}
+
+/**
+ * Digest of one exact call set alone, independent of the policy's time window
+ * and rate limit. An adopter that reviewed a call set pins this digest; the
+ * verifying side recomputes it from the calls the Grant's policy permits, so
+ * equality states "the reviewed calls are exactly the permitted calls" without
+ * shipping the policy itself. Input calls must already be in canonical policy
+ * order (unique, sorted target-selector keys).
+ */
+export function hashGrantPolicyCalls(value: unknown): `0x${string}` {
+  return captureFailure("grant_policy_invalid", () => {
+    const code = "grant_policy_invalid" as const;
+    const context: CaptureContext = new WeakSet();
+    const callInputs = captureDenseArray(value, "grant policy calls", context, failFor(code));
+    if (callInputs.length === 0) return invalid(code, "grant policy calls must not be empty");
+    const calls = callInputs.map((entry, index) => parseCall(entry, code, context, index));
+    for (let index = 1; index < calls.length; index += 1) {
+      const previous = calls[index - 1];
+      const current = calls[index];
+      if (!previous || !current || callKey(previous) >= callKey(current)) {
+        return invalid(code, "grant policy calls must have unique, sorted target-selector keys");
+      }
+    }
+    return keccak256(
+      encodeAbiParameters(
+        [
+          { type: "string", name: "domain" },
+          { type: "string", name: "version" },
+          {
+            type: "tuple[]",
+            name: "calls",
+            components: [
+              { type: "address", name: "target" },
+              { type: "bytes4", name: "selector" },
+              { type: "uint256", name: "valueLimit" },
+              {
+                type: "tuple[]",
+                name: "argumentEquals",
+                components: [
+                  { type: "uint64", name: "index" },
+                  { type: "bytes32", name: "value" },
+                ],
+              },
+            ],
+          },
+        ],
+        [
+          OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN,
+          OAATH_GRANT_POLICY_VERSION,
+          calls.map((call) => ({
+            target: call.target,
+            selector: call.selector,
+            valueLimit: BigInt(call.valueLimit),
+            argumentEquals: call.argumentEquals.map((argument) => ({
+              index: BigInt(argument.index),
+              value: argument.value,
+            })),
+          })),
+        ],
+      ),
+    );
+  });
 }
 
 function argumentMap(call: GrantPolicyCall): ReadonlyMap<number, `0x${string}`> {

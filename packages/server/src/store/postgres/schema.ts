@@ -24,6 +24,7 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     record_version text NOT NULL,
     client_id text NOT NULL,
     subject text NOT NULL,
+    organization_audience text,
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
     requested_scope text NOT NULL,

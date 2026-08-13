@@ -65,6 +65,7 @@ export async function createAuthorizationRequest(
     requestId: randomIdentifier(),
     clientId: input.caller.clientId,
     subject: input.caller.subject,
+    organizationAudience: input.caller.organizationAudience,
     redirectUri: input.redirectUri,
     codeChallenge: input.codeChallenge,
     requestedScope: input.requestedScope,

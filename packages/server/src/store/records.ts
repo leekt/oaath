@@ -49,6 +49,12 @@ export interface AuthorizationRequestRecord {
   readonly clientId: string;
   /** Pairwise user/device subject bound by the authentication port. */
   readonly subject: string;
+  /**
+   * Organization/audience bound by the authentication port at creation time,
+   * or null when the deployment declares none. Grant reference verification
+   * compares assertions against this captured value.
+   */
+  readonly organizationAudience: string | null;
   readonly redirectUri: string;
   /** PKCE S256 challenge; the verifier never reaches the store. */
   readonly codeChallenge: string;
@@ -213,6 +219,7 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
       "requestId",
       "clientId",
       "subject",
+      "organizationAudience",
       "redirectUri",
       "codeChallenge",
       "requestedScope",
@@ -230,6 +237,10 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
     requestId: canonicalIdentifier(record.requestId, "requestId", UNREADABLE),
     clientId: canonicalIdentifier(record.clientId, "clientId", UNREADABLE),
     subject: canonicalIdentifier(record.subject, "subject", UNREADABLE),
+    organizationAudience:
+      record.organizationAudience === null
+        ? null
+        : canonicalIdentifier(record.organizationAudience, "organizationAudience", UNREADABLE),
     redirectUri: boundedText(
       record.redirectUri,
       RELAY_LIMITS.redirectUri,
