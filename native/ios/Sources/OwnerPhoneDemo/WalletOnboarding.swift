@@ -59,6 +59,23 @@ struct WalletOnboardingView: View {
 
             custodyStateCard.padding(.top, 22)
 
+            // A blocked stored pairing must stay recoverable even while the
+            // owner key is unavailable — that combination is exactly when the
+            // model demands an explicit local forget, so the control and the
+            // model's own instruction surface here, not only on step 2.
+            if model.storedPairingBlocked {
+                if !model.statusLine.isEmpty {
+                    Text(model.statusLine)
+                        .font(WalletTheme.speech(12.5))
+                        .foregroundStyle(WalletTheme.muted)
+                        .padding(.top, 12)
+                }
+                WalletSecondaryButton(title: "Forget blocked pairing", destructive: true) {
+                    model.unpair()
+                }
+                .padding(.top, 12)
+            }
+
             Spacer()
             WalletPrimaryButton(
                 title: model.ownerKey == nil ? "Key unavailable" : "Continue",
@@ -76,7 +93,12 @@ struct WalletOnboardingView: View {
     }
 
     private var custodyLine: String {
-        "A P-256 key is generated inside this iPhone's Secure Enclave. It never leaves the chip, can't be exported, and every use asks for your presence."
+        guard let ownerKey = model.ownerKey else {
+            return "This device could not create or load a P-256 key. Nothing can be signed until it can."
+        }
+        return ownerKey.secureEnclave
+            ? "A P-256 key is generated inside this iPhone's Secure Enclave. It never leaves the chip, can't be exported, and every use asks for your presence."
+            : "This build runs without a Secure Enclave, so the key is a regular keychain P-256 key — the explicit simulator fallback, never a quiet downgrade."
     }
 
     private var custodyStateCard: some View {
@@ -100,7 +122,9 @@ struct WalletOnboardingView: View {
 
     private var stateText: String {
         guard let ownerKey = model.ownerKey else {
-            return "OWNER KEY UNAVAILABLE — RESTART TO RETRY"
+            return model.storedPairingBlocked
+                ? "OWNER KEY UNAVAILABLE — FORGET THE BLOCKED PAIRING FIRST"
+                : "OWNER KEY UNAVAILABLE — RESTART TO RETRY"
         }
         return ownerKey.secureEnclave
             ? "KEY READY · SECURE ENCLAVE"
