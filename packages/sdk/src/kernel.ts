@@ -98,7 +98,6 @@ export type {
   KernelV4ReadClient,
   KernelV4ReplayableInstallDigestInput,
   KernelV4SignerDataInput,
-  KernelV4SupportedChainId,
   KernelV4UserOperationGas,
   KernelV4UserOperationInput,
   KernelV4UserOperationNonceInput,

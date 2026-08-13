@@ -105,7 +105,9 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return deployment.implementationDeployment.runtimeCodeHash;
+    const pinned = deployment.implementationDeployment;
+    if (!pinned) throw new Error("the composition chain must carry pinned evidence");
+    return pinned.runtimeCodeHash;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
@@ -708,14 +710,32 @@ describe("Kernel composition matrix", () => {
     );
   });
 
-  it("rejects an unsupported deployment chain", () => {
+  it("rejects a malformed deployment chain", () => {
+    expect(() =>
+      createKernelRuntime({
+        deployment: { chainId: 0 } as never,
+        operator: operatorProfiles.owner(keyProfiles.ecdsa()),
+        reads: reads(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_v4_chain_unsupported" }));
+  });
+
+  it("composes an open production chain but refuses a forged profile for it", () => {
+    // Chain 1 resolves the canonical open profile now; only the owned frozen
+    // instance passes the identity gate, so a forged lookalike still fails.
     expect(() =>
       createKernelRuntime({
         deployment: { chainId: 1 } as never,
         operator: operatorProfiles.owner(keyProfiles.ecdsa()),
         reads: reads(),
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_chain_unsupported" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+    const runtime = createKernelRuntime({
+      deployment: kernelV4Deployment(1),
+      operator: operatorProfiles.owner(keyProfiles.ecdsa()),
+      reads: reads(),
+    });
+    expect(runtime.deployment.chainId).toBe(1);
   });
 });
 

@@ -17,7 +17,6 @@ import {
   type KernelCapabilityReason,
   type KernelRuntime,
   type KernelRuntimeErrorCode,
-  type KernelV4SupportedChainId,
   type KeyProfile,
   kernelV4Deployment,
   type OperatorProfile,
@@ -28,7 +27,7 @@ import {
   webauthnKey,
 } from "../src/kernel.js";
 
-const chainIds: readonly KernelV4SupportedChainId[] = [46_630, 421_614, 11_155_111];
+const chainIds: readonly number[] = [46_630, 421_614, 11_155_111, 1, 8_453, 42_161];
 const validator = `0x${"22".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
 
@@ -197,7 +196,7 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
   }
 }
 
-function compose(chainId: KernelV4SupportedChainId, capability: KernelCapability) {
+function compose(chainId: number, capability: KernelCapability) {
   return () =>
     createKernelRuntime({
       deployment: kernelV4Deployment(chainId),
@@ -392,7 +391,6 @@ describe("Kernel capability diagnosis", () => {
   });
 
   it.each([
-    ["an unsupported chain", 1],
     ["a zero chain", 0],
     ["a decimal chain id", 421_614.5],
     ["a negative chain id", -421_614],

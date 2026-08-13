@@ -436,13 +436,15 @@ function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return selectedDeployment.implementationDeployment.runtimeCodeHash;
+    const pinned = selectedDeployment.implementationDeployment;
+    if (!pinned) throw new Error("the fixture chain must carry pinned evidence");
+    return pinned.runtimeCodeHash;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
 export interface ChainFixtureOptions {
-  readonly chainId?: 46_630 | 421_614 | 11_155_111;
+  readonly chainId?: number;
   /** Smart account returned by the synthetic factory; defaults to ACCOUNT. */
   readonly account?: `0x${string}`;
   /**

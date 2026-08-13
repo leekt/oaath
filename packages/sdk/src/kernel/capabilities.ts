@@ -12,8 +12,9 @@
  *
  * The module-existence question carries no per-chain dimension: every pinned
  * module address is chain-independent, so the registry is consulted without a
- * chain. The chain enters one way only, through deployment support — an
- * unsupported chain fails in kernelV4Deployment before any axis is diagnosed.
+ * chain. The chain enters one way only, through the deployment
+ * profile — only a malformed chain identifier fails in kernelV4Deployment
+ * before any axis is diagnosed; no real chain is blocked there.
  *
  * A P-256 or WebAuthn credential is never downgraded: an unbound validator or
  * signer axis is reported unsupported and composed as a structured failure, never
@@ -27,12 +28,12 @@
  * the packages the session's own credential and policy axes already resolve, and
  * its authority is Kernel's own replayable enable mode rather than a module — so
  * there is nothing extra whose deployment could be absent. A chain that supports
- * a session's axes supports materializing that session on it, and an unsupported
- * chain already fails in kernelV4Deployment.
+ * a session's axes supports materializing that session on it, and a malformed
+ * chain identifier already fails in kernelV4Deployment.
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type KernelV4SupportedChainId, kernelV4Deployment } from "../kernel-v4.js";
+import { kernelV4Deployment } from "../kernel-v4.js";
 import { exactInput, inputInvalid, isBuiltInKeyKind } from "./internal.js";
 import { pinnedPolicyModule, pinnedSignerModule, pinnedValidatorModule } from "./modules.js";
 import type {
@@ -77,13 +78,13 @@ export type KernelCapabilityFact =
   | Readonly<{
       status: "available";
       capability: KernelCapability;
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       evidence: KernelCapabilityEvidence;
     }>
   | Readonly<{
       status: Exclude<KernelCapabilityStatus, "available">;
       capability: KernelCapability;
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       reason: KernelCapabilityReason;
     }>;
 
@@ -248,8 +249,8 @@ export function diagnoseKernelCapability(
     "Kernel capability diagnosis",
     new WeakSet(),
   );
-  // kernelV4Deployment owns the chain fact, so an unsupported or non-canonical
-  // chain fails here with the same code the composition factory raises. It is the
+  // kernelV4Deployment owns the chain fact, so a malformed chain identifier
+  // fails here with the same code the composition factory raises. It is the
   // only place the chain enters: the module registry below is chain-independent.
   const deployment = kernelV4Deployment(record.chainId);
   const captured = capturedCapability(record.capability);

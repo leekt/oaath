@@ -53,7 +53,9 @@ const selector = "0x12345678" as const;
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return kernelV4Deployment(421_614).implementationDeployment.runtimeCodeHash;
+    const pinned = kernelV4Deployment(421_614).implementationDeployment;
+    if (!pinned) throw new Error("chain 421614 must carry pinned evidence");
+    return pinned.runtimeCodeHash;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
@@ -152,32 +154,28 @@ describe("Kernel v4 deployment profile", () => {
   it.each([
     [
       421_614,
-      "arbitrum-sepolia",
       "0xa63c36c76b536b1c11d75c68ac5ca15d4ce2c09a40e90ab29ff6601b4bdb0d33",
       "0xd0c42b1ed1738560c1b243fd9e5fc04b2eb5aa1be9962ac7f1f61696f9e6902b",
     ],
     [
       11_155_111,
-      "ethereum-sepolia",
       "0x54528619ceafbcc656a7d0f7b637213f38d2fbe013a0e2909cfa3fef6dca7cc0",
       "0xb1f85627093213ec87a1484b6af7192651f4dbd6c5f9e9c0aff22e332c5ddb01",
     ],
     [
       46_630,
-      "robinhood-sepolia",
       "0xf662be20e4e8d3b0fcfb7bd08845ea89b45977d82aa315cb78530f013f4f2782",
       "0xaef18d8059fa2474272125891050e2e755f45db00c2668b45b7062b2a9579be0",
     ],
   ] as const)(
-    "binds chain %i to the sole UUPS / EntryPoint 0.7 profile",
-    (chainId, chain, transactionHash, runtimeCodeHash) => {
+    "binds chain %i to the pinned UUPS / EntryPoint 0.7 profile",
+    (chainId, transactionHash, runtimeCodeHash) => {
       const deployment = kernelV4Deployment(chainId);
       expect(deployment).toEqual({
         profile: "kernel-v4-uups-entrypoint-v0.7",
         kernelVersion: "0.4.0",
         accountType: "uups",
         chainId,
-        chain,
         entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
         implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
         factory: KERNEL_V4_FACTORY_V07,
@@ -193,8 +191,28 @@ describe("Kernel v4 deployment profile", () => {
     },
   );
 
-  it.each([1, 11_155_110, 46_631, "421614", Number.NaN])(
-    "rejects unsupported or non-canonical chain %s",
+  it.each([1, 8_453, 42_161, 10, 137])(
+    "resolves open production chain %i to the canonical CREATE2 profile",
+    (chainId) => {
+      const deployment = kernelV4Deployment(chainId);
+      expect(deployment).toEqual({
+        profile: "kernel-v4-uups-entrypoint-v0.7",
+        kernelVersion: "0.4.0",
+        accountType: "uups",
+        chainId,
+        entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+        implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+        factory: KERNEL_V4_FACTORY_V07,
+        implementationDeployment: null,
+      });
+      expect(Object.isFrozen(deployment)).toBe(true);
+      // One owned instance per chain keeps the composition identity gate exact.
+      expect(kernelV4Deployment(chainId)).toBe(deployment);
+    },
+  );
+
+  it.each([0, -1, 421_614.5, "421614", Number.NaN])(
+    "rejects malformed chain identifier %s",
     (chainId) => {
       expect(() => kernelV4Deployment(chainId)).toThrowError(
         expect.objectContaining({
@@ -497,6 +515,35 @@ describe("Kernel v4 account binding", () => {
     });
     await expect(bindKernelV4Account(input)).resolves.toMatchObject({ state: "deployed" });
     expect(requests.at(-1)?.type).toBe("kernel_account_implementation");
+  });
+
+  it("binds a counterfactual account on an open production chain by CREATE2 code presence", async () => {
+    const { input, requests } = binding();
+    const descriptor = await bindKernelV4Account({ ...input, chainId: 8_453 });
+    expect(descriptor).toMatchObject({ state: "counterfactual", chainId: 8_453, account });
+    // No pinned per-chain hash exists on Base, so the implementation is proven
+    // by nonempty code at the canonical CREATE2 address — the open chain must
+    // never ask for the implementation runtime hash.
+    expect(requests.map((request) => request.type)).toEqual([
+      "chain_id",
+      "runtime_code_hash",
+      "code",
+      "runtime_code_hash",
+      "code",
+      "kernel_factory_implementation",
+      "kernel_factory_account",
+      "code",
+    ]);
+    expect(
+      requests.filter((request) => request.type === "runtime_code_hash").map((r) => r.address),
+    ).toEqual([KERNEL_V4_ENTRY_POINT_V07, factory]);
+  });
+
+  it("fails closed on an open chain that carries no implementation code", async () => {
+    const { input } = binding({ code: "0x" });
+    await expect(bindKernelV4Account({ ...input, chainId: 8_453 })).rejects.toMatchObject({
+      code: "kernel_v4_evidence_invalid",
+    });
   });
 
   it("rejects caller-selected factories instead of widening the deployment registry", async () => {
