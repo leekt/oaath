@@ -31,7 +31,9 @@ import {
 } from "../src/kernel.js";
 
 const chainId = 421_614;
-const otherChainId = 11_155_111;
+// Base mainnet: an open production chain with no pinned per-chain evidence,
+// introduced after the approval — exactly the chain class issue #117 unblocks.
+const otherChainId = 8_453;
 const validator = `0x${"22".repeat(20)}` as const;
 const account = `0x${"66".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
@@ -45,6 +47,12 @@ const gas = Object.freeze({
 
 const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"33".repeat(32)}`);
+
+function pinnedRuntimeCodeHash(chain: number): `0x${string}` {
+  const pinned = kernelV4Deployment(chain).implementationDeployment;
+  if (!pinned) throw new Error("an open chain must verify implementation by code, not hash");
+  return pinned.runtimeCodeHash;
+}
 
 /** Forces a hostile value past the compiler without weakening the source types. */
 function asHostile<T>(value: T): (input: never) => unknown {
@@ -60,7 +68,9 @@ function runtimeCodeHash(
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    return kernelV4Deployment(chain).implementationDeployment.runtimeCodeHash;
+    // Requesting the implementation hash on the open chain is itself a bug:
+    // binding must verify it by code presence there, so the fake fails loudly.
+    return pinnedRuntimeCodeHash(chain);
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }

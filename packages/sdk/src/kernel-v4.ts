@@ -71,7 +71,6 @@ export const KERNEL_V4_EXECUTE_SELECTOR = "0xe9ae5c53" as const;
  */
 export const KERNEL_V4_EXECUTE_USER_OP_SELECTOR = "0x8dd7712f" as const;
 
-export type KernelV4SupportedChainId = 46_630 | 421_614 | 11_155_111;
 export type KernelV4ModuleType = ProtocolKernelV4ModuleType;
 export type KernelV4ValidationMode =
   | "standard"
@@ -101,19 +100,29 @@ export interface KernelV4Deployment {
   readonly profile: "kernel-v4-uups-entrypoint-v0.7";
   readonly kernelVersion: "0.4.0";
   readonly accountType: "uups";
-  readonly chainId: KernelV4SupportedChainId;
-  readonly chain: "arbitrum-sepolia" | "ethereum-sepolia" | "robinhood-sepolia";
+  readonly chainId: number;
   readonly entryPoint: Readonly<{
     version: "0.7";
     address: typeof KERNEL_V4_ENTRY_POINT_V07;
   }>;
   readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
   readonly factory: typeof KERNEL_V4_FACTORY_V07;
+  /**
+   * Per-chain reviewed deployment evidence, or null on an open chain. Every
+   * address above is the same CREATE2 canonical address on every chain, but
+   * Kernel caches `block.chainid` in its immutables, so the implementation's
+   * runtime code hash is genuinely per chain and cannot be pinned in advance.
+   * With a pin, binding compares the observed implementation runtime code hash
+   * exactly; without one, binding relies on the EVM's own CREATE2 commitment —
+   * the canonical implementation address commits to the exact reviewed init
+   * code, so nonempty code at that address plus the hash-pinned factory
+   * reporting it as its UUPS implementation proves the reviewed deployment.
+   */
   readonly implementationDeployment: Readonly<{
     deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
     transactionHash: `0x${string}`;
     runtimeCodeHash: `0x${string}`;
-  }>;
+  }> | null;
 }
 
 export type KernelV4Install = ProtocolKernelV4Install;
@@ -217,32 +226,32 @@ export interface KernelV4ValidityTimeRange {
 }
 
 export type KernelV4AccountReadRequest =
-  | Readonly<{ type: "chain_id"; chainId: KernelV4SupportedChainId }>
+  | Readonly<{ type: "chain_id"; chainId: number }>
   | Readonly<{
       type: "code";
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       address: `0x${string}`;
     }>
   | Readonly<{
       type: "runtime_code_hash";
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       address: `0x${string}`;
     }>
   | Readonly<{
       type: "kernel_factory_implementation";
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       factory: `0x${string}`;
       calldata: `0x${string}`;
     }>
   | Readonly<{
       type: "kernel_factory_account";
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       factory: `0x${string}`;
       calldata: `0x${string}`;
     }>
   | Readonly<{
       type: "kernel_account_implementation";
-      chainId: KernelV4SupportedChainId;
+      chainId: number;
       account: `0x${string}`;
     }>;
 
@@ -276,7 +285,7 @@ export interface KernelV4ReadClient {
 export interface KernelV4AccountDescriptor {
   readonly profile: "kernel-v4-uups-entrypoint-v0.7";
   readonly state: "counterfactual" | "deployed";
-  readonly chainId: KernelV4SupportedChainId;
+  readonly chainId: number;
   readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V07;
   readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
   readonly factory: typeof KERNEL_V4_FACTORY_V07;
@@ -295,13 +304,18 @@ const ENTRY_POINT = Object.freeze({
 const implementationDeployment = (transactionHash: `0x${string}`, runtimeCodeHash: `0x${string}`) =>
   Object.freeze({ deployer: KERNEL_V4_CREATE2_DEPLOYER, transactionHash, runtimeCodeHash });
 
-const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>> = Object.freeze({
+/**
+ * Chains with reviewed per-chain deployment evidence. This table pins extra
+ * proof; it is deliberately not an allowlist — every other chain resolves the
+ * same canonical CREATE2 profile through `kernelV4Deployment` and is verified
+ * at bind time from read evidence instead.
+ */
+const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.freeze({
   46630: Object.freeze({
     profile: "kernel-v4-uups-entrypoint-v0.7",
     kernelVersion: "0.4.0",
     accountType: "uups",
     chainId: 46_630,
-    chain: "robinhood-sepolia",
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
@@ -315,7 +329,6 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
     kernelVersion: "0.4.0",
     accountType: "uups",
     chainId: 421_614,
-    chain: "arbitrum-sepolia",
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
@@ -329,7 +342,6 @@ const DEPLOYMENTS: Readonly<Record<KernelV4SupportedChainId, KernelV4Deployment>
     kernelVersion: "0.4.0",
     accountType: "uups",
     chainId: 11_155_111,
-    chain: "ethereum-sepolia",
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
@@ -590,15 +602,40 @@ export function captureKernelV4Installs(value: unknown): readonly Readonly<Kerne
   return captureInstalls(value, new WeakSet(), "Kernel install packages");
 }
 
+/**
+ * One owned frozen profile per chain, so `exactKernelDeployment`'s identity
+ * gate keeps refusing every foreign object. Growth is bounded by the distinct
+ * chain identifiers this process resolves, which its own configuration owns.
+ */
+const OPEN_DEPLOYMENTS = new Map<number, Readonly<KernelV4Deployment>>();
+
+/**
+ * Resolves the Kernel v4 deployment profile for one chain. Every EVM chain
+ * resolves: the profile's addresses are CREATE2 canonical and therefore
+ * chain-independent, and `bindKernelV4Account` proves the actual on-chain
+ * capability from read evidence before any account depends on it. Only a
+ * malformed chain identifier is unsupported; no chain is blocked here.
+ */
 export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deployment> {
-  if (typeof chainId !== "number" || !Number.isSafeInteger(chainId)) {
+  if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return kernelError("kernel_v4_chain_unsupported", "Kernel v4 chain is unsupported");
   }
-  const deployment = DEPLOYMENTS[chainId as KernelV4SupportedChainId];
-  if (!deployment) {
-    return kernelError("kernel_v4_chain_unsupported", "Kernel v4 chain is unsupported");
-  }
-  return deployment;
+  const pinned = PINNED_DEPLOYMENTS[chainId];
+  if (pinned) return pinned;
+  const open = OPEN_DEPLOYMENTS.get(chainId);
+  if (open) return open;
+  const created: Readonly<KernelV4Deployment> = Object.freeze({
+    profile: "kernel-v4-uups-entrypoint-v0.7",
+    kernelVersion: "0.4.0",
+    accountType: "uups",
+    chainId,
+    entryPoint: ENTRY_POINT,
+    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+    factory: KERNEL_V4_FACTORY_V07,
+    implementationDeployment: null,
+  });
+  OPEN_DEPLOYMENTS.set(chainId, created);
+  return created;
 }
 
 /** Encodes Kernel v4 validator internalData: hook followed by allowed selectors. */
@@ -807,15 +844,31 @@ export async function bindKernelV4Account(
     KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
     "Kernel v4 EntryPoint runtime code",
   );
-  evidenceCodeHash(
-    await readEvidence(read, {
-      type: "runtime_code_hash",
-      chainId: deployment.chainId,
-      address: deployment.implementation,
-    }),
-    deployment.implementationDeployment.runtimeCodeHash,
-    "Kernel v4 implementation runtime code",
-  );
+  if (deployment.implementationDeployment) {
+    evidenceCodeHash(
+      await readEvidence(read, {
+        type: "runtime_code_hash",
+        chainId: deployment.chainId,
+        address: deployment.implementation,
+      }),
+      deployment.implementationDeployment.runtimeCodeHash,
+      "Kernel v4 implementation runtime code",
+    );
+  } else {
+    // No per-chain pin exists on an open chain: Kernel's chainid immutables
+    // make the runtime code hash chain-specific. The CREATE2 address itself
+    // commits to the exact reviewed init code, so nonempty code here — plus
+    // the hash-pinned factory reporting this address as its implementation
+    // below — is the deployment proof. Empty code still fails closed.
+    evidenceCode(
+      await readEvidence(read, {
+        type: "code",
+        chainId: deployment.chainId,
+        address: deployment.implementation,
+      }),
+      "Kernel v4 implementation code",
+    );
+  }
   evidenceCodeHash(
     await readEvidence(read, {
       type: "runtime_code_hash",

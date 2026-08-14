@@ -21,7 +21,6 @@ import {
   type KernelAllChainApproval,
   type KernelRuntime,
   type KernelV4AccountDescriptor,
-  type KernelV4SupportedChainId,
   type KeyProfile,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
@@ -39,9 +38,13 @@ import {
 } from "./support/anvil.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
-/** Chain A, and chain B, which this proof treats as introduced after approval. */
-const CHAIN_A = 421_614 satisfies KernelV4SupportedChainId;
-const CHAIN_B = 11_155_111 satisfies KernelV4SupportedChainId;
+/**
+ * Chain A carries pinned per-chain deployment evidence; chain B is Base — an
+ * open production chain with no pin, introduced after approval — so this proof
+ * covers both verification paths of issue #117.
+ */
+const CHAIN_A = 421_614;
+const CHAIN_B = 8_453;
 /** Kernel's own install nonce for the one approval; per-chain state, same value. */
 const INSTALL_NONCE = "0";
 /**
@@ -116,7 +119,7 @@ interface ChainStack {
  * both chains. The proof asserts that rather than assuming it.
  */
 async function bringUp(
-  chainId: KernelV4SupportedChainId,
+  chainId: number,
   owner: ReturnType<typeof countingOwner>,
   sessionKeyAccount: ReturnType<typeof privateKeyToAccount>,
   sessionTarget: `0x${string}`,
