@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
+import { startPhoneDevnet } from "./devnet.mjs";
 import { startPhoneService } from "./service.mjs";
 
 const envFile = new URL("../.env", import.meta.url);
@@ -30,8 +31,11 @@ if (process.env.OAATH_ZERODEV_LIVE === "1") {
   process.exitCode = result.status ?? 1;
 } else {
   let service;
+  let devnet;
   try {
+    devnet = await startPhoneDevnet();
     service = await startPhoneService({
+      chains: devnet.chains,
       host: process.env.OAATH_HOST ?? "0.0.0.0",
       port: Number(process.env.OAATH_PORT ?? 8787),
       workspaceKind: process.env.OAATH_WORKSPACE_KIND ?? "personal",
@@ -54,6 +58,11 @@ if (process.env.OAATH_ZERODEV_LIVE === "1") {
     console.error("Phone demo unavailable; check local Anvil and the configured listening port.");
     process.exitCode = 1;
   } finally {
-    await service?.close();
+    const results = await Promise.allSettled([service?.close()]);
+    results.push(...(await Promise.allSettled([devnet?.close()])));
+    if (results.some((result) => result.status === "rejected")) {
+      console.error("Phone demo cleanup unavailable.");
+      process.exitCode = 1;
+    }
   }
 }

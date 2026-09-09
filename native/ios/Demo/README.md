@@ -35,9 +35,11 @@ Installs paired before persisted pairing v4 must pair once again; the app reject
 records that lack the current account and chain binding.
 While paired, new pairing links are ignored until **Clear pairing** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
-bound relay refuses the credential (after an example restart — its state is
-in-memory), the app clears the whole pairing and returns to the pairing screen:
-restart the example and use the fresh browser Pair flow.
+bound relay refuses the credential, the app clears the whole pairing and
+returns to the pairing screen. Restarting the default in-memory devnet command
+requires the fresh browser Pair flow. The PostgreSQL service restart workflow
+preserves the credential and account at the same relay URL; it requires no
+new pairing.
 
 ## Push notifications (optional, paid account required)
 

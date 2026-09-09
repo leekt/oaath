@@ -46,10 +46,11 @@ workflow test also authenticates the second member over HTTP and verifies its
 separate bootstrap identity, session, grant and budget. There is no team admin
 UI. The deployment supplies authentication and directory administration.
 
-The relay, directory, phone credential store, pairing and local chains are ephemeral.
+The default command keeps relay, directory and phone credentials in memory.
+Exiting the command also stops its local chains.
 Pairing issues relay access through `createOwnerDeviceAuthentication`; the
 credential store owns authentication, separately from the phone-owned account.
-Restarting the service recreates the account; clear this demo origin's browser data and pair
+Restarting the default command recreates the account; clear this demo origin's browser data and pair
 again. Each permission request has its own install-nonce namespace. Configured
 chains constrain service routing; the replayable approval is not a chain
 allowlist. Revocation status covers the configured chains, not every possible
@@ -61,9 +62,9 @@ are fixed for this devnet. Pairing prefunds the local account. The existing SDK
 executor and operation store own submission evidence, so repeated phone
 decisions and client checks recover the same operation without resubmitting.
 The service schedules one bounded execution/observation attempt after approval
-or an approved request recovery. Its in-memory operation adapter is explicitly
-ephemeral alongside Anvil; a lasting deployment uses the existing PostgreSQL
-adapter. A failed attempt remains pending; approval alone is never completion.
+or an approved request recovery. A failed attempt remains pending; approval
+alone is never completion. The service uses the existing operation adapter
+for either memory or PostgreSQL persistence.
 
 The default phone transport is the authenticated `GET /native/inbox`. Pending
 consent comes from the relay request and decision records, with no separate
@@ -88,3 +89,38 @@ native consent/signing. CI runs both native and local service workflows.
 The old manual live sponsorship pipeline has been removed. Setting
 `OAATH_ZERODEV_LIVE=1` exits before starting a chain or contacting a provider;
 a live deployment needs a chain adapter for the shared SDK.
+
+### Service restart with PostgreSQL
+
+`startPhoneService({ chains, pool, port, workspaceKind })` borrows configured
+chain backends and an optional provisioned PostgreSQL pool. With `pool`, it
+composes the existing relay, directory, owner-credential and operation stores.
+Provision their four schemas before starting; startup creates the initial
+directory only when absent and never overwrites an existing enrollment.
+`close()` stops HTTP/workers and closes store handles. The caller owns the pool
+and chain lifetimes; `startPhoneDevnet()` is the default command's chain owner.
+
+The phone keeps its original credential and account after service/pool
+recreation at the same URL. Its pull inbox recovers pending consent, and
+client status checks recover submitted owner work without another send.
+The account display reads the enrolled public Kernel profile from the directory.
+An enrolled account does not expose another pairing invitation after restart.
+
+Run the local PostgreSQL restart workflow explicitly:
+
+```sh
+OAATH_REQUIRE_POSTGRES=1 OAATH_PHONE_SIMULATE=1 pnpm --filter @oaath/examples example:phone
+```
+
+It uses `OAATH_POSTGRES_URL` (default `postgres://localhost:5432/postgres`), owns
+a disposable schema, and keeps two local Anvil backends alive while recreating
+every HTTP service, store, directory, authenticator and PostgreSQL pool. It
+restarts after pairing, before phone consent, before observing an application
+job, and with an owner revocation recorded as submitted but not finalized.
+The original credential and exact operation evidence survive; recovery adds
+zero submissions. CI runs this alongside both default memory workflows.
+
+This proves the service lifetime with live external chain backends, not a chain
+reset or a browser/phone restart. Pairing invitations and optional push delivery
+remain process-local. Interrupted initial enrollment/credential delivery and
+hosted-chain deployment configuration are not demonstrated by this example.

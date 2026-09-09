@@ -8,18 +8,100 @@ import {
 } from "@oaath/protocol";
 import { createOAAth } from "@oaath/sdk";
 import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
+import {
+  createPostgresOperationSchema,
+  createPostgresOwnerDeviceCredentialSchema,
+  createPostgresRelaySchema,
+  createPostgresServiceDirectorySchema,
+} from "@oaath/server/postgres";
+import pg from "pg";
 import { hexToBytes, toHex } from "viem";
+import { startPhoneDevnet } from "./devnet.mjs";
 import { startPhoneService } from "./service.mjs";
 
-for (const workspaceKind of ["personal", "team"])
-  test(`${workspaceKind} phone service runs and revokes across configured chains`, async () => {
+async function postgresFixture() {
+  const connectionString = process.env.OAATH_POSTGRES_URL ?? "postgres://localhost:5432/postgres";
+  const admin = new pg.Pool({ connectionString, max: 1 });
+  const schema = `oaath_phone_test_${crypto.randomUUID().replaceAll("-", "")}`;
+  await admin.query(`CREATE SCHEMA "${schema}"`);
+  const open = () => new pg.Pool({ connectionString, max: 4, options: `-c search_path=${schema}` });
+  try {
+    const pool = open();
+    try {
+      await createPostgresRelaySchema(pool);
+      await createPostgresServiceDirectorySchema(pool);
+      await createPostgresOwnerDeviceCredentialSchema(pool);
+      await createPostgresOperationSchema(pool);
+    } finally {
+      await pool.end();
+    }
+    return {
+      open,
+      async close() {
+        try {
+          await admin.query(`DROP SCHEMA "${schema}" CASCADE`);
+        } finally {
+          await admin.end();
+        }
+      },
+    };
+  } catch (error) {
+    try {
+      await admin.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } finally {
+      await admin.end();
+    }
+    throw error;
+  }
+}
+
+const scenarios = [{ workspaceKind: "personal" }, { workspaceKind: "team" }];
+if (process.env.OAATH_REQUIRE_POSTGRES === "1")
+  scenarios.push({ workspaceKind: "team", restart: true });
+for (const { workspaceKind, restart = false } of scenarios)
+  test(`${workspaceKind} phone service runs and revokes across configured chains${restart ? " with PostgreSQL restart" : ""}`, async () => {
     const used = workspaceKind === "team";
-    const service = await startPhoneService({ simulate: true, workspaceKind });
+    let service;
+    let devnet;
+    let database;
+    let pool;
+    let observationPaused = false;
+    let restartCount = 0;
     const secret = p256.utils.randomPrivateKey();
     let oaath;
     let connection;
     let teammate;
+    let primaryError;
+    const cleanupErrors = [];
     try {
+      devnet = await startPhoneDevnet();
+      if (restart) database = await postgresFixture();
+      pool = database?.open();
+      const chains = devnet.chains.map((chain) => ({
+        ...chain,
+        capability: {
+          ...chain.capability,
+          observation: {
+            async read(request) {
+              if (observationPaused) throw new Error("injected observation interruption");
+              return chain.capability.observation.read(request);
+            },
+          },
+        },
+      }));
+      service = await startPhoneService({ simulate: true, workspaceKind, chains, pool });
+      const reopen = async () => {
+        if (!restart) return;
+        const previousUrl = service.url;
+        const port = Number(new URL(previousUrl).port);
+        await service.close();
+        service = null;
+        await pool.end();
+        pool = database.open();
+        service = await startPhoneService({ simulate: true, workspaceKind, chains, pool, port });
+        restartCount += 1;
+        assert.equal(service.url, previousUrl, "the deployment URL must remain stable");
+      };
       assert.equal(service.chains?.length, 2, "one composition must serve both configured chains");
       const [firstChain, secondChain] = service.chains;
       const chainId = firstChain.capability.chainId;
@@ -46,6 +128,22 @@ for (const workspaceKind of ["personal", "team"])
         })),
       );
       assert.deepEqual(Object.keys(paired), ["version", "deviceCredential", "account", "chains"]);
+      await reopen();
+      if (restart) {
+        const accountResponse = await fetch(`${service.url}/demo/account`);
+        assert.equal(
+          accountResponse.status,
+          200,
+          "successful pairing must survive service recreation",
+        );
+        assert.equal((await accountResponse.json()).account, paired.account);
+        const pairingSecret = await fetch(`${service.url}/demo/pairing-secret`, {
+          method: "POST",
+          headers: { origin: service.url },
+          body: "{}",
+        });
+        assert.equal(pairingSecret.status, 410, "restart must not invite a replacement pairing");
+      }
       const ownerFetch = (path, body) =>
         fetch(`${service.url}${path}`, {
           headers: {
@@ -68,6 +166,7 @@ for (const workspaceKind of ["personal", "team"])
             response.status === 201
           ) {
             const { requestId } = await response.clone().json();
+            await reopen(); // Consent is still undecided and must be recovered by the original phone.
             const consent = await (await ownerFetch(`/native/projections/${requestId}`)).json();
             assert.equal(consent.scope.kind, "permission-request");
             assert.equal(consent.scope.context.workspaceId, `${workspaceKind}-1`);
@@ -154,6 +253,7 @@ for (const workspaceKind of ["personal", "team"])
         const first = await grant.sendCalls(job);
         await assert.rejects(grant.sendCalls(job), { code: "oaath_client_state_conflict" });
         assert.equal(firstChain.sends.length, 1);
+        await reopen(); // The application has not observed or finalized this job.
         const saved = await grant.getOperation({ chain: chainId, id: first.id });
         assert.equal(saved.id, first.id);
         const outcome = await saved.wait();
@@ -222,6 +322,7 @@ for (const workspaceKind of ["personal", "team"])
           before,
           "consent cannot submit owner work",
         );
+        await reopen(); // Both chain requests are still awaiting phone consent.
         const pending = await (await ownerFetch("/native/inbox")).json();
         assert.equal(pending.version, "oaath.native-inbox/v1");
         assert.equal(pending.requests.length, 2);
@@ -263,10 +364,37 @@ for (const workspaceKind of ["personal", "team"])
               command: "approve",
               artifact: signed,
             });
+          observationPaused = restart;
           const approved = await decide();
           assert.equal(approved.status, 200);
           assert.equal((await approved.json()).outcome, "approved");
           await service.settle();
+          if (restart) {
+            const beforeRecovery = service.chains.map((chain) => chain.sends.length);
+            const retained = await pool.query(
+              "SELECT record FROM oaath_operation_lane_v1 WHERE record #>> '{value,identity,userOperationHash}' = $1",
+              [request.expectedDigest],
+            );
+            assert.equal(
+              retained.rows.length,
+              1,
+              "retain this exact owner operation before recreation",
+            );
+            assert.equal(
+              retained.rows[0].record.value.state,
+              "submitted",
+              "owner operation must remain unfinalized before recreation",
+            );
+            await reopen();
+            observationPaused = false;
+            await current.revoke();
+            await service.settle();
+            assert.deepEqual(
+              service.chains.map((chain) => chain.sends.length),
+              beforeRecovery,
+              "service recovery must observe the same owner operation without sending again",
+            );
+          }
           await current.revoke();
           await service.settle();
           assert.equal(
@@ -309,11 +437,34 @@ for (const workspaceKind of ["personal", "team"])
         assert.equal((await ownChainA.wait()).outcome, "success");
         await revoke(teammateGrant, new Set([chainId, secondChainId]));
       }
+      if (restart)
+        assert.ok(
+          restartCount >= 6,
+          "the workflow must cross the service lifecycle at each unfinished stage",
+        );
+    } catch (error) {
+      primaryError = error;
     } finally {
       secret.fill(0);
-      await connection?.close();
-      await oaath?.close();
-      await teammate?.close();
-      await service.close();
+      const closed = await Promise.allSettled([
+        connection?.close(),
+        oaath?.close(),
+        teammate?.close(),
+      ]);
+      closed.push(...(await Promise.allSettled([service?.close()])));
+      closed.push(...(await Promise.allSettled([pool?.end(), devnet?.close()])));
+      closed.push(...(await Promise.allSettled([database?.close()])));
+      cleanupErrors.push(
+        ...closed.filter((result) => result.status === "rejected").map((result) => result.reason),
+      );
     }
+    if (primaryError) {
+      if (cleanupErrors.length)
+        throw new AggregateError([primaryError, ...cleanupErrors], "phone workflow failed", {
+          cause: primaryError,
+        });
+      throw primaryError;
+    }
+    if (cleanupErrors.length)
+      throw new AggregateError(cleanupErrors, "phone workflow cleanup failed");
   });
