@@ -26,7 +26,7 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v5"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v6"
 
 /// Current protocol versions embedded in the consent projection.
 public let ownerPhoneWorkspaceAccountContextVersion = "oaath.workspace-account-context/v1"
@@ -63,10 +63,10 @@ public struct MatchCode: Equatable, Sendable {
 /// The requesting client, exactly as the stored request binds it.
 public struct OwnerPhoneClientIdentity: Equatable, Sendable {
     public let clientId: String
-    /// Where the released one-time code is delivered after an approval.
-    public let redirectUri: String
+    /// Where the grant code is delivered; nil for owner revocation operations.
+    public let redirectUri: String?
 
-    public init(clientId: String, redirectUri: String) {
+    public init(clientId: String, redirectUri: String?) {
         self.clientId = clientId
         self.redirectUri = redirectUri
     }
@@ -366,6 +366,7 @@ public struct OwnerPhoneSigningRequestScope: Equatable, Sendable {
 /// unknown `kind` fails closed.
 public enum OwnerPhoneScope: Equatable, Sendable {
     case permissionRequest(OwnerPhonePermissionScope)
+    case kernelRevocation(OwnerPhoneKernelRevocationScope)
     case ownerSigningRequest(OwnerPhoneSigningRequestScope)
     case raw(String)
 }
@@ -396,6 +397,11 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         self.scope = scope
     }
 
+    var decisionDomain: OwnerPhoneDecisionDomain {
+        if case .kernelRevocation = scope { return .revocation }
+        return .authorization
+    }
+
     /// Strict decode of the relay's JSON consent projection: exactly
     /// `{version, operationId, displayPayload, expiresAt, client, scope}`.
     public static func decode(_ data: Data) throws -> OwnerPhoneRequestProjection {
@@ -407,14 +413,24 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         guard object["version"] as? String == ownerPhoneProjectionVersion else {
             throw OwnerPhoneWireError.invalidField("version")
         }
+        let scope = try decodeScope(object["scope"])
+        let client = try decodeClient(object["client"])
+        if case let .kernelRevocation(revocation) = scope {
+            guard client.redirectUri == nil,
+                  client.clientId == revocation.permission.application.clientId else {
+                throw OwnerPhoneWireError.invalidField("revocation client")
+            }
+        } else if client.redirectUri == nil {
+            throw OwnerPhoneWireError.invalidField("redirectUri")
+        }
         return OwnerPhoneRequestProjection(
             operationId: try Wire.identifier(
                 object["operationId"], maximum: WireLimits.operationId, label: "operationId"),
             matchCode: try MatchCode(try Wire.text(
                 object["displayPayload"], maximum: ownerPhoneMatchCodeLength, label: "displayPayload")),
             expiresAt: try Wire.timestamp(object["expiresAt"], label: "expiresAt"),
-            client: try decodeClient(object["client"]),
-            scope: try decodeScope(object["scope"])
+            client: client,
+            scope: scope
         )
     }
 
@@ -423,7 +439,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         try Wire.exactKeys(object, ["clientId", "redirectUri"], label: "client")
         return OwnerPhoneClientIdentity(
             clientId: try Wire.identifier(object["clientId"], label: "clientId"),
-            redirectUri: try Wire.text(
+            redirectUri: object["redirectUri"] is NSNull ? nil : try Wire.text(
                 object["redirectUri"], maximum: WireLimits.redirectUri, label: "redirectUri")
         )
     }
@@ -467,9 +483,11 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
             accountId: try identifier("accountId"))
     }
 
-    private static func decodeScope(_ value: Any?) throws -> OwnerPhoneScope {
+    static func decodeScope(_ value: Any?) throws -> OwnerPhoneScope {
         let object = try Wire.object(value, label: "scope")
         switch object["kind"] as? String {
+        case "kernel-revocation":
+            return .kernelRevocation(try decodeKernelRevocationScope(object))
         case "permission-request":
             try Wire.exactKeys(
                 object,

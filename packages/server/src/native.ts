@@ -14,11 +14,10 @@
  * Platform-neutral like the root entry: Fetch, WebCrypto, and injected ports
  * only. Apple delivery lives behind `@oaath/server/apns`.
  *
- * There is deliberately no `native/store.ts`: the relay's `RelayStore`
- * transaction contract already carries the whole saga. The authorization
- * decision record is the durable, terminal, one-shot saga state, so a preview
- * decision record and a preview store contract would both be second owners of a
- * fact the relay already owns.
+ * Grant authorization reuses `RelayStore` and its terminal decision record;
+ * it has no second native store. The revocation export only projects an
+ * already-admitted immutable request. Its separate owner-operation queue,
+ * HTTP decision route and execution are not implemented by this module.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -41,3 +40,8 @@ export {
   projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,
 } from "./native/projection.js";
+export type {
+  OwnerPhoneRevocationDecision,
+  OwnerPhoneRevocationScopeProjection,
+} from "./native/revocation.js";
+export { projectOwnerPhoneRevocation } from "./native/revocation.js";

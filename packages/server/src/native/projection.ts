@@ -33,6 +33,7 @@ import {
   hashOwnerSigningRequest,
   type KernelV4ReplayableInstallOwnerSigningRequest,
   type OwnerSigningRequest,
+  type PermissionRequest,
   type WorkspaceAccountContext,
 } from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
@@ -46,12 +47,13 @@ import {
   type OwnerPhonePermissionApprovals,
   prepareOwnerPhonePermissionApproval,
 } from "./permission-approval.js";
+import type { OwnerPhoneRevocationScopeProjection } from "./revocation.js";
 
 /** Bounded base64url match code length. 48 bits is plenty to compare by eye. */
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v5" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v6" as const;
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 
@@ -76,55 +78,58 @@ export type OwnerPhoneCredentialProjection =
  * its protocol-owned hash; only exact Kernel replayable-install P-256 signing
  * is approvable. Anything else is returned as explicitly labeled raw text.
  */
+export type OwnerPhonePermissionScopeProjection = Readonly<{
+  kind: "permission-request";
+  decision: "approve-or-reject";
+  /** Explicit request context, independent of later account selection. */
+  context: Readonly<WorkspaceAccountContext>;
+  /** The application identity the signed request binds, verbatim. */
+  application: Readonly<{
+    applicationId: string;
+    clientId: string;
+    origin: string;
+    /** Opaque device identity, fingerprinted: raw ids mean nothing to an owner. */
+    deviceFingerprint: string;
+  }>;
+  /** The logical account this authority acts for. */
+  account: Readonly<{
+    accountIndex: string;
+    kernelVersion: string;
+    factoryRoute: string;
+    entryPointVersion: string;
+    ownerCredential: OwnerPhoneCredentialProjection;
+  }>;
+  /** The session credential that receives the scoped authority. */
+  operatorCredential: OwnerPhoneCredentialProjection;
+  /**
+   * Where the session key lives: null for frontend custody (the page's
+   * own non-extractable key), or the remote trust model the owner is
+   * asked to approve — the request hash binds it, so approving this
+   * display approves exactly this custody.
+   */
+  sessionSigner: Readonly<{
+    mode: "application_backend" | "oaath_hosted";
+    providerId: string;
+  }> | null;
+  chainScope: "all";
+  calls: readonly Readonly<{
+    target: string;
+    selector: string;
+    valueLimit: string;
+    argumentEquals: readonly Readonly<{ index: number; value: string }>[];
+  }>[];
+  requestedAt: number;
+  /** The permission request's own expiry, as the requesting client stated it. */
+  expiresAt: number;
+  /** The policy's on-chain validity window; inclusive, in Unix seconds. */
+  policyValidAfter: number;
+  policyValidUntil: number | null;
+  perChainOperationLimit: number;
+}>;
+
 export type OwnerPhoneScopeProjection =
-  | Readonly<{
-      kind: "permission-request";
-      decision: "approve-or-reject";
-      /** Explicit request context, independent of later account selection. */
-      context: Readonly<WorkspaceAccountContext>;
-      /** The application identity the signed request binds, verbatim. */
-      application: Readonly<{
-        applicationId: string;
-        clientId: string;
-        origin: string;
-        /** Opaque device identity, fingerprinted: raw ids mean nothing to an owner. */
-        deviceFingerprint: string;
-      }>;
-      /** The logical account this authority acts for. */
-      account: Readonly<{
-        accountIndex: string;
-        kernelVersion: string;
-        factoryRoute: string;
-        entryPointVersion: string;
-        ownerCredential: OwnerPhoneCredentialProjection;
-      }>;
-      /** The session credential that receives the scoped authority. */
-      operatorCredential: OwnerPhoneCredentialProjection;
-      /**
-       * Where the session key lives: null for frontend custody (the page's
-       * own non-extractable key), or the remote trust model the owner is
-       * asked to approve — the request hash binds it, so approving this
-       * display approves exactly this custody.
-       */
-      sessionSigner: Readonly<{
-        mode: "application_backend" | "oaath_hosted";
-        providerId: string;
-      }> | null;
-      chainScope: "all";
-      calls: readonly Readonly<{
-        target: string;
-        selector: string;
-        valueLimit: string;
-        argumentEquals: readonly Readonly<{ index: number; value: string }>[];
-      }>[];
-      requestedAt: number;
-      /** The permission request's own expiry, as the requesting client stated it. */
-      expiresAt: number;
-      /** The policy's on-chain validity window; inclusive, in Unix seconds. */
-      policyValidAfter: number;
-      policyValidUntil: number | null;
-      perChainOperationLimit: number;
-    }>
+  | OwnerPhonePermissionScopeProjection
+  | OwnerPhoneRevocationScopeProjection
   | Readonly<{
       kind: "owner-signing-request";
       decision: "approve-or-reject";
@@ -156,7 +161,7 @@ export interface OwnerPhoneRequestProjection {
   /** The stored request's expiry, in epoch milliseconds. */
   readonly expiresAt: number;
   /** The requesting client, exactly as the stored request binds it. */
-  readonly client: Readonly<{ clientId: string; redirectUri: string }>;
+  readonly client: Readonly<{ clientId: string; redirectUri: string | null }>;
   readonly scope: OwnerPhoneScopeProjection;
 }
 
@@ -205,6 +210,60 @@ function projectCredential(
   });
 }
 
+/** One owner for permission display facts in both grant and removal consent. */
+export async function projectPermissionConsent(
+  request: Readonly<PermissionRequest>,
+): Promise<OwnerPhonePermissionScopeProjection> {
+  return Object.freeze({
+    kind: "permission-request",
+    decision: "approve-or-reject",
+    context: request.context,
+    application: Object.freeze({
+      applicationId: request.application.applicationId,
+      clientId: request.application.clientId,
+      origin: request.application.origin,
+      deviceFingerprint: (
+        await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
+      ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+    }),
+    account: Object.freeze({
+      accountIndex: request.logicalAccount.accountIndex,
+      kernelVersion: request.logicalAccount.kernelVersion,
+      factoryRoute: request.logicalAccount.factoryRoute,
+      entryPointVersion: request.logicalAccount.entryPoint.version,
+      ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
+    }),
+    operatorCredential: projectCredential(request.operatorCredential),
+    sessionSigner:
+      request.sessionSigner === null
+        ? null
+        : Object.freeze({
+            mode: request.sessionSigner.mode,
+            providerId: request.sessionSigner.providerId,
+          }),
+    chainScope: request.chainScope,
+    calls: Object.freeze(
+      request.policy.calls.map((call) =>
+        Object.freeze({
+          target: call.target,
+          selector: call.selector,
+          valueLimit: call.valueLimit,
+          argumentEquals: Object.freeze(
+            call.argumentEquals.map((rule) =>
+              Object.freeze({ index: rule.index, value: rule.value }),
+            ),
+          ),
+        }),
+      ),
+    ),
+    requestedAt: request.requestedAt,
+    expiresAt: request.expiresAt,
+    policyValidAfter: request.policy.validAfter,
+    policyValidUntil: request.policy.validUntil,
+    perChainOperationLimit: request.policy.perChainOperationLimit,
+  });
+}
+
 export async function projectOwnerPhoneScope(
   requestedScope: string,
   operationId: string,
@@ -212,55 +271,7 @@ export async function projectOwnerPhoneScope(
   try {
     const classified = classifyStoredAuthorizationScope(requestedScope, operationId);
     if (classified.kind === "permission-request") {
-      const request = classified.request;
-      return Object.freeze({
-        kind: "permission-request",
-        decision: "approve-or-reject",
-        context: request.context,
-        application: Object.freeze({
-          applicationId: request.application.applicationId,
-          clientId: request.application.clientId,
-          origin: request.application.origin,
-          deviceFingerprint: (
-            await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
-          ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
-        }),
-        account: Object.freeze({
-          accountIndex: request.logicalAccount.accountIndex,
-          kernelVersion: request.logicalAccount.kernelVersion,
-          factoryRoute: request.logicalAccount.factoryRoute,
-          entryPointVersion: request.logicalAccount.entryPoint.version,
-          ownerCredential: projectCredential(request.logicalAccount.ownerCredential),
-        }),
-        operatorCredential: projectCredential(request.operatorCredential),
-        sessionSigner:
-          request.sessionSigner === null
-            ? null
-            : Object.freeze({
-                mode: request.sessionSigner.mode,
-                providerId: request.sessionSigner.providerId,
-              }),
-        chainScope: request.chainScope,
-        calls: Object.freeze(
-          request.policy.calls.map((call) =>
-            Object.freeze({
-              target: call.target,
-              selector: call.selector,
-              valueLimit: call.valueLimit,
-              argumentEquals: Object.freeze(
-                call.argumentEquals.map((rule) =>
-                  Object.freeze({ index: rule.index, value: rule.value }),
-                ),
-              ),
-            }),
-          ),
-        ),
-        requestedAt: request.requestedAt,
-        expiresAt: request.expiresAt,
-        policyValidAfter: request.policy.validAfter,
-        policyValidUntil: request.policy.validUntil,
-        perChainOperationLimit: request.policy.perChainOperationLimit,
-      });
+      return projectPermissionConsent(classified.request);
     }
     if (classified.kind === "kernel-owner-signing-request") {
       return Object.freeze({

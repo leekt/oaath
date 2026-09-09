@@ -133,10 +133,11 @@ final class KernelEnableSigningTests: XCTestCase {
         let harness = try makeReviewHarness(publicKeyX963: publicKey)
         var custodyCalls = 0
 
-        let artifact = try makeKernelEnableOwnerSigningArtifact(
+        let artifact = try makeKernelOwnerSigningArtifact(
             review: harness.review,
             now: signingTestNow,
-            pairedIdentity: harness.pairedIdentity
+            pairedIdentity: harness.pairedIdentity,
+            chains: configuredTestChains
         ) { digest in
             custodyCalls += 1
             return try loadOnly.sign(digest)
@@ -171,10 +172,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var structuredError: KernelEnableSigningError?
 
         do {
-            _ = try makeKernelEnableOwnerSigningArtifact(
+            _ = try makeKernelOwnerSigningArtifact(
                 review: harness.review,
                 now: signingTestNow,
-                pairedIdentity: harness.pairedIdentity
+                pairedIdentity: harness.pairedIdentity,
+                chains: configuredTestChains
             ) { digest in
                 custodyCalls += 1
                 return try missing.sign(digest)
@@ -198,10 +200,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var signerCalls = 0
         var signedDigest: VerifiedSignableDigest?
 
-        let artifact = try makeKernelEnableOwnerSigningArtifact(
+        let artifact = try makeKernelOwnerSigningArtifact(
             review: harness.review,
             now: signingTestNow,
-            pairedIdentity: harness.pairedIdentity
+            pairedIdentity: harness.pairedIdentity,
+            chains: configuredTestChains
         ) { digest in
             signerCalls += 1
             signedDigest = digest
@@ -443,10 +446,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var wrongKeyProducedArtifact = false
         var wrongKeyError: KernelEnableSigningError?
         do {
-            _ = try makeKernelEnableOwnerSigningArtifact(
+            _ = try makeKernelOwnerSigningArtifact(
                 review: harness.review,
                 now: signingTestNow,
-                pairedIdentity: harness.pairedIdentity
+                pairedIdentity: harness.pairedIdentity,
+                chains: configuredTestChains
             ) { digest in
                 wrongKeyCalls += 1
                 return try wrongKey.signature(for: digest.cryptoKitDigest).derRepresentation
@@ -463,10 +467,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var malformedProducedArtifact = false
         var malformedError: KernelEnableSigningError?
         do {
-            _ = try makeKernelEnableOwnerSigningArtifact(
+            _ = try makeKernelOwnerSigningArtifact(
                 review: harness.review,
                 now: signingTestNow,
-                pairedIdentity: harness.pairedIdentity
+                pairedIdentity: harness.pairedIdentity,
+                chains: configuredTestChains
             ) { _ in
                 malformedCalls += 1
                 return Data("not DER".utf8)
@@ -483,10 +488,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var failureProducedArtifact = false
         var failureError: KernelEnableSigningError?
         do {
-            _ = try makeKernelEnableOwnerSigningArtifact(
+            _ = try makeKernelOwnerSigningArtifact(
                 review: harness.review,
                 now: signingTestNow,
-                pairedIdentity: harness.pairedIdentity
+                pairedIdentity: harness.pairedIdentity,
+                chains: configuredTestChains
             ) { _ in
                 failureCalls += 1
                 throw InjectedSignerFailure.refused
@@ -512,10 +518,11 @@ final class KernelEnableSigningTests: XCTestCase {
         var producedArtifact = false
         var structuredError: KernelEnableSigningError?
         do {
-            _ = try makeKernelEnableOwnerSigningArtifact(
+            _ = try makeKernelOwnerSigningArtifact(
                 review: review,
                 now: signingTestNow,
-                pairedIdentity: pairedIdentity
+                pairedIdentity: pairedIdentity,
+                chains: configuredTestChains
             ) { digest in
                 calls += 1
                 return try key.signature(for: digest.cryptoKitDigest).derRepresentation

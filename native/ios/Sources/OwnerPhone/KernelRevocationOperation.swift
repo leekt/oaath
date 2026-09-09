@@ -30,17 +30,33 @@ struct DerivedKernelRevocationOperation: Equatable, Sendable {
     let entryPoint: String
     let effect: KernelRevocationEffect
     let digest: Data
+    let nonce: String
+    let verificationGasLimit: String
+    let callGasLimit: String
+    let preVerificationGas: String
+    let maxPriorityFeePerGas: String
+    let maxFeePerGas: String
+    let deploymentRequired: Bool
     var canonicalHex: String { hexEncode(digest) }
 
     fileprivate init(
         account: String, chainId: Int, entryPoint: String,
-        effect: KernelRevocationEffect, digest: [UInt8]
+        effect: KernelRevocationEffect, digest: [UInt8], nonce: [UInt8],
+        accountGasLimits: [UInt8], preVerificationGas: [UInt8], gasFees: [UInt8],
+        deploymentRequired: Bool
     ) {
         self.account = account
         self.chainId = chainId
         self.entryPoint = entryPoint
         self.effect = effect
         self.digest = Data(digest)
+        self.nonce = revocationDecimal(nonce)
+        self.verificationGasLimit = revocationDecimal(Array(accountGasLimits.prefix(16)))
+        self.callGasLimit = revocationDecimal(Array(accountGasLimits.suffix(16)))
+        self.preVerificationGas = revocationDecimal(preVerificationGas)
+        self.maxPriorityFeePerGas = revocationDecimal(Array(gasFees.prefix(16)))
+        self.maxFeePerGas = revocationDecimal(Array(gasFees.suffix(16)))
+        self.deploymentRequired = deploymentRequired
     }
 }
 
@@ -105,7 +121,9 @@ func deriveKernelRevocationOperation(
     }
     return DerivedKernelRevocationOperation(
         account: refinedInstall.account, chainId: chainId, entryPoint: entryPoint,
-        effect: effect, digest: digest)
+        effect: effect, digest: digest, nonce: nonce, accountGasLimits: accountGasLimits,
+        preVerificationGas: preVerificationGas, gasFees: gasFees,
+        deploymentRequired: !initCode.isEmpty)
 }
 
 private func revocationCallData(
@@ -232,4 +250,19 @@ private func revocationHash(_ bytes: [UInt8]) -> [UInt8] {
 
 private func revocationSelector(_ signature: String) -> [UInt8] {
     Array(revocationHash(Array(signature.utf8)).prefix(4))
+}
+
+/// Exact decimal display of an already-captured unsigned EVM word.
+private func revocationDecimal(_ bytes: [UInt8]) -> String {
+    var digits = [UInt16](repeating: 0, count: 1)
+    for byte in bytes {
+        var carry = UInt16(byte)
+        for index in digits.indices {
+            let value = digits[index] * 256 + carry
+            digits[index] = value % 10
+            carry = value / 10
+        }
+        while carry > 0 { digits.append(carry % 10); carry /= 10 }
+    }
+    return digits.reversed().map(String.init).joined()
 }

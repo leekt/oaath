@@ -123,7 +123,7 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                         id: "application.redirectUri",
                         label: "Code delivery",
                         evidence: .relayBound,
-                        value: .text(client.redirectUri)),
+                        value: .text(client.redirectUri ?? "No code delivery")),
                     .init(
                         id: "application.deviceFingerprint",
                         label: "Device fingerprint",
@@ -695,7 +695,7 @@ public final class ApprovalModel: ObservableObject {
         switch review.projection.scope {
         case .permissionRequest:
             await approvePermission(token: token, review: review, binding: binding)
-        case .ownerSigningRequest:
+        case .ownerSigningRequest, .kernelRevocation:
             await approveKernel(token: token, review: review, binding: binding,
                                 signingProjection: review.projection)
         case .raw:
@@ -718,6 +718,11 @@ public final class ApprovalModel: ObservableObject {
         case let .ownerSigningRequest(scope):
             guard scope.decisionCapability == .approveOrReject,
                   let binding = kernelP256ApprovalBinding,
+                  binding.semanticallyMatches(projection)
+            else { return .rejectOnly }
+            return .kernelP256OwnerSigning
+        case .kernelRevocation:
+            guard let binding = kernelP256ApprovalBinding,
                   binding.semanticallyMatches(projection)
             else { return .rejectOnly }
             return .kernelP256OwnerSigning
@@ -974,7 +979,8 @@ public final class ApprovalModel: ObservableObject {
         var review = submittingReview
         let operationId = review.projection.operationId
         do {
-            let decision = try await relay.submit(operationId: operationId, command: command)
+            let decision = try await relay.submit(operationId: operationId, command: command,
+                                                  domain: review.projection.decisionDomain)
             guard owns(token) else { return }
             try review.settle(decision)
             unresolvedNotice = false
@@ -1095,7 +1101,8 @@ public struct ApprovalView: View {
         case .submitting:
             ProgressView("Submitting…")
         case let .settled(decision):
-            settledBody(decision, overridden: review.storedOutcomeOverrodeCommand)
+            settledBody(decision, overridden: review.storedOutcomeOverrodeCommand,
+                        domain: review.projection.decisionDomain)
         }
     }
 
@@ -1104,12 +1111,16 @@ public struct ApprovalView: View {
     private func consentBody(_ projection: OwnerPhoneRequestProjection) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 6) {
-                Text("\(projection.client.clientId) requests authority")
+                Text(projection.decisionDomain == .revocation
+                     ? "Remove authority for \(projection.client.clientId)"
+                     : "\(projection.client.clientId) requests authority")
                     .font(.subheadline)
                     .bold()
-                Text("Code delivery: \(projection.client.redirectUri)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                if let redirectUri = projection.client.redirectUri {
+                    Text("Code delivery: \(redirectUri)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
                 switch projection.scope {
                 case let .permissionRequest(scope):
                     permissionBody(PermissionConsentPresentation(
@@ -1127,7 +1138,16 @@ public struct ApprovalView: View {
                             .bold()
                             .foregroundStyle(.orange)
                     }
-                    ownerSigningBody(OwnerSigningConsentPresentation(scope: scope))
+                    ownerSigningBody(OwnerSigningConsentPresentation(scope: scope).sections)
+                case let .kernelRevocation(scope):
+                    Text("Approval authorizes the operation below on one configured chain. The service must submit it and confirm onchain completion.")
+                        .font(.footnote)
+                    if model.approvalAvailability(for: projection) == .rejectOnly {
+                        Text("This request does not match this phone's paired account, key, or configured chain. Reject only.")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+                    ownerSigningBody(KernelRevocationConsentPresentation(scope: scope).sections)
                 case let .raw(text):
                     // Explicit unstructured state: the owner reviews the raw
                     // text or rejects; nothing is summarized that was not parsed.
@@ -1184,10 +1204,10 @@ public struct ApprovalView: View {
     }
 
     @ViewBuilder
-    private func ownerSigningBody(_ presentation: OwnerSigningConsentPresentation) -> some View {
+    private func ownerSigningBody(_ sections: [OwnerSigningConsentSection]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(presentation.sections) { section in
+                ForEach(sections) { section in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(section.title)
                             .font(.footnote)
@@ -1212,10 +1232,15 @@ public struct ApprovalView: View {
     }
 
     @ViewBuilder
-    private func settledBody(_ decision: OwnerPhoneDecision, overridden: Bool) -> some View {
+    private func settledBody(_ decision: OwnerPhoneDecision, overridden: Bool,
+                             domain: OwnerPhoneDecisionDomain) -> some View {
         Text(decision.outcome == .approved ? "Approved" : "Rejected")
             .font(.title2)
             .bold()
+        if domain == .revocation, decision.outcome == .approved {
+            Text("Revocation approved. Onchain completion has not been confirmed by this phone.")
+                .font(.footnote)
+        }
         switch decision.settlement {
         case .decided:
             Text("This device decided the request.")

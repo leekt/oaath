@@ -409,12 +409,19 @@ final class DemoRelayEndpointTests: XCTestCase {
         XCTAssertEqual(signing.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
 
         let decision = endpoint.decisionRequest(
-            operationId: "req-1", body: Data("{}".utf8), credential: "cred")
+            operationId: "req-1", body: Data("{}".utf8), credential: "cred", domain: .authorization)
         XCTAssertEqual(decision.httpMethod, "POST")
         XCTAssertEqual(
             decision.url?.absoluteString, "http://192.168.1.20:8787/native/decisions/req-1")
         XCTAssertEqual(decision.value(forHTTPHeaderField: "Content-Type"), "application/json")
         XCTAssertEqual(decision.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
+
+        let revocation = endpoint.decisionRequest(
+            operationId: "revoke-1", body: Data("{}".utf8), credential: "cred", domain: .revocation)
+        XCTAssertEqual(revocation.httpMethod, "POST")
+        XCTAssertEqual(revocation.url?.path, "/native/revocation-decisions/revoke-1")
+        XCTAssertTrue(revocation.value(forHTTPHeaderField: "Authorization") == "Bearer cred")
+        XCTAssertEqual(revocation.httpBody, Data("{}".utf8))
 
         let pairing = try endpoint.pairingRequest(
             pairingCode: PairingCode(pairingCodeAInput)!,

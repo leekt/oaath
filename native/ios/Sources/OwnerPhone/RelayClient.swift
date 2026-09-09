@@ -7,6 +7,8 @@
  documented projection/decision shapes, and the transport — base URL,
  authentication, TLS — stays deployment-wired: a deployment injects one
  closure that moves bytes and carries the authenticated owner credential.
+ Revocation uses a separate decision domain and versioned acknowledgement;
+ its transport contract does not imply a deployed service queue or HTTP handler.
  Nothing here reads configuration or holds credentials.
 
  @author taek <leekt216@gmail.com>
@@ -20,11 +22,12 @@ public struct OwnerPhoneRelayCall: Equatable, Sendable {
         case fetchProjection
         case fetchPermissionSigningProjection
         case submitDecision
+        case submitRevocationDecision
     }
 
     public let kind: Kind
     public let operationId: String
-    /// Strict JSON command body for `submitDecision`; nil otherwise.
+    /// Strict JSON command body for either decision domain; nil for fetches.
     public let body: Data?
 }
 
@@ -33,7 +36,8 @@ public protocol OwnerPhoneRelayClient: Sendable {
     func permissionSigningProjection(operationId: String) async throws -> OwnerPhoneRequestProjection
     func submit(
         operationId: String,
-        command: OwnerPhoneDecisionCommand
+        command: OwnerPhoneDecisionCommand,
+        domain: OwnerPhoneDecisionDomain
     ) async throws -> OwnerPhoneDecision
 }
 
@@ -70,13 +74,16 @@ public struct TransportRelayClient: OwnerPhoneRelayClient {
 
     public func submit(
         operationId: String,
-        command: OwnerPhoneDecisionCommand
+        command: OwnerPhoneDecisionCommand,
+        domain: OwnerPhoneDecisionDomain
     ) async throws -> OwnerPhoneDecision {
         let id = try Wire.identifier(operationId, maximum: WireLimits.operationId, label: "operationId")
         let body = try command.encode()
         let data = try await transport(
-            OwnerPhoneRelayCall(kind: .submitDecision, operationId: id, body: body))
-        let decision = try OwnerPhoneDecision.decode(data)
+            OwnerPhoneRelayCall(kind: domain == .authorization ? .submitDecision : .submitRevocationDecision,
+                                operationId: id, body: body))
+        let decision = try domain == .authorization
+            ? OwnerPhoneDecision.decode(data) : OwnerPhoneDecision.decodeRevocation(data)
         guard decision.operationId == id else {
             throw OwnerPhoneWireError.invalidField("operationId")
         }
