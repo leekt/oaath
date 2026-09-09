@@ -447,15 +447,8 @@ public final class DemoModel: ObservableObject {
         } else {
             kernelP256ApprovalBinding = nil
         }
-        // Permission consent keeps its existing non-signature demo artifact.
-        // Exact Kernel owner signing uses only the separate sealed binding;
-        // the current server projection remains reject-only.
-        let model = ApprovalModel(relay: client, approvalArtifact: { projection in
-            guard pairingIsCurrent() else {
-                throw DemoOwnerKeyBindingError.mismatch
-            }
-            return demoApprovalArtifact()
-        }, kernelP256ApprovalBinding: kernelP256ApprovalBinding)
+        let model = ApprovalModel(
+            relay: client, kernelP256ApprovalBinding: kernelP256ApprovalBinding)
         approval = model
         paired = true
         phaseSink = model.$phase

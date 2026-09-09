@@ -96,8 +96,21 @@ strict Swift decoders in `native/ios/Sources/OwnerPhone/`):
 
 ```text
 GET  /native/projections/{operationId}             owner   consent projection
+GET  /native/permission-signing/{operationId}      owner   prepared Kernel signing projection
 POST /native/decisions/{operationId}               owner   approve or reject saga
 ```
+
+Canonical phone permission approval requires `RelayHandlerOptions.permissionApprovals`.
+Wire its `prepare(request)` to `prepareKernelPhonePermissionApproval` from
+`@oaath/sdk/kernel`, supplying the deployment's account reads, chain ID, and
+stable install nonce for that request. Return the helper's `signingRequest`
+and a `complete(artifact, decidedAt)` that JSON-serializes its completion result.
+The server has no SDK dependency or owner key. The phone reviews the permission,
+fetches its signing projection, and submits its P-256 artifact to the native
+decision route. That route completes the grant through the injected helper and
+the existing one-time decision transaction. A committed retry returns the stored
+outcome before invoking preparation. An unconfigured deployment cannot approve
+canonical permissions through the native route.
 
 Failures are `{"error":{"code":"relay_*"}}` with the status from
 `RELAY_ERROR_STATUS`. A response never carries message text, provider output, or

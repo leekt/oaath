@@ -31,6 +31,10 @@ private actor DeferredApprovalRelay: OwnerPhoneRelayClient {
         return projection
     }
 
+    func permissionSigningProjection(operationId: String) async throws -> OwnerPhoneRequestProjection {
+        try await projection(operationId: operationId)
+    }
+
     func submit(
         operationId: String,
         command: OwnerPhoneDecisionCommand
@@ -58,42 +62,6 @@ private actor DeferredApprovalRelay: OwnerPhoneRelayClient {
     }
 }
 
-private actor DeferredArtifact {
-    private var projections: [OwnerPhoneRequestProjection] = []
-    private var continuation: CheckedContinuation<String, Error>?
-
-    func generate(_ projection: OwnerPhoneRequestProjection) async throws -> String {
-        projections.append(projection)
-        return try await withCheckedThrowingContinuation { continuation = $0 }
-    }
-
-    func waitForGeneration() async {
-        while projections.isEmpty || continuation == nil { await Task.yield() }
-    }
-
-    func recordedProjections() -> [OwnerPhoneRequestProjection] {
-        projections
-    }
-
-    func complete(with artifact: String) {
-        continuation?.resume(returning: artifact)
-        continuation = nil
-    }
-}
-
-private actor RecordingArtifact {
-    private var projections: [OwnerPhoneRequestProjection] = []
-
-    func generate(_ projection: OwnerPhoneRequestProjection) -> String {
-        projections.append(projection)
-        return "artifact-for-\(projection.operationId)"
-    }
-
-    func recordedProjections() -> [OwnerPhoneRequestProjection] {
-        projections
-    }
-}
-
 private actor ImmediateDecisionRelay: OwnerPhoneRelayClient {
     private let projections: [String: OwnerPhoneRequestProjection]
     private var submissions: [DeferredApprovalRelay.Submission] = []
@@ -110,6 +78,10 @@ private actor ImmediateDecisionRelay: OwnerPhoneRelayClient {
     func projection(operationId: String) async throws -> OwnerPhoneRequestProjection {
         guard let projection = projections[operationId] else { throw DeferredFailure.endpoint }
         return projection
+    }
+
+    func permissionSigningProjection(operationId: String) async throws -> OwnerPhoneRequestProjection {
+        try await projection(operationId: operationId)
     }
 
     func submit(
@@ -136,17 +108,6 @@ private actor ImmediateDecisionRelay: OwnerPhoneRelayClient {
     func recordedSubmissions() -> [DeferredApprovalRelay.Submission] {
         submissions
     }
-}
-
-private actor CountingArtifact {
-    private var calls = 0
-
-    func generate(_ projection: OwnerPhoneRequestProjection) -> String {
-        calls += 1
-        return "artifact-for-\(projection.operationId)"
-    }
-
-    func count() -> Int { calls }
 }
 
 private final class KernelSignerProbe: @unchecked Sendable {
@@ -230,6 +191,8 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
     }
 
     private let projectionValue: OwnerPhoneRequestProjection
+    private let signingProjection: OwnerPhoneRequestProjection?
+    private var signingFetches = 0
     private var plannedResults: [PlannedResult]
     private var submissions = 0
     private var firstArtifact: String?
@@ -237,9 +200,11 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
 
     init(
         projection: OwnerPhoneRequestProjection,
+        signingProjection: OwnerPhoneRequestProjection? = nil,
         plannedResults: [PlannedResult]
     ) {
         projectionValue = projection
+        self.signingProjection = signingProjection
         self.plannedResults = plannedResults
     }
 
@@ -249,6 +214,16 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
         }
         return projectionValue
     }
+
+    func permissionSigningProjection(operationId: String) async throws -> OwnerPhoneRequestProjection {
+        signingFetches += 1
+        // A committed request is no longer projectable. Ambiguous retry must
+        // retain the first packet instead of fetching a second one.
+        guard submissions == 0, let signingProjection else { throw DeferredFailure.endpoint }
+        return signingProjection
+    }
+
+    func signingFetchCount() -> Int { signingFetches }
 
     func submit(
         operationId: String,
@@ -360,6 +335,23 @@ final class ApprovalModelRaceTests: XCTestCase {
             binding: binding,
             signer: signer,
             facts: facts)
+    }
+
+    private func permissionConsent(for signing: OwnerPhoneRequestProjection) throws -> OwnerPhoneRequestProjection {
+        guard case let .ownerSigningRequest(signingScope) = signing.scope,
+              case let .eip712(request) = signingScope.request,
+              case let .permissionRequest(base) = OwnerPhoneRequestProjection.fixture().scope
+        else { throw DeferredFailure.endpoint }
+        return replacingScope(signing, with: .permissionRequest(OwnerPhonePermissionScope(
+            context: base.context, application: base.application,
+            account: OwnerPhoneAccountIdentity(
+                accountIndex: "0", kernelVersion: "0.4.0", factoryRoute: "kernel_factory",
+                entryPointVersion: "0.7", ownerCredential: request.signer.ownerCredential.credential),
+            operatorCredential: base.operatorCredential, sessionSigner: nil,
+            chainScope: base.chainScope, calls: base.calls,
+            requestedAt: base.requestedAt, expiresAt: base.expiresAt,
+            policyValidAfter: base.policyValidAfter, policyValidUntil: base.policyValidUntil,
+            perChainOperationLimit: base.perChainOperationLimit)))
     }
 
     private func replacingScope(
@@ -476,25 +468,19 @@ final class ApprovalModelRaceTests: XCTestCase {
                 scope: scope
             )
             let relay = ImmediateDecisionRelay(request)
-            let artifact = CountingArtifact()
             let model = ApprovalModel(
                 relay: relay,
-                approvalArtifact: { await artifact.generate($0) },
                 now: { 1_800_000_000_000 }
             )
 
             await model.open(operationId: request.operationId)
             await model.approve()
-            let artifactCallsAfterApproval = await artifact.count()
             let submissionsAfterApproval = await relay.recordedSubmissions()
-            XCTAssertEqual(artifactCallsAfterApproval, 0)
             XCTAssertEqual(submissionsAfterApproval, [])
             XCTAssertEqual(displayedReview(model)?.state, .pending)
 
             await model.reject()
-            let artifactCallsAfterRejection = await artifact.count()
             let submissionsAfterRejection = await relay.recordedSubmissions()
-            XCTAssertEqual(artifactCallsAfterRejection, 0)
             XCTAssertEqual(
                 submissionsAfterRejection,
                 [.init(operationId: request.operationId, command: .rejected)]
@@ -512,26 +498,24 @@ final class ApprovalModelRaceTests: XCTestCase {
         }
     }
 
-    func testV3DecisionAndWrongSemanticsStayRejectOnlyWithAValidBinding() async throws {
+    func testRejectOnlyDecisionAndWrongSemanticsStayRejectOnlyWithAValidBinding() async throws {
         let harness = try kernelApprovalHarness()
         guard case let .ownerSigningRequest(scope) = harness.projection.scope else {
             return XCTFail("Kernel approval test projection changed shape")
         }
-        let v3Projection = replacingScope(
+        let rejectOnlyProjection = replacingScope(
             harness.projection,
             with: .ownerSigningRequest(OwnerPhoneSigningRequestScope(
                 requestHash: scope.requestHash,
                 request: scope.request,
                 decisionCapability: .rejectOnly)))
-        let projections = [v3Projection] +
+        let projections = [rejectOnlyProjection] +
             (try wrongSemanticProjections(from: harness.projection))
 
         for projection in projections {
             let relay = ImmediateDecisionRelay(projection)
-            let permissionArtifact = CountingArtifact()
             let model = ApprovalModel(
                 relay: relay,
-                approvalArtifact: { await permissionArtifact.generate($0) },
                 kernelP256ApprovalBinding: harness.binding,
                 now: { harness.facts.now() })
             model.setForeground(true)
@@ -539,11 +523,68 @@ final class ApprovalModelRaceTests: XCTestCase {
 
             XCTAssertEqual(model.approvalAvailability(for: projection), .rejectOnly)
             await model.approve()
-            let permissionArtifactCalls = await permissionArtifact.count()
             let submissions = await relay.recordedSubmissions()
             XCTAssertEqual(harness.signer.callCount(), 0)
-            XCTAssertEqual(permissionArtifactCalls, 0)
             XCTAssertEqual(submissions, [])
+            XCTAssertEqual(displayedReview(model)?.state, .pending)
+        }
+    }
+
+    func testPermissionApprovalUsesPairedSignerAndRetainsPacketAcrossAmbiguousRetry() async throws {
+        let harness = try kernelApprovalHarness()
+        let consent = try permissionConsent(for: harness.projection)
+        let relay = KernelDecisionRelay(
+            projection: consent, signingProjection: harness.projection,
+            plannedResults: [.ambiguous, .decided])
+        let model = ApprovalModel(relay: relay, kernelP256ApprovalBinding: harness.binding,
+                                  now: { harness.facts.now() })
+        model.setForeground(true)
+        await model.open(operationId: consent.operationId)
+        XCTAssertEqual(model.approvalAvailability(for: consent), .kernelP256OwnerSigning)
+        await model.approve()
+        XCTAssertEqual(displayedReview(model)?.projection, consent)
+        XCTAssertTrue(model.unresolvedNotice)
+        await model.approve()
+        let fetches = await relay.signingFetchCount()
+        let submissions = await relay.submissionCount()
+        let identical = await relay.submittedArtifactsWereIdentical()
+        XCTAssertEqual(fetches, 1)
+        XCTAssertEqual(harness.signer.callCount(), 1)
+        XCTAssertEqual(submissions, 2)
+        XCTAssertTrue(identical)
+        guard case .settled = displayedReview(model)?.state else {
+            return XCTFail("permission approval did not settle")
+        }
+    }
+
+    func testPermissionSigningProjectionMustMatchDisplayedConsent() async throws {
+        let harness = try kernelApprovalHarness()
+        let consent = try permissionConsent(for: harness.projection)
+        let other = try kernelApprovalHarness()
+        let packets = [
+            OwnerPhoneRequestProjection(operationId: "different", matchCode: consent.matchCode,
+                expiresAt: consent.expiresAt, client: consent.client, scope: harness.projection.scope),
+            OwnerPhoneRequestProjection(operationId: consent.operationId, matchCode: try MatchCode("XXXXXXXX"),
+                expiresAt: consent.expiresAt, client: consent.client, scope: harness.projection.scope),
+            OwnerPhoneRequestProjection(operationId: consent.operationId, matchCode: consent.matchCode,
+                expiresAt: consent.expiresAt + 1, client: consent.client, scope: harness.projection.scope),
+            OwnerPhoneRequestProjection(operationId: consent.operationId, matchCode: consent.matchCode,
+                expiresAt: consent.expiresAt,
+                client: OwnerPhoneClientIdentity(clientId: "different", redirectUri: "https://other.example/"),
+                scope: harness.projection.scope),
+            replacingScope(harness.projection, with: other.projection.scope),
+            consent,
+        ]
+        for packet in packets {
+            let relay = KernelDecisionRelay(projection: consent, signingProjection: packet, plannedResults: [.decided])
+            let model = ApprovalModel(relay: relay, kernelP256ApprovalBinding: harness.binding,
+                                      now: { harness.facts.now() })
+            model.setForeground(true)
+            await model.open(operationId: consent.operationId)
+            await model.approve()
+            let submissions = await relay.submissionCount()
+            XCTAssertEqual(harness.signer.callCount(), 0)
+            XCTAssertEqual(submissions, 0)
             XCTAssertEqual(displayedReview(model)?.state, .pending)
         }
     }
@@ -553,10 +594,8 @@ final class ApprovalModelRaceTests: XCTestCase {
         let relay = KernelDecisionRelay(
             projection: harness.projection,
             plannedResults: [.decided])
-        let permissionArtifact = CountingArtifact()
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { await permissionArtifact.generate($0) },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -567,10 +606,8 @@ final class ApprovalModelRaceTests: XCTestCase {
             .kernelP256OwnerSigning)
         await model.approve()
 
-        let permissionArtifactCalls = await permissionArtifact.count()
         let submissions = await relay.submissionCount()
         XCTAssertEqual(harness.signer.callCount(), 1)
-        XCTAssertEqual(permissionArtifactCalls, 0)
         XCTAssertEqual(submissions, 1)
         guard case .settled = displayedReview(model)?.state else {
             return XCTFail("Kernel approval did not settle")
@@ -585,7 +622,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             plannedResults: [.ambiguous, .decided])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -616,7 +652,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             plannedResults: [.ambiguous, .provenUnsent, .decided])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -648,7 +683,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             plannedResults: [.provenUnsent, .decided])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -675,7 +709,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             plannedResults: [.ambiguous, .decided])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -703,7 +736,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             plannedResults: [.ambiguous, .decided])
         let first = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         first.setForeground(true)
@@ -713,7 +745,6 @@ final class ApprovalModelRaceTests: XCTestCase {
 
         let recreated = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in throw DeferredFailure.endpoint },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         recreated.setForeground(true)
@@ -740,10 +771,8 @@ final class ApprovalModelRaceTests: XCTestCase {
         for failure in [Failure.background, .expired, .pairing, .cancellation] {
             let harness = try kernelApprovalHarness()
             let relay = ImmediateDecisionRelay(harness.projection)
-            let permissionArtifact = CountingArtifact()
             let model = ApprovalModel(
                 relay: relay,
-                approvalArtifact: { await permissionArtifact.generate($0) },
                 kernelP256ApprovalBinding: harness.binding,
                 now: { harness.facts.now() })
             model.setForeground(failure != .background)
@@ -765,10 +794,8 @@ final class ApprovalModelRaceTests: XCTestCase {
                 await model.approve()
             }
 
-            let permissionArtifactCalls = await permissionArtifact.count()
             let submissions = await relay.recordedSubmissions()
             XCTAssertEqual(harness.signer.callCount(), 0)
-            XCTAssertEqual(permissionArtifactCalls, 0)
             XCTAssertEqual(submissions, [])
             XCTAssertEqual(displayedReview(model)?.state, .pending)
         }
@@ -792,7 +819,6 @@ final class ApprovalModelRaceTests: XCTestCase {
             let relay = ImmediateDecisionRelay(harness.projection)
             let model = ApprovalModel(
                 relay: relay,
-                approvalArtifact: { _ in throw DeferredFailure.endpoint },
                 kernelP256ApprovalBinding: harness.binding,
                 now: { harness.facts.now() })
             model.setForeground(true)
@@ -827,7 +853,6 @@ final class ApprovalModelRaceTests: XCTestCase {
         let relay = ImmediateDecisionRelay([harness.projection, requestB])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in "permission-artifact" },
             kernelP256ApprovalBinding: harness.binding,
             now: { harness.facts.now() })
         model.setForeground(true)
@@ -846,44 +871,18 @@ final class ApprovalModelRaceTests: XCTestCase {
         XCTAssertEqual(displayedReview(model)?.state, .pending)
     }
 
-    func testApproveArtifactForAIsDiscardedWhenBReplacesItsReview() async throws {
-        let requestA = projection("request-A")
-        let requestB = projection("request-B")
-        let relay = DeferredApprovalRelay([requestA, requestB])
-        let artifact = DeferredArtifact()
-        let model = ApprovalModel(
-            relay: relay,
-            approvalArtifact: { try await artifact.generate($0) },
-            now: { 1_800_000_000_000 }
-        )
-
-        await model.open(operationId: requestA.operationId)
-        let staleApproval = Task { await model.approve() }
-        await artifact.waitForGeneration()
-        await model.open(operationId: requestB.operationId)
-        await artifact.complete(with: "artifact-for-request-A")
-        await staleApproval.value
-
-        let generated = await artifact.recordedProjections()
-        let submissions = await relay.recordedSubmissions()
-        XCTAssertEqual(generated.map(\.operationId), [requestA.operationId])
-        XCTAssertEqual(submissions, [])
-        XCTAssertEqual(displayedReview(model)?.projection, requestB)
-        XCTAssertEqual(displayedReview(model)?.state, .pending)
-        XCTAssertFalse(model.unresolvedNotice)
-    }
-
     func testACompletedSubmissionCannotOverwriteBReview() async throws {
-        let requestA = projection("request-A")
+        let harness = try kernelApprovalHarness()
+        let requestA = harness.projection
         let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
-        let artifact = RecordingArtifact()
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { await artifact.generate($0) },
+            kernelP256ApprovalBinding: harness.binding,
             now: { 1_800_000_000_000 }
         )
 
+        model.setForeground(true)
         await model.open(operationId: requestA.operationId)
         let staleApproval = Task { await model.approve() }
         await relay.waitForSubmission()
@@ -892,28 +891,26 @@ final class ApprovalModelRaceTests: XCTestCase {
         await staleApproval.value
 
         let submissions = await relay.recordedSubmissions()
-        XCTAssertEqual(submissions, [
-            .init(
-                operationId: requestA.operationId,
-                command: .approved(artifact: "artifact-for-request-A")
-            )
-        ])
+        XCTAssertEqual(submissions.map(\.operationId), [requestA.operationId])
+        XCTAssertEqual(submissions.map { $0.command.outcome }, [.approved])
+        XCTAssertEqual(harness.signer.callCount(), 1)
         XCTAssertEqual(displayedReview(model)?.projection, requestB)
         XCTAssertEqual(displayedReview(model)?.state, .pending)
         XCTAssertFalse(model.unresolvedNotice)
     }
 
     func testAFailedSubmissionCannotSetErrorOrUnresolvedStatusOnB() async throws {
-        let requestA = projection("request-A")
+        let harness = try kernelApprovalHarness()
+        let requestA = harness.projection
         let requestB = projection("request-B")
         let relay = DeferredApprovalRelay([requestA, requestB])
-        let artifact = RecordingArtifact()
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { await artifact.generate($0) },
+            kernelP256ApprovalBinding: harness.binding,
             now: { 1_800_000_000_000 }
         )
 
+        model.setForeground(true)
         await model.open(operationId: requestA.operationId)
         let staleApproval = Task { await model.approve() }
         await relay.waitForSubmission()
@@ -927,28 +924,24 @@ final class ApprovalModelRaceTests: XCTestCase {
     }
 
     func testExplicitBApprovalGeneratesAndSubmitsOnlyB() async throws {
-        let requestB = projection("request-B")
+        let harness = try kernelApprovalHarness()
+        let requestB = harness.projection
         let relay = DeferredApprovalRelay([requestB])
-        let artifact = RecordingArtifact()
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { await artifact.generate($0) },
+            kernelP256ApprovalBinding: harness.binding,
             now: { 1_800_000_000_000 }
         )
 
+        model.setForeground(true)
         await model.open(operationId: requestB.operationId)
         let approval = Task { await model.approve() }
         await relay.waitForSubmission()
 
-        let generated = await artifact.recordedProjections()
         let submissions = await relay.recordedSubmissions()
-        XCTAssertEqual(generated, [requestB])
-        XCTAssertEqual(submissions, [
-            .init(
-                operationId: requestB.operationId,
-                command: .approved(artifact: "artifact-for-request-B")
-            )
-        ])
+        XCTAssertEqual(submissions.map(\.operationId), [requestB.operationId])
+        XCTAssertEqual(submissions.map { $0.command.outcome }, [.approved])
+        XCTAssertEqual(harness.signer.callCount(), 1)
         await relay.complete(decision(requestB.operationId))
         await approval.value
         XCTAssertEqual(displayedReview(model)?.state, .settled(decision(requestB.operationId)))
@@ -960,7 +953,6 @@ final class ApprovalModelRaceTests: XCTestCase {
         let relay = DeferredApprovalRelay([requestA, requestB])
         let model = ApprovalModel(
             relay: relay,
-            approvalArtifact: { _ in XCTFail("reject must not create an artifact"); return "" },
             now: { 1_800_000_000_000 }
         )
 

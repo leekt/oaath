@@ -52,6 +52,24 @@ final class RelayClientTests: XCTestCase {
         }
     }
 
+    func testPermissionSigningProjectionUsesItsRouteAndBindsTheOperation() async throws {
+        let recorder = Recorder()
+        let client = TransportRelayClient { call in
+            recorder.calls.append(call)
+            return try JSONSerialization.data(withJSONObject: projectionJson(operationId: "req-1"))
+        }
+        _ = try await client.permissionSigningProjection(operationId: "req-1")
+        XCTAssertEqual(recorder.calls, [
+            OwnerPhoneRelayCall(kind: .fetchPermissionSigningProjection, operationId: "req-1", body: nil)
+        ])
+        do {
+            _ = try await client.permissionSigningProjection(operationId: "req-other")
+            XCTFail("foreign signing projection must fail")
+        } catch {
+            XCTAssertEqual(error as? OwnerPhoneWireError, .invalidField("operationId"))
+        }
+    }
+
     func testSubmitsTheEncodedCommandAndBindsTheDecision() async throws {
         let recorder = Recorder()
         let client = TransportRelayClient { call in

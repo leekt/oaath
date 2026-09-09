@@ -63,7 +63,11 @@ import { resumeAuthorization } from "../authorization/resume.js";
 import { verifyGrantReference } from "../authorization/verify.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { submitOwnerPhoneDecision } from "../native/decision.js";
-import { projectOwnerPhoneRequest } from "../native/projection.js";
+import type { OwnerPhonePermissionApprovals } from "../native/permission-approval.js";
+import {
+  projectOwnerPhonePermissionSigning,
+  projectOwnerPhoneRequest,
+} from "../native/projection.js";
 import {
   authenticateCaller,
   type RelayAuthentication,
@@ -174,6 +178,8 @@ export interface RelayPaymasterServiceConfiguration {
 }
 
 export interface RelayHandlerOptions {
+  /** Enables canonical permission approval through the owner phone. */
+  readonly permissionApprovals?: OwnerPhonePermissionApprovals;
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
   /** Required. Resolves an approving device independently of the requesting member. */
@@ -201,6 +207,7 @@ export interface RelayHandlerOptions {
 export type RelayHandler = (request: Request) => Promise<Response>;
 
 const OPTION_KEYS: readonly string[] = [
+  "permissionApprovals",
   "store",
   "authentication",
   "ownerRouting",
@@ -269,6 +276,7 @@ function duration(value: unknown, fallback: number, label: string, maximum = MAX
 }
 
 interface CapturedOptions {
+  readonly permissionApprovals: OwnerPhonePermissionApprovals | undefined;
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
   readonly ownerRouting: RelayOwnerRouting;
@@ -445,6 +453,14 @@ function captureOptions(value: unknown): CapturedOptions {
   }
   return Object.freeze({
     store: requirePort<RelayStore>(record.store, ["begin", "close"], "store"),
+    permissionApprovals:
+      record.permissionApprovals === undefined
+        ? undefined
+        : requirePort<OwnerPhonePermissionApprovals>(
+            record.permissionApprovals,
+            ["prepare"],
+            "permissionApprovals",
+          ),
     authentication: requirePort<RelayAuthentication>(
       record.authentication,
       ["authenticate"],
@@ -616,6 +632,22 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
     // EXPERIMENTAL PREVIEW — owner-phone approval routes. Same wire hygiene as
     // every relay route: exact capture, structured codes, no-store responses.
     if (head === "native") {
+      if (segments.length === 3 && group === "permission-signing") {
+        requireMethod(request, "GET");
+        const caller = await authenticate(request, "owner", "native.permissionSigning");
+        return jsonResponse(
+          200,
+          await projectOwnerPhonePermissionSigning({
+            store: captured.store,
+            clock: captured.clock,
+            caller,
+            requestId: canonicalIdentifier(third, "operationId", INVALID),
+            ...(captured.permissionApprovals
+              ? { permissionApprovals: captured.permissionApprovals }
+              : {}),
+          }),
+        );
+      }
       if (segments.length === 3 && group === "projections") {
         requireMethod(request, "GET");
         const caller = await authenticate(request, "owner", "native.project");
@@ -632,6 +664,9 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         const caller = await authenticate(request, "owner", "native.decide");
         const command = phoneDecisionCommand(await bodyRecord(request, captured.maxBodyBytes));
         const decided = await submitOwnerPhoneDecision({
+          ...(captured.permissionApprovals
+            ? { permissionApprovals: captured.permissionApprovals }
+            : {}),
           store: captured.store,
           clock: captured.clock,
           kms: captured.kms,

@@ -36,12 +36,16 @@ import {
   type WorkspaceAccountContext,
 } from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
-import { fetchAuthorizationRequest } from "../authorization/request.js";
+import { type AuthorizationState, fetchAuthorizationRequest } from "../authorization/request.js";
 import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import type { RelayClock } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayStore } from "../store/interface.js";
+import {
+  type OwnerPhonePermissionApprovals,
+  prepareOwnerPhonePermissionApproval,
+} from "./permission-approval.js";
 
 /** Bounded base64url match code length. 48 bits is plenty to compare by eye. */
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
@@ -285,9 +289,9 @@ export async function projectOwnerPhoneScope(
  * request is not projectable: there is nothing left to approve, so nothing is
  * ever pushed or rendered for it.
  */
-export async function projectOwnerPhoneRequest(
+async function pendingOwnerRequest(
   input: ProjectOwnerPhoneRequestInput,
-): Promise<OwnerPhoneRequestProjection> {
+): Promise<AuthorizationState> {
   if (input.caller.role !== "owner") {
     return relayFailure("relay_forbidden", "caller may not act in the required role");
   }
@@ -303,15 +307,58 @@ export async function projectOwnerPhoneRequest(
   if (state.decision !== null) {
     return relayFailure("relay_already_decided", "authorization request is already decided");
   }
-  const digest = await sha256Base64Url(
-    `${DISPLAY_DOMAIN}${input.caller.subject}:${state.requestId}`,
-  );
+  return state;
+}
+
+async function projectionFromState(
+  state: AuthorizationState,
+  caller: RelayCaller,
+  scope: OwnerPhoneScopeProjection,
+): Promise<OwnerPhoneRequestProjection> {
+  const digest = await sha256Base64Url(`${DISPLAY_DOMAIN}${caller.subject}:${state.requestId}`);
   return Object.freeze({
     version: OAATH_NATIVE_PROJECTION_VERSION,
     operationId: state.requestId,
     displayPayload: digest.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
     expiresAt: state.expiresAt,
     client: Object.freeze({ clientId: state.clientId, redirectUri: state.redirectUri }),
-    scope: await projectOwnerPhoneScope(state.requestedScope, state.requestId),
+    scope,
   });
+}
+
+export async function projectOwnerPhoneRequest(
+  input: ProjectOwnerPhoneRequestInput,
+): Promise<OwnerPhoneRequestProjection> {
+  const state = await pendingOwnerRequest(input);
+  return projectionFromState(
+    state,
+    input.caller,
+    await projectOwnerPhoneScope(state.requestedScope, state.requestId),
+  );
+}
+
+/** The signing packet for the same consent, using the existing projection wire shape. */
+export async function projectOwnerPhonePermissionSigning(
+  input: ProjectOwnerPhoneRequestInput & {
+    readonly permissionApprovals?: OwnerPhonePermissionApprovals;
+  },
+): Promise<OwnerPhoneRequestProjection> {
+  const state = await pendingOwnerRequest(input);
+  const scope = classifyStoredAuthorizationScope(state.requestedScope, state.requestId);
+  if (scope.kind !== "permission-request")
+    return relayFailure("relay_request_invalid", "request is not a permission");
+  const prepared = await prepareOwnerPhonePermissionApproval(
+    input.permissionApprovals,
+    scope.request,
+  );
+  return projectionFromState(
+    state,
+    input.caller,
+    Object.freeze({
+      kind: "owner-signing-request" as const,
+      decision: "approve-or-reject" as const,
+      requestHash: hashOwnerSigningRequest(prepared.signingRequest),
+      request: prepared.signingRequest,
+    }),
+  );
 }

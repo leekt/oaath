@@ -7,6 +7,7 @@
  *
  * The relay handler exposes these use cases as preview HTTP routes
  * (`GET /native/projections/{operationId}`,
+ * `GET /native/permission-signing/{operationId}`,
  * `POST /native/decisions/{operationId}`), pinned field-for-field by the strict
  * Swift decoders in `native/ios/Sources/OwnerPhone/`.
  *
@@ -25,6 +26,10 @@
 export type { OwnerPhoneDecision, SubmitOwnerPhoneDecisionInput } from "./native/decision.js";
 export { submitOwnerPhoneDecision } from "./native/decision.js";
 export type {
+  OwnerPhonePermissionApprovals,
+  PreparedOwnerPhonePermissionApproval,
+} from "./native/permission-approval.js";
+export type {
   OwnerPhonePushProjection,
   OwnerPhoneRequestProjection,
   OwnerPhoneScopeProjection,
@@ -33,5 +38,6 @@ export type {
 export {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
+  projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,
 } from "./native/projection.js";

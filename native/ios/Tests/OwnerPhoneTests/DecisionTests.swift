@@ -168,7 +168,8 @@ final class DecisionTests: XCTestCase {
 
     func testHappyPathApproveDecides() throws {
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 1_753_999_000_000)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 1_753_999_000_000)
+        try review.finishAuthorization(now: 1_753_999_000_000)
         XCTAssertEqual(review.state, .submitting(.approved))
         let decision = try OwnerPhoneDecision.decode(json(decidedApproved))
         try review.settle(decision)
@@ -222,6 +223,14 @@ final class DecisionTests: XCTestCase {
         }
     }
 
+    func testPermissionApprovalRequiresAuthorization() {
+        var review = OwnerPhoneReview(projection: projection)
+        XCTAssertThrowsError(try review.beginSubmission(.approved, now: 0)) {
+            XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .authorizationRequired)
+        }
+        XCTAssertEqual(review.state, .pending)
+    }
+
     func testAuthorizationRejectsWrongScopeExpiryAndWrongState() throws {
         var permission = OwnerPhoneReview(projection: projection)
         XCTAssertThrowsError(try permission.beginAuthorization(
@@ -270,7 +279,8 @@ final class DecisionTests: XCTestCase {
             XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notSubmitting)
         }
         // Double begin.
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         XCTAssertThrowsError(try review.beginSubmission(.approved, now: 0)) {
             XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .notPending)
         }
@@ -297,7 +307,8 @@ final class DecisionTests: XCTestCase {
 
     func testAmbiguousFailureKeepsAnExplicitIntentAndForbidsSwitching() throws {
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         try review.submissionFailed(ambiguous: true)
         XCTAssertEqual(review.state, .pending)
         XCTAssertEqual(review.unresolvedIntent, .approved)
@@ -306,13 +317,15 @@ final class DecisionTests: XCTestCase {
             XCTAssertEqual($0 as? OwnerPhoneReview.TransitionError, .conflictingUnresolvedIntent)
         }
         // The same command may be retried explicitly.
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         XCTAssertEqual(review.state, .submitting(.approved))
     }
 
     func testProvenNonSubmissionClearsTheIntent() throws {
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         try review.submissionFailed(ambiguous: false)
         XCTAssertNil(review.unresolvedIntent)
         // Switching is allowed: the command provably never left the device.
@@ -322,9 +335,11 @@ final class DecisionTests: XCTestCase {
 
     func testProvenNonSubmissionRetryPreservesAnOlderAmbiguousIntent() throws {
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         try review.submissionFailed(ambiguous: true)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         try review.submissionFailed(ambiguous: false)
 
         XCTAssertEqual(review.state, .pending)
@@ -340,9 +355,11 @@ final class DecisionTests: XCTestCase {
         // Retried as approved after an ambiguous first attempt, but the store
         // says rejected: the stored outcome wins and the UI must say so.
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         try review.submissionFailed(ambiguous: true)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         let stored = try OwnerPhoneDecision.decode(json(replayedRejected))
         try review.settle(stored)
         XCTAssertEqual(review.state, .settled(stored))
@@ -352,7 +369,8 @@ final class DecisionTests: XCTestCase {
 
     func testADecidedSettlementMustAgreeWithTheSentCommand() throws {
         var review = OwnerPhoneReview(projection: projection)
-        try review.beginSubmission(.approved, now: 0)
+        try review.beginAuthorization(availability: .kernelP256OwnerSigning, now: 0)
+        try review.finishAuthorization(now: 0)
         var object = replayedRejected
         object["settlement"] = "decided"
         object["release"] = ["outcome": "rejected", "decidedAt": 1_753_999_000_000] as [String: Any]

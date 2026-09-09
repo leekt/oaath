@@ -28,8 +28,8 @@ published to npm.
   relay-bound client/redirect facts are visually distinct from requested scope
   and requested constraints. The projection contains no materialization,
   onchain-install, or simulation evidence, so it labels no constraint
-  guaranteed. Structured permission requests expose explicit Approve/Reject
-  actions. Owner-signing requests expose every captured purpose, signer,
+  guaranteed. Canonical P-256 permission requests expose Approve when the phone has a
+  Kernel account binding; other permissions remain reject-only. Owner-signing requests expose every captured purpose, signer,
   versioned credential, typed-data, expected digest, replay, and request-hash
   fact. Only an exact Kernel/P-256 request with a current local pairing exposes
   Approve; every other owner-signing request remains reject-only.
@@ -39,8 +39,13 @@ published to npm.
 
   Native projection `oaath.native-projection/v5` requires the permission
   request's workspace/account context. The phone rejects earlier projections;
-  update the relay and phone together and refetch consent. This display change
-  does not supply the demo's missing canonical permission-signing flow.
+  update the relay and phone together and refetch consent. On approval, the phone
+  fetches `/native/permission-signing/{operationId}` and binds its operation,
+  client, match code, expiry, and owner credential to the displayed consent.
+  The existing paired Kernel signer produces the real approval artifact;
+  ambiguous retries retain both that packet and artifact without refetching
+  or signing again. The deployment must configure the server's
+  `permissionApprovals` port with the SDK helper and a stable install nonce.
 - Submits approve/reject keyed by the stable `operationId` and renders the
   replayed-outcome semantics of `packages/server/src/native/decision.ts`
   honestly: a retry answers the **stored** outcome (which may differ from the
@@ -60,7 +65,7 @@ Shared protocol/viem/Swift vectors cover the official Mail example, nested
 fixed and dynamic arrays, signed and unsigned integers, fixed and dynamic
 bytes, strings, booleans, addresses, and domain subsets.
 
-The live v4 exact Kernel/P-256 branch creates a sealed
+The exact Kernel/P-256 signing path creates a sealed
 `VerifiedSignableDigest` only after the current pending review, expiry,
 foreground state, paired account/key, Kernel semantics, and device-derived
 digest all agree. `requestHash` is authenticated server/protocol evidence and
@@ -71,8 +76,8 @@ of raw JSON bytes; the relay owns canonical protocol capture before projection.
 
 ## Transport is deployment-wired
 
-The relay serves the preview routes `GET /native/projections/{operationId}`
-and `POST /native/decisions/{operationId}`
+The relay serves the preview routes `GET /native/projections/{operationId}`,
+`GET /native/permission-signing/{operationId}`, and `POST /native/decisions/{operationId}`
 (`packages/server/src/relay/handler.ts`). `TransportRelayClient` stays defined
 against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.
