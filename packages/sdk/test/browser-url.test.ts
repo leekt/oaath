@@ -43,6 +43,7 @@ import {
   createUrlRealm,
   ISSUER_URL,
   ORIGIN,
+  OWNER_TOKEN,
   permissionInput,
   relayChainPort,
   relayKms,
@@ -52,6 +53,102 @@ import {
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
+  it.each([
+    {
+      label: "native rejection",
+      authorization: undefined,
+      code: "oaath_client_permission_rejected",
+    },
+    {
+      label: "unrecognized callback error",
+      authorization: {
+        async authorize() {
+          throw new Error("the owner rejected the permission request");
+        },
+      },
+      code: "oaath_client_decision_unavailable",
+    },
+    {
+      label: "unrecognized callback object",
+      authorization: {
+        async authorize() {
+          throw { code: "oaath_client_permission_rejected" };
+        },
+      },
+      code: "oaath_client_decision_unavailable",
+    },
+  ])(
+    "reports $label without redeeming a code or creating a grant",
+    async ({ authorization, code }) => {
+      const clock = createClock();
+      const chain = createChainFixture();
+      const relay = createRelay(clock, {
+        bootstrap: {
+          resolve: async () => ({
+            application: { applicationId: "app-a", applicationName: "OAAth Example" },
+            context: workspaceContext,
+            account: accountProfile,
+            ownerValidator: VALIDATOR,
+            chainIds: [chain.capability.chainId],
+          }),
+        },
+        chains: [relayChainPort(chain)],
+      });
+      const posts: string[] = [];
+      let codePickups = 0;
+      const oaath = createOAAth({
+        url: ISSUER_URL,
+        origin: ORIGIN,
+        now: clock.now,
+        stores: createMemoryStores(),
+        ...(authorization ? { authorization } : {}),
+        fetch: async (request: Request) => {
+          const path = new URL(request.url).pathname;
+          if (request.method === "POST") posts.push(path);
+          if (path.endsWith("/code")) codePickups += 1;
+          const headers = new Headers(request.headers);
+          headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+          const response = await relay(new Request(request, { headers }));
+          if (request.method === "POST" && path === "/authorization/requests") {
+            expect(response.status).toBe(201);
+            const { requestId } = await response.clone().json();
+            const ownerHeaders = { authorization: `Bearer ${OWNER_TOKEN}` };
+            const consent = await relay(
+              new Request(`${ISSUER_URL}/native/projections/${requestId}`, {
+                headers: ownerHeaders,
+              }),
+            );
+            expect(consent.status).toBe(200);
+            const decision = await relay(
+              new Request(`${ISSUER_URL}/native/decisions/${requestId}`, {
+                method: "POST",
+                headers: { ...ownerHeaders, "content-type": "application/json" },
+                body: JSON.stringify({ command: "reject" }),
+              }),
+            );
+            expect(decision.status).toBe(200);
+            expect((await decision.json()).outcome).toBe("rejected");
+          }
+          return response;
+        },
+      });
+      try {
+        const connection = await oaath.connect();
+        await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
+          code,
+        });
+        expect(await connection.resume()).toBeNull();
+        expect(posts).toEqual(["/authorization/requests"]);
+        expect(codePickups).toBe(authorization ? 0 : 1);
+        expect(chain.quotes).toBe(0);
+        expect(chain.sends).toHaveLength(0);
+        expect(chain.signatures).toHaveLength(0);
+      } finally {
+        await oaath.close();
+      }
+    },
+  );
+
   it("requests phone revocation through the URL again after reload without owner quotes or sends", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
