@@ -54,7 +54,8 @@ is `0.1.0`; no package becomes `1.0.0` during this program.
 
 [`native/ios`](native/ios/README.md) carries the experimental owner-phone
 SwiftUI approval app (preview only): it is not part of the release group and is
-never published to npm.
+never published to npm. Its host tests run in CI alongside the package gates;
+run the same check on macOS with `pnpm test:phone`.
 
 ## Status
 
