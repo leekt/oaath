@@ -65,6 +65,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm --filter @oaath/sdk test:anvil
+      - name: Phone-owned service workflow
+        run: pnpm --filter @oaath/examples example:phone
+        env:
+          OAATH_PHONE_SIMULATE: "1"
       # Packaging gates. Real gates, not advisory: each one fails the job. The
       # smokes pack the workspace and install the tarballs into a clean consumer,
       # so they prove the published artifacts rather than the workspace links.

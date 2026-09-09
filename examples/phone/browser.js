@@ -241,6 +241,18 @@ const actions = {
       );
     },
   ],
+  revoke: [
+    "Checking permission revocation",
+    async () => {
+      const current = await currentGrant();
+      await current.revoke();
+      say(
+        current.state === "revoked"
+          ? "Permission revoked on the configured chain. Saved jobs can still be observed."
+          : "Revocation pending. Review any request in the phone inbox, then choose Revoke / check again.",
+      );
+    },
+  ],
   observe: [
     "Observing saved job",
     async () => {

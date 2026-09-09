@@ -46,6 +46,7 @@ function installDocument() {
       "permission",
       "session",
       "observe",
+      "revoke",
     ].map((id) => [
       id,
       {
@@ -65,10 +66,10 @@ function installDocument() {
   return nodes;
 }
 
-test("page has one Pair action plus the connection, consent, run and observation actions", () => {
+test("page has pairing, connection, consent, job observation and revocation actions", () => {
   const page = readFileSync(new URL("./page.html", import.meta.url), "utf8");
   const buttonIds = [...page.matchAll(/<button[^>]+id="([^"]+)"/gu)].map((match) => match[1]);
-  assert.deepEqual(buttonIds, ["pair", "unlock", "permission", "session", "observe"]);
+  assert.deepEqual(buttonIds, ["pair", "unlock", "permission", "session", "observe", "revoke"]);
 });
 
 test("Pair click renders the transient QR/link without storing the secret", async () => {

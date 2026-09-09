@@ -25,6 +25,11 @@ its transient QR code with [the iOS demo](../../native/ios/Demo/README.md), then
 4. **Observe saved job** looks up the returned operation ID and observes it.
    Reload the page before this step to exercise SDK IndexedDB recovery. After
    finalization, run another job under the same permission.
+5. **Revoke / check** stops application admission and requests phone consent.
+   Approve the chain operation in the phone inbox, then check again. The service
+   submits the exact approved operation; the SDK reports `revoked` only after
+   finalized permission absence and install-nonce consumption. An unused grant
+   burns its install nonce; an installed permission is uninstalled.
 
 The page stores only a versioned operation ID and chain pointer in localStorage.
 The SDK owns the key, grant and operation records in IndexedDB. An observation
@@ -36,9 +41,18 @@ The relay, directory, pairing and local chain are ephemeral. Restarting the
 service creates a new account; clear this demo origin's browser data and pair
 again. This example configures one personal workspace and one grant per fresh
 account. The shared directory also supports teams; there is no team admin UI
-here. The install nonce is fixed at zero. Configured chains constrain service
-routing; the replayable approval is not a chain allowlist. Phone-signed uninstall
-and all-chain revocation are not demonstrated.
+here. Each permission request has its own install-nonce namespace. Configured
+chains constrain service routing; the replayable approval is not a chain
+allowlist. This demo proves revocation on its one configured local chain.
+
+Preparation reads the current module state and owner-operation nonce; gas limits
+are fixed for this devnet. Pairing prefunds the local account. The existing SDK
+executor and operation store own submission evidence, so repeated phone
+decisions and client checks recover the same operation without resubmitting.
+The service schedules one bounded execution/observation attempt after approval
+or an approved request recovery. Its in-memory operation adapter is explicitly
+ephemeral alongside Anvil; a lasting deployment uses the existing PostgreSQL
+adapter. A failed attempt remains pending; approval alone is never completion.
 
 The default phone transport is the authenticated pull inbox. The loopback page
 alone can reveal its one-time pairing secret. The relay listens on the LAN for
@@ -52,9 +66,13 @@ environment values win.
 P-256 fixture pairs over HTTP, rejects a foreign signature, completes the
 canonical consent/decision/code/claim path, and executes three jobs through the
 URL SDK. It also proves occupied-lane refusal, observation without resubmission,
-and refusal of a fourth job. It contacts neither Apple nor a live RPC and does
+and refusal of a fourth job. Both the installed permission and an unused
+counterfactual grant then complete phone-approved revocation through the actual
+Kernel contracts, with no submission before consent and no resend on replay.
+It contacts neither Apple nor a live RPC and does
 not prove physical phone consent or Secure Enclave user presence. The Swift
-host suite separately checks the native consent/signing implementation.
+host suite separately checks the native consent/signing implementation. CI runs
+both the native suite and this local service workflow.
 
 The old manual live sponsorship pipeline has been removed. Setting
 `OAATH_ZERODEV_LIVE=1` exits before starting a chain or contacting a provider;
