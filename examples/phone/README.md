@@ -101,9 +101,11 @@ directory only when absent and never overwrites an existing enrollment.
 and chain lifetimes; `startPhoneDevnet()` is the default command's chain owner.
 
 The phone keeps its original credential and account after service/pool
-recreation at the same URL. Its pull inbox recovers pending consent, and
-client status checks recover submitted owner work without another send.
-The account display reads the enrolled public Kernel profile from the directory.
+recreation at the same URL. Its pull inbox recovers pending consent. Client
+checks confirm chain effects; replaying an approved phone decision recreates
+the executor and observes its retained operation without another send. Startup
+does not automatically run those executors. The account display reads the
+enrolled public Kernel profile from the directory.
 An enrolled account does not expose another pairing invitation after restart.
 
 Run the local PostgreSQL restart workflow explicitly:
