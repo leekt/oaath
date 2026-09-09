@@ -73,6 +73,7 @@ describe("send/return crash recovery", () => {
     const connection = await before.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const crashed = await grant.sendCalls(sendCallsInput());
+    const reference = { chain: crashed.chainId, id: crashed.id };
 
     // The send was attempted exactly once and its outcome is unknown.
     expect(chain.sends).toHaveLength(1);
@@ -91,7 +92,7 @@ describe("send/return crash recovery", () => {
     expect(attempted?.value.identity.userOperationHash).toBe(identity.userOperationHash);
 
     // Recreate every instance: connection, stores, adapters, database.
-    await connection.close();
+    await before.oaath.close();
     first.database.close();
     opened.splice(opened.indexOf(first.database), 1);
     crash = false;
@@ -101,9 +102,14 @@ describe("send/return crash recovery", () => {
     const restored = await (await after.oaath.connect()).resume();
     if (!restored) throw new Error("expected the Grant to resume");
 
-    // The unresolved lane resolves by observation. No second send happens even
-    // though the same calls are requested again.
-    const resumed = await restored.sendCalls(sendCallsInput());
+    // New intent is refused; only lookup of the retained public reference
+    // recovers the ambiguous submission for observation.
+    await expect(restored.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_state_conflict",
+    });
+    const resumed = await restored.getOperation(reference);
+    if (resumed === null) throw new Error("expected the retained operation");
+    expect(resumed.id).toBe(reference.id);
     const outcome = await resumed.wait();
     expect(outcome.status).toBe("finalized");
     expect(chain.sends).toHaveLength(1);
@@ -114,6 +120,7 @@ describe("send/return crash recovery", () => {
     expect(finalized?.value.state).toBe("finalized");
     expect(finalized?.value.identity.userOperationHash).toBe(identity.userOperationHash);
     expect(finalized?.value.identity.nonce).toBe(attempted?.value.identity.nonce);
+    await after.oaath.close();
   });
 
   it("recovers an accepted revocation after full recreation without resubmission", async () => {
