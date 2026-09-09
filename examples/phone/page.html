@@ -114,10 +114,10 @@
     <main>
       <h1>Owner-phone demo</h1>
       <p>
-        Arbitrum Sepolia profile. The owner P-256 key stays on the phone; the
-        session private key is generated and signs only in this page.
+        Approve a bounded job on your phone, then run it from this application.
+        The owner key stays on the phone.
       </p>
-      <p class="network">Arbitrum Sepolia <code>chain 421614</code></p>
+      <p class="network">Local Anvil · Arbitrum Sepolia profile <code>chain 421614</code></p>
       <section class="activity" id="activity" role="status" aria-live="polite" hidden>
         <span class="spinner" aria-hidden="true"></span>
         <div>
@@ -139,13 +139,13 @@
           aria-label="Copyable one-time phone pairing link"
         />
       </section>
-      <p class="account" id="account">Account: locked</p>
-      <button type="button" id="unlock">1. Unlock account</button>
+      <p class="account" id="account">Account: not connected</p>
+      <button type="button" id="unlock">1. Connect account</button>
       <button type="button" id="permission">2. Request permission</button>
-      <button type="button" id="session">3. Send tx with session key</button>
-      <button type="button" id="owner">4. Send tx with owner key</button>
+      <button type="button" id="session">3. Run a new job</button>
+      <button type="button" id="observe">4. Observe saved job</button>
       <pre id="status" aria-live="polite">
-Ready. Open this page on loopback and choose Pair phone, then use the four account actions.</pre>
+Ready. Open this page on loopback and choose Pair phone, then connect and request permission. A job permits 5 wei per call, up to three operations in 30 minutes. Reload and choose Observe saved job to recover its outcome.</pre>
     </main>
     <script type="module" src="/demo.js"></script>
   </body>

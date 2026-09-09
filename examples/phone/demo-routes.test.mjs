@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import {
   compareOperationIds,
   markInboxTerminal,
+  OneShotPairing,
   pendingInbox,
   serveDemoInbox,
   servePairingSecret,
@@ -226,4 +227,26 @@ test("pairing secret route requires loopback socket and fixed same-origin and cl
   } finally {
     await fixture.close();
   }
+});
+
+test("pairing reservation is atomic across concurrent handlers", async () => {
+  const pairing = new OneShotPairing({ hash: "expected", expiresAt: 100 });
+  assert.equal(pairing.available(1), true);
+  const credentials = [];
+  const devices = new Map();
+  const handle = async (index) => {
+    pairing.reserve({ hash: "expected", now: 1 });
+    await Promise.resolve();
+    const credential = `credential-${index}`;
+    credentials.push(credential);
+    devices.set(credential, { index });
+    return credential;
+  };
+  const settled = await Promise.allSettled([handle(1), handle(2)]);
+  assert.equal(settled.filter(({ status }) => status === "fulfilled").length, 1);
+  assert.equal(settled.filter(({ status }) => status === "rejected").length, 1);
+  assert.equal(credentials.length, 1);
+  assert.equal(devices.size, 1);
+  assert.equal(pairing.available(1), false);
+  assert.equal(new OneShotPairing({ hash: "expected", expiresAt: 1 }).available(1), false);
 });

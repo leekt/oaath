@@ -44,9 +44,6 @@ importers:
       '@oaath/server':
         specifier: workspace:*
         version: link:../packages/server
-      '@zerodev/sdk':
-        specifier: 5.5.10
-        version: 5.5.10(viem@2.55.8(typescript@7.0.2))
       esbuild:
         specifier: 0.25.12
         version: 0.25.12
@@ -56,9 +53,6 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
-      qrcode-terminal:
-        specifier: ^0.12.0
-        version: 0.12.0
       viem:
         specifier: 2.55.8
         version: 2.55.8(typescript@7.0.2)
@@ -922,11 +916,6 @@ packages:
   '@yuku-toolchain/types@0.8.2':
     resolution: {integrity: sha512-ODYjxmbajkNCaONqd7dfIsH+h2ddRiI4YsSuQXy1Sg0ZSTvOETcNz5EiEIOqVSLnHDs1+r+b2yuS9eOw3ChguA==}
 
-  '@zerodev/sdk@5.5.10':
-    resolution: {integrity: sha512-WVyj2XR9F6zK2GdXrvappx7yo6zoJ46cWe42dOIArp3xDjFBninjA4O1O94MwohB0G+yFqtXNsEU+WxdE67SgQ==}
-    peerDependencies:
-      viem: ^2.28.0
-
   abitype@1.2.3:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
     peerDependencies:
@@ -1439,10 +1428,6 @@ packages:
 
   pure-rand@8.4.2:
     resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
-
-  qrcode-terminal@0.12.0:
-    resolution: {integrity: sha512-EXtzRZmC+YGmGlDFbXKxQiMZNwCLEO6BANKXG4iCtSIM0yqc/pappSx3RIKr4r0uh5JsBckOXeKrB3Iz7mdQpQ==}
-    hasBin: true
 
   qrcode@1.5.4:
     resolution: {integrity: sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg==}
@@ -2419,11 +2404,6 @@ snapshots:
 
   '@yuku-toolchain/types@0.8.2': {}
 
-  '@zerodev/sdk@5.5.10(viem@2.55.8(typescript@7.0.2))':
-    dependencies:
-      semver: 7.8.5
-      viem: 2.55.8(typescript@7.0.2)
-
   abitype@1.2.3(typescript@7.0.2):
     optionalDependencies:
       typescript: 7.0.2
@@ -2849,8 +2829,6 @@ snapshots:
   prettier@2.8.8: {}
 
   pure-rand@8.4.2: {}
-
-  qrcode-terminal@0.12.0: {}
 
   qrcode@1.5.4:
     dependencies:

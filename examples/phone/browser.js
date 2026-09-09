@@ -1,6 +1,4 @@
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { createOAAth } from "@oaath/sdk";
 
 const $ = (id) => document.getElementById(id);
 const status = $("status");
@@ -11,10 +9,6 @@ const pairingLink = $("pairing-link");
 const activity = $("activity");
 const activityTitle = $("activity-title");
 const activityDetail = $("activity-detail");
-const keyName = "oaath-demo-session-private-key-v1";
-const permissionRequestKey = "oaath-demo-permission-request-v1";
-const sessionOperationKey = "oaath-demo-session-operation-v1";
-const ownerRequestKey = "oaath-demo-owner-request-v1";
 const statusLines = status.textContent.trim() ? [status.textContent.trim()] : [];
 const say = (text) => {
   statusLines.push(`[${new Date().toLocaleTimeString()}] ${text}`);
@@ -58,38 +52,9 @@ const json = async (path, options) => {
   if (!response.ok) throw new Error(body.error?.code ?? `HTTP ${response.status}`);
   return body;
 };
-const remember = (key, value) => localStorage.setItem(key, value);
-const forget = (key) => localStorage.removeItem(key);
-const sessionKey = () => {
-  let hex = localStorage.getItem(keyName);
-  if (hex === null || !/^[0-9a-f]{64}$/.test(hex)) {
-    hex = bytesToHex(secp256k1.utils.randomPrivateKey());
-    localStorage.setItem(keyName, hex);
-  }
-  return hexToBytes(hex);
-};
-const sessionIdentity = () => {
-  const key = sessionKey();
-  const publicKey = secp256k1.getPublicKey(key, false);
-  return {
-    key,
-    publicKey: `0x${bytesToHex(publicKey)}`,
-    address: `0x${bytesToHex(keccak_256(publicKey.slice(1)).slice(-20))}`,
-  };
-};
-const sign = (hash, key) => {
-  const signature = secp256k1.sign(hexToBytes(hash.slice(2)), key, {
-    lowS: true,
-    prehash: false,
-  });
-  const recovery = signature.recovery;
-  if (recovery === undefined) throw new Error("session signature has no recovery id");
-  return `0x${signature.toCompactHex()}${(27 + recovery).toString(16).padStart(2, "0")}`;
-};
 let pairingExpiryTimer = null;
 let pairingStatusTimer = null;
 let pairingRequestGeneration = 0;
-let sessionActionPending = false;
 const clearPairingSecret = () => {
   if (pairingExpiryTimer !== null) clearTimeout(pairingExpiryTimer);
   if (pairingStatusTimer !== null) clearInterval(pairingStatusTimer);
@@ -179,341 +144,147 @@ $("pair").onclick = async () => {
     );
   }
 };
-const poll = async (path, label, id, activityToken) => {
-  let currentRequestId = id;
-  say(`${label}\nWaiting without creating another request or operation.\nExact id: ${id}`);
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    const answer = await json(path);
-    if (answer.status !== "pending") return answer;
-    if (answer.requestId && answer.requestId !== currentRequestId) {
-      currentRequestId = answer.requestId;
-      say(
-        `Sponsorship completed. Waiting for the final owner request.\nExact id: ${currentRequestId}`,
-      );
-    }
-    updateActivity(
-      activityToken,
-      label,
-      `Waiting for the request outcome (${attempt + 1}s). Exact id: ${currentRequestId}`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw new Error("request decision timed out");
-};
-const finishSession = (answer) => {
-  if (answer.status === "unresolved") {
-    say(
-      `Session operation remains unresolved (${answer.code ?? "evidence_unavailable"}). Observation retried without resubmission. Permission remains unmaterialized.\nUserOperation: ${answer.userOperationHash}${answer.transactionHash ? `\nDiscovered transaction: ${answer.transactionHash}` : ""}`,
-    );
-    return;
-  }
-  forget(sessionOperationKey);
-  say(
-    `Session operation ${answer.status}.\nUserOperation: ${answer.userOperationHash}\nTransaction: ${answer.transactionHash}`,
-  );
-};
-const observeSession = async (operationId) => {
-  remember(sessionOperationKey, operationId);
-  finishSession(await json(`/demo/operations/${operationId}`));
-};
-const sponsorSession = async (prepared, identity, activityToken) => {
-  updateActivity(
-    activityToken,
-    "Signing paymaster simulation",
-    `Signing retained hash ${prepared.userOperationHash}; this signature is not submitted.`,
-  );
-  const signature = sign(prepared.userOperationHash, identity.key);
-  updateActivity(
-    activityToken,
-    "Requesting ZeroDev sponsorship",
-    `Core SDK preparation is hash-binding paymaster fields for ${prepared.operationId}.`,
-  );
-  return json("/demo/session/sponsor", {
-    method: "POST",
-    body: JSON.stringify({ operationId: prepared.operationId, signature }),
-  });
-};
-const submitSession = async (prepared, identity, activityToken) => {
-  updateActivity(
-    activityToken,
-    "Signing final session operation",
-    `Signing final hash ${prepared.userOperationHash} only in this browser.`,
-  );
-  const signature = sign(prepared.userOperationHash, identity.key);
-  updateActivity(
-    activityToken,
-    "Submitting session operation",
-    `Submitting exact operation ${prepared.operationId}, then waiting for chain evidence.`,
-  );
-  finishSession(
-    await json("/demo/session/submit", {
-      method: "POST",
-      body: JSON.stringify({ operationId: prepared.operationId, signature }),
-    }),
-  );
-};
 
-$("unlock").onclick = async () => {
-  const button = $("unlock");
-  const activityToken = beginActivity(
-    button,
-    "Reading paired account",
-    "Binding the phone owner to the Arbitrum Sepolia profile (chain 421614).",
-  );
-  try {
-    const unlocked = await json("/demo/account");
-    account.textContent = `Account: ${unlocked.account}`;
-    say(
-      `Unlocked ${unlocked.account}.\nNetwork: Arbitrum Sepolia (${unlocked.chainId}); mode: ${unlocked.mode}.\nNo owner authorization was requested.`,
-    );
-  } catch (error) {
-    say(`Unlock failed: ${error.message}`);
-  } finally {
-    finishActivity(button, activityToken);
-  }
+// The SDK owns session custody and operation state in IndexedDB. The page saves
+// only the exact returned handle identity, never a session key or signature.
+const operationKey = "oaath.phone-demo-operation/v1";
+const chainId = 421614;
+const target = `0x${"71".repeat(20)}`;
+let client;
+let connection;
+let grant;
+let busy = false;
+const clientFetch = (request) => {
+  const headers = new Headers(request.headers);
+  headers.set("authorization", "Bearer demo-client-token");
+  return fetch(new Request(request, { headers }));
 };
-$("permission").onclick = async () => {
-  const button = $("permission");
-  const activityToken = beginActivity(
-    button,
-    "Checking permission state",
-    "Reading the current Arbitrum Sepolia session binding before creating anything.",
-  );
-  try {
-    const identity = sessionIdentity();
-    const state = await json("/demo/state");
-    if (state.permission?.sessionAddress === identity.address) {
-      if (!state.permission.requestId) {
-        say("The matching permission reservation is still occupied; no duplicate was created.");
+async function connectAccount() {
+  if (!connection) {
+    client ??= createOAAth({ url: location.origin, fetch: clientFetch });
+    connection = await client.connect();
+    grant = await connection.resume();
+  }
+  const paired = await json("/demo/account");
+  account.textContent = `Account: ${paired.account}`;
+  return connection;
+}
+async function currentGrant() {
+  await connectAccount();
+  if (!grant) throw new Error("Request permission first.");
+  return grant;
+}
+function saveOperation(id) {
+  localStorage.setItem(operationKey, JSON.stringify({ version: operationKey, chain: chainId, id }));
+}
+function savedOperation() {
+  const text = localStorage.getItem(operationKey);
+  if (text === null) return null;
+  const value = JSON.parse(text);
+  if (
+    value?.version !== operationKey ||
+    value.chain !== chainId ||
+    typeof value.id !== "string" ||
+    !/^0x[0-9a-f]{64}$/.test(value.id) ||
+    Object.keys(value).sort().join(",") !== "chain,id,version"
+  ) {
+    throw new Error("Saved operation cannot be read.");
+  }
+  return { chain: value.chain, id: value.id };
+}
+const actions = {
+  unlock: [
+    "Connecting account",
+    async () => {
+      await connectAccount();
+      say(
+        grant
+          ? `Permission restored (${grant.state}).`
+          : "Connected. Request permission to run jobs.",
+      );
+    },
+  ],
+  permission: [
+    "Waiting for phone approval",
+    async () => {
+      await connectAccount();
+      if (grant) {
+        say(`Permission already exists (${grant.state}).`);
         return;
       }
-      remember(permissionRequestKey, state.permission.requestId);
-      updateActivity(
-        activityToken,
-        "Resuming permission request",
-        `Exact request: ${state.permission.requestId}`,
-      );
-      const resumed = await poll(
-        `/demo/permission/${state.permission.requestId}`,
-        "Resuming the existing permission request.",
-        state.permission.requestId,
-        activityToken,
-      );
-      if (resumed.status === "rejected") forget(permissionRequestKey);
-      say(
-        resumed.status === "rejected"
-          ? "Permission request rejected. No signature or permission was created."
-          : `Permission authorization completed for ${resumed.account}.\nExact digest: ${resumed.digest}. Onchain permission is not materialized yet.`,
-      );
-      return;
-    }
-    updateActivity(
-      activityToken,
-      "Preparing permission request",
-      "Binding the browser session key and creating one owner request.",
-    );
-    const created = await json("/demo/permission", {
-      method: "POST",
-      body: JSON.stringify({
-        sessionAddress: identity.address,
-        sessionPublicKey: identity.publicKey,
-      }),
-    });
-    // Persist as soon as the API reveals the owner request id, before polling.
-    remember(permissionRequestKey, created.requestId);
-    updateActivity(
-      activityToken,
-      "Waiting for permission request outcome",
-      `Exact request: ${created.requestId}`,
-    );
-    const approved = await poll(
-      `/demo/permission/${created.requestId}`,
-      "Permission request created.",
-      created.requestId,
-      activityToken,
-    );
-    if (approved.status === "rejected") {
-      forget(permissionRequestKey);
-      say("Permission request rejected. No signature or permission was created.");
-      return;
-    }
-    say(
-      `Permission authorization completed for ${approved.account}.\nExact digest: ${approved.digest}. Onchain permission is not materialized yet.`,
-    );
-  } catch (error) {
-    say(`Permission failed: ${error.message}`);
-  } finally {
-    finishActivity(button, activityToken);
-  }
-};
-$("session").onclick = async () => {
-  if (sessionActionPending) {
-    say("Session operation preparation is still in progress; no duplicate was started.");
-    return;
-  }
-  sessionActionPending = true;
-  const button = $("session");
-  const activityToken = beginActivity(
-    button,
-    "Checking session operation lane",
-    "Reading the exact retained operation before preparing or submitting anything.",
-  );
-  try {
-    const identity = sessionIdentity();
-    const state = await json("/demo/state");
-    const existing = state.operations?.session;
-    if (existing?.status === "preparing") {
-      say("Session operation preparation is still in progress; no duplicate was started.");
-      return;
-    }
-    if (existing) {
-      remember(sessionOperationKey, existing.operationId);
-      if (existing.status === "awaiting-sponsorship-signature") {
-        await submitSession(
-          await sponsorSession(existing, identity, activityToken),
-          identity,
-          activityToken,
-        );
-      } else if (existing.status === "sponsoring") {
-        say("Sponsorship is already in progress; no duplicate request was started.");
-      } else if (existing.status === "sponsorship-unresolved") {
-        say("Sponsorship outcome is unresolved; no retry or transaction submission was started.");
-      } else if (existing.status === "prepared") {
-        await submitSession(existing, identity, activityToken);
-      } else if (existing.status === "unresolved") {
-        updateActivity(
-          activityToken,
-          "Checking the next session nonce",
-          "A new operation is prepared only if EntryPoint proves the retained nonce was consumed.",
-        );
-        try {
-          const prepared = await json("/demo/session/prepare", {
-            method: "POST",
-            body: JSON.stringify({ sessionAddress: identity.address }),
-          });
-          remember(sessionOperationKey, prepared.operationId);
-          const finalPrepared = prepared.sponsorshipRequired
-            ? await sponsorSession(prepared, identity, activityToken)
-            : prepared;
-          await submitSession(finalPrepared, identity, activityToken);
-        } catch (error) {
-          if (error.message !== "session_sequence_unresolved") throw error;
-          updateActivity(
-            activityToken,
-            "Observing occupied session nonce",
-            `Observing exact operation ${existing.operationId} without resubmitting.`,
-          );
-          await observeSession(existing.operationId);
-        }
-      } else {
-        updateActivity(
-          activityToken,
-          "Observing existing session operation",
-          `Observing exact operation ${existing.operationId} without resubmitting.`,
-        );
-        await observeSession(existing.operationId);
+      say("Review the request in the phone inbox and approve it.");
+      grant = await connection.requestPermission({
+        chainScope: "all",
+        permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "5" }] }],
+        expiresIn: 1800,
+        perChainOperationLimit: 3,
+      });
+      say("Permission active: up to three jobs on this chain, for 30 minutes.");
+    },
+  ],
+  session: [
+    "Running a new job",
+    async () => {
+      const current = await currentGrant();
+      // A saved unresolved job is an observation action, never another send.
+      if (savedOperation()) {
+        say("Observe the saved job before starting another.");
+        return;
       }
-      return;
-    }
-    const remembered = localStorage.getItem(sessionOperationKey);
-    if (remembered !== null) {
-      updateActivity(
-        activityToken,
-        "Recovering retained session operation",
-        `Observing exact operation ${remembered} without resubmitting.`,
-      );
-      await observeSession(remembered);
-      return;
-    }
-    updateActivity(
-      activityToken,
-      "Preparing session operation",
-      "Reading the EntryPoint nonce and building the Arbitrum Sepolia UserOperation.",
-    );
-    const prepared = await json("/demo/session/prepare", {
-      method: "POST",
-      body: JSON.stringify({ sessionAddress: identity.address }),
-    });
-    // The prepared hash/id is known before submit. Retain it across response
-    // loss and reload so every later click observes this exact occupied lane.
-    remember(sessionOperationKey, prepared.operationId);
-    const finalPrepared = prepared.sponsorshipRequired
-      ? await sponsorSession(prepared, identity, activityToken)
-      : prepared;
-    await submitSession(finalPrepared, identity, activityToken);
-  } catch (error) {
-    if (error.message === "operation_not_found") {
-      forget(sessionOperationKey);
+      const operation = await current.sendCalls({
+        chain: chainId,
+        calls: [{ target, value: "5", data: "0x12345678" }],
+      });
+      saveOperation(operation.id);
       say(
-        "The retained session operation belongs to a previous relay process. Its local pointer was cleared; no operation was prepared or submitted. Click again to start a new operation explicitly.",
+        `Job submitted. Choose Observe saved job to check its outcome.\nOperation: ${operation.id}`,
       );
-    } else say(`Session transaction failed: ${error.message}`);
-  } finally {
-    sessionActionPending = false;
-    finishActivity(button, activityToken);
-  }
+    },
+  ],
+  observe: [
+    "Observing saved job",
+    async () => {
+      const saved = savedOperation();
+      if (!saved) {
+        say("No saved job to observe.");
+        return;
+      }
+      const current = await currentGrant();
+      const operation = await current.getOperation(saved);
+      if (!operation) {
+        say("The saved job is unavailable. Its identity is retained.");
+        return;
+      }
+      const outcome = await operation.observe();
+      if (outcome.status === "finalized") {
+        localStorage.removeItem(operationKey);
+        say(
+          `Job finalized: ${outcome.outcome}.\nOperation: ${operation.id}\nTransaction: ${outcome.transactionHash}`,
+        );
+      } else if (outcome.status === "superseded") {
+        localStorage.removeItem(operationKey);
+        say(`Job superseded. Operation: ${operation.id}`);
+      } else
+        say(
+          `Job remains ${outcome.status}. Observation can be retried.\nOperation: ${operation.id}`,
+        );
+    },
+  ],
 };
-$("owner").onclick = async () => {
-  const button = $("owner");
-  const activityToken = beginActivity(
-    button,
-    "Checking owner operation lane",
-    "Reading the exact retained request before preparing or submitting anything.",
-  );
-  try {
-    const state = await json("/demo/state");
-    const ownerOperation = state.operations?.owner;
-    let requestId =
-      ownerOperation && ownerOperation.status !== "awaiting-request"
-        ? ownerOperation.operationId
-        : state.signatureRequest?.purpose === "owner-operation"
-          ? state.signatureRequest.requestId
-          : localStorage.getItem(ownerRequestKey);
-    if (!requestId && (ownerOperation || state.signatureRequest)) {
-      say("The owner request lane is occupied and possibly submitted; no duplicate was created.");
-      return;
+for (const [id, [title, action]] of Object.entries(actions)) {
+  $(id).onclick = async () => {
+    if (busy) return;
+    busy = true;
+    const token = beginActivity($(id), title, "Waiting for the current action.");
+    for (const actionId of Object.keys(actions)) $(actionId).disabled = true;
+    try {
+      await action();
+    } catch (error) {
+      say(`Action unavailable: ${error?.code ?? "check pairing, permission, or the saved job"}.`);
+    } finally {
+      busy = false;
+      finishActivity($(id), token);
+      for (const actionId of Object.keys(actions)) $(actionId).disabled = false;
     }
-    if (!requestId) {
-      updateActivity(
-        activityToken,
-        "Preparing owner operation",
-        "Reading the EntryPoint nonce and creating one owner request.",
-      );
-      const prepared = await json("/demo/owner/prepare", { method: "POST", body: "{}" });
-      requestId = prepared.requestId;
-    }
-    // Persist immediately when the API reveals the signature request id.
-    remember(ownerRequestKey, requestId);
-    updateActivity(
-      activityToken,
-      "Waiting for owner request outcome",
-      `Exact request: ${requestId}. Submission follows only an accepted result.`,
-    );
-    const sent = await poll(
-      `/demo/owner/${requestId}`,
-      "Resuming the exact owner signature request.",
-      requestId,
-      activityToken,
-    );
-    if (sent.status === "rejected") {
-      forget(ownerRequestKey);
-      say("Owner operation request rejected. No signature or operation was submitted.");
-      return;
-    }
-    forget(ownerRequestKey);
-    say(
-      sent.status === "unresolved"
-        ? `Owner operation remains unresolved (${sent.code ?? "evidence_unavailable"}) after request resolution. Observation is same-hash only.\nUserOperation: ${sent.userOperationHash}${sent.transactionHash ? `\nDiscovered transaction: ${sent.transactionHash}` : ""}`
-        : `Owner operation ${sent.status} after request resolution.\nUserOperation: ${sent.userOperationHash}\nTransaction: ${sent.transactionHash}`,
-    );
-  } catch (error) {
-    if (error.message === "operation_not_found") {
-      forget(ownerRequestKey);
-      say(
-        "The retained owner request belongs to a previous relay process. Its local pointer was cleared; no operation was prepared or submitted. Click again to start a new request explicitly.",
-      );
-    } else say(`Owner transaction failed: ${error.message}`);
-  } finally {
-    finishActivity(button, activityToken);
-  }
-};
+  };
+}
