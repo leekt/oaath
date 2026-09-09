@@ -461,6 +461,7 @@ export function createConnection(
     );
     const scope: PermissionScope = Object.freeze({
       version: OAATH_PERMISSION_REQUEST_VERSION,
+      context: input.binding.context,
       application: input.binding.application,
       chainScope: "all",
       logicalAccount: input.binding.account,
@@ -655,6 +656,13 @@ export function createConnection(
         "oaath_client_state_conflict",
         "the persisted context belongs to another realm",
         "context_binding_mismatch",
+      );
+    }
+    if (JSON.stringify(context.request.context) !== JSON.stringify(input.binding.context)) {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the reviewed request belongs to another workspace/account context",
+        "workspace_account_context_mismatch",
       );
     }
     let record: GrantStoreRecord | undefined;

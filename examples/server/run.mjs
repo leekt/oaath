@@ -39,7 +39,13 @@ const CODE_VERIFIER = "demo-code-verifier-that-is-long-enough-0123456789";
 const REQUESTED_AT = Math.floor(Date.now() / 1_000);
 /** One exact protocol scope the shared decision owner can approve. */
 const DEMO_PERMISSION_SCOPE = JSON.stringify({
-  version: "oaath.permission-request/v1",
+  version: "oaath.permission-request/v2",
+  context: {
+    version: "oaath.workspace-account-context/v1",
+    workspaceId: "personal-1",
+    workspaceKind: "personal",
+    accountId: "account-1",
+  },
   application: {
     applicationId: "oaath-relay-demo",
     clientId: CLIENT_ID,
@@ -81,6 +87,7 @@ const DEMO_PERMISSION_SCOPE = JSON.stringify({
   },
   requestedAt: REQUESTED_AT,
   expiresAt: REQUESTED_AT + 600,
+  sessionSigner: null,
 });
 
 const say = (...parts) => console.log(...parts);

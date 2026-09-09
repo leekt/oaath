@@ -33,7 +33,13 @@ export const NO_AUDIENCE_CLIENT_TOKEN = "no-audience-client-token";
  * permissive placeholder, so rejection tests exercise the production gate.
  */
 export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
-  version: "oaath.permission-request/v1",
+  version: "oaath.permission-request/v2",
+  context: {
+    version: "oaath.workspace-account-context/v1",
+    workspaceId: "personal-1",
+    workspaceKind: "personal",
+    accountId: "account-1",
+  },
   application: {
     applicationId: "oaath-native-tests",
     clientId: "client-a",
@@ -75,6 +81,7 @@ export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
   },
   requestedAt: 100,
   expiresAt: 200,
+  sessionSigner: null,
 });
 
 /** Test clock start (`createTestClock`'s 1_700_000_000_000 ms) in protocol seconds. */

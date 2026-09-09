@@ -29,7 +29,13 @@ const subject = createSubjectBinding({
 });
 
 const permission = {
-  version: "oaath.permission-request/v1",
+  version: "oaath.permission-request/v2",
+  context: {
+    version: "oaath.workspace-account-context/v1",
+    workspaceId: "personal-1",
+    workspaceKind: "personal",
+    accountId: "account-1",
+  },
   requestId: "authorization-request-1",
   application: {
     applicationId: "oaath-example",

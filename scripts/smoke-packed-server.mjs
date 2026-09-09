@@ -108,6 +108,12 @@ const policyCalls = [
 ];
 const requestedScope = JSON.stringify({
   version: OAATH_PERMISSION_REQUEST_VERSION,
+  context: {
+    version: "oaath.workspace-account-context/v1",
+    workspaceId: "personal-1",
+    workspaceKind: "personal",
+    accountId: "account-1",
+  },
   application: {
     applicationId: "oaath-packed-server-smoke",
     clientId: "client-a",
@@ -142,6 +148,7 @@ const requestedScope = JSON.stringify({
   },
   requestedAt,
   expiresAt: requestedAt + 600,
+  sessionSigner: null,
 });
 
 const callers = new Map([

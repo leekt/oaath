@@ -6,6 +6,7 @@
 import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
+import { parseClientContext } from "../src/persistence.js";
 import {
   CALL_DATA,
   CHAIN_ID,
@@ -21,6 +22,48 @@ import {
 } from "./support/browser.js";
 
 describe("browser golden path", () => {
+  it("refuses a persisted permission request from a different workspace context", async () => {
+    const stores = createMemoryStores();
+    const first = createRealm({ stores });
+    const connection = await first.oaath.connect();
+    await connection.requestPermission(permissionInput());
+    const stored = parseClientContext(await stores.context.read(first.oaath.binding.bindingId));
+    expect(stored.request.context).toEqual(first.oaath.binding.context);
+    await first.oaath.close();
+    const recreatedStores = createMemoryStores();
+    const second = createRealm({
+      clock: first.clock,
+      relay: first.relay,
+      stores: {
+        ...recreatedStores,
+        context: {
+          ...recreatedStores.context,
+          read: async () => {
+            return {
+              ...stored,
+              request: {
+                ...stored.request,
+                context: {
+                  ...stored.request.context,
+                  workspaceId: "foreign-team",
+                  workspaceKind: "team",
+                },
+              },
+            };
+          },
+        },
+      },
+    });
+    const reconnected = await second.oaath.connect();
+    await expect(reconnected.resume()).rejects.toMatchObject({
+      code: "oaath_client_state_conflict",
+      source: "workspace_account_context_mismatch",
+    });
+    expect(first.chain.sends).toHaveLength(0);
+    expect(second.chain.sends).toHaveLength(0);
+    await second.oaath.close();
+  });
+
   it("drains a permission handle created while its Connection closes", async () => {
     const clock = createClock();
     const relay = createRelay(clock);

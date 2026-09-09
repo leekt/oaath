@@ -110,6 +110,11 @@ with configured ports. `context` carries version
 (`personal` or `team`), and `accountId`. A new connection fetches the current
 selection; existing connections retain their captured context.
 
+The permission request carries that context through owner review and binds it
+into the request hash. Resuming a grant checks the stored request against the
+connection's context. `oaath.permission-request/v2` is the only accepted request
+schema; prior requests require fresh authorization.
+
 Local sessions and grant lookup are isolated by authenticated caller,
 workspace, and complete account profile. Switching contexts creates a distinct
 realm; switching back can resume its prior session. The service directory owns
