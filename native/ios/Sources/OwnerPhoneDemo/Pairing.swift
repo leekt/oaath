@@ -11,6 +11,7 @@
  */
 import CryptoKit
 import Foundation
+import OwnerPhone
 
 public enum DemoPairingError: Error, Equatable, Sendable {
     case refused
@@ -142,56 +143,73 @@ public struct OwnerPublicMaterial: Equatable, Sendable {
     }
 }
 
-/// One paired device: the device-scoped owner credential, plus the smart
-/// account address the relay derived server-side from the registered public
-/// key (`null` when the web half has no chain to derive it against). The phone
-/// displays what the relay derived — the derivation honestly lives with the
-/// web half, which is the side that proves the chain evidence.
+/// Current exact pairing response. Earlier responses require fresh pairing.
+public let ownerPhonePairingResponseVersion = "oaath.phone-pairing/v1"
+
+/// One complete paired account and the chain/EntryPoint configuration captured
+/// with its device credential. A chainless service cannot establish pairing.
 public struct PairedDevice: Equatable, Sendable {
     public let deviceCredential: String
-    public let account: String?
+    public let account: String
+    public let chains: OwnerPhoneKernelChains
 
-    fileprivate init(deviceCredential: PairingDeviceCredential, account: String?) {
+    fileprivate init(deviceCredential: PairingDeviceCredential, account: String, chains: OwnerPhoneKernelChains) {
         self.deviceCredential = deviceCredential.value
         self.account = account
+        self.chains = chains
     }
 }
 
-/// Strict decode of `{deviceCredential, account}` — exactly two keys; the
-/// credential is canonical 32-byte base64url, and the account is a lowercase
-/// 20-byte hex address or null. The example owns one compact byte encoding;
-/// re-encoding rejects duplicate keys and representation drift.
+/// Strict current version, exact fields and canonical response bytes. The
+/// service owns chain configuration; a later signing request cannot replace it.
 public func decodePairingResponse(_ data: Data) throws -> PairedDevice {
     guard !data.isEmpty,
-          data.count <= 256,
+          data.count <= 16_384,
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          Set(object.keys) == ["deviceCredential", "account"],
+          Set(object.keys) == ["version", "deviceCredential", "account", "chains"],
+          object["version"] as? String == ownerPhonePairingResponseVersion,
           let credentialText = object["deviceCredential"] as? String,
-          let credential = PairingDeviceCredential(credentialText)
+          let credential = PairingDeviceCredential(credentialText),
+          let account = object["account"] as? String, isLowercaseAddress(account),
+          let chains = try? decodePairingChains(object["chains"])
     else {
         throw DemoPairingError.invalidResponse
     }
-    let device: PairedDevice
-    let canonical: Data
-    if object["account"] is NSNull {
-        device = PairedDevice(deviceCredential: credential, account: nil)
-        canonical = Data(
-            #"{"deviceCredential":"\#(credential.value)","account":null}"#.utf8)
-    } else {
-        guard let account = object["account"] as? String, isLowercaseAddress(account) else {
-            throw DemoPairingError.invalidResponse
-        }
-        device = PairedDevice(deviceCredential: credential, account: account)
-        canonical = Data(
-            #"{"deviceCredential":"\#(credential.value)","account":"\#(account)"}"#.utf8)
-    }
+    let chainData = try JSONSerialization.data(withJSONObject: pairingChainObjects(chains), options: .sortedKeys)
+    let chainText = String(decoding: chainData, as: UTF8.self)
+    let canonical = Data(
+        #"{"version":"\#(ownerPhonePairingResponseVersion)","deviceCredential":"\#(credential.value)","account":"\#(account)","chains":\#(chainText)}"#.utf8)
     guard data == canonical else { throw DemoPairingError.invalidResponse }
-    return device
+    return PairedDevice(deviceCredential: credential, account: account, chains: chains)
+}
+
+private func decodePairingChains(_ value: Any?) throws -> OwnerPhoneKernelChains {
+    guard let entries = value as? [[String: Any]] else {
+        throw PairingStoreError.invalidRecord
+    }
+    var entryPoints: [Int: String] = [:]
+    for entry in entries {
+        guard Set(entry.keys) == ["chainId", "entryPoint"],
+              let chain = entry["chainId"] as? NSNumber,
+              CFGetTypeID(chain) != CFBooleanGetTypeID(),
+              chain.doubleValue >= 1, chain.doubleValue <= 9_007_199_254_740_991,
+              chain.doubleValue.rounded(.towardZero) == chain.doubleValue,
+              let entryPoint = entry["entryPoint"] as? String,
+              entryPoints[Int(chain.doubleValue)] == nil
+        else { throw PairingStoreError.invalidRecord }
+        entryPoints[Int(chain.doubleValue)] = entryPoint
+    }
+    return try OwnerPhoneKernelChains(entryPoints: entryPoints)
+}
+
+private func pairingChainObjects(_ chains: OwnerPhoneKernelChains) -> [[String: Any]] {
+    chains.entryPoints.sorted { $0.key < $1.key }.map { ["chainId": $0.key, "entryPoint": $0.value] }
 }
 
 /// Lowercase `0x`-prefixed 20-byte hex, the projection's address shape.
 private func isLowercaseAddress(_ text: String) -> Bool {
-    guard text.count == 42, text.hasPrefix("0x") else { return false }
+    guard text.count == 42, text.hasPrefix("0x"),
+          text != "0x" + String(repeating: "00", count: 20) else { return false }
     for scalar in text.unicodeScalars.dropFirst(2) {
         switch scalar {
         case "0"..."9", "a"..."f": continue
@@ -235,44 +253,48 @@ public enum PairingStoreError: Error, Equatable, Sendable {
 /// The one authoritative persisted pairing identity. Endpoint and bearer are
 /// encoded in the same exact versioned value and can never be loaded apart.
 public struct PersistedPairing: Equatable, Sendable {
-    /// Version 3 binds the relay credential to the user-presence owner-key
-    /// generation. Earlier custody is rejected and must be explicitly
-    /// forgotten before re-pairing; there is no migration or old reader.
-    public static let version = 3
-    private static let maxEncodedBytes = 2_048
+    /// Version 4 captures configured chains with the account and owner key.
+    /// Prior state is unreadable until explicitly forgotten and re-paired.
+    public static let version = 4
+    private static let maxEncodedBytes = 32_768
     public let endpoint: DemoRelayEndpoint
     public let credential: String
-    public let account: String?
+    public let account: String
+    public let chains: OwnerPhoneKernelChains
     /// Exact owner key registered when this credential was issued.
     public let ownerPublicMaterial: OwnerPublicMaterial
 
     public init(
         endpoint: DemoRelayEndpoint,
         credential: String,
-        account: String?,
+        account: String,
+        chains: OwnerPhoneKernelChains,
         ownerPublicMaterial: OwnerPublicMaterial
     ) throws {
         guard PairingDeviceCredential(credential) != nil else {
             throw PairingStoreError.invalidRecord
         }
-        if let account, !isLowercaseAddress(account) { throw PairingStoreError.invalidRecord }
+        guard isLowercaseAddress(account) else { throw PairingStoreError.invalidRecord }
         self.endpoint = endpoint
         self.credential = credential
         self.account = account
+        self.chains = chains
         self.ownerPublicMaterial = ownerPublicMaterial
     }
 
     public func encoded() throws -> Data {
-        let encodedAccount: Any = account.map { $0 as Any } ?? NSNull()
-        return try JSONSerialization.data(
+        let data = try JSONSerialization.data(
             withJSONObject: [
                 "version": Self.version,
                 "endpoint": endpoint.baseURL.absoluteString,
                 "credential": credential,
-                "account": encodedAccount,
+                "account": account,
+                "chains": pairingChainObjects(chains),
                 "ownerPublicMaterial": ownerPublicMaterial.hex
             ],
             options: [.sortedKeys])
+        guard data.count <= Self.maxEncodedBytes else { throw PairingStoreError.invalidRecord }
+        return data
     }
 
     public static func decode(_ data: Data) throws -> PersistedPairing {
@@ -280,7 +302,7 @@ public struct PersistedPairing: Equatable, Sendable {
               data.count <= Self.maxEncodedBytes,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys)
-                == ["version", "endpoint", "credential", "account", "ownerPublicMaterial"],
+                == ["version", "endpoint", "credential", "account", "chains", "ownerPublicMaterial"],
               let version = object["version"] as? NSNumber,
               CFGetTypeID(version) != CFBooleanGetTypeID(),
               version.doubleValue == Double(Self.version),
@@ -289,9 +311,8 @@ public struct PersistedPairing: Equatable, Sendable {
               let ownerPublicMaterialText = object["ownerPublicMaterial"] as? String,
               let ownerPublicMaterial = OwnerPublicMaterial(ownerPublicMaterialText)
         else { throw PairingStoreError.invalidRecord }
-        let account: String?
-        if object["account"] is NSNull { account = nil }
-        else if let value = object["account"] as? String { account = value }
+        guard let account = object["account"] as? String,
+              let chains = try? decodePairingChains(object["chains"])
         else { throw PairingStoreError.invalidRecord }
         do {
             let endpoint = try DemoRelayEndpoint(baseURLText: endpointText)
@@ -302,6 +323,7 @@ public struct PersistedPairing: Equatable, Sendable {
                 endpoint: endpoint,
                 credential: credential,
                 account: account,
+                chains: chains,
                 ownerPublicMaterial: ownerPublicMaterial)
             guard try pairing.encoded() == data else {
                 throw PairingStoreError.invalidRecord

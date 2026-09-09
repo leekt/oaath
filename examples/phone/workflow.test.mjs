@@ -7,6 +7,7 @@ import {
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
 import { createOAAth } from "@oaath/sdk";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
 import { hexToBytes, toHex } from "viem";
 import { startPhoneService } from "./service.mjs";
 
@@ -28,6 +29,11 @@ test("canonical phone approval executes repeated bounded jobs on a real P-256 Ke
     });
     assert.equal(pairedResponse.status, 200, "pairing must enroll the actual account");
     const paired = await pairedResponse.json();
+    assert.equal(paired.version, "oaath.phone-pairing/v1");
+    assert.deepEqual(paired.chains, [
+      { chainId: service.chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+    ]);
+    assert.deepEqual(Object.keys(paired), ["version", "deviceCredential", "account", "chains"]);
     const ownerFetch = (path, body) =>
       fetch(`${service.url}${path}`, {
         headers: {

@@ -29,10 +29,10 @@ stability guarantee and no production qualification.
    "Pair this device". The phone and Mac must be on the same network; allow the
    app's Local Network prompt so it can connect to the relay on the Mac.
 
-The device keeps the normalized relay endpoint and its issued credential as one
-versioned Keychain value after pairing; neither can be loaded or used apart.
-Installs paired before the v3 custody fix must pair once again; the app rejects
-the old software-fallback-bound pairing instead of reusing contradictory state.
+The device keeps the normalized relay endpoint, issued credential, owner account,
+public key, and configured chain/EntryPoint pairs in one versioned Keychain value.
+Installs paired before persisted pairing v4 must pair once again; the app rejects
+records that lack the current account and chain binding.
 While paired, new pairing links are ignored until **Clear pairing** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
 bound relay refuses the credential (after an example restart — its state is

@@ -59,6 +59,14 @@ The phone finishes when the relay commits its decision. The application SDK
 retrieves the released code from the relay; the phone never contacts the
 application callback or needs to reach the browser's loopback origin.
 
+Pairing response `oaath.phone-pairing/v1` binds a nonzero account and its
+configured chain/EntryPoint pairs to the device credential. Persisted pairing
+version 4 stores those facts together with the endpoint and owner public key;
+recreation passes the same configuration to the approval binding. Update the
+service and phone together, then explicitly forget and replace prior pairing
+records. Chainless pairing is no longer supported. These are service execution
+chains; they do not narrow the replayable enable signature's onchain scope.
+
 ## EIP-712 derivation and Kernel approval
 
 `OwnerPhone` uses a package-internal, non-authorizing EIP-712 primitive to

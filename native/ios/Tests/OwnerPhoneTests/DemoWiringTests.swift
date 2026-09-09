@@ -190,8 +190,8 @@ private actor DeferredHTTP: DemoHTTP {
     }
 }
 
-private func pairingResponse(_ credential: String) -> Data {
-    Data(#"{"deviceCredential":"\#(credential)","account":null}"#.utf8)
+private func pairingResponse(_ credential: String, account: String = "0x" + String(repeating: "66", count: 20)) -> Data {
+    Data(#"{"version":"oaath.phone-pairing/v1","deviceCredential":"\#(credential)","account":"\#(account)","chains":[{"chainId":31337,"entryPoint":"0x0000000071727de22e5e9d8baf0edac6f37da032"}]}"#.utf8)
 }
 
 private func inboxResponse(
@@ -254,7 +254,7 @@ private final class PairingIdentityHTTP: DemoHTTP, @unchecked Sendable {
         if request.url?.path == "/native/pairings" {
             if pairingStatus != 200 { return (Data("{}".utf8), pairingStatus) }
             return (
-                Data(#"{"deviceCredential":"\#(credential)","account":"\#(account)"}"#.utf8),
+                pairingResponse(credential, account: account),
                 200)
         }
         let operationId = request.url?.lastPathComponent ?? "request"
@@ -448,7 +448,8 @@ final class DemoRelayEndpointTests: XCTestCase {
             pairing: try PersistedPairing(
                 endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
                 credential: deviceCredentialA,
-                account: nil,
+                account: "0x" + String(repeating: "66", count: 20),
+                chains: configuredTestChains,
                 ownerPublicMaterial: fakeOwnerPublicMaterial),
             http: FakeHTTP(status: 200, body: body, recorder: recorder),
             onUnauthorized: { await unauthorized.record($0) })
@@ -468,7 +469,8 @@ final class DemoRelayEndpointTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
             credential: deviceCredentialC,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let client = demoRelayClient(
             pairing: pairing,
@@ -549,7 +551,8 @@ final class DemoInboxCodecTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let recorder = FakeHTTP.Recorder()
         let items = try await fetchDemoInbox(
@@ -591,37 +594,24 @@ final class PairingClientTests: XCTestCase {
             pairingAttempts: InMemoryPairingAttemptStore(),
             http: FakeHTTP(
                 status: 200,
-                body: Data(
-                    #"{"deviceCredential":"\#(deviceCredentialA)","account":"\#(account)"}"#.utf8),
+                body: pairingResponse(deviceCredentialA, account: account),
                 recorder: recorder))
         XCTAssertEqual(device.deviceCredential, deviceCredentialA)
         XCTAssertEqual(device.account, account)
         XCTAssertEqual(recorder.requests.count, 1)
 
-        // A chainless web half derives no account; the phone shows that honestly.
-        let chainless = try await pair(
-            endpoint: try DemoRelayEndpoint(baseURLText: "http://127.0.0.1:8787"),
-            pairingCode: PairingCode(pairingCodeAInput)!,
-            deviceToken: validDeviceToken,
-            publicKey: fakeOwnerPublicMaterial,
-            pairingAttempts: InMemoryPairingAttemptStore(),
-            http: FakeHTTP(
-                status: 200,
-                body: pairingResponse(deviceCredentialA),
-                recorder: .init()))
-        XCTAssertNil(chainless.account)
+        XCTAssertTrue(device.chains == configuredTestChains)
+
     }
 
     func testARefusedOrMalformedPairingFailsClosed() async throws {
+        let valid = String(decoding: pairingResponse(deviceCredentialA), as: UTF8.self)
         for (status, body) in [
             (401, #"{"error":{"code":"pairing_invalid"}}"#),
-            (200, #"{"deviceCredential":"x","account":null,"extra":1}"#),
-            (200, #"{"deviceCredential":"x"}"#),
-            (200, #"{"deviceCredential":"","account":null}"#),
-            (200, #"{"deviceCredential":"x","account":"0xNOT"}"#),
-            (200, #"{"deviceCredential":"\#(deviceCredentialA)","deviceCredential":"\#(deviceCredentialB)","account":null}"#),
-            (200, #" {"deviceCredential":"\#(deviceCredentialA)","account":null}"#),
-            (200, #"{"account":null,"deviceCredential":"\#(deviceCredentialA)"}"#),
+            (200, valid.replacingOccurrences(of: "\"deviceCredential\":\"\(deviceCredentialA)\"", with: "\"deviceCredential\":\"x\"")),
+            (200, valid.replacingOccurrences(of: "\"deviceCredential\":\"\(deviceCredentialA)\"", with: "\"deviceCredential\":\"\"")),
+            (200, valid.replacingOccurrences(of: "\"deviceCredential\":\"\(deviceCredentialA)\"", with: "\"deviceCredential\":\"\(deviceCredentialA)\",\"deviceCredential\":\"\(deviceCredentialB)\"")),
+            (200, " " + valid),
             (200, #"[]"#)
         ] {
             do {
@@ -632,12 +622,12 @@ final class PairingClientTests: XCTestCase {
                     publicKey: fakeOwnerPublicMaterial,
                     pairingAttempts: InMemoryPairingAttemptStore(),
                     http: FakeHTTP(status: status, body: Data(body.utf8), recorder: .init()))
-                XCTFail("pairing must fail closed for status \(status) body \(body)")
+                XCTFail("pairing must fail closed for status \(status)")
             } catch {
                 XCTAssertTrue(error is DemoPairingError)
             }
         }
-        XCTAssertThrowsError(try decodePairingResponse(Data(repeating: 0x20, count: 257))) {
+        XCTAssertThrowsError(try decodePairingResponse(Data(repeating: 0x20, count: 16_385))) {
             XCTAssertEqual($0 as? DemoPairingError, .invalidResponse)
         }
     }
@@ -707,10 +697,10 @@ final class PairingClientTests: XCTestCase {
             XCTAssertThrowsError(try PersistedPairing(
                 endpoint: endpoint,
                 credential: invalidCredential,
-                account: nil,
+                account: "0x" + String(repeating: "66", count: 20),
+                chains: configuredTestChains,
                 ownerPublicMaterial: fakeOwnerPublicMaterial))
-            XCTAssertThrowsError(try decodePairingResponse(Data(
-                #"{"deviceCredential":"\#(invalidCredential)","account":null}"#.utf8)))
+            XCTAssertThrowsError(try decodePairingResponse(pairingResponse(invalidCredential)))
         }
     }
 
@@ -751,13 +741,14 @@ final class PairingClientTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "HTTP://RELAY.EXAMPLE:8787/"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         XCTAssertEqual(store.load(), .absent)
         XCTAssertTrue(try store.installIfAbsent(pairing))
         XCTAssertEqual(store.load(), .stored(pairing))
         XCTAssertEqual(pairing.endpoint.baseURL.absoluteString, "http://relay.example:8787")
-        XCTAssertEqual(PersistedPairing.version, 3)
+        XCTAssertEqual(PersistedPairing.version, 4)
         XCTAssertEqual(try PersistedPairing.decode(pairing.encoded()), pairing)
         XCTAssertTrue(store.clear())
         XCTAssertEqual(store.load(), .absent)
@@ -768,14 +759,14 @@ final class PairingClientTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let valid = try XCTUnwrap(
             JSONSerialization.jsonObject(with: pairing.encoded()) as? [String: Any])
         for changed in [
             valid.merging(["extra": true]) { _, right in right },
-            valid.merging(["version": 1]) { _, right in right },
-            valid.merging(["version": 2]) { _, right in right },
+            valid.merging(["version": 3]) { _, right in right },
             valid.merging(["ownerPublicMaterial": "0x00"]) { _, right in right },
             valid.merging(["endpoint": "http://RELAY-A:8787/"]) { _, right in right }
         ] {
@@ -793,7 +784,7 @@ final class PairingClientTests: XCTestCase {
         for malformed in [
             Data((" " + canonicalText).utf8),
             Data(duplicateCredential.utf8),
-            Data(repeating: 0x20, count: 2_049)
+            Data(repeating: 0x20, count: 32_769)
         ] {
             XCTAssertThrowsError(try PersistedPairing.decode(malformed)) {
                 XCTAssertEqual($0 as? PairingStoreError, .invalidRecord)
@@ -801,21 +792,22 @@ final class PairingClientTests: XCTestCase {
         }
     }
 
-    func testOldV2PairingOccupiesTheSameSlotUntilExplicitClearAndRePair() throws {
+    func testPriorPairingRemainsUnreadableUntilExplicitClearAndRePair() throws {
         XCTAssertEqual(
             KeychainPairingStore().service,
             "org.oaath.owner-phone.pairing-v2")
 
-        let service = "org.oaath.tests.pairing.v3.\(UUID().uuidString)"
+        let service = "org.oaath.tests.pairing.v4.\(UUID().uuidString)"
         let store = KeychainPairingStore(service: service)
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         var oldObject = try XCTUnwrap(
             JSONSerialization.jsonObject(with: pairing.encoded()) as? [String: Any])
-        oldObject["version"] = 2
+        oldObject["version"] = 3
         let oldData = try JSONSerialization.data(
             withJSONObject: oldObject,
             options: [.sortedKeys])
@@ -840,7 +832,7 @@ final class PairingClientTests: XCTestCase {
         XCTAssertTrue(store.clear())
         XCTAssertEqual(store.load(), .absent)
         XCTAssertTrue(try store.installIfAbsent(pairing))
-        XCTAssertEqual(store.load(), .stored(pairing))
+        XCTAssertTrue(store.load() == .stored(pairing))
     }
 
     func testPairingCodeCanonicalizesExactlyLikeTheRelay() {
@@ -861,12 +853,14 @@ final class PairingClientTests: XCTestCase {
         let pairingA = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let pairingB = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-b.example:8787"),
             credential: deviceCredentialB,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
 
         let occupied = InMemoryPairingStore(result: .stored(pairingA))
@@ -948,7 +942,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let store = InMemoryPairingStore(result: .stored(pairing))
 
@@ -1025,7 +1020,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let intervening = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://other.example:8787"),
             credential: deviceCredentialD,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         XCTAssertTrue(try store.installIfAbsent(intervening))
         model.baseURLText = "http://relay.example:8787"
@@ -1050,7 +1046,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let intervening = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://other.example:8787"),
             credential: deviceCredentialD,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         XCTAssertTrue(try store.installIfAbsent(intervening))
         await http.succeed(
@@ -1115,7 +1112,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let pairedStore = InMemoryPairingStore(
             result: .stored(pairing), mutationsSucceed: false)
@@ -1136,16 +1134,20 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(blockedStore.load(), .unreadable)
     }
 
-    func testRebuildRejectsAStoreChangedByTheInjectedSigner() throws {
+    func testRebuildRejectsChainConfigurationChangedByTheInjectedSigner() throws {
         let pairingA = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let pairingB = try PersistedPairing(
-            endpoint: DemoRelayEndpoint(baseURLText: "http://relay-b.example:8787"),
-            credential: deviceCredentialB,
-            account: nil,
+            endpoint: pairingA.endpoint,
+            credential: pairingA.credential,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: OwnerPhoneKernelChains(entryPoints: [
+                421614: "0x0000000071727de22e5e9d8baf0edac6f37da032"
+            ]),
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let store = InMemoryPairingStore(result: .stored(pairingA))
         let signer = StoreMutatingOwnerSigning {
@@ -1168,6 +1170,7 @@ final class DemoPairingIdentityTests: XCTestCase {
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
             account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: OwnerPublicMaterial(hexEncode(Data(key.publicKey.x963Representation.dropFirst())))!))
         let callback = expectation(description: "approval must not call the application redirect")
         callback.isInverted = true
@@ -1198,6 +1201,7 @@ final class DemoPairingIdentityTests: XCTestCase {
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
             account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
 
         let currentHTTP = KernelOwnerSigningRecordingHTTP()
@@ -1250,11 +1254,13 @@ final class DemoPairingIdentityTests: XCTestCase {
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
             account: account,
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let pairingB = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-b.example:8787"),
             credential: deviceCredentialB,
             account: account,
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let store = InMemoryPairingStore(result: .stored(pairingA))
         let signingAttempts = OwnerSigningAttemptRecorder()
@@ -1287,7 +1293,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let http = OwnerSigningRecordingHTTP()
         let signingAttempts = OwnerSigningAttemptRecorder()
@@ -1414,7 +1421,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         try store.installIfAbsent(PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial))
         let http = InboxRecordingHTTP(inboxBody: try inboxResponse([
             ("request-a", "AAAA1111", 1_900_000_000_000)
@@ -1444,7 +1452,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         try store.installIfAbsent(PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial))
         let http = DeferredHTTP()
         let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
@@ -1490,7 +1499,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         try store.installIfAbsent(pairing)
         let http = DeferredHTTP()
@@ -1670,7 +1680,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         let pairingA = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         try store.installIfAbsent(pairingA)
         let http = DeferredHTTP()
@@ -1715,7 +1726,8 @@ final class DemoPairingIdentityTests: XCTestCase {
         try store.installIfAbsent(PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay-a.example:8787"),
             credential: deviceCredentialA,
-            account: nil,
+            account: "0x" + String(repeating: "66", count: 20),
+            chains: configuredTestChains,
             ownerPublicMaterial: fakeOwnerPublicMaterial))
         let http = DeferredHTTP()
         let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())

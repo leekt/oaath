@@ -328,6 +328,7 @@ final class ApprovalModelRaceTests: XCTestCase {
         let binding = try OwnerPhoneKernelP256ApprovalBinding(
             account: request.signer.account,
             p256PublicMaterial: hexEncode(Data(key.publicKey.x963Representation.dropFirst())),
+            chains: configuredTestChains,
             pairingIsCurrent: { facts.isCurrent() },
             sign: { try signer.sign($0) })
         return KernelApprovalHarness(
