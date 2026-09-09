@@ -2,8 +2,10 @@
 
 A SwiftUI owner-phone approval app for the OAAth relay's native preview
 surfaces. Preview means: no stability guarantee and no production
-qualification. It is **not** part of the fixed npm release group and is never
-published to npm.
+qualification. Use phone source from the same repository revision used to
+build the fixed `0.x.y` npm group; update the phone and relay together. The
+Swift targets are not published to npm. Native distribution packaging remains
+release work.
 
 ## What it does
 
@@ -13,7 +15,7 @@ published to npm.
   `{version, operationId, expiresAt}` under `oaath`. Nothing else exists in
   the payload by design, and nothing else is accepted — any unknown field at
   any level fails closed, so authority material can never ride a notification.
-- Polls the example-owned authenticated pull inbox by default while paired
+- Polls the canonical relay's authenticated `GET /native/inbox` while paired
   (about every two seconds, plus manual Refresh). The inbox is a strict closed
   versioned list of at most 20 immutable operation-id/match-code/expiry
   summaries. Selecting one only opens the full projection; poll and tap never
@@ -99,18 +101,26 @@ review, foreground, and retained-artifact retry flow is shared with installation
 
 Revocation decisions use a separate transport domain and the strict
 `oaath.native-revocation-decision/v1` response. They release no OAuth code;
-approval is not onchain completion. The demo maps this contract to
-`POST /native/revocation-decisions/{operationId}`, but the service queue,
-authenticated HTTP handler, durable decision storage, submission, and finality
-are not implemented yet. `projectOwnerPhoneRevocation` only produces consent
-bytes from an admitted immutable request. Shared unsigned vectors, native
-CryptoKit signing, and a fake transport prove this phone flow; they do not prove
-service execution or a full Swift-to-SDK artifact round trip.
+approval is not onchain completion. The canonical relay owns
+`POST /native/revocation-decisions/{operationId}` and durable request/decision
+storage. The [reference service](../../examples/phone/README.md) composes the
+SDK executor and operation store to submit the exact approved operation and
+observe finality. Replaying an approved decision recovers that operation without
+another send; service startup alone does not restart executors. The application
+reports revocation only after finalized evidence covers each configured chain,
+including install-nonce consumption for an unused grant.
+
+Shared unsigned vectors and native CryptoKit tests prove phone consent/signing.
+A process-local P-256 phone fixture separately exercises service execution on
+two local Anvil chains, including PostgreSQL service recreation. Those proofs
+do not establish a full Swift-to-service-to-chain round trip or physical-device
+user presence.
 
 ## Transport is deployment-wired
 
-The relay serves the preview routes `GET /native/projections/{operationId}`,
-`GET /native/permission-signing/{operationId}`, and `POST /native/decisions/{operationId}`
+The relay serves `GET /native/inbox`, `GET /native/projections/{operationId}`,
+`GET /native/permission-signing/{operationId}`, `POST /native/decisions/{operationId}`,
+and `POST /native/revocation-decisions/{operationId}`
 (`packages/server/src/relay/handler.ts`). `TransportRelayClient` stays defined
 against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.

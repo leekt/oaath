@@ -53,8 +53,10 @@ All four publish together in one fixed `0.x.y` release group. The first release
 is `0.1.0`; no package becomes `1.0.0` during this program.
 
 [`native/ios`](native/ios/README.md) carries the experimental owner-phone
-SwiftUI approval app (preview only): it is not part of the release group and is
-never published to npm. Its host tests run in CI alongside the package gates;
+SwiftUI approval app. Use its source from the same repository revision used to
+build the fixed npm group: phone and relay wire contracts change together.
+The Swift targets are not npm packages; native distribution packaging remains
+release work. Their host tests run in CI alongside the package gates;
 run the same check on macOS with `pnpm test:phone`.
 
 ## Status
@@ -72,8 +74,20 @@ evidence. Missing receipts, timeouts, and unreadable observations never
 authorize another submission or prove an operation dropped. `@oaath/testing`
 carries the concrete SQLite test stores and is never a production dependency.
 `@oaath/server` carries the durable authorization relay, its PostgreSQL store,
-and the experimental phone and APNs preview surfaces. Remaining capabilities land
-as bounded, independently reviewed child PRs.
+and the experimental phone and APNs preview surfaces.
+
+The [phone service workflow](examples/phone/README.md) proves personal and team
+account selection, approval by a simulated P-256 owner phone, bounded application jobs,
+saved-operation recovery, and revocation across two configured local chains.
+Its PostgreSQL scenario recreates the service and pools while retaining the
+external chain backends; pending consent and submitted operation evidence
+survive without another send. Swift host tests separately prove native consent
+and signing. These gates do not prove a physical-device or hosted deployment.
+
+The product model and this PoC workflow are implemented. Further decomposition
+of the client, separating the wallet-RPC layer used by the extension, and native
+release packaging remain follow-ups. They do not require a rewrite of the
+Kernel runtime or operation state machine.
 
 The wallet-RPC surface intentionally distinguishes finalized standards from
 experiments:
