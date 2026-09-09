@@ -78,6 +78,13 @@ accepting the signed artifact. Other EIP-712 purposes and protocol raw-digest
 requests remain reject-only. The semantic decoder does not claim preservation
 of raw JSON bytes; the relay owns canonical protocol capture before projection.
 
+The package-internal revocation codec independently reconstructs Kernel nonce
+invalidation or permission removal and derives the EntryPoint 0.7 operation
+hash, including chain, EntryPoint, deployment data, nonce, and gas. Shared
+unsigned protocol/Swift fixtures prove both effects and reject unrelated calls
+even with correct hashes. This codec produces semantic evidence only; revocation
+consent, paired configured-chain checks, and owner signing are not wired yet.
+
 ## Transport is deployment-wired
 
 The relay serves the preview routes `GET /native/projections/{operationId}`,
