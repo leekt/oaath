@@ -64,6 +64,29 @@ function expectClientError(action: () => unknown, code: string): void {
 }
 
 describe("hostile input at the client boundary", () => {
+  it("binds workspace, account identity, and complete account profile independently", () => {
+    const original = captureOaathBinding(bindingInput);
+    const alternatives = [
+      { context: { ...bindingInput.context, workspaceId: "team-1", workspaceKind: "team" } },
+      { context: { ...bindingInput.context, accountId: "account-2" } },
+      {
+        account: {
+          ...bindingInput.account,
+          ownerCredential: {
+            ...bindingInput.account.ownerCredential,
+            address: `0x${"44".repeat(20)}`,
+          },
+        },
+      },
+    ];
+    for (const alternative of alternatives) {
+      const other = captureOaathBinding({ ...bindingInput, ...alternative });
+      expect(other.account.accountIndex).toBe(original.account.accountIndex);
+      expect(other.bindingId).not.toBe(original.bindingId);
+    }
+    expect(captureOaathBinding(structuredClone(bindingInput)).bindingId).toBe(original.bindingId);
+  });
+
   it("refuses a configuration that is not an exact record", () => {
     // `undefined` is deliberately absent: no configuration at all is the
     // URL-mode local development default, not hostile input.

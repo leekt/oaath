@@ -63,8 +63,11 @@ nothing.
 
 How an application organization/audience maps to the OAAth client/realm:
 
-- One deployed relay URL is one realm; its `/bootstrap` document names the
-  deployment's identity facts.
+- One deployed relay URL can serve multiple personal and team workspaces.
+  `bootstrap.resolve(caller)` selects the caller's workspace, logical account,
+  and configured chains on each request. The SDK keeps local realms separate
+  by caller, workspace/account context, and complete account profile. Membership
+  and account selection records are currently supplied by the deployment.
 - `clientId`, the pairwise `subject`, and the `organizationAudience` are all
   asserted by the deployment's `RelayAuthentication` port. An application
   backend with its own cookie session obtains an authenticated OAAth caller by

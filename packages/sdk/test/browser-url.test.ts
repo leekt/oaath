@@ -44,14 +44,64 @@ import {
   ISSUER_URL,
   ORIGIN,
   permissionInput,
-  REDIRECT_URI,
   relayChainPort,
   relayKms,
   sendCallsInput,
   VALIDATOR,
+  workspaceContext,
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
+  it("isolates selected workspaces across complete IndexedDB recreation", async () => {
+    const factory = new IDBFactory();
+    let selected = "personal-1";
+    const bootstrap = (document: Record<string, unknown>) => ({
+      ...document,
+      context: {
+        version: "oaath.workspace-account-context/v1",
+        workspaceId: selected,
+        workspaceKind: selected === "personal-1" ? "personal" : "team",
+        accountId: "account-1",
+      },
+    });
+    const life = async () => {
+      const database = await openOaathDatabase({ factory });
+      const realm = createUrlRealm({ stores: idbStores(database), bootstrap });
+      const connection = await realm.oaath.connect();
+      return {
+        realm,
+        connection,
+        close: async () => {
+          await connection.close();
+          await database.close();
+        },
+      };
+    };
+    const first = await life();
+    await first.connection.requestPermission(permissionInput());
+    const personalBinding = first.realm.oaath.binding;
+    await first.close();
+
+    selected = "team-1";
+    const second = await life();
+    expect(second.realm.oaath.binding.bindingId).not.toBe(personalBinding.bindingId);
+    expect(second.realm.oaath.binding.operatorCredential).not.toEqual(
+      personalBinding.operatorCredential,
+    );
+    expect(await second.connection.resume()).toBeNull();
+    await second.realm.oaath.disconnect(null);
+    await second.close();
+
+    selected = "personal-1";
+    const third = await life();
+    expect(third.realm.oaath.binding.bindingId).toBe(personalBinding.bindingId);
+    expect(third.realm.oaath.binding.operatorCredential).toEqual(
+      personalBinding.operatorCredential,
+    );
+    expect(await third.connection.resume()).not.toBeNull();
+    await third.close();
+  });
+
   it("connects, requests permission, sends calls, and revokes from one URL", async () => {
     // The chain's answer to "is the permission still installed", and how far
     // the chain advanced beyond this realm's own submissions — both flip when
@@ -186,15 +236,13 @@ describe("URL-only golden path", () => {
     const chain = createChainFixture();
     const relay = createRelay(clock, {
       bootstrap: {
-        application: {
-          applicationId: "app-a",
-          applicationName: "OAAth Example",
-          clientId: "client-a",
-          redirectUris: [REDIRECT_URI],
-        },
-        userHandle: "user-1",
-        account: accountProfile,
-        ownerValidator: VALIDATOR,
+        resolve: async () => ({
+          application: { applicationId: "app-a", applicationName: "OAAth Example" },
+          context: workspaceContext,
+          account: accountProfile,
+          ownerValidator: VALIDATOR,
+          chainIds: [chain.capability.chainId],
+        }),
       },
       chains: [relayChainPort(chain)],
     });
@@ -234,15 +282,13 @@ describe("URL-only golden path", () => {
     const chain = createChainFixture();
     const relay = createRelay(clock, {
       bootstrap: {
-        application: {
-          applicationId: "app-a",
-          applicationName: "OAAth Example",
-          clientId: "client-a",
-          redirectUris: [REDIRECT_URI],
-        },
-        userHandle: "user-1",
-        account: accountProfile,
-        ownerValidator: VALIDATOR,
+        resolve: async () => ({
+          application: { applicationId: "app-a", applicationName: "OAAth Example" },
+          context: workspaceContext,
+          account: accountProfile,
+          ownerValidator: VALIDATOR,
+          chainIds: [chain.capability.chainId],
+        }),
       },
       chains: [relayChainPort(chain)],
     });

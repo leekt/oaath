@@ -9,7 +9,7 @@
  * owns exactly one new fact, the binding id.
  *
  * The binding id names one realm: one issuer, application, client, origin,
- * device, pairwise subject, and account index. A realm holds at most one active
+ * device, pairwise subject, workspace, and complete account profile. A realm holds at most one active
  * Grant in `0.1.0`, which is why an application never handles a grantId.
  *
  * @author taek <leekt216@gmail.com>
@@ -29,12 +29,14 @@ import {
   parseIssuerIdentity,
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
+  parseWorkspaceAccountContext,
   type SubjectBinding,
+  type WorkspaceAccountContext,
 } from "@oaath/protocol";
 import { encodeAbiParameters, keccak256 } from "viem";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
 
-export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v1" as const;
+export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v2" as const;
 export const OAATH_BINDING_HASH_DOMAIN = "@oaath/sdk:client-realm-binding" as const;
 
 export interface OaathBindingInput {
@@ -50,6 +52,7 @@ export interface OaathBindingInput {
   readonly deviceId: string;
   /** Opaque issuer-scoped user handle; never persisted outside the subject binding. */
   readonly userHandle: string;
+  readonly context: Readonly<WorkspaceAccountContext>;
   /** Logical Kernel account profile, including the owner credential. */
   readonly account: unknown;
   /** Operator/session credential summary the Grant authorizes. */
@@ -63,6 +66,7 @@ export interface OaathBinding {
   readonly client: Readonly<ClientBinding>;
   readonly application: Readonly<ApplicationBinding>;
   readonly subject: Readonly<SubjectBinding>;
+  readonly context: Readonly<WorkspaceAccountContext>;
   readonly redirectUri: string;
   readonly account: Readonly<KernelAccountProfile>;
   readonly operatorCredential: Readonly<OperatorCredentialProfile>;
@@ -77,6 +81,7 @@ const INPUT_KEYS: readonly string[] = Object.freeze([
   "redirectUri",
   "deviceId",
   "userHandle",
+  "context",
   "account",
   "operatorCredential",
 ]);
@@ -88,7 +93,8 @@ function deriveBindingId(input: {
   readonly origin: string;
   readonly deviceId: string;
   readonly subjectId: string;
-  readonly accountIndex: string;
+  readonly context: Readonly<WorkspaceAccountContext>;
+  readonly account: Readonly<KernelAccountProfile>;
 }): `0x${string}` {
   return keccak256(
     encodeAbiParameters(
@@ -101,7 +107,8 @@ function deriveBindingId(input: {
         { type: "string", name: "origin" },
         { type: "string", name: "deviceId" },
         { type: "bytes32", name: "subjectId" },
-        { type: "uint256", name: "accountIndex" },
+        { type: "string", name: "context" },
+        { type: "string", name: "account" },
       ],
       [
         OAATH_BINDING_HASH_DOMAIN,
@@ -112,7 +119,8 @@ function deriveBindingId(input: {
         input.origin,
         input.deviceId,
         input.subjectId as `0x${string}`,
-        BigInt(input.accountIndex),
+        JSON.stringify(input.context),
+        JSON.stringify(input.account),
       ],
     ),
   );
@@ -141,6 +149,7 @@ export function captureOaathBinding(value: unknown): Readonly<OaathBinding> {
       deviceId: record.deviceId,
     });
     const account = parseKernelAccountProfile(record.account);
+    const workspaceContext = parseWorkspaceAccountContext(record.context);
     const operatorCredential = parseOperatorCredentialProfile(record.operatorCredential);
     const redirectUri = client.redirectUris[0];
     if (redirectUri === undefined) {
@@ -167,12 +176,14 @@ export function captureOaathBinding(value: unknown): Readonly<OaathBinding> {
         origin: application.origin,
         deviceId: application.deviceId,
         subjectId: subject.subjectId,
-        accountIndex: account.accountIndex,
+        context: workspaceContext,
+        account,
       }),
       issuer,
       client,
       application,
       subject,
+      context: workspaceContext,
       redirectUri,
       account,
       operatorCredential,

@@ -621,20 +621,151 @@ describe("URL-only service surface", () => {
   function bootstrapOptions(overrides: Record<string, unknown> = {}) {
     return {
       bootstrap: {
-        application: {
-          applicationId: "app-a",
-          applicationName: "OAAth Example",
-          clientId: "client-a",
-          redirectUris: [REDIRECT_URI],
-        },
-        userHandle: "user-1",
-        account: ACCOUNT_PROFILE,
-        ownerValidator: `0x${"22".repeat(20)}`,
+        resolve: async () => bootstrapSelection(),
       },
       chains: [chainPort()],
       ...overrides,
     } as Partial<RelayHandlerOptions>;
   }
+
+  function bootstrapSelection() {
+    return {
+      application: { applicationId: "app-a", applicationName: "OAAth Example" },
+      context: {
+        version: "oaath.workspace-account-context/v1" as const,
+        workspaceId: "personal-1",
+        workspaceKind: "personal" as const,
+        accountId: "account-1",
+      },
+      account: ACCOUNT_PROFILE,
+      ownerValidator: `0x${"22".repeat(20)}` as `0x${string}`,
+      chainIds: [31_337],
+    };
+  }
+
+  it("resolves each authenticated caller's current workspace and account", async () => {
+    let selected = "personal-1";
+    const callers: string[] = [];
+    const harness = createHarness(
+      bootstrapOptions({
+        bootstrap: {
+          resolve: async (caller: { clientId: string; subject: string }) => {
+            callers.push(`${caller.clientId}:${caller.subject}`);
+            const base = bootstrapSelection();
+            return {
+              ...base,
+              context: {
+                ...base.context,
+                workspaceId: caller.clientId === "client-b" ? "team-2" : selected,
+                workspaceKind:
+                  selected === "personal-1" && caller.clientId === "client-a" ? "personal" : "team",
+              },
+            };
+          },
+        },
+      }),
+    );
+    const fetch = async (token: string) =>
+      expectOk<Record<string, unknown>>(await harness.handler(get("/bootstrap", token)), 200);
+    expect(await fetch(CLIENT_TOKEN)).toMatchObject({
+      userHandle: "subject-1",
+      context: { workspaceId: "personal-1" },
+      application: { clientId: "client-a", redirectUris: [REDIRECT_URI] },
+    });
+    expect(await fetch(OTHER_CLIENT_TOKEN)).toMatchObject({
+      context: { workspaceId: "team-2" },
+      application: { clientId: "client-b" },
+    });
+    selected = "team-1";
+    expect(await fetch(CLIENT_TOKEN)).toMatchObject({
+      context: { workspaceId: "team-1", workspaceKind: "team" },
+    });
+    expect(callers).toEqual(["client-a:subject-1", "client-b:subject-1", "client-a:subject-1"]);
+  });
+
+  it("returns no context for an unassigned caller", async () => {
+    const harness = createHarness(bootstrapOptions({ bootstrap: { resolve: async () => null } }));
+    await expectFailure(await harness.handler(get("/bootstrap", CLIENT_TOKEN)), "relay_not_found");
+  });
+
+  it("selects separate accounts for two members of the same application", async () => {
+    const harness = createHarness(
+      bootstrapOptions({
+        authentication: {
+          authenticate: async (request: Request) => {
+            const authorization = request.headers.get("authorization");
+            if (
+              authorization !== `Bearer ${CLIENT_TOKEN}` &&
+              authorization !== `Bearer ${OTHER_CLIENT_TOKEN}`
+            )
+              return null;
+            return {
+              role: "client",
+              clientId: "client-a",
+              subject: authorization === `Bearer ${CLIENT_TOKEN}` ? "member-1" : "member-2",
+              redirectUris: [REDIRECT_URI],
+              organizationAudience: null,
+            };
+          },
+        },
+        bootstrap: {
+          resolve: async (caller: { subject: string }) => {
+            const base = bootstrapSelection();
+            return {
+              ...base,
+              context: {
+                ...base.context,
+                workspaceId: "team-1",
+                workspaceKind: "team",
+                accountId: caller.subject === "member-1" ? "operations" : "treasury",
+              },
+            };
+          },
+        },
+      }),
+    );
+    const first = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    const second = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", OTHER_CLIENT_TOKEN)),
+      200,
+    );
+    expect(first).toMatchObject({
+      userHandle: "member-1",
+      application: { clientId: "client-a" },
+      context: { workspaceId: "team-1", accountId: "operations" },
+    });
+    expect(second).toMatchObject({
+      userHandle: "member-2",
+      application: { clientId: "client-a" },
+      context: { workspaceId: "team-1", accountId: "treasury" },
+    });
+  });
+
+  it.each([{ chainIds: [] }, { chainIds: [31_337, 31_337] }, { chainIds: [1] }])(
+    "refuses an invalid selected chain set $chainIds",
+    async ({ chainIds }) => {
+      const harness = createHarness(
+        bootstrapOptions({
+          bootstrap: { resolve: async () => ({ ...bootstrapSelection(), chainIds }) },
+        }),
+      );
+      await expectFailure(await harness.handler(get("/bootstrap", CLIENT_TOKEN)), "relay_internal");
+    },
+  );
+
+  it("advertises only the account's configured chains", async () => {
+    const harness = createHarness(
+      bootstrapOptions({ chains: [chainPort(), chainPort({ chainId: 31_338 })] }),
+    );
+    const document = await expectOk<{ chains: { chainId: number }[] }>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    expect(document.chains.map((chain) => chain.chainId)).toEqual([31_337]);
+  });
 
   it("serves hosted session-signer custody: one credential per identity, signatures on exact hashes", async () => {
     const provider = createKmsSessionSignerProvider({ kms: createTestKms() });
@@ -728,8 +859,8 @@ describe("URL-only service surface", () => {
       200,
     );
     expect(document).toMatchObject({
-      version: "oaath.service-bootstrap/v3",
-      userHandle: "user-1",
+      version: "oaath.service-bootstrap/v4",
+      userHandle: "subject-1",
       chains: [
         {
           chainId: 31_337,

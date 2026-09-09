@@ -382,6 +382,7 @@ function createRealm() {
       redirectUri: REDIRECT_URI,
       deviceId: "device-a",
       userHandle: "user-1",
+      context: { version: "oaath.workspace-account-context/v1", workspaceId: "personal-1", workspaceKind: "personal", accountId: "account-1" },
       account: {
         version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
         kind: "kernel",
@@ -527,6 +528,64 @@ await recreatedConnection.close();
 await recreated.close();
 database.close();
 if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invalidated");
+
+// Public URL composition resolves each caller's selected context from the
+// packed server, then restores only that context's local session after reload.
+let selectedWorkspace = "personal-1";
+const selectedProfile = {
+  version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+  kind: "kernel", accountIndex: "0", kernelVersion: "0.4.0",
+  factoryRoute: "kernel_factory", entryPoint: { version: "0.7" }, ownerCredential,
+};
+const contextRelay = createRelayHandler({
+  store: createMemoryRelayStore(),
+  authentication: { async authenticate(request) {
+    return request.headers.get("authorization") === "Bearer " + CLIENT_TOKEN
+      ? callers.get(CLIENT_TOKEN) : null;
+  } },
+  kms: { async encrypt() { fail("context connection does not encrypt artifacts"); }, async decrypt() { fail("context connection does not decrypt artifacts"); } },
+  clock: { now: () => clock * 1000 },
+  bootstrap: { async resolve(caller) {
+    if (caller.subject !== SUBJECT) return null;
+    return {
+      application: { applicationId: "app-a", applicationName: "OAAth Packed Smoke" },
+      context: { version: "oaath.workspace-account-context/v1", workspaceId: selectedWorkspace,
+        workspaceKind: selectedWorkspace === "personal-1" ? "personal" : "team", accountId: "account-1" },
+      account: selectedProfile, ownerValidator: VALIDATOR, chainIds: [CHAIN_ID],
+    };
+  } },
+  chains: [{ chainId: CHAIN_ID, reads: async () => fail("bootstrap must not read a chain"),
+    observation: async () => fail("bootstrap must not observe"), bundler: async () => fail("bootstrap must not select a bundler"),
+    quote: async () => fail("bootstrap must not quote"), submission: async () => fail("bootstrap must not submit"),
+    usage: null, feePayer: null, staticPaymasterConfigurationHash: null }],
+});
+const contextFactory = new IDBFactory();
+async function contextLife() {
+  const db = await openOaathDatabase({ factory: contextFactory });
+  const client = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
+    fetch: (request) => contextRelay(authorized(request, CLIENT_TOKEN)),
+    stores: { grants: createIndexedDbGrantStoreAdapter(db), operations: createIndexedDbOperationStoreAdapter(db),
+      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(db), preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(db),
+      keys: createIndexedDbKeyStore(db), cleanup: createIndexedDbCleanupStore(db), context: createIndexedDbContextStore(db) },
+  });
+  const connection = await client.connect();
+  return { client, connection, close: async () => { await client.close(); db.close(); } };
+}
+const personal = await contextLife();
+const personalBinding = personal.client.binding;
+await personal.close();
+selectedWorkspace = "team-1";
+const team = await contextLife();
+if (team.client.binding.bindingId === personalBinding.bindingId) fail("workspace bindings collided");
+if (team.client.binding.subject.deviceId === personalBinding.subject.deviceId) fail("workspace sessions collided");
+if (await team.connection.resume() !== null) fail("new workspace resumed foreign authority");
+await team.client.disconnect(null);
+await team.close();
+selectedWorkspace = "personal-1";
+const returned = await contextLife();
+if (returned.client.binding.bindingId !== personalBinding.bindingId) fail("personal context did not survive team cleanup");
+if (JSON.stringify(returned.client.binding.operatorCredential) !== JSON.stringify(personalBinding.operatorCredential)) fail("personal session did not survive reload");
+await returned.close();
 
 process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 `;
