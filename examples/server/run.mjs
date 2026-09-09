@@ -20,7 +20,11 @@
  */
 
 import { createServer } from "node:http";
-import { deriveCodeChallenge } from "@oaath/protocol";
+import {
+  deriveCodeChallenge,
+  hashPermissionRequest,
+  parsePermissionRequest,
+} from "@oaath/protocol";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 
 const PORT = Number(process.env.OAATH_PORT ?? 8787);
@@ -208,11 +212,6 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 
 say("");
 say(`OAAth relay      ${origin}`);
-say(`client token     Bearer ${CLIENT_TOKEN}`);
-say(`owner token      Bearer ${OWNER_TOKEN}`);
-say(`code_challenge   ${deriveCodeChallenge(CODE_VERIFIER)}`);
-say(`code_verifier    ${CODE_VERIFIER}`);
-say(`requested scope  ${DEMO_PERMISSION_SCOPE}`);
 say("");
 
 if (!SMOKE) {
@@ -229,7 +228,7 @@ if (!SMOKE) {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const payload = await response.json();
-    say(`  ${label.padEnd(16)} ${response.status} ${JSON.stringify(payload).slice(0, 96)}`);
+    say(`  ${label.padEnd(16)} ${response.status}`);
     return { status: response.status, payload };
   };
   const expect = (condition, message) => {
@@ -260,12 +259,24 @@ if (!SMOKE) {
   );
   expect(stolen.status === 403, "a client must not read the owner's review route");
 
+  // This relay-only example supplies protocol approval meaning. The phone
+  // reference example also completes the SDK's executable Kernel capability.
+  const permission = parsePermissionRequest({ ...JSON.parse(DEMO_PERMISSION_SCOPE), requestId });
+  const artifact = JSON.stringify({
+    version: "oaath.permission-decision/v1",
+    kind: "approve",
+    requestId,
+    requestHash: hashPermissionRequest(permission),
+    decidedAt: Math.floor(Date.now() / 1_000),
+    approvedPolicy: permission.policy,
+    capabilityHash: `0x${"ab".repeat(32)}`,
+  });
   const approved = await call(
     "owner approves",
     "POST",
     `/authorization/requests/${requestId}/decision`,
     OWNER_TOKEN,
-    { outcome: "approved", artifact: JSON.stringify({ approvedBy: "owner-console" }) },
+    { outcome: "approved", artifact },
   );
   expect(approved.payload.outcome === "approved", "the decision was not recorded as approved");
 
@@ -302,7 +313,7 @@ if (!SMOKE) {
     "a refusal must carry a structured code",
   );
   expect(
-    !JSON.stringify(replayed.payload).includes("owner-console"),
+    !JSON.stringify(replayed.payload).includes(artifact),
     "a refusal must not leak the artifact",
   );
 

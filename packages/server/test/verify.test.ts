@@ -135,13 +135,21 @@ describe("POST /grants/verify", () => {
       },
       { kind: "reject" },
     ]) {
-      const harness = createHarness();
+      const kms = createTestKms();
+      let corruptedArtifact: string | null = null;
+      const harness = createHarness({
+        kms: {
+          encrypt: kms.encrypt,
+          async decrypt(ref) {
+            return corruptedArtifact ?? kms.decrypt(ref);
+          },
+        },
+      });
       const created = await createRequest(harness, LIVE_SCOPE);
-      await approve(
-        harness,
-        created.requestId,
-        change === null ? "{}" : approvalArtifact(created.requestId, change),
-      );
+      await approve(harness, created.requestId, approvalArtifact(created.requestId));
+      // Corrupt the durable read boundary after a valid admission. Invalid
+      // approvals cannot be written through the decision endpoint anymore.
+      corruptedArtifact = change === null ? "{}" : approvalArtifact(created.requestId, change);
       await expectResult(await verify(harness, assertion(created.requestId)), {
         state: "unknown",
         code: "grant_unreadable",

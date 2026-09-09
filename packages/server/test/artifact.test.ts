@@ -17,9 +17,8 @@ import {
   expectFailure,
   expectOk,
   OTHER_CLIENT_TOKEN,
+  permissionArtifact,
 } from "./support.js";
-
-const SECRET = '{"sessionKey":"never-in-the-store"}';
 
 /** Records every value handed to the store so a test can prove what was written. */
 function createRecordingStore(): { store: RelayStore; written: unknown[] } {
@@ -57,14 +56,15 @@ describe("encrypted artifact claim", () => {
   it("releases the artifact exactly once", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
     await expectOk(await consume(harness, decision.code), 200);
 
     const claimed = await expectOk<{ artifact: string }>(
       await claim(harness, decision.artifactId),
       200,
     );
-    expect(claimed.artifact).toBe(SECRET);
+    expect(claimed.artifact === artifact).toBe(true);
     await expectFailure(
       await claim(harness, decision.artifactId),
       "relay_artifact_already_claimed",
@@ -74,7 +74,8 @@ describe("encrypted artifact claim", () => {
   it("releases once under concurrent claims", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
     await expectOk(await consume(harness, decision.code), 200);
 
     const responses = await Promise.all([
@@ -87,7 +88,8 @@ describe("encrypted artifact claim", () => {
   it("hides an artifact bound to another client, and an unknown one", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
 
     await expectFailure(
       await claim(harness, decision.artifactId, OTHER_CLIENT_TOKEN),
@@ -112,7 +114,8 @@ describe("encrypted artifact claim", () => {
       },
     });
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
 
     openable = false;
     await expectFailure(await claim(harness, decision.artifactId), "relay_kms_unavailable");
@@ -136,7 +139,8 @@ describe("encrypted artifact claim", () => {
       },
     });
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
     await expectFailure(await claim(harness, decision.artifactId), "relay_kms_unavailable");
   });
 
@@ -144,15 +148,15 @@ describe("encrypted artifact claim", () => {
     const recording = createRecordingStore();
     const harness = createHarness({}, recording.store);
     const created = await createRequest(harness);
-    const decision = await approve(harness, created.requestId, SECRET);
+    const artifact = permissionArtifact(created.requestId);
+    const decision = await approve(harness, created.requestId, artifact);
     await expectOk(await consume(harness, decision.code), 200);
     await expectOk(await claim(harness, decision.artifactId), 200);
 
     const serialized = JSON.stringify(recording.written);
-    expect(serialized).not.toContain(SECRET);
-    expect(serialized).not.toContain("never-in-the-store");
+    expect(serialized.includes(artifact)).toBe(false);
     // The released code is only ever stored as its digest.
-    expect(serialized).not.toContain(decision.code);
+    expect(serialized.includes(decision.code)).toBe(false);
     expect(recording.written).toHaveLength(4);
   });
 });
