@@ -52,6 +52,8 @@ describe("package boundary", () => {
       "encodeKernelV4FactoryImplementationRead",
       "encodeKernelV4Initialize",
       "encodeKernelV4InstallModules",
+      "encodeKernelV4InstallNonceInvalidationCall",
+      "encodeKernelV4InstallNonceRead",
       "encodeKernelV4Nonce",
       "encodeKernelV4NonceKey",
       "encodeKernelV4NonceRead",

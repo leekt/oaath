@@ -9,7 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { parseEther, toFunctionSelector } from "viem";
+import { parseAbi, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
 import {
@@ -17,6 +17,8 @@ import {
   createKernelRuntime,
   type EcdsaSignRequest,
   ecdsaKey,
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
   encodeKernelV4PermissionUninstallCalls,
   type KernelAllChainApproval,
   type KernelRuntime,
@@ -164,6 +166,128 @@ async function bringUp(
 }
 
 (requireAnvil ? describe : describe.skip)("all-chain materialization local proof", () => {
+  it("invalidates an unused chain approval without invalidating another grant", async () => {
+    const owner = countingOwner();
+    const sessionKey = privateKeyToAccount(generatePrivateKey());
+    const target = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const installNonce = kernelPermissionInstallNonce(`0x${"33".repeat(32)}`);
+    const a = await bringUp(CHAIN_A, owner, sessionKey, target);
+    const approval = await approveKernelPermissionAllChain({
+      owner: a.ownerKey,
+      account: a.account.account,
+      installNonce,
+      packages: a.sessionRuntime.packages,
+    });
+    const first = await materializeKernelPermission({
+      approval,
+      runtime: a.sessionRuntime,
+      grantId: "installed-on-a",
+      account: a.account,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "500", data: "0x" }],
+      gas,
+    });
+    expect(await a.harness.sendSigned(first.prepared, first.signature)).toBe("success");
+
+    // B has never deployed the account or installed this permission. The
+    // owner operation deploys the account and invalidates only the approval key.
+    const b = await bringUp(CHAIN_B, owner, sessionKey, target);
+    expect(b.account.account).toBe(a.account.account);
+    expect(b.account.state).toBe("counterfactual");
+    const invalidation = b.ownerRuntime.prepareOperation({
+      kind: "revocation",
+      grantId: "invalidate-unused-on-b",
+      account: b.account,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [
+        encodeKernelV4InstallNonceInvalidationCall({ account: b.account.account, installNonce }),
+      ],
+      gas,
+    });
+    expect(await b.harness.send(b.ownerRuntime, invalidation)).toBe("success");
+    const readNonce = async (nonce: string) => {
+      const result = await b.harness.client.call({
+        to: b.account.account,
+        data: encodeKernelV4InstallNonceRead({ key: (BigInt(nonce) >> 64n).toString(10) }),
+      });
+      if (result.data === undefined || result.data.length !== 66) throw new Error("missing nonce");
+      return BigInt(result.data);
+    };
+    expect(await readNonce(installNonce)).toBe(BigInt(installNonce) + 1n);
+    expect(
+      await b.harness.client.readContract({
+        address: b.account.account,
+        abi: parseAbi(["function validNonceFrom() view returns (uint64)"]),
+        functionName: "validNonceFrom",
+      }),
+    ).toBe(0n);
+    const deployed = await b.sessionRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: b.ownerRuntime.packages,
+    });
+    const refused = await materializeKernelPermission({
+      approval,
+      runtime: b.sessionRuntime,
+      grantId: "old-approval-on-b",
+      account: deployed,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "500", data: "0x" }],
+      gas,
+    });
+    expect(await b.harness.rejectionOf(refused.prepared, refused.signature)).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", toFunctionSelector("InvalidNonce()")],
+    });
+    expect(await b.harness.client.getBalance({ address: target })).toBe(0n);
+
+    const otherNonce = kernelPermissionInstallNonce(`0x${"44".repeat(32)}`);
+    expect(await readNonce(otherNonce)).toBe(BigInt(otherNonce));
+    const otherTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const otherRuntime = createKernelRuntime({
+      deployment: kernelV4Deployment(CHAIN_B),
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await b.harness.deployValidatorCreate2(),
+        }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: otherTarget, selector: "0x00000000", valueLimit: "500" }],
+          },
+        ],
+      }),
+      reads: b.harness.reads,
+    });
+    const otherApproval = await approveKernelPermissionAllChain({
+      owner: b.ownerKey,
+      account: b.account.account,
+      installNonce: otherNonce,
+      packages: otherRuntime.packages,
+    });
+    const other = await materializeKernelPermission({
+      approval: otherApproval,
+      runtime: otherRuntime,
+      grantId: "other-grant-on-b",
+      account: await otherRuntime.bindAccount({
+        accountIndex: "0",
+        initialPackages: b.ownerRuntime.packages,
+      }),
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target: otherTarget, value: "500", data: "0x" }],
+      gas,
+    });
+    expect(await b.harness.sendSigned(other.prepared, other.signature)).toBe("success");
+    expect(await b.harness.client.getBalance({ address: otherTarget })).toBe(500n);
+    expect(await readNonce(installNonce)).toBe(BigInt(installNonce) + 1n);
+    expect(await a.harness.client.getBalance({ address: target })).toBe(500n);
+    expect(owner.signatures()).toBe(3); // two approvals and one owner invalidation operation
+  }, 180_000);
+
   it("installs two grants in opposite chain orders without sharing install counters", async () => {
     const owner = countingOwner();
     const firstKey = privateKeyToAccount(generatePrivateKey());

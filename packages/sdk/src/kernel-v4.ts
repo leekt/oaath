@@ -398,6 +398,23 @@ const FACTORY_ABI = [
 const KERNEL_ABI = [
   {
     type: "function",
+    name: "nonce",
+    stateMutability: "view",
+    inputs: [{ name: "key", type: "uint192" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "setNonce",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "nonceKey", type: "uint192" },
+      { name: "seq", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "initialize",
     stateMutability: "payable",
     inputs: [INSTALL_ARRAY_PARAMETER],
@@ -1255,6 +1272,54 @@ export function encodeKernelV4Nonce(value: KernelV4NonceInput): string {
   const key = uint(record.key, (1n << 192n) - 1n, "Kernel nonce key");
   const sequence = uint(record.sequence, MAX_UINT64, "Kernel nonce sequence");
   return ((key << 64n) | sequence).toString(10);
+}
+
+/**
+ * Encodes the Kernel account's nonce(uint192) read. Call the account, not
+ * EntryPoint; the uint256 result includes the key and effective sequence,
+ * respecting Kernel's global minimum. A missing account/result is not zero.
+ */
+export function encodeKernelV4InstallNonceRead(value: { readonly key: string }): Hex {
+  const record = exact(value, ["key"], "Kernel install nonce read", new WeakSet());
+  return encodeFunctionData({
+    abi: KERNEL_ABI,
+    functionName: "nonce",
+    args: [uint(record.key, (1n << 192n) - 1n, "Kernel install nonce key")],
+  });
+}
+
+/**
+ * Invalidates an unconsumed install approval on one chain by encoding an
+ * owner-authorized self-call to setNonce(key, signedSequence + 1). Kernel
+ * requires a strictly increasing stored sequence, so already consumed or
+ * invalidated approvals need observation rather than this call again.
+ *
+ * This neither removes an installed permission nor invalidates another key
+ * or chain. Callers own submission, finality, and configured-chain completion.
+ */
+export function encodeKernelV4InstallNonceInvalidationCall(value: {
+  readonly account: `0x${string}`;
+  readonly installNonce: string;
+}): Readonly<KernelV4Call> {
+  const record = exact(
+    value,
+    ["account", "installNonce"],
+    "Kernel install nonce invalidation",
+    new WeakSet(),
+  );
+  const account = address(record.account, "Kernel install nonce account");
+  const nonce = uint(record.installNonce, MAX_UINT256, "Kernel install nonce");
+  const sequence = nonce & MAX_UINT64;
+  if (sequence === MAX_UINT64) return fail("Kernel install nonce sequence is exhausted");
+  return Object.freeze({
+    target: account,
+    value: "0",
+    data: encodeFunctionData({
+      abi: KERNEL_ABI,
+      functionName: "setNonce",
+      args: [nonce >> 64n, sequence + 1n],
+    }),
+  });
 }
 
 /** ABI-encodes the policy signatures followed by the signer signature. */

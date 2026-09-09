@@ -49,6 +49,8 @@ import {
   prepareKernelPhonePermissionApproval,
   ecdsaKey,
   encodeKernelV4NonceKey,
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07,
@@ -97,6 +99,13 @@ const EXPIRES_IN = 1800;
 const VALIDATOR = "0x" + "22".repeat(20);
 const TARGET = "0x" + "44".repeat(20);
 const ACCOUNT = "0x" + "66".repeat(20);
+const unusedInstallNonce = kernelPermissionInstallNonce("0x" + "aa".repeat(32));
+const invalidationCall = encodeKernelV4InstallNonceInvalidationCall({ account: ACCOUNT, installNonce: unusedInstallNonce });
+if (invalidationCall.target !== ACCOUNT || invalidationCall.value !== "0" ||
+    !invalidationCall.data.startsWith("0x")) fail("invalid install nonce self-call");
+if (!encodeKernelV4InstallNonceRead({ key: (BigInt(unusedInstallNonce) >> 64n).toString(10) }).startsWith("0x")) {
+  fail("invalid Kernel install nonce read");
+}
 const PAYMASTER = "0x" + "33".repeat(20);
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
 const deployment = kernelV4Deployment(CHAIN_ID);

@@ -39,6 +39,15 @@ Kernel's global `validNonceFrom()` to remain zero on each destination chain;
 accounts with an advanced global minimum require separate reconciliation.
 The install nonce is separate from the EntryPoint operation nonce above.
 
+For an untouched chain, `encodeKernelV4InstallNonceInvalidationCall({ account,
+installNonce })` encodes an owner self-call that advances that approval's key
+to the next sequence. `encodeKernelV4InstallNonceRead({ key })` encodes the
+account's `nonce(uint192)` read for checking its effective sequence. An already
+consumed or invalidated nonce requires observation; repeating the self-call can
+revert because Kernel requires an increase. Installed permissions still need
+uninstall calls. These codecs do not submit, establish finality, or complete
+configured-chain revocation.
+
 The headless Grant provider returns `4200` for `wallet_showCallsStatus` unless
 the adopter supplies a wallet-owned status presenter. Executable
 `wallet_sendCalls` entries without `to` are valid contract-creation requests,
