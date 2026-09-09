@@ -16,7 +16,11 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
+import {
+  encodeKernelV4NonceKey,
+  encodeKernelV4NonceRead,
+  KERNEL_V4_ENTRY_POINT_V07,
+} from "@oaath/sdk/kernel";
 import { decodeEventLog, encodeFunctionData, parseEther, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { deployKernelStack, startAnvil } from "../support/anvil.mjs";
@@ -233,9 +237,25 @@ export async function createAnvilChain(chainId) {
         // it is where this example prefunds it. A deployment funds accounts out
         // of band, or uses a paymaster.
         await stack.fund(request.account, parseEther("1"));
-        // ponytail: one operation per lane per run, so the sequence is zero. A
-        // deployment reads EntryPoint.getNonce for the account's canonical key.
-        return { nonceKey: "0", sequence: "0", gas: GAS };
+        const nonceKey = "0";
+        const key = encodeKernelV4NonceKey({
+          mode: request.mode,
+          validation: request.validation,
+          nonceKey,
+        });
+        const raw = await chain.rpc("eth_call", [
+          {
+            to: KERNEL_V4_ENTRY_POINT_V07,
+            data: encodeKernelV4NonceRead({ account: request.account, key }),
+          },
+          "latest",
+        ]);
+        if (typeof raw !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+          throw new Error("nonce_read_invalid");
+        }
+        const nonce = BigInt(raw);
+        if (nonce >> 64n !== BigInt(key)) throw new Error("nonce_domain_mismatch");
+        return { nonceKey, sequence: (nonce & ((1n << 64n) - 1n)).toString(10), gas: GAS };
       },
       // Complete usage evidence anchored to the node's own finalized tag: the
       // finalized count is what this example actually submitted and saw

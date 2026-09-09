@@ -59,7 +59,12 @@ import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
-import type { KernelRuntime, KernelRuntimePrepareInput, KeyProfile } from "../kernel/types.js";
+import type {
+  KernelRuntime,
+  KernelRuntimePrepareInput,
+  KernelRuntimeValidationMode,
+  KeyProfile,
+} from "../kernel/types.js";
 import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
@@ -295,12 +300,20 @@ export interface OaathQuoteRequest {
   readonly kind: OperationKind;
   readonly signer: OaathExecutionSigner;
   readonly account: `0x${string}`;
+  /** Selected by the runtime before quoting; neither field is a quote result. */
+  readonly mode: KernelRuntimeValidationMode;
+  readonly validation: KernelRuntime["validation"];
   readonly calls: readonly Readonly<KernelV4Call>[];
   /** Exact static sponsorship selected before quoting, or null. */
   readonly paymaster: Readonly<PreparedPaymaster> | null;
 }
 
-/** Nonce sequence and gas are deployment facts; the SDK never invents them. */
+/**
+ * The deployment chooses a uint16 nonce namespace, then reads EntryPoint's
+ * sequence for encodeKernelV4NonceKey({ mode, validation, nonceKey }). Return
+ * that namespace and sequence with gas; never assume the root nonce applies
+ * to a session or that enable and standard validation share a sequence.
+ */
 export interface OaathQuoteCapability {
   readonly quote: (request: Readonly<OaathQuoteRequest>) => Promise<unknown>;
 }
@@ -1333,6 +1346,8 @@ export function createGrantHandle(
         kind: "execution",
         signer: "session",
         account: shape.descriptor.account,
+        mode: shape.mode,
+        validation: shape.runtime.validation,
         calls: shape.calls,
         paymaster: null,
       }),
@@ -1468,6 +1483,8 @@ export function createGrantHandle(
                 kind: spec.kind,
                 signer: spec.signer,
                 account: spec.descriptor.account,
+                mode: spec.mode,
+                validation: spec.runtime.validation,
                 calls: spec.calls,
                 paymaster: spec.staticPaymaster ?? null,
               }),

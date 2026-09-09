@@ -14,6 +14,12 @@ after a later operation replaces the lane. Lookup and observation do not quote,
 sign, or submit, and work after grant expiry or revocation. `null` means no
 matching retained record, never permission to retry a send.
 
+Custom deployment quotes receive the selected Kernel `mode` and `validation`.
+Choose a nonce namespace, encode its EntryPoint key with `encodeKernelV4NonceKey`,
+and read that key's sequence. The root, enable, and standard permission paths
+have separate nonce domains; the SDK supplies the authority and the deployment
+supplies its current chain sequence and gas.
+
 `@oaath/sdk/kernel` exposes `prepareKernelPhonePermissionApproval` for the
 owner-phone service integration. It binds a canonical permission request's
 account using public credentials and configured reads, derives its policy

@@ -47,6 +47,7 @@ import {
   p256Key,
   prepareKernelPhonePermissionApproval,
   ecdsaKey,
+  encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07,
@@ -248,6 +249,7 @@ let chainEnabled = false;
 let chainTouches = 0;
 const sends = [];
 let quotes = 0;
+const quotedKeys = [];
 const sponsorshipStages = [];
 function requireChain(port) {
   if (!chainEnabled) fail("requestPermission reached the chain " + port + " port");
@@ -311,6 +313,9 @@ const chain = {
   submission: {
     async open(request) {
       requireChain("submission");
+      if ((BigInt(request.prepared.userOperation.nonce) >> 64n).toString(10) !== quotedKeys.at(-1)) {
+        fail("prepared operation changed the quoted Kernel validation domain");
+      }
       sends.push(request.prepared);
       return {
         async send() {
@@ -323,6 +328,7 @@ const chain = {
   async quote(request) {
     requireChain("quote");
     quotes += 1;
+    quotedKeys.push(encodeKernelV4NonceKey({ mode: request.mode, validation: request.validation, nonceKey: "0" }));
     return {
       nonceKey: "0",
       sequence: String(sends.length),
@@ -666,7 +672,13 @@ export async function completePhoneApproval(input: PrepareKernelPhonePermissionA
 import {
   type GrantStoreAdapter,
   type OaathConfiguration,
+  type OaathQuoteRequest,
 } from "@oaath/sdk/advanced";
+import { encodeKernelV4NonceKey } from "@oaath/sdk/kernel";
+
+export function nonceDomain(request: OaathQuoteRequest): string {
+  return encodeKernelV4NonceKey({ mode: request.mode, validation: request.validation, nonceKey: "0" });
+}
 import {
   type Oaath,
   type OaathGrantHandle,

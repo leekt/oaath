@@ -307,6 +307,8 @@ async function ownerConsole() {
         kind: "revocation",
         signer: "owner",
         account: bound.account,
+        mode: "standard",
+        validation: ownerRuntime.validation,
         calls,
         paymaster: null,
       });
@@ -400,6 +402,24 @@ say(
   `  finalized        ${outcome.transactionHash} (block ${receipt.blockNumber}, ${receipt.gasUsed} gas)`,
 );
 expect(receipt.status === "success", "the receipt disagrees with the outcome");
+
+step("repeat two jobs through the installed session permission");
+for (let index = 0; index < 2; index += 1) {
+  const next = await grant.sendCalls({
+    chain: CHAIN_ID,
+    calls: [{ target, value: "5", data: `${selector}${"0".repeat(128)}` }],
+  });
+  const nextOutcome = await next.wait();
+  expect(
+    nextOutcome.status === "finalized" && nextOutcome.outcome === "success",
+    "repeated job did not finalize",
+  );
+}
+expect(chain.sends.length === 3, "repeated jobs changed the submission count");
+expect(
+  (BigInt(chain.sends[2].userOperation.nonce) & ((1n << 64n) - 1n)) === 1n,
+  "the standard permission sequence did not advance",
+);
 
 step("revoke");
 await grant.revoke();

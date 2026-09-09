@@ -5,7 +5,8 @@
  */
 import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import { OperationStore } from "../src/advanced.js";
+import { type OaathQuoteRequest, OperationStore } from "../src/advanced.js";
+import { encodeKernelV4NonceKey } from "../src/kernel.js";
 import { parseClientContext } from "../src/persistence.js";
 import {
   CALL_DATA,
@@ -22,6 +23,51 @@ import {
 } from "./support/browser.js";
 
 describe("browser golden path", () => {
+  it("quotes the exact selected validation domain for session and owner operations", async () => {
+    const quoted: Readonly<OaathQuoteRequest>[] = [];
+    const base = createChainFixture();
+    const realm = createRealm({
+      chain: {
+        ...base,
+        capability: {
+          ...base.capability,
+          async quote(request) {
+            quoted.push(request);
+            return base.capability.quote(request);
+          },
+        },
+      },
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    for (let index = 0; index < 3; index += 1) {
+      expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    }
+    await grant.revoke();
+    expect(quoted.map((request) => request.mode)).toEqual([
+      "enable-replayable",
+      "standard",
+      "standard",
+      "standard",
+    ]);
+    expect(quoted.map((request) => request.validation.kind)).toEqual([
+      "permission",
+      "permission",
+      "permission",
+      "root",
+    ]);
+    for (const [index, request] of quoted.entries()) {
+      expect(
+        encodeKernelV4NonceKey({
+          mode: request.mode,
+          validation: request.validation,
+          nonceKey: "0",
+        }),
+      ).toBe((BigInt(base.sends[index]?.userOperation.nonce ?? "0") >> 64n).toString(10));
+    }
+    await realm.oaath.close();
+  });
+
   it("rejects new intent on an occupied lane without preparing, signing, or sending again", async () => {
     let withhold = false;
     const realm = createRealm({
