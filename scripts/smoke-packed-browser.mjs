@@ -139,10 +139,11 @@ const callers = new Map([
     CLIENT_TOKEN,
     { role: "client", clientId: "client-a", subject: SUBJECT, redirectUris: [REDIRECT_URI] },
   ],
-  [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: SUBJECT, redirectUris: [] }],
+  [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
 ]);
 
 const relay = createRelayHandler({
+  ownerRouting: { async resolveOwner() { return { ownerDeviceId: "owner-phone", ownerSubject: "phone-subject" }; } },
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
@@ -552,6 +553,7 @@ await contextDirectory.replace({ expectedRevision: null, directory: {
   selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
 } });
 const contextRelay = createRelayHandler({
+  ownerRouting: { async resolveOwner() { return null; } },
   store: createMemoryRelayStore(),
   authentication: { async authenticate(request) {
     return request.headers.get("authorization") === "Bearer " + CLIENT_TOKEN
@@ -632,6 +634,7 @@ export async function permission(oaath: Readonly<Oaath>): Promise<Readonly<Oaath
 
 export function relay(): RelayHandler {
   return createRelayHandler({
+    ownerRouting: { async resolveOwner() { return null; } },
     store: createMemoryRelayStore(),
     authentication: { authenticate: async () => null },
     kms: { encrypt: async (value: string) => value, decrypt: async (value: string) => value },

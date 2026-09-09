@@ -28,6 +28,7 @@ export type {
   CreateAuthorizationRequestInput,
   CreatedAuthorizationRequest,
   FetchAuthorizationRequestInput,
+  RelayOwnerRouting,
 } from "./authorization/request.js";
 export { createAuthorizationRequest, fetchAuthorizationRequest } from "./authorization/request.js";
 export type { ResumeAuthorizationInput } from "./authorization/resume.js";
@@ -82,6 +83,7 @@ export type {
   AuthorizationCodeRecord,
   AuthorizationDecisionOutcome,
   AuthorizationDecisionRecord,
+  AuthorizationOwnerRoute,
   AuthorizationRequestRecord,
   EncryptedArtifactRecord,
 } from "./store/records.js";

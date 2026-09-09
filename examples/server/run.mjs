@@ -189,6 +189,11 @@ function listener(handler) {
 
 const store = await openStore();
 const handler = createRelayHandler({
+  ownerRouting: {
+    async resolveOwner() {
+      return { ownerDeviceId: "demo-owner", ownerSubject: SUBJECT };
+    },
+  },
   store,
   authentication,
   kms,

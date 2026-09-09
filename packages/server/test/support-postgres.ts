@@ -11,6 +11,7 @@
  */
 
 import pg from "pg";
+import type { RelayOwnerRouting } from "../src/authorization/request.js";
 import { createRelayHandler } from "../src/relay/handler.js";
 import { createPostgresRelaySchema } from "../src/store/postgres/schema.js";
 import { createPostgresRelayStore } from "../src/store/postgres/store.js";
@@ -18,6 +19,7 @@ import {
   createTestAuthentication,
   createTestClock,
   createTestKms,
+  createTestOwnerRouting,
   type Harness,
   type TestClock,
 } from "./support.js";
@@ -74,6 +76,7 @@ export interface PostgresHarness extends Harness {
 export function createPostgresHarness(
   fixture: PostgresFixture,
   clock: TestClock = createTestClock(),
+  ownerRouting: RelayOwnerRouting = createTestOwnerRouting(),
 ): PostgresHarness {
   const pool = fixture.createPool();
   const store = createPostgresRelayStore({ pool });
@@ -82,6 +85,7 @@ export function createPostgresHarness(
     handler: createRelayHandler({
       store,
       authentication: createTestAuthentication(),
+      ownerRouting,
       kms,
       clock,
     }),

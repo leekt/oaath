@@ -192,7 +192,7 @@ function relayAuthentication(): RelayAuthentication {
       {
         role: "owner",
         clientId: "owner-console",
-        subject: SUBJECT,
+        subject: "owner-subject",
         redirectUris: [],
         organizationAudience: null,
       },
@@ -225,6 +225,11 @@ export function createRelay(
   options: Record<string, unknown> = {},
 ): (request: Request) => Promise<Response> {
   return createRelayHandler({
+    ownerRouting: {
+      async resolveOwner() {
+        return { ownerDeviceId: "owner-phone", ownerSubject: "owner-subject" };
+      },
+    },
     store: createMemoryRelayStore(),
     authentication: relayAuthentication(),
     kms: relayKms(),

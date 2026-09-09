@@ -8,6 +8,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { withRelayTransaction } from "../src/store/interface.js";
 import {
   approve,
   claim,
@@ -17,7 +18,9 @@ import {
   expectFailure,
   expectOk,
   get,
+  OTHER_OWNER_TOKEN,
   OWNER_TOKEN,
+  post,
 } from "./support.js";
 import {
   createPostgresFixture,
@@ -37,20 +40,44 @@ import {
     await fixture.end();
   });
 
-  it("resumes an undecided request after a full restart", async () => {
+  it("keeps the distinct approving device after a full restart and routing change", async () => {
     const clock = createTestClock();
-    const before = createPostgresHarness(fixture, clock);
+    const before = createPostgresHarness(fixture, clock, {
+      async resolveOwner() {
+        return { ownerDeviceId: "team-phone", ownerSubject: "subject-2" };
+      },
+    });
     const created = await createRequest(before);
     await before.shutdown();
 
     const after = createPostgresHarness(fixture, clock);
-    const state = await expectOk<{ requestId: string; decision: unknown }>(
+    const stored = await withRelayTransaction(after.store, (transaction) =>
+      transaction.lockAuthorizationRequest(created.requestId),
+    );
+    expect(stored).toMatchObject({
+      subject: "subject-1",
+      ownerDeviceId: "team-phone",
+      ownerSubject: "subject-2",
+    });
+    await expectFailure(
       await after.handler(get(`/authorization/requests/${created.requestId}`, OWNER_TOKEN)),
+      "relay_not_found",
+    );
+    const state = await expectOk<{ requestId: string; decision: unknown }>(
+      await after.handler(get(`/authorization/requests/${created.requestId}`, OTHER_OWNER_TOKEN)),
       200,
     );
     expect(state).toMatchObject({ requestId: created.requestId, decision: null });
 
-    const decision = await approve(after, created.requestId, '{"grant":"after-restart"}');
+    const decision = await expectOk<{ code: string }>(
+      await after.handler(
+        post(`/authorization/requests/${created.requestId}/decision`, OTHER_OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: '{"grant":"after-restart"}',
+        }),
+      ),
+      200,
+    );
     await expectOk(await consume(after, decision.code), 200);
     await after.shutdown();
   });

@@ -108,6 +108,10 @@ function chainPort(capability) {
   };
 }
 
+const ownerRoute = Object.freeze({
+  ownerDeviceId: "demo-owner",
+  ownerSubject: "demo-owner-subject",
+});
 const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
 await directory.replace({
   expectedRevision: null,
@@ -123,7 +127,11 @@ await directory.replace({
     workspaces: [{ workspaceId: "personal-1", kind: "personal" }],
     memberships: [{ workspaceId: "personal-1", clientId: "demo-client", subject: "demo-subject" }],
     ownerDevices: [
-      { workspaceId: "personal-1", ownerDeviceId: "demo-owner", subject: "demo-subject" },
+      {
+        workspaceId: "personal-1",
+        ownerDeviceId: ownerRoute.ownerDeviceId,
+        subject: ownerRoute.ownerSubject,
+      },
     ],
     accounts: [
       {
@@ -148,6 +156,11 @@ await directory.replace({
 
 step("serve the relay over HTTP");
 const relayHandler = createRelayHandler({
+  ownerRouting: {
+    async resolveOwner() {
+      return ownerRoute;
+    },
+  },
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
@@ -165,7 +178,7 @@ const relayHandler = createRelayHandler({
         return {
           role: "owner",
           clientId: "owner-console",
-          subject: "demo-subject",
+          subject: ownerRoute.ownerSubject,
           redirectUris: [],
         };
       }

@@ -22,11 +22,13 @@ import {
   createTestAuthentication,
   createTestClock,
   createTestKms,
+  createTestOwnerRouting,
   expectFailure,
   expectOk,
   get,
   ORIGIN,
   OTHER_CLIENT_TOKEN,
+  OTHER_OWNER_TOKEN,
   OWNER_TOKEN,
   post,
   REDIRECT_URI,
@@ -44,6 +46,83 @@ function expectConstructionFailure(build: () => unknown, code: RelayErrorCode): 
 }
 
 describe("relay handler", () => {
+  it("snapshots a distinct approving device while keeping the requesting member", async () => {
+    const route = { ownerDeviceId: "team-phone", ownerSubject: "subject-2" };
+    let resolutions = 0;
+    const harness = createHarness({
+      ownerRouting: {
+        async resolveOwner(caller, request) {
+          expect(caller.subject).toBe("subject-1");
+          expect(request.requestId).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+          resolutions += 1;
+          return route;
+        },
+      },
+    });
+    const created = await createRequest(harness);
+    route.ownerSubject = "subject-1";
+    await expectFailure(
+      await harness.handler(get(`/authorization/requests/${created.requestId}`, OWNER_TOKEN)),
+      "relay_not_found",
+    );
+    await expectFailure(
+      await harness.handler(
+        post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
+          outcome: "rejected",
+        }),
+      ),
+      "relay_not_found",
+    );
+    await expectOk(
+      await harness.handler(get(`/native/projections/${created.requestId}`, OTHER_OWNER_TOKEN)),
+      200,
+    );
+    const decision = await expectOk<{ code: string; artifactId: string }>(
+      await harness.handler(
+        post(`/authorization/requests/${created.requestId}/decision`, OTHER_OWNER_TOKEN, {
+          outcome: "approved",
+          artifact: '{"grant":"team-approved"}',
+        }),
+      ),
+      200,
+    );
+    await expectOk(await consume(harness, decision.code), 200);
+    await expectOk(await claim(harness, decision.artifactId), 200);
+    expect(resolutions).toBe(1);
+  });
+
+  it("creates no request when the deployment resolves no owner", async () => {
+    let writes = 0;
+    const store = createMemoryRelayStore();
+    const harness = createHarness(
+      {
+        ownerRouting: {
+          async resolveOwner() {
+            return null;
+          },
+        },
+      },
+      {
+        ...store,
+        async begin() {
+          writes += 1;
+          return store.begin();
+        },
+      },
+    );
+    await expectFailure(
+      await harness.handler(
+        post("/authorization/requests", CLIENT_TOKEN, {
+          redirectUri: REDIRECT_URI,
+          codeChallenge: await codeChallenge(),
+          requestedScope: APPROVABLE_PERMISSION_SCOPE,
+        }),
+      ),
+      "relay_forbidden",
+    );
+    expect(writes).toBe(0);
+  });
+
   it("round-trips create, fetch, approve, consume, and claim", async () => {
     const harness = createHarness();
     const created = await createRequest(harness);
@@ -527,6 +606,7 @@ describe("relay handler", () => {
       const complete: RelayHandlerOptions = {
         store: createMemoryRelayStore(),
         authentication: createTestAuthentication(),
+        ownerRouting: createTestOwnerRouting(),
         kms: createTestKms(),
         clock: createTestClock(),
       };
@@ -537,6 +617,8 @@ describe("relay handler", () => {
         {},
         { ...complete, store: {} },
         { ...complete, authentication: {} },
+        { ...complete, ownerRouting: undefined },
+        { ...complete, ownerRouting: {} },
         { ...complete, kms: { encrypt: 1, decrypt: 1 } },
         { ...complete, clock: { now: "later" } },
         { ...complete, rateLimit: {} },

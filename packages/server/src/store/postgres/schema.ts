@@ -8,22 +8,24 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v1" as const;
+export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v2" as const;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.freeze([
-  `CREATE TABLE oaath_relay_schema_v1 (
+  `CREATE TABLE oaath_relay_schema_v2 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )`,
-  `INSERT INTO oaath_relay_schema_v1 (schema_id, version)
+  `INSERT INTO oaath_relay_schema_v2 (schema_id, version)
    VALUES ('oaath', '${OAATH_RELAY_POSTGRES_SCHEMA_VERSION}')`,
-  `CREATE TABLE oaath_relay_authorization_request_v1 (
+  `CREATE TABLE oaath_relay_authorization_request_v2 (
     request_id text PRIMARY KEY,
     record_version text NOT NULL,
     client_id text NOT NULL,
     subject text NOT NULL,
+    owner_device_id text NOT NULL,
+    owner_subject text NOT NULL,
     organization_audience text,
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
@@ -33,7 +35,7 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
   )`,
   `CREATE TABLE oaath_relay_authorization_decision_v1 (
     request_id text PRIMARY KEY
-      REFERENCES oaath_relay_authorization_request_v1 (request_id),
+      REFERENCES oaath_relay_authorization_request_v2 (request_id),
     record_version text NOT NULL,
     outcome text NOT NULL CHECK (outcome IN ('approved', 'rejected')),
     decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= ${MAX_SAFE_INTEGER}),
@@ -53,7 +55,7 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     code_hash text PRIMARY KEY,
     record_version text NOT NULL,
     request_id text NOT NULL UNIQUE
-      REFERENCES oaath_relay_authorization_request_v1 (request_id),
+      REFERENCES oaath_relay_authorization_request_v2 (request_id),
     client_id text NOT NULL,
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
@@ -66,7 +68,7 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     artifact_id text PRIMARY KEY,
     record_version text NOT NULL,
     request_id text NOT NULL UNIQUE
-      REFERENCES oaath_relay_authorization_request_v1 (request_id),
+      REFERENCES oaath_relay_authorization_request_v2 (request_id),
     client_id text NOT NULL,
     ciphertext_ref text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= ${MAX_SAFE_INTEGER}),

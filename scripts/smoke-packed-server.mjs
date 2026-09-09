@@ -164,10 +164,11 @@ const callers = new Map([
   ],
   // The owner caller keeps the pre-audience port shape on purpose: a
   // deployment that declares no audience must keep authenticating.
-  [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: SUBJECT, redirectUris: [] }],
+  [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
 ]);
 
 const handler = createRelayHandler({
+  ownerRouting: { async resolveOwner() { return { ownerDeviceId: "owner-phone", ownerSubject: "phone-subject" }; } },
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
@@ -390,6 +391,7 @@ export const store: RelayStore = createMemoryRelayStore();
 
 export function relay(): RelayHandler {
   return createRelayHandler({
+    ownerRouting: { async resolveOwner() { return null; } },
     store,
     authentication: { authenticate: async () => null },
     kms: { encrypt: async (value: string) => value, decrypt: async (value: string) => value },
