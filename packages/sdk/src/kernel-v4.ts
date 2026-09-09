@@ -1,3 +1,8 @@
+export {
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4PermissionUninstallCalls,
+} from "@oaath/protocol";
+
 import {
   type CanonicalEip712TypedData,
   type CaptureContext,
@@ -405,16 +410,6 @@ const KERNEL_ABI = [
   },
   {
     type: "function",
-    name: "setNonce",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "nonceKey", type: "uint192" },
-      { name: "seq", type: "uint64" },
-    ],
-    outputs: [],
-  },
-  {
-    type: "function",
     name: "initialize",
     stateMutability: "payable",
     inputs: [INSTALL_ARRAY_PARAMETER],
@@ -437,28 +432,6 @@ const KERNEL_ABI = [
     ],
     outputs: [],
   },
-  {
-    type: "function",
-    name: "uninstallModule",
-    stateMutability: "payable",
-    inputs: [
-      { name: "moduleType", type: "uint256" },
-      { name: "module", type: "address" },
-      { name: "initData", type: "bytes" },
-    ],
-    outputs: [],
-  },
-] as const;
-
-/**
- * `Kernel.uninstallModule`'s `initData` is an ABI-encoded
- * `InstallModuleDataFormat(bytes installData, bytes internalData)` — the same
- * wrapper `installModule` reads (src/Kernel.sol at the vendored commit binds
- * the struct pointer straight to `initData.offset`).
- */
-const INSTALL_MODULE_DATA_FORMAT = [
-  { name: "installData", type: "bytes" },
-  { name: "internalData", type: "bytes" },
 ] as const;
 
 function kernelError(code: KernelV4ErrorCode, message: string): never {
@@ -698,68 +671,6 @@ export function encodeKernelV4InstallModules(installs: readonly KernelV4Install[
     functionName: "installModule",
     args: [installTuples(packages)],
   });
-}
-
-/**
- * The exact call sequence that removes one installed permission, derived from
- * the same install packages the approval bound — no second description of the
- * permission exists to drift.
- *
- * Kernel enforces the order this emits (src/core/ValidationManager.sol at the
- * vendored commit): each `_uninstallPolicy` may only pop the *last* policy in
- * the validation's array, so policies leave in reverse install order, and
- * `_uninstallSigner` requires every policy gone before it clears the signer
- * and marks the validation uninstalled. Each module's own `onUninstall`
- * receives the permission-scoped prefix of its install data; Kernel ignores
- * that call's success on purpose — removal of authority never depends on a
- * module's cleanup cooperating.
- *
- * The calls target the account itself: `uninstallModule` requires
- * `msg.sender` to be the EntryPoint or the account, which a self-call through
- * the account's own execution phase satisfies.
- */
-export function encodeKernelV4PermissionUninstallCalls(value: {
-  readonly account: `0x${string}`;
-  readonly packages: readonly KernelV4Install[];
-}): readonly Readonly<KernelV4Call>[] {
-  const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["account", "packages"], "Kernel permission uninstall", context);
-  const account = address(record.account, "Kernel permission uninstall account");
-  const packages = captureInstalls(record.packages, context, "Kernel uninstall packages");
-  const policies = packages.filter((entry) => entry.moduleType === 5);
-  const signers = packages.filter((entry) => entry.moduleType === 6);
-  if (signers.length !== 1 || policies.length + 1 !== packages.length) {
-    return fail("Kernel permission uninstall requires policy packages and exactly one signer");
-  }
-  if (packages.some((entry) => entry.moduleData.length < 66)) {
-    return fail("Kernel permission uninstall packages must carry the permission prefix");
-  }
-  // Every package's moduleData starts with the 32-byte-padded permission ID;
-  // the internal handlers read the 4-byte ID from internalData's prefix. Both
-  // come verbatim from the install packages.
-  const uninstallCall = (entry: Readonly<KernelV4Install>): Readonly<KernelV4Call> =>
-    Object.freeze({
-      target: account,
-      value: "0",
-      data: encodeFunctionData({
-        abi: KERNEL_ABI,
-        functionName: "uninstallModule",
-        args: [
-          BigInt(entry.moduleType),
-          entry.module,
-          encodeAbiParameters(INSTALL_MODULE_DATA_FORMAT, [
-            // onUninstall receives the permission-scoped identity, exactly as
-            // onInstall did; module-internal cleanup beyond it is best-effort.
-            entry.moduleData.slice(0, 66) as Hex,
-            entry.internalData,
-          ]),
-        ],
-      }),
-    });
-  return Object.freeze([
-    ...[...policies].reverse().map(uninstallCall),
-    ...signers.map(uninstallCall),
-  ]);
 }
 
 export function encodeKernelV4FactoryImplementationRead(): Hex {
@@ -1285,40 +1196,6 @@ export function encodeKernelV4InstallNonceRead(value: { readonly key: string }):
     abi: KERNEL_ABI,
     functionName: "nonce",
     args: [uint(record.key, (1n << 192n) - 1n, "Kernel install nonce key")],
-  });
-}
-
-/**
- * Invalidates an unconsumed install approval on one chain by encoding an
- * owner-authorized self-call to setNonce(key, signedSequence + 1). Kernel
- * requires a strictly increasing stored sequence, so already consumed or
- * invalidated approvals need observation rather than this call again.
- *
- * This neither removes an installed permission nor invalidates another key
- * or chain. Callers own submission, finality, and configured-chain completion.
- */
-export function encodeKernelV4InstallNonceInvalidationCall(value: {
-  readonly account: `0x${string}`;
-  readonly installNonce: string;
-}): Readonly<KernelV4Call> {
-  const record = exact(
-    value,
-    ["account", "installNonce"],
-    "Kernel install nonce invalidation",
-    new WeakSet(),
-  );
-  const account = address(record.account, "Kernel install nonce account");
-  const nonce = uint(record.installNonce, MAX_UINT256, "Kernel install nonce");
-  const sequence = nonce & MAX_UINT64;
-  if (sequence === MAX_UINT64) return fail("Kernel install nonce sequence is exhausted");
-  return Object.freeze({
-    target: account,
-    value: "0",
-    data: encodeFunctionData({
-      abi: KERNEL_ABI,
-      functionName: "setNonce",
-      args: [nonce >> 64n, sequence + 1n],
-    }),
   });
 }
 

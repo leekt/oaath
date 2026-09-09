@@ -1,7 +1,7 @@
 {
   "name": "@oaath/protocol",
   "version": "0.1.0",
-  "description": "Runtime-neutral OAAth wire and durable contracts.",
+  "description": "IO-free OAAth wire, durable contracts, and Kernel v4 signing profiles.",
   "type": "module",
   "sideEffects": false,
   "license": "Apache-2.0",

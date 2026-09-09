@@ -207,6 +207,18 @@ export {
   parseKernelV4ReplayableInstallOwnerSigningRequest,
 } from "./kernel-v4-replayable-install.js";
 export type {
+  KernelV4RevocationEffect,
+  KernelV4RevocationOperation,
+  KernelV4RevocationSigningRequest,
+} from "./kernel-v4-revocation.js";
+export {
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4PermissionUninstallCalls,
+  hashKernelV4RevocationSigningRequest,
+  OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+  parseKernelV4RevocationSigningRequest,
+} from "./kernel-v4-revocation.js";
+export type {
   AbandonedOperation,
   DroppedOperation,
   FinalizedOperation,
