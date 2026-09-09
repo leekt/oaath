@@ -111,7 +111,7 @@ is intentional so the project cannot imply a second provenance authority.
 
 `swift build` + `swift test` (macOS host) cover every testable part:
 `OwnerPhone` (wire decoders, review machine) and `OwnerPhoneDemo` (routes,
-pairing, credential store, code delivery, screens compile). The Demo app also
+pairing, credential store, decision settlement, screens compile). The Demo app also
 builds unsigned for generic iPhoneOS and iOS Simulator destinations with
 `xcodebuild ... CODE_SIGNING_ALLOWED=NO build`. Not proven headlessly: a signed
 physical-device install/run, APNs delivery, provisioning, camera behavior, or

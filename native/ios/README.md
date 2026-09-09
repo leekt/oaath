@@ -55,6 +55,10 @@ published to npm.
   ever auto-resubmitted; an explicit retry is safe only because the server
   saga is replay-only.
 
+The phone finishes when the relay commits its decision. The application SDK
+retrieves the released code from the relay; the phone never contacts the
+application callback or needs to reach the browser's loopback origin.
+
 ## EIP-712 derivation and Kernel approval
 
 `OwnerPhone` uses a package-internal, non-authorizing EIP-712 primitive to
@@ -83,7 +87,7 @@ against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.
 Nothing in the `OwnerPhone` library reads configuration or holds credentials;
 the demo wiring (URLSession transport, pairing, bound endpoint/credential
-custody, example-owned `GET /demo/inbox`, code delivery) lives in the
+custody, example-owned `GET /demo/inbox`, decision settlement) lives in the
 `OwnerPhoneDemo` target.
 
 ## App wiring
@@ -171,7 +175,7 @@ endpoint/model ownership, the consent projection decode
 (structured and raw scope) and match-code rendering, decision decode with
 one-shot/replay consistency, the review state machine including forbidden
 transitions, the transport-injected client, and the demo wiring (routes,
-pairing, credential custody, code delivery). The relay pins the same
+pairing, credential custody, decision settlement). The relay pins the same
 envelopes from its side in `packages/server/test/native.test.ts`.
 
 Evidence explicitly **not** available from these gates: real APNs delivery,

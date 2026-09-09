@@ -3,7 +3,7 @@
 // Not part of the fixed npm release group and never published to npm.
 //
 // OwnerPhone is the reviewed wire/consent library; OwnerPhoneDemo is the demo
-// app's wiring (pairing, transport, code delivery, screens) consumed by the
+// app's wiring (pairing, transport, screens) consumed by the
 // runnable Xcode app in ./Demo.
 import PackageDescription
 

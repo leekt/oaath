@@ -38,7 +38,6 @@ public final class DemoModel: ObservableObject {
     @Published public private(set) var paired = false
     @Published public private(set) var statusLine = ""
     @Published public private(set) var approval: ApprovalModel?
-    @Published public private(set) var deliveryLine = ""
     /// Opaque pending summaries from the authenticated example-owned inbox.
     @Published public private(set) var inbox: [DemoInboxItem] = []
     /// Bounded status codes/prose only; transport bodies and errors never enter UI state.
@@ -71,8 +70,6 @@ public final class DemoModel: ObservableObject {
     private var inFlightPairingAttempts: Set<PairingAttemptIdentity> = []
     private var pairingIdentity: PersistedPairing?
     private var inboxRefreshToken: UUID?
-    private var phaseSink: AnyCancellable?
-    private var delivered: Set<String> = []
 
     public convenience init(
         pairings: any DevicePairingStore,
@@ -315,7 +312,6 @@ public final class DemoModel: ObservableObject {
 
     public func openManually() async {
         guard let approval else { return }
-        deliveryLine = ""
         await approval.open(
             operationId: operationIdText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -371,13 +367,11 @@ public final class DemoModel: ObservableObject {
     public func openInboxItem(_ item: DemoInboxItem) async {
         guard inbox.contains(item), pairingIdentity != nil, let approval else { return }
         operationIdText = item.operationId
-        deliveryLine = ""
         await approval.open(operationId: item.operationId)
     }
 
     public func receive(push: OwnerPhonePush) async {
         guard let approval else { return }
-        deliveryLine = ""
         await approval.receive(push: push)
     }
 
@@ -451,9 +445,6 @@ public final class DemoModel: ObservableObject {
             relay: client, kernelP256ApprovalBinding: kernelP256ApprovalBinding)
         approval = model
         paired = true
-        phaseSink = model.$phase
-            .receive(on: RunLoop.main)
-            .sink { [weak self] phase in self?.observe(phase: phase) }
     }
 
     private func invalidatePairingAttempt() {
@@ -495,7 +486,6 @@ public final class DemoModel: ObservableObject {
         inboxStatusLine = ""
         pollingIdentity = UUID()
         approval = nil
-        phaseSink = nil
         paired = false
         account = nil
         baseURLText = ""
@@ -509,43 +499,10 @@ public final class DemoModel: ObservableObject {
         inboxStatusLine = ""
         pollingIdentity = UUID()
         approval = nil
-        phaseSink = nil
         paired = false
         account = nil
         storedPairingBlocked = true
         statusLine = message
-    }
-
-    /// Delivers the released code exactly once per decided approval, the OAuth
-    /// way: GET `redirectUri?code=…`. A replayed settlement releases nothing,
-    /// so nothing is ever delivered for it — `ApprovalView` says so honestly.
-    private func observe(phase: ApprovalModel.Phase) {
-        guard case let .review(review) = phase,
-              case let .settled(decision) = review.state,
-              decision.settlement == .decided,
-              case let .approved(code, _, redirectUri, _) = decision.release ?? .rejected,
-              !delivered.contains(decision.operationId)
-        else {
-            if case .review(let review) = phase,
-               case .settled(let decision) = review.state,
-               decision.settlement == .replayed {
-                deliveryLine = "Replayed outcome: nothing was released, nothing to deliver."
-            }
-            return
-        }
-        delivered.insert(decision.operationId)
-        deliveryLine = "Delivering the code to the web app…"
-        let http = self.http
-        Task { @MainActor in
-            do {
-                let status = try await deliverCode(redirectUri: redirectUri, code: code, http: http)
-                deliveryLine = status < 400
-                    ? "Code delivered to \(redirectUri) (HTTP \(status))."
-                    : "The web app refused the code (HTTP \(status))."
-            } catch {
-                deliveryLine = "Code delivery failed: is the web example still waiting?"
-            }
-        }
     }
 }
 
