@@ -42,7 +42,7 @@ import {
   servePairingSecret,
 } from "./demo-routes.mjs";
 
-const CHAIN_ID = 421_614;
+const CHAIN_IDS = [84_532, 421_614];
 const CLIENT_ID = "demo-web-app";
 const SUBJECT = "demo-owner-subject";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -75,7 +75,16 @@ function chainPort(capability) {
 }
 
 /** In-memory example; restarting recreates both the directory and local chain. */
-export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate = false } = {}) {
+export async function startPhoneService({
+  host = "127.0.0.1",
+  port = 0,
+  simulate = false,
+  workspaceKind = "personal",
+} = {}) {
+  if (workspaceKind !== "personal" && workspaceKind !== "team")
+    throw new Error("workspace_kind_invalid");
+  const workspaceId = `${workspaceKind}-1`;
+  const members = workspaceKind === "team" ? ["demo-member", "demo-teammate"] : ["demo-member"];
   const bundle = await build({
     entryPoints: [`${HERE}/browser.js`],
     bundle: true,
@@ -85,7 +94,24 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
     logLevel: "silent",
   });
   const page = readFileSync(`${HERE}/page.html`);
-  const chain = await createAnvilChain(CHAIN_ID, { p256: true });
+  const chains = [];
+  try {
+    for (const chainId of CHAIN_IDS) chains.push(await createAnvilChain(chainId, { p256: true }));
+  } catch (error) {
+    await Promise.allSettled(chains.map((chain) => chain.stop()));
+    throw error;
+  }
+  const chainById = (chainId) => {
+    const chain = chains.find((entry) => entry.capability.chainId === chainId);
+    if (!chain) throw new Error("chain_not_configured");
+    return chain;
+  };
+  const primary = chains[0];
+  const stopChains = async () => {
+    const results = await Promise.allSettled(chains.map((chain) => chain.stop()));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
+  };
   const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
   await directory.replace({
     expectedRevision: null,
@@ -94,18 +120,16 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       applications: [
         { clientId: CLIENT_ID, applicationId: "phone-demo", applicationName: "OAAth Phone Demo" },
       ],
-      workspaces: [{ workspaceId: "personal-1", kind: "personal" }],
-      memberships: [{ workspaceId: "personal-1", clientId: CLIENT_ID, subject: "demo-member" }],
+      workspaces: [{ workspaceId, kind: workspaceKind }],
+      memberships: members.map((subject) => ({ workspaceId, clientId: CLIENT_ID, subject })),
       ownerDevices: [],
       accounts: [],
-      selections: [
-        {
-          workspaceId: "personal-1",
-          accountId: "account-1",
-          clientId: CLIENT_ID,
-          subject: "demo-member",
-        },
-      ],
+      selections: members.map((subject) => ({
+        workspaceId,
+        accountId: "account-1",
+        clientId: CLIENT_ID,
+        subject,
+      })),
     },
   });
   const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -148,10 +172,14 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
         operationId,
         // Each executor borrows the example backend; only service.close destroys it.
         operations: { ...operations, close: async () => {} },
-        observation: chain.capability.observation,
+        observation: {
+          read: (request) => chainById(request.chainId).capability.observation.read(request),
+          close: async () => {},
+        },
         submission: {
           close: async () => {},
           async openSubmission(prepared, signature) {
+            const chain = chainById(prepared.chainId);
             const session = await chain.capability.submission.open({
               prepared,
               signature,
@@ -176,16 +204,22 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
   const relay = createRelayHandler({
     ownerRouting: directory,
     bootstrap: directory,
-    chains: [chainPort(chain.capability)],
+    chains: chains.map((chain) => chainPort(chain.capability)),
     store,
     authentication: {
       async authenticate(request) {
         const token = request.headers.get("authorization");
-        if (token === "Bearer demo-client-token") {
+        const member =
+          token === "Bearer demo-client-token"
+            ? "demo-member"
+            : token === "Bearer demo-teammate-token"
+              ? "demo-teammate"
+              : null;
+        if (member) {
           return {
             role: "client",
             clientId: CLIENT_ID,
-            subject: "demo-member",
+            subject: member,
             redirectUris: [`${url}/callback`],
           };
         }
@@ -205,7 +239,7 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
     revocations: {
       directory,
       async prepare({ request, artifact, chainId }) {
-        if (chainId !== CHAIN_ID) throw new Error("chain_not_configured");
+        const chain = chainById(chainId);
         const approval = parseKernelAllChainApproval(JSON.parse(artifact).installApproval);
         const quote = await chain.quoteRevocation(approval);
         return (
@@ -223,8 +257,8 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       async prepare(request) {
         const prepared = await prepareKernelPhonePermissionApproval({
           request,
-          chainId: CHAIN_ID,
-          reads: chain.capability.reads,
+          chainId: primary.capability.chainId,
+          reads: primary.capability.reads,
         });
         return {
           signingRequest: prepared.signingRequest,
@@ -268,7 +302,7 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       publicKey: `0x04${value.publicKey.slice(2)}`,
     };
     const runtime = createKernelRuntime({
-      deployment: kernelV4Deployment(CHAIN_ID),
+      deployment: kernelV4Deployment(primary.capability.chainId),
       operator: ownerOperator({
         key: p256Key({
           credential,
@@ -277,7 +311,7 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
           },
         }),
       }),
-      reads: chain.capability.reads,
+      reads: primary.capability.reads,
     });
     const descriptor = await runtime.bindAccount({
       accountIndex: "0",
@@ -285,10 +319,10 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
     });
     const enrolled = await directory.enrollOwnerDevice({
       expectedRevision: 1,
-      device: { workspaceId: "personal-1", ownerDeviceId: "demo-owner-phone", subject: SUBJECT },
+      device: { workspaceId, ownerDeviceId: "demo-owner-phone", subject: SUBJECT },
       accounts: [
         {
-          workspaceId: "personal-1",
+          workspaceId,
           accountId: "account-1",
           ownerDeviceId: "demo-owner-phone",
           account: {
@@ -301,13 +335,13 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
             ownerCredential: credential,
           },
           ownerValidator: null,
-          chainIds: [CHAIN_ID],
+          chainIds: CHAIN_IDS,
         },
       ],
     });
     if (!enrolled) return refuse(outgoing, 409, "phone_enrollment_conflict");
     // Local Anvil prefunding is a pairing effect, never part of pure consent preparation.
-    await chain.fund(descriptor.account);
+    for (const chain of chains) await chain.fund(descriptor.account);
     activeDevice = {
       credential: randomBytes(32).toString("base64url"),
       deviceToken: value.deviceToken.toLowerCase(),
@@ -317,7 +351,7 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       version: "oaath.phone-pairing/v1",
       deviceCredential: activeDevice.credential,
       account: descriptor.account,
-      chains: [{ chainId: CHAIN_ID, entryPoint: KERNEL_V4_ENTRY_POINT_V07 }],
+      chains: CHAIN_IDS.map((chainId) => ({ chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 })),
     });
   }
 
@@ -403,7 +437,10 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
         return;
       if (incoming.method === "GET" && pathname === "/demo/account") {
         if (!activeDevice) return refuse(outgoing, 409, "phone_not_paired");
-        return sendJson(outgoing, 200, { account: activeDevice.account });
+        return sendJson(outgoing, 200, {
+          account: activeDevice.account,
+          chains: CHAIN_IDS.map((chainId) => ({ chainId, name: `Local Anvil ${chainId}` })),
+        });
       }
       const chunks = [];
       for await (const chunk of incoming) chunks.push(chunk);
@@ -458,8 +495,9 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
     return {
       url,
       pairingCode,
-      chain,
-      chainId: CHAIN_ID,
+      chains,
+      // Embedding/teardown can await current tasks without starting more work.
+      settle: () => Promise.all(workers.values()),
       target: `0x${"71".repeat(20)}`,
       async close() {
         server.closeAllConnections();
@@ -467,11 +505,11 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
         await Promise.all(workers.values());
         await operations.close();
         await store.close();
-        await chain.stop();
+        await stopChains();
       },
     };
   } catch (error) {
-    await chain.stop();
+    await stopChains();
     throw error;
   }
 }

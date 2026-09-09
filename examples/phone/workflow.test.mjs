@@ -11,22 +11,20 @@ import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
 import { hexToBytes, toHex } from "viem";
 import { startPhoneService } from "./service.mjs";
 
-for (const used of [true, false])
-  test(`phone revokes ${used ? "an installed bounded-job permission" : "an unused counterfactual grant"}`, async () => {
-    const service = await startPhoneService({ simulate: true });
-    let closedWorkers = 0;
-    service.chain.capability.observation.close = async () => {
-      closedWorkers += 1;
-    };
-    const waitForWorkers = async (count) => {
-      for (let attempt = 0; attempt < 100 && closedWorkers < count; attempt += 1)
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      assert.ok(closedWorkers >= count, "a bounded executor must release its resources");
-    };
+for (const workspaceKind of ["personal", "team"])
+  test(`${workspaceKind} phone service runs and revokes across configured chains`, async () => {
+    const used = workspaceKind === "team";
+    const service = await startPhoneService({ simulate: true, workspaceKind });
     const secret = p256.utils.randomPrivateKey();
     let oaath;
     let connection;
+    let teammate;
     try {
+      assert.equal(service.chains?.length, 2, "one composition must serve both configured chains");
+      const [firstChain, secondChain] = service.chains;
+      const chainId = firstChain.capability.chainId;
+      const secondChainId = secondChain.capability.chainId;
+      const sends = () => service.chains.reduce((count, chain) => count + chain.sends.length, 0);
       // This is the exact code grammar accepted by the native PairingCode owner.
       assert.match(service.pairingCode, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{10}$/);
       const pairedResponse = await fetch(`${service.url}/native/pairings`, {
@@ -40,9 +38,13 @@ for (const used of [true, false])
       assert.equal(pairedResponse.status, 200, "pairing must enroll the actual account");
       const paired = await pairedResponse.json();
       assert.equal(paired.version, "oaath.phone-pairing/v1");
-      assert.deepEqual(paired.chains, [
-        { chainId: service.chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
-      ]);
+      assert.deepEqual(
+        paired.chains,
+        service.chains.map((chain) => ({
+          chainId: chain.capability.chainId,
+          entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+        })),
+      );
       assert.deepEqual(Object.keys(paired), ["version", "deviceCredential", "account", "chains"]);
       const ownerFetch = (path, body) =>
         fetch(`${service.url}${path}`, {
@@ -54,10 +56,11 @@ for (const used of [true, false])
         });
       let approvals = 0;
       let phoneFailure;
-      const clientFetch = async (request) => {
+      const clientFetchFor = (token) => async (request) => {
+        const beforeConsent = sends();
         try {
           const headers = new Headers(request.headers);
-          headers.set("authorization", "Bearer demo-client-token");
+          headers.set("authorization", `Bearer ${token}`);
           const response = await fetch(new Request(request, { headers }));
           if (
             request.method === "POST" &&
@@ -67,7 +70,7 @@ for (const used of [true, false])
             const { requestId } = await response.clone().json();
             const consent = await (await ownerFetch(`/native/projections/${requestId}`)).json();
             assert.equal(consent.scope.kind, "permission-request");
-            assert.equal(consent.scope.context.workspaceId, "personal-1");
+            assert.equal(consent.scope.context.workspaceId, `${workspaceKind}-1`);
             assert.equal(consent.scope.context.accountId, "account-1");
             const inbox = await (await ownerFetch("/demo/inbox")).json();
             assert.equal(inbox.requests.length, 1);
@@ -104,7 +107,7 @@ for (const used of [true, false])
               foreign.fill(0);
             }
             assert.equal((await ownerFetch(`/native/projections/${requestId}`)).status, 200);
-            assert.equal(service.chain.sends.length, 0, "consent cannot submit a job");
+            assert.equal(sends(), beforeConsent, "consent cannot submit a job");
             const approved = await ownerFetch(`/native/decisions/${requestId}`, {
               command: "approve",
               artifact: artifact(secret),
@@ -119,6 +122,7 @@ for (const used of [true, false])
           throw error;
         }
       };
+      const clientFetch = clientFetchFor("demo-client-token");
       oaath = createOAAth({ url: service.url, origin: service.url, fetch: clientFetch });
       connection = await oaath.connect();
       assert.equal(await connection.resume(), null);
@@ -135,95 +139,166 @@ for (const used of [true, false])
           throw phoneFailure ?? error;
         });
       assert.equal(grant.state, "active");
-      assert.equal(await grant.account(service.chainId), paired.account);
+      assert.equal(await grant.account(chainId), paired.account);
       const job = {
-        chain: service.chainId,
+        chain: chainId,
         calls: [{ target: service.target, value: "5", data: "0x12345678" }],
       };
       if (used) {
         const first = await grant.sendCalls(job);
         await assert.rejects(grant.sendCalls(job), { code: "oaath_client_state_conflict" });
-        assert.equal(service.chain.sends.length, 1);
-        const saved = await grant.getOperation({ chain: service.chainId, id: first.id });
+        assert.equal(firstChain.sends.length, 1);
+        const saved = await grant.getOperation({ chain: chainId, id: first.id });
         assert.equal(saved.id, first.id);
         const outcome = await saved.wait();
         assert.equal(outcome.status, "finalized");
         assert.equal(outcome.outcome, "success");
-        assert.equal(service.chain.sends.length, 1, "observation cannot resubmit");
+        assert.equal(firstChain.sends.length, 1, "observation cannot resubmit");
         for (let index = 0; index < 2; index += 1) {
           const operation = await grant.sendCalls(job);
           const next = await operation.wait();
           assert.equal(next.status, "finalized");
           assert.equal(next.outcome, "success");
         }
-        assert.equal(service.chain.sends.length, 3);
+        assert.equal(firstChain.sends.length, 3);
         assert.equal(approvals, 1);
-        assert.equal(BigInt(service.chain.sends[2].userOperation.nonce) & ((1n << 64n) - 1n), 1n);
+        assert.equal(BigInt(firstChain.sends[2].userOperation.nonce) & ((1n << 64n) - 1n), 1n);
         await assert.rejects(grant.sendCalls(job), { code: "oaath_client_scope_denied" });
-        assert.equal(service.chain.sends.length, 3, "the fourth job exceeds the approved bound");
+        assert.equal(firstChain.sends.length, 3, "the fourth job exceeds the approved bound");
       }
-      const jobs = service.chain.sends.length;
-      await grant.revoke();
-      assert.equal(grant.state, "revoking");
-      assert.equal(service.chain.sends.length, jobs, "requesting consent cannot submit owner work");
-      const pending = await (await ownerFetch("/demo/inbox")).json();
-      assert.equal(pending.requests.length, 1);
-      const operationId = pending.requests[0].operationId;
-      const projection = await (await ownerFetch(`/native/projections/${operationId}`)).json();
-      assert.equal(projection.scope.kind, "kernel-revocation");
-      assert.equal(projection.scope.effect, used ? "uninstall-permission" : "invalidate-install");
-      const request = projection.scope;
-      assert.equal(request.operation.sender, paired.account);
-      const signed = serializeOwnerSigningArtifact({
-        version: "oaath.owner-signing-artifact/v1",
-        kind: "p256",
-        requestHash: projection.scope.requestHash,
-        signature: toHex(
-          p256
-            .sign(hexToBytes(request.expectedDigest), secret, {
-              prehash: false,
-              lowS: true,
-            })
-            .toCompactRawBytes(),
-        ),
-      });
-      const decide = () =>
-        ownerFetch(`/native/revocation-decisions/${operationId}`, {
-          command: "approve",
-          artifact: signed,
+      let teammateGrant;
+      if (used) {
+        // One approval executes on another configured chain with its own budget.
+        const otherJob = await grant.sendCalls({ ...job, chain: secondChainId });
+        // Leave the first member's SDK record submitted while another member sends.
+        assert.equal(approvals, 1);
+        teammate = createOAAth({
+          url: service.url,
+          origin: service.url,
+          fetch: clientFetchFor("demo-teammate-token"),
         });
-      const approved = await decide();
-      assert.equal(approved.status, 200);
-      assert.equal((await approved.json()).outcome, "approved");
-      // The service returns custody independently of its bounded executor task.
-      // Repeated client checks recover that task's immutable operation evidence.
-      for (let attempt = 0; attempt < 20 && grant.state !== "revoked"; attempt += 1) {
-        await grant.revoke();
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const teammateConnection = await teammate.connect();
+        assert.equal(teammate.binding.context.workspaceKind, "team");
+        assert.notEqual(teammate.binding.subject.userHandle, oaath.binding.subject.userHandle);
+        assert.equal(await teammateConnection.resume(), null);
+        teammateGrant = await teammateConnection.requestPermission({
+          chainScope: "all",
+          permissions: [
+            { calls: [{ target: service.target, selectors: ["0x12345678"], valueLimit: "5" }] },
+          ],
+          expiresIn: 1800,
+          perChainOperationLimit: 2,
+        });
+        const ownJob = await teammateGrant.sendCalls({ ...job, chain: secondChainId });
+        assert.equal(
+          (await ownJob.wait()).outcome,
+          "success",
+          "another member's jobs cannot consume this grant budget",
+        );
+        const old = await grant.getOperation({ chain: secondChainId, id: otherJob.id });
+        assert.equal(
+          (await old.observe()).status,
+          "finalized",
+          "another member cannot erase the earlier receipt",
+        );
+      } else {
+        const outsider = await fetch(`${service.url}/bootstrap`, {
+          headers: { authorization: "Bearer demo-teammate-token" },
+        });
+        assert.equal(outsider.ok, false, "personal workspace has no second member");
       }
-      assert.equal(grant.state, "revoked");
-      assert.equal(
-        service.chain.sends.length,
-        jobs + 1,
-        "exactly one phone operation must execute",
-      );
-      assert.equal(service.chain.sends.at(-1).userOperationHash, request.expectedDigest);
-      assert.equal((await (await ownerFetch("/demo/inbox")).json()).requests.length, 0);
-      await waitForWorkers(1);
-      const priorWorkers = closedWorkers;
-      assert.equal((await decide()).status, 200);
-      await waitForWorkers(priorWorkers + 1);
-      await grant.revoke();
-      await assert.rejects(grant.sendCalls(job), { code: "oaath_client_grant_inactive" });
-      assert.equal(
-        service.chain.sends.length,
-        jobs + 1,
-        "replays cannot submit another owner operation",
-      );
+      async function revoke(current, usedChains) {
+        const before = service.chains.map((chain) => chain.sends.length);
+        await current.revoke();
+        assert.equal(current.state, "revoking");
+        assert.deepEqual(
+          service.chains.map((chain) => chain.sends.length),
+          before,
+          "consent cannot submit owner work",
+        );
+        const pending = await (await ownerFetch("/demo/inbox")).json();
+        assert.equal(pending.requests.length, 2);
+        const projections = await Promise.all(
+          pending.requests.map(async ({ operationId }) =>
+            (await ownerFetch(`/native/projections/${operationId}`)).json(),
+          ),
+        );
+        projections.sort((left, right) => left.scope.chainId - right.scope.chainId);
+        for (const [index, projection] of projections.entries()) {
+          const request = projection.scope;
+          assert.equal(request.kind, "kernel-revocation");
+          assert.equal(request.chainId, service.chains[index].capability.chainId);
+          assert.equal(
+            request.effect,
+            usedChains.has(request.chainId) ? "uninstall-permission" : "invalidate-install",
+          );
+          assert.equal(request.operation.sender, paired.account);
+          const signed = serializeOwnerSigningArtifact({
+            version: "oaath.owner-signing-artifact/v1",
+            kind: "p256",
+            requestHash: request.requestHash,
+            signature: toHex(
+              p256
+                .sign(hexToBytes(request.expectedDigest), secret, { prehash: false, lowS: true })
+                .toCompactRawBytes(),
+            ),
+          });
+          const decide = () =>
+            ownerFetch(`/native/revocation-decisions/${projection.operationId}`, {
+              command: "approve",
+              artifact: signed,
+            });
+          const approved = await decide();
+          assert.equal(approved.status, 200);
+          assert.equal((await approved.json()).outcome, "approved");
+          await service.settle();
+          await current.revoke();
+          await service.settle();
+          assert.equal(
+            current.state,
+            index === 0 ? "revoking" : "revoked",
+            "one chain cannot complete the other chain's obligation",
+          );
+          assert.equal(
+            service.chains[index].sends.at(-1).userOperationHash,
+            request.expectedDigest,
+          );
+          assert.equal((await decide()).status, 200);
+          await service.settle(); // A fresh executor reads its retained exact operation.
+          assert.equal(
+            service.chains[index].sends.length,
+            before[index] + 1,
+            "replay cannot resubmit",
+          );
+        }
+        assert.equal((await (await ownerFetch("/demo/inbox")).json()).requests.length, 0);
+        await assert.rejects(current.sendCalls(job), { code: "oaath_client_grant_inactive" });
+      }
+      await revoke(grant, new Set(used ? [chainId, secondChainId] : []));
+      if (teammateGrant) {
+        assert.equal(
+          teammateGrant.state,
+          "active",
+          "another member's revocation cannot revoke this grant",
+        );
+        const remainingJob = await teammateGrant.sendCalls({ ...job, chain: secondChainId });
+        assert.equal(
+          (await remainingJob.wait()).outcome,
+          "success",
+          "another grant's revocation cannot remove this authority or spend its remaining budget",
+        );
+        await assert.rejects(teammateGrant.sendCalls({ ...job, chain: secondChainId }), {
+          code: "oaath_client_scope_denied",
+        });
+        const ownChainA = await teammateGrant.sendCalls(job);
+        assert.equal((await ownChainA.wait()).outcome, "success");
+        await revoke(teammateGrant, new Set([chainId, secondChainId]));
+      }
     } finally {
       secret.fill(0);
       await connection?.close();
       await oaath?.close();
+      await teammate?.close();
       await service.close();
     }
   });

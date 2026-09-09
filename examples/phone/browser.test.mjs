@@ -45,6 +45,7 @@ function installDocument() {
       "unlock",
       "permission",
       "session",
+      "chain",
       "observe",
       "revoke",
     ].map((id) => [
