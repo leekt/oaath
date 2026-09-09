@@ -158,10 +158,16 @@ How an application organization/audience maps to the OAAth client/realm:
   immutable per Grant (an authority change is a revocation plus a new Grant),
   so the single approval is revision `1`; anything else denies.
 - `requiredCallsDigest` is `hashGrantPolicyCalls` over the reviewed call set
-  and must equal the digest of the Grant policy's exact call set; a subset
-  still denies, which fails closed. `policyDigest` in the returned reference
-  is `hashGrantPolicy` of the Grant's policy — the Grant identity's
-  `policyHash`.
+  and must equal the sealed approval's exact approved call set. `policyDigest`
+  is `hashGrantPolicy(approvedPolicy)`, which may differ from the requested
+  policy in the Grant identity. The approved expiry also bounds verification.
+- Verification reads the retained encrypted artifact by request ID and checks
+  its permission decision's request binding and policy attenuation. An approved
+  OAuth outcome alone is insufficient; missing or unreadable approval evidence,
+  including unavailable KMS, returns `unknown/grant_unreadable`. Reading never
+  consumes a code or claims/releases an artifact, including after client claim
+  and process restart. This verifies service-approved authority; it does not
+  prove onchain installation or replace the Kernel runtime's capability checks.
 
 ## Security notes
 

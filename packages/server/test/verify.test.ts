@@ -10,9 +10,12 @@ import {
   type GrantVerificationResult,
   hashGrantPolicy,
   hashGrantPolicyCalls,
+  hashPermissionRequest,
   OAATH_GRANT_REFERENCE_VERSION,
+  parsePermissionRequest,
 } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
+import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
   approve,
   CLIENT_TOKEN,
@@ -21,6 +24,7 @@ import {
   consume,
   createHarness,
   createRequest,
+  createTestKms,
   expectFailure,
   expectOk,
   type Harness,
@@ -31,6 +35,7 @@ import {
   OWNER_TOKEN,
   post,
   REDIRECT_URI,
+  TEST_CLOCK_SECONDS,
 } from "./support.js";
 
 const LIVE_POLICY = LIVE_PERMISSION_POLICY;
@@ -63,13 +68,147 @@ async function expectResult(response: Response, expected: GrantVerificationResul
   expect(await expectOk<GrantVerificationResult>(response, 200)).toEqual(expected);
 }
 
+function approvalArtifact(requestId: string, overrides: Record<string, unknown> = {}) {
+  const decision: Record<string, unknown> = {
+    version: "oaath.permission-decision/v1",
+    kind: "approve",
+    requestId,
+    requestHash: hashPermissionRequest(
+      parsePermissionRequest({ ...JSON.parse(LIVE_SCOPE), requestId }),
+    ),
+    decidedAt: TEST_CLOCK_SECONDS,
+    approvedPolicy: LIVE_POLICY,
+    capabilityHash: `0x${"ab".repeat(32)}`,
+    ...overrides,
+  };
+  if (decision.kind === "reject") {
+    delete decision.approvedPolicy;
+    delete decision.capabilityHash;
+  }
+  return JSON.stringify(decision);
+}
+
 async function approvedGrant(harness: Harness): Promise<string> {
   const created = await createRequest(harness, LIVE_SCOPE);
-  await approve(harness, created.requestId);
+  await approve(harness, created.requestId, approvalArtifact(created.requestId));
   return created.requestId;
 }
 
 describe("POST /grants/verify", () => {
+  it("uses the narrower approved calls, policy digest, and expiry instead of the request", async () => {
+    const harness = createHarness();
+    const created = await createRequest(harness, LIVE_SCOPE);
+    const approvedPolicy = {
+      ...LIVE_POLICY,
+      calls: [{ ...LIVE_POLICY.calls[0], valueLimit: "1" }],
+      validUntil: TEST_CLOCK_SECONDS + 30,
+      perChainOperationLimit: 2,
+    };
+    await approve(
+      harness,
+      created.requestId,
+      approvalArtifact(created.requestId, { approvedPolicy }),
+    );
+    await expectResult(await verify(harness, assertion(created.requestId)), {
+      state: "denied",
+      code: "grant_calls_mismatch",
+    });
+    const exact = assertion(created.requestId, {
+      requiredCallsDigest: hashGrantPolicyCalls(approvedPolicy.calls),
+    });
+    const first = await expectOk<GrantVerificationResult>(await verify(harness, exact), 200);
+    expect(first.state).toBe("authorized");
+    if (first.state === "authorized")
+      expect(first.ref.policyDigest).toBe(hashGrantPolicy(approvedPolicy));
+    harness.clock.advance(31_000);
+    await expectResult(await verify(harness, exact), { state: "denied", code: "grant_expired" });
+  });
+
+  it("does not turn an approved outcome into authority without a valid bound approval", async () => {
+    for (const change of [
+      null,
+      { requestId: "another-request" },
+      { requestHash: `0x${"cc".repeat(32)}` },
+      { decidedAt: TEST_CLOCK_SECONDS + 1 },
+      {
+        approvedPolicy: { ...LIVE_POLICY, calls: [{ ...LIVE_POLICY.calls[0], valueLimit: "101" }] },
+      },
+      { kind: "reject" },
+    ]) {
+      const harness = createHarness();
+      const created = await createRequest(harness, LIVE_SCOPE);
+      await approve(
+        harness,
+        created.requestId,
+        change === null ? "{}" : approvalArtifact(created.requestId, change),
+      );
+      await expectResult(await verify(harness, assertion(created.requestId)), {
+        state: "unknown",
+        code: "grant_unreadable",
+      });
+    }
+  });
+
+  it("returns unknown for a missing retained artifact without falling back to the requested policy", async () => {
+    const inner = createMemoryRelayStore();
+    const harness = createHarness(
+      {},
+      {
+        async begin() {
+          return {
+            ...(await inner.begin()),
+            async lockEncryptedArtifactByRequestId() {
+              return undefined;
+            },
+          };
+        },
+        close: () => inner.close(),
+      },
+    );
+    const grantId = await approvedGrant(harness);
+    await expectResult(await verify(harness, assertion(grantId)), {
+      state: "unknown",
+      code: "grant_unreadable",
+    });
+  });
+
+  it("keeps verification read-only through a KMS outage, claim, and code expiry", async () => {
+    let readable = true;
+    const kms = createTestKms();
+    const harness = createHarness({
+      kms: {
+        encrypt: kms.encrypt,
+        async decrypt(ref) {
+          if (!readable) throw new Error("unavailable");
+          return kms.decrypt(ref);
+        },
+      },
+    });
+    const created = await createRequest(harness, LIVE_SCOPE);
+    const approved = await approve(harness, created.requestId, approvalArtifact(created.requestId));
+    readable = false;
+    await expectResult(await verify(harness, assertion(created.requestId)), {
+      state: "unknown",
+      code: "grant_unreadable",
+    });
+    readable = true;
+    const consumed = await expectOk<{ artifactId: string }>(
+      await consume(harness, approved.code),
+      200,
+    );
+    await expectOk(await claim(harness, consumed.artifactId), 200);
+    harness.clock.advance(61_000);
+    const verified = await expectOk<GrantVerificationResult>(
+      await verify(harness, assertion(created.requestId)),
+      200,
+    );
+    expect(verified.state).toBe("authorized");
+    await expectFailure(
+      await claim(harness, consumed.artifactId),
+      "relay_artifact_already_claimed",
+    );
+  });
+
   it("authorizes an active exact revision with immutable reference evidence", async () => {
     const harness = createHarness();
     const grantId = await approvedGrant(harness);
@@ -96,7 +235,7 @@ describe("POST /grants/verify", () => {
       state: "denied",
       code: "grant_pending",
     });
-    const approved = await approve(harness, created.requestId);
+    const approved = await approve(harness, created.requestId, approvalArtifact(created.requestId));
     const first = await verify(harness, assertion(created.requestId));
     const second = await verify(harness, assertion(created.requestId));
     expect(await first.json()).toEqual(await second.json());
@@ -193,7 +332,7 @@ describe("POST /grants/verify", () => {
       ),
       201,
     );
-    await approve(harness, created.requestId);
+    await approve(harness, created.requestId, approvalArtifact(created.requestId));
     await expectResult(await verify(harness, assertion(created.requestId)), {
       state: "denied",
       code: "grant_audience_mismatch",

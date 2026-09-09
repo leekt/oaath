@@ -33,7 +33,10 @@ export async function sealArtifact(kms: RelayKms, plaintext: string): Promise<st
   return ciphertextRef;
 }
 
-/** Opens a reference this KMS previously sealed. Called only after the claim commits. */
+/**
+ * Opens retained ciphertext for an authorized internal reader. Client release
+ * calls this only after claim commits; authority verification releases no bytes.
+ */
 export async function openArtifact(kms: RelayKms, ciphertextRef: string): Promise<string> {
   let opened: unknown;
   try {

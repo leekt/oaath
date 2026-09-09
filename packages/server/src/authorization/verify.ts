@@ -7,8 +7,8 @@
  * state and owner        no new state; the request, decision, and capability
  *                        invalidation records already own every fact projected
  * persisted evidence     the immutable request (subject, clientId, audience,
- *                        requestedScope), the terminal decision, and the
- *                        one-shot invalidation
+ *                        requestedScope), terminal decision, sealed approval
+ *                        artifact and one-shot invalidation
  * resource occupied?     nothing; verification is a pure read
  * retry positively safe? yes: no write exists, so a replay answers the same
  *                        stored facts and never mutates the Grant
@@ -31,10 +31,11 @@
  *    `denied`;
  * 6. otherwise → `authorized` with the immutable reference evidence.
  *
- * The relay verifies *approved authority*: the Grant identity's policy (and so
- * `policyDigest` = `hashGrantPolicy(requestedPolicy)`) is fixed at request
- * time, the owner's approval is the relay's durable authority fact, and
- * per-chain materialization remains the client aggregate's separate domain.
+ * The sealed permission decision owns the approved policy. The requested
+ * policy is its upper bound, checked through applyPermissionDecision. A missing
+ * or unreadable artifact never falls back to outcome=approved. This reads
+ * service-approved authority; Kernel capability verification and onchain
+ * installation remain the runtime's separate domain.
  * `expiresAt`/`validUntil` speak protocol seconds; the relay clock speaks
  * milliseconds and is floored into the protocol domain before comparison.
  *
@@ -42,18 +43,23 @@
  */
 
 import {
+  applyPermissionDecision,
+  createGrantFromPermissionRequest,
   type GrantVerificationResult,
   hashGrantPolicy,
   hashGrantPolicyCalls,
   OAATH_GRANT_REFERENCE_APPROVED_REVISION,
   OAATH_GRANT_REFERENCE_VERSION,
   type OaathGrantRef,
+  parsePermissionDecision,
   parseVerifyGrantRevisionInput,
   type VerifyGrantRevisionInput,
 } from "@oaath/protocol";
+import { openArtifact } from "../artifact/encrypt.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
+import type { RelayKms } from "../security/kms.js";
 import type { RelayStore } from "../store/interface.js";
 import { withRelayTransaction } from "../store/interface.js";
 import { classifyStoredAuthorizationScope } from "./scope.js";
@@ -61,6 +67,7 @@ import { classifyStoredAuthorizationScope } from "./scope.js";
 export interface VerifyGrantReferenceInput {
   readonly store: RelayStore;
   readonly clock: RelayClock;
+  readonly kms: RelayKms;
   /** Authenticated `client` caller; only its own Grants are visible. */
   readonly caller: RelayCaller;
   readonly assertion: unknown;
@@ -131,10 +138,49 @@ export async function verifyGrantReference(
     if (await transaction.lockCapabilityInvalidation(assertion.grantId)) {
       return denied("grant_revoked");
     }
+    // The sealed artifact is the authoritative approval. Request policy is
+    // only its upper bound; a terminal OAuth outcome alone names no call set.
+    const approval = await (async () => {
+      try {
+        const artifact = await transaction.lockEncryptedArtifactByRequestId(request.requestId);
+        if (
+          !artifact ||
+          artifact.requestId !== request.requestId ||
+          artifact.clientId !== request.clientId ||
+          artifact.createdAt !== decision.decidedAt
+        )
+          return null;
+        const value = JSON.parse(await openArtifact(input.kms, artifact.ciphertextRef)) as unknown;
+        // The current SDK appends its separately owned install capability to
+        // the protocol decision. It is not evidence of onchain installation.
+        const decisionValue =
+          value !== null && typeof value === "object" && "installApproval" in value
+            ? (({ installApproval: _install, ...permission }) => permission)(value)
+            : value;
+        const permission = parsePermissionDecision(decisionValue);
+        if (
+          permission.kind !== "approve" ||
+          permission.decidedAt > Math.floor(decision.decidedAt / 1_000)
+        )
+          return null;
+        const applied = applyPermissionDecision({
+          request: scope.request,
+          grant: createGrantFromPermissionRequest(scope.request),
+          observation: { status: "available", decision: permission },
+          evaluatedAt: permission.decidedAt,
+        });
+        return applied.status === "applied" && applied.grant.state === "approved"
+          ? permission
+          : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (approval === null) return unknown("grant_unreadable");
     // The policy's inclusive expiry bounds the authority usable for covered
     // calls; it is always earlier than the Grant expiry, so it is the strict
     // fail-closed bound. Protocol time is whole seconds.
-    const validUntil = scope.request.policy.validUntil;
+    const validUntil = approval.approvedPolicy.validUntil;
     if (validUntil === null || Math.floor(now / 1_000) > validUntil) {
       return denied("grant_expired");
     }
@@ -142,7 +188,7 @@ export async function verifyGrantReference(
     if (assertion.revision !== OAATH_GRANT_REFERENCE_APPROVED_REVISION) {
       return denied("grant_revision_mismatch");
     }
-    if (assertion.requiredCallsDigest !== hashGrantPolicyCalls(scope.request.policy.calls)) {
+    if (assertion.requiredCallsDigest !== hashGrantPolicyCalls(approval.approvedPolicy.calls)) {
       return denied("grant_calls_mismatch");
     }
 
@@ -154,7 +200,7 @@ export async function verifyGrantReference(
       clientId: request.clientId,
       organizationAudience: request.organizationAudience,
       state: "active" as const,
-      policyDigest: hashGrantPolicy(scope.request.policy),
+      policyDigest: hashGrantPolicy(approval.approvedPolicy),
     });
     return Object.freeze({ state: "authorized" as const, ref });
   });

@@ -73,6 +73,8 @@ import {
 } from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
 import {
+  hashGrantPolicy,
+  hashGrantPolicyCalls,
   hashOwnerSigningRequest,
   hashPermissionRequest,
   hashKernelV4RevocationSigningRequest,
@@ -147,7 +149,7 @@ const operatorCredential = {
 const callers = new Map([
   [
     CLIENT_TOKEN,
-    { role: "client", clientId: "client-a", subject: SUBJECT, redirectUris: [REDIRECT_URI] },
+    { role: "client", clientId: "client-a", subject: SUBJECT, organizationAudience: "org-1", redirectUris: [REDIRECT_URI] },
   ],
   [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
 ]);
@@ -176,6 +178,7 @@ for (const [workspaceId, expectedRevision] of [["personal-1", 1], ["team-1", 2]]
   }))) fail("phone enrollment lost its directory revision");
 }
 
+let approvedPermissionPolicy;
 const relay = createRelayHandler({
   permissionApprovals: {
     async prepare(request) {
@@ -188,6 +191,7 @@ const relay = createRelayHandler({
       return { signingRequest: prepared.signingRequest,
         complete: async (artifact, decidedAt) => {
           const approved = await prepared.complete(artifact, decidedAt);
+          approvedPermissionPolicy = approved.approvedPolicy;
           const revocation = await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
             chainId: CHAIN_ID, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
             gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } });
@@ -489,6 +493,18 @@ const grant = await connection.requestPermission({
 });
 
 if (grant.state !== "active") fail("Grant state is " + grant.state);
+// The real SDK-completed phone artifact has already been claimed. Verification
+// reads that same retained approval; it neither consumes nor releases it again.
+const approvedReference = await relayJson("/grants/verify", CLIENT_TOKEN, {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ grantId: ownerRequests[0], revision: 1, subject: SUBJECT,
+    clientId: "client-a", organizationAudience: "org-1",
+    requiredCallsDigest: hashGrantPolicyCalls(approvedPermissionPolicy.calls) }),
+});
+if (approvedReference.state !== "authorized" || approvedReference.ref.policyDigest !== hashGrantPolicy(approvedPermissionPolicy)) {
+  fail("retained phone approval did not supply the verified policy");
+}
+
 if (ownerRequests.length !== 1) fail("owner console ran " + ownerRequests.length + " times");
 if (grant.expiresAt !== START + EXPIRES_IN) fail("Grant expiry is " + grant.expiresAt);
 

@@ -90,6 +90,14 @@ export const LOCK_ENCRYPTED_ARTIFACT = `
   FOR UPDATE
 `;
 
+/** The existing unique request_id index identifies the same sealed artifact after claim. */
+export const LOCK_ENCRYPTED_ARTIFACT_BY_REQUEST_ID = `
+  SELECT ${ARTIFACT_COLUMNS}
+  FROM oaath_relay_encrypted_artifact_v1
+  WHERE request_id = $1
+  FOR UPDATE
+`;
+
 export const INSERT_ENCRYPTED_ARTIFACT = `
   INSERT INTO oaath_relay_encrypted_artifact_v1 (${ARTIFACT_COLUMNS})
   VALUES ($1, $2, $3, $4, $5, $6, $7)
