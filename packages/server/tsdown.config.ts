@@ -15,6 +15,7 @@ export default defineConfig({
     index: "src/index.ts",
     postgres: "src/postgres.ts",
     native: "src/native.ts",
+    kernel: "src/kernel.ts",
     apns: "src/apns.ts",
   },
   format: ["esm"],

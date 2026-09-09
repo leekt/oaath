@@ -39,6 +39,7 @@ import {
   p256Key,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
+  restoreKernelPhoneRevocation,
   sessionOperator,
 } from "../src/kernel.js";
 import {
@@ -325,13 +326,17 @@ async function bringUp(
       expect(revocation.prepared.userOperation.factory !== null).toBe(
         effect === "invalidate-install",
       );
-      const signature = await revocation.complete(
+      const restored = restoreKernelPhoneRevocation(
+        JSON.parse(JSON.stringify(revocation.signingRequest)),
+      );
+      expect(restored.prepared).toEqual(revocation.prepared);
+      const signature = await restored.complete(
         sign(
           revocation.signingRequest.expectedDigest,
           hashKernelV4RevocationSigningRequest(revocation.signingRequest),
         ),
       );
-      expect(await harness.sendSigned(revocation.prepared, signature)).toBe("success");
+      expect(await harness.sendSigned(restored.prepared, signature)).toBe("success");
       if (session.validation.kind !== "permission") throw new Error("permission validation absent");
       const signer = session.packages.find((entry) => entry.moduleType === 6)?.module;
       if (!signer) throw new Error("permission signer absent");

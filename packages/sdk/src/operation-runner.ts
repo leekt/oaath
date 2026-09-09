@@ -784,7 +784,7 @@ async function withTimeout<Value>(action: () => Promise<Value>, timeoutMs: numbe
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      Promise.resolve().then(action),
+      Promise.resolve().then(() => action()),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new RunnerTimeout()), timeoutMs);
       }),

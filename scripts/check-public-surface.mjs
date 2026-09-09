@@ -14,7 +14,8 @@
  *      `@oaath/protocol` root entries reaches no `node:*`, no driver, and no
  *      test-only package.
  *   2. Direction: production edges match the declared table exactly, so
- *      protocol depends on nothing internal, sdk only on protocol, and
+ *      protocol depends on nothing internal, sdk only on protocol, server
+ *      composes the SDK through its Kernel execution subpath, and
  *      `@oaath/testing` is never a production dependency of anything.
  *   3. Provenance: every published entry points at built artifacts, never
  *      `src`, and every public package builds those artifacts during `prepack`.
@@ -52,7 +53,7 @@ const FORBIDDEN = [
 const DIRECTION = {
   "@oaath/protocol": [],
   "@oaath/sdk": ["@oaath/protocol"],
-  "@oaath/server": ["@oaath/protocol"],
+  "@oaath/server": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/testing": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/contracts": [],
 };

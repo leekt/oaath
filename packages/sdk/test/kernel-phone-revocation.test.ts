@@ -13,6 +13,7 @@ import {
   encodeKernelV4PermissionUninstallCalls,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
+  restoreKernelPhoneRevocation,
 } from "../src/kernel.js";
 import {
   accountProfile,
@@ -111,8 +112,11 @@ describe("phone revocation preparation", () => {
       const { input, sign } = await fixture();
       const value = { ...input, effect };
       const prepared = await prepareKernelPhoneRevocation(value);
-      const recreated = await prepareKernelPhoneRevocation(value);
+      const recreated = restoreKernelPhoneRevocation(
+        JSON.parse(JSON.stringify(prepared.signingRequest)),
+      );
       expect(recreated.signingRequest).toEqual(prepared.signingRequest);
+      expect(recreated.prepared).toEqual(prepared.prepared);
       expect(prepared.prepared.kind).toBe("revocation");
       expect(prepared.prepared.userOperation.callData).toBe(
         encodeKernelV4Execution({
@@ -157,7 +161,8 @@ describe("phone revocation preparation", () => {
 
   it("rejects another operation's artifact, including a relabeled signature", async () => {
     const { input, sign } = await fixture();
-    const first = await prepareKernelPhoneRevocation(input);
+    const original = await prepareKernelPhoneRevocation(input);
+    const first = restoreKernelPhoneRevocation(JSON.parse(JSON.stringify(original.signingRequest)));
     const other = await prepareKernelPhoneRevocation({ ...input, sequence: "1" });
     const artifact = sign(
       other.signingRequest.expectedDigest,

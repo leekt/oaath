@@ -11,6 +11,10 @@ export {
   createPostgresServiceDirectorySchema,
   createPostgresServiceDirectoryStore,
 } from "./directory/postgres.js";
+export {
+  createPostgresOperationSchema,
+  createPostgresOperationStoreAdapter,
+} from "./store/postgres/operation.js";
 export type { RelaySchemaExecutor } from "./store/postgres/schema.js";
 export {
   createPostgresRelaySchema,

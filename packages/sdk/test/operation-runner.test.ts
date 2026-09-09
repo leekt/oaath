@@ -316,6 +316,25 @@ function expectRunnerError(
 }
 
 describe("OperationRunner", () => {
+  it("invokes the bound submit session with exactly zero arguments", async () => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const snapshot = prepared("execution");
+    let argumentCount: number | undefined;
+    const execution = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: counters(),
+      submit: async (...args: unknown[]) => {
+        argumentCount = args.length;
+        return { userOperationHash: snapshot.userOperationHash };
+      },
+    });
+    expect((await execution.startOperation(runInput("execution"))).record.value.state).toBe(
+      "submitted",
+    );
+    expect(argumentCount).toBe(0);
+    await execution.close();
+  });
   it("rejects send authority or chain policy on the preparation boundary", () => {
     const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
     expect(() =>

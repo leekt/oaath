@@ -68,7 +68,10 @@ export type {
   PreparedKernelPhoneRevocation,
   PrepareKernelPhoneRevocationInput,
 } from "./kernel/permission/phone-revocation.js";
-export { prepareKernelPhoneRevocation } from "./kernel/permission/phone-revocation.js";
+export {
+  prepareKernelPhoneRevocation,
+  restoreKernelPhoneRevocation,
+} from "./kernel/permission/phone-revocation.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,

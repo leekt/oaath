@@ -41,6 +41,7 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
 const SMOKE = `
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import { requestOwnerPhoneRevocation } from "@oaath/server/native";
+import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import {
   createOAAth,
 } from "@oaath/sdk";
@@ -523,6 +524,38 @@ const revocationDecision = await decideRevocation({ command: "approve", artifact
 if (revocationDecision.version !== "oaath.native-revocation-decision/v1" || revocationDecision.outcome !== "approved" || revocationDecision.settlement !== "decided" || "release" in revocationDecision) fail("revocation custody decision failed");
 const revocationReplay = await decideRevocation({ command: "reject" });
 if (revocationReplay.outcome !== "approved" || revocationReplay.settlement !== "replayed" || sends.length !== sendsBeforeRevocation) fail("revocation replay changed custody or submitted");
+const revocationFactory = new IDBFactory();
+let revocationDatabase = await openOaathDatabase({ factory: revocationFactory });
+let revocationSends = 0;
+const revocationObservation = () => ({ close: async () => {}, async read(request) {
+  if (request.type === "chain_id") return CHAIN_ID;
+  if (request.type === "user_operation_receipt" || request.type === "replacement_candidate") return null;
+  throw new Error("unexpected revocation observation read");
+} });
+const ownerExecutor = await createOwnerPhoneRevocationExecutor({
+  store: relayStore, kms: relayKms, clock: relayClock, operationId: revocation.operationId,
+  operations: createIndexedDbOperationStoreAdapter(revocationDatabase), observation: revocationObservation(),
+  submission: { close: async () => {}, async openSubmission(prepared, signature) {
+    const state = await createIndexedDbOperationStoreAdapter(revocationDatabase).get({ grantId: prepared.grantId, chainId: prepared.chainId, kind: "revocation" });
+    if (state?.value?.state !== "submission_attempted" || prepared.userOperationHash !== revocationConsent.scope.expectedDigest || !signature.startsWith("0x")) fail("owner submission lacks exact durable evidence");
+    return { close: async () => {}, async submit(...args) { if (args.length !== 0) fail("owner submit accepted replacement input"); revocationSends += 1; return { userOperationHash: prepared.userOperationHash }; } };
+  } },
+});
+const startedRevocation = await ownerExecutor.start(1000);
+if (startedRevocation.record.value.state !== "submitted") fail("owner revocation did not submit: " + JSON.stringify({ status: startedRevocation.status, reason: startedRevocation.reason, state: startedRevocation.record.value.state, sends: revocationSends }));
+await ownerExecutor.close(); await revocationDatabase.close();
+revocationDatabase = await openOaathDatabase({ factory: revocationFactory });
+const forbiddenOwnerEffect = async () => { throw new Error("recovery must not open an owner effect"); };
+const recoveredOwnerExecutor = await createOwnerPhoneRevocationExecutor({
+  store: relayStore, kms: { encrypt: forbiddenOwnerEffect, decrypt: forbiddenOwnerEffect }, clock: relayClock,
+  operationId: revocation.operationId, operations: createIndexedDbOperationStoreAdapter(revocationDatabase), observation: revocationObservation(),
+  submission: { openSubmission: forbiddenOwnerEffect, close: async () => {} },
+});
+if ((await recoveredOwnerExecutor.start(1000)).record.value.state !== "submitted") fail("owner recovery lost submission");
+await recoveredOwnerExecutor.observe(1000);
+if (revocationSends !== 1) fail("owner recovery submitted again");
+await recoveredOwnerExecutor.close(); await revocationDatabase.close();
+
 
 // The real SDK-completed phone artifact has already been claimed. Verification
 // reads that same retained approval; it neither consumes nor releases it again.
@@ -863,7 +896,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      phone enrollment, native approval, durable revocation custody/replay, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
+    "  golden path      phone enrollment, native approval, durable revocation custody/execution/recovery, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {
