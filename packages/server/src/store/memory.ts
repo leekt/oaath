@@ -14,6 +14,7 @@ import { relayFailure } from "../relay/errors.js";
 import {
   parseRevocationDecisionRecord,
   parseRevocationRequestRecord,
+  type RevocationRequestRecord,
 } from "../revocation/records.js";
 import type { RelayStore, RelayTransaction } from "./interface.js";
 import {
@@ -124,6 +125,19 @@ export function createMemoryRelayStore(): RelayStore {
       };
 
       return {
+        async lockLatestRevocationRequest(grantId, chainId) {
+          let latest: RevocationRequestRecord | undefined;
+          for (const stored of open().revocationRequests.values()) {
+            const record = parseRevocationRequestRecord(stored);
+            if (
+              record.signingRequest.permissionRequest.requestId !== grantId ||
+              record.signingRequest.chainId !== chainId
+            )
+              continue;
+            if (!latest || record.createdAt > latest.createdAt) latest = record;
+          }
+          return latest;
+        },
         async lockRevocationRequest(operationId) {
           return read(open().revocationRequests, operationId, parseRevocationRequestRecord);
         },

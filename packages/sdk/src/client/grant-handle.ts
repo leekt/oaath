@@ -360,6 +360,11 @@ export interface OaathCapabilityInvalidationCapability {
   ) => Promise<unknown>;
 }
 
+/** Requests durable phone custody through the service; it never proves onchain completion. */
+export interface OaathOwnerRevocationCapability {
+  readonly request: (input: Readonly<{ grantId: string; chainId: number }>) => Promise<void>;
+}
+
 export interface OaathGrantHandle {
   readonly state: GrantState;
   readonly expiresAt: number;
@@ -476,6 +481,7 @@ export interface CreateGrantHandleInput {
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
+  readonly ownerRevocations: Readonly<OaathOwnerRevocationCapability> | null;
   readonly now: () => number;
 }
 
@@ -3471,7 +3477,7 @@ export function createGrantHandle(
         await observing.close().catch(() => undefined);
       }
     }
-    if (value === null && retryPositivelySafe) {
+    if (value === null && retryPositivelySafe && input.ownerRevocations === null) {
       let result: OperationRunResult | null = null;
       try {
         const chain = chainCapability(chainId);
@@ -3657,6 +3663,7 @@ export function createGrantHandle(
     // owner authority) leaves the chain pending. The Grant stays durably
     // `revoking` until every chain's removal is conclusively observed.
     for (const original of [...grant.materializations]) {
+      if (!input.chains.has(original.chainId)) continue;
       let entry = grant.materializations.find(
         (candidate) => candidate.chainId === original.chainId,
       );
@@ -3686,19 +3693,33 @@ export function createGrantHandle(
         "oaath_client_state_conflict",
         "revocation scope contradicts its install approval",
       );
+    const requestFailures: unknown[] = [];
     for (const binding of grant.revocation.targets) {
       if (grant.revocation?.evidence.some((entry) => entry.permission.chainId === binding.chainId))
         continue;
       const chain = input.chains.get(binding.chainId);
       // A removed configuration entry cannot remove an already recorded obligation.
-      if (!chain) continue;
-      const evidence = await observeKernelPermissionRevocation({
-        binding,
-        approval: input.installApproval,
-        observation: chain.observation,
-        now: input.now,
-      });
-      if (evidence === null) continue;
+      const evidence = chain
+        ? await observeKernelPermissionRevocation({
+            binding,
+            approval: input.installApproval,
+            observation: chain.observation,
+            now: input.now,
+          })
+        : null;
+      if (evidence === null) {
+        if (input.ownerRevocations) {
+          try {
+            await input.ownerRevocations.request({
+              grantId: grant.identity.grantId,
+              chainId: binding.chainId,
+            });
+          } catch (error) {
+            requestFailures.push(error);
+          }
+        }
+        continue;
+      }
       snapshot = await commit(
         snapshot,
         transition(grant, {
@@ -3709,6 +3730,8 @@ export function createGrantHandle(
       );
       grant = snapshot.value;
     }
+    if (requestFailures.length > 0)
+      return mapClientFailure(requestFailures[0], "owner revocation request failed");
     if (
       grant.revocation === null ||
       grant.revocation.evidence.length !== grant.revocation.targets.length ||

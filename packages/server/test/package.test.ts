@@ -109,6 +109,7 @@ describe("package boundary", () => {
     expect(Object.keys(native).sort()).toEqual([
       "NATIVE_DISPLAY_PAYLOAD_LENGTH",
       "OAATH_NATIVE_PROJECTION_VERSION",
+      "fetchClientPhoneRevocation",
       "fetchOwnerPhoneRevocation",
       "projectOwnerPhonePermissionSigning",
       "projectOwnerPhoneRequest",

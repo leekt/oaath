@@ -47,8 +47,12 @@ export type {
 } from "./native/revocation.js";
 export { projectOwnerPhoneRevocation } from "./native/revocation.js";
 
-export type { RequestOwnerPhoneRevocationInput } from "./revocation/service.js";
+export type {
+  OwnerPhoneRevocationStatus,
+  RequestOwnerPhoneRevocationInput,
+} from "./revocation/service.js";
 export {
+  fetchClientPhoneRevocation,
   fetchOwnerPhoneRevocation,
   requestOwnerPhoneRevocation,
   submitOwnerPhoneRevocationDecision,

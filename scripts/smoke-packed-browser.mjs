@@ -40,7 +40,6 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
  */
 const SMOKE = `
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
-import { requestOwnerPhoneRevocation } from "@oaath/server/native";
 import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import {
   createOAAth,
@@ -191,7 +190,16 @@ const relayKms = {
   },
 };
 const relayClock = { now: () => clock * 1000 };
-const relay = createRelayHandler({
+let revocationPreparations = 0;
+const relayOptions = {
+  revocations: { directory: contextDirectory, async prepare({ request, artifact, chainId }) {
+    revocationPreparations += 1;
+    const approved = JSON.parse(artifact);
+    return (await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
+      chainId, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
+      gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" },
+    })).signingRequest;
+  } },
   permissionApprovals: {
     async prepare(request) {
       const prepared = await prepareKernelPhonePermissionApproval({
@@ -226,7 +234,8 @@ const relay = createRelayHandler({
   },
   kms: relayKms,
   clock: relayClock,
-});
+};
+let relay = createRelayHandler(relayOptions);
 
 function authorized(request, token) {
   const headers = new Headers(request.headers);
@@ -500,16 +509,8 @@ if (grant.state !== "active") fail("Grant state is " + grant.state);
 // Public packed SDK -> durable service -> phone transport. The grant artifact
 // has already been claimed by the browser; preparation reads retained custody.
 const sendsBeforeRevocation = sends.length;
-const revocation = await requestOwnerPhoneRevocation({
-  store: relayStore, kms: relayKms, clock: relayClock, directory: contextDirectory,
-  caller: callers.get(CLIENT_TOKEN), grantId: ownerRequests[0], chainId: CHAIN_ID, requestTtlMs: 60000,
-  async prepare({ request, artifact, chainId }) {
-    const approved = JSON.parse(artifact);
-    return (await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
-      chainId, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
-      gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" },
-    })).signingRequest;
-  },
+const revocation = await relayJson("/grants/" + ownerRequests[0] + "/revocations/" + CHAIN_ID, CLIENT_TOKEN, {
+  method: "POST", headers: { "content-type": "application/json" }, body: "{}",
 });
 const revocationConsent = await relayJson("/native/projections/" + revocation.operationId, OWNER_TOKEN);
 if (revocationConsent.scope?.kind !== "kernel-revocation" || revocationConsent.client.redirectUri !== null) fail("revocation consent was not projected");
@@ -755,6 +756,78 @@ await completedGrant.revoke();
 if (completedGrant.state !== "revoked" || sends.length !== beforeRevoking.sends || invalidations !== beforeRevoking.invalidations + 1) fail("configured revocation recovery lost proof or repeated effects");
 await completedClient.close(); await database.close();
 
+// The URL client requests phone custody through the actual packed service.
+// The deployment fixture selects an unused account's invalidation effect and
+// fixed gas; automatic chain preparation and execution are separate workers.
+const queueFactory = new IDBFactory();
+const queuePorts = [{ chainId: CHAIN_ID, reads: accountRead,
+  observation: async (request) => {
+    if (request.type === "chain_id") return CHAIN_ID;
+    if (request.type === "finalized_block") return null;
+    fail("unexpected queued revocation observation");
+  },
+  bundler: async () => fail("phone enqueue selected a bundler"),
+  quote: async () => fail("phone enqueue quoted an application owner operation"),
+  submission: async () => fail("phone enqueue submitted"),
+  usage: null, feePayer: null, staticPaymasterConfigurationHash: null }];
+const queueResponses = [];
+async function queueLife() {
+  relay = createRelayHandler({ ...relayOptions, bootstrap: contextDirectory, chains: queuePorts,
+    clock: { now: () => clock * 1000 }, kms: { ...relayKms } });
+  const db = await openOaathDatabase({ factory: queueFactory });
+  const client = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
+    fetch: async (request) => {
+      const response = await relay(authorized(request, CLIENT_TOKEN));
+      const path = new URL(request.url).pathname;
+      if (request.method === "POST" && path === "/authorization/requests" && response.status === 201) {
+        const created = await response.clone().json();
+        await authorization.authorize({ requestId: created.requestId });
+      }
+      if (request.method === "POST" && path.includes("/revocations/")) {
+        if (!response.ok) fail("URL revocation enqueue failed");
+        queueResponses.push(await response.clone().json());
+      }
+      return response;
+    },
+    stores: { grants: createIndexedDbGrantStoreAdapter(db), operations: createIndexedDbOperationStoreAdapter(db),
+      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(db), preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(db),
+      keys: createIndexedDbKeyStore(db), cleanup: createIndexedDbCleanupStore(db), context: createIndexedDbContextStore(db) },
+  });
+  return { client, connection: await client.connect(), close: async () => { await client.close(); await db.close(); } };
+}
+const firstQueue = await queueLife();
+const queuedGrant = await firstQueue.connection.requestPermission({ chainScope: "all",
+  permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
+  expiresIn: EXPIRES_IN, perChainOperationLimit: 10 });
+const beforeQueue = { preparations: revocationPreparations, sends: sends.length, quotes };
+await queuedGrant.revoke();
+if (queuedGrant.state !== "revoking" || queueResponses.length !== 1 || queueResponses[0].status !== "pending") fail("client did not retain pending phone custody");
+if (Object.keys(queueResponses[0]).sort().join(",") !== "chainId,expiresAt,grantId,operationId,status") fail("client received owner signing material");
+await firstQueue.close();
+const secondQueue = await queueLife();
+const resumedQueue = await secondQueue.connection.resume();
+if (resumedQueue === null) fail("client lost queued revocation after reload");
+await resumedQueue.revoke();
+if (queueResponses.length !== 2 || queueResponses[1].operationId !== queueResponses[0].operationId) fail("reload created another phone request");
+const queued = queueResponses[0];
+const queuePath = "/grants/" + queued.grantId + "/revocations/" + CHAIN_ID;
+if ((await relayJson(queuePath, CLIENT_TOKEN)).status !== "pending") fail("client status lost pending custody");
+const queuedConsent = await relayJson("/native/projections/" + queued.operationId, OWNER_TOKEN);
+const queuedArtifact = serializeOwnerSigningArtifact({ version: "oaath.owner-signing-artifact/v1", kind: "p256",
+  requestHash: queuedConsent.scope.requestHash,
+  signature: bytesToHex(p256.sign(hexToBytes(queuedConsent.scope.expectedDigest), phoneKey, { prehash: false, lowS: true }).toCompactRawBytes()),
+});
+const queuedDecision = await relayJson("/native/revocation-decisions/" + queued.operationId, OWNER_TOKEN, {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ command: "approve", artifact: queuedArtifact }),
+});
+if (queuedDecision.outcome !== "approved" || (await relayJson(queuePath, CLIENT_TOKEN)).status !== "approved") fail("client status lost phone approval");
+await resumedQueue.revoke();
+if (resumedQueue.state !== "revoking" || queueResponses.length !== 3 || queueResponses[2].status !== "approved" ||
+    queueResponses[2].operationId !== queued.operationId || revocationPreparations !== beforeQueue.preparations + 1 ||
+    sends.length !== beforeQueue.sends || quotes !== beforeQueue.quotes) fail("phone custody completion invented a chain effect");
+await secondQueue.close();
+
 // Public URL composition resolves each caller's selected context from the
 // packed server, then restores only that context's local session after reload.
 const contextRelay = createRelayHandler({
@@ -932,7 +1005,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      phone enrollment, native approval, durable revocation custody/execution/recovery, configured-chain completion after reload, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
+    "  golden path      phone enrollment, native approval, durable revocation custody/execution/recovery, URL client phone enqueue and recovery, configured-chain completion after reload, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

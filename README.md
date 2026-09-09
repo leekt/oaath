@@ -269,8 +269,10 @@ chains. `revoked` requires finalized permission absence and a consumed approval
 install nonce on every chain in that snapshot, including unused chains. Relay
 invalidation stops service admission; it does not invalidate the owner signature
 onchain. A missing chain transport leaves the Grant `revoking`, even after reload.
-The phone must approve each required chain operation; client polling currently
-observes those effects while service request orchestration is being connected.
+URL-mode `grant.revoke()` requests durable phone custody for every target still
+missing proof. Repeated calls recover the current request; phone approval alone
+leaves the Grant `revoking`. The deployment supplies chain preparation, phone
+delivery and an execution worker, while the client observes the resulting effects.
 Chains outside this snapshot are not covered by its revocation status.
 
 Account descriptors are process-local evidence handles. After a process reload,

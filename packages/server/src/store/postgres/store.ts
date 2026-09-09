@@ -46,6 +46,7 @@ import {
   LOCK_CAPABILITY_INVALIDATION,
   LOCK_ENCRYPTED_ARTIFACT,
   LOCK_ENCRYPTED_ARTIFACT_BY_REQUEST_ID,
+  LOCK_LATEST_REVOCATION_REQUEST,
   LOCK_REVOCATION_DECISION,
   LOCK_REVOCATION_REQUEST,
 } from "./queries.js";
@@ -166,6 +167,11 @@ function createTransaction(client: PoolClient): RelayTransaction {
   }
 
   return {
+    lockLatestRevocationRequest(grantId, chainId) {
+      return first(LOCK_LATEST_REVOCATION_REQUEST, [grantId, String(chainId)], (row) =>
+        parseRevocationRequestRecord(row.record),
+      );
+    },
     lockRevocationRequest(operationId) {
       return first(LOCK_REVOCATION_REQUEST, [operationId], (row) =>
         parseRevocationRequestRecord(row.record),

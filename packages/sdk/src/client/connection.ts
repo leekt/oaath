@@ -76,6 +76,7 @@ import {
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
+  type OaathOwnerRevocationCapability,
 } from "./grant-handle.js";
 
 const MAX_PERMISSIONS = 16;
@@ -161,6 +162,7 @@ export interface CreateConnectionInput {
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
+  readonly ownerRevocations: Readonly<OaathOwnerRevocationCapability> | null;
   /**
    * Remote session-key custody the deployment declared, or null for frontend
    * custody. Named in every permission request so the owner's approval binds
@@ -411,6 +413,7 @@ export function createConnection(
       ownerKey: input.ownerKey,
       sessionKey: input.sessionKey,
       invalidation: input.invalidation,
+      ownerRevocations: input.ownerRevocations,
       now: input.now,
     });
     handles.push(created);

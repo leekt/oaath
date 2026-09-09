@@ -18,6 +18,8 @@
  * GET  /bootstrap                                    client  URL-only service context
  * POST /invalidations                                client  capability invalidation
  * POST /grants/verify                                client  grant reference verification
+ * POST /grants/{grantId}/revocations/{chainId}       client  request/recover phone custody
+ * GET  /grants/{grantId}/revocations/{chainId}       client  current custody status
  * POST /chains/{chainId}/{port}                      client  chain execution relay,
  *                                                            port in reads |
  *                                                            observation | bundler |
@@ -71,7 +73,10 @@ import {
 } from "../native/projection.js";
 import { REVOCATION_OPERATION_PREFIX } from "../revocation/records.js";
 import {
+  fetchClientPhoneRevocation,
   fetchOwnerPhoneRevocation,
+  type RequestOwnerPhoneRevocationInput,
+  requestOwnerPhoneRevocation,
   submitOwnerPhoneRevocationDecision,
 } from "../revocation/service.js";
 import {
@@ -184,6 +189,8 @@ export interface RelayPaymasterServiceConfiguration {
 }
 
 export interface RelayHandlerOptions {
+  /** Enables application-initiated phone revocation; preparation never signs or submits. */
+  readonly revocations?: Readonly<Pick<RequestOwnerPhoneRevocationInput, "directory" | "prepare">>;
   /** Enables canonical permission approval through the owner phone. */
   readonly permissionApprovals?: OwnerPhonePermissionApprovals;
   readonly store: RelayStore;
@@ -213,6 +220,7 @@ export interface RelayHandlerOptions {
 export type RelayHandler = (request: Request) => Promise<Response>;
 
 const OPTION_KEYS: readonly string[] = [
+  "revocations",
   "permissionApprovals",
   "store",
   "authentication",
@@ -282,6 +290,7 @@ function duration(value: unknown, fallback: number, label: string, maximum = MAX
 }
 
 interface CapturedOptions {
+  readonly revocations: RelayHandlerOptions["revocations"] | null;
   readonly permissionApprovals: OwnerPhonePermissionApprovals | undefined;
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
@@ -459,6 +468,24 @@ function captureOptions(value: unknown): CapturedOptions {
   }
   return Object.freeze({
     store: requirePort<RelayStore>(record.store, ["begin", "close"], "store"),
+    revocations:
+      record.revocations === undefined
+        ? null
+        : (() => {
+            const configuration = requirePort<NonNullable<RelayHandlerOptions["revocations"]>>(
+              record.revocations,
+              ["prepare"],
+              "revocations",
+            );
+            return Object.freeze({
+              prepare: configuration.prepare.bind(configuration),
+              directory: requirePort<RequestOwnerPhoneRevocationInput["directory"]>(
+                configuration.directory,
+                ["resolveRevocationOwner"],
+                "revocation directory",
+              ),
+            });
+          })(),
     permissionApprovals:
       record.permissionApprovals === undefined
         ? undefined
@@ -634,6 +661,38 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
   const route = async (request: Request): Promise<Response> => {
     const segments = new URL(request.url).pathname.split("/").filter((part) => part.length > 0);
     const [head, group, third, fourth] = segments;
+
+    if (head === "grants" && third === "revocations" && segments.length === 4) {
+      if (request.method !== "GET" && request.method !== "POST")
+        return relayFailure("relay_method_not_allowed", "route does not accept this method");
+      const caller = await authenticate(request, "client", "grants.revocation");
+      const grantId = canonicalIdentifier(group, "grantId", INVALID);
+      if (
+        typeof fourth !== "string" ||
+        !/^[1-9][0-9]*$/u.test(fourth) ||
+        !Number.isSafeInteger(Number(fourth))
+      )
+        return relayFailure(INVALID, "revocation chain is invalid");
+      const input = {
+        store: captured.store,
+        clock: captured.clock,
+        caller,
+        grantId,
+        chainId: Number(fourth),
+      };
+      if (request.method === "GET")
+        return jsonResponse(200, await fetchClientPhoneRevocation(input));
+      exactBody(await bodyRecord(request, captured.maxBodyBytes), []);
+      if (!captured.revocations)
+        return relayFailure("relay_not_found", "revocation preparation is not configured");
+      const { created, ...status } = await requestOwnerPhoneRevocation({
+        ...input,
+        kms: captured.kms,
+        requestTtlMs: captured.requestTtlMs,
+        ...captured.revocations,
+      });
+      return jsonResponse(created ? 201 : 200, status);
+    }
 
     // EXPERIMENTAL PREVIEW — owner-phone approval routes. Same wire hygiene as
     // every relay route: exact capture, structured codes, no-store responses.
