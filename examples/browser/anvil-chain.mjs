@@ -59,9 +59,9 @@ const logEvidence = (log) => ({
   data: log.data,
 });
 
-export async function createAnvilChain(chainId) {
-  const chain = await startAnvil(chainId);
-  const stack = await deployKernelStack(chain);
+export async function createAnvilChain(chainId, { p256 = false } = {}) {
+  const chain = await startAnvil(chainId, p256 ? "osaka" : "prague");
+  const stack = await deployKernelStack(chain, { p256 });
   const feePayerBalance = await chain.client.getBalance({ address: stack.submitter.address });
   /** The one handleOps transaction this example submits, once it exists. */
   let transactionHash = null;

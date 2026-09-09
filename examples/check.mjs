@@ -25,33 +25,26 @@ const examples = [
   { label: "browser", script: "browser/run.mjs", env: {} },
   { label: "extension", script: "extension/check.mjs", env: {} },
   { label: "server", script: "server/run.mjs", env: { OAATH_SMOKE: "1", OAATH_PORT: "0" } },
-  {
+];
+
+if (anvilAvailable()) {
+  examples.push({
     // Simulate mode drives the phone's half over HTTP: no Apple contact, no
     // LAN binding, and the APNS_*/APPLE_* opt-ins are never read as a gate.
     label: "phone",
     script: "phone/run.mjs",
-    env: { OAATH_PHONE_SIMULATE: "1", OAATH_PORT: "0", OAATH_CALLBACK_PORT: "0" },
-  },
-];
-
-if (anvilAvailable()) {
+    env: { OAATH_PHONE_SIMULATE: "1", OAATH_PORT: "0" },
+  });
   examples.push({ label: "all-chain", script: "all-chain/run.mjs", env: {} });
   examples.push({ label: "service", script: "service/run.mjs", env: {} });
 } else {
-  console.log("examples:check: skipping all-chain and service, Anvil is not installed");
+  console.log("examples:check: skipping phone, all-chain and service, Anvil is not installed");
 }
 
 const failures = [];
 const phoneUnits = spawnSync(
   "node",
-  [
-    "--import",
-    HOOK,
-    "--test",
-    "phone/operation.test.mjs",
-    "phone/demo-routes.test.mjs",
-    "phone/browser-recovery.test.mjs",
-  ],
+  ["--import", HOOK, "--test", "phone/demo-routes.test.mjs", "phone/browser.test.mjs"],
   {
     cwd: HERE,
     stdio: "inherit",

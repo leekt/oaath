@@ -11,6 +11,27 @@ export const DEMO_INBOX_VERSION = "oaath.demo-inbox/v1";
 export const DEMO_INBOX_LIMIT = 20;
 export const DEMO_PAIRING_SECRET_VERSION = "oaath.demo-pairing-secret/v1";
 
+/** Reserves the example's pairing code synchronously before account reads. */
+export class OneShotPairing {
+  #hash;
+  #expiresAt;
+  #consumed = false;
+
+  constructor({ hash, expiresAt }) {
+    this.#hash = hash;
+    this.#expiresAt = expiresAt;
+  }
+
+  available(now) {
+    return !this.#consumed && now < this.#expiresAt;
+  }
+
+  reserve({ hash, now }) {
+    if (!this.available(now) || hash !== this.#hash) throw new Error("pairing_invalid");
+    this.#consumed = true;
+  }
+}
+
 const sendJson = (outgoing, status, body) => {
   outgoing.writeHead(status, {
     "content-type": "application/json",
