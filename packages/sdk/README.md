@@ -26,9 +26,18 @@ account using public credentials and configured reads, derives its policy
 packages through `createKernelRuntime`, and returns the existing Kernel signing
 request. `complete(phoneArtifact, decidedAt)` verifies the P-256 signature and
 returns the permission decision plus install approval consumed by the browser
-client. The caller owns phone transport and install-nonce allocation; the helper
-does not submit or persist anything. It supports the P-256 owner phone and the
+client. The caller owns phone transport; the helper does not submit or persist
+anything. It supports the P-256 owner phone and the
 current ECDSA/WebAuthn operator profiles, using the Kernel factory route.
+
+Phone preparation derives its install nonce with
+`kernelPermissionInstallNonce(hashPermissionRequest(request))`: the first 192
+hash bits select a request-specific Kernel install key at sequence zero. The
+same request recreates the same signing packet, while different requests can
+install in different orders across chains. This requires an unused key and
+Kernel's global `validNonceFrom()` to remain zero on each destination chain;
+accounts with an advanced global minimum require separate reconciliation.
+The install nonce is separate from the EntryPoint operation nonce above.
 
 The headless Grant provider returns `4200` for `wallet_showCallsStatus` unless
 the adopter supplies a wallet-owned status presenter. Executable

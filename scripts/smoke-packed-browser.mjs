@@ -45,6 +45,7 @@ import {
 } from "@oaath/sdk";
 import {
   p256Key,
+  kernelPermissionInstallNonce,
   prepareKernelPhonePermissionApproval,
   ecdsaKey,
   encodeKernelV4NonceKey,
@@ -70,6 +71,7 @@ import {
 import { oaathProvider } from "@oaath/sdk/viem";
 import {
   hashOwnerSigningRequest,
+  hashPermissionRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -167,8 +169,11 @@ const relay = createRelayHandler({
   permissionApprovals: {
     async prepare(request) {
       const prepared = await prepareKernelPhonePermissionApproval({
-        request, chainId: CHAIN_ID, reads: { read: accountRead }, installNonce: "0",
+        request, chainId: CHAIN_ID, reads: { read: accountRead },
       });
+      if (prepared.signingRequest.replay.nonce !== kernelPermissionInstallNonce(hashPermissionRequest(request))) {
+        fail("phone preparation did not use the canonical request's install namespace");
+      }
       return { signingRequest: prepared.signingRequest,
         complete: async (artifact, decidedAt) => JSON.stringify(await prepared.complete(artifact, decidedAt)) };
     },

@@ -22,6 +22,7 @@ import {
   type KernelRuntime,
   type KernelV4AccountDescriptor,
   type KeyProfile,
+  kernelPermissionInstallNonce,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
@@ -163,6 +164,102 @@ async function bringUp(
 }
 
 (requireAnvil ? describe : describe.skip)("all-chain materialization local proof", () => {
+  it("installs two grants in opposite chain orders without sharing install counters", async () => {
+    const owner = countingOwner();
+    const firstKey = privateKeyToAccount(generatePrivateKey());
+    const firstTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const secondKey = privateKeyToAccount(generatePrivateKey());
+    const secondTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const firstNonce = kernelPermissionInstallNonce(`0x${"11".repeat(32)}`);
+    const secondNonce = kernelPermissionInstallNonce(`0x${"22".repeat(32)}`);
+    const a = await bringUp(CHAIN_A, owner, firstKey, firstTarget);
+    const secondRuntime = async (stack: ChainStack) =>
+      createKernelRuntime({
+        deployment: kernelV4Deployment(stack.chain.chainId),
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: secondKey,
+            validator: await stack.harness.deployValidatorCreate2(),
+          }),
+          policies: [
+            {
+              kind: "call",
+              permissions: [{ target: secondTarget, selector: "0x00000000", valueLimit: "500" }],
+            },
+          ],
+        }),
+        reads: stack.harness.reads,
+      });
+    const firstApproval = await approveKernelPermissionAllChain({
+      owner: a.ownerKey,
+      account: a.account.account,
+      installNonce: firstNonce,
+      packages: a.sessionRuntime.packages,
+    });
+    const prepare = async (
+      stack: ChainStack,
+      runtime: Readonly<KernelRuntime>,
+      approval: Readonly<KernelAllChainApproval>,
+      target: `0x${string}`,
+      sequence = "0",
+    ) =>
+      materializeKernelPermission({
+        approval,
+        runtime,
+        grantId: approval.installNonce,
+        account: await runtime.bindAccount({
+          accountIndex: "0",
+          initialPackages: stack.ownerRuntime.packages,
+        }),
+        nonceKey: "0",
+        sequence,
+        calls: [{ target, value: "500", data: "0x" }],
+        gas,
+      });
+    const install = async (
+      stack: ChainStack,
+      runtime: Readonly<KernelRuntime>,
+      approval: Readonly<KernelAllChainApproval>,
+      target: `0x${string}`,
+    ) => {
+      const operation = await prepare(stack, runtime, approval, target);
+      expect(await stack.harness.sendSigned(operation.prepared, operation.signature)).toBe(
+        "success",
+      );
+      expect(await stack.harness.client.getBalance({ address: target })).toBe(500n);
+    };
+
+    // Grant one is installed on A before grant two even exists. Chain B has no
+    // account or install history yet when both owner approvals are produced.
+    await install(a, a.sessionRuntime, firstApproval, firstTarget);
+    const secondA = await secondRuntime(a);
+    const secondApproval = await approveKernelPermissionAllChain({
+      owner: a.ownerKey,
+      account: a.account.account,
+      installNonce: secondNonce,
+      packages: secondA.packages,
+    });
+    expect(owner.signatures()).toBe(2);
+    const b = await bringUp(CHAIN_B, owner, firstKey, firstTarget);
+    const secondB = await secondRuntime(b);
+    expect(b.account.account).toBe(a.account.account);
+    expect(secondB.packages).toEqual(secondA.packages);
+    expect(secondA.validation).not.toEqual(a.sessionRuntime.validation);
+    await install(b, secondB, secondApproval, secondTarget);
+    await install(a, secondA, secondApproval, secondTarget);
+    await install(b, b.sessionRuntime, firstApproval, firstTarget);
+
+    // A fresh EntryPoint sequence does not revive a consumed install approval.
+    // Assert Kernel's own refusal, excluding EntryPoint nonce reuse as a cause.
+    const reused = await prepare(a, a.sessionRuntime, firstApproval, firstTarget, "1");
+    expect(await a.harness.rejectionOf(reused.prepared, reused.signature)).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", toFunctionSelector("InvalidNonce()")],
+    });
+    expect(await a.harness.client.getBalance({ address: firstTarget })).toBe(500n);
+    expect(owner.signatures()).toBe(2);
+  }, 180_000);
+
   it("retains validation-installed permission when enable-mode execution reverts", async () => {
     const owner = countingOwner();
     const sessionKeyAccount = privateKeyToAccount(generatePrivateKey());

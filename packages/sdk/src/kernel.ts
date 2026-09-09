@@ -44,6 +44,7 @@ export { ownerOperator } from "./kernel/operator/owner.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
 export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
+export { kernelPermissionInstallNonce } from "./kernel/permission/install-nonce.js";
 export type {
   ApproveKernelPermissionAllChainInput,
   KernelAllChainApproval,
