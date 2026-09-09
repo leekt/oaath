@@ -29,8 +29,8 @@
  * ```
  *
  * EXPERIMENTAL PREVIEW routes for the owner-phone approval surface. Preview
- * means: no stability guarantee and no production qualification. Their wire
- * shapes are pinned field-for-field by the strict Swift decoders in
+ * means: no stability guarantee and no production qualification. Consent and
+ * decision shapes are pinned field-for-field by the strict Swift decoders in
  * `native/ios/Sources/OwnerPhone/{Projection,Decision}.swift`.
  *
  * ```text
@@ -66,6 +66,7 @@ import { resumeAuthorization } from "../authorization/resume.js";
 import { verifyGrantReference } from "../authorization/verify.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { submitOwnerPhoneDecision } from "../native/decision.js";
+import { listOwnerPhoneRequests } from "../native/inbox.js";
 import type { OwnerPhonePermissionApprovals } from "../native/permission-approval.js";
 import {
   projectOwnerPhonePermissionSigning,
@@ -697,6 +698,14 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
     // EXPERIMENTAL PREVIEW — owner-phone approval routes. Same wire hygiene as
     // every relay route: exact capture, structured codes, no-store responses.
     if (head === "native") {
+      if (segments.length === 2 && group === "inbox") {
+        requireMethod(request, "GET");
+        const caller = await authenticate(request, "owner", "native.inbox");
+        return jsonResponse(
+          200,
+          await listOwnerPhoneRequests({ store: captured.store, clock: captured.clock, caller }),
+        );
+      }
       if (segments.length === 3 && group === "permission-signing") {
         requireMethod(request, "GET");
         const caller = await authenticate(request, "owner", "native.permissionSigning");

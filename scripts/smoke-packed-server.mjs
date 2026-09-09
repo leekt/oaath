@@ -267,6 +267,12 @@ if (state.requestId !== created.requestId) fail("the owner read another request"
 if (state.decision !== null) fail("an undecided request must carry no decision");
 
 const personalProjection = await ok(await handler(request("GET", "/native/projections/" + created.requestId, OWNER_TOKEN)), 200, "personal phone consent");
+const personalInbox = await ok(await handler(request("GET", "/native/inbox", OWNER_TOKEN)), 200, "personal phone inbox");
+if (personalInbox.version !== "oaath.native-inbox/v1" || personalInbox.requests.length !== 1 ||
+    personalInbox.requests[0].operationId !== created.requestId ||
+    personalInbox.requests[0].displayPayload !== personalProjection.displayPayload ||
+    Object.keys(personalInbox.requests[0]).sort().join(",") !== "displayPayload,expiresAt,operationId") fail("packed inbox lost the pending consent summary");
+if ((await handler(request("GET", "/native/inbox", CLIENT_TOKEN))).status !== 403) fail("client read an owner inbox");
 if (personalProjection.version !== "oaath.native-projection/v6" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
 
 const ARTIFACT = permissionArtifact(created.requestId, permission);
@@ -281,6 +287,7 @@ const approved = await ok(
   "approve",
 );
 if (approved.outcome !== "approved") fail("decision outcome is " + approved.outcome);
+if ((await ok(await handler(request("GET", "/native/inbox", OWNER_TOKEN)), 200, "decided phone inbox")).requests.length !== 0) fail("decided request remained in the inbox");
 
 const consumed = await ok(
   await handler(
@@ -317,6 +324,9 @@ const teamCreated = await ok(await handler(request("POST", "/authorization/reque
 const wrongOwner = await handler(request("GET", "/authorization/requests/" + teamCreated.requestId, OWNER_TOKEN));
 if (wrongOwner.status !== 404) fail("personal phone accessed the team request");
 const teamProjection = await ok(await handler(request("GET", "/native/projections/" + teamCreated.requestId, TEAM_OWNER_TOKEN)), 200, "team phone consent");
+const teamInbox = await ok(await handler(request("GET", "/native/inbox", TEAM_OWNER_TOKEN)), 200, "team phone inbox");
+if (teamInbox.requests.length !== 1 || teamInbox.requests[0].operationId !== teamCreated.requestId) fail("team phone did not discover its pending request");
+if ((await ok(await handler(request("GET", "/native/inbox", OWNER_TOKEN)), 200, "isolated phone inbox")).requests.length !== 0) fail("personal phone discovered a team request");
 if (JSON.stringify(teamProjection.scope.context) !== JSON.stringify(JSON.parse(teamScope).context)) fail("team phone lost requested account context");
 const snapshot = await directory.read();
 await directory.replace({ expectedRevision: snapshot.revision, directory: { ...snapshot.directory, memberships: [] } });

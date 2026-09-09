@@ -6,11 +6,12 @@
  * operations are later qualification work.
  *
  * The relay handler exposes these use cases as preview HTTP routes
- * (`GET /native/projections/{operationId}`,
+ * (`GET /native/inbox`,
+ * `GET /native/projections/{operationId}`,
  * `GET /native/permission-signing/{operationId}`,
  * `POST /native/decisions/{operationId}`,
- * `POST /native/revocation-decisions/{operationId}`), pinned field-for-field by the strict
- * Swift decoders in `native/ios/Sources/OwnerPhone/`.
+ * `POST /native/revocation-decisions/{operationId}`). Consent and decision shapes
+ * are pinned by the strict Swift decoders in `native/ios/Sources/OwnerPhone/`.
  *
  * Platform-neutral like the root entry: Fetch, WebCrypto, and injected ports
  * only. Apple delivery lives behind `@oaath/server/apns`.
@@ -25,6 +26,8 @@
 
 export type { OwnerPhoneDecision, SubmitOwnerPhoneDecisionInput } from "./native/decision.js";
 export { submitOwnerPhoneDecision } from "./native/decision.js";
+export type { OwnerPhoneInbox } from "./native/inbox.js";
+export { listOwnerPhoneRequests, OAATH_NATIVE_INBOX_VERSION } from "./native/inbox.js";
 export type {
   OwnerPhonePermissionApprovals,
   PreparedOwnerPhonePermissionApproval,

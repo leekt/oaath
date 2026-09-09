@@ -125,6 +125,45 @@ export function createMemoryRelayStore(): RelayStore {
       };
 
       return {
+        async listPendingOwnerRequests(ownerSubject, now, limit) {
+          const tables = open();
+          const requests = [];
+          for (const value of tables.requests.values()) {
+            const record = parseAuthorizationRequestRecord(value);
+            if (
+              record.ownerSubject === ownerSubject &&
+              record.expiresAt > now &&
+              !tables.decisions.has(record.requestId)
+            ) {
+              requests.push({
+                operationId: record.requestId,
+                ownerSubject,
+                expiresAt: record.expiresAt,
+              });
+            }
+          }
+          for (const value of tables.revocationRequests.values()) {
+            const record = parseRevocationRequestRecord(value);
+            if (
+              record.ownerSubject === ownerSubject &&
+              record.expiresAt > now &&
+              !tables.revocationDecisions.has(record.operationId)
+            ) {
+              requests.push({
+                operationId: record.operationId,
+                ownerSubject,
+                expiresAt: record.expiresAt,
+              });
+            }
+          }
+          return requests
+            .sort(
+              (a, b) =>
+                a.expiresAt - b.expiresAt ||
+                (a.operationId < b.operationId ? -1 : a.operationId > b.operationId ? 1 : 0),
+            )
+            .slice(0, limit);
+        },
         async lockLatestRevocationRequest(grantId, chainId) {
           let latest: RevocationRequestRecord | undefined;
           for (const stored of open().revocationRequests.values()) {

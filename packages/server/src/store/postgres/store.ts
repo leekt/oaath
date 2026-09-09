@@ -40,6 +40,7 @@ import {
   INSERT_ENCRYPTED_ARTIFACT,
   INSERT_REVOCATION_DECISION,
   INSERT_REVOCATION_REQUEST,
+  LIST_PENDING_OWNER_REQUESTS,
   LOCK_AUTHORIZATION_CODE,
   LOCK_AUTHORIZATION_DECISION,
   LOCK_AUTHORIZATION_REQUEST,
@@ -167,6 +168,27 @@ function createTransaction(client: PoolClient): RelayTransaction {
   }
 
   return {
+    async listPendingOwnerRequests(ownerSubject, now, limit) {
+      const result = await run(LIST_PENDING_OWNER_REQUESTS, [ownerSubject, now, limit]);
+      return result.rows.map((row) => {
+        if (row.kind === "authorization") {
+          const record = requestRecord(row.record as Row);
+          return {
+            operationId: record.requestId,
+            ownerSubject: record.ownerSubject,
+            expiresAt: record.expiresAt,
+          };
+        }
+        if (row.kind !== "revocation")
+          return relayFailure("relay_record_unreadable", "pending request kind is invalid");
+        const record = parseRevocationRequestRecord(row.record);
+        return {
+          operationId: record.operationId,
+          ownerSubject: record.ownerSubject,
+          expiresAt: record.expiresAt,
+        };
+      });
+    },
     lockLatestRevocationRequest(grantId, chainId) {
       return first(LOCK_LATEST_REVOCATION_REQUEST, [grantId, String(chainId)], (row) =>
         parseRevocationRequestRecord(row.record),

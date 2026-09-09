@@ -39,7 +39,20 @@ import type {
   EncryptedArtifactRecord,
 } from "./records.js";
 
+/** Read-only discovery metadata. The existing request/decision records own pending state. */
+export interface PendingOwnerRequest {
+  readonly operationId: string;
+  readonly ownerSubject: string;
+  readonly expiresAt: number;
+}
+
 export interface RelayTransaction {
+  /** Unexpired and undecided requests, ordered by expiry then ASCII operation ID. No reservation. */
+  listPendingOwnerRequests(
+    ownerSubject: string,
+    now: number,
+    limit: number,
+  ): Promise<readonly PendingOwnerRequest[]>;
   /** Lock the original authorization request first to serialize grant/chain enqueue. */
   lockLatestRevocationRequest(
     grantId: string,

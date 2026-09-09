@@ -57,6 +57,15 @@ export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v6" as c
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 
+/** One match code for inbox, consent, and push, independent of delivery state. */
+export async function ownerPhoneDisplayPayload(
+  ownerSubject: string,
+  operationId: string,
+): Promise<string> {
+  const digest = await sha256Base64Url(`${DISPLAY_DOMAIN}${ownerSubject}:${operationId}`);
+  return digest.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH);
+}
+
 /**
  * Whether the phone may offer approval for one projected scope. Permission
  * requests and exact Kernel replayable-install P-256 signing are approvable;
@@ -326,11 +335,10 @@ async function projectionFromState(
   caller: RelayCaller,
   scope: OwnerPhoneScopeProjection,
 ): Promise<OwnerPhoneRequestProjection> {
-  const digest = await sha256Base64Url(`${DISPLAY_DOMAIN}${caller.subject}:${state.requestId}`);
   return Object.freeze({
     version: OAATH_NATIVE_PROJECTION_VERSION,
     operationId: state.requestId,
-    displayPayload: digest.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+    displayPayload: await ownerPhoneDisplayPayload(caller.subject, state.requestId),
     expiresAt: state.expiresAt,
     client: Object.freeze({ clientId: state.clientId, redirectUri: state.redirectUri }),
     scope,

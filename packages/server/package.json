@@ -79,7 +79,7 @@
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts test/revocation-executor.test.ts"
+    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts test/revocation-executor.test.ts test/native-inbox.test.ts"
   },
   "dependencies": {
     "@noble/curves": "1.9.1",

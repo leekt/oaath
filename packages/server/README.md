@@ -99,15 +99,25 @@ POST /grants/{grantId}/revocations/{chainId}         client  request or recover 
 GET  /grants/{grantId}/revocations/{chainId}         client  read current phone custody status
 ```
 
-EXPERIMENTAL PREVIEW routes (owner-phone approval; wire shapes pinned by the
-strict Swift decoders in `native/ios/Sources/OwnerPhone/`):
+EXPERIMENTAL PREVIEW routes (owner-phone approval):
 
 ```text
+GET  /native/inbox                                owner   pending consent summaries
 GET  /native/projections/{operationId}             owner   consent projection
 GET  /native/permission-signing/{operationId}      owner   prepared Kernel signing projection
 POST /native/decisions/{operationId}               owner   approve or reject saga
 POST /native/revocation-decisions/{operationId}    owner   revocation custody decision
 ```
+
+`GET /native/inbox` returns `oaath.native-inbox/v1` with `requests`, each containing
+only `operationId`, `displayPayload`, and `expiresAt` (epoch milliseconds).
+It reads existing permission and revocation requests for the authenticated owner,
+excluding expired or decided requests, and returns at most 20 ordered by expiry
+then operation ID. There is no separate inbox table or delivery flag to restore.
+PostgreSQL readers recover the list after service recreation. Listing does not
+prepare, sign, submit, or open an approval artifact; fetching consent checks
+current state again. The example phone's inbox transport is not yet switched to
+this endpoint.
 
 Canonical phone permission approval requires `RelayHandlerOptions.permissionApprovals`.
 Wire its `prepare(request)` to `prepareKernelPhonePermissionApproval` from
