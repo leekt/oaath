@@ -480,6 +480,7 @@ async function composeConfiguration(
       redirectUri,
       deviceId: session.deviceId,
       userHandle: bootstrap.userHandle,
+      context: bootstrap.context,
       account: bootstrap.account,
       operatorCredential,
     },
@@ -514,7 +515,7 @@ async function composeConfiguration(
         }),
     // Deleting the wrapping key on disconnect durably orphans the persisted
     // session ciphertext, so `forgetLocal` forgets the session too.
-    localKeyIds: [serviceSessionKeyId(input.url, origin)],
+    localKeyIds: [serviceSessionKeyId(input.url, origin, bootstrap)],
     now,
   };
 }
@@ -586,10 +587,7 @@ export function createServiceRealm<Realm extends object>(
           );
         }
       });
-      // The fetch runs concurrently with session loading below; this keeps a
-      // rejection observed during that window. The real `await bootstrap`
-      // still throws to the caller.
-      bootstrap.catch(() => undefined);
+      const selectedBootstrap = await bootstrap;
       if (input.stores === null) defaultStoreOwner = await defaultStores();
       const stores = (input.stores ?? defaultStoreOwner?.stores) as {
         readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
@@ -602,16 +600,26 @@ export function createServiceRealm<Realm extends object>(
       // than refusing it — the approval flow re-establishes authority either
       // way.
       const origin = localOrigin(input);
-      let session = await loadServiceSession({ stores, url: input.url, origin });
+      let session = await loadServiceSession({
+        stores,
+        url: input.url,
+        origin,
+        bootstrap: selectedBootstrap,
+      });
       if (session === null) {
         session = Object.freeze({ deviceId: deviceIdentity(), privateKey: generatePrivateKey() });
         const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
-        await saveServiceSession({ stores, url: input.url, origin, session, now }).catch(
-          () => undefined,
-        );
+        await saveServiceSession({
+          stores,
+          url: input.url,
+          origin,
+          bootstrap: selectedBootstrap,
+          session,
+          now,
+        }).catch(() => undefined);
       }
       inner = compose(
-        await composeConfiguration(input, transport, await bootstrap, stores, session),
+        await composeConfiguration(input, transport, selectedBootstrap, stores, session),
       );
       return inner;
     })().catch(async (error: unknown) => {

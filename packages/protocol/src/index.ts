@@ -278,11 +278,14 @@ export type {
   ServiceBootstrapPaymasterService,
   ServiceBootstrapSessionSigner,
   ServiceBootstrapSessionSignerMode,
+  WorkspaceAccountContext,
 } from "./service-bootstrap.js";
 export {
   captureServiceBootstrap,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
+  OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,
   parseServiceBootstrap,
+  parseWorkspaceAccountContext,
 } from "./service-bootstrap.js";
 export type {
   CanonicalEip712Array,

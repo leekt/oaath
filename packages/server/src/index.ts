@@ -36,6 +36,8 @@ export type { RelayClock } from "./clock.js";
 export type { RelayErrorCode } from "./relay/errors.js";
 export { OaathRelayError, RELAY_ERROR_STATUS } from "./relay/errors.js";
 export type {
+  RelayBootstrapConfiguration,
+  RelayBootstrapSelection,
   RelayHandler,
   RelayHandlerOptions,
   RelayPaymasterServiceConfiguration,

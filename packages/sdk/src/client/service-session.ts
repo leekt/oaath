@@ -18,10 +18,11 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import type { ServiceBootstrap } from "@oaath/protocol";
 import { encodeAbiParameters, keccak256 } from "viem";
 import { requireNonExtractableKey } from "../persistence/interfaces.js";
 
-export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v1" as const;
+export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v2" as const;
 const STORAGE_DOMAIN = "@oaath/sdk:service-session" as const;
 const PRIVATE_KEY = /^0x[0-9a-f]{64}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})+$/u;
@@ -43,6 +44,7 @@ export interface ServiceSessionInput {
   readonly stores: ServiceSessionStores;
   readonly url: string;
   readonly origin: string;
+  readonly bootstrap: Readonly<ServiceBootstrap>;
 }
 
 export interface PersistedServiceSession {
@@ -51,23 +53,44 @@ export interface PersistedServiceSession {
   readonly privateKey: `0x${string}`;
 }
 
-/** One durable record per (service URL, page origin); the id is its address. */
-function storageId(url: string, origin: string): `0x${string}` {
+/** One durable session per authenticated caller and selected workspace/account. */
+function storageId(
+  url: string,
+  origin: string,
+  bootstrap: Readonly<ServiceBootstrap>,
+): `0x${string}` {
   return keccak256(
     encodeAbiParameters(
       [
         { type: "string", name: "domain" },
         { type: "string", name: "url" },
         { type: "string", name: "origin" },
+        { type: "string", name: "selection" },
       ],
-      [STORAGE_DOMAIN, url, origin],
+      [
+        STORAGE_DOMAIN,
+        url,
+        origin,
+        JSON.stringify([
+          OAATH_SERVICE_SESSION_VERSION,
+          bootstrap.application.applicationId,
+          bootstrap.application.clientId,
+          bootstrap.userHandle,
+          bootstrap.context,
+          bootstrap.account,
+        ]),
+      ],
     ),
   );
 }
 
 /** The wrapping key's id in the key store; listed in `localKeyIds` for cleanup. */
-export function serviceSessionKeyId(url: string, origin: string): string {
-  return `service-session-${storageId(url, origin).slice(2, 34)}`;
+export function serviceSessionKeyId(
+  url: string,
+  origin: string,
+  bootstrap: Readonly<ServiceBootstrap>,
+): string {
+  return `service-session-${storageId(url, origin, bootstrap).slice(2, 34)}`;
 }
 
 function bytesToHex(bytes: Uint8Array): `0x${string}` {
@@ -85,7 +108,7 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * Opens the persisted session for this (url, origin), or null. Every failure
+ * Opens the persisted session for this authenticated account context, or null. Every failure
  * mode — no record, unknown fields, a foreign shape, a deleted or unreadable
  * wrapping key, a ciphertext that does not authenticate — reads as null:
  * local continuity state is never trusted into a failure, only into a fresh
@@ -95,7 +118,9 @@ export async function loadServiceSession(
   input: Readonly<ServiceSessionInput>,
 ): Promise<PersistedServiceSession | null> {
   try {
-    const raw = await input.stores.context.read(storageId(input.url, input.origin));
+    const raw = await input.stores.context.read(
+      storageId(input.url, input.origin, input.bootstrap),
+    );
     if (raw === null || raw === undefined || typeof raw !== "object") return null;
     const record = raw as Record<string, unknown>;
     if (
@@ -109,7 +134,7 @@ export async function loadServiceSession(
     if (
       typeof deviceId !== "string" ||
       !DEVICE_ID.test(deviceId) ||
-      keyId !== serviceSessionKeyId(input.url, input.origin) ||
+      keyId !== serviceSessionKeyId(input.url, input.origin, input.bootstrap) ||
       typeof iv !== "string" ||
       !BYTES.test(iv) ||
       typeof ciphertext !== "string" ||
@@ -144,7 +169,7 @@ export async function saveServiceSession(
     ServiceSessionInput & { session: Readonly<PersistedServiceSession>; now: () => number }
   >,
 ): Promise<void> {
-  const keyId = serviceSessionKeyId(input.url, input.origin);
+  const keyId = serviceSessionKeyId(input.url, input.origin, input.bootstrap);
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, [
     "encrypt",
     "decrypt",
@@ -157,7 +182,7 @@ export async function saveServiceSession(
   await input.stores.context.write(
     Object.freeze({
       version: OAATH_SERVICE_SESSION_VERSION,
-      bindingId: storageId(input.url, input.origin),
+      bindingId: storageId(input.url, input.origin, input.bootstrap),
       deviceId: input.session.deviceId,
       keyId,
       iv: bytesToHex(iv),

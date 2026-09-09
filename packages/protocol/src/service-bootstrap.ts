@@ -26,7 +26,56 @@ import {
   exactRecord,
 } from "./internal/exact-record.js";
 
-export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v3" as const;
+export const OAATH_SERVICE_BOOTSTRAP_VERSION = "oaath.service-bootstrap/v4" as const;
+export const OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION =
+  "oaath.workspace-account-context/v1" as const;
+
+/** A selected logical account in one personal or team workspace. */
+export interface WorkspaceAccountContext {
+  readonly version: typeof OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION;
+  readonly workspaceId: string;
+  readonly workspaceKind: "personal" | "team";
+  readonly accountId: string;
+}
+
+function captureWorkspaceAccountContext(
+  value: unknown,
+  context: CaptureContext,
+  fail: CaptureFailure,
+): Readonly<WorkspaceAccountContext> {
+  const record = exactRecord(
+    value,
+    ["version", "workspaceId", "workspaceKind", "accountId"],
+    "workspace account context",
+    context,
+    fail,
+  );
+  if (
+    record.version !== OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION ||
+    (record.workspaceKind !== "personal" && record.workspaceKind !== "team")
+  ) {
+    return fail("workspace account context version or kind is unsupported");
+  }
+  return Object.freeze({
+    version: OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,
+    workspaceId: parseClientId(record.workspaceId, fail),
+    workspaceKind: record.workspaceKind,
+    accountId: parseClientId(record.accountId, fail),
+  });
+}
+
+export function parseWorkspaceAccountContext(value: unknown): Readonly<WorkspaceAccountContext> {
+  return capturedByProtocol(
+    "service_bootstrap_invalid",
+    "workspace account context is invalid",
+    () =>
+      captureWorkspaceAccountContext(
+        value,
+        new WeakSet(),
+        protocolFailure("service_bootstrap_invalid"),
+      ),
+  );
+}
 
 const MAX_REDIRECT_URIS = 8;
 const MAX_CHAINS = 32;
@@ -99,6 +148,7 @@ const FRONTEND_SESSION_SIGNER: Readonly<ServiceBootstrapSessionSigner> = Object.
 
 export interface ServiceBootstrap {
   readonly version: typeof OAATH_SERVICE_BOOTSTRAP_VERSION;
+  readonly context: Readonly<WorkspaceAccountContext>;
   readonly application: Readonly<ServiceBootstrapApplication>;
   /** Opaque issuer-scoped handle of the authenticated user. */
   readonly userHandle: string;
@@ -236,6 +286,7 @@ export function captureServiceBootstrap(
     value,
     [
       "version",
+      "context",
       "application",
       "userHandle",
       "account",
@@ -295,6 +346,7 @@ export function captureServiceBootstrap(
   }
   return Object.freeze({
     version: OAATH_SERVICE_BOOTSTRAP_VERSION,
+    context: captureWorkspaceAccountContext(record.context, context, fail),
     application: Object.freeze({
       applicationId: parseClientId(application.applicationId, fail),
       applicationName: boundedText(

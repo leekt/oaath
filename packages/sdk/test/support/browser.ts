@@ -122,6 +122,13 @@ export const accountProfile = Object.freeze({
   ownerCredential,
 });
 
+export const workspaceContext = Object.freeze({
+  version: "oaath.workspace-account-context/v1",
+  workspaceId: "personal-1",
+  workspaceKind: "personal",
+  accountId: "account-1",
+} as const);
+
 export const bindingInput = Object.freeze({
   issuer: ISSUER_URL,
   applicationId: "app-a",
@@ -131,6 +138,7 @@ export const bindingInput = Object.freeze({
   redirectUri: REDIRECT_URI,
   deviceId: "device-a",
   userHandle: "user-1",
+  context: workspaceContext,
   account: accountProfile,
   operatorCredential,
 });
@@ -851,15 +859,13 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
     options.relay ??
     createRelay(clock, {
       bootstrap: {
-        application: {
-          applicationId: "app-a",
-          applicationName: "OAAth Example",
-          clientId: "client-a",
-          redirectUris: [REDIRECT_URI],
-        },
-        userHandle: "user-1",
-        account: accountProfile,
-        ownerValidator: VALIDATOR,
+        resolve: async () => ({
+          application: { applicationId: "app-a", applicationName: "OAAth Example" },
+          context: workspaceContext,
+          account: accountProfile,
+          ownerValidator: VALIDATOR,
+          chainIds: [chain.capability.chainId],
+        }),
       },
       chains: [relayChainPort(chain)],
       ...(options.sessionSigner ? { sessionSigner: options.sessionSigner } : {}),

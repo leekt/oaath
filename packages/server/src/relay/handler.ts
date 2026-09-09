@@ -114,12 +114,22 @@ export interface RelayChainPort {
   readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
-/** The identity facts `GET /bootstrap` serves; chains derive from `chains`. */
-export interface RelayBootstrapConfiguration {
-  readonly application: unknown;
-  readonly userHandle: string;
-  readonly account: unknown;
+/** Selection resolved from the deployment's membership and account records. */
+export interface RelayBootstrapSelection {
+  readonly application: Readonly<
+    Pick<ServiceBootstrap["application"], "applicationId" | "applicationName">
+  >;
+  readonly context: ServiceBootstrap["context"];
+  readonly account: ServiceBootstrap["account"];
   readonly ownerValidator: `0x${string}` | null;
+  readonly chainIds: readonly number[];
+}
+
+/** Called for each authenticated bootstrap request; null means no assigned account. */
+export interface RelayBootstrapConfiguration {
+  readonly resolve: (
+    caller: Readonly<RelayCaller>,
+  ) => Promise<Readonly<RelayBootstrapSelection> | null>;
 }
 
 /**
@@ -264,7 +274,7 @@ interface CapturedOptions {
   readonly codeTtlMs: number;
   readonly maxBodyBytes: number;
   /** The exact parsed document `GET /bootstrap` serves, or null when unserved. */
-  readonly bootstrap: Readonly<ServiceBootstrap> | null;
+  readonly bootstrap: Readonly<RelayBootstrapConfiguration> | null;
   readonly sessionSigner: Readonly<RelaySessionSignerConfiguration> | null;
   readonly chains: ReadonlyMap<number, Readonly<RelayChainPort>>;
   readonly paymasterServices: ReadonlyMap<number, Readonly<RelayPaymasterServiceConfiguration>>;
@@ -417,47 +427,16 @@ function captureOptions(value: unknown): CapturedOptions {
       ),
     });
   }
-  let bootstrap: Readonly<ServiceBootstrap> | null = null;
+  let bootstrap: Readonly<RelayBootstrapConfiguration> | null = null;
   if (record.bootstrap !== undefined) {
     if (chains.size === 0) {
       relayFailure("relay_internal", "a bootstrap surface requires chain ports");
     }
-    const identity = captureRecord(
+    bootstrap = requirePort<RelayBootstrapConfiguration>(
       record.bootstrap,
-      "relay bootstrap configuration",
-      context,
-      (message) => relayFailure("relay_internal", message),
+      ["resolve"],
+      "bootstrap",
     );
-    // The exact protocol parser owns document meaning; a misconfigured
-    // deployment fails at construction, never at a client's request.
-    try {
-      bootstrap = parseServiceBootstrap({
-        version: OAATH_SERVICE_BOOTSTRAP_VERSION,
-        application: identity.application,
-        userHandle: identity.userHandle,
-        account: identity.account,
-        ownerValidator: identity.ownerValidator,
-        chains: [...chains.values()].map((port) => {
-          const paymasterService = paymasterServices.get(port.chainId);
-          return {
-            chainId: port.chainId,
-            usage: port.usage !== null,
-            feePayer: port.feePayer,
-            paymasterService:
-              paymasterService === undefined ? null : { providerId: paymasterService.providerId },
-            staticPaymasterConfigurationHash: port.staticPaymasterConfigurationHash,
-          };
-        }),
-        // The one custody declaration serves both the document and the
-        // signing routes; they can never disagree.
-        sessionSigner:
-          sessionSigner === null
-            ? { mode: "frontend", providerId: null }
-            : { mode: sessionSigner.mode, providerId: sessionSigner.providerId },
-      });
-    } catch {
-      relayFailure("relay_internal", "relay bootstrap configuration is invalid");
-    }
   }
   return Object.freeze({
     store: requirePort<RelayStore>(record.store, ["begin", "close"], "store"),
@@ -658,11 +637,65 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
 
     if (head === "bootstrap" && segments.length === 1) {
       requireMethod(request, "GET");
-      await authenticate(request, "client", "bootstrap.fetch");
+      const caller = await authenticate(request, "client", "bootstrap.fetch");
       if (captured.bootstrap === null) {
         return relayFailure("relay_not_found", "route does not exist");
       }
-      return jsonResponse(200, captured.bootstrap);
+      const selection = await captured.bootstrap.resolve(caller);
+      if (selection === null) return relayFailure("relay_not_found", "no assigned account");
+      let document: Readonly<ServiceBootstrap>;
+      try {
+        const context: CaptureContext = new WeakSet();
+        const fail = (message: string): never => relayFailure("relay_internal", message);
+        const selected = exactCapturedRecord(
+          captureRecord(selection, "bootstrap selection", context, fail),
+          ["application", "context", "account", "ownerValidator", "chainIds"],
+          "bootstrap selection",
+          fail,
+        );
+        const application = exactCapturedRecord(
+          captureRecord(selected.application, "bootstrap application", context, fail),
+          ["applicationId", "applicationName"],
+          "bootstrap application",
+          fail,
+        );
+        const chainIds = captureDenseArray(selected.chainIds, "selected chains", context, fail);
+        document = parseServiceBootstrap({
+          version: OAATH_SERVICE_BOOTSTRAP_VERSION,
+          application: {
+            ...application,
+            clientId: caller.clientId,
+            redirectUris: caller.redirectUris,
+          },
+          userHandle: caller.subject,
+          context: selected.context,
+          account: selected.account,
+          ownerValidator: selected.ownerValidator,
+          chains: chainIds.map((chainId) => {
+            const port = captured.chains.get(chainId as number);
+            if (port === undefined) return fail("selected chain is not configured");
+            const paymasterService = captured.paymasterServices.get(port.chainId);
+            return {
+              chainId: port.chainId,
+              usage: port.usage !== null,
+              feePayer: port.feePayer,
+              paymasterService:
+                paymasterService === undefined ? null : { providerId: paymasterService.providerId },
+              staticPaymasterConfigurationHash: port.staticPaymasterConfigurationHash,
+            };
+          }),
+          sessionSigner:
+            captured.sessionSigner === null
+              ? { mode: "frontend", providerId: null }
+              : {
+                  mode: captured.sessionSigner.mode,
+                  providerId: captured.sessionSigner.providerId,
+                },
+        });
+      } catch {
+        return relayFailure("relay_internal", "resolved bootstrap is invalid");
+      }
+      return jsonResponse(200, document);
     }
 
     if (head === "session-signers") {

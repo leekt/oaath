@@ -140,15 +140,21 @@ const relayHandler = createRelayHandler({
   },
   clock: { now: () => Date.now() },
   bootstrap: {
-    application: {
-      applicationId: "demo-app",
-      applicationName: "OAAth Reference Service",
-      clientId: "demo-client",
-      redirectUris: [`${APP_ORIGIN}/callback`],
-    },
-    userHandle: "demo-user",
-    account: accountProfile,
-    ownerValidator: chain.validator,
+    resolve: async () => ({
+      application: {
+        applicationId: "demo-app",
+        applicationName: "OAAth Reference Service",
+      },
+      context: {
+        version: "oaath.workspace-account-context/v1",
+        workspaceId: "personal-1",
+        workspaceKind: "personal",
+        accountId: "account-1",
+      },
+      account: accountProfile,
+      ownerValidator: chain.validator,
+      chainIds: [chain.capability.chainId],
+    }),
   },
   chains: [chainPort(chain.capability)],
 });

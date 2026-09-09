@@ -211,6 +211,12 @@ const oaath = createOAAth({
     redirectUri: REDIRECT_URI,
     deviceId: "device-a",
     userHandle: "user-1",
+    context: {
+      version: "oaath.workspace-account-context/v1",
+      workspaceId: "personal-1",
+      workspaceKind: "personal",
+      accountId: "account-1",
+    },
     account: {
       version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
       kind: "kernel",

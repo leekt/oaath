@@ -26,6 +26,12 @@ function document(): Record<string, unknown> {
       redirectUris: ["https://app.example/callback"],
     },
     userHandle: "user-1",
+    context: {
+      version: "oaath.workspace-account-context/v1",
+      workspaceId: "personal-1",
+      workspaceKind: "personal",
+      accountId: "account-1",
+    },
     account: {
       version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
       kind: "kernel",
@@ -70,6 +76,22 @@ describe("service bootstrap", () => {
     ]);
     expect(Object.isFrozen(bootstrap)).toBe(true);
     expect(Object.isFrozen(bootstrap.chains)).toBe(true);
+    expect(Object.isFrozen(bootstrap.context)).toBe(true);
+    expect(bootstrap.context.workspaceId).toBe("personal-1");
+  });
+
+  it("captures a team account with the same context schema", () => {
+    const bootstrap = parseServiceBootstrap({
+      ...document(),
+      context: {
+        version: "oaath.workspace-account-context/v1",
+        workspaceId: "team-1",
+        workspaceKind: "team",
+        accountId: "treasury",
+      },
+    });
+    expect(bootstrap.context.workspaceKind).toBe("team");
+    expect(bootstrap.context.accountId).toBe("treasury");
   });
 
   it("captures a fee payer snapshot exactly", () => {
@@ -96,6 +118,30 @@ describe("service bootstrap", () => {
   });
 
   it.each([
+    ["the retired v3 version", { version: "oaath.service-bootstrap/v3" }],
+    ["a missing context", { context: undefined }],
+    [
+      "an unsupported workspace kind",
+      {
+        context: {
+          version: "oaath.workspace-account-context/v1",
+          workspaceId: "team-1",
+          workspaceKind: "organization",
+          accountId: "treasury",
+        },
+      },
+    ],
+    [
+      "an empty account identity",
+      {
+        context: {
+          version: "oaath.workspace-account-context/v1",
+          workspaceId: "team-1",
+          workspaceKind: "team",
+          accountId: "",
+        },
+      },
+    ],
     ["the retired v2 version", { version: "oaath.service-bootstrap/v2" }],
     ["an unknown field", { extra: 1 }],
     ["a missing user handle", { userHandle: "" }],
