@@ -69,6 +69,17 @@ function read<Value>(
   return stored === undefined ? undefined : parse(stored);
 }
 
+function artifactByRequest(tables: Tables, requestId: string): EncryptedArtifactRecord | undefined {
+  let match: EncryptedArtifactRecord | undefined;
+  for (const value of tables.artifacts.values()) {
+    const record = parseEncryptedArtifactRecord(value);
+    if (record.requestId !== requestId) continue;
+    if (match) return relayFailure("relay_record_unreadable", "request has multiple artifacts");
+    match = record;
+  }
+  return match;
+}
+
 export function createMemoryRelayStore(): RelayStore {
   let committed = emptyTables();
   let closed = false;
@@ -137,8 +148,13 @@ export function createMemoryRelayStore(): RelayStore {
         async lockEncryptedArtifact(artifactId) {
           return read(open().artifacts, artifactId, parseEncryptedArtifactRecord);
         },
+        async lockEncryptedArtifactByRequestId(requestId) {
+          return artifactByRequest(open(), requestId);
+        },
         async insertEncryptedArtifact(record: EncryptedArtifactRecord) {
-          return insert(open().artifacts, record.artifactId, record);
+          const tables = open();
+          if (artifactByRequest(tables, record.requestId)) return false;
+          return insert(tables.artifacts, record.artifactId, record);
         },
         async claimEncryptedArtifact(artifactId, claimedAt) {
           const artifacts = open().artifacts;

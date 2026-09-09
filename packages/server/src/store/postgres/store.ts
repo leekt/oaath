@@ -39,6 +39,7 @@ import {
   LOCK_AUTHORIZATION_REQUEST,
   LOCK_CAPABILITY_INVALIDATION,
   LOCK_ENCRYPTED_ARTIFACT,
+  LOCK_ENCRYPTED_ARTIFACT_BY_REQUEST_ID,
 } from "./queries.js";
 
 export type PostgresRelayStoreOptions =
@@ -223,6 +224,9 @@ function createTransaction(client: PoolClient): RelayTransaction {
     },
     lockEncryptedArtifact(artifactId) {
       return first(LOCK_ENCRYPTED_ARTIFACT, [artifactId], artifactRecord);
+    },
+    lockEncryptedArtifactByRequestId(requestId) {
+      return first(LOCK_ENCRYPTED_ARTIFACT_BY_REQUEST_ID, [requestId], artifactRecord);
     },
     insertEncryptedArtifact(record) {
       return inserted(INSERT_ENCRYPTED_ARTIFACT, [

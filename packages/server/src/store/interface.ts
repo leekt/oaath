@@ -54,6 +54,8 @@ export interface RelayTransaction {
   insertCapabilityInvalidation(record: CapabilityInvalidationRecord): Promise<boolean>;
 
   lockEncryptedArtifact(artifactId: string): Promise<EncryptedArtifactRecord | undefined>;
+  /** Internal authority lookup; returns retained evidence even after client claim. Never releases it. */
+  lockEncryptedArtifactByRequestId(requestId: string): Promise<EncryptedArtifactRecord | undefined>;
   insertEncryptedArtifact(record: EncryptedArtifactRecord): Promise<boolean>;
   /** Returns true only when this call set `claimed_at`. */
   claimEncryptedArtifact(artifactId: string, claimedAt: number): Promise<boolean>;

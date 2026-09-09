@@ -162,6 +162,31 @@ describe("durable record capture", () => {
 });
 
 describe("relay transaction discipline", () => {
+  it("keeps the request artifact unique and readable after one-time client claim", async () => {
+    const store = createMemoryRelayStore();
+    await withRelayTransaction(store, async (transaction) => {
+      expect(await transaction.insertEncryptedArtifact(ARTIFACT)).toBe(true);
+      expect(await transaction.insertEncryptedArtifact({ ...ARTIFACT, artifactId: "second" })).toBe(
+        false,
+      );
+      expect(
+        (await transaction.lockEncryptedArtifactByRequestId(ARTIFACT.requestId))?.artifactId,
+      ).toBe(ARTIFACT.artifactId);
+      expect(await transaction.lockEncryptedArtifactByRequestId("absent")).toBeUndefined();
+      expect(
+        await transaction.claimEncryptedArtifact(ARTIFACT.artifactId, ARTIFACT.createdAt),
+      ).toBe(true);
+    });
+    await withRelayTransaction(store, async (transaction) => {
+      const retained = await transaction.lockEncryptedArtifactByRequestId(ARTIFACT.requestId);
+      expect(retained?.claimedAt).toBe(ARTIFACT.createdAt);
+      expect(
+        await transaction.claimEncryptedArtifact(ARTIFACT.artifactId, ARTIFACT.createdAt),
+      ).toBe(false);
+    });
+    await store.close();
+  });
+
   it("refuses to reuse a settled transaction", async () => {
     const store = createMemoryRelayStore();
     const transaction = await store.begin();

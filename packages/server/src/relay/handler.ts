@@ -807,6 +807,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       const result = await verifyGrantReference({
         store: captured.store,
         clock: captured.clock,
+        kms: captured.kms,
         caller,
         assertion: await bodyRecord(request, captured.maxBodyBytes),
       });

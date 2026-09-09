@@ -47,6 +47,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   deriveCodeChallenge,
   hashGrantPolicyCalls,
+  hashPermissionRequest,
   OAATH_GRANT_POLICY_VERSION,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -82,7 +83,13 @@ const OWNER_TOKEN = "owner-token";
 const SUBJECT = "subject-1";
 const TEAM_OWNER_TOKEN = "team-owner-token";
 const CODE_VERIFIER = "smoke-code-verifier-that-is-long-enough-0123";
-const ARTIFACT = JSON.stringify({ grant: "approved", smoke: true });
+function permissionArtifact(requestId, scope) {
+  return JSON.stringify({
+    version: "oaath.permission-decision/v1", kind: "approve", requestId,
+    requestHash: hashPermissionRequest({ ...scope, requestId }), decidedAt: requestedAt,
+    approvedPolicy: scope.policy, capabilityHash: "0x" + "ab".repeat(32),
+  });
+}
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
 
 // Every entry, root and Node-only subpath alike, resolves to a built artifact.
@@ -260,6 +267,7 @@ if (state.decision !== null) fail("an undecided request must carry no decision")
 const personalProjection = await ok(await handler(request("GET", "/native/projections/" + created.requestId, OWNER_TOKEN)), 200, "personal phone consent");
 if (personalProjection.version !== "oaath.native-projection/v6" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
 
+const ARTIFACT = permissionArtifact(created.requestId, permission);
 const approved = await ok(
   await handler(
     request("POST", "/authorization/requests/" + created.requestId + "/decision", OWNER_TOKEN, {
@@ -314,14 +322,15 @@ const refused = await handler(request("POST", "/authorization/requests", CLIENT_
   redirectUri: REDIRECT_URI, codeChallenge: deriveCodeChallenge(CODE_VERIFIER), requestedScope: teamScope,
 }));
 if (refused.status !== 403 || (await refused.json()).error?.code !== "relay_forbidden") fail("removed member created a request");
+const teamArtifact = permissionArtifact(teamCreated.requestId, JSON.parse(teamScope));
 const teamApproval = await ok(await handler(request("POST", "/authorization/requests/" + teamCreated.requestId + "/decision", TEAM_OWNER_TOKEN, {
-  outcome: "approved", artifact: ARTIFACT,
+  outcome: "approved", artifact: teamArtifact,
 })), 200, "team approve");
 const teamConsumed = await ok(await handler(request("POST", "/authorization/codes/consume", CLIENT_TOKEN, {
   code: teamApproval.code, codeVerifier: CODE_VERIFIER, redirectUri: REDIRECT_URI,
 })), 200, "team consume");
 const teamClaimed = await ok(await handler(request("POST", "/authorization/artifacts/" + teamConsumed.artifactId + "/claim", CLIENT_TOKEN)), 200, "team claim");
-if (teamClaimed.requestId !== teamCreated.requestId || teamClaimed.artifact !== ARTIFACT) fail("team artifact binding was lost");
+if (teamClaimed.requestId !== teamCreated.requestId || teamClaimed.artifact !== teamArtifact) fail("team artifact binding was lost");
 
 // One-time claim: the replay must fail closed and disclose nothing.
 const replayed = await handler(

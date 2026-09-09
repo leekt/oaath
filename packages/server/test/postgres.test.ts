@@ -7,7 +7,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { hashGrantPolicyCalls } from "@oaath/protocol";
+import { hashGrantPolicy, hashGrantPolicyCalls, hashPermissionRequest } from "@oaath/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OAATH_RELAY_POSTGRES_SCHEMA_VERSION } from "../src/store/postgres/schema.js";
 import {
@@ -26,6 +26,7 @@ import {
   OWNER_TOKEN,
   post,
   REDIRECT_URI,
+  TEST_CLOCK_SECONDS,
 } from "./support.js";
 import {
   createPostgresFixture,
@@ -80,31 +81,71 @@ import {
     await harness.shutdown();
   });
 
-  it("verifies a grant reference from an independent connection", async () => {
-    const clock = createTestClock();
-    const issuing = createPostgresHarness(fixture, clock);
+  it("verifies retained approved policy after claim and full instance recreation", async () => {
+    const issuing = createPostgresHarness(fixture, createTestClock());
     const created = await createRequest(issuing, LIVE_PERMISSION_SCOPE);
-    await approve(issuing, created.requestId);
-
-    // A separate pool answers the verification, so the captured audience and
-    // scope are proven durable, not a warm in-memory echo.
-    const verifier = createPostgresHarness(fixture, clock);
-    const response = await verifier.handler(
-      post("/grants/verify", CLIENT_TOKEN, {
-        grantId: created.requestId,
-        revision: 1,
-        subject: "subject-1",
-        clientId: "client-a",
-        organizationAudience: "org-1",
-        requiredCallsDigest: hashGrantPolicyCalls(LIVE_PERMISSION_POLICY.calls),
+    const approvedPolicy = {
+      ...LIVE_PERMISSION_POLICY,
+      calls: [{ ...LIVE_PERMISSION_POLICY.calls[0], valueLimit: "1" }],
+      validUntil: TEST_CLOCK_SECONDS + 120,
+    };
+    const decision = await approve(
+      issuing,
+      created.requestId,
+      JSON.stringify({
+        version: "oaath.permission-decision/v1",
+        kind: "approve",
+        requestId: created.requestId,
+        requestHash: hashPermissionRequest({
+          ...JSON.parse(LIVE_PERMISSION_SCOPE),
+          requestId: created.requestId,
+        }),
+        decidedAt: TEST_CLOCK_SECONDS,
+        approvedPolicy,
+        capabilityHash: `0x${"ab".repeat(32)}`,
       }),
     );
-    const result = await expectOk<{ state: string; ref?: { organizationAudience: string } }>(
-      response,
+    await expectOk(await consume(issuing, decision.code), 200);
+    await expectOk(await claim(issuing, decision.artifactId), 200);
+    await issuing.shutdown();
+
+    // New pool, store, handler, KMS and clock after code expiry. The retained
+    // approval, rather than requestedScope or warm state, supplies the policy.
+    const clock = createTestClock((TEST_CLOCK_SECONDS + 61) * 1_000);
+    const verifier = createPostgresHarness(fixture, clock);
+    const assertion = {
+      grantId: created.requestId,
+      revision: 1,
+      subject: "subject-1",
+      clientId: "client-a",
+      organizationAudience: "org-1",
+      requiredCallsDigest: hashGrantPolicyCalls(approvedPolicy.calls),
+    };
+    const result = await expectOk<{ state: string; ref?: { policyDigest: string } }>(
+      await verifier.handler(post("/grants/verify", CLIENT_TOKEN, assertion)),
       200,
     );
     expect(result.state).toBe("authorized");
-    expect(result.ref?.organizationAudience).toBe("org-1");
+    expect(result.ref?.policyDigest).toBe(hashGrantPolicy(approvedPolicy));
+    const broad = await expectOk<{ state: string; code: string }>(
+      await verifier.handler(
+        post("/grants/verify", CLIENT_TOKEN, {
+          ...assertion,
+          requiredCallsDigest: hashGrantPolicyCalls(LIVE_PERMISSION_POLICY.calls),
+        }),
+      ),
+      200,
+    );
+    expect(broad).toEqual({ state: "denied", code: "grant_calls_mismatch" });
+    await expectFailure(
+      await claim(verifier, decision.artifactId),
+      "relay_artifact_already_claimed",
+    );
+    clock.advance(60_000);
+    expect(
+      await expectOk(await verifier.handler(post("/grants/verify", CLIENT_TOKEN, assertion)), 200),
+    ).toEqual({ state: "denied", code: "grant_expired" });
+    await verifier.shutdown();
   });
 
   it("releases a code once under concurrent consumes on independent stores", async () => {
