@@ -16,6 +16,8 @@
  *   - the packed runtime exports are exactly what the workspace build produced;
  *   - `createOAAth` composes and `requestPermission` returns an active Grant
  *     while application chain ports stay untouched (owner binding uses owned reads);
+ *   - a native owner rejection reaches the URL client without code redemption,
+ *     artifact claim, or grant creation;
  *   - registered ERC-7677 sponsorship finalizes one exact UserOperation before
  *     signing and submission;
  *   - a recreated realm resumes the Grant and observes the exact durable
@@ -770,6 +772,51 @@ const queuePorts = [{ chainId: CHAIN_ID, reads: accountRead,
   quote: async () => fail("phone enqueue quoted an application owner operation"),
   submission: async () => fail("phone enqueue submitted"),
   usage: null, feePayer: null, staticPaymasterConfigurationHash: null }];
+
+// Reject through the phone endpoint; let the SDK's own URL polling report it.
+relay = createRelayHandler({ ...relayOptions, bootstrap: contextDirectory, chains: queuePorts,
+  clock: { now: () => clock * 1000 }, kms: { ...relayKms } });
+const rejectedPosts = [];
+let rejectedCodePickups = 0;
+const rejectedClient = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
+  fetch: async (request) => {
+    const path = new URL(request.url).pathname;
+    if (request.method === "POST") rejectedPosts.push(path);
+    if (path.endsWith("/code")) rejectedCodePickups += 1;
+    const response = await relay(authorized(request, CLIENT_TOKEN));
+    if (request.method === "POST" && path === "/authorization/requests") {
+      if (response.status !== 201) fail("rejected permission request was not created");
+      const created = await response.clone().json();
+      const consent = await relay(authorized(new Request(ISSUER_URL + "/native/projections/" + created.requestId), OWNER_TOKEN));
+      if (!consent.ok) fail("phone could not review the permission request");
+      const decision = await relayJson("/native/decisions/" + created.requestId, OWNER_TOKEN, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "reject" }),
+      });
+      if (decision.outcome !== "rejected") fail("phone rejection was not committed");
+    }
+    return response;
+  },
+});
+try {
+  const rejectedConnection = await rejectedClient.connect();
+  let rejectionCode = null;
+  try {
+    await rejectedConnection.requestPermission({ chainScope: "all",
+      permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
+      expiresIn: EXPIRES_IN, perChainOperationLimit: 10 });
+  } catch (error) {
+    rejectionCode = error?.code;
+  }
+  if (rejectionCode !== "oaath_client_permission_rejected") fail("URL client lost the phone rejection");
+  if (await rejectedConnection.resume() !== null) fail("phone rejection created a resumable grant");
+  if (rejectedPosts.length !== 1 || rejectedPosts[0] !== "/authorization/requests" || rejectedCodePickups !== 1) {
+    fail("phone rejection redeemed a code, claimed an artifact, or repolled a terminal decision");
+  }
+} finally {
+  await rejectedClient.close();
+}
+
 const queueResponses = [];
 async function queueLife() {
   relay = createRelayHandler({ ...relayOptions, bootstrap: contextDirectory, chains: queuePorts,

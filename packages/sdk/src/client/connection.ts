@@ -496,7 +496,8 @@ export function createConnection(
         redirectUri: input.binding.redirectUri,
         expiresAt: relayExpiresAt,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof OaathClientError) throw error;
       return clientFail(
         "oaath_client_decision_unavailable",
         "the owner decision could not be obtained",
