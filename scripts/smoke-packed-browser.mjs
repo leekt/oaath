@@ -136,6 +136,30 @@ const callers = new Map([
   [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
 ]);
 
+const selectedProfile = {
+  version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+  kind: "kernel", accountIndex: "0", kernelVersion: "0.4.0",
+  factoryRoute: "kernel_factory", entryPoint: { version: "0.7" }, ownerCredential,
+};
+const contextDirectory = createServiceDirectory(createMemoryServiceDirectoryStore());
+await contextDirectory.replace({ expectedRevision: null, directory: {
+  version: "oaath.service-directory/v1",
+  applications: [{ clientId: "client-a", applicationId: "app-a", applicationName: "OAAth Packed Smoke" }],
+  workspaces: [{ workspaceId: "personal-1", kind: "personal" }, { workspaceId: "team-1", kind: "team" }],
+  memberships: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, clientId: "client-a", subject: SUBJECT })),
+  ownerDevices: [],
+  accounts: [],
+  selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
+} });
+for (const [workspaceId, expectedRevision] of [["personal-1", 1], ["team-1", 2]]) {
+  if (!(await contextDirectory.enrollOwnerDevice({
+    expectedRevision,
+    device: { workspaceId, ownerDeviceId: "owner-phone", subject: "phone-subject" },
+    accounts: [{ workspaceId, accountId: "account-1", ownerDeviceId: "owner-phone",
+      account: structuredClone(selectedProfile), ownerValidator: null, chainIds: [CHAIN_ID] }],
+  }))) fail("phone enrollment lost its directory revision");
+}
+
 const relay = createRelayHandler({
   permissionApprovals: {
     async prepare(request) {
@@ -146,7 +170,7 @@ const relay = createRelayHandler({
         complete: async (artifact, decidedAt) => JSON.stringify(await prepared.complete(artifact, decidedAt)) };
     },
   },
-  ownerRouting: { async resolveOwner() { return { ownerDeviceId: "owner-phone", ownerSubject: "phone-subject" }; } },
+  ownerRouting: contextDirectory,
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
@@ -526,22 +550,6 @@ if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invali
 
 // Public URL composition resolves each caller's selected context from the
 // packed server, then restores only that context's local session after reload.
-const selectedProfile = {
-  version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
-  kind: "kernel", accountIndex: "0", kernelVersion: "0.4.0",
-  factoryRoute: "kernel_factory", entryPoint: { version: "0.7" }, ownerCredential,
-};
-const contextDirectory = createServiceDirectory(createMemoryServiceDirectoryStore());
-await contextDirectory.replace({ expectedRevision: null, directory: {
-  version: "oaath.service-directory/v1",
-  applications: [{ clientId: "client-a", applicationId: "app-a", applicationName: "OAAth Packed Smoke" }],
-  workspaces: [{ workspaceId: "personal-1", kind: "personal" }, { workspaceId: "team-1", kind: "team" }],
-  memberships: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, clientId: "client-a", subject: SUBJECT })),
-  ownerDevices: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, ownerDeviceId: "owner-phone", subject: "phone-subject" })),
-  accounts: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, accountId: "account-1", ownerDeviceId: "owner-phone",
-    account: structuredClone(selectedProfile), ownerValidator: null, chainIds: [CHAIN_ID] })),
-  selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
-} });
 const contextRelay = createRelayHandler({
   ownerRouting: { async resolveOwner() { return null; } },
   store: createMemoryRelayStore(),
@@ -608,8 +616,12 @@ import {
 import {
   createMemoryGrantStoreAdapter,
 } from "@oaath/sdk/testing";
-import { createMemoryRelayStore, createRelayHandler, type RelayHandler } from "@oaath/server";
+import { createMemoryRelayStore, createRelayHandler, type RelayHandler, type ServiceDirectory, type EnrollOwnerDeviceInput } from "@oaath/server";
 import type { OwnerPhonePermissionApprovals } from "@oaath/server/native";
+
+export function enrollPhone(directory: ServiceDirectory, enrollment: EnrollOwnerDeviceInput): Promise<boolean> {
+  return directory.enrollOwnerDevice(enrollment);
+}
 
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
 
@@ -693,7 +705,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      connect, native phone consent/signing/decision, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
+    "  golden path      phone enrollment, connect, native phone consent/signing/decision, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

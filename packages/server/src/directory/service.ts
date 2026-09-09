@@ -10,7 +10,12 @@ import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayBootstrapConfiguration, RelayBootstrapSelection } from "../relay/handler.js";
 import type { RelayCaller } from "../security/authentication.js";
-import { parseServiceDirectory, type ServiceDirectoryDocument } from "./records.js";
+import {
+  type DirectoryAccount,
+  type DirectoryOwnerDevice,
+  parseServiceDirectory,
+  type ServiceDirectoryDocument,
+} from "./records.js";
 
 export interface ServiceDirectorySnapshot {
   readonly revision: number;
@@ -27,6 +32,13 @@ export interface ServiceDirectoryStore {
   ): Promise<boolean>;
 }
 
+/** Deployment-authenticated pairing result; contains public identity only. */
+export interface EnrollOwnerDeviceInput {
+  readonly expectedRevision: number;
+  readonly device: Readonly<DirectoryOwnerDevice>;
+  readonly accounts: readonly Readonly<DirectoryAccount>[];
+}
+
 export interface ServiceDirectory extends RelayBootstrapConfiguration, RelayOwnerRouting {
   read(): Promise<Readonly<ServiceDirectorySnapshot> | null>;
   /** Deployment administration capability, never an unauthenticated HTTP endpoint. */
@@ -34,6 +46,13 @@ export interface ServiceDirectory extends RelayBootstrapConfiguration, RelayOwne
     readonly expectedRevision: number | null;
     readonly directory: unknown;
   }): Promise<boolean>;
+  /**
+   * Atomically enroll a new P-256 phone and its Kernel accounts in one workspace.
+   * The deployment authenticates pairing and assigns the owner subject first.
+   * No membership, authentication credential, or onchain operation is created.
+   * False means the expected revision lost; read before a fresh admin decision.
+   */
+  enrollOwnerDevice(input: Readonly<EnrollOwnerDeviceInput>): Promise<boolean>;
   /** False means a concurrent directory write won; read current state before choosing again. */
   selectAccount(
     caller: Readonly<RelayCaller>,
@@ -42,7 +61,11 @@ export interface ServiceDirectory extends RelayBootstrapConfiguration, RelayOwne
 }
 
 /**
- * Owns membership/account selection over one versioned directory document.
+ * Owns membership/account selection and atomic phone enrollment over one
+ * versioned directory document. Enrollment moves absent device/accounts to
+ * jointly registered identities; it cannot overwrite them. Its single CAS is
+ * the persisted evidence and cleanup owner: a lost response causes no retry,
+ * and a recreated reader sees the whole enrollment or none of it.
  * Writes use compare-and-swap; bootstrap/admission reads never reserve resources.
  * A reload reads durable state afresh. Member removal blocks new admission but
  * does not revoke grants or delete operation evidence. The deployment owns store
@@ -141,6 +164,53 @@ export function createServiceDirectory(store: ServiceDirectoryStore): Readonly<S
         input.expectedRevision,
         parseServiceDirectory(input.directory, "relay_request_invalid"),
       );
+    },
+    async enrollOwnerDevice(input): Promise<boolean> {
+      // Configuration is copied before the first await. The directory codec
+      // below captures the complete proposed durable document once.
+      const enrollment = structuredClone(input);
+      if (
+        !Number.isSafeInteger(enrollment.expectedRevision) ||
+        enrollment.expectedRevision < 1 ||
+        enrollment.expectedRevision === Number.MAX_SAFE_INTEGER
+      ) {
+        return relayFailure("relay_request_invalid", "expected directory revision is invalid");
+      }
+      const snapshot = await read();
+      if (snapshot === null)
+        return relayFailure("relay_not_found", "service directory is not initialized");
+      if (snapshot.revision !== enrollment.expectedRevision) return false;
+      // Appending lets the directory codec reject existing identities instead
+      // of silently replacing a phone, account, or another workspace's facts.
+      const proposed = parseServiceDirectory(
+        {
+          ...snapshot.directory,
+          ownerDevices: [...snapshot.directory.ownerDevices, enrollment.device],
+          accounts: [...snapshot.directory.accounts, ...enrollment.accounts],
+        },
+        "relay_request_invalid",
+      );
+      const device = proposed.ownerDevices.at(-1);
+      const accounts = proposed.accounts.slice(snapshot.directory.accounts.length);
+      const owner = accounts[0]?.account.ownerCredential;
+      if (
+        !device ||
+        owner?.kind !== "p256" ||
+        accounts.some(
+          (account) =>
+            account.workspaceId !== device.workspaceId ||
+            account.ownerDeviceId !== device.ownerDeviceId ||
+            account.account.factoryRoute !== "kernel_factory" ||
+            account.account.ownerCredential.kind !== "p256" ||
+            account.account.ownerCredential.publicKey !== owner.publicKey,
+        )
+      ) {
+        return relayFailure(
+          "relay_request_invalid",
+          "phone accounts must bind one workspace, device, and P-256 owner",
+        );
+      }
+      return store.compareAndSwap(enrollment.expectedRevision, proposed);
     },
     async selectAccount(caller, selection): Promise<boolean> {
       const fail = (message: string): never => relayFailure("relay_request_invalid", message);

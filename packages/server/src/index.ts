@@ -45,6 +45,7 @@ export type {
 } from "./directory/records.js";
 export { OAATH_SERVICE_DIRECTORY_VERSION } from "./directory/records.js";
 export type {
+  EnrollOwnerDeviceInput,
   ServiceDirectory,
   ServiceDirectorySnapshot,
   ServiceDirectoryStore,

@@ -15,6 +15,16 @@ explicit tap.
 pnpm --filter @oaath/examples example:phone
 ```
 
+After the one-shot pairing check, the example registers the phone and its
+P-256 Kernel account through `ServiceDirectory.enrollOwnerDevice`. The example
+configures one personal workspace; the same public service operation supports
+team workspaces. Account routing reads the committed registration. Pairing
+codes, bearer issuance, and APNs delivery remain deployment wiring, and this
+example's directory is in memory. PostgreSQL enrollment durability is covered
+by the server's independent-connection tests. The page still uses its standalone
+Kernel-signing/operation demo flow; the packed SDK consumer proves canonical
+permission approval after enrollment.
+
 The page has one **Pair phone** action plus four account actions:
 
 1. **Unlock account** reads the paired, chain-independent CREATE2 account

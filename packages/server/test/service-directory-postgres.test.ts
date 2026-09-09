@@ -4,7 +4,13 @@ import {
   createPostgresServiceDirectorySchema,
   createPostgresServiceDirectoryStore,
 } from "../src/postgres.js";
-import { directoryDocument, member, permissionScope } from "./support-directory.js";
+import {
+  directoryDocument,
+  member,
+  permissionScope,
+  phoneEnrollment,
+  unenrolledDirectory,
+} from "./support-directory.js";
 import {
   createPostgresFixture,
   type PostgresFixture,
@@ -91,6 +97,81 @@ import {
     expect(snapshot.directory.applications[0]?.applicationName).toBe(
       results[0] ? "Example" : "Updated",
     );
+  });
+
+  it("atomically enrolls one competing phone and restores it after all writers are recreated", async () => {
+    const onePool = fixture.createPool();
+    const twoPool = fixture.createPool();
+    let one: ReturnType<typeof createServiceDirectory> | null = createServiceDirectory(
+      createPostgresServiceDirectoryStore({ pool: onePool }),
+    );
+    let two: ReturnType<typeof createServiceDirectory> | null = createServiceDirectory(
+      createPostgresServiceDirectoryStore({ pool: twoPool }),
+    );
+    await one.replace({ expectedRevision: null, directory: unenrolledDirectory() });
+    const candidates = [phoneEnrollment(), phoneEnrollment("team-1")];
+    const results = await Promise.all([
+      one.enrollOwnerDevice(candidates[0]!),
+      two.enrollOwnerDevice(candidates[1]!),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const winner = candidates[results[0] ? 0 : 1]!;
+    one = null;
+    two = null;
+    await onePool.end();
+    await twoPool.end();
+    const restored = createServiceDirectory(
+      createPostgresServiceDirectoryStore({ pool: fixture.createPool() }),
+    );
+    const snapshot = (await restored.read())!;
+    expect(snapshot.revision).toBe(2);
+    expect(snapshot.directory.ownerDevices).toEqual([winner.device]);
+    expect(snapshot.directory.accounts).toEqual(winner.accounts);
+    const caller = member(winner.device.workspaceId === "personal-1" ? "subject-1" : "subject-2");
+    expect((await restored.resolve(caller))?.account).toEqual(winner.accounts[0]!.account);
+    const requestedScope = JSON.parse(permissionScope(winner.device.workspaceId));
+    requestedScope.logicalAccount = winner.accounts[0]!.account;
+    expect(
+      await restored.resolveOwner(caller, {
+        requestId: "restored-enrollment",
+        requestedScope: JSON.stringify(requestedScope),
+      }),
+    ).toEqual({ ownerDeviceId: winner.device.ownerDeviceId, ownerSubject: winner.device.subject });
+  });
+
+  it("retains a committed enrollment after a lost write response without retrying it", async () => {
+    const pool = fixture.createPool();
+    const seed = createServiceDirectory(createPostgresServiceDirectoryStore({ pool }));
+    await seed.replace({ expectedRevision: null, directory: unenrolledDirectory() });
+    let writes = 0;
+    const interrupted = new Proxy(pool, {
+      get(target, property) {
+        if (property !== "query") return Reflect.get(target, property);
+        return async (...args: unknown[]) => {
+          const result = await Reflect.apply(target.query, target, args);
+          if (typeof args[0] === "string" && args[0].startsWith("UPDATE")) {
+            writes += 1;
+            throw new Error("injected connection loss after enrollment commit");
+          }
+          return result;
+        };
+      },
+    });
+    const writer = createServiceDirectory(
+      createPostgresServiceDirectoryStore({ pool: interrupted }),
+    );
+    const enrollment = phoneEnrollment();
+    await expect(writer.enrollOwnerDevice(enrollment)).rejects.toMatchObject({
+      code: "relay_state_ambiguous",
+    });
+    expect(writes).toBe(1);
+    const reader = createServiceDirectory(
+      createPostgresServiceDirectoryStore({ pool: fixture.createPool() }),
+    );
+    const snapshot = (await reader.read())!;
+    expect(snapshot.directory.ownerDevices).toEqual([enrollment.device]);
+    expect(snapshot.directory.accounts).toEqual(enrollment.accounts);
+    expect(await reader.enrollOwnerDevice(enrollment)).toBe(false);
   });
 
   it("observes membership removal from an independently connected resolver", async () => {

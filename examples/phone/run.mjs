@@ -20,6 +20,7 @@ import {
   deriveCodeChallenge,
   hashCanonicalEip712TypedData,
   hashOwnerSigningRequest,
+  OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_SIGNING_REQUEST_VERSION,
   parseOwnerSigningRequest,
@@ -41,7 +42,12 @@ import {
   p256Key,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
+import {
+  createMemoryRelayStore,
+  createMemoryServiceDirectoryStore,
+  createRelayHandler,
+  createServiceDirectory,
+} from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
 import { sponsorUserOperation as sponsorZeroDevUserOperation } from "@zerodev/sdk";
 import { build } from "esbuild";
@@ -253,10 +259,40 @@ const authentication = {
     return null;
   },
 };
+// The deployment authenticates pairing; the service directory owns the
+// resulting phone/account registration. This demo configures one workspace.
+const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+await directory.replace({
+  expectedRevision: null,
+  directory: {
+    version: "oaath.service-directory/v1",
+    applications: [
+      { clientId: CLIENT_ID, applicationId: "phone-demo", applicationName: "OAAth Phone Demo" },
+    ],
+    workspaces: [{ workspaceId: "personal-1", kind: "personal" }],
+    memberships: [{ workspaceId: "personal-1", clientId: CLIENT_ID, subject: "demo-member" }],
+    ownerDevices: [],
+    accounts: [],
+    selections: [
+      {
+        workspaceId: "personal-1",
+        accountId: "account-1",
+        clientId: CLIENT_ID,
+        subject: "demo-member",
+      },
+    ],
+  },
+});
 const relayHandler = createRelayHandler({
   ownerRouting: {
+    // This example still requests standalone Kernel signing. Canonical
+    // permission integrations pass the directory itself as ownerRouting.
     async resolveOwner() {
-      return { ownerDeviceId: "demo-owner-phone", ownerSubject: SUBJECT };
+      const snapshot = await directory.read();
+      const device = snapshot?.directory.ownerDevices.find(
+        (entry) => entry.workspaceId === "personal-1" && entry.ownerDeviceId === "demo-owner-phone",
+      );
+      return device ? { ownerDeviceId: device.ownerDeviceId, ownerSubject: device.subject } : null;
     },
   },
   store,
@@ -333,6 +369,29 @@ async function handlePairing(body, outgoing) {
     return refusal(outgoing, 401, "pairing_invalid");
   }
   const account = await bindOwner(value.publicKey);
+  const enrolled = await directory.enrollOwnerDevice({
+    expectedRevision: 1,
+    device: { workspaceId: "personal-1", ownerDeviceId: "demo-owner-phone", subject: SUBJECT },
+    accounts: [
+      {
+        workspaceId: "personal-1",
+        accountId: "account-1",
+        ownerDeviceId: "demo-owner-phone",
+        account: {
+          version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+          kind: "kernel",
+          accountIndex: "0",
+          kernelVersion: "0.4.0",
+          factoryRoute: "kernel_factory",
+          entryPoint: { version: "0.7" },
+          ownerCredential: pairedP256Credential(value.publicKey),
+        },
+        ownerValidator: null,
+        chainIds: [CHAIN_ID],
+      },
+    ],
+  });
+  expect(enrolled, "phone_enrollment_conflict");
   const credential = randomBytes(32).toString("base64url");
   activeDevice = {
     credential,
@@ -1540,6 +1599,23 @@ async function simulate() {
   expect(
     (await relayCall("GET", "/demo/account", null)).account === pair.account,
     "unlock changed the account",
+  );
+
+  const enrolled = await directory.resolve({
+    role: "client",
+    clientId: CLIENT_ID,
+    subject: "demo-member",
+    redirectUris: [redirectUri],
+    organizationAudience: null,
+  });
+  expect(
+    enrolled?.account.ownerCredential.kind === "p256" &&
+      enrolled.account.ownerCredential.publicKey === pairedP256Credential(publicMaterial).publicKey,
+    "paired phone key was not registered with its account",
+  );
+  expect(
+    enrolled.context.workspaceId === "personal-1" && enrolled.context.accountId === "account-1",
+    "paired account lost its workspace context",
   );
 
   // The pull inbox is an authenticated read-only projection of the existing
