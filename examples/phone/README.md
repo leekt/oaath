@@ -63,13 +63,15 @@ or an approved request recovery. Its in-memory operation adapter is explicitly
 ephemeral alongside Anvil; a lasting deployment uses the existing PostgreSQL
 adapter. A failed attempt remains pending; approval alone is never completion.
 
-The default phone transport is the authenticated pull inbox. The loopback page
-alone can reveal its one-time pairing secret. The relay listens on the LAN for
-the phone; `OAATH_HOST`, `OAATH_PORT`, and `OAATH_PHONE_WAIT_MS` control its bind
+The default phone transport is the authenticated `GET /native/inbox`. Pending
+consent comes from the relay request and decision records, with no separate
+inbox map or delivery flag. The loopback page alone can reveal its one-time
+pairing secret. The relay listens on the LAN for the phone; `OAATH_HOST`, `OAATH_PORT`, and `OAATH_PHONE_WAIT_MS` control its bind
 and lifetime (five minutes by default). Optional APNs uses `APNS_KEY_PEM` or
 `APNS_KEY_PEM_PATH`, `APNS_KEY_ID`, `APPLE_TEAM_ID`, and `APNS_TOPIC`, with one
-bounded notification attempt. An `examples/.env` is loaded if present; existing
-environment values win.
+bounded notification attempt per newly created request. Polling or recovering
+an existing request does not send another notification. An `examples/.env` is
+loaded if present; existing environment values win.
 
 `OAATH_PHONE_SIMULATE=1` runs both personal and team workflows against real
 local contracts. A process-local P-256 fixture pairs over HTTP and completes

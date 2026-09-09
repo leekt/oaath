@@ -72,9 +72,15 @@ for (const workspaceKind of ["personal", "team"])
             assert.equal(consent.scope.kind, "permission-request");
             assert.equal(consent.scope.context.workspaceId, `${workspaceKind}-1`);
             assert.equal(consent.scope.context.accountId, "account-1");
-            const inbox = await (await ownerFetch("/demo/inbox")).json();
-            assert.equal(inbox.requests.length, 1);
-            assert.equal(inbox.requests[0].operationId, requestId);
+            const inbox = await (await ownerFetch("/native/inbox")).json();
+            assert.equal(inbox.version, "oaath.native-inbox/v1");
+            assert.deepEqual(inbox.requests, [
+              {
+                operationId: requestId,
+                displayPayload: consent.displayPayload,
+                expiresAt: consent.expiresAt,
+              },
+            ]);
             const signing = await (
               await ownerFetch(`/native/permission-signing/${requestId}`)
             ).json();
@@ -114,7 +120,7 @@ for (const workspaceKind of ["personal", "team"])
             });
             assert.equal(approved.status, 200, "the canonical phone decision must commit");
             approvals += 1;
-            assert.equal((await (await ownerFetch("/demo/inbox")).json()).requests.length, 0);
+            assert.equal((await (await ownerFetch("/native/inbox")).json()).requests.length, 0);
           }
           return response;
         } catch (error) {
@@ -216,12 +222,21 @@ for (const workspaceKind of ["personal", "team"])
           before,
           "consent cannot submit owner work",
         );
-        const pending = await (await ownerFetch("/demo/inbox")).json();
+        const pending = await (await ownerFetch("/native/inbox")).json();
+        assert.equal(pending.version, "oaath.native-inbox/v1");
         assert.equal(pending.requests.length, 2);
         const projections = await Promise.all(
-          pending.requests.map(async ({ operationId }) =>
-            (await ownerFetch(`/native/projections/${operationId}`)).json(),
-          ),
+          pending.requests.map(async (summary) => {
+            const projection = await (
+              await ownerFetch(`/native/projections/${summary.operationId}`)
+            ).json();
+            assert.deepEqual(summary, {
+              operationId: projection.operationId,
+              displayPayload: projection.displayPayload,
+              expiresAt: projection.expiresAt,
+            });
+            return projection;
+          }),
         );
         projections.sort((left, right) => left.scope.chainId - right.scope.chainId);
         for (const [index, projection] of projections.entries()) {
@@ -271,7 +286,7 @@ for (const workspaceKind of ["personal", "team"])
             "replay cannot resubmit",
           );
         }
-        assert.equal((await (await ownerFetch("/demo/inbox")).json()).requests.length, 0);
+        assert.equal((await (await ownerFetch("/native/inbox")).json()).requests.length, 0);
         await assert.rejects(current.sendCalls(job), { code: "oaath_client_grant_inactive" });
       }
       await revoke(grant, new Set(used ? [chainId, secondChainId] : []));

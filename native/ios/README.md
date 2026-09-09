@@ -116,7 +116,7 @@ against the documented projection/decision shapes, and a deployment injects
 one closure that moves bytes and carries the authenticated owner credential.
 Nothing in the `OwnerPhone` library reads configuration or holds credentials;
 the demo wiring (URLSession transport, pairing, bound endpoint/credential
-custody, example-owned `GET /demo/inbox`, decision settlement) lives in the
+custody, canonical relay `GET /native/inbox`, decision settlement) lives in the
 `OwnerPhoneDemo` target.
 
 ## App wiring

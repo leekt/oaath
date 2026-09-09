@@ -222,7 +222,7 @@ private final class InboxRecordingHTTP: DemoHTTP, @unchecked Sendable {
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
         lock.withLock { recorded.append(request) }
-        if request.url?.path == "/demo/inbox" { return (inboxBody, 200) }
+        if request.url?.path == "/native/inbox" { return (inboxBody, 200) }
         if request.httpMethod == "GET", request.url?.path.hasPrefix("/native/projections/") == true {
             let operationId = request.url?.lastPathComponent ?? "request"
             return (try JSONSerialization.data(
@@ -394,7 +394,7 @@ final class DemoRelayEndpointTests: XCTestCase {
 
         let inbox = endpoint.inboxRequest(credential: "cred")
         XCTAssertEqual(inbox.httpMethod, "GET")
-        XCTAssertEqual(inbox.url?.absoluteString, "http://192.168.1.20:8787/demo/inbox")
+        XCTAssertEqual(inbox.url?.absoluteString, "http://192.168.1.20:8787/native/inbox")
         XCTAssertEqual(inbox.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
 
         let projection = endpoint.projectionRequest(operationId: "req-1", credential: "cred")
@@ -502,7 +502,7 @@ final class DemoInboxCodecTests: XCTestCase {
         ])
         let items = try decodeDemoInbox(data)
         XCTAssertNoThrow(try decodeDemoInbox(
-            Data(#"{"requests":[],"version":"oaath.demo-inbox/v1"}"#.utf8)))
+            Data(#"{"requests":[],"version":"oaath.native-inbox/v1"}"#.utf8)))
         XCTAssertEqual(items.map(\.operationId), ["request-a", "request-b"])
         XCTAssertEqual(items.map(\.matchCode.value), ["AAAA1111", "BBBB2222"])
         XCTAssertEqual(items.map(\.expiresAt), [1_900_000_000_000, 1_900_000_000_001])
@@ -529,11 +529,11 @@ final class DemoInboxCodecTests: XCTestCase {
         let malformed = [
             Data(),
             Data("[]".utf8),
-            Data(#"{"extra":true,"requests":[],"version":"oaath.demo-inbox/v1"}"#.utf8),
+            Data(#"{"extra":true,"requests":[],"version":"oaath.native-inbox/v1"}"#.utf8),
             Data(validText.replacingOccurrences(of: "AAAA1111", with: "short").utf8),
             Data(validText.replacingOccurrences(of: "request-a", with: "bad/request").utf8),
             Data(validText.replacingOccurrences(of: "1900000000000", with: "true").utf8),
-            Data("{\"requests\":[],\"version\":\"oaath.demo-inbox/v1\",\"version\":\"oaath.demo-inbox/v1\"}".utf8),
+            Data("{\"requests\":[],\"version\":\"oaath.native-inbox/v1\",\"version\":\"oaath.native-inbox/v1\"}".utf8),
             Data(repeating: 0x20, count: 8_193)
         ]
         for (index, data) in malformed.enumerated() {
@@ -569,7 +569,7 @@ final class DemoInboxCodecTests: XCTestCase {
                 body: try inboxResponse([("request-a", "AAAA1111", 1_900_000_000_000)]),
                 recorder: recorder))
         XCTAssertEqual(items.map(\.operationId), ["request-a"])
-        XCTAssertEqual(recorder.requests.first?.url?.absoluteString, "http://relay.example:8787/demo/inbox")
+        XCTAssertEqual(recorder.requests.first?.url?.absoluteString, "http://relay.example:8787/native/inbox")
         XCTAssertEqual(
             recorder.requests.first?.value(forHTTPHeaderField: "Authorization"),
             "Bearer \(deviceCredentialA)")
@@ -1443,7 +1443,7 @@ final class DemoPairingIdentityTests: XCTestCase {
 
         XCTAssertEqual(
             http.requests().map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" },
-            ["GET /demo/inbox", "GET /native/projections/request-a"])
+            ["GET /native/inbox", "GET /native/projections/request-a"])
         XCTAssertFalse(http.requests().contains {
             $0.httpMethod == "POST" && $0.url?.path.hasPrefix("/native/decisions/") == true
         })
