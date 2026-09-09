@@ -293,12 +293,6 @@ function authorized(request: Request, token: string): Request {
 }
 
 export interface OwnerDecision {
-  /** `reject` records a terminal rejection instead of an approval. */
-  readonly outcome?: "approve" | "reject";
-  /** Replaces the approved policy, for attenuation or widening attempts. */
-  readonly policy?: (requested: unknown) => unknown;
-  /** Replaces the decision envelope entirely, for hostile artifacts. */
-  readonly artifact?: (decision: Record<string, unknown>) => unknown;
   /** Test-only non-ECDSA operator identity the owner reviewed. */
   readonly operatorKey?: Readonly<KeyProfile>;
 }
@@ -395,39 +389,28 @@ export function createOwnerAuthorization(
         ).json()) as { readonly requestedScope: string };
         const scope = JSON.parse(state.requestedScope) as Record<string, unknown>;
         const full = { ...scope, requestId: request.requestId };
-        let decision: Record<string, unknown>;
-        if (options.outcome === "reject") {
-          decision = {
-            version: OAATH_PERMISSION_DECISION_VERSION,
-            kind: "reject",
-            requestId: request.requestId,
-            requestHash: hashPermissionRequest(full),
-            decidedAt: clock.now(),
-          };
-        } else {
-          const approvedPolicy = options.policy ? options.policy(scope.policy) : scope.policy;
-          const operator = parseOperatorCredentialProfile(scope.operatorCredential);
-          const installApproval = await ownerInstallApproval(
-            reads,
-            approvedPolicy,
-            operator,
-            options.operatorKey,
-            validator,
-          );
-          decision = {
-            version: OAATH_PERMISSION_DECISION_VERSION,
-            kind: "approve",
-            requestId: request.requestId,
-            requestHash: hashPermissionRequest(full),
-            decidedAt: clock.now(),
-            approvedPolicy,
-            capabilityHash: kernelAllChainCapabilityHash(installApproval),
-            installApproval,
-          };
-        }
+        const approvedPolicy = scope.policy;
+        const operator = parseOperatorCredentialProfile(scope.operatorCredential);
+        const installApproval = await ownerInstallApproval(
+          reads,
+          approvedPolicy,
+          operator,
+          options.operatorKey,
+          validator,
+        );
+        const decision = {
+          version: OAATH_PERMISSION_DECISION_VERSION,
+          kind: "approve",
+          requestId: request.requestId,
+          requestHash: hashPermissionRequest(full),
+          decidedAt: clock.now(),
+          approvedPolicy,
+          capabilityHash: kernelAllChainCapabilityHash(installApproval),
+          installApproval,
+        };
         const body = {
           outcome: "approved",
-          artifact: JSON.stringify(options.artifact ? options.artifact(decision) : decision),
+          artifact: JSON.stringify(decision),
         };
         const decided = (await (
           await relay(
@@ -963,6 +946,8 @@ export interface RealmOptions {
   readonly chains?: readonly ChainFixture[];
   readonly binding?: unknown;
   readonly owner?: OwnerDecision;
+  /** Replaces only the claimed wire artifact, after a valid relay approval. */
+  readonly claimedArtifact?: (decision: Record<string, unknown>) => unknown;
   /** ECDSA validator deployed by a real local chain fixture. */
   readonly validator?: `0x${string}`;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
@@ -1006,7 +991,23 @@ export function createRealm(options: RealmOptions = {}): Realm {
     binding: options.binding ?? bindingInput,
     issuer: {
       url: ISSUER_URL,
-      fetch: (request: Request) => relay(authorized(request, CLIENT_TOKEN)),
+      fetch: async (request: Request) => {
+        const response = await relay(authorized(request, CLIENT_TOKEN));
+        if (
+          !options.claimedArtifact ||
+          !response.ok ||
+          !new URL(request.url).pathname.endsWith("/claim")
+        )
+          return response;
+        const claimed = await response.json();
+        return new Response(
+          JSON.stringify({
+            ...claimed,
+            artifact: JSON.stringify(options.claimedArtifact(JSON.parse(claimed.artifact))),
+          }),
+          { status: response.status, headers: response.headers },
+        );
+      },
       signOut:
         options.issuerSignOut === undefined
           ? async () => {
