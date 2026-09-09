@@ -40,6 +40,7 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
  */
 const SMOKE = `
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
+import { requestOwnerPhoneRevocation } from "@oaath/server/native";
 import {
   createOAAth,
 } from "@oaath/sdk";
@@ -78,6 +79,7 @@ import {
   hashOwnerSigningRequest,
   hashPermissionRequest,
   hashKernelV4RevocationSigningRequest,
+  serializeOwnerSigningArtifact,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -179,6 +181,15 @@ for (const [workspaceId, expectedRevision] of [["personal-1", 1], ["team-1", 2]]
 }
 
 let approvedPermissionPolicy;
+const relayStore = createMemoryRelayStore();
+const relayKms = {
+  async encrypt(plaintext) { return KMS_PREFIX + btoa(plaintext); },
+  async decrypt(reference) {
+    if (!reference.startsWith(KMS_PREFIX)) fail("unknown ciphertext reference");
+    return atob(reference.slice(KMS_PREFIX.length));
+  },
+};
+const relayClock = { now: () => clock * 1000 };
 const relay = createRelayHandler({
   permissionApprovals: {
     async prepare(request) {
@@ -204,7 +215,7 @@ const relay = createRelayHandler({
     },
   },
   ownerRouting: contextDirectory,
-  store: createMemoryRelayStore(),
+  store: relayStore,
   authentication: {
     async authenticate(request) {
       const header = request.headers.get("authorization") ?? "";
@@ -212,17 +223,8 @@ const relay = createRelayHandler({
       return callers.get(token) ?? null;
     },
   },
-  kms: {
-    async encrypt(plaintext) {
-      return KMS_PREFIX + btoa(plaintext);
-    },
-    async decrypt(reference) {
-      if (!reference.startsWith(KMS_PREFIX)) fail("unknown ciphertext reference");
-      return atob(reference.slice(KMS_PREFIX.length));
-    },
-  },
-  // The relay clock is milliseconds; the protocol clock is seconds.
-  clock: { now: () => clock * 1000 },
+  kms: relayKms,
+  clock: relayClock,
 });
 
 function authorized(request, token) {
@@ -493,6 +495,35 @@ const grant = await connection.requestPermission({
 });
 
 if (grant.state !== "active") fail("Grant state is " + grant.state);
+
+// Public packed SDK -> durable service -> phone transport. The grant artifact
+// has already been claimed by the browser; preparation reads retained custody.
+const sendsBeforeRevocation = sends.length;
+const revocation = await requestOwnerPhoneRevocation({
+  store: relayStore, kms: relayKms, clock: relayClock, directory: contextDirectory,
+  caller: callers.get(CLIENT_TOKEN), grantId: ownerRequests[0], chainId: CHAIN_ID, requestTtlMs: 60000,
+  async prepare({ request, artifact, chainId }) {
+    const approved = JSON.parse(artifact);
+    return (await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
+      chainId, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
+      gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" },
+    })).signingRequest;
+  },
+});
+const revocationConsent = await relayJson("/native/projections/" + revocation.operationId, OWNER_TOKEN);
+if (revocationConsent.scope?.kind !== "kernel-revocation" || revocationConsent.client.redirectUri !== null) fail("revocation consent was not projected");
+const phoneRevocationArtifact = serializeOwnerSigningArtifact({ version: "oaath.owner-signing-artifact/v1", kind: "p256",
+  requestHash: revocationConsent.scope.requestHash,
+  signature: bytesToHex(p256.sign(hexToBytes(revocationConsent.scope.expectedDigest), phoneKey, { prehash: false, lowS: true }).toCompactRawBytes()),
+});
+const decideRevocation = (command) => relayJson("/native/revocation-decisions/" + revocation.operationId, OWNER_TOKEN, {
+  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command),
+});
+const revocationDecision = await decideRevocation({ command: "approve", artifact: phoneRevocationArtifact });
+if (revocationDecision.version !== "oaath.native-revocation-decision/v1" || revocationDecision.outcome !== "approved" || revocationDecision.settlement !== "decided" || "release" in revocationDecision) fail("revocation custody decision failed");
+const revocationReplay = await decideRevocation({ command: "reject" });
+if (revocationReplay.outcome !== "approved" || revocationReplay.settlement !== "replayed" || sends.length !== sendsBeforeRevocation) fail("revocation replay changed custody or submitted");
+
 // The real SDK-completed phone artifact has already been claimed. Verification
 // reads that same retained approval; it neither consumes nor releases it again.
 const approvedReference = await relayJson("/grants/verify", CLIENT_TOKEN, {
@@ -737,7 +768,9 @@ import {
   createMemoryGrantStoreAdapter,
 } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler, type RelayHandler, type ServiceDirectory, type EnrollOwnerDeviceInput } from "@oaath/server";
-import type { OwnerPhonePermissionApprovals } from "@oaath/server/native";
+import { requestOwnerPhoneRevocation, type OwnerPhonePermissionApprovals, type RequestOwnerPhoneRevocationInput } from "@oaath/server/native";
+
+export const enqueueRevocation: (input: RequestOwnerPhoneRevocationInput) => Promise<Readonly<{ operationId: string; expiresAt: number }>> = requestOwnerPhoneRevocation;
 
 export function enrollPhone(directory: ServiceDirectory, enrollment: EnrollOwnerDeviceInput): Promise<boolean> {
   return directory.enrollOwnerDevice(enrollment);
@@ -830,7 +863,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      phone enrollment, native approval, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
+    "  golden path      phone enrollment, native approval, durable revocation custody/replay, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

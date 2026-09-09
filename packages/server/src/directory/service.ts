@@ -10,6 +10,7 @@ import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayBootstrapConfiguration, RelayBootstrapSelection } from "../relay/handler.js";
 import type { RelayCaller } from "../security/authentication.js";
+import type { AuthorizationOwnerRoute } from "../store/records.js";
 import {
   type DirectoryAccount,
   type DirectoryOwnerDevice,
@@ -41,6 +42,11 @@ export interface EnrollOwnerDeviceInput {
 
 export interface ServiceDirectory extends RelayBootstrapConfiguration, RelayOwnerRouting {
   read(): Promise<Readonly<ServiceDirectorySnapshot> | null>;
+  /** Admission for the original permission context, restricted to its configured chains. */
+  resolveRevocationOwner(
+    caller: Readonly<RelayCaller>,
+    input: Readonly<{ requestId: string; requestedScope: string; chainId: number }>,
+  ): Promise<Readonly<AuthorizationOwnerRoute> | null>;
   /** Deployment administration capability, never an unauthenticated HTTP endpoint. */
   replace(input: {
     readonly expectedRevision: number | null;
@@ -112,44 +118,51 @@ export function createServiceDirectory(store: ServiceDirectoryStore): Readonly<S
       )
     );
   }
+  async function resolveOwner(
+    caller: Readonly<RelayCaller>,
+    input: Readonly<{ requestId: string; requestedScope: string }>,
+    chainId?: number,
+  ): Promise<Readonly<AuthorizationOwnerRoute> | null> {
+    const scope = classifyStoredAuthorizationScope(input.requestedScope, input.requestId);
+    if (scope.kind !== "permission-request") return null;
+    const request = scope.request;
+    const snapshot = await read();
+    if (snapshot === null || !assigned(snapshot.directory, caller, request.context.workspaceId))
+      return null;
+    const directory = snapshot.directory;
+    const workspace = directory.workspaces.find(
+      (entry) => entry.workspaceId === request.context.workspaceId,
+    );
+    const application = directory.applications.find((entry) => entry.clientId === caller.clientId);
+    const account = directory.accounts.find(
+      (entry) =>
+        entry.workspaceId === request.context.workspaceId &&
+        entry.accountId === request.context.accountId,
+    );
+    if (
+      !workspace ||
+      !application ||
+      !account ||
+      (chainId !== undefined && !account.chainIds.includes(chainId)) ||
+      workspace.kind !== request.context.workspaceKind ||
+      application.applicationId !== request.application.applicationId ||
+      caller.clientId !== request.application.clientId ||
+      JSON.stringify(account.account) !== JSON.stringify(request.logicalAccount)
+    )
+      return null;
+    const device = directory.ownerDevices.find(
+      (entry) =>
+        entry.workspaceId === workspace.workspaceId &&
+        entry.ownerDeviceId === account.ownerDeviceId,
+    );
+    if (!device) return null;
+    return Object.freeze({ ownerDeviceId: device.ownerDeviceId, ownerSubject: device.subject });
+  }
   return Object.freeze<ServiceDirectory>({
     read,
-    async resolveOwner(caller, input) {
-      const scope = classifyStoredAuthorizationScope(input.requestedScope, input.requestId);
-      if (scope.kind !== "permission-request") return null;
-      const request = scope.request;
-      const snapshot = await read();
-      if (snapshot === null || !assigned(snapshot.directory, caller, request.context.workspaceId))
-        return null;
-      const directory = snapshot.directory;
-      const workspace = directory.workspaces.find(
-        (entry) => entry.workspaceId === request.context.workspaceId,
-      );
-      const application = directory.applications.find(
-        (entry) => entry.clientId === caller.clientId,
-      );
-      const account = directory.accounts.find(
-        (entry) =>
-          entry.workspaceId === request.context.workspaceId &&
-          entry.accountId === request.context.accountId,
-      );
-      if (
-        !workspace ||
-        !application ||
-        !account ||
-        workspace.kind !== request.context.workspaceKind ||
-        application.applicationId !== request.application.applicationId ||
-        caller.clientId !== request.application.clientId ||
-        JSON.stringify(account.account) !== JSON.stringify(request.logicalAccount)
-      )
-        return null;
-      const device = directory.ownerDevices.find(
-        (entry) =>
-          entry.workspaceId === workspace.workspaceId &&
-          entry.ownerDeviceId === account.ownerDeviceId,
-      );
-      if (!device) return null;
-      return Object.freeze({ ownerDeviceId: device.ownerDeviceId, ownerSubject: device.subject });
+    resolveOwner,
+    resolveRevocationOwner(caller, input) {
+      return resolveOwner(caller, input, input.chainId);
     },
     async replace(input): Promise<boolean> {
       if (

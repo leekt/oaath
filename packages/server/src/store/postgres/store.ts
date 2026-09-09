@@ -13,6 +13,10 @@
 import type { Pool, PoolClient } from "pg";
 import pg from "pg";
 import { relayFailure } from "../../relay/errors.js";
+import {
+  parseRevocationDecisionRecord,
+  parseRevocationRequestRecord,
+} from "../../revocation/records.js";
 import type { RelayStore, RelayTransaction } from "../interface.js";
 import {
   type AuthorizationCodeRecord,
@@ -34,12 +38,16 @@ import {
   INSERT_AUTHORIZATION_REQUEST,
   INSERT_CAPABILITY_INVALIDATION,
   INSERT_ENCRYPTED_ARTIFACT,
+  INSERT_REVOCATION_DECISION,
+  INSERT_REVOCATION_REQUEST,
   LOCK_AUTHORIZATION_CODE,
   LOCK_AUTHORIZATION_DECISION,
   LOCK_AUTHORIZATION_REQUEST,
   LOCK_CAPABILITY_INVALIDATION,
   LOCK_ENCRYPTED_ARTIFACT,
   LOCK_ENCRYPTED_ARTIFACT_BY_REQUEST_ID,
+  LOCK_REVOCATION_DECISION,
+  LOCK_REVOCATION_REQUEST,
 } from "./queries.js";
 
 export type PostgresRelayStoreOptions =
@@ -158,6 +166,22 @@ function createTransaction(client: PoolClient): RelayTransaction {
   }
 
   return {
+    lockRevocationRequest(operationId) {
+      return first(LOCK_REVOCATION_REQUEST, [operationId], (row) =>
+        parseRevocationRequestRecord(row.record),
+      );
+    },
+    insertRevocationRequest(record) {
+      return inserted(INSERT_REVOCATION_REQUEST, [record.operationId, JSON.stringify(record)]);
+    },
+    lockRevocationDecision(operationId) {
+      return first(LOCK_REVOCATION_DECISION, [operationId], (row) =>
+        parseRevocationDecisionRecord(row.record),
+      );
+    },
+    insertRevocationDecision(record) {
+      return inserted(INSERT_REVOCATION_DECISION, [record.operationId, JSON.stringify(record)]);
+    },
     lockAuthorizationRequest(requestId) {
       return first(LOCK_AUTHORIZATION_REQUEST, [requestId], requestRecord);
     },

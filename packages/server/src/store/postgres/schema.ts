@@ -8,16 +8,16 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v2" as const;
+export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v3" as const;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.freeze([
-  `CREATE TABLE oaath_relay_schema_v2 (
+  `CREATE TABLE oaath_relay_schema_v3 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )`,
-  `INSERT INTO oaath_relay_schema_v2 (schema_id, version)
+  `INSERT INTO oaath_relay_schema_v3 (schema_id, version)
    VALUES ('oaath', '${OAATH_RELAY_POSTGRES_SCHEMA_VERSION}')`,
   `CREATE TABLE oaath_relay_authorization_request_v2 (
     request_id text PRIMARY KEY,
@@ -73,6 +73,14 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     ciphertext_ref text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= ${MAX_SAFE_INTEGER}),
     claimed_at bigint CHECK (claimed_at >= created_at AND claimed_at <= ${MAX_SAFE_INTEGER})
+  )`,
+  `CREATE TABLE oaath_relay_revocation_request_v1 (
+    operation_id text PRIMARY KEY,
+    record jsonb NOT NULL CHECK (record->>'operationId' = operation_id)
+  )`,
+  `CREATE TABLE oaath_relay_revocation_decision_v1 (
+    operation_id text PRIMARY KEY REFERENCES oaath_relay_revocation_request_v1 (operation_id),
+    record jsonb NOT NULL CHECK (record->>'operationId' = operation_id)
   )`,
 ]);
 

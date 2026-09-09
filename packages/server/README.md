@@ -104,6 +104,7 @@ strict Swift decoders in `native/ios/Sources/OwnerPhone/`):
 GET  /native/projections/{operationId}             owner   consent projection
 GET  /native/permission-signing/{operationId}      owner   prepared Kernel signing projection
 POST /native/decisions/{operationId}               owner   approve or reject saga
+POST /native/revocation-decisions/{operationId}    owner   revocation custody decision
 ```
 
 Canonical phone permission approval requires `RelayHandlerOptions.permissionApprovals`.
@@ -117,6 +118,23 @@ decision route. That route completes the grant through the injected helper and
 the existing one-time decision transaction. A committed retry returns the stored
 outcome before invoking preparation. An unconfigured deployment cannot approve
 canonical permissions through the native route.
+
+`requestOwnerPhoneRevocation` from `@oaath/server/native` is the deployment
+entry for revoking an approved permission on one configured chain. It admits
+the original authenticated application/member through `ServiceDirectory`, opens
+the retained approval (including after client claim or execution-policy expiry),
+and calls the deployment's `prepare({ request, artifact, chainId })` capability.
+Use `prepareKernelPhoneRevocation` from `@oaath/sdk/kernel` there to validate the
+Kernel capability and select the effect, root nonce and gas from chain state;
+return its `signingRequest`. Preparation must not sign or submit.
+
+The returned `operationId` and `expiresAt` identify an immutable stored request.
+The paired phone fetches the shared projection route and posts approve/reject
+to `revocation-decisions`. PostgreSQL preserves the exact request and sealed
+phone artifact across restart. A repeated decision answers the stored outcome,
+even after expiry or a conflicting command. Approval acknowledges custody;
+submission, finality, configured-chain orchestration and a client enqueue HTTP
+endpoint remain separate work. No OAuth code or artifact is released.
 
 Failures are `{"error":{"code":"relay_*"}}` with the status from
 `RELAY_ERROR_STATUS`. A response never carries message text, provider output, or
@@ -190,7 +208,7 @@ How an application organization/audience maps to the OAAth client/realm:
 ## Schema
 
 `createPostgresRelaySchema` creates the one current schema
-(`oaath.relay-postgres-schema/v2`). There is no migration runner: an obsolete
+(`oaath.relay-postgres-schema/v3`). There is no migration runner: an obsolete
 database is dropped and recreated.
 
 ## Tests
