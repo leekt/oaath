@@ -31,6 +31,7 @@ import { encodeAbiParameters, keccak256 } from "viem";
 import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
+  encodeKernelV4NonceKey,
   type KernelV4Install,
   kernelV4ReplayableInstallDigest,
 } from "../../kernel-v4.js";
@@ -168,16 +169,6 @@ export async function approveKernelPermissionAllChain(
 }
 
 /**
- * Spends one all-chain approval on one chain: prepares the session's first
- * operation there in `enable-replayable` mode and wraps the session signature in
- * Kernel's EnableModeSignature envelope beside the owner approval.
- *
- * The envelope lives in the signature, which no operation hash covers, so it
- * changes nothing about the prepared identity the runtime derived. Two bindings
- * are checked before any signature exists: the approval installs exactly the
- * packages this runtime validates through, and it covers exactly this account.
- */
-/**
  * Captures one stored or wire-delivered all-chain approval exactly. The digest
  * is recomputed rather than trusted: an approval whose digest no longer matches
  * its own account, nonce and packages is contradictory evidence, and the owner
@@ -240,34 +231,107 @@ export function kernelAllChainCapabilityHash(
   );
 }
 
-function prepareKernelPermission(value: MaterializeKernelPermissionInput): Readonly<{
-  prepared: PreparedUserOperation;
-  installNonce: string;
-  packages: readonly Readonly<KernelV4Install>[];
-  enableSignature: `0x${string}`;
-}> {
-  const approval = parseKernelAllChainApproval(value.approval);
-  const scope = approval;
-
-  const runtimePackages = captureKernelV4Installs(value.runtime.packages);
+/**
+ * Internal composition over an already captured approval and composed runtime.
+ * Owns the approval binding, enable preparation and both signature envelopes.
+ * Preparation never signs: the client can persist its final sponsored snapshot
+ * before calling signOperation. The public one-shot helper uses the same owner.
+ */
+export function bindKernelPermissionApproval(
+  value: Readonly<{
+    runtime: Readonly<KernelRuntime>;
+    approval: Readonly<KernelAllChainApproval>;
+    account: `0x${string}`;
+  }>,
+) {
+  const { runtime, approval } = value;
+  const runtimePackages = runtime.packages;
   if (
-    runtimePackages.length !== scope.packages.length ||
+    approval.account !== value.account ||
+    runtimePackages.length !== approval.packages.length ||
     !runtimePackages.every((install, index) => {
-      const approved = scope.packages[index];
+      const approved = approval.packages[index];
       return approved !== undefined && sameInstall(install, approved);
     })
   ) {
     return runtimeFail(
       "kernel_runtime_binding_mismatch",
-      "Kernel all-chain approval does not install this runtime's permission",
+      "Kernel all-chain approval does not bind this account and permission runtime",
     );
   }
 
-  // prepareOperation owns exact capture of the descriptor, calls, gas and nonce;
-  // this axis only binds the enable mode and the envelope.
-  const prepared = value.runtime.prepareOperation({
+  function envelope(userOperationSignature: `0x${string}`): `0x${string}` {
+    return encodeKernelV4EnableSignature({
+      nonce: approval.installNonce,
+      packages: approval.packages,
+      enableSignature: approval.enableSignature,
+      userOperationSignature,
+    });
+  }
+
+  // The runtime/operation store already captures the prepared snapshot. This
+  // owner binds only the materialization facts; runtime signing still verifies
+  // its chain, EntryPoint, hash and permission authority.
+  function requireMaterialization(prepared: Readonly<PreparedUserOperation>): void {
+    const nonce = BigInt(prepared.userOperation.nonce);
+    if (
+      prepared.kind !== "execution" ||
+      prepared.userOperation.sender !== approval.account ||
+      (nonce >> 64n).toString(10) !==
+        encodeKernelV4NonceKey({
+          mode: "enable-replayable",
+          validation: runtime.validation,
+          nonceKey: ((nonce >> 64n) & 0xffffn).toString(10),
+        })
+    ) {
+      runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Kernel all-chain approval does not cover this materialization",
+      );
+    }
+  }
+
+  return Object.freeze({
+    dummySignature: envelope(runtime.dummySignature),
+    prepareOperation(input: KernelRuntimePrepareInput): PreparedUserOperation {
+      if (
+        input.kind !== "execution" ||
+        (input.mode !== undefined && input.mode !== "enable-replayable")
+      ) {
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel materialization requires an enable-mode execution",
+        );
+      }
+      const prepared = runtime.prepareOperation({ ...input, mode: "enable-replayable" });
+      requireMaterialization(prepared);
+      return prepared;
+    },
+    async signOperation(prepared: Readonly<PreparedUserOperation>): Promise<`0x${string}`> {
+      requireMaterialization(prepared);
+      return envelope(await runtime.signOperation(prepared));
+    },
+    async encodeVerifiedSignature(
+      prepared: Readonly<PreparedUserOperation>,
+      signature: `0x${string}`,
+    ): Promise<`0x${string}`> {
+      requireMaterialization(prepared);
+      return envelope(await runtime.encodeVerifiedSignature(prepared, signature));
+    },
+  });
+}
+
+/** Prepares and signs one execution through the shared materialization owner. */
+export async function materializeKernelPermission(
+  value: MaterializeKernelPermissionInput,
+): Promise<Readonly<KernelPermissionMaterialization>> {
+  const materialization = bindKernelPermissionApproval({
+    runtime: value.runtime,
+    approval: parseKernelAllChainApproval(value.approval),
+    account: value.account.account,
+  });
+  const prepared = materialization.prepareOperation({
     kind: "execution",
-    mode: "enable-replayable",
     grantId: value.grantId,
     account: value.account,
     nonceKey: value.nonceKey,
@@ -279,31 +343,8 @@ function prepareKernelPermission(value: MaterializeKernelPermissionInput): Reado
       : {}),
     paymaster: value.paymaster ?? null,
   });
-  if (prepared.userOperation.sender !== scope.account) {
-    return runtimeFail(
-      "kernel_runtime_binding_mismatch",
-      "Kernel all-chain approval does not cover this account",
-    );
-  }
   return Object.freeze({
     prepared,
-    installNonce: scope.installNonce,
-    packages: scope.packages,
-    enableSignature: approval.enableSignature,
-  });
-}
-
-export async function materializeKernelPermission(
-  value: MaterializeKernelPermissionInput,
-): Promise<Readonly<KernelPermissionMaterialization>> {
-  const materialization = prepareKernelPermission(value);
-  return Object.freeze({
-    prepared: materialization.prepared,
-    signature: encodeKernelV4EnableSignature({
-      nonce: materialization.installNonce,
-      packages: materialization.packages,
-      enableSignature: materialization.enableSignature,
-      userOperationSignature: await value.runtime.signOperation(materialization.prepared),
-    }),
+    signature: await materialization.signOperation(prepared),
   });
 }

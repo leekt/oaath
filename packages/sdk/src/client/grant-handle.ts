@@ -55,10 +55,12 @@ import {
   kernelKeyCapability,
 } from "../kernel/capabilities.js";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import { sameInstall } from "../kernel/internal.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
-import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
+import {
+  bindKernelPermissionApproval,
+  type KernelAllChainApproval,
+} from "../kernel/permission/materialize.js";
 import { observeKernelPermissionRevocation } from "../kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import type {
@@ -68,8 +70,6 @@ import type {
   KeyProfile,
 } from "../kernel/types.js";
 import {
-  captureKernelV4Installs,
-  encodeKernelV4EnableSignature,
   encodeKernelV4PermissionUninstallCalls,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
@@ -1147,6 +1147,7 @@ export function createGrantHandle(
     readonly descriptor: Readonly<KernelV4AccountDescriptor>;
     readonly calls: readonly Readonly<KernelV4Call>[];
     readonly mode: "standard" | "enable-replayable";
+    readonly materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly binding: Readonly<{
       chainId: number;
@@ -1274,6 +1275,8 @@ export function createGrantHandle(
       descriptor,
       calls,
       mode,
+      materializer:
+        mode === "enable-replayable" ? permissionMaterializer(runtime, descriptor.account) : null,
       decision,
       binding,
       grantId: publicationGrant.identity.grantId,
@@ -1282,52 +1285,17 @@ export function createGrantHandle(
     });
   }
 
-  function requireBoundEnableApproval(
+  function permissionMaterializer(
     runtime: Readonly<KernelRuntime>,
     account: `0x${string}`,
-    approval: Readonly<KernelAllChainApproval> | null,
-  ): Readonly<KernelAllChainApproval> {
+  ): ReturnType<typeof bindKernelPermissionApproval> {
+    const approval = input.installApproval;
     if (approval === null) return unsupported("grant_capability_unavailable");
-    const packages = captureKernelV4Installs(runtime.packages);
-    if (
-      approval.account !== account ||
-      approval.packages.length !== packages.length ||
-      !packages.every((install, index) => {
-        const approved = approval.packages[index];
-        return approved !== undefined && sameInstall(install, approved);
-      })
-    ) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the install approval does not bind this permission runtime",
-        "kernel_runtime_binding_mismatch",
-      );
+    try {
+      return bindKernelPermissionApproval({ runtime, account, approval });
+    } catch (error) {
+      return mapClientFailure(error, "the install approval does not bind this permission runtime");
     }
-    return approval;
-  }
-
-  function requireEnableApproval(
-    shape: Readonly<ExecutionShape>,
-  ): Readonly<KernelAllChainApproval> {
-    return requireBoundEnableApproval(
-      shape.runtime,
-      shape.descriptor.account,
-      input.installApproval,
-    );
-  }
-
-  function enableSimulationSignature(
-    runtime: Readonly<KernelRuntime>,
-    account: `0x${string}`,
-    approval: Readonly<KernelAllChainApproval> | null,
-  ): `0x${string}` {
-    const retained = requireBoundEnableApproval(runtime, account, approval);
-    return encodeKernelV4EnableSignature({
-      nonce: retained.installNonce,
-      packages: retained.packages,
-      enableSignature: retained.enableSignature,
-      userOperationSignature: runtime.dummySignature,
-    });
   }
 
   type PreparedCallPaymasterSource =
@@ -1376,32 +1344,18 @@ export function createGrantHandle(
         ? {}
         : { validityTimeRange: shape.validityTimeRange }),
     };
-    let operation: KernelRuntimePrepareInput;
-    let simulationSignature = shape.runtime.dummySignature;
-    if (shape.mode === "enable-replayable") {
-      simulationSignature = enableSimulationSignature(
-        shape.runtime,
-        shape.descriptor.account,
-        input.installApproval,
-      );
-      operation = {
-        ...fields,
-        kind: "execution",
-        mode: "enable-replayable",
-      };
-    } else {
-      operation = { kind: "execution", ...fields };
-    }
+    const execution = shape.materializer ?? shape.runtime;
+    const operation: KernelRuntimePrepareInput = { kind: "execution", ...fields };
     let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
     const prepared =
       options.paymaster?.kind === "resolve-erc7677"
         ? await prepareSponsoredKernelOperation({
-            runtime: shape.runtime,
+            runtime: execution,
             operation,
-            simulationSignature,
+            simulationSignature: execution.dummySignature,
             sponsorship: options.paymaster.sponsorship,
           })
-        : shape.runtime.prepareOperation(operation);
+        : execution.prepareOperation(operation);
     if (options.paymaster?.kind === "resolve-erc7677") {
       resultCapabilities = options.paymaster.resultCapabilities();
     }
@@ -1418,15 +1372,10 @@ export function createGrantHandle(
     signature: `0x${string}`,
   ): Promise<`0x${string}`> {
     try {
-      const inner = await shape.runtime.encodeVerifiedSignature(prepared, signature);
-      if (shape.mode !== "enable-replayable") return inner;
-      const approval = requireEnableApproval(shape);
-      return encodeKernelV4EnableSignature({
-        nonce: approval.installNonce,
-        packages: approval.packages,
-        enableSignature: approval.enableSignature,
-        userOperationSignature: inner,
-      });
+      return await (shape.materializer ?? shape.runtime).encodeVerifiedSignature(
+        prepared,
+        signature,
+      );
     } catch (error) {
       return mapClientFailure(error, "prepared-call signature could not be verified");
     }
@@ -1447,7 +1396,7 @@ export function createGrantHandle(
      * session signature.
      */
     readonly mode: "standard" | "enable-replayable";
-    readonly installApproval: Readonly<KernelAllChainApproval> | null;
+    readonly materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
@@ -1469,6 +1418,7 @@ export function createGrantHandle(
     readonly staticPaymaster?: Readonly<PreparedPaymaster>;
   }): ReturnType<typeof createOperationRunner> {
     const chain = chainCapability(spec.chainId);
+    const execution = spec.materializer ?? spec.runtime;
     const shared = observer(spec.chainId);
     let reservedOperation: OaathProviderOperationPointer | null = null;
     let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null =
@@ -1513,29 +1463,14 @@ export function createGrantHandle(
                 ? {}
                 : { validityTimeRange: spec.validityTimeRange }),
             };
-            let operation: KernelRuntimePrepareInput;
-            let simulationSignature = spec.runtime.dummySignature;
-            if (spec.mode === "enable-replayable") {
-              operation = {
-                ...fields,
-                kind: spec.kind,
-                mode: "enable-replayable",
-              };
-              simulationSignature = enableSimulationSignature(
-                spec.runtime,
-                spec.descriptor.account,
-                spec.installApproval,
-              );
-            } else {
-              operation = { kind: spec.kind, ...fields };
-            }
+            const operation: KernelRuntimePrepareInput = { kind: spec.kind, ...fields };
             if (spec.sponsorship === undefined) {
-              return spec.runtime.prepareOperation(operation);
+              return execution.prepareOperation(operation);
             }
             const prepared = await prepareSponsoredKernelOperation({
-              runtime: spec.runtime,
+              runtime: execution,
               operation,
-              simulationSignature,
+              simulationSignature: execution.dummySignature,
               sponsorship: spec.sponsorship,
             });
             resultCapabilities = spec.sponsorshipResultCapabilities?.() ?? null;
@@ -1620,21 +1555,7 @@ export function createGrantHandle(
             // enable envelope is minted here, after provider binding and the
             // runner's durable submission-attempt transition, for this exact
             // snapshot and nothing else.
-            let signature = spec.externalSignature;
-            if (signature === undefined) {
-              const userOperationSignature = await spec.runtime.signOperation(prepared);
-              signature = userOperationSignature;
-            }
-            if (spec.externalSignature === undefined && spec.mode === "enable-replayable") {
-              const approval = spec.installApproval;
-              if (approval === null) return unsupported("grant_capability_unavailable");
-              signature = encodeKernelV4EnableSignature({
-                nonce: approval.installNonce,
-                packages: approval.packages,
-                enableSignature: approval.enableSignature,
-                userOperationSignature: signature,
-              });
-            }
+            const signature = spec.externalSignature ?? (await execution.signOperation(prepared));
             return captureSubmissionSession(
               await chain.submission.open({
                 prepared,
@@ -2400,7 +2321,7 @@ export function createGrantHandle(
       calls,
       signer: "session" as const,
       mode: resolved.mode,
-      installApproval: input.installApproval,
+      materializer: resolved.materializer,
       decision: resolved.decision,
       grantId: resolved.grantId,
       requestHash,
@@ -2746,7 +2667,7 @@ export function createGrantHandle(
       calls: shape.calls,
       signer: "session" as const,
       mode: shape.mode,
-      installApproval: input.installApproval,
+      materializer: shape.materializer,
       decision: shape.decision,
       grantId: shape.grantId,
       requestHash,
@@ -3533,7 +3454,7 @@ export function createGrantHandle(
               calls,
               signer: "owner",
               mode: "standard",
-              installApproval: null,
+              materializer: null,
               decision,
               terminalBehavior: "replace",
               grantId: latest.value.identity.grantId,
