@@ -148,7 +148,7 @@ $("pair").onclick = async () => {
 // The SDK owns session custody and operation state in IndexedDB. The page saves
 // only the exact returned handle identity, never a session key or signature.
 const operationKey = "oaath.phone-demo-operation/v1";
-const chainId = 421614;
+const chainChoice = $("chain");
 const target = `0x${"71".repeat(20)}`;
 let client;
 let connection;
@@ -167,6 +167,18 @@ async function connectAccount() {
   }
   const paired = await json("/demo/account");
   account.textContent = `Account: ${paired.account}`;
+  const selected = chainChoice.value;
+  chainChoice.replaceChildren(
+    ...paired.chains.map(({ chainId, name }) => {
+      const option = document.createElement("option");
+      option.value = String(chainId);
+      option.textContent = name;
+      return option;
+    }),
+  );
+  chainChoice.value = paired.chains.some(({ chainId }) => String(chainId) === selected)
+    ? selected
+    : String(paired.chains[0].chainId);
   return connection;
 }
 async function currentGrant() {
@@ -174,8 +186,8 @@ async function currentGrant() {
   if (!grant) throw new Error("Request permission first.");
   return grant;
 }
-function saveOperation(id) {
-  localStorage.setItem(operationKey, JSON.stringify({ version: operationKey, chain: chainId, id }));
+function saveOperation(id, chain) {
+  localStorage.setItem(operationKey, JSON.stringify({ version: operationKey, chain, id }));
 }
 function savedOperation() {
   const text = localStorage.getItem(operationKey);
@@ -183,7 +195,8 @@ function savedOperation() {
   const value = JSON.parse(text);
   if (
     value?.version !== operationKey ||
-    value.chain !== chainId ||
+    !Number.isSafeInteger(value.chain) ||
+    value.chain < 1 ||
     typeof value.id !== "string" ||
     !/^0x[0-9a-f]{64}$/.test(value.id) ||
     Object.keys(value).sort().join(",") !== "chain,id,version"
@@ -219,7 +232,7 @@ const actions = {
         expiresIn: 1800,
         perChainOperationLimit: 3,
       });
-      say("Permission active: up to three jobs on this chain, for 30 minutes.");
+      say("Permission active: up to three jobs per configured chain, for 30 minutes.");
     },
   ],
   session: [
@@ -232,10 +245,10 @@ const actions = {
         return;
       }
       const operation = await current.sendCalls({
-        chain: chainId,
+        chain: Number(chainChoice.value),
         calls: [{ target, value: "5", data: "0x12345678" }],
       });
-      saveOperation(operation.id);
+      saveOperation(operation.id, operation.chainId);
       say(
         `Job submitted. Choose Observe saved job to check its outcome.\nOperation: ${operation.id}`,
       );
@@ -248,7 +261,7 @@ const actions = {
       await current.revoke();
       say(
         current.state === "revoked"
-          ? "Permission revoked on the configured chain. Saved jobs can still be observed."
+          ? "Permission revoked on both configured chains. Saved jobs can still be observed."
           : "Revocation pending. Review any request in the phone inbox, then choose Revoke / check again.",
       );
     },

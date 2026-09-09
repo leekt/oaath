@@ -64,8 +64,8 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
   const chain = await startAnvil(chainId, p256 ? "osaka" : "prague");
   const stack = await deployKernelStack(chain, { p256 });
   const feePayerBalance = await chain.client.getBalance({ address: stack.submitter.address });
-  /** The one handleOps transaction this example submits, once it exists. */
-  let transactionHash = null;
+  /** Exact operation -> submitted transaction, retained across other members' jobs. */
+  const transactionHashes = new Map();
   const sends = [];
 
   const receiptOf = async (hash) => chain.rpc("eth_getTransactionReceipt", [hash]);
@@ -76,7 +76,8 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
    * against the transaction receipt, the transaction, and the canonical block.
    */
   const userOperationReceipt = async (userOperationHash) => {
-    if (transactionHash === null) return null;
+    const transactionHash = transactionHashes.get(userOperationHash);
+    if (transactionHash === undefined) return null;
     const receipt = await receiptOf(transactionHash);
     if (receipt === null) return null;
     const log = receipt.logs.find(
@@ -282,7 +283,7 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
               const sent = await stack.sendSigned(request.prepared, request.signature, (hash) => {
                 // Captured before receipt waiting: an ambiguous wait cannot
                 // erase the submitted transaction identity.
-                transactionHash = hash;
+                transactionHashes.set(request.prepared.userOperationHash, hash);
               });
               if (sent.status !== "success") throw new Error("the handleOps transaction failed");
               // A devnet only finalizes as blocks arrive, so mine past the
@@ -308,12 +309,21 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
       // included. Without it, coverage is inconclusive and sendCalls is denied.
       async usage(request) {
         const block = await chain.rpc("eth_getBlockByNumber", ["finalized", false]);
+        let finalizedOperationCount = 0;
+        for (const prepared of sends) {
+          if (prepared.kind !== "execution" || prepared.grantId !== request.grantId) continue;
+          const receipt = await userOperationReceipt(prepared.userOperationHash);
+          if (!receipt || BigInt(receipt.blockNumber) > BigInt(block.number)) continue;
+          const canonical = await chain.rpc("eth_getBlockByNumber", [receipt.blockNumber, false]);
+          if (canonical?.hash !== receipt.blockHash) throw new Error("usage_block_unreadable");
+          finalizedOperationCount += 1;
+        }
         return {
           version: "oaath.grant-policy-usage/v1",
           status: "complete",
           grantId: request.grantId,
           chainId: request.chainId,
-          finalizedOperationCount: String(sends.length),
+          finalizedOperationCount: String(finalizedOperationCount),
           through: {
             blockNumber: BigInt(block.number).toString(10),
             blockHash: block.hash,

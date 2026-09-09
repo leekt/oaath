@@ -34,6 +34,7 @@ if (process.env.OAATH_ZERODEV_LIVE === "1") {
     service = await startPhoneService({
       host: process.env.OAATH_HOST ?? "0.0.0.0",
       port: Number(process.env.OAATH_PORT ?? 8787),
+      workspaceKind: process.env.OAATH_WORKSPACE_KIND ?? "personal",
     });
     console.log(`Phone delegation demo: ${service.url}`);
     console.log("Local Anvil, P-256 owner. Choose Pair phone, connect, then request permission.");
