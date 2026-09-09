@@ -85,6 +85,48 @@ pool shutdown. Membership/account removal can leave old selections behind;
 resolution checks current records and returns `null` rather than granting
 access through stale preferences. It does not revoke grants or delete operations.
 
+### Phone relay credentials
+
+`createOwnerDeviceAuthentication` from `@oaath/server/native` provides the phone
+part of the deployment's authentication port. Compose it with application
+identity authentication; it only returns owner callers.
+
+```ts
+import { createOwnerDeviceAuthentication } from "@oaath/server/native";
+import {
+  createPostgresOwnerDeviceCredentialSchema,
+  createPostgresOwnerDeviceCredentialStore,
+} from "@oaath/server/postgres";
+
+// Provision once, separately from the public directory and relay tables.
+await createPostgresOwnerDeviceCredentialSchema(pool);
+const phoneAuthentication = createOwnerDeviceAuthentication({
+  directory,
+  store: createPostgresOwnerDeviceCredentialStore({ pool }),
+});
+// Administration only: authenticate pairing and enroll this device first.
+const deviceCredential = await phoneAuthentication.issue({ workspaceId, ownerDeviceId });
+// Return it once to the paired phone; never log it.
+// Route phone requests through phoneAuthentication.authenticate(request).
+```
+
+The store retains only a SHA-256 hash and the workspace/device/subject binding
+under `oaath.owner-device-credential/v1`. The phone keeps the original 32-byte
+base64url bearer. Recreating the service and PostgreSQL pools preserves access
+with that bearer; authentication checks the current directory without a cache.
+Missing devices, changed subjects and explicitly revoked credentials cannot
+authenticate. Unreadable storage is an error.
+
+`phoneAuthentication.revoke({ workspaceId, ownerDeviceId })` terminally revokes
+all credentials already issued for that device. It does not revoke grants,
+uninstall permissions, remove enrollment or erase phone keys. A later explicit
+`issue` creates another credential; old revoked credentials remain unusable.
+Issuance and revocation never retry writes. A lost issuance response throws and
+returns no credential; the deployment owns pairing delivery and pool shutdown.
+This is credential persistence, not a durable pairing-invitation or full-service
+restart implementation. The demo uses `createMemoryOwnerDeviceCredentialStore`
+and remains ephemeral with its local chains.
+
 ## Endpoints
 
 ```text

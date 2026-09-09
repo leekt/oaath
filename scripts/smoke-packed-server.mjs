@@ -58,8 +58,10 @@ import {
 } from "@oaath/protocol";
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import { APNS_PAYLOAD_MAX_BYTES, createApnsSender } from "@oaath/server/apns";
-import { NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest, projectOwnerPhoneRevocation } from "@oaath/server/native";
+import { createMemoryOwnerDeviceCredentialStore, createOwnerDeviceAuthentication, NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest, projectOwnerPhoneRevocation } from "@oaath/server/native";
 import {
+  createPostgresOwnerDeviceCredentialSchema,
+  createPostgresOwnerDeviceCredentialStore,
   createPostgresRelaySchema,
   createPostgresRelayStore,
   OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS,
@@ -81,9 +83,7 @@ const ENTRIES = [
 const ORIGIN = "https://relay.example";
 const REDIRECT_URI = "https://app.example/callback";
 const CLIENT_TOKEN = "client-token";
-const OWNER_TOKEN = "owner-token";
 const SUBJECT = "subject-1";
-const TEAM_OWNER_TOKEN = "team-owner-token";
 const CODE_VERIFIER = "smoke-code-verifier-that-is-long-enough-0123";
 function permissionArtifact(requestId, scope) {
   return JSON.stringify({
@@ -183,6 +183,12 @@ await directory.replace({ expectedRevision: null, directory: {
   selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
 } });
 
+const ownerCredentials = createMemoryOwnerDeviceCredentialStore();
+const issuer = createOwnerDeviceAuthentication({ directory, store: ownerCredentials });
+const OWNER_TOKEN = await issuer.issue({ workspaceId: "personal-1", ownerDeviceId: "owner-phone" });
+const TEAM_OWNER_TOKEN = await issuer.issue({ workspaceId: "team-1", ownerDeviceId: "team-phone" });
+const ownerAuthentication = createOwnerDeviceAuthentication({ directory, store: ownerCredentials });
+
 const callers = new Map([
   [
     CLIENT_TOKEN,
@@ -194,10 +200,6 @@ const callers = new Map([
       organizationAudience: "org-1",
     },
   ],
-  // The owner caller keeps the pre-audience port shape on purpose: a
-  // deployment that declares no audience must keep authenticating.
-  [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
-  [TEAM_OWNER_TOKEN, { role: "owner", clientId: "owner-phone", subject: "team-phone-subject", redirectUris: [] }],
 ]);
 
 const handler = createRelayHandler({
@@ -207,7 +209,7 @@ const handler = createRelayHandler({
     async authenticate(request) {
       const header = request.headers.get("authorization") ?? "";
       const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-      return callers.get(token) ?? null;
+      return callers.get(token) ?? ownerAuthentication.authenticate(request);
     },
   },
   kms: {
@@ -393,8 +395,16 @@ if (JSON.stringify(replayVerified) !== JSON.stringify(verified)) {
   fail("a replayed verification answered different evidence");
 }
 
+await ownerAuthentication.revoke({ workspaceId: "personal-1", ownerDeviceId: "owner-phone" });
+if ((await handler(request("GET", "/native/inbox", OWNER_TOKEN))).status !== 401) fail("revoked phone credential remained authenticated");
+if ((await handler(request("GET", "/native/inbox", TEAM_OWNER_TOKEN))).status !== 200) fail("another phone credential was revoked");
+
 // The PostgreSQL subpath owns the driver and the schema; nothing connects here.
 if (typeof pg.Pool !== "function") fail("the consumer could not load the pg driver");
+if (typeof createPostgresOwnerDeviceCredentialStore !== "function") fail("owner credential store is missing");
+const credentialStatements = [];
+await createPostgresOwnerDeviceCredentialSchema({ async query(statement) { credentialStatements.push(statement); } });
+if (credentialStatements.length !== 1 || !credentialStatements[0].includes("oaath_owner_device_credentials_v1")) fail("owner credential schema is missing");
 if (typeof createPostgresRelayStore !== "function") fail("createPostgresRelayStore is missing");
 if (OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS.length < 1) fail("the relay schema is empty");
 const statements = [];
@@ -468,6 +478,8 @@ import {
   createMemoryApnsOutbox,
 } from "@oaath/server/apns";
 import {
+  createOwnerDeviceAuthentication,
+  type OwnerDeviceAuthentication,
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   type OwnerPhoneRequestProjection,
   type OwnerPhoneRevocationDecision,
@@ -478,6 +490,7 @@ import {
   OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS,
   type PostgresRelayStoreOptions,
   createPostgresServiceDirectoryStore,
+  createPostgresOwnerDeviceCredentialStore,
 } from "@oaath/server/postgres";
 import type { Pool } from "pg";
 
@@ -507,6 +520,13 @@ export function relay(): RelayHandler {
 export function durable(pool: Pool): RelayStore {
   const options: PostgresRelayStoreOptions = { pool };
   return createPostgresRelayStore(options);
+}
+
+export function durablePhoneAuthentication(pool: Pool): Readonly<OwnerDeviceAuthentication> {
+  return createOwnerDeviceAuthentication({
+    directory: createServiceDirectory(createPostgresServiceDirectoryStore({ pool })),
+    store: createPostgresOwnerDeviceCredentialStore({ pool }),
+  });
 }
 
 export function durableDirectory(pool: Pool) {

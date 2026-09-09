@@ -46,8 +46,10 @@ workflow test also authenticates the second member over HTTP and verifies its
 separate bootstrap identity, session, grant and budget. There is no team admin
 UI. The deployment supplies authentication and directory administration.
 
-The relay, directory, pairing and local chains are ephemeral. Restarting the
-service recreates the account; clear this demo origin's browser data and pair
+The relay, directory, phone credential store, pairing and local chains are ephemeral.
+Pairing issues relay access through `createOwnerDeviceAuthentication`; the
+credential store owns authentication, separately from the phone-owned account.
+Restarting the service recreates the account; clear this demo origin's browser data and pair
 again. Each permission request has its own install-nonce namespace. Configured
 chains constrain service routing; the replayable approval is not a chain
 allowlist. Revocation status covers the configured chains, not every possible

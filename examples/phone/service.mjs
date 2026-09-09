@@ -32,6 +32,10 @@ import {
 } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
 import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
+import {
+  createMemoryOwnerDeviceCredentialStore,
+  createOwnerDeviceAuthentication,
+} from "@oaath/server/native";
 import { build } from "esbuild";
 import QRCode from "qrcode";
 import { createAnvilChain } from "../browser/anvil-chain.mjs";
@@ -127,6 +131,10 @@ export async function startPhoneService({
       })),
     },
   });
+  const ownerAuthentication = createOwnerDeviceAuthentication({
+    directory,
+    store: createMemoryOwnerDeviceCredentialStore(),
+  });
   const codeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const pairingCode = [...randomBytes(10)]
     .map((byte) => codeAlphabet[byte % codeAlphabet.length])
@@ -217,15 +225,7 @@ export async function startPhoneService({
             redirectUris: [`${url}/callback`],
           };
         }
-        if (activeDevice && token === `Bearer ${activeDevice.credential}`) {
-          return {
-            role: "owner",
-            clientId: "demo-owner-phone",
-            subject: SUBJECT,
-            redirectUris: [],
-          };
-        }
-        return null;
+        return ownerAuthentication.authenticate(request);
       },
     },
     kms,
@@ -337,7 +337,10 @@ export async function startPhoneService({
     // Local Anvil prefunding is a pairing effect, never part of pure consent preparation.
     for (const chain of chains) await chain.fund(descriptor.account);
     activeDevice = {
-      credential: randomBytes(32).toString("base64url"),
+      credential: await ownerAuthentication.issue({
+        workspaceId,
+        ownerDeviceId: "demo-owner-phone",
+      }),
       deviceToken: value.deviceToken.toLowerCase(),
       account: descriptor.account,
     };
