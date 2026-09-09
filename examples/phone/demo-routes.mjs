@@ -77,12 +77,12 @@ export async function servePairingSecret({
     refuse(outgoing, 403, "pairing_loopback_required");
     return true;
   }
-  if (!pairingAvailable()) {
+  if (!(await pairingAvailable())) {
     refuse(outgoing, 410, "pairing_secret_unavailable");
     return true;
   }
   const qrDataUrl = await renderQr(pairingLink);
-  if (!pairingAvailable()) {
+  if (!(await pairingAvailable())) {
     refuse(outgoing, 410, "pairing_secret_unavailable");
     return true;
   }
