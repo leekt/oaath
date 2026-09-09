@@ -505,7 +505,7 @@ describe("private Grant provider port", () => {
     expect((BigInt(firstPrepared.userOperation.nonce) >> 248n) & 0xffn).toBe(0x0cn);
 
     const second = await grant.sendCalls(sendCallsInput());
-    expect(second.outcome.status).toBe("finalized");
+    expect((await second.wait()).status).toBe("finalized");
     expect(realm.chain.sends).toHaveLength(2);
     const secondPrepared = realm.chain.sends[1];
     if (!secondPrepared) throw new Error("expected the replacing direct operation");

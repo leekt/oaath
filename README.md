@@ -145,9 +145,17 @@ const grant =
   }));
 
 const operation = await grant.sendCalls({ chain, calls });
+// Keep { chain: operation.chainId, id: operation.id } with the application's job.
 await operation.wait();
 await oaath.disconnect(grant); // revoke, signOut, forgetLocal, close
 ```
+
+`sendCalls` starts a new operation. One unresolved operation occupies each
+grant/chain lane; another send returns `oaath_client_state_conflict`.
+After reload, resume the grant and call `grant.getOperation({ chain, id })`
+with the saved reference. Its `observe()` and `wait()` methods submit nothing
+and remain available after grant expiry or revocation. A missing local record
+returns `null`; it is not evidence that the operation was never submitted.
 
 Applications never handle permission ids, enable envelopes, operation journals,
 store revisions, or nonce recovery. Persistence defaults to IndexedDB where it

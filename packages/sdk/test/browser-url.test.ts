@@ -52,6 +52,48 @@ import {
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
+  it("recovers a pending public operation after full IndexedDB recreation and grant expiry", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    let withhold = true;
+    const chain = createChainFixture({ withholdReceipt: () => withhold });
+    const firstDatabase = await openOaathDatabase({ factory });
+    const first = createUrlRealm({ clock, chain, stores: idbStores(firstDatabase) });
+    const connection = await first.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const operation = await grant.sendCalls(sendCallsInput());
+    const reference = { chain: operation.chainId, id: operation.id };
+    expect((await operation.observe()).status).toBe("pending");
+    await first.oaath.close();
+    await firstDatabase.close();
+    clock.advance(1_801);
+
+    const secondDatabase = await openOaathDatabase({ factory });
+    const second = createUrlRealm({
+      clock,
+      chain,
+      relay: first.relay,
+      stores: idbStores(secondDatabase),
+    });
+    const reconnected = await second.oaath.connect();
+    const resumed = await reconnected.resume();
+    if (resumed === null) throw new Error("missing resumable operation history");
+    await expect(resumed.sendCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_grant_inactive",
+    });
+    const recovered = await resumed.getOperation(reference);
+    expect(recovered?.id).toBe(reference.id);
+    expect((await recovered?.observe())?.status).toBe("pending");
+    withhold = false;
+    expect((await recovered?.wait())?.status).toBe("finalized");
+    expect(chain.quotes).toBe(1);
+    expect(chain.signatures).toHaveLength(1);
+    expect(chain.sends).toHaveLength(1);
+    expect(second.fetched).not.toContain("POST /authorization/requests");
+    await second.oaath.close();
+    await secondDatabase.close();
+  });
+
   it("isolates selected workspaces across complete IndexedDB recreation", async () => {
     const factory = new IDBFactory();
     let selected = "personal-1";
