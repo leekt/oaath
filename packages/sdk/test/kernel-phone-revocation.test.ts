@@ -7,6 +7,7 @@ import {
 } from "@oaath/protocol";
 import { bytesToHex, hexToBytes } from "viem";
 import { describe, expect, it } from "vitest";
+import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import {
   encodeKernelV4Execution,
   encodeKernelV4InstallNonceInvalidationCall,
@@ -106,6 +107,69 @@ async function fixture() {
 }
 
 describe("phone revocation preparation", () => {
+  it("observes only finalized absence with the consumed approval nonce on its own chain", async () => {
+    const { input } = await fixture();
+    const binding = {
+      chainId: CHAIN_ID,
+      account: input.approval.account,
+      permissionId: "0x11223344" as const,
+    };
+    const block = { number: "0x10", hash: `0x${"aa".repeat(32)}` };
+    for (const mode of [
+      "valid",
+      "absent-nonce",
+      "unused-nonce",
+      "foreign-key",
+      "present",
+      "reorg",
+      "foreign-chain",
+    ] as const) {
+      const seen: string[] = [];
+      const proof = await observeKernelPermissionRevocation({
+        binding,
+        approval: input.approval,
+        now: () => 120,
+        observation: {
+          close: async () => {
+            throw new Error("borrowed observation must not close");
+          },
+          async read(request) {
+            seen.push(request.type);
+            expect(request.chainId).toBe(CHAIN_ID);
+            if (request.type === "chain_id") return mode === "foreign-chain" ? 1 : CHAIN_ID;
+            if (request.type === "finalized_block") return block;
+            if (request.type === "canonical_block")
+              return mode === "reorg" ? { ...block, hash: `0x${"bb".repeat(32)}` } : block;
+            if (
+              request.type === "kernel_permission_installed" ||
+              request.type === "kernel_install_nonce"
+            ) {
+              expect(request.account).toBe(binding.account);
+              expect(request.blockNumber).toBe("16");
+              if (request.type === "kernel_permission_installed") {
+                expect(request.permissionId).toBe(binding.permissionId);
+                return mode === "present";
+              }
+              expect(request.nonce).toBe(input.approval.installNonce);
+              if (mode === "absent-nonce") return "0x";
+              const increment =
+                mode === "unused-nonce" ? 0n : mode === "foreign-key" ? 1n << 64n : 1n;
+              return `0x${(BigInt(request.nonce) + increment).toString(16).padStart(64, "0")}`;
+            }
+            throw new Error("unexpected effect read");
+          },
+        },
+      });
+      if (mode === "valid") {
+        expect(proof).toMatchObject({
+          permission: { ...binding, kind: "permission_absent", blockNumber: "16", observedAt: 120 },
+          installNonce: (BigInt(input.approval.installNonce) + 1n).toString(10),
+        });
+        expect(seen).toHaveLength(5);
+      } else expect(proof).toBeNull();
+    }
+  });
+
   it.each(["invalidate-install", "uninstall-permission"] as const)(
     "prepares only %s calls and completes the exact phone signature",
     async (effect) => {

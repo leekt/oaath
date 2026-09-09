@@ -493,6 +493,8 @@ export interface ChainFixtureOptions {
    * still installed, `null`/absent no conclusive answer.
    */
   readonly permissionInstalled?: () => boolean | null;
+  /** Effective Kernel install nonce at the observation block. Undefined models this fixture's installs. */
+  readonly installNonce?: (approvalNonce: string) => string | null;
   /**
    * Extra blocks the chain advanced beyond its submissions — e.g. an owner
    * console's out-of-band removal transaction.
@@ -670,7 +672,22 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           return observed === null ? null : `0x${BigInt(observed).toString(16)}`;
         }
         if (request.type === "kernel_permission_installed") {
-          return options.permissionInstalled?.() ?? null;
+          if (options.permissionInstalled) return options.permissionInstalled();
+          return submitted()?.kind === "revocation" &&
+            !options.withholdReceipt?.() &&
+            !options.crashOnSend?.() &&
+            (options.operationSuccess?.(currentIndex()) ?? true)
+            ? false
+            : null;
+        }
+        if (request.type === "kernel_install_nonce") {
+          const nonce = request.nonce ?? "0";
+          const observed = options.installNonce
+            ? options.installNonce(nonce)
+            : (
+                BigInt(nonce) + (sends.some((entry) => entry.kind === "execution") ? 1n : 0n)
+              ).toString(10);
+          return observed === null ? null : `0x${BigInt(observed).toString(16)}`;
         }
         if (request.type === "transaction_receipt") return transactionReceipt();
         if (request.type === "transaction") {
@@ -1004,8 +1021,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
       ) => {
         invalidations += 1;
         if (options.invalidate) return options.invalidate(request);
-        // A deployment proves the replayable approval capability is dead; the SDK
-        // never invents this evidence.
+        // Service admission evidence; chain effect reads must still prove revocation.
         return {
           evidenceHash: keccak256(stringToBytes(`invalidated:${request.grantId}`)),
           invalidatedAt: clock.now(),

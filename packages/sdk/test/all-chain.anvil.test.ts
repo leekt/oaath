@@ -18,6 +18,7 @@ import {
 import { bytesToHex, hexToBytes, parseAbi, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
+import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
   approveKernelPermissionAllChain,
@@ -42,6 +43,7 @@ import {
   restoreKernelPhoneRevocation,
   sessionOperator,
 } from "../src/kernel.js";
+import type { OperationObserverCapabilities } from "../src/operation-observer.js";
 import {
   type AnvilChain,
   createHarness,
@@ -387,6 +389,55 @@ async function bringUp(
     const b = await bringUp(CHAIN_B, owner, sessionKey, target);
     expect(b.account.account).toBe(a.account.account);
     expect(b.account.state).toBe("counterfactual");
+    if (b.sessionRuntime.validation.kind !== "permission") throw new Error("expected permission");
+    const observation: OperationObserverCapabilities = {
+      close: async () => {},
+      async read(request) {
+        if (request.type === "chain_id") return b.harness.client.getChainId();
+        if (request.type === "finalized_block" || request.type === "canonical_block") {
+          const block = await b.harness.client.getBlock(
+            request.type === "finalized_block"
+              ? { blockTag: "finalized" }
+              : { blockNumber: BigInt(request.blockNumber) },
+          );
+          return { number: `0x${block.number.toString(16)}`, hash: block.hash };
+        }
+        if (request.type === "kernel_permission_installed")
+          return b.harness.client.readContract({
+            address: request.account,
+            abi: KERNEL_MODULE_VIEW_ABI,
+            functionName: "isModuleInstalled",
+            args: [6n, request.signer, request.permissionId],
+            blockNumber: BigInt(request.blockNumber),
+          });
+        if (request.type === "kernel_install_nonce")
+          return (
+            await b.harness.client.call({
+              to: request.account,
+              data: encodeKernelV4InstallNonceRead({
+                key: (BigInt(request.nonce) >> 64n).toString(10),
+              }),
+              blockNumber: BigInt(request.blockNumber),
+            })
+          ).data;
+        throw new Error("unexpected revocation effect read");
+      },
+    };
+    const observeRevocation = () =>
+      observeKernelPermissionRevocation({
+        binding: {
+          chainId: CHAIN_B,
+          account: b.account.account,
+          permissionId:
+            b.sessionRuntime.validation.kind === "permission"
+              ? b.sessionRuntime.validation.permissionId
+              : "0x00000000",
+        },
+        approval,
+        observation,
+        now: () => 100,
+      });
+    expect(await observeRevocation()).toBeNull();
     const invalidation = b.ownerRuntime.prepareOperation({
       kind: "revocation",
       grantId: "invalidate-unused-on-b",
@@ -408,6 +459,17 @@ async function bringUp(
       return BigInt(result.data);
     };
     expect(await readNonce(installNonce)).toBe(BigInt(installNonce) + 1n);
+    await b.harness.client.request({
+      method: "anvil_mine" as "eth_chainId",
+      params: ["0x40"] as never,
+    });
+    const effectProof = await observeRevocation();
+    expect(effectProof?.installNonce).toBe((BigInt(installNonce) + 1n).toString(10));
+    expect(effectProof?.permission).toMatchObject({
+      chainId: CHAIN_B,
+      account: b.account.account,
+      kind: "permission_absent",
+    });
     expect(
       await b.harness.client.readContract({
         address: b.account.account,

@@ -254,7 +254,7 @@ describe("PermissionRequest current codec", () => {
 
     const grant = createGrantFromPermissionRequest(parsed);
     expect(grant).toMatchObject({
-      version: "oaath.grant/v2",
+      version: "oaath.grant/v3",
       state: "requested",
       revision: 0,
       requestedAt: 100,

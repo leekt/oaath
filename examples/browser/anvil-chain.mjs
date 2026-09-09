@@ -17,6 +17,7 @@
  */
 
 import {
+  encodeKernelV4InstallNonceRead,
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
   KERNEL_V4_ENTRY_POINT_V07,
@@ -167,6 +168,17 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
             });
             return await chain.rpc("eth_call", [
               { to: request.entryPoint, data },
+              `0x${BigInt(request.blockNumber).toString(16)}`,
+            ]);
+          }
+          if (request.type === "kernel_install_nonce") {
+            return await chain.rpc("eth_call", [
+              {
+                to: request.account,
+                data: encodeKernelV4InstallNonceRead({
+                  key: (BigInt(request.nonce) >> 64n).toString(10),
+                }),
+              },
               `0x${BigInt(request.blockNumber).toString(16)}`,
             ]);
           }

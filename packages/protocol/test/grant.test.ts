@@ -177,6 +177,7 @@ function revokingRecord(): Record<string, unknown> {
     ...activeRecord(),
     revision: 18,
     state: "revoking",
+    revocation: { targets: [1, 2, 3, 4, 5].map(binding), installNonce: "0", evidence: [] },
     updatedAt: 46,
     revocationStartedAt: 40,
     materializations: revokingChildren(),
@@ -186,8 +187,16 @@ function revokingRecord(): Record<string, unknown> {
 function revokedRecord(): Record<string, unknown> {
   return {
     ...activeRecord(),
-    revision: 17,
+    revision: 21,
     state: "revoked",
+    revocation: {
+      targets: [1, 2, 3, 4].map(binding),
+      installNonce: "0",
+      evidence: [1, 2, 3, 4].map((chainId) => ({
+        permission: absent(chainId, 13, 55),
+        installNonce: "1",
+      })),
+    },
     updatedAt: 60,
     revocationStartedAt: 40,
     capabilityInvalidation: {
@@ -255,7 +264,7 @@ describe("Grant current codec", () => {
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "oaath.grant/v2",
+      version: "oaath.grant/v3",
       state: "requested",
       revision: 0,
       identity: {
@@ -436,6 +445,7 @@ describe("Grant current codec", () => {
       state: "revoking",
       updatedAt: 40,
       revocationStartedAt: 40,
+      revocation: { targets: [binding(4)], installNonce: "0", evidence: [] },
     };
     expect(parseGrant(revoking)).toMatchObject({
       state: "revoking",

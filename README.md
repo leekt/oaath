@@ -264,6 +264,15 @@ nonce, the EntryPoint nonce, the operation identity, the submission route, and
 inclusion, finality and revocation evidence all stay chain-local, and no chain
 borrows another's. There is no global atomic install, execute, or revoke.
 
+Revocation snapshots the client's configured chains and any previously bound
+chains. `revoked` requires finalized permission absence and a consumed approval
+install nonce on every chain in that snapshot, including unused chains. Relay
+invalidation stops service admission; it does not invalidate the owner signature
+onchain. A missing chain transport leaves the Grant `revoking`, even after reload.
+The phone must approve each required chain operation; client polling currently
+observes those effects while service request orchestration is being connected.
+Chains outside this snapshot are not covered by its revocation status.
+
 Account descriptors are process-local evidence handles. After a process reload,
 call `bindKernelV4Account` again before preparing another operation; serialized
 or copied descriptors are deliberately rejected. A descriptor also freezes the
