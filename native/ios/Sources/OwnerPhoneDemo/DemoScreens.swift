@@ -249,6 +249,7 @@ public final class DemoModel: ObservableObject {
                 endpoint: endpoint,
                 credential: device.deviceCredential,
                 account: device.account,
+                chains: device.chains,
                 ownerPublicMaterial: ownerPublicMaterial)
             // The store owns the absent→stored transition. An intervening
             // record or unreadable evidence is preserved, never overwritten.
@@ -426,21 +427,17 @@ public final class DemoModel: ObservableObject {
             else { return false }
             return true
         }
-        let kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding?
-        if let account = boundPairing.account {
-            kernelP256ApprovalBinding = try? OwnerPhoneKernelP256ApprovalBinding(
-                account: account,
-                p256PublicMaterial: boundPairing.ownerPublicMaterial.hex,
-                pairingIsCurrent: pairingIsCurrent,
-                sign: { digest in
-                    guard pairingIsCurrent() else {
-                        throw DemoOwnerKeyBindingError.mismatch
-                    }
-                    return try ownerKey.sign(digest)
-                })
-        } else {
-            kernelP256ApprovalBinding = nil
-        }
+        let kernelP256ApprovalBinding = try? OwnerPhoneKernelP256ApprovalBinding(
+            account: boundPairing.account,
+            p256PublicMaterial: boundPairing.ownerPublicMaterial.hex,
+            chains: boundPairing.chains,
+            pairingIsCurrent: pairingIsCurrent,
+            sign: { digest in
+                guard pairingIsCurrent() else {
+                    throw DemoOwnerKeyBindingError.mismatch
+                }
+                return try ownerKey.sign(digest)
+            })
         let model = ApprovalModel(
             relay: client, kernelP256ApprovalBinding: kernelP256ApprovalBinding)
         approval = model

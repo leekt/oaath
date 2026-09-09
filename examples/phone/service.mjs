@@ -15,6 +15,7 @@ import {
 } from "@oaath/protocol";
 import {
   createKernelRuntime,
+  KERNEL_V4_ENTRY_POINT_V07,
   kernelV4Deployment,
   ownerOperator,
   p256Key,
@@ -246,8 +247,10 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       account: descriptor.account,
     };
     sendJson(outgoing, 200, {
+      version: "oaath.phone-pairing/v1",
       deviceCredential: activeDevice.credential,
       account: descriptor.account,
+      chains: [{ chainId: CHAIN_ID, entryPoint: KERNEL_V4_ENTRY_POINT_V07 }],
     });
   }
 

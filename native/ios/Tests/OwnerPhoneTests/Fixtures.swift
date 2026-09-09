@@ -75,3 +75,8 @@ extension OwnerPhoneScope {
         ))
     }
 }
+
+/// One exact configured chain for native approval/pairing tests.
+let configuredTestChains = try! OwnerPhoneKernelChains(entryPoints: [
+    31337: "0x0000000071727de22e5e9d8baf0edac6f37da032"
+])

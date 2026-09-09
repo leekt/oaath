@@ -61,6 +61,7 @@ final class KernelEnableSigningTests: XCTestCase {
         let binding = try OwnerPhoneKernelP256ApprovalBinding(
             account: signingTestAccount,
             p256PublicMaterial: hexEncode(Data(key.publicKey.x963Representation.dropFirst())),
+            chains: configuredTestChains,
             pairingIsCurrent: { true },
             sign: { _ in
                 signer.record()
@@ -84,6 +85,7 @@ final class KernelEnableSigningTests: XCTestCase {
         XCTAssertNoThrow(try OwnerPhoneKernelP256ApprovalBinding(
             account: signingTestAccount,
             p256PublicMaterial: validMaterial,
+            chains: configuredTestChains,
             pairingIsCurrent: { true },
             sign: { _ in throw InjectedSignerFailure.refused }))
 
@@ -98,6 +100,7 @@ final class KernelEnableSigningTests: XCTestCase {
             XCTAssertThrowsError(try OwnerPhoneKernelP256ApprovalBinding(
                 account: account,
                 p256PublicMaterial: material,
+                chains: configuredTestChains,
                 pairingIsCurrent: { true },
                 sign: { _ in throw InjectedSignerFailure.refused }
             )) {

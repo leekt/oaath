@@ -36,11 +36,34 @@ struct KernelEnablePairedIdentity: Equatable, Sendable {
     let p256XY: Data?
 }
 
+/// The chain/EntryPoint configuration captured with an owner account at pairing.
+/// This is service configuration, not the replay scope of an enable signature.
+public struct OwnerPhoneKernelChains: Equatable, Sendable {
+    public let entryPoints: [Int: String]
+
+    public init(entryPoints: [Int: String]) throws {
+        guard !entryPoints.isEmpty else {
+            throw OwnerPhoneWireError.invalidField("configured chains")
+        }
+        for (chainId, entryPoint) in entryPoints {
+            guard (1...9_007_199_254_740_991).contains(chainId), isNonzeroAddress(entryPoint) else {
+                throw OwnerPhoneWireError.invalidField("configured chain")
+            }
+        }
+        self.entryPoints = entryPoints
+    }
+
+    public func contains(chainId: Int, entryPoint: String) -> Bool {
+        entryPoints[chainId] == entryPoint
+    }
+}
+
 /// A sealed approval binding. Construction captures one exact,
 /// already-validated account/P-256 pairing and only a verified-digest signer;
 /// no raw digest or raw signer escapes this owner.
 public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
     private let pairedIdentity: KernelEnablePairedIdentity
+    let chains: OwnerPhoneKernelChains
     private let pairingIsCurrentClosure: @Sendable () -> Bool
     private let signClosure: @Sendable (VerifiedSignableDigest) throws -> Data
 
@@ -50,6 +73,7 @@ public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
     public init(
         account: String,
         p256PublicMaterial: String,
+        chains: OwnerPhoneKernelChains,
         pairingIsCurrent: @escaping @Sendable () -> Bool,
         sign: @escaping @Sendable (VerifiedSignableDigest) throws -> Data
     ) throws {
@@ -61,6 +85,7 @@ public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
             p256XY: p256XY)
         _ = try kernelEnablePublicKey(for: pairedIdentity)
         self.pairedIdentity = pairedIdentity
+        self.chains = chains
         pairingIsCurrentClosure = pairingIsCurrent
         signClosure = sign
     }
