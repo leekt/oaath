@@ -254,6 +254,9 @@ const state = await ok(
 if (state.requestId !== created.requestId) fail("the owner read another request");
 if (state.decision !== null) fail("an undecided request must carry no decision");
 
+const personalProjection = await ok(await handler(request("GET", "/native/projections/" + created.requestId, OWNER_TOKEN)), 200, "personal phone consent");
+if (personalProjection.version !== "oaath.native-projection/v5" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
+
 const approved = await ok(
   await handler(
     request("POST", "/authorization/requests/" + created.requestId + "/decision", OWNER_TOKEN, {
@@ -300,6 +303,8 @@ const teamCreated = await ok(await handler(request("POST", "/authorization/reque
 })), 201, "team create");
 const wrongOwner = await handler(request("GET", "/authorization/requests/" + teamCreated.requestId, OWNER_TOKEN));
 if (wrongOwner.status !== 404) fail("personal phone accessed the team request");
+const teamProjection = await ok(await handler(request("GET", "/native/projections/" + teamCreated.requestId, TEAM_OWNER_TOKEN)), 200, "team phone consent");
+if (JSON.stringify(teamProjection.scope.context) !== JSON.stringify(JSON.parse(teamScope).context)) fail("team phone lost requested account context");
 const snapshot = await directory.read();
 await directory.replace({ expectedRevision: snapshot.revision, directory: { ...snapshot.directory, memberships: [] } });
 const refused = await handler(request("POST", "/authorization/requests", CLIENT_TOKEN, {

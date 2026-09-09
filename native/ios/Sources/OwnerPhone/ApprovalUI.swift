@@ -131,6 +131,26 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                         value: .text(scope.application.deviceFingerprint)),
                 ]),
             PermissionConsentSection(
+                id: "context",
+                title: "Workspace and account",
+                facts: [
+                    .init(
+                        id: "context.workspaceId",
+                        label: "Workspace ID",
+                        evidence: .requestedScope,
+                        value: .text(scope.context.workspaceId)),
+                    .init(
+                        id: "context.workspaceKind",
+                        label: "Workspace kind",
+                        evidence: .requestedScope,
+                        value: .text(scope.context.workspaceKind == .personal ? "Personal" : "Team")),
+                    .init(
+                        id: "context.accountId",
+                        label: "Account ID",
+                        evidence: .requestedScope,
+                        value: .text(scope.context.accountId)),
+                ]),
+            PermissionConsentSection(
                 id: "account",
                 title: "Kernel account",
                 facts: [

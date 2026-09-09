@@ -22,7 +22,8 @@ published to npm.
 - Fetches the full owner-phone consent projection
   (`packages/server/src/native/projection.ts`) and renders it exactly as the
   relay sends it: match code, the requesting client and its redirect target,
-  the structured permission scope, or the full current-version owner-signing
+  the structured permission scope (including the requested workspace ID,
+  personal/team kind, and account ID), or the full current-version owner-signing
   request. Every structured-permission fact carries one closed evidence label:
   relay-bound client/redirect facts are visually distinct from requested scope
   and requested constraints. The projection contains no materialization,
@@ -35,6 +36,11 @@ published to npm.
   The push and the authenticated projection must agree exactly or the review
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
+
+  Native projection `oaath.native-projection/v5` requires the permission
+  request's workspace/account context. The phone rejects earlier projections;
+  update the relay and phone together and refetch consent. This display change
+  does not supply the demo's missing canonical permission-signing flow.
 - Submits approve/reject keyed by the stable `operationId` and renders the
   replayed-outcome semantics of `packages/server/src/native/decision.ts`
   honestly: a retry answers the **stored** outcome (which may differ from the

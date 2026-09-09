@@ -33,6 +33,7 @@ import {
   hashOwnerSigningRequest,
   type KernelV4ReplayableInstallOwnerSigningRequest,
   type OwnerSigningRequest,
+  type WorkspaceAccountContext,
 } from "@oaath/protocol";
 import { sha256Base64Url } from "../authorization/challenge.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
@@ -46,7 +47,7 @@ import type { RelayStore } from "../store/interface.js";
 export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v4" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v5" as const;
 
 const DISPLAY_DOMAIN = "oaath.native-display/v1:";
 
@@ -75,6 +76,8 @@ export type OwnerPhoneScopeProjection =
   | Readonly<{
       kind: "permission-request";
       decision: "approve-or-reject";
+      /** Explicit request context, independent of later account selection. */
+      context: Readonly<WorkspaceAccountContext>;
       /** The application identity the signed request binds, verbatim. */
       application: Readonly<{
         applicationId: string;
@@ -209,6 +212,7 @@ export async function projectOwnerPhoneScope(
       return Object.freeze({
         kind: "permission-request",
         decision: "approve-or-reject",
+        context: request.context,
         application: Object.freeze({
           applicationId: request.application.applicationId,
           clientId: request.application.clientId,

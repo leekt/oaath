@@ -25,6 +25,8 @@ extension OwnerPhoneRequestProjection {
                 redirectUri: "http://192.168.1.20:8788/callback"
             ),
             scope: scope ?? .permissionRequest(OwnerPhonePermissionScope(
+                context: OwnerPhoneWorkspaceAccountContext(
+                    workspaceId: "personal-1", workspaceKind: .personal, accountId: "account-1"),
                 application: OwnerPhoneApplicationIdentity(
                     applicationId: "app-a",
                     clientId: "demo-web-app",

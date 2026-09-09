@@ -21,9 +21,12 @@ final class PermissionConsentPresentationTests: XCTestCase {
         owner: OwnerPhoneCredential,
         operatorCredential: OwnerPhoneCredential,
         sessionSigner: OwnerPhoneSessionSigner?,
-        policyValidUntil: Int? = 1_753_003_600
+        policyValidUntil: Int? = 1_753_003_600,
+        workspaceKind: OwnerPhoneWorkspaceKind = .team
     ) -> OwnerPhonePermissionScope {
         OwnerPhonePermissionScope(
+            context: OwnerPhoneWorkspaceAccountContext(
+                workspaceId: "workspace-1", workspaceKind: workspaceKind, accountId: "treasury"),
             application: OwnerPhoneApplicationIdentity(
                 applicationId: "app-a",
                 clientId: "permission-client",
@@ -92,12 +95,12 @@ final class PermissionConsentPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             presentation.sections.map(\.id),
-            ["application", "account", "authority", "call.0", "call.1", "validity"])
+            ["application", "context", "account", "authority", "call.0", "call.1", "validity"])
         XCTAssertTrue(presentation.sections.allSatisfy { !$0.title.isEmpty })
         XCTAssertTrue(presentation.sections.flatMap(\.facts).allSatisfy { !$0.label.isEmpty })
         let values = facts(presentation)
         let evidenceByFact = evidence(presentation)
-        XCTAssertEqual(values.count, 33)
+        XCTAssertEqual(values.count, 36)
         XCTAssertEqual(evidenceByFact.count, values.count)
 
         XCTAssertEqual(values["application.applicationId"], .text("app-a"))
@@ -106,6 +109,10 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertEqual(values["application.origin"], .text("https://app.example"))
         XCTAssertEqual(values["application.redirectUri"], .text("https://app.example/callback"))
         XCTAssertEqual(values["application.deviceFingerprint"], .text("8sWHndmh"))
+
+        XCTAssertEqual(values["context.workspaceId"], .text("workspace-1"))
+        XCTAssertEqual(values["context.workspaceKind"], .text("Team"))
+        XCTAssertEqual(values["context.accountId"], .text("treasury"))
 
         XCTAssertEqual(values["account.accountIndex"], .text("7"))
         XCTAssertEqual(values["account.kernelVersion"], .text("0.4.0"))
@@ -191,9 +198,11 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 owner: .ecdsa(address: address),
                 operatorCredential: .ecdsa(address: address),
                 sessionSigner: nil,
-                policyValidUntil: nil))
+                policyValidUntil: nil,
+                workspaceKind: .personal))
         let values = facts(presentation)
 
+        XCTAssertEqual(values["context.workspaceKind"], .text("Personal"))
         XCTAssertEqual(values["account.ownerCredential.kind"], .text("ECDSA"))
         XCTAssertEqual(values["account.ownerCredential.address"], .text(address))
         XCTAssertEqual(values["authority.operatorCredential.kind"], .text("ECDSA"))
