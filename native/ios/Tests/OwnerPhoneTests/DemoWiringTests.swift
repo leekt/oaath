@@ -1,10 +1,11 @@
 /**
  EXPERIMENTAL PREVIEW — pure demo-wiring tests: route construction, pairing
- decode, credential custody, and code delivery. No network is contacted; the
+ decode, credential custody, and decision settlement. No network is contacted; the
  byte mover is faked.
 
  @author taek <leekt216@gmail.com>
  */
+import CryptoKit
 import Security
 import XCTest
 @testable import OwnerPhone
@@ -87,6 +88,19 @@ private struct FakeOwnerSigning: DemoOwnerSigning {
     func sign(_ digest: VerifiedSignableDigest) throws -> Data {
         signingAttempts?.record()
         throw FakeOwnerSigningError.unavailable
+    }
+}
+
+private struct EphemeralOwnerSigning: DemoOwnerSigning {
+    let secureEnclave = false
+    let key: P256.Signing.PrivateKey
+    let attempts: OwnerSigningAttemptRecorder
+    func publicMaterialHex() throws -> String {
+        hexEncode(Data(key.publicKey.x963Representation.dropFirst()))
+    }
+    func sign(_ digest: VerifiedSignableDigest) throws -> Data {
+        attempts.record()
+        return try key.signature(for: digest.cryptoKitDigest).derRepresentation
     }
 }
 
@@ -303,13 +317,33 @@ private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendab
     private let lock = NSLock()
     private var recorded: [URLRequest] = []
     private let decision: String?
+    private let approvalKey: P256.Signing.PrivateKey?
+    private let callback: (@Sendable () -> Void)?
 
-    init(decision: String? = nil) {
+    init(decision: String? = nil, approvalKey: P256.Signing.PrivateKey? = nil,
+         callback: (@Sendable () -> Void)? = nil) {
         self.decision = decision
+        self.approvalKey = approvalKey
+        self.callback = callback
     }
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
         lock.withLock { recorded.append(request) }
+        if request.url?.path == "/callback" {
+            callback?()
+            return (Data(), 200)
+        }
+        if approvalKey != nil, request.httpMethod == "POST" {
+            let now = Int(Date().timeIntervalSince1970 * 1000)
+            return (try JSONSerialization.data(withJSONObject: [
+                "operationId": request.url?.lastPathComponent ?? "request",
+                "outcome": "approved", "decidedAt": now, "settlement": "decided",
+                "release": ["outcome": "approved", "decidedAt": now,
+                            "code": UUID().uuidString, "artifactId": UUID().uuidString,
+                            "redirectUri": "http://127.0.0.1:8788/callback",
+                            "codeExpiresAt": now + 60000] as [String: Any]
+            ]), 200)
+        }
         guard request.httpMethod == "GET" else { return (Data(), 500) }
         let fixtureURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -325,6 +359,15 @@ private final class KernelOwnerSigningRecordingHTTP: DemoHTTP, @unchecked Sendab
             var scope = projection["scope"] as? [String: Any]
         else {
             throw OwnerPhoneWireError.invalidField("Kernel owner signing test fixture")
+        }
+        if let approvalKey,
+           var signingRequest = scope["request"] as? [String: Any],
+           var signer = signingRequest["signer"] as? [String: Any],
+           var credential = signer["ownerCredential"] as? [String: Any] {
+            credential["publicKey"] = hexEncode(approvalKey.publicKey.x963Representation)
+            signer["ownerCredential"] = credential
+            signingRequest["signer"] = signer
+            scope["request"] = signingRequest
         }
         if let decision { scope["decision"] = decision }
         projection["scope"] = scope
@@ -1118,6 +1161,38 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertEqual(store.load(), .stored(pairingB))
     }
 
+    func testSettledApprovalLeavesCodeRetrievalToTheApplication() async throws {
+        let key = P256.Signing.PrivateKey()
+        let store = InMemoryPairingStore()
+        try store.installIfAbsent(PersistedPairing(
+            endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+            credential: deviceCredentialA,
+            account: "0x" + String(repeating: "66", count: 20),
+            ownerPublicMaterial: OwnerPublicMaterial(hexEncode(Data(key.publicKey.x963Representation.dropFirst())))!))
+        let callback = expectation(description: "approval must not call the application redirect")
+        callback.isInverted = true
+        let http = KernelOwnerSigningRecordingHTTP(
+            decision: "approve-or-reject", approvalKey: key, callback: { callback.fulfill() })
+        let signing = OwnerSigningAttemptRecorder()
+        let model = DemoModel(pairings: store, http: http,
+                              ownerKey: EphemeralOwnerSigning(key: key, attempts: signing))
+        let approval = try XCTUnwrap(model.approval)
+        approval.setForeground(true)
+        model.operationIdText = "settled-kernel-approval"
+        await model.openManually()
+        await approval.approve()
+        guard case let .review(review) = approval.phase,
+              case let .settled(decision) = review.state else {
+            return XCTFail("the native approval did not settle")
+        }
+        XCTAssertEqual(decision.outcome, .approved)
+        await approval.approve()
+        await fulfillment(of: [callback], timeout: 0.2)
+        XCTAssertEqual(signing.recordedCount(), 1)
+        XCTAssertEqual(http.requests().map { $0.httpMethod ?? "" }, ["GET", "POST"])
+        XCTAssertTrue(http.requests().allSatisfy { $0.url?.host == "relay.example" })
+    }
+
     func testDemoComposesCurrentKernelBindingAndKeepsExplicitRejectOnlyScopeInert() async throws {
         let pairing = try PersistedPairing(
             endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
@@ -1668,40 +1743,5 @@ final class DemoPairingIdentityTests: XCTestCase {
         await failedB.value
         XCTAssertEqual(store.load(), .stored(pairingB))
         XCTAssertTrue(model.paired)
-    }
-}
-
-final class CodeDeliveryTests: XCTestCase {
-    func testAppendsTheCodeToTheRedirectUri() throws {
-        XCTAssertEqual(
-            try codeDeliveryURL(redirectUri: "http://192.168.1.20:8788/callback", code: "one-time")
-                .absoluteString,
-            "http://192.168.1.20:8788/callback?code=one-time")
-        // An existing query survives; the code is appended, never overwritten.
-        XCTAssertEqual(
-            try codeDeliveryURL(redirectUri: "https://app.example/cb?state=x", code: "c")
-                .absoluteString,
-            "https://app.example/cb?state=x&code=c")
-    }
-
-    func testRejectsANonHttpRedirectUri() {
-        for bad in ["javascript:alert(1)", "file:///etc/passwd", "not a url", ""] {
-            XCTAssertThrowsError(try codeDeliveryURL(redirectUri: bad, code: "c")) {
-                XCTAssertEqual($0 as? CodeDeliveryError, .invalidRedirectUri)
-            }
-        }
-    }
-
-    func testDeliveryPerformsExactlyOneGet() async throws {
-        let recorder = FakeHTTP.Recorder()
-        let status = try await deliverCode(
-            redirectUri: "http://127.0.0.1:8788/callback",
-            code: "one-time",
-            http: FakeHTTP(status: 200, body: Data(), recorder: recorder))
-        XCTAssertEqual(status, 200)
-        XCTAssertEqual(recorder.requests.map { $0.httpMethod }, ["GET"])
-        XCTAssertEqual(
-            recorder.requests.map { $0.url?.absoluteString },
-            ["http://127.0.0.1:8788/callback?code=one-time"])
     }
 }

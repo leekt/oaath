@@ -2,7 +2,7 @@
  EXPERIMENTAL PREVIEW — the wallet shell: four tabs over one DemoModel.
 
  TURN-1 design, screens 1a–1e: Wallet, Activity, Approvals, Settings. The
- shell adds chrome only — pairing, inbox polling, review, decisions, delivery,
+ shell adds chrome only — pairing, inbox polling, review, decisions,
  and unpairing stay exactly the DemoModel behavior the wiring tests pin. The
  Approvals tab is the real consent path; every other surface renders live
  facts where the app holds them and says "SAMPLE" where it does not.
@@ -90,7 +90,7 @@ struct WalletShellView: View {
 }
 
 /// The real approval surface: pending requests, the consent flow, manual open,
-/// delivery lines — plus the granted-authority section (1d) beneath it.
+/// status lines — plus the granted-authority section (1d) beneath it.
 struct WalletApprovalsView: View {
     @ObservedObject var model: DemoModel
 
@@ -133,11 +133,6 @@ struct WalletApprovalsView: View {
 
                 if let approval = model.approval {
                     ApprovalView(model: approval)
-                }
-                if !model.deliveryLine.isEmpty {
-                    Text(model.deliveryLine)
-                        .font(WalletTheme.speech(12))
-                        .foregroundStyle(WalletTheme.muted)
                 }
 
                 manualOpen
