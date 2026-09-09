@@ -5,7 +5,8 @@
  * state and owner        the decision record owns "decided"; the request record
  *                        never mutates
  * persisted evidence     the immutable requestedScope is reclassified from the
- *                        durable request before every approval attempt
+ *                        durable request before every approval attempt; the
+ *                        artifact must carry its valid bound approval
  * resource occupied?     a refused approval occupies nothing and performs no KMS
  *                        sealing; a rejection occupies only its decision row
  * retry positively safe? refused approval is read-only; a terminal outcome is
@@ -42,13 +43,14 @@ import {
   OAATH_AUTHORIZATION_DECISION_RECORD_VERSION,
   OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION,
 } from "../store/records.js";
+import { parseApprovedPermission } from "./approved-permission.js";
 import { randomIdentifier, sha256Base64Url } from "./challenge.js";
 import { verifyKernelV4ReplayableInstallOwnerSigningArtifact } from "./owner-signing.js";
 import { fetchAuthorizationRequest } from "./request.js";
 import { classifyStoredAuthorizationScope } from "./scope.js";
 
 export type AuthorizationDecisionCommand =
-  /** The owner approves and hands over the artifact the client will claim once. */
+  /** The owner supplies a request-bound approval artifact; the client claims it once. */
   Readonly<{ outcome: "approved"; artifact: string }> | Readonly<{ outcome: "rejected" }>;
 
 export interface SubmitAuthorizationDecisionInput {
@@ -100,7 +102,15 @@ export async function submitAuthorizationDecision(
     }
     const scope = classifyStoredAuthorizationScope(state.requestedScope, state.requestId);
     if (scope.kind === "permission-request") {
-      approvedArtifact = input.command.artifact;
+      try {
+        approvedArtifact = parseApprovedPermission(
+          input.command.artifact,
+          scope.request,
+          decidedAt,
+        ).plaintext;
+      } catch {
+        return relayFailure("relay_request_invalid", "permission approval artifact is invalid");
+      }
     } else if (scope.kind === "kernel-owner-signing-request") {
       approvedArtifact = verifyKernelV4ReplayableInstallOwnerSigningArtifact(
         scope.request,

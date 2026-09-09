@@ -5,6 +5,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { hashPermissionRequest, parsePermissionRequest } from "@oaath/protocol";
 import { expect } from "vitest";
 import { sha256Base64Url } from "../src/authorization/challenge.js";
 import type { RelayOwnerRouting } from "../src/authorization/request.js";
@@ -316,10 +317,27 @@ export async function createRequest(
   return expectOk<CreatedRequest>(response, 201);
 }
 
+/** Protocol-only relay fixture; Kernel execution is proved by the packed SDK consumer. */
+export function permissionArtifact(
+  requestId: string,
+  requestedScope = APPROVABLE_PERMISSION_SCOPE,
+): string {
+  const request = parsePermissionRequest({ ...JSON.parse(requestedScope), requestId });
+  return JSON.stringify({
+    version: "oaath.permission-decision/v1",
+    kind: "approve",
+    requestId,
+    requestHash: hashPermissionRequest(request),
+    decidedAt: request.requestedAt,
+    approvedPolicy: request.policy,
+    capabilityHash: `0x${"ab".repeat(32)}`,
+  });
+}
+
 export async function approve(
   harness: Harness,
   requestId: string,
-  artifact = '{"grant":"approved"}',
+  artifact = permissionArtifact(requestId),
 ): Promise<ApprovedDecision> {
   const response = await harness.handler(
     post(`/authorization/requests/${requestId}/decision`, OWNER_TOKEN, {

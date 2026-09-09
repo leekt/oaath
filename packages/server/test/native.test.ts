@@ -46,6 +46,7 @@ import {
   get,
   type Harness,
   OWNER_TOKEN,
+  permissionArtifact,
   post,
   REDIRECT_URI,
   type TestClock,
@@ -70,11 +71,11 @@ const PHONE_SCOPE = JSON.stringify({
   },
 });
 const PHONE_APPROVALS: OwnerPhonePermissionApprovals = {
-  async prepare() {
+  async prepare(request) {
     return {
       signingRequest: PHONE_SIGNING,
       async complete() {
-        return '{"grant":"approved"}';
+        return permissionArtifact(request.requestId, JSON.stringify(request));
       },
     };
   },
@@ -397,6 +398,34 @@ describe("experimental owner-phone projection", () => {
 });
 
 describe("canonical phone permission signing", () => {
+  it("refuses an invalid completion result at the shared decision owner before sealing", async () => {
+    const fixed = await fixture();
+    await expectRelayFailure(
+      () =>
+        submitOwnerPhoneDecision({
+          ...fixed,
+          caller: OWNER,
+          operationId: fixed.requestId,
+          codeTtlMs: CODE_TTL_MS,
+          command: { outcome: "approved", artifact: PHONE.canonicalArtifact },
+          permissionApprovals: {
+            async prepare() {
+              return {
+                signingRequest: PHONE_SIGNING,
+                async complete() {
+                  return "opaque completion";
+                },
+              };
+            },
+          },
+        }),
+      "relay_request_invalid",
+    );
+    expect(fixed.kmsEncryptions()).toBe(0);
+    expect((await project(fixed)).scope.kind).toBe("permission-request");
+    expect((await decide(fixed, "approved")).settlement).toBe("decided");
+  });
+
   it("projects the prepared Kernel packet for the same authenticated consent", async () => {
     const harness = createHarness({
       permissionApprovals: {

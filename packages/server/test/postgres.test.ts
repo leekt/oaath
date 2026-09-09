@@ -24,6 +24,7 @@ import {
   LIVE_PERMISSION_POLICY,
   LIVE_PERMISSION_SCOPE,
   OWNER_TOKEN,
+  permissionArtifact,
   post,
   REDIRECT_URI,
   TEST_CLOCK_SECONDS,
@@ -68,7 +69,7 @@ import {
       expired: false,
     });
 
-    const decision = await approve(harness, created.requestId, '{"grant":"pg"}');
+    const decision = await approve(harness, created.requestId);
     const consumed = await expectOk<{ artifactId: string }>(
       await consume(harness, decision.code),
       200,
@@ -77,7 +78,7 @@ import {
       await claim(harness, consumed.artifactId),
       200,
     );
-    expect(claimed.artifact).toBe('{"grant":"pg"}');
+    expect(claimed.artifact === permissionArtifact(created.requestId)).toBe(true);
     await harness.shutdown();
   });
 
@@ -182,7 +183,7 @@ import {
         decider.handler(
           post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
             outcome: "approved",
-            artifact: '{"grant":"race"}',
+            artifact: permissionArtifact(created.requestId),
           }),
         ),
       ),

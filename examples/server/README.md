@@ -77,14 +77,16 @@ curl -s $RELAY/authorization/requests/$REQUEST_ID -H "$OWNER"
 ```
 
 **3. The owner decides.** Terminal: a second decision on the same request is
-refused. `artifact` is whatever the owner's device sealed — the relay treats it as
-opaque and never parses it.
+refused. The relay checks that `artifact` contains an approved protocol decision
+bound to the request and within its requested policy. Kernel capability
+verification belongs to the SDK. The [phone example](../phone/) composes that
+executable approval; this example proves the relay transaction only.
+
+Have the owner integration write `owner-decision.json` with `outcome: "approved"`
+and the serialized permission artifact in `artifact`, then submit that command:
 
 ```sh
-curl -s -X POST $RELAY/authorization/requests/$REQUEST_ID/decision -H "$OWNER" -H "$JSON" -d '{
-  "outcome": "approved",
-  "artifact": "{\"approvedBy\":\"owner-console\"}"
-}'
+curl -s -X POST $RELAY/authorization/requests/$REQUEST_ID/decision -H "$OWNER" -H "$JSON" --data-binary @owner-decision.json
 # {"outcome":"approved","code":"SYxT6R4l…","artifactId":"jaIydsT9…","codeExpiresAt":1785810045813}
 export CODE=SYxT6R4lynOmZihuaaWu9Zp9H-oejgBjsTlyKHZOc1I
 export ARTIFACT_ID=jaIydsT9Ol_uSOFAz4QPF3pcmvgieKiKm0O3W3tzFUE
@@ -106,7 +108,7 @@ curl -s -X POST $RELAY/authorization/codes/consume -H "$CLIENT" -H "$JSON" -d '{
 
 ```sh
 curl -s -X POST $RELAY/authorization/artifacts/$ARTIFACT_ID/claim -H "$CLIENT"
-# {"requestId":"ECdLnW2y…","artifact":"{\"approvedBy\":\"owner-console\"}"}
+# The response contains requestId and the exact serialized permission artifact.
 ```
 
 **6. The replay fails closed** with a code and no disclosure. This is the

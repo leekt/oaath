@@ -30,6 +30,7 @@ import {
   OTHER_CLIENT_TOKEN,
   OTHER_OWNER_TOKEN,
   OWNER_TOKEN,
+  permissionArtifact,
   post,
   REDIRECT_URI,
 } from "./support.js";
@@ -81,7 +82,7 @@ describe("relay handler", () => {
       await harness.handler(
         post(`/authorization/requests/${created.requestId}/decision`, OTHER_OWNER_TOKEN, {
           outcome: "approved",
-          artifact: '{"grant":"team-approved"}',
+          artifact: permissionArtifact(created.requestId),
         }),
       ),
       200,
@@ -165,10 +166,8 @@ describe("relay handler", () => {
       await claim(harness, decision.artifactId),
       200,
     );
-    expect(claimed).toEqual({
-      requestId: created.requestId,
-      artifact: '{"grant":"approved"}',
-    });
+    expect(claimed.requestId).toBe(created.requestId);
+    expect(claimed.artifact === permissionArtifact(created.requestId)).toBe(true);
   });
 
   it("reports a rejected decision through fetch and resume", async () => {
@@ -572,7 +571,7 @@ describe("relay handler", () => {
         await harness.handler(
           post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
             outcome: "approved",
-            artifact: "secret",
+            artifact: permissionArtifact(created.requestId),
           }),
         ),
         "relay_kms_unavailable",
@@ -595,7 +594,7 @@ describe("relay handler", () => {
         await harness.handler(
           post(`/authorization/requests/${created.requestId}/decision`, OWNER_TOKEN, {
             outcome: "approved",
-            artifact: "secret",
+            artifact: permissionArtifact(created.requestId),
           }),
         ),
         "relay_kms_unavailable",

@@ -487,8 +487,16 @@ describe("browser golden path", () => {
     await connection.close();
   });
 
-  it("preserves a rejected permission decision and refuses to hand out authority", async () => {
-    const realm = createRealm({ owner: { outcome: "reject" } });
+  it("persists a rejection delivered at the artifact boundary and refuses authority", async () => {
+    const realm = createRealm({
+      claimedArtifact: (decision) => ({
+        version: decision.version,
+        kind: "reject",
+        requestId: decision.requestId,
+        requestHash: decision.requestHash,
+        decidedAt: decision.decidedAt,
+      }),
+    });
     const connection = await realm.oaath.connect();
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
       name: "OaathClientError",
@@ -499,14 +507,15 @@ describe("browser golden path", () => {
     await connection.close();
   });
 
-  it("refuses an owner decision that widens the reviewed policy", async () => {
+  it("refuses a claimed decision that widens the reviewed policy", async () => {
     const realm = createRealm({
-      owner: {
-        policy: (requested) => ({
-          ...(requested as Record<string, unknown>),
+      claimedArtifact: (decision) => ({
+        ...decision,
+        approvedPolicy: {
+          ...(decision.approvedPolicy as Record<string, unknown>),
           perChainOperationLimit: 1_000,
-        }),
-      },
+        },
+      }),
     });
     const connection = await realm.oaath.connect();
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
@@ -518,7 +527,7 @@ describe("browser golden path", () => {
 
   it("refuses a decision artifact bound to another request", async () => {
     const realm = createRealm({
-      owner: { artifact: (decision) => ({ ...decision, requestHash: `0x${"11".repeat(32)}` }) },
+      claimedArtifact: (decision) => ({ ...decision, requestHash: `0x${"11".repeat(32)}` }),
     });
     const connection = await realm.oaath.connect();
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({

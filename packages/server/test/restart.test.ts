@@ -20,6 +20,7 @@ import {
   get,
   OTHER_OWNER_TOKEN,
   OWNER_TOKEN,
+  permissionArtifact,
   post,
 } from "./support.js";
 import {
@@ -73,7 +74,7 @@ import {
       await after.handler(
         post(`/authorization/requests/${created.requestId}/decision`, OTHER_OWNER_TOKEN, {
           outcome: "approved",
-          artifact: '{"grant":"after-restart"}',
+          artifact: permissionArtifact(created.requestId),
         }),
       ),
       200,
@@ -86,7 +87,7 @@ import {
     const clock = createTestClock();
     const before = createPostgresHarness(fixture, clock);
     const created = await createRequest(before);
-    const decision = await approve(before, created.requestId, '{"grant":"one-shot"}');
+    const decision = await approve(before, created.requestId);
     await expectOk(await consume(before, decision.code), 200);
     await before.shutdown();
 
@@ -98,7 +99,7 @@ import {
       await claim(after, decision.artifactId),
       200,
     );
-    expect(claimed.artifact).toBe('{"grant":"one-shot"}');
+    expect(claimed.artifact === permissionArtifact(created.requestId)).toBe(true);
     await after.shutdown();
 
     const last = createPostgresHarness(fixture, clock);
