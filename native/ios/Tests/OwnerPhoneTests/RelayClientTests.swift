@@ -82,7 +82,7 @@ final class RelayClientTests: XCTestCase {
                 "release": ["outcome": "rejected", "decidedAt": 1_753_999_000_000]
             ])
         }
-        let decision = try await client.submit(operationId: "req-1", command: .rejected)
+        let decision = try await client.submit(operationId: "req-1", command: .rejected, domain: .authorization)
         XCTAssertEqual(decision.outcome, .rejected)
         XCTAssertEqual(decision.settlement, .decided)
         XCTAssertEqual(recorder.calls.count, 1)
@@ -91,6 +91,39 @@ final class RelayClientTests: XCTestCase {
             recorder.calls[0].body.flatMap { String(data: $0, encoding: .utf8) },
             #"{"command":"reject"}"#
         )
+    }
+
+    func testRevocationUsesASeparateVersionedDecisionWithoutOAuthRelease() async throws {
+        let recorder = Recorder()
+        let client = TransportRelayClient { call in
+            recorder.calls.append(call)
+            return Data(#"{"version":"oaath.native-revocation-decision/v1","operationId":"revoke-1","outcome":"rejected","decidedAt":1800000000000,"settlement":"decided"}"#.utf8)
+        }
+        let decision = try await client.submit(operationId: "revoke-1", command: .rejected, domain: .revocation)
+        XCTAssertEqual(decision.outcome, .rejected)
+        XCTAssertEqual(decision.settlement, .decided)
+        XCTAssertNil(decision.release)
+        XCTAssertEqual(recorder.calls[0].kind, .submitRevocationDecision)
+        XCTAssertEqual(recorder.calls[0].body, try OwnerPhoneDecisionCommand.rejected.encode())
+        do {
+            _ = try await client.submit(operationId: "revoke-other", command: .rejected, domain: .revocation)
+            XCTFail("foreign revocation decision must fail")
+        } catch {
+            XCTAssertEqual(error as? OwnerPhoneWireError, .invalidField("operationId"))
+        }
+    }
+
+    func testRevocationAndAuthorizationDecisionCodecsRejectTheOtherDomain() throws {
+        let revocation = Data(#"{"version":"oaath.native-revocation-decision/v1","operationId":"revoke-1","outcome":"approved","decidedAt":1800000000000,"settlement":"replayed"}"#.utf8)
+        let authorization = Data(#"{"operationId":"revoke-1","outcome":"approved","decidedAt":1800000000000,"settlement":"replayed","release":null}"#.utf8)
+        XCTAssertThrowsError(try OwnerPhoneDecision.decode(revocation))
+        XCTAssertThrowsError(try OwnerPhoneDecision.decodeRevocation(authorization))
+        var wrong = try Wire.object(revocation, label: "test")
+        wrong["release"] = NSNull()
+        XCTAssertThrowsError(try OwnerPhoneDecision.decodeRevocation(JSONSerialization.data(withJSONObject: wrong)))
+        wrong.removeValue(forKey: "release")
+        wrong["version"] = "oaath.native-revocation-decision/v0"
+        XCTAssertThrowsError(try OwnerPhoneDecision.decodeRevocation(JSONSerialization.data(withJSONObject: wrong)))
     }
 
     func testAMalformedOperationIdNeverReachesTheTransport() async {
@@ -119,7 +152,7 @@ final class RelayClientTests: XCTestCase {
             ])
         }
         do {
-            _ = try await client.submit(operationId: "req-1", command: .rejected)
+            _ = try await client.submit(operationId: "req-1", command: .rejected, domain: .authorization)
             XCTFail("foreign decision must fail closed")
         } catch {
             XCTAssertEqual(error as? OwnerPhoneWireError, .invalidField("operationId"))

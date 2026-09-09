@@ -18,6 +18,12 @@
  */
 import Foundation
 
+/// Grant authorization releases an OAuth code; owner revocation never does.
+public enum OwnerPhoneDecisionDomain: Equatable, Sendable {
+    case authorization
+    case revocation
+}
+
 public enum OwnerPhoneOutcome: String, Equatable, Sendable {
     case approved
     case rejected
@@ -34,7 +40,7 @@ public enum OwnerPhoneSettlement: String, Equatable, Sendable {
 /// `packages/server/src/relay/handler.ts`. This is deliberately not the
 /// authorization route's `{outcome}` envelope.
 public enum OwnerPhoneDecisionCommand: Equatable, Sendable {
-    /// The owner approves and hands over the artifact the client will claim once.
+    /// The owner approves and hands the artifact to the selected decision owner.
     case approved(artifact: String)
     case rejected
 
@@ -143,6 +149,21 @@ public struct OwnerPhoneDecision: Equatable, Sendable {
         )
     }
 
+    /// Versioned owner-operation acknowledgement. Approval is not onchain completion.
+    public static func decodeRevocation(_ data: Data) throws -> OwnerPhoneDecision {
+        let object = try Wire.object(data, label: "revocation decision")
+        try Wire.exactKeys(object, ["version", "operationId", "outcome", "decidedAt", "settlement"],
+                           label: "revocation decision")
+        guard object["version"] as? String == "oaath.native-revocation-decision/v1",
+              let outcome = (object["outcome"] as? String).flatMap(OwnerPhoneOutcome.init),
+              let settlement = (object["settlement"] as? String).flatMap(OwnerPhoneSettlement.init)
+        else { throw OwnerPhoneWireError.invalidField("revocation decision") }
+        return OwnerPhoneDecision(
+            operationId: try Wire.identifier(object["operationId"], maximum: WireLimits.operationId, label: "operationId"),
+            outcome: outcome, decidedAt: try Wire.timestamp(object["decidedAt"], label: "decidedAt"),
+            settlement: settlement, release: nil)
+    }
+
     private static func decodeRelease(_ value: Any?) throws -> OwnerPhoneRelease? {
         if value is NSNull {
             return nil
@@ -214,7 +235,7 @@ public struct OwnerPhoneReview: Equatable, Sendable {
         guard now < projection.expiresAt else { throw TransitionError.expired }
         if outcome == .approved {
             switch projection.scope {
-            case .permissionRequest:
+            case .permissionRequest, .kernelRevocation:
                 throw TransitionError.authorizationRequired
             case let .ownerSigningRequest(scope):
                 guard scope.decisionCapability == .approveOrReject else {
@@ -243,8 +264,8 @@ public struct OwnerPhoneReview: Equatable, Sendable {
             throw TransitionError.notApprovable
         }
         switch projection.scope {
-        case .permissionRequest:
-            break // ApprovalModel binds the fetched Kernel packet before entering.
+        case .permissionRequest, .kernelRevocation:
+            break // ApprovalModel binds the verified Kernel packet before entering.
         case let .ownerSigningRequest(scope):
             guard scope.decisionCapability == .approveOrReject else {
                 throw TransitionError.notApprovable
@@ -281,6 +302,9 @@ public struct OwnerPhoneReview: Equatable, Sendable {
             throw TransitionError.operationMismatch
         }
         if decision.settlement == .decided, decision.outcome != sent {
+            throw TransitionError.contradictoryEvidence
+        }
+        if projection.decisionDomain == .revocation, decision.release != nil {
             throw TransitionError.contradictoryEvidence
         }
         unresolvedIntent = nil

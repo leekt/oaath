@@ -1,5 +1,5 @@
 /**
- Package-internal Kernel 0.4.0 replayable-install signing refinement.
+ Package-internal Kernel 0.4.0 install and revocation signing refinement.
 
  Pure refinement first proves the exact Kernel profile without minting signing
  authority. Artifact production then accepts only an already-captured pending
@@ -20,6 +20,7 @@ enum KernelEnableSigningError: Error, Equatable, Sendable {
     case requestNotKernelEnable
     case pairedIdentityInvalid
     case accountMismatch
+    case chainMismatch
     case credentialMismatch
     case typedDataInvalid
     case replayInvalid
@@ -95,23 +96,26 @@ public struct OwnerPhoneKernelP256ApprovalBinding: Sendable {
     }
 
     func validates(_ review: OwnerPhoneReview, now: Int) -> Bool {
-        (try? verifyKernelEnableReview(
+        (try? verifyKernelReview(
             review,
             now: now,
-            pairedIdentity: pairedIdentity)) != nil
+            pairedIdentity: pairedIdentity,
+            chains: chains)) != nil
     }
 
     func semanticallyMatches(_ projection: OwnerPhoneRequestProjection) -> Bool {
-        (try? verifyKernelEnableProjection(
+        (try? verifyKernelProjection(
             projection,
-            pairedIdentity: pairedIdentity)) != nil
+            pairedIdentity: pairedIdentity,
+            chains: chains)) != nil
     }
 
     func makeArtifact(_ review: OwnerPhoneReview, now: Int) throws -> String {
-        try makeKernelEnableOwnerSigningArtifact(
+        try makeKernelOwnerSigningArtifact(
             review: review,
             now: now,
             pairedIdentity: pairedIdentity,
+            chains: chains,
             signer: signClosure)
     }
 }
@@ -128,6 +132,11 @@ public struct VerifiedSignableDigest: Sendable {
     fileprivate init(derived: DerivedEIP712Digest) {
         precondition(derived.bytes.count == Self.byteCount)
         storage = derived.bytes
+    }
+
+    fileprivate init(revocation: DerivedKernelRevocationOperation) {
+        precondition(revocation.digest.count == Self.byteCount)
+        storage = revocation.digest
     }
 
     /// Package-only views for the two exact cryptographic consumers. Neither
@@ -179,7 +188,7 @@ private let kernelInstallFields = [
     CanonicalEIP712Field(name: "internalData", type: "bytes")
 ]
 
-private struct VerifiedKernelEnableRequest {
+private struct VerifiedKernelRequest {
     let requestHash: String
     let digest: VerifiedSignableDigest
     let publicKey: P256.Signing.PublicKey
@@ -210,16 +219,18 @@ private struct CapturedKernelEnableSigningScope {
  result must normalize to a compact low-S signature that verifies over the
  exact paired/requested P-256 public key and the device-derived digest.
  */
-func makeKernelEnableOwnerSigningArtifact(
+func makeKernelOwnerSigningArtifact(
     review: OwnerPhoneReview,
     now: Int,
     pairedIdentity: KernelEnablePairedIdentity,
+    chains: OwnerPhoneKernelChains,
     signer: (VerifiedSignableDigest) throws -> Data
 ) throws -> String {
-    let verified = try verifyKernelEnableReview(
+    let verified = try verifyKernelReview(
         review,
         now: now,
-        pairedIdentity: pairedIdentity)
+        pairedIdentity: pairedIdentity,
+        chains: chains)
 
     let der: Data
     do {
@@ -247,21 +258,43 @@ func makeKernelEnableOwnerSigningArtifact(
         "\"requestHash\":\"\(verified.requestHash)\",\"signature\":\"\(hexEncode(raw))\"}"
 }
 
-private func verifyKernelEnableReview(
+private func verifyKernelReview(
     _ review: OwnerPhoneReview,
     now: Int,
-    pairedIdentity: KernelEnablePairedIdentity
-) throws -> VerifiedKernelEnableRequest {
+    pairedIdentity: KernelEnablePairedIdentity,
+    chains: OwnerPhoneKernelChains
+) throws -> VerifiedKernelRequest {
     guard case .pending = review.state else {
         throw KernelEnableSigningError.reviewNotPending
     }
     guard now < review.projection.expiresAt else {
         throw KernelEnableSigningError.expired
     }
-    let bound = try verifyKernelEnableProjection(
-        review.projection,
-        pairedIdentity: pairedIdentity)
-    return VerifiedKernelEnableRequest(
+    return try verifyKernelProjection(review.projection, pairedIdentity: pairedIdentity, chains: chains)
+}
+
+private func verifyKernelProjection(
+    _ projection: OwnerPhoneRequestProjection,
+    pairedIdentity: KernelEnablePairedIdentity,
+    chains: OwnerPhoneKernelChains
+) throws -> VerifiedKernelRequest {
+    if case let .kernelRevocation(scope) = projection.scope {
+        let publicKey = try kernelEnablePublicKey(for: pairedIdentity)
+        guard scope.operation.account == pairedIdentity.account else {
+            throw KernelEnableSigningError.accountMismatch
+        }
+        guard scope.ownerPublicKey == publicKey.x963Representation else {
+            throw KernelEnableSigningError.credentialMismatch
+        }
+        guard chains.contains(chainId: scope.operation.chainId, entryPoint: scope.operation.entryPoint) else {
+            throw KernelEnableSigningError.chainMismatch
+        }
+        return VerifiedKernelRequest(
+            requestHash: scope.requestHash,
+            digest: VerifiedSignableDigest(revocation: scope.operation), publicKey: publicKey)
+    }
+    let bound = try verifyKernelEnableProjection(projection, pairedIdentity: pairedIdentity)
+    return VerifiedKernelRequest(
         requestHash: bound.requestHash,
         digest: VerifiedSignableDigest(derived: bound.digest),
         publicKey: bound.requestedPublicKey)

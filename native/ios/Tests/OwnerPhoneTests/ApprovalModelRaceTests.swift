@@ -37,7 +37,8 @@ private actor DeferredApprovalRelay: OwnerPhoneRelayClient {
 
     func submit(
         operationId: String,
-        command: OwnerPhoneDecisionCommand
+        command: OwnerPhoneDecisionCommand,
+        domain: OwnerPhoneDecisionDomain
     ) async throws -> OwnerPhoneDecision {
         submissions.append(Submission(operationId: operationId, command: command))
         return try await withCheckedThrowingContinuation { continuation = $0 }
@@ -86,7 +87,8 @@ private actor ImmediateDecisionRelay: OwnerPhoneRelayClient {
 
     func submit(
         operationId: String,
-        command: OwnerPhoneDecisionCommand
+        command: OwnerPhoneDecisionCommand,
+        domain: OwnerPhoneDecisionDomain
     ) async throws -> OwnerPhoneDecision {
         submissions.append(.init(operationId: operationId, command: command))
         return OwnerPhoneDecision(
@@ -227,7 +229,8 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
 
     func submit(
         operationId: String,
-        command: OwnerPhoneDecisionCommand
+        command: OwnerPhoneDecisionCommand,
+        domain: OwnerPhoneDecisionDomain
     ) async throws -> OwnerPhoneDecision {
         guard operationId == projectionValue.operationId,
               case let .approved(artifact) = command,

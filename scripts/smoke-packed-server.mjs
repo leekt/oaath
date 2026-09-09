@@ -28,6 +28,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { readFileSync } from "node:fs";
 import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
 
 /** Every published entry, mapped to the built artifact it must deliver. */
@@ -41,6 +42,8 @@ const SUBPATHS = {
 const PG_VERSION = "8.22.0";
 
 const SMOKE = String.raw`
+import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import {
   deriveCodeChallenge,
   hashGrantPolicyCalls,
@@ -53,7 +56,7 @@ import {
 } from "@oaath/protocol";
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import { APNS_PAYLOAD_MAX_BYTES, createApnsSender } from "@oaath/server/apns";
-import { NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest } from "@oaath/server/native";
+import { NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest, projectOwnerPhoneRevocation } from "@oaath/server/native";
 import {
   createPostgresRelaySchema,
   createPostgresRelayStore,
@@ -255,7 +258,7 @@ if (state.requestId !== created.requestId) fail("the owner read another request"
 if (state.decision !== null) fail("an undecided request must carry no decision");
 
 const personalProjection = await ok(await handler(request("GET", "/native/projections/" + created.requestId, OWNER_TOKEN)), 200, "personal phone consent");
-if (personalProjection.version !== "oaath.native-projection/v5" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
+if (personalProjection.version !== "oaath.native-projection/v6" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
 
 const approved = await ok(
   await handler(
@@ -387,6 +390,17 @@ if (statements.join("\n") !== OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS.join("\n"))
 // The experimental previews resolve and stay callable behind their own subpaths.
 if (typeof NATIVE_DISPLAY_PAYLOAD_LENGTH !== "number") fail("the native preview is unusable");
 if (typeof projectOwnerPhoneRequest !== "function") fail("projectOwnerPhoneRequest is missing");
+const revocationSource = JSON.parse(readFileSync(new URL("./revocation-source.json", import.meta.url), "utf8"));
+const revocationGolden = JSON.parse(readFileSync(new URL("./revocation-golden.json", import.meta.url), "utf8"));
+for (const [index, { name, ...operation }] of revocationSource.valid.entries()) {
+  const projection = await projectOwnerPhoneRevocation({
+    operationId: "revoke-" + index, ownerSubject: "fixture-owner", expiresAt: 1800000060000,
+    request: { version: "oaath.kernel-revocation-signing-request/v1", kind: "kernel-revocation",
+      permissionRequest: revocationSource.permissionRequest, install: revocationSource.installProjection.scope.request, ...operation },
+  });
+  if (!isDeepStrictEqual(JSON.parse(JSON.stringify(projection)), revocationGolden[index])) fail("packed revocation projection differs from Swift vector");
+}
+
 if (typeof APNS_PAYLOAD_MAX_BYTES !== "number") fail("the apns preview is unusable");
 if (typeof createApnsSender !== "function") fail("createApnsSender is missing");
 
@@ -430,6 +444,8 @@ import {
 import {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   type OwnerPhoneRequestProjection,
+  type OwnerPhoneRevocationDecision,
+  projectOwnerPhoneRevocation,
 } from "@oaath/server/native";
 import {
   createPostgresRelayStore,
@@ -438,6 +454,12 @@ import {
   createPostgresServiceDirectoryStore,
 } from "@oaath/server/postgres";
 import type { Pool } from "pg";
+
+export const revocationProjection: (input: Parameters<typeof projectOwnerPhoneRevocation>[0]) => Promise<OwnerPhoneRequestProjection> = projectOwnerPhoneRevocation;
+export const revocationDecision: OwnerPhoneRevocationDecision = {
+  version: "oaath.native-revocation-decision/v1", operationId: "revoke-1",
+  outcome: "rejected", decidedAt: 1800000000000, settlement: "decided",
+};
 
 export const challenge: string = deriveCodeChallenge("a".repeat(43));
 
@@ -500,7 +522,21 @@ const consumer = await createConsumer({
   dependencies: { pg: PG_VERSION, "@types/pg": "8.20.3", "@types/node": "22.13.0" },
   types: ["node"],
   skipLibCheck: true,
-  files: { "smoke.mjs": SMOKE, "types.ts": TYPES },
+  files: {
+    "smoke.mjs": SMOKE,
+    "types.ts": TYPES,
+    "revocation-source.json": readFileSync(
+      new URL(
+        "../packages/protocol/test/fixtures/kernel-revocation-operation.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    "revocation-golden.json": readFileSync(
+      new URL("../packages/server/test/fixtures/phone-revocation-golden.json", import.meta.url),
+      "utf8",
+    ),
+  },
 });
 
 try {

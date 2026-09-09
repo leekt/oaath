@@ -83,10 +83,12 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
         return request
     }
 
-    /// `POST /native/decisions/{operationId}`, owner-authenticated.
-    func decisionRequest(operationId: String, body: Data, credential: String) -> URLRequest {
+    /// Owner-authenticated decision; revocation uses its separate owner-operation contract.
+    func decisionRequest(operationId: String, body: Data, credential: String,
+                         domain: OwnerPhoneDecisionDomain) -> URLRequest {
+        let route = domain == .authorization ? "decisions" : "revocation-decisions"
         var request = URLRequest(
-            url: baseURL.appendingPathComponent("native/decisions/\(operationId)"))
+            url: baseURL.appendingPathComponent("native/\(route)/\(operationId)"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -149,11 +151,12 @@ public func demoRelayClient(
         case .fetchPermissionSigningProjection:
             request = pairing.endpoint.permissionSigningRequest(
                 operationId: call.operationId, credential: pairing.credential)
-        case .submitDecision:
+        case .submitDecision, .submitRevocationDecision:
             request = pairing.endpoint.decisionRequest(
                 operationId: call.operationId,
                 body: call.body ?? Data(),
-                credential: pairing.credential)
+                credential: pairing.credential,
+                domain: call.kind == .submitDecision ? .authorization : .revocation)
         }
         let (data, status) = try await http.send(request)
         if status == 401 { await onUnauthorized?(pairing) }

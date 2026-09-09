@@ -37,8 +37,9 @@ published to npm.
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
 
-  Native projection `oaath.native-projection/v5` requires the permission
-  request's workspace/account context. The phone rejects earlier projections;
+  Native projection `oaath.native-projection/v6` carries workspace/account
+  context and a closed `kernel-revocation` scope. Revocations require a null
+  redirect target; grant authorization requires code delivery. The phone rejects earlier projections;
   update the relay and phone together and refetch consent. On approval, the phone
   fetches `/native/permission-signing/{operationId}` and binds its operation,
   client, match code, expiry, and owner credential to the displayed consent.
@@ -90,8 +91,21 @@ The package-internal revocation codec independently reconstructs Kernel nonce
 invalidation or permission removal and derives the EntryPoint 0.7 operation
 hash, including chain, EntryPoint, deployment data, nonce, and gas. Shared
 unsigned protocol/Swift fixtures prove both effects and reject unrelated calls
-even with correct hashes. This codec produces semantic evidence only; revocation
-consent, paired configured-chain checks, and owner signing are not wired yet.
+even with correct hashes. Revocation consent identifies service-bound permission
+facts separately from the locally verified effect, account, chain, EntryPoint,
+deployment, nonce, hash, and gas bounds. The paired binding checks the exact
+account, owner key, and configured chain/EntryPoint before signing. The current
+review, foreground, and retained-artifact retry flow is shared with installation.
+
+Revocation decisions use a separate transport domain and the strict
+`oaath.native-revocation-decision/v1` response. They release no OAuth code;
+approval is not onchain completion. The demo maps this contract to
+`POST /native/revocation-decisions/{operationId}`, but the service queue,
+authenticated HTTP handler, durable decision storage, submission, and finality
+are not implemented yet. `projectOwnerPhoneRevocation` only produces consent
+bytes from an admitted immutable request. Shared unsigned vectors, native
+CryptoKit signing, and a fake transport prove this phone flow; they do not prove
+service execution or a full Swift-to-SDK artifact round trip.
 
 ## Transport is deployment-wired
 

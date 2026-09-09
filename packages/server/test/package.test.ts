@@ -95,6 +95,7 @@ describe("package boundary", () => {
       "OAATH_NATIVE_PROJECTION_VERSION",
       "projectOwnerPhonePermissionSigning",
       "projectOwnerPhoneRequest",
+      "projectOwnerPhoneRevocation",
       "submitOwnerPhoneDecision",
     ]);
   });

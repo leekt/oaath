@@ -1,6 +1,6 @@
 {
   "installProjection": {
-    "version": "oaath.native-projection/v5",
+    "version": "oaath.native-projection/v6",
     "operationId": "fixture-operation-id",
     "displayPayload": "Ab1-_9Zz",
     "expiresAt": 1700000300000,
