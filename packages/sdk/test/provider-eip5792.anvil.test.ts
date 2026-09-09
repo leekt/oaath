@@ -27,6 +27,7 @@ import type {
 import {
   createKernelRuntime,
   ecdsaKey,
+  encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
@@ -460,13 +461,20 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           await harness.fund(request.account, parseEther("2"));
           funded.add(request.account);
         }
+        const key = BigInt(
+          encodeKernelV4NonceKey({
+            mode: request.mode,
+            validation: request.validation,
+            nonceKey: "0",
+          }),
+        );
         const nonce = await harness.client.readContract({
           address: KERNEL_V4_ENTRY_POINT_V07,
           abi: entryPoint07Abi,
           functionName: "getNonce",
-          args: [request.account, 0n],
+          args: [request.account, key],
         });
-        if (nonce >> 64n !== 0n) throw new Error("the provider proof expected nonce key zero");
+        if (nonce >> 64n !== key) throw new Error("the quote returned a different nonce domain");
         return Object.freeze({
           nonceKey: "0",
           sequence: (nonce & UINT64_MASK).toString(10),
@@ -701,6 +709,19 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
         submitted: live.submitted(),
         targets: live.targetHashes.length,
       }).toEqual(beforeStatusReads);
+
+      // Enable and standard validation have separate EntryPoint nonce keys.
+      // A third execution must read the advanced standard sequence, not zero
+      // or the root account's sequence. Exercise the primary SDK entry too.
+      const third = await grant.sendCalls({
+        chain: CHAIN_ID,
+        calls: [{ target: successA, value: "1", data: CALL_SELECTOR }],
+      });
+      expect((await third.wait()).status).toBe("finalized");
+      expect(third.outcome.outcome).toBe("success");
+      expect(await live.harness.client.getBalance({ address: successA })).toBe(2n);
+      expect(live.opened()).toBe(3);
+      expect(live.submitted()).toBe(3);
 
       await connection.close();
     } finally {
