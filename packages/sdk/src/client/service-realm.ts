@@ -24,7 +24,7 @@
  */
 import { parseServiceBootstrap, type ServiceBootstrap } from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { credentialOwnerKey } from "../kernel/key/credential-owner.js";
+import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
 import { createIndexedDbCleanupStore } from "../persistence/indexeddb/cleanup-store.js";
@@ -497,7 +497,7 @@ async function composeConfiguration(
     stores,
     chains: bootstrap.chains.map((chain) => serviceChainCapability(transport, input.url, chain)),
     signing: {
-      owner: credentialOwnerKey({
+      owner: credentialKey({
         credential: bootstrap.account.ownerCredential,
         validator: bootstrap.ownerValidator,
       }),

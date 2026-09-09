@@ -58,12 +58,8 @@ import { sameInstall } from "../kernel/internal.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
-import type {
-  KernelPolicyProfile,
-  KernelRuntime,
-  KernelRuntimePrepareInput,
-  KeyProfile,
-} from "../kernel/types.js";
+import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
+import type { KernelRuntime, KernelRuntimePrepareInput, KeyProfile } from "../kernel/types.js";
 import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
@@ -735,45 +731,6 @@ function captureProviderValidityAdmissionInput(value: unknown): Readonly<{
       validUntil: validUntil.toString(10),
     }),
   });
-}
-
-/**
- * Maps the approved Grant policy onto Kernel policy hook profiles. This is the
- * one place the two vocabularies meet, and it is deliberately total: an approved
- * constraint with no reviewed hook profile fails closed instead of installing a
- * session that enforces less than the owner approved.
- */
-export function deriveSessionPolicyProfiles(
-  policy: Readonly<GrantPolicy>,
-): readonly KernelPolicyProfile[] {
-  // Every approved call maps to exactly one CallPolicy permission carrying that
-  // call's own value limit, in the Grant policy's canonical order. No aggregate
-  // is computed: a global maximum would install an on-chain allowance on one
-  // call that only another call's approval justified.
-  const permissions = policy.calls.map((call) => {
-    if (call.argumentEquals.length > 0) {
-      unsupported("policy_argument_constraint_unsupported");
-    }
-    return Object.freeze({
-      target: call.target,
-      selector: call.selector,
-      valueLimit: call.valueLimit,
-    });
-  });
-  if (permissions.length === 0) unsupported("policy_has_no_calls");
-  if (policy.validUntil === null) unsupported("policy_expiry_unbounded");
-  return Object.freeze([
-    Object.freeze({ kind: "call" as const, permissions: Object.freeze(permissions) }),
-    Object.freeze({
-      kind: "expiry" as const,
-      validAfter: policy.validAfter.toString(10),
-      validUntil: policy.validUntil.toString(10),
-    }),
-    Object.freeze({
-      kind: "operation-limit" as const,
-      maximumOperations: policy.perChainOperationLimit.toString(10),
-    }),
-  ]);
 }
 
 function coverageToRouting(result: GrantPolicyCoverageResult): OaathSessionCoverage {

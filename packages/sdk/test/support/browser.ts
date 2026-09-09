@@ -34,13 +34,13 @@ import type {
   OaathChainCapability,
   OaathRegisteredPaymasterService,
 } from "../../src/advanced.js";
-import { deriveSessionPolicyProfiles } from "../../src/client/grant-handle.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
 import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../../src/kernel/modules.js";
+import { deriveSessionPolicyProfiles } from "../../src/kernel/permission/profiles.js";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
