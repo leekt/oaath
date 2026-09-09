@@ -26,9 +26,10 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v4"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v5"
 
-/// Current protocol versions embedded in the v4 owner-signing projection.
+/// Current protocol versions embedded in the consent projection.
+public let ownerPhoneWorkspaceAccountContextVersion = "oaath.workspace-account-context/v1"
 public let ownerPhoneSigningRequestVersion = "oaath.owner-signing-request/v1"
 public let ownerPhoneOwnerCredentialVersion = "oaath.owner-credential-profile/v1"
 
@@ -128,6 +129,26 @@ public struct OwnerPhoneApplicationIdentity: Equatable, Sendable {
     }
 }
 
+public enum OwnerPhoneWorkspaceKind: String, Equatable, Sendable {
+    case personal
+    case team
+}
+
+/// The explicit workspace and account bound by the permission request.
+/// It does not follow subsequent changes to the member's account selection.
+public struct OwnerPhoneWorkspaceAccountContext: Equatable, Sendable {
+    public let version = ownerPhoneWorkspaceAccountContextVersion
+    public let workspaceId: String
+    public let workspaceKind: OwnerPhoneWorkspaceKind
+    public let accountId: String
+
+    public init(workspaceId: String, workspaceKind: OwnerPhoneWorkspaceKind, accountId: String) {
+        self.workspaceId = workspaceId
+        self.workspaceKind = workspaceKind
+        self.accountId = accountId
+    }
+}
+
 /// The logical account the requested authority acts for.
 public struct OwnerPhoneAccountIdentity: Equatable, Sendable {
     public let accountIndex: String
@@ -169,6 +190,7 @@ public struct OwnerPhoneSessionSigner: Equatable, Sendable {
 /// that determines who receives authority, over which account, and under what
 /// limits.
 public struct OwnerPhonePermissionScope: Equatable, Sendable {
+    public let context: OwnerPhoneWorkspaceAccountContext
     public let application: OwnerPhoneApplicationIdentity
     public let account: OwnerPhoneAccountIdentity
     /// The session credential that receives the scoped authority.
@@ -187,6 +209,7 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     public let perChainOperationLimit: Int
 
     public init(
+        context: OwnerPhoneWorkspaceAccountContext,
         application: OwnerPhoneApplicationIdentity,
         account: OwnerPhoneAccountIdentity,
         operatorCredential: OwnerPhoneCredential,
@@ -199,6 +222,7 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
         policyValidUntil: Int?,
         perChainOperationLimit: Int
     ) {
+        self.context = context
         self.application = application
         self.account = account
         self.operatorCredential = operatorCredential
@@ -420,6 +444,30 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 object["providerId"], maximum: WireLimits.identifier, label: "sessionSigner providerId"))
     }
 
+    private static func decodeContext(_ value: Any?) throws -> OwnerPhoneWorkspaceAccountContext {
+        let object = try Wire.object(value, label: "context")
+        try Wire.exactKeys(
+            object, ["version", "workspaceId", "workspaceKind", "accountId"], label: "context")
+        guard object["version"] as? String == ownerPhoneWorkspaceAccountContextVersion,
+              let kind = object["workspaceKind"] as? String,
+              let workspaceKind = OwnerPhoneWorkspaceKind(rawValue: kind)
+        else {
+            throw OwnerPhoneWireError.invalidField("context version or kind")
+        }
+        // These protocol IDs use the narrower parseClientId contract, not
+        // the relay's URL-safe operation ID grammar.
+        func identifier(_ field: String) throws -> String {
+            let text = try Wire.text(object[field], maximum: 64, label: "context \(field)")
+            guard text.range(of: "^[a-z0-9][a-z0-9._-]{0,63}$", options: .regularExpression) != nil else {
+                throw OwnerPhoneWireError.invalidField("context \(field)")
+            }
+            return text
+        }
+        return OwnerPhoneWorkspaceAccountContext(
+            workspaceId: try identifier("workspaceId"), workspaceKind: workspaceKind,
+            accountId: try identifier("accountId"))
+    }
+
     private static func decodeScope(_ value: Any?) throws -> OwnerPhoneScope {
         let object = try Wire.object(value, label: "scope")
         switch object["kind"] as? String {
@@ -427,7 +475,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
             try Wire.exactKeys(
                 object,
                 [
-                    "kind", "decision", "application", "account", "operatorCredential",
+                    "kind", "decision", "context", "application", "account", "operatorCredential",
                     "sessionSigner", "chainScope", "calls", "requestedAt", "expiresAt",
                     "policyValidAfter", "policyValidUntil", "perChainOperationLimit",
                 ],
@@ -449,6 +497,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                     object["policyValidUntil"], label: "policyValidUntil")
             }
             return .permissionRequest(OwnerPhonePermissionScope(
+                context: try decodeContext(object["context"]),
                 application: try decodeApplication(object["application"]),
                 account: try decodeAccount(object["account"]),
                 operatorCredential: try decodeCredential(

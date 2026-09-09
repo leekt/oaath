@@ -172,7 +172,7 @@ describe("experimental owner-phone projection", () => {
     const fixed = await fixture();
     const projection = await project(fixed);
 
-    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v4");
+    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v5");
     expect(projection.version).toBe(OAATH_NATIVE_PROJECTION_VERSION);
     expect(projection.operationId).toBe(fixed.requestId);
     expect(projection.displayPayload).toHaveLength(NATIVE_DISPLAY_PAYLOAD_LENGTH);
@@ -200,6 +200,12 @@ describe("experimental owner-phone projection", () => {
     expect(projection.scope).toEqual({
       kind: "permission-request",
       decision: "approve-or-reject",
+      context: {
+        version: "oaath.workspace-account-context/v1",
+        workspaceId: "personal-1",
+        workspaceKind: "personal",
+        accountId: "account-1",
+      },
       application: {
         applicationId: "oaath-native-tests",
         clientId: "client-a",
@@ -230,6 +236,17 @@ describe("experimental owner-phone projection", () => {
       policyValidUntil: 190,
       perChainOperationLimit: 10,
     });
+  });
+
+  it("preserves the requested team account in phone consent", async () => {
+    const context = {
+      version: "oaath.workspace-account-context/v1",
+      workspaceId: "team-1",
+      workspaceKind: "team",
+      accountId: "treasury",
+    };
+    const fixed = await fixture(JSON.stringify({ ...JSON.parse(PERMISSION_SCOPE), context }));
+    expect((await project(fixed)).scope).toMatchObject({ kind: "permission-request", context });
   });
 
   it("projects remote session custody as an approvable consent fact", async () => {

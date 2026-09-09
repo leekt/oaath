@@ -69,6 +69,12 @@ final class ProjectionTests: XCTestCase {
     private let permissionScope: [String: Any] = [
         "kind": "permission-request",
         "decision": "approve-or-reject",
+        "context": [
+            "version": "oaath.workspace-account-context/v1",
+            "workspaceId": "personal-1",
+            "workspaceKind": "personal",
+            "accountId": "account-1"
+        ],
         "application": [
             "applicationId": "app-a",
             "clientId": "demo-web-app",
@@ -212,6 +218,8 @@ final class ProjectionTests: XCTestCase {
         object["scope"] = permissionScope
         let projection = try OwnerPhoneRequestProjection.decode(json(object))
         XCTAssertEqual(projection.scope, .permissionRequest(OwnerPhonePermissionScope(
+            context: OwnerPhoneWorkspaceAccountContext(
+                workspaceId: "personal-1", workspaceKind: .personal, accountId: "account-1"),
             application: OwnerPhoneApplicationIdentity(
                 applicationId: "app-a",
                 clientId: "demo-web-app",
@@ -243,6 +251,47 @@ final class ProjectionTests: XCTestCase {
             policyValidUntil: nil,
             perChainOperationLimit: 10
         )))
+    }
+
+    func testDecodesTheRequestedTeamAccount() throws {
+        var scope = permissionScope
+        scope["context"] = [
+            "version": "oaath.workspace-account-context/v1",
+            "workspaceId": "team-1", "workspaceKind": "team", "accountId": "treasury"
+        ]
+        var object = valid
+        object["scope"] = scope
+        let projection = try OwnerPhoneRequestProjection.decode(json(object))
+        guard case let .permissionRequest(decoded) = projection.scope else {
+            return XCTFail("expected permission consent")
+        }
+        XCTAssertEqual(decoded.context, OwnerPhoneWorkspaceAccountContext(
+            workspaceId: "team-1", workspaceKind: .team, accountId: "treasury"))
+    }
+
+    func testRejectsPermissionConsentWithoutCurrentAccountContext() throws {
+        let context = permissionScope["context"] as! [String: Any]
+        var scope = permissionScope
+        scope.removeValue(forKey: "context")
+        var object = valid
+        object["scope"] = scope
+        XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object)))
+
+        for invalid: Any in [
+            NSNull(),
+            context.filter { $0.key != "accountId" },
+            context.merging(["version": "oaath.workspace-account-context/v2"]) { _, new in new },
+            context.merging(["workspaceKind": "organization"]) { _, new in new },
+            context.merging(["workspaceId": ""]) { _, new in new },
+            context.merging(["workspaceId": "Team-1"]) { _, new in new },
+            context.merging(["accountId": String(repeating: "a", count: 65)]) { _, new in new },
+            context.merging(["accountId": "other/account"]) { _, new in new },
+            context.merging(["extra": true]) { _, new in new },
+        ] {
+            scope["context"] = invalid
+            object["scope"] = scope
+            XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object)))
+        }
     }
 
     func testDecodesRemoteSessionCustodyAndRejectsUnknownModes() throws {
@@ -588,9 +637,9 @@ final class ProjectionTests: XCTestCase {
         }
     }
 
-    func testRejectsTheRetiredV3Projection() {
+    func testRejectsProjectionWithoutTheCurrentContextContract() {
         var object = valid
-        object["version"] = "oaath.native-projection/v3"
+        object["version"] = "oaath.native-projection/v4"
         XCTAssertThrowsError(try OwnerPhoneRequestProjection.decode(json(object))) {
             XCTAssertEqual($0 as? OwnerPhoneWireError, .invalidField("version"))
         }

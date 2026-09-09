@@ -46,6 +46,8 @@ final class GoldenFixtureTests: XCTestCase {
         XCTAssertEqual(permission.operationId, "fixture-operation-id")
         XCTAssertEqual(permission.matchCode.value, "Ab1-_9Zz")
         XCTAssertEqual(permission.client.clientId, "client-a")
+        XCTAssertEqual(scope.context, OwnerPhoneWorkspaceAccountContext(
+            workspaceId: "personal-1", workspaceKind: .personal, accountId: "account-1"))
         XCTAssertEqual(scope.chainScope, "all")
         XCTAssertEqual(scope.calls.count, 1)
         XCTAssertEqual(scope.perChainOperationLimit, 10)
