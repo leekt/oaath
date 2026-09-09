@@ -102,7 +102,7 @@ const DEFAULT_REQUEST_TTL_MS = 300_000;
 const DEFAULT_CODE_TTL_MS = 60_000;
 const DEFAULT_MAX_BODY_BYTES = 65_536;
 const MAX_TTL_MS = 86_400_000;
-/** RFC 6749 ceiling, matching `MAX_AUTHORIZATION_CODE_LIFETIME` in @oaath/protocol. */
+/** The relay owns the authorization-code lifetime ceiling, in milliseconds. */
 const MAX_CODE_TTL_MS = 600_000;
 const MAX_PAYMASTER_REQUEST_TIMEOUT_MS = 30_000;
 const HASH = /^0x[0-9a-f]{64}$/u;

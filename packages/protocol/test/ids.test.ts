@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  deriveMaterializationId,
   OaathProtocolError,
   parseAccountId,
   parseClientId,
   parseDeviceId,
-  parseGrantId,
-  parseMaterializationId,
-  parseOperationId,
   parseSubjectId,
 } from "../src/index.js";
 
@@ -49,17 +45,8 @@ describe("canonical protocol ids", () => {
     }
   });
 
-  it("keeps the existing bounded canonical grantId shape", () => {
-    expect(parseGrantId("permission-request-1")).toBe("permission-request-1");
-    expect(parseGrantId("Any Bounded String #1")).toBe("Any Bounded String #1");
-    expect(parseGrantId("g".repeat(256))).toBe("g".repeat(256));
-    for (const value of ["", " untrimmed", "untrimmed ", "g".repeat(257), 1, null, {}]) {
-      expectIdError(() => parseGrantId(value));
-    }
-  });
-
-  it("requires derived 32-byte hashes for subject and operation ids", () => {
-    for (const parse of [parseSubjectId, parseOperationId]) {
+  it("requires derived 32-byte hashes for subject ids", () => {
+    for (const parse of [parseSubjectId]) {
       expect(parse(hash)).toBe(hash);
       for (const value of [
         hash.toUpperCase(),
@@ -74,43 +61,11 @@ describe("canonical protocol ids", () => {
     }
   });
 
-  it("derives and re-parses the chain-local materialization id", () => {
-    expect(deriveMaterializationId("grant-1", 8453)).toBe("grant-1#8453");
-    expect(parseMaterializationId("grant-1#8453")).toBe("grant-1#8453");
-    // A grantId may itself contain "#": the last separator owns the chain.
-    expect(deriveMaterializationId("grant#7", 1)).toBe("grant#7#1");
-    expect(parseMaterializationId("grant#7#1")).toBe("grant#7#1");
-
-    for (const chainId of [0, -1, -0, 1.5, "1", null, undefined, Number.MAX_SAFE_INTEGER + 1]) {
-      expectIdError(() => deriveMaterializationId("grant-1", chainId));
-    }
-    expectIdError(() => deriveMaterializationId(" untrimmed ", 1));
-    for (const value of [
-      "grant-1",
-      "#1",
-      "grant-1#",
-      "grant-1#0",
-      "grant-1#01",
-      "grant-1#-1",
-      "grant-1#1.0",
-      `grant-1#${"9".repeat(16)}`,
-      " untrimmed #1",
-      42,
-    ]) {
-      expectIdError(() => parseMaterializationId(value));
-    }
-  });
-
   it("routes failures to a caller-supplied owner code when one is given", () => {
     const fail = (message: string): never => {
       throw new RangeError(message);
     };
     expect(() => parseClientId("BAD", fail)).toThrow(RangeError);
-    expect(() => parseGrantId("", fail)).toThrow(RangeError);
     expect(() => parseSubjectId("0x", fail)).toThrow(RangeError);
-    expect(() => parseMaterializationId(1, fail)).toThrow(RangeError);
-    expect(() => parseMaterializationId("no-separator", fail)).toThrow(RangeError);
-    expect(() => parseMaterializationId("grant#x", fail)).toThrow(RangeError);
-    expect(() => deriveMaterializationId("grant", 0, fail)).toThrow(RangeError);
   });
 });

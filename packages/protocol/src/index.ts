@@ -19,41 +19,8 @@ export {
   OAATH_SUBJECT_VERSION,
   parseSubjectBinding,
 } from "./actors/subject.js";
-export type {
-  AuthorizationCode,
-  AuthorizationCodeState,
-  AuthorizationCodeTransition,
-  ConsumedAuthorizationCode,
-  ExpiredAuthorizationCode,
-  IssuedAuthorizationCode,
-} from "./authorization/code.js";
-export {
-  advanceAuthorizationCode,
-  captureAuthorizationCode,
-  deriveCodeChallenge,
-  hashAuthorizationCode,
-  MAX_AUTHORIZATION_CODE_LIFETIME,
-  OAATH_AUTHORIZATION_CODE_VERSION,
-  parseAuthorizationCode,
-} from "./authorization/code.js";
-export type { AuthorizationDecision } from "./authorization/decision.js";
-export {
-  captureAuthorizationDecision,
-  OAATH_AUTHORIZATION_DECISION_VERSION,
-  parseAuthorizationDecision,
-} from "./authorization/decision.js";
-export type { AuthorizationRequest } from "./authorization/request.js";
-export {
-  captureAuthorizationRequest,
-  OAATH_AUTHORIZATION_REQUEST_VERSION,
-  parseAuthorizationRequest,
-} from "./authorization/request.js";
-export type { OaathProtocolErrorCode, ProtocolContractErrorCode } from "./errors.js";
-export {
-  isOaathProtocolErrorCode,
-  OAATH_PROTOCOL_ERROR_CODES,
-  OaathProtocolError,
-} from "./errors.js";
+export type { ProtocolContractErrorCode } from "./errors.js";
+export { OaathProtocolError } from "./errors.js";
 export type {
   ActiveGrant,
   ApplicationBinding,
@@ -168,19 +135,12 @@ export type {
   AccountId,
   ClientId,
   DeviceId,
-  GrantId,
-  MaterializationId,
-  OperationId,
   SubjectId,
 } from "./ids.js";
 export {
-  deriveMaterializationId,
   parseAccountId,
   parseClientId,
   parseDeviceId,
-  parseGrantId,
-  parseMaterializationId,
-  parseOperationId,
   parseSubjectId,
 } from "./ids.js";
 export type {
@@ -285,6 +245,7 @@ export {
   parsePermissionDecision,
   parsePermissionRequest,
 } from "./permission-protocol.js";
+export { deriveCodeChallenge } from "./pkce.js";
 export type {
   ServiceAccount,
   ServiceBootstrap,
@@ -327,18 +288,3 @@ export {
   parseCanonicalEip712TypedData,
   parseOwnerSigningRequest,
 } from "./signing-request.js";
-export type { Duration, Timestamp } from "./time.js";
-export {
-  durationBetween,
-  MAX_PROTOCOL_TIMESTAMP,
-  parseDuration,
-  parseTimestamp,
-} from "./time.js";
-export type { BrowserEnvelope, BrowserEnvelopeKind, BrowserErrorPayload } from "./wire/browser.js";
-export {
-  captureBrowserEnvelope,
-  OAATH_BROWSER_ENVELOPE_VERSION,
-  parseBrowserEnvelope,
-} from "./wire/browser.js";
-export type { ProtocolErrorStatus } from "./wire/server.js";
-export { protocolErrorStatus, serverErrorEnvelope } from "./wire/server.js";
