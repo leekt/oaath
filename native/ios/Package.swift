@@ -1,6 +1,6 @@
 // swift-tools-version:5.10
 // EXPERIMENTAL PREVIEW — owner-phone iOS approval app for the OAAth relay.
-// Not part of the fixed npm release group and never published to npm.
+// Use the same source revision as the fixed npm group; Swift is not published to npm.
 //
 // OwnerPhone is the reviewed wire/consent library; OwnerPhoneDemo is the demo
 // app's wiring (pairing, transport, screens) consumed by the
