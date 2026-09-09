@@ -5,17 +5,19 @@ import {
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createMemoryRelayStore } from "../src/index.js";
+import { createMemoryRelayStore, OaathRelayError, type RelayStore } from "../src/index.js";
 import { requestOwnerPhoneRevocation } from "../src/native.js";
 import { createRelayHandler } from "../src/relay/handler.js";
 import { createPostgresRelayStore } from "../src/store/postgres/store.js";
 import {
+  CLIENT_TOKEN,
   createTestAuthentication,
   createTestClock,
   createTestKms,
   expectFailure,
   expectOk,
   get,
+  OTHER_CLIENT_TOKEN,
   OTHER_OWNER_TOKEN,
   OWNER_TOKEN,
   post,
@@ -32,6 +34,89 @@ const projectionPath = (id: string) => `/native/projections/${id}`;
 const decisionPath = (id: string) => `/native/revocation-decisions/${id}`;
 
 describe("durable phone revocation admission and decision", () => {
+  it("recovers the same pending request before preparing or opening its retained approval again", async () => {
+    const f = await setup(createMemoryRelayStore());
+    const first = await requestOwnerPhoneRevocation(f.input);
+    const decrypt = vi.spyOn(f.input.kms, "decrypt");
+    const second = await requestOwnerPhoneRevocation(f.input);
+    expect(second.operationId).toBe(first.operationId);
+    expect(second.expiresAt).toBe(first.expiresAt);
+    expect(f.prepare).toHaveBeenCalledTimes(1);
+    expect(decrypt).not.toHaveBeenCalled();
+    f.erase();
+  });
+
+  it("serves authenticated request/status metadata and replaces only expired undecided custody", async () => {
+    const f = await setup(createMemoryRelayStore());
+    const handler = createRelayHandler({
+      store: f.input.store,
+      kms: f.input.kms,
+      clock: f.input.clock,
+      authentication: createTestAuthentication(),
+      ownerRouting: f.input.directory,
+      requestTtlMs: 60_000,
+      revocations: { directory: f.input.directory, prepare: f.prepare },
+    });
+    const path = `/grants/${f.input.grantId}/revocations/${f.input.chainId}`;
+    await expectFailure(await handler(get(path, OTHER_CLIENT_TOKEN)), "relay_forbidden");
+    await expectFailure(await handler(get(path, CLIENT_TOKEN)), "relay_not_found");
+    await expectFailure(await handler(post(path, OWNER_TOKEN, {})), "relay_forbidden");
+    await expectFailure(
+      await handler(post(path, CLIENT_TOKEN, { account: "untrusted" })),
+      "relay_request_invalid",
+    );
+    expect(f.prepare).not.toHaveBeenCalled();
+    const first = await expectOk<Record<string, unknown>>(
+      await handler(post(path, CLIENT_TOKEN, {})),
+      201,
+    );
+    expect(first).toMatchObject({
+      grantId: f.input.grantId,
+      chainId: f.input.chainId,
+      status: "pending",
+    });
+    expect(Object.keys(first).sort()).toEqual([
+      "chainId",
+      "expiresAt",
+      "grantId",
+      "operationId",
+      "status",
+    ]);
+    expect(await expectOk(await handler(post(path, CLIENT_TOKEN, {})), 200)).toEqual(first);
+    f.harness.clock.advance(60_001);
+    expect(await expectOk(await handler(get(path, CLIENT_TOKEN)), 200)).toMatchObject({
+      status: "expired",
+    });
+    const replacement = await expectOk<Record<string, unknown>>(
+      await handler(post(path, CLIENT_TOKEN, {})),
+      201,
+    );
+    expect(replacement.operationId).not.toBe(first.operationId);
+    await expectFailure(
+      await handler(
+        post(decisionPath(String(first.operationId)), OWNER_TOKEN, { command: "reject" }),
+      ),
+      "relay_expired",
+    );
+    await expectOk(
+      await handler(
+        post(decisionPath(String(replacement.operationId)), OWNER_TOKEN, {
+          command: "approve",
+          artifact: f.artifact(),
+        }),
+      ),
+      200,
+    );
+    f.harness.clock.advance(60_001);
+    const approved = await expectOk<Record<string, unknown>>(
+      await handler(post(path, CLIENT_TOKEN, {})),
+      200,
+    );
+    expect(approved).toMatchObject({ operationId: replacement.operationId, status: "approved" });
+    expect(f.prepare).toHaveBeenCalledTimes(2);
+    f.erase();
+  });
+
   it("refuses a foreign member or unconfigured chain before preparation", async () => {
     const f = await setup(createMemoryRelayStore());
     for (const changed of [
@@ -162,11 +247,104 @@ describe("durable phone revocation admission and decision", () => {
     afterAll(async () => {
       await fixture.end();
     });
+    it("shares one admitted request across concurrent workers and recovers a lost commit response", async () => {
+      const a = fixture.createPool();
+      const b = fixture.createPool();
+      const storeA = createPostgresRelayStore({ pool: a });
+      const storeB = createPostgresRelayStore({ pool: b });
+      const f = await setup(storeA);
+      let prepared = 0;
+      let release!: () => void;
+      const bothPrepared = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const prepare = async () => {
+        prepared += 1;
+        if (prepared === 2) release();
+        await bothPrepared;
+        return f.signingRequest;
+      };
+      const answers = await Promise.all(
+        [storeA, storeB].map((store) =>
+          requestOwnerPhoneRevocation({ ...f.input, store, prepare }),
+        ),
+      );
+      expect(answers[0]?.operationId).toBe(answers[1]?.operationId);
+      expect(answers.map((answer) => answer.created).sort()).toEqual([false, true]);
+      expect(prepared).toBe(2); // Preparation reserves nothing; only the stored winner reaches the phone.
+
+      const lost = await setup(storeA);
+      const uncertain: RelayStore = {
+        close: async () => {},
+        async begin() {
+          const transaction = await storeA.begin();
+          let inserted = false;
+          return {
+            ...transaction,
+            async insertRevocationRequest(record) {
+              inserted = await transaction.insertRevocationRequest(record);
+              return inserted;
+            },
+            async commit() {
+              await transaction.commit();
+              if (inserted)
+                throw new OaathRelayError("relay_state_ambiguous", "commit response lost");
+            },
+          };
+        },
+      };
+      await expect(
+        requestOwnerPhoneRevocation({ ...lost.input, store: uncertain }),
+      ).rejects.toMatchObject({ code: "relay_state_ambiguous" });
+      expect(lost.prepare).toHaveBeenCalledTimes(1);
+      await storeA.close();
+      await storeB.close();
+      await a.end();
+      await b.end();
+      const c = fixture.createPool();
+      const recovered = createPostgresRelayStore({ pool: c });
+      const noEffect = async () => {
+        throw new Error("recovery must not prepare or open KMS");
+      };
+      const status = await requestOwnerPhoneRevocation({
+        ...lost.input,
+        store: recovered,
+        clock: createTestClock(160_000),
+        kms: { encrypt: noEffect, decrypt: noEffect },
+        directory: { resolveRevocationOwner: noEffect },
+        prepare: noEffect,
+      });
+      expect(status).toMatchObject({
+        created: false,
+        status: "pending",
+        grantId: lost.input.grantId,
+        chainId: 31337,
+      });
+      const handler = createRelayHandler({
+        store: recovered,
+        clock: createTestClock(160_000),
+        kms: { encrypt: noEffect, decrypt: noEffect },
+        authentication: createTestAuthentication(),
+        ownerRouting: { resolveOwner: noEffect },
+      });
+      expect(
+        await expectOk(
+          await handler(get(`/grants/${lost.input.grantId}/revocations/31337`, CLIENT_TOKEN)),
+          200,
+        ),
+      ).toMatchObject({ operationId: status.operationId, status: "pending" });
+      await recovered.close();
+      await c.end();
+      f.erase();
+      lost.erase();
+    });
+
     it("recreates pending state before signing and settles once on independent connections", async () => {
       const pool = fixture.createPool();
       const f = await setup(createPostgresRelayStore({ pool }));
       const queued = await requestOwnerPhoneRevocation(f.input);
-      const raced = await requestOwnerPhoneRevocation(f.input);
+      const race = await setup(f.input.store);
+      const raced = await requestOwnerPhoneRevocation(race.input);
       const before = await expectOk(
         await f.harness.handler(get(projectionPath(queued.operationId), OWNER_TOKEN)),
         200,
@@ -216,7 +394,7 @@ describe("durable phone revocation admission and decision", () => {
         a.handler(
           post(decisionPath(raced.operationId), OWNER_TOKEN, {
             command: "approve",
-            artifact: f.artifact(),
+            artifact: race.artifact(),
           }),
         ),
         b.handler(post(decisionPath(raced.operationId), OWNER_TOKEN, { command: "reject" })),
@@ -242,6 +420,7 @@ describe("durable phone revocation admission and decision", () => {
       ).toEqual({ ...approved, settlement: "replayed" });
       await c.pool.end();
       f.erase();
+      race.erase();
     });
   },
 );

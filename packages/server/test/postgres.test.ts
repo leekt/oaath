@@ -48,7 +48,7 @@ import {
 
   it("creates exactly one current schema version", async () => {
     const pool = fixture.createPool();
-    const rows = await pool.query("SELECT schema_id, version FROM oaath_relay_schema_v3");
+    const rows = await pool.query("SELECT schema_id, version FROM oaath_relay_schema_v4");
     expect(rows.rows).toEqual([
       { schema_id: "oaath", version: OAATH_RELAY_POSTGRES_SCHEMA_VERSION },
     ]);

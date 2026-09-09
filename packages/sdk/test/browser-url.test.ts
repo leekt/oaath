@@ -52,6 +52,98 @@ import {
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
+  it("requests phone revocation through the URL again after reload without owner quotes or sends", async () => {
+    const factory = new IDBFactory();
+    const clock = createClock();
+    const chain = createChainFixture();
+    const upstream = createUrlRealm({ clock, chain });
+    const requested: string[] = [];
+    const relay = async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === "POST" && /^\/grants\/[^/]+\/revocations\/[0-9]+$/u.test(path)) {
+        expect(await request.json()).toEqual({});
+        requested.push(path);
+        return new Response(JSON.stringify({ status: "pending" }), { status: 200 });
+      }
+      return upstream.relay(request);
+    };
+    const firstDatabase = await openOaathDatabase({ factory });
+    const first = createUrlRealm({ clock, chain, relay, stores: idbStores(firstDatabase) });
+    const connection = await first.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
+    const quotes = chain.quotes;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(requested).toHaveLength(1);
+    expect(chain.quotes).toBe(quotes);
+    expect(chain.sends).toHaveLength(1);
+    await first.oaath.close();
+    await firstDatabase.close();
+    const secondDatabase = await openOaathDatabase({ factory });
+    const second = createUrlRealm({
+      clock: createClock(),
+      chain,
+      relay,
+      stores: idbStores(secondDatabase),
+    });
+    const restored = await (await second.oaath.connect()).resume();
+    if (!restored) throw new Error("missing revoking grant");
+    await restored.revoke();
+    expect(restored.state).toBe("revoking");
+    expect(requested).toEqual([requested[0], requested[0]]);
+    expect(chain.quotes).toBe(quotes);
+    expect(chain.sends).toHaveLength(1);
+    await second.oaath.close();
+    await secondDatabase.close();
+    await upstream.oaath.close();
+  });
+
+  it("attempts every configured phone request even when one enqueue fails", async () => {
+    const clock = createClock();
+    const chain = createChainFixture();
+    const upstream = createUrlRealm({ clock, chain });
+    const requested: number[] = [];
+    const otherChain = 8453;
+    let failFirst = true;
+    const relay = async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      const match = /^\/grants\/[^/]+\/revocations\/([0-9]+)$/u.exec(path);
+      if (request.method === "POST" && match) {
+        const chainId = Number(match[1]);
+        requested.push(chainId);
+        return new Response(JSON.stringify({ status: "pending" }), {
+          status: chainId === otherChain && failFirst ? 503 : 200,
+        });
+      }
+      return upstream.relay(request);
+    };
+    const realm = createUrlRealm({
+      clock,
+      chain,
+      relay,
+      bootstrap: (document) => ({
+        ...document,
+        chains: [
+          ...(document.chains as readonly unknown[]),
+          { ...(document.chains as readonly Record<string, unknown>[])[0], chainId: otherChain },
+        ],
+      }),
+    });
+    const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+    await expect(grant.revoke()).rejects.toMatchObject({ code: "oaath_client_issuer_rejected" });
+    expect(grant.state).toBe("revoking");
+    expect(requested).toEqual([otherChain, CHAIN_ID]);
+    failFirst = false;
+    await grant.revoke();
+    expect(requested).toEqual([otherChain, CHAIN_ID, otherChain, CHAIN_ID]);
+    expect(grant.state).toBe("revoking");
+    expect(chain.quotes).toBe(0);
+    expect(chain.sends).toHaveLength(0);
+    await realm.oaath.close();
+    await upstream.oaath.close();
+  });
+
   it("recovers a pending public operation after full IndexedDB recreation and grant expiry", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
@@ -144,7 +236,7 @@ describe("URL-only golden path", () => {
     await third.close();
   });
 
-  it("connects, requests permission, sends calls, and revokes from one URL", async () => {
+  it("retains revocation when phone preparation is unconfigured and completes from observed effects", async () => {
     // The chain's answer to "is the permission still installed", and how far
     // the chain advanced beyond this realm's own submissions — both flip when
     // the owner's console removes the permission out of band.
@@ -180,7 +272,9 @@ describe("URL-only golden path", () => {
       realm.fetched.filter((entry) => entry === `POST /chains/${CHAIN_ID}/submissions`),
     ).toHaveLength(1);
 
-    await grant.revoke();
+    await expect(grant.revoke()).rejects.toMatchObject({ code: "oaath_client_issuer_rejected" });
+    // This service has no phone preparation port. Admission still stops,
+    // and the missing route leaves its revocation obligation recoverable.
     // The capability died through the service, but the installed chain
     // permission awaits owner-signed removal: durably revoking, never a
     // claimed revocation no chain observed. This realm holds no owner

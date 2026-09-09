@@ -57,6 +57,7 @@ import {
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
+  type OaathOwnerRevocationCapability,
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
 import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
@@ -97,6 +98,8 @@ export interface OaathSigningConfiguration {
 }
 
 export interface OaathConfiguration {
+  /** Use the service's phone queue for owner revocation instead of a local owner signer. */
+  readonly ownerRevocations?: Readonly<OaathOwnerRevocationCapability> | null;
   readonly binding: Readonly<OaathBindingInput>;
   readonly issuer: Readonly<OaathIssuerCapability>;
   readonly authorization: Readonly<OaathAuthorizationCapability>;
@@ -273,19 +276,26 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath> {
 
 function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
-  const declaresSessionSigner =
-    typeof configuration === "object" &&
-    configuration !== null &&
-    Object.hasOwn(configuration, "sessionSigner");
+  const optionalKeys =
+    typeof configuration === "object" && configuration !== null
+      ? ["sessionSigner", "ownerRevocations"].filter((key) => Object.hasOwn(configuration, key))
+      : [];
   const record = exactClientRecord(
     configuration,
-    declaresSessionSigner ? [...CONFIGURATION_KEYS, "sessionSigner"] : CONFIGURATION_KEYS,
+    [...CONFIGURATION_KEYS, ...optionalKeys],
     "OAAth configuration",
     context,
   );
-  const sessionSigner = declaresSessionSigner
-    ? captureSessionSigner(record.sessionSigner, context)
-    : null;
+  const sessionSigner = captureSessionSigner(record.sessionSigner, context);
+  const ownerRevocations =
+    record.ownerRevocations === undefined || record.ownerRevocations === null
+      ? null
+      : storePort<Readonly<OaathOwnerRevocationCapability>>(
+          record.ownerRevocations,
+          ["request"],
+          "owner revocation",
+          context,
+        );
   const binding = captureOaathBinding(record.binding);
   const issuer = captureIssuerCapability(record.issuer);
   if (issuer.url !== binding.issuer.url) {
@@ -443,6 +453,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       ownerKey,
       sessionKey,
       invalidation,
+      ownerRevocations,
       sessionSigner,
       now,
     });

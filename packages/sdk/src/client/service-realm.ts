@@ -494,6 +494,18 @@ async function composeConfiguration(
           "capability invalidation",
         ),
     },
+    ownerRevocations: {
+      async request(request: Readonly<{ grantId: string; chainId: number }>) {
+        await fetchJson(
+          transport,
+          jsonRequest(
+            `${input.url}/grants/${encodeURIComponent(request.grantId)}/revocations/${request.chainId}`,
+            {},
+          ),
+          "owner revocation request",
+        );
+      },
+    },
     stores,
     chains: bootstrap.chains.map((chain) => serviceChainCapability(transport, input.url, chain)),
     signing: {

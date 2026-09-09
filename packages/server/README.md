@@ -95,6 +95,8 @@ POST /authorization/codes/consume                  client  one-time code consume
 POST /authorization/artifacts/{artifactId}/claim   client  one-time artifact claim
 POST /authorization/resume                         client  fresh auth + recovery read
 POST /grants/verify                                client  grant reference verification
+POST /grants/{grantId}/revocations/{chainId}         client  request or recover phone custody
+GET  /grants/{grantId}/revocations/{chainId}         client  read current phone custody status
 ```
 
 EXPERIMENTAL PREVIEW routes (owner-phone approval; wire shapes pinned by the
@@ -119,22 +121,34 @@ the existing one-time decision transaction. A committed retry returns the stored
 outcome before invoking preparation. An unconfigured deployment cannot approve
 canonical permissions through the native route.
 
-`requestOwnerPhoneRevocation` from `@oaath/server/native` is the deployment
-entry for revoking an approved permission on one configured chain. It admits
-the original authenticated application/member through `ServiceDirectory`, opens
-the retained approval (including after client claim or execution-policy expiry),
-and calls the deployment's `prepare({ request, artifact, chainId })` capability.
-Use `prepareKernelPhoneRevocation` from `@oaath/sdk/kernel` there to validate the
-Kernel capability and select the effect, root nonce and gas from chain state;
-return its `signingRequest`. Preparation must not sign or submit.
+URL-mode `grant.revoke()` posts an empty object to the grant/chain revocation
+route for each target without complete chain evidence. Configure
+`RelayHandlerOptions.revocations` with the service `directory` and a
+`prepare({ request, artifact, chainId })` capability. The existing
+`requestOwnerPhoneRevocation` entry from `@oaath/server/native` owns admission
+and durable custody. It checks the original application/member, resolves the
+configured account and phone, and opens the retained approval even after claim
+or execution-policy expiry. The deployment selects the effect, root nonce and
+gas from chain state and passes them to `prepareKernelPhoneRevocation` from
+`@oaath/sdk/kernel`, returning its `signingRequest`. Preparation must not reserve
+a lane or nonce, sign, or submit; concurrent preparations may lose admission.
 
-The returned `operationId` and `expiresAt` identify an immutable stored request.
+POST returns `201` for new custody or `200` for recovered custody. GET creates
+nothing. Both return only `{ grantId, chainId, operationId, expiresAt, status }`,
+where status is `pending`, `approved`, `rejected`, or `expired`. Pending and
+terminal requests are recovered before preparation or KMS access, including
+after a lost response. An explicit POST may replace expired, undecided custody;
+approved and rejected requests remain terminal. No uncertain submission or
+expired approval authorizes a replacement operation.
+
 The paired phone fetches the shared projection route and posts approve/reject
 to `revocation-decisions`. PostgreSQL preserves the exact request and sealed
 phone artifact across restart. A repeated decision answers the stored outcome,
 even after expiry or a conflicting command. Approval acknowledges custody;
-the operation journal owns submission and finality. Configured-chain orchestration
-and a client enqueue HTTP endpoint remain separate work. No OAuth code or artifact is released.
+the operation journal owns submission and finality. The client remains
+`revoking` until every saved target has finalized chain-effect evidence. The
+deployment still owns phone delivery and the execution worker. No OAuth code
+or artifact is released by revocation.
 
 Failures are `{"error":{"code":"relay_*"}}` with the status from
 `RELAY_ERROR_STATUS`. A response never carries message text, provider output, or
@@ -161,8 +175,8 @@ without KMS or submission access. Expired consent prevents a fresh attempt but
 never hides existing operation evidence. `close()` releases runner resources
 and can be retried after cleanup failure.
 
-Finalized operation success is evidence about that exact operation. A complete
-configured-chain revocation result, nonce-effect observation and replacement
+Finalized operation success is evidence about that exact operation. The client separately observes permission absence and consumed install nonces
+on every saved revocation target. Automatic worker scheduling and replacement
 planning remain separate work. This subpath introduces the server's explicit
 SDK dependency; the relay root imports no runtime or PostgreSQL driver.
 
@@ -234,7 +248,7 @@ How an application organization/audience maps to the OAAth client/realm:
 ## Schema
 
 `createPostgresRelaySchema` creates the one current schema
-(`oaath.relay-postgres-schema/v3`). There is no migration runner: an obsolete
+(`oaath.relay-postgres-schema/v4`). There is no migration runner: an obsolete
 database is dropped and recreated.
 
 ## Tests

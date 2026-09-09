@@ -38,6 +38,7 @@ export type {
 export type {
   OaathCapabilityInvalidationCapability,
   OaathChainCapability,
+  OaathOwnerRevocationCapability,
   OaathQuoteCapability,
   OaathQuoteRequest,
   OaathRegisteredPaymasterService,

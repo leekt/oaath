@@ -3,8 +3,10 @@
  * The immutable request and terminal decision are the only persisted evidence.
  * Approval occupies this operation ID; it proves custody, never submission or
  * onchain completion. No execution lane is acquired here. A decision retry reads
- * the stored outcome before expiry or artifact handling. Enqueue/ambiguous
- * commits are never automatically retried. Reload needs only store/KMS; there
+ * the stored outcome before expiry or artifact handling. An ambiguous enqueue
+ * response is recovered by looking up the original grant/chain; it never
+ * authorizes a blind insertion. Only expired undecided custody may be replaced.
+ * Enqueue recovery needs only the store; signing custody needs KMS. There
  * is no in-memory preparation to recover. Transactions own rollback and release.
  */
 import {
@@ -46,7 +48,7 @@ export interface RequestOwnerPhoneRevocationInput {
   readonly store: RelayStore;
   readonly clock: RelayClock;
   readonly kms: RelayKms;
-  readonly directory: ServiceDirectory;
+  readonly directory: Pick<ServiceDirectory, "resolveRevocationOwner">;
   /** Deployment-authenticated original application/member. */
   readonly caller: RelayCaller;
   readonly grantId: string;
@@ -56,6 +58,8 @@ export interface RequestOwnerPhoneRevocationInput {
    * Deployment uses prepareKernelPhoneRevocation to verify the retained Kernel
    * capability, read target-chain state, and choose effect/root nonce/gas.
    * Receives the retained approval plaintext; never log or expose it to clients.
+   * Preparation must not reserve a nonce or execution lane; concurrent
+   * preparations may lose admission.
    * Returns the SDK signingRequest only. Must not sign or submit an operation.
    */
   readonly prepare: (
@@ -63,13 +67,81 @@ export interface RequestOwnerPhoneRevocationInput {
   ) => Promise<unknown>;
 }
 
-/** Deployment enqueue capability; returns metadata for the existing phone transport/push. */
+export interface OwnerPhoneRevocationStatus {
+  readonly grantId: string;
+  readonly chainId: number;
+  readonly operationId: string;
+  /** Relay timestamp in milliseconds. */
+  readonly expiresAt: number;
+  /** Custody status only, never submission or grant revocation completion. */
+  readonly status: "pending" | "approved" | "rejected" | "expired";
+}
+
+type ClientRevocationInput = Pick<
+  RequestOwnerPhoneRevocationInput,
+  "store" | "clock" | "caller" | "grantId" | "chainId"
+>;
+
+async function readClientState(transaction: RelayTransaction, input: ClientRevocationInput) {
+  if (input.caller.role !== "client")
+    return relayFailure("relay_forbidden", "only the originating client may request revocation");
+  const source = await transaction.lockAuthorizationRequest(input.grantId);
+  if (
+    !source ||
+    source.clientId !== input.caller.clientId ||
+    source.subject !== input.caller.subject
+  )
+    return relayFailure("relay_forbidden", "permission is not owned by this caller");
+  const request = await transaction.lockLatestRevocationRequest(input.grantId, input.chainId);
+  const current = request ? { request, decision: await readDecision(transaction, request) } : null;
+  return { source, current };
+}
+
+function statusOf(
+  state: { request: RevocationRequestRecord; decision: RevocationDecisionRecord | undefined },
+  clock: RelayClock,
+): Readonly<OwnerPhoneRevocationStatus> {
+  return Object.freeze({
+    grantId: state.request.signingRequest.permissionRequest.requestId,
+    chainId: state.request.signingRequest.chainId,
+    operationId: state.request.operationId,
+    expiresAt: state.request.expiresAt,
+    status:
+      state.decision?.outcome ??
+      (relayNow(clock) > state.request.expiresAt ? "expired" : "pending"),
+  });
+}
+function reusable(
+  state: Awaited<ReturnType<typeof readClientState>>["current"],
+  clock: RelayClock,
+) {
+  return (
+    state !== null && (state.decision !== undefined || relayNow(clock) <= state.request.expiresAt)
+  );
+}
+
+/** Authenticated metadata lookup. It never prepares, opens KMS custody or submits. */
+export async function fetchClientPhoneRevocation(
+  input: ClientRevocationInput,
+): Promise<Readonly<OwnerPhoneRevocationStatus>> {
+  return withRelayTransaction(input.store, async (transaction) => {
+    const { current } = await readClientState(transaction, input);
+    if (!current) return relayFailure("relay_not_found", "revocation request is absent");
+    return statusOf(current, input.clock);
+  });
+}
+
+/**
+ * Returns the current grant/chain request before touching preparation or KMS.
+ * Only positively expired, undecided custody may be replaced. Approved custody
+ * remains immutable even after expiry: operation evidence owns any replacement.
+ * Pure preparation runs outside the transaction; final admission locks the
+ * original grant again so concurrent callers share the winner's exact request.
+ */
 export async function requestOwnerPhoneRevocation(
   input: RequestOwnerPhoneRevocationInput,
-): Promise<Readonly<{ operationId: string; expiresAt: number }>> {
+): Promise<Readonly<OwnerPhoneRevocationStatus & { created: boolean }>> {
   const { store, clock, kms, directory, caller, grantId, chainId, requestTtlMs, prepare } = input;
-  if (caller.role !== "client")
-    return relayFailure("relay_forbidden", "only the originating client may request revocation");
   if (
     !Number.isSafeInteger(chainId) ||
     chainId < 1 ||
@@ -78,9 +150,8 @@ export async function requestOwnerPhoneRevocation(
   )
     return relayFailure("relay_request_invalid", "revocation chain or TTL is invalid");
   const source = await withRelayTransaction(store, async (transaction) => {
-    const request = await transaction.lockAuthorizationRequest(grantId);
-    if (!request || request.clientId !== caller.clientId || request.subject !== caller.subject)
-      return relayFailure("relay_forbidden", "permission is not owned by this caller");
+    const { source: request, current } = await readClientState(transaction, input);
+    if (current && reusable(current, clock)) return { retained: statusOf(current, clock) } as const;
     const scope = classifyStoredAuthorizationScope(request.requestedScope, request.requestId);
     const decision = await transaction.lockAuthorizationDecision(grantId);
     if (scope.kind !== "permission-request" || decision?.outcome !== "approved")
@@ -100,8 +171,9 @@ export async function requestOwnerPhoneRevocation(
     );
     if (!retained)
       return relayFailure("relay_record_unreadable", "approved permission is unreadable");
-    return { request: scope.request, artifact: retained.plaintext, owner };
+    return { request: scope.request, artifact: retained.plaintext, owner } as const;
   });
+  if ("retained" in source) return Object.freeze({ ...source.retained, created: false });
   let signingRequest: Readonly<KernelV4RevocationSigningRequest>;
   try {
     signingRequest = parseKernelV4RevocationSigningRequest(
@@ -119,25 +191,31 @@ export async function requestOwnerPhoneRevocation(
       "relay_request_invalid",
       "prepared revocation changed its permission or chain",
     );
-  const createdAt = relayNow(clock);
-  const expiresAt = timestamp(
-    createdAt + requestTtlMs,
-    "revocation expiry",
-    "relay_request_invalid",
-  );
-  const record: RevocationRequestRecord = Object.freeze({
-    version: OAATH_REVOCATION_REQUEST_RECORD_VERSION,
-    operationId: REVOCATION_OPERATION_PREFIX + randomIdentifier(),
-    ...source.owner,
-    createdAt,
-    expiresAt,
-    signingRequest,
-  });
-  await withRelayTransaction(store, async (transaction) => {
+  return withRelayTransaction(store, async (transaction) => {
+    const { current } = await readClientState(transaction, input);
+    if (current && reusable(current, clock))
+      return Object.freeze({ ...statusOf(current, clock), created: false });
+    const createdAt = relayNow(clock);
+    const expiresAt = timestamp(
+      createdAt + requestTtlMs,
+      "revocation expiry",
+      "relay_request_invalid",
+    );
+    const record: RevocationRequestRecord = Object.freeze({
+      version: OAATH_REVOCATION_REQUEST_RECORD_VERSION,
+      operationId: REVOCATION_OPERATION_PREFIX + randomIdentifier(),
+      ...source.owner,
+      createdAt,
+      expiresAt,
+      signingRequest,
+    });
     if (!(await transaction.insertRevocationRequest(record)))
-      return relayFailure("relay_internal", "revocation operation ID already exists");
+      return relayFailure("relay_state_ambiguous", "revocation request insertion did not settle");
+    return Object.freeze({
+      ...statusOf({ request: record, decision: undefined }, clock),
+      created: true,
+    });
   });
-  return Object.freeze({ operationId: record.operationId, expiresAt });
 }
 
 interface OwnerRevocationInput {
@@ -158,7 +236,10 @@ async function readOwnerState(transaction: RelayTransaction, input: OwnerRevocat
 export async function readRevocationState(transaction: RelayTransaction, operationId: string) {
   const request = await transaction.lockRevocationRequest(operationId);
   if (!request) return relayFailure("relay_not_found", "revocation request is absent");
-  const decision = await transaction.lockRevocationDecision(operationId);
+  return { request, decision: await readDecision(transaction, request) };
+}
+async function readDecision(transaction: RelayTransaction, request: RevocationRequestRecord) {
+  const decision = await transaction.lockRevocationDecision(request.operationId);
   if (
     decision &&
     (decision.decidedAt < request.createdAt || decision.decidedAt > request.expiresAt)
@@ -167,8 +248,9 @@ export async function readRevocationState(transaction: RelayTransaction, operati
       "relay_record_unreadable",
       "revocation decision time contradicts its request",
     );
-  return { request, decision };
+  return decision;
 }
+
 function requirePending(request: RevocationRequestRecord, clock: RelayClock) {
   if (relayNow(clock) > request.expiresAt)
     return relayFailure("relay_expired", "revocation request expired");
