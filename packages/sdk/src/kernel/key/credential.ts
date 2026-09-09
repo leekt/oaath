@@ -1,5 +1,5 @@
 /**
- * Owner KeyProfile from an approved credential profile alone.
+ * A KeyProfile from an approved public credential alone, with no signer.
  *
  * In the service-bootstrapped browser path the application never holds an
  * owner signer: root signing happens on the owner device and arrives through
@@ -7,10 +7,16 @@
  * to derive and bind the Kernel account and to prove the #77 credential
  * binding — so this profile carries exactly the public material the approved
  * credential states and refuses to sign anything.
+ * The owner service also uses it to derive permission packages from an
+ * operator's reviewed public credential, without owning the application key.
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { CaptureContext, OwnerCredentialProfile } from "@oaath/protocol";
+import type {
+  CaptureContext,
+  OperatorCredentialProfile,
+  OwnerCredentialProfile,
+} from "@oaath/protocol";
 import { encodeAbiParameters } from "viem";
 import type { KernelV4Deployment } from "../../kernel-v4.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
@@ -34,12 +40,12 @@ const DUMMY: Readonly<Record<OwnerCredentialProfile["kind"], `0x${string}`>> = O
   webauthn: `0x${"55".repeat(64)}`,
 });
 
-export interface CredentialOwnerKeyInput {
-  /** Parsed `@oaath/protocol` owner credential profile. */
-  readonly credential: Readonly<OwnerCredentialProfile>;
+export interface CredentialKeyInput {
+  /** Parsed protocol credential; owner/session behavior belongs to the operator. */
+  readonly credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>;
   /**
-   * Caller-bound ECDSA validator module, required exactly when the credential
-   * is ecdsa (Kernel v4 pins no ECDSA validator); other kinds must carry null.
+   * ECDSA root validator, if root authority will be composed. Session-only
+   * public profiles need no root validator; other key kinds must carry null.
    */
   readonly validator: `0x${string}` | null;
 }
@@ -49,7 +55,9 @@ export interface CredentialOwnerKeyInput {
  * the corresponding signing profile publishes, so the derived account is the
  * account the owner's own device derives.
  */
-function publicMaterial(credential: Readonly<OwnerCredentialProfile>): `0x${string}` {
+function publicMaterial(
+  credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>,
+): `0x${string}` {
   if (credential.kind === "ecdsa") return credential.address;
   if (credential.kind === "p256") {
     return encodeAbiParameters(POINT_PARAMETERS, [
@@ -64,19 +72,21 @@ function publicMaterial(credential: Readonly<OwnerCredentialProfile>): `0x${stri
   ]);
 }
 
-export function credentialOwnerKey(value: CredentialOwnerKeyInput): Readonly<KeyProfile> {
+export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
-  const record = exactInput(value, ["credential", "validator"], "credential owner key", context);
-  const credential = record.credential as Readonly<OwnerCredentialProfile>;
+  const record = exactInput(value, ["credential", "validator"], "credential key", context);
+  const credential = record.credential as Readonly<
+    OwnerCredentialProfile | OperatorCredentialProfile
+  >;
   if (
     credential === null ||
     typeof credential !== "object" ||
     (credential.kind !== "ecdsa" && credential.kind !== "p256" && credential.kind !== "webauthn")
   ) {
-    return inputInvalid("credential owner key requires an owner credential profile");
+    return inputInvalid("credential key requires a parsed credential profile");
   }
-  if ((credential.kind === "ecdsa") !== (record.validator !== null)) {
-    return inputInvalid("credential owner key validator does not match the credential kind");
+  if (credential.kind !== "ecdsa" && record.validator !== null) {
+    return inputInvalid("credential key validator does not match the credential kind");
   }
   const validator =
     record.validator === null ? null : inputAddress(record.validator, "credential owner validator");
@@ -87,6 +97,8 @@ export function credentialOwnerKey(value: CredentialOwnerKeyInput): Readonly<Key
     resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
       exactKernelDeployment(deployment);
       if (validator !== null) return validator;
+      if (credential.kind === "ecdsa")
+        return inputInvalid("ECDSA root authority requires a validator");
       return resolvePinnedValidator(credential.kind);
     },
     signerModule: null,
@@ -94,7 +106,7 @@ export function credentialOwnerKey(value: CredentialOwnerKeyInput): Readonly<Key
     async sign(): Promise<`0x${string}`> {
       return runtimeFail(
         "kernel_runtime_signing_failed",
-        "owner signing happens on the owner device, never in the application",
+        "a public credential profile cannot sign",
       );
     },
     async verify(): Promise<boolean> {

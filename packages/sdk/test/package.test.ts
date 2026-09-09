@@ -71,6 +71,7 @@ describe("package boundary", () => {
       "parsePreparedUserOperation",
       "pinnedPolicyModule",
       "pinnedSignerModule",
+      "prepareKernelPhonePermissionApproval",
       "prepareKernelV4UserOperation",
       "prepareUserOperation",
       "sessionOperator",

@@ -58,6 +58,12 @@ export {
   parseKernelAllChainApproval,
 } from "./kernel/permission/materialize.js";
 export type {
+  KernelPhonePermissionArtifact,
+  PreparedKernelPhonePermissionApproval,
+  PrepareKernelPhonePermissionApprovalInput,
+} from "./kernel/permission/phone-approval.js";
+export { prepareKernelPhonePermissionApproval } from "./kernel/permission/phone-approval.js";
+export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
   KernelBuiltInKeyKind,

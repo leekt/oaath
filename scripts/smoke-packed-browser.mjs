@@ -15,7 +15,7 @@
  *     consumer's own `node_modules`;
  *   - the packed runtime exports are exactly what the workspace build produced;
  *   - `createOAAth` composes and `requestPermission` returns an active Grant
- *     while every chain port stays untouched;
+ *     while application chain ports stay untouched (owner binding uses owned reads);
  *   - registered ERC-7677 sponsorship finalizes one exact UserOperation before
  *     signing and submission;
  *   - a recreated realm resumes the Grant and observes the exact durable
@@ -42,23 +42,18 @@ import {
   createOAAth,
 } from "@oaath/sdk";
 import {
-  approveKernelPermissionAllChain,
-  createKernelRuntime,
+  p256Key,
+  prepareKernelPhonePermissionApproval,
   ecdsaKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
-  kernelAllChainCapabilityHash,
   kernelV4Deployment,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
-  sessionOperator,
 } from "@oaath/sdk/kernel";
-import {
-  deriveSessionPolicyProfiles,
-} from "@oaath/sdk/advanced";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -71,14 +66,14 @@ import {
 } from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
 import {
-  hashPermissionRequest,
+  hashOwnerSigningRequest,
+  parsePermissionRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-  OAATH_PERMISSION_DECISION_VERSION,
-  parseGrantPolicy,
 } from "@oaath/protocol";
-import { keccak256, stringToBytes } from "viem";
+import { bytesToHex, hexToBytes, keccak256, stringToBytes } from "viem";
+import { p256 } from "@noble/curves/nist.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { IDBFactory } from "fake-indexeddb";
 
@@ -120,13 +115,13 @@ for (const specifier of ENTRIES) {
 let clock = START;
 const now = () => clock;
 
-const ownerAccount = privateKeyToAccount("0x" + "11".repeat(32));
+const phoneKey = p256.utils.randomPrivateKey();
 const sessionAccount = privateKeyToAccount("0x" + "12".repeat(32));
 
 const ownerCredential = {
   version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-  kind: "ecdsa",
-  address: ownerAccount.address.toLowerCase(),
+  kind: "p256",
+  publicKey: bytesToHex(p256.getPublicKey(phoneKey, false)),
 };
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -187,33 +182,19 @@ const authorization = {
       version: "oaath.workspace-account-context/v1", workspaceId: "personal-1",
       workspaceKind: "personal", accountId: "account-1",
     })) fail("owner review lost the connection's workspace/account context");
-    // The owner device mints the replayable install approval itself, offline:
-    // package derivation is pure and the account address is the owner's own
-    // fact, so the smoke's throwing chain ports prove nothing was consulted.
-    const sessionRuntime = createKernelRuntime({
-      deployment: kernelV4Deployment(CHAIN_ID),
-      operator: sessionOperator({
-        key: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
-        policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-      }),
-      reads: chain.reads,
+    const prepared = await prepareKernelPhonePermissionApproval({
+      request: parsePermissionRequest({ ...scope, requestId: request.requestId }),
+      chainId: CHAIN_ID, reads: { read: accountRead }, installNonce: "0",
     });
-    const installApproval = await approveKernelPermissionAllChain({
-      owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
-      account: ACCOUNT,
-      installNonce: "0",
-      packages: [...sessionRuntime.packages],
-    });
-    const decision = {
-      version: OAATH_PERMISSION_DECISION_VERSION,
-      kind: "approve",
-      requestId: request.requestId,
-      requestHash: hashPermissionRequest({ ...scope, requestId: request.requestId }),
-      decidedAt: now(),
-      approvedPolicy: scope.policy,
-      capabilityHash: kernelAllChainCapabilityHash(installApproval),
-      installApproval,
-    };
+    // Simulates the native phone's existing compact P-256 artifact. No private
+    // owner key is injected into the application's runtime.
+    const decision = await prepared.complete({
+      version: "oaath.owner-signing-artifact/v1", kind: "p256",
+      requestHash: hashOwnerSigningRequest(prepared.signingRequest),
+      signature: bytesToHex(p256.sign(hexToBytes(prepared.signingRequest.expectedDigest), phoneKey, {
+        prehash: false, lowS: true,
+      }).toCompactRawBytes()),
+    }, now());
     const decided = await relayJson(
       "/authorization/requests/" + request.requestId + "/decision",
       OWNER_TOKEN,
@@ -230,8 +211,9 @@ const authorization = {
   },
 };
 
-// Consent remains chain-free. After approval the same packed composition is
-// enabled for one exact provider send and observation-only reload recovery.
+// Application chain ports remain untouched during consent. The owner helper
+// binds through its own read capability. After approval the application can
+// send one exact operation and recover it through observation only.
 let chainEnabled = false;
 let chainTouches = 0;
 const sends = [];
@@ -241,33 +223,37 @@ function requireChain(port) {
   chainTouches += 1;
 }
 
+async function accountRead(request) {
+  if (request.type === "chain_id") return CHAIN_ID;
+  if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
+  if (request.type === "runtime_code_hash") {
+    if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
+      return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+    }
+    if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
+      return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+    }
+    if (request.address === KERNEL_V4_FACTORY_V07) return KERNEL_V4_FACTORY_V07_CODE_HASH;
+    if (request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
+      return deployment.implementationDeployment.runtimeCodeHash;
+    }
+  }
+  if (request.type === "kernel_factory_implementation") {
+    return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+  }
+  if (request.type === "kernel_factory_account") return ACCOUNT;
+  if (request.type === "kernel_account_implementation") {
+    return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+  }
+  fail("unexpected account read " + request.type);
+}
+
 const chain = {
   chainId: CHAIN_ID,
   reads: {
     async read(request) {
       requireChain("reads");
-      if (request.type === "chain_id") return CHAIN_ID;
-      if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
-      if (request.type === "runtime_code_hash") {
-        if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
-          return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
-        }
-        if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
-          return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
-        }
-        if (request.address === KERNEL_V4_FACTORY_V07) return KERNEL_V4_FACTORY_V07_CODE_HASH;
-        if (request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-          return deployment.implementationDeployment.runtimeCodeHash;
-        }
-      }
-      if (request.type === "kernel_factory_implementation") {
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
-      }
-      if (request.type === "kernel_factory_account") return ACCOUNT;
-      if (request.type === "kernel_account_implementation") {
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
-      }
-      fail("unexpected account read " + request.type);
+      return accountRead(request);
     },
   },
   observation: {
@@ -419,7 +405,7 @@ function createRealm() {
     stores,
     chains: [chain],
     signing: {
-      owner: ecdsaKey({ account: ownerAccount, validator: VALIDATOR }),
+      owner: p256Key({ credential: ownerCredential, sign: async () => fail("application cannot sign as owner") }),
       session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
     },
     localKeyIds: ["session-key"],
@@ -549,7 +535,7 @@ await contextDirectory.replace({ expectedRevision: null, directory: {
   memberships: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, clientId: "client-a", subject: SUBJECT })),
   ownerDevices: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, ownerDeviceId: "owner-phone", subject: "phone-subject" })),
   accounts: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, accountId: "account-1", ownerDeviceId: "owner-phone",
-    account: structuredClone(selectedProfile), ownerValidator: VALIDATOR, chainIds: [CHAIN_ID] })),
+    account: structuredClone(selectedProfile), ownerValidator: null, chainIds: [CHAIN_ID] })),
   selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
 } });
 const contextRelay = createRelayHandler({
@@ -599,7 +585,13 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 `;
 
 /** The published types must resolve and compose under `nodenext` strict. */
-const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest } from "@oaath/protocol";
+const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest, type OwnerSigningArtifact } from "@oaath/protocol";
+import { prepareKernelPhonePermissionApproval, type PrepareKernelPhonePermissionApprovalInput, type KernelPhonePermissionArtifact } from "@oaath/sdk/kernel";
+
+export async function completePhoneApproval(input: PrepareKernelPhonePermissionApprovalInput, artifact: OwnerSigningArtifact, decidedAt: number): Promise<Readonly<KernelPhonePermissionArtifact>> {
+  return (await prepareKernelPhonePermissionApproval(input)).complete(artifact, decidedAt);
+}
+
 import {
   type GrantStoreAdapter,
   type OaathConfiguration,
@@ -652,7 +644,7 @@ const EXPECTED_SURFACES = {
 const consumer = await createConsumer({
   label: "browser",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
-  dependencies: { "fake-indexeddb": "6.2.5", viem: "2.55.8" },
+  dependencies: { "@noble/curves": "1.9.1", "fake-indexeddb": "6.2.5", viem: "2.55.8" },
   files: { "smoke.mjs": SMOKE, "types.ts": TYPES },
 });
 

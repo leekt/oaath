@@ -44,12 +44,12 @@ export type {
   OaathSubmissionCapability,
   OaathSubmissionRequest,
 } from "./client/grant-handle.js";
-export { deriveSessionPolicyProfiles } from "./client/grant-handle.js";
 export type {
   OaathConfiguration,
   OaathSigningConfiguration,
   OaathStoreConfiguration,
 } from "./create-oaath.js";
+export { deriveSessionPolicyProfiles } from "./kernel/permission/profiles.js";
 export type {
   ObserveOperationResult,
   OperationObserver,
