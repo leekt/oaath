@@ -156,9 +156,15 @@ this list as the record of what was rejected on purpose.
 ## Gates
 
 ```sh
-swift build   # macOS host, no simulator or device required
-swift test    # unit tests over the pure parts of both targets
+pnpm test:phone # from the repository root on macOS
 ```
+
+The `phone` CI job runs this same command on every pull request and main push.
+It compiles both native targets and runs their host tests, including the
+canonical permission approval path and the shared relay wire fixtures. Swift
+uses the committed `Package.resolved` and fails if it needs updating. A failing
+phone test fails the workflow. No simulator, signing identity, or Apple account
+is required.
 
 The tests cover the closed pull-inbox and push decodes, authenticated inbox
 endpoint/model ownership, the consent projection decode

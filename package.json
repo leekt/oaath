@@ -23,6 +23,7 @@
     "build": "pnpm -r build",
     "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:phone": "swift test --package-path native/ios --force-resolved-versions",
     "lint": "biome check . --diagnostic-level=error",
     "format": "biome format --write .",
     "format:check": "biome format .",
