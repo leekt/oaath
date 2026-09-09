@@ -19,8 +19,11 @@ import {
   kernelV4Deployment,
   ownerOperator,
   p256Key,
+  parseKernelAllChainApproval,
   prepareKernelPhonePermissionApproval,
+  prepareKernelPhoneRevocation,
 } from "@oaath/sdk/kernel";
+import { createMemoryOperationStoreAdapter } from "@oaath/sdk/testing";
 import {
   createMemoryRelayStore,
   createMemoryServiceDirectoryStore,
@@ -28,6 +31,7 @@ import {
   createServiceDirectory,
 } from "@oaath/server";
 import { createApnsSender, sendApnsNotification } from "@oaath/server/apns";
+import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import { build } from "esbuild";
 import QRCode from "qrcode";
 import { createAnvilChain } from "../browser/anvil-chain.mjs";
@@ -115,11 +119,65 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
   let url;
   let pairingLink;
   let allowedOrigins;
+  const store = createMemoryRelayStore();
+  // The whole demo, including Anvil, is ephemeral. Production deployments use
+  // the shared PostgreSQL adapter; no example-owned operation state machine.
+  const operations = createMemoryOperationStoreAdapter();
+  const clock = { now: () => Date.now() };
+  // REPLACE: illustrative encoding, not encryption or production key custody.
+  const kms = {
+    async encrypt(plaintext) {
+      return `demo-not-encrypted:v1:${Buffer.from(plaintext).toString("base64")}`;
+    },
+    async decrypt(reference) {
+      const prefix = "demo-not-encrypted:v1:";
+      if (!reference.startsWith(prefix)) throw new Error("unknown_ciphertext");
+      return Buffer.from(reference.slice(prefix.length), "base64").toString();
+    },
+  };
+  // Only live resource ownership is cached. The SDK journal alone decides
+  // whether a recreated worker can submit or must recover the exact operation.
+  const workers = new Map();
+  function scheduleRevocation(operationId) {
+    if (workers.has(operationId)) return;
+    const work = (async () => {
+      const executor = await createOwnerPhoneRevocationExecutor({
+        store,
+        kms,
+        clock,
+        operationId,
+        // Each executor borrows the example backend; only service.close destroys it.
+        operations: { ...operations, close: async () => {} },
+        observation: chain.capability.observation,
+        submission: {
+          close: async () => {},
+          async openSubmission(prepared, signature) {
+            const session = await chain.capability.submission.open({
+              prepared,
+              signature,
+              route: "entrypoint-handleops",
+              feePayer: chain.capability.feePayer,
+            });
+            return { submit: () => session.send(), close: () => session.close() };
+          },
+        },
+      });
+      try {
+        await executor.start(10_000);
+        await executor.observe(10_000);
+      } finally {
+        await executor.close();
+      }
+    })()
+      .catch(() => console.error("phone revocation remains pending; check its chain evidence"))
+      .finally(() => workers.delete(operationId));
+    workers.set(operationId, work);
+  }
   const relay = createRelayHandler({
     ownerRouting: directory,
     bootstrap: directory,
     chains: [chainPort(chain.capability)],
-    store: createMemoryRelayStore(),
+    store,
     authentication: {
       async authenticate(request) {
         const token = request.headers.get("authorization");
@@ -142,18 +200,25 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
         return null;
       },
     },
-    // REPLACE: illustrative encoding, not encryption or production key custody.
-    kms: {
-      async encrypt(plaintext) {
-        return `demo-not-encrypted:v1:${Buffer.from(plaintext).toString("base64")}`;
-      },
-      async decrypt(reference) {
-        const prefix = "demo-not-encrypted:v1:";
-        if (!reference.startsWith(prefix)) throw new Error("unknown_ciphertext");
-        return Buffer.from(reference.slice(prefix.length), "base64").toString();
+    kms,
+    clock,
+    revocations: {
+      directory,
+      async prepare({ request, artifact, chainId }) {
+        if (chainId !== CHAIN_ID) throw new Error("chain_not_configured");
+        const approval = parseKernelAllChainApproval(JSON.parse(artifact).installApproval);
+        const quote = await chain.quoteRevocation(approval);
+        return (
+          await prepareKernelPhoneRevocation({
+            request,
+            approval,
+            chainId,
+            reads: chain.capability.reads,
+            ...quote,
+          })
+        ).signingRequest;
       },
     },
-    clock: { now: () => Date.now() },
     permissionApprovals: {
       async prepare(request) {
         const prepared = await prepareKernelPhonePermissionApproval({
@@ -241,6 +306,8 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       ],
     });
     if (!enrolled) return refuse(outgoing, 409, "phone_enrollment_conflict");
+    // Local Anvil prefunding is a pairing effect, never part of pure consent preparation.
+    await chain.fund(descriptor.account);
     activeDevice = {
       credential: randomBytes(32).toString("base64url"),
       deviceToken: value.deviceToken.toLowerCase(),
@@ -277,6 +344,25 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
     } finally {
       session.close();
     }
+  }
+
+  async function deliver(operationId) {
+    if (inbox.has(operationId) || !activeDevice) return;
+    const response = await relay(
+      new Request(`${url}/native/projections/${operationId}`, {
+        headers: { authorization: `Bearer ${activeDevice.credential}` },
+      }),
+    );
+    if (!response.ok) return;
+    const projection = await response.json();
+    const summary = {
+      operationId: projection.operationId,
+      displayPayload: projection.displayPayload,
+      expiresAt: projection.expiresAt,
+    };
+    inbox.set(operationId, { inboxState: "pending", inboxSummary: summary });
+    // Push is secondary; a failed push leaves the pull inbox available.
+    void maybePush(summary).catch(() => console.error("phone notification unavailable"));
   }
 
   const server = createServer(async (incoming, outgoing) => {
@@ -333,31 +419,22 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
           ...(body.length ? { body } : {}),
         }),
       );
-      if (
-        incoming.method === "POST" &&
-        pathname === "/authorization/requests" &&
-        response.status === 201
-      ) {
-        const { requestId } = await response.clone().json();
-        const projected = await relay(
-          new Request(`${url}/native/projections/${requestId}`, {
-            headers: { authorization: `Bearer ${activeDevice.credential}` },
-          }),
-        );
-        if (projected.ok) {
-          const projection = await projected.json();
-          const summary = {
-            operationId: projection.operationId,
-            displayPayload: projection.displayPayload,
-            expiresAt: projection.expiresAt,
-          };
-          inbox.set(requestId, { inboxState: "pending", inboxSummary: summary });
-          // Push is secondary; a failed push leaves the pull inbox available.
-          void maybePush(summary).catch(() => console.error("phone notification unavailable"));
+      if (incoming.method === "POST" && response.ok) {
+        if (pathname === "/authorization/requests" && response.status === 201) {
+          const { requestId } = await response.clone().json();
+          await deliver(requestId);
+        } else if (/^\/grants\/[^/]+\/revocations\/[0-9]+$/.test(pathname)) {
+          const status = await response.clone().json();
+          if (status.status === "pending") await deliver(status.operationId);
+          else if (status.status === "approved") scheduleRevocation(status.operationId);
+        } else if (pathname.startsWith("/native/revocation-decisions/")) {
+          const decision = await response.clone().json();
+          const operationId = pathname.slice("/native/revocation-decisions/".length);
+          markInboxTerminal(inbox, operationId);
+          if (decision.outcome === "approved") scheduleRevocation(operationId);
+        } else if (pathname.startsWith("/native/decisions/")) {
+          markInboxTerminal(inbox, pathname.slice("/native/decisions/".length));
         }
-      }
-      if (incoming.method === "POST" && pathname.startsWith("/native/decisions/") && response.ok) {
-        markInboxTerminal(inbox, pathname.slice("/native/decisions/".length));
       }
       outgoing.writeHead(response.status, Object.fromEntries(response.headers));
       outgoing.end(Buffer.from(await response.arrayBuffer()));
@@ -387,6 +464,9 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
       async close() {
         server.closeAllConnections();
         await new Promise((resolve) => server.close(resolve));
+        await Promise.all(workers.values());
+        await operations.close();
+        await store.close();
         await chain.stop();
       },
     };

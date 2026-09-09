@@ -102,10 +102,84 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
     };
   };
 
+  async function permissionInstalled(request) {
+    // Kernel's own isModuleInstalled(6, signer, permissionId) at the
+    // anchored block: true exactly while the permission validation is
+    // live. Anything but a well-formed boolean is no answer.
+    const data = encodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "isModuleInstalled",
+          stateMutability: "view",
+          inputs: [{ type: "uint256" }, { type: "address" }, { type: "bytes" }],
+          outputs: [{ type: "bool" }],
+        },
+      ],
+      functionName: "isModuleInstalled",
+      args: [6n, request.signer, request.permissionId],
+    });
+    const answer = await chain.rpc("eth_call", [
+      { to: request.account, data },
+      `0x${BigInt(request.blockNumber).toString(16)}`,
+    ]);
+    if (answer === `0x${"0".repeat(64)}`) return false;
+    if (answer === `0x${"0".repeat(63)}1`) return true;
+    return null;
+  }
+  async function nonceQuote(request) {
+    const nonceKey = "0";
+    const key = encodeKernelV4NonceKey({
+      mode: request.mode,
+      validation: request.validation,
+      nonceKey,
+    });
+    const raw = await chain.rpc("eth_call", [
+      {
+        to: KERNEL_V4_ENTRY_POINT_V07,
+        data: encodeKernelV4NonceRead({ account: request.account, key }),
+      },
+      "latest",
+    ]);
+    if (typeof raw !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(raw))
+      throw new Error("nonce_read_invalid");
+    const nonce = BigInt(raw);
+    if (nonce >> 64n !== BigInt(key)) throw new Error("nonce_domain_mismatch");
+    return { nonceKey, sequence: (nonce & ((1n << 64n) - 1n)).toString(10), gas: GAS };
+  }
+
   return {
     label: `local Anvil at ${chain.url} with Kernel v4`,
     validator: stack.validator,
     sends,
+    fund: (account) => stack.fund(account, parseEther("1")),
+    /** Pure local deployment quote. The retained approval supplies the permission identity. */
+    async quoteRevocation(approval) {
+      const signer = approval.packages.find((entry) => entry.moduleType === 6);
+      if (!signer) throw new Error("revocation_signer_missing");
+      const block = await chain.rpc("eth_getBlockByNumber", ["latest", false]);
+      const code = await chain.rpc("eth_getCode", [approval.account, block.number]);
+      if (typeof code !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(code))
+        throw new Error("account_code_unreadable");
+      const installed =
+        code === "0x"
+          ? false
+          : await permissionInstalled({
+              account: approval.account,
+              signer: signer.module,
+              permissionId: signer.internalData.slice(0, 10),
+              blockNumber: BigInt(block.number).toString(10),
+            });
+      if (installed !== true && installed !== false) throw new Error("permission_state_unreadable");
+      return {
+        ...(await nonceQuote({
+          account: approval.account,
+          mode: "standard",
+          validation: { kind: "root" },
+        })),
+        effect: installed ? "uninstall-permission" : "invalidate-install",
+      };
+    },
     stop: () => chain.stop(),
     capability: {
       chainId,
@@ -183,29 +257,7 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
             ]);
           }
           if (request.type === "kernel_permission_installed") {
-            // Kernel's own isModuleInstalled(6, signer, permissionId) at the
-            // anchored block: true exactly while the permission validation is
-            // live. Anything but a well-formed boolean is no answer.
-            const data = encodeFunctionData({
-              abi: [
-                {
-                  type: "function",
-                  name: "isModuleInstalled",
-                  stateMutability: "view",
-                  inputs: [{ type: "uint256" }, { type: "address" }, { type: "bytes" }],
-                  outputs: [{ type: "bool" }],
-                },
-              ],
-              functionName: "isModuleInstalled",
-              args: [6n, request.signer, request.permissionId],
-            });
-            const answer = await chain.rpc("eth_call", [
-              { to: request.account, data },
-              `0x${BigInt(request.blockNumber).toString(16)}`,
-            ]);
-            if (answer === `0x${"0".repeat(64)}`) return false;
-            if (answer === `0x${"0".repeat(63)}1`) return true;
-            return null;
+            return permissionInstalled(request);
           }
           throw new Error(`unsupported observation read ${request.type}`);
         },
@@ -249,25 +301,7 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
         // it is where this example prefunds it. A deployment funds accounts out
         // of band, or uses a paymaster.
         await stack.fund(request.account, parseEther("1"));
-        const nonceKey = "0";
-        const key = encodeKernelV4NonceKey({
-          mode: request.mode,
-          validation: request.validation,
-          nonceKey,
-        });
-        const raw = await chain.rpc("eth_call", [
-          {
-            to: KERNEL_V4_ENTRY_POINT_V07,
-            data: encodeKernelV4NonceRead({ account: request.account, key }),
-          },
-          "latest",
-        ]);
-        if (typeof raw !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(raw)) {
-          throw new Error("nonce_read_invalid");
-        }
-        const nonce = BigInt(raw);
-        if (nonce >> 64n !== BigInt(key)) throw new Error("nonce_domain_mismatch");
-        return { nonceKey, sequence: (nonce & ((1n << 64n) - 1n)).toString(10), gas: GAS };
+        return nonceQuote(request);
       },
       // Complete usage evidence anchored to the node's own finalized tag: the
       // finalized count is what this example actually submitted and saw
