@@ -78,6 +78,7 @@ describe("package boundary", () => {
       "prepareKernelPhoneRevocation",
       "prepareKernelV4UserOperation",
       "prepareUserOperation",
+      "restoreKernelPhoneRevocation",
       "sessionOperator",
       "webauthnKey",
     ]);

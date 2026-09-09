@@ -118,6 +118,9 @@ importers:
       '@oaath/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@oaath/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       pg:
         specifier: 8.22.0
         version: 8.22.0

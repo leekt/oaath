@@ -37,6 +37,10 @@
     "./apns": {
       "types": "./src/apns.ts",
       "node": "./src/apns.ts"
+    },
+    "./kernel": {
+      "types": "./src/kernel.ts",
+      "default": "./src/kernel.ts"
     }
   },
   "publishConfig": {
@@ -59,6 +63,10 @@
       "./apns": {
         "types": "./dist/apns.d.ts",
         "node": "./dist/apns.js"
+      },
+      "./kernel": {
+        "types": "./dist/kernel.d.ts",
+        "default": "./dist/kernel.js"
       }
     }
   },
@@ -71,13 +79,14 @@
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts"
+    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts test/revocation-executor.test.ts"
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
     "@noble/hashes": "2.2.0",
     "@oaath/protocol": "workspace:*",
-    "pg": "8.22.0"
+    "pg": "8.22.0",
+    "@oaath/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.13.0",

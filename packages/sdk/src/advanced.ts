@@ -67,12 +67,14 @@ export {
   OaathOperationObserverError,
 } from "./operation-observer.js";
 export type {
+  OperationObserveResult,
   OperationPreparationCapability,
   OperationRunInput,
   OperationRunner,
   OperationRunnerConfiguration,
   OperationRunnerErrorCode,
   OperationRunResult,
+  OperationStartResult,
   OperationSubmissionCapability,
   OperationSubmissionSession,
   OperationTerminalBehavior,

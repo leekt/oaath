@@ -112,7 +112,7 @@ Wire its `prepare(request)` to `prepareKernelPhonePermissionApproval` from
 `@oaath/sdk/kernel`, supplying the deployment's account reads, chain ID, and
 stable install nonce for that request. Return the helper's `signingRequest`
 and a `complete(artifact, decidedAt)` that JSON-serializes its completion result.
-The server has no SDK dependency or owner key. The phone reviews the permission,
+The approval handler holds no owner key. The phone reviews the permission,
 fetches its signing projection, and submits its P-256 artifact to the native
 decision route. That route completes the grant through the injected helper and
 the existing one-time decision transaction. A committed retry returns the stored
@@ -133,12 +133,38 @@ The paired phone fetches the shared projection route and posts approve/reject
 to `revocation-decisions`. PostgreSQL preserves the exact request and sealed
 phone artifact across restart. A repeated decision answers the stored outcome,
 even after expiry or a conflicting command. Approval acknowledges custody;
-submission, finality, configured-chain orchestration and a client enqueue HTTP
-endpoint remain separate work. No OAuth code or artifact is released.
+the operation journal owns submission and finality. Configured-chain orchestration
+and a client enqueue HTTP endpoint remain separate work. No OAuth code or artifact is released.
 
 Failures are `{"error":{"code":"relay_*"}}` with the status from
 `RELAY_ERROR_STATUS`. A response never carries message text, provider output, or
 internal detail.
+
+## Owner revocation execution
+
+`@oaath/server/kernel` composes approved phone custody with the SDK's existing
+OperationRunner, OperationStore and OperationObserver. Use
+`createOwnerPhoneRevocationExecutor({ store, kms, clock, operationId, operations,
+observation, submission })` in a deployment worker. `operations` is an SDK
+OperationStoreAdapter; `createPostgresOperationSchema` and
+`createPostgresOperationStoreAdapter({ pool })` from `@oaath/server/postgres`
+provide its durable implementation. Create the current operation tables once
+alongside the relay schema. The deployment owns the pool.
+
+`start(timeoutMs)` commits submission evidence before opening the deployment's
+`submission.openSubmission(prepared, signature)` capability. Opening returns
+`{ submit(), close() }` and must not send; the zero-argument submit sends only that
+snapshot. `observe(timeoutMs)` uses the existing observer's chain evidence.
+Recreating the executor preserves factory bytes, nonce, gas, calls and hash.
+An attempted or terminal operation is never submitted again; recovery works
+without KMS or submission access. Expired consent prevents a fresh attempt but
+never hides existing operation evidence. `close()` releases runner resources
+and can be retried after cleanup failure.
+
+Finalized operation success is evidence about that exact operation. A complete
+configured-chain revocation result, nonce-effect observation and replacement
+planning remain separate work. This subpath introduces the server's explicit
+SDK dependency; the relay root imports no runtime or PostgreSQL driver.
 
 ## Grant reference verification
 

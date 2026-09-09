@@ -149,11 +149,16 @@ interface OwnerRevocationInput {
 async function readOwnerState(transaction: RelayTransaction, input: OwnerRevocationInput) {
   if (input.caller.role !== "owner")
     return relayFailure("relay_forbidden", "caller may not decide");
-  const request = await transaction.lockRevocationRequest(input.operationId);
-  if (!request) return relayFailure("relay_not_found", "revocation request is absent");
-  if (request.ownerSubject !== input.caller.subject)
+  const state = await readRevocationState(transaction, input.operationId);
+  if (state.request.ownerSubject !== input.caller.subject)
     return relayFailure("relay_forbidden", "revocation belongs to another owner");
-  const decision = await transaction.lockRevocationDecision(input.operationId);
+  return state;
+}
+/** Shared durable request/decision binding; caller admission belongs to each use case. */
+export async function readRevocationState(transaction: RelayTransaction, operationId: string) {
+  const request = await transaction.lockRevocationRequest(operationId);
+  if (!request) return relayFailure("relay_not_found", "revocation request is absent");
+  const decision = await transaction.lockRevocationDecision(operationId);
   if (
     decision &&
     (decision.decidedAt < request.createdAt || decision.decidedAt > request.expiresAt)

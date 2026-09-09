@@ -20,7 +20,7 @@
  *     replays identically, all through published package exports;
  *   - `./postgres` loads the deployment's own `pg` driver and publishes its
  *     schema with no connection opened;
- *   - all four subpaths' types resolve under `nodenext` strict.
+ *   - all five subpaths' types resolve under `nodenext` strict.
  *
  * No PostgreSQL server is contacted: `packages/server/test/postgres.test.ts`
  * owns that behind `OAATH_REQUIRE_POSTGRES`.
@@ -37,6 +37,7 @@ const SUBPATHS = {
   "@oaath/server/postgres": "postgres.js",
   "@oaath/server/native": "native.js",
   "@oaath/server/apns": "apns.js",
+  "@oaath/server/kernel": "kernel.js",
 };
 
 const PG_VERSION = "8.22.0";
@@ -75,6 +76,7 @@ const ENTRIES = [
   "@oaath/server/postgres",
   "@oaath/server/native",
   "@oaath/server/apns",
+  "@oaath/server/kernel",
 ];
 const ORIGIN = "https://relay.example";
 const REDIRECT_URI = "https://app.example/callback";
@@ -428,7 +430,12 @@ process.stdout.write(
 `;
 
 /** All four subpaths must resolve and compose under `nodenext` strict. */
-const TYPES = `import {
+const TYPES = `import { createOwnerPhoneRevocationExecutor, type OwnerPhoneRevocationExecutorInput, type OwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
+import { createPostgresOperationSchema, createPostgresOperationStoreAdapter } from "@oaath/server/postgres";
+export const restoreRevocation: (input: OwnerPhoneRevocationExecutorInput) => Promise<Readonly<OwnerPhoneRevocationExecutor>> = createOwnerPhoneRevocationExecutor;
+export const operationSchema = createPostgresOperationSchema;
+export const operationStore = createPostgresOperationStoreAdapter;
+import {
   deriveCodeChallenge,
   type GrantVerificationResult,
   hashGrantPolicyCalls,
@@ -526,7 +533,7 @@ export function assertion(grantId: string, digestCalls: unknown): VerifyGrantRev
 
 const consumer = await createConsumer({
   label: "server",
-  packages: ["@oaath/protocol", "@oaath/server"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
   // A deployment installs the driver itself; the subpath must find it there.
   dependencies: { pg: PG_VERSION, "@types/pg": "8.20.3", "@types/node": "22.13.0" },
   types: ["node"],
@@ -560,7 +567,12 @@ try {
       `${specifier}: packed exports differ from the built surface\n    packed: ${actual.join(",")}\n    built:  ${expected.join(",")}`,
     );
     // A collapsed entry would satisfy the equality above vacuously.
-    assert(actual.length > 2, `${specifier}: only ${actual.length} runtime exports`);
+    if (specifier === "@oaath/server/kernel")
+      assert(
+        actual.join() === "createOwnerPhoneRevocationExecutor",
+        "Kernel execution export is missing",
+      );
+    else assert(actual.length > 2, `${specifier}: only ${actual.length} runtime exports`);
   }
 
   assert(

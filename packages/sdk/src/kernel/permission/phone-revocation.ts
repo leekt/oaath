@@ -17,7 +17,11 @@ import {
   parseOwnerSigningArtifact,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import { toPackedUserOperation } from "viem/account-abstraction";
+import {
+  toPackedUserOperation,
+  toUserOperation,
+  type UserOperation,
+} from "viem/account-abstraction";
 import {
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4PermissionUninstallCalls,
@@ -26,7 +30,12 @@ import {
   kernelV4Deployment,
   kernelV4ReplayableInstallTypedData,
 } from "../../kernel-v4.js";
-import { asViemUserOperation, type PreparedUserOperation } from "../../prepared-user-operation.js";
+import {
+  asViemUserOperation,
+  OAATH_PREPARED_USER_OPERATION_VERSION,
+  type PreparedUserOperation,
+  parsePreparedUserOperation,
+} from "../../prepared-user-operation.js";
 import { createKernelRuntime } from "../create-kernel-runtime.js";
 import { exactInput, inputInvalid, runtimeFail, sameInstall } from "../internal.js";
 import { credentialKey } from "../key/credential.js";
@@ -175,6 +184,72 @@ export async function prepareKernelPhoneRevocation(
     },
     expectedDigest: prepared.userOperationHash,
   });
+  return restoredRevocation(signingRequest, prepared, owner);
+}
+
+/**
+ * Reconstructs a previously admitted immutable phone request without chain
+ * reads, gas quotes, nonce allocation or account preparation. In particular,
+ * factory bytes remain present even if the account deployed after consent.
+ * This does not admit a grant or prove that a submission happened.
+ */
+export function restoreKernelPhoneRevocation(
+  value: unknown,
+): Readonly<PreparedKernelPhoneRevocation> {
+  const signingRequest = parseKernelV4RevocationSigningRequest(value);
+  const credential = signingRequest.install.signer.ownerCredential;
+  if (credential.kind !== "p256") return inputInvalid("phone revocation requires P-256");
+  const owner = createKernelRuntime({
+    deployment: kernelV4Deployment(signingRequest.chainId),
+    operator: ownerOperator({
+      key: p256Key({
+        credential,
+        sign: async () =>
+          runtimeFail("kernel_runtime_signing_failed", "restored phone request has no signer"),
+      }),
+    }),
+    reads: {
+      read: async () =>
+        runtimeFail("kernel_runtime_binding_mismatch", "restoration must not read the chain"),
+    },
+  });
+  const operation = toUserOperation({
+    ...signingRequest.operation,
+    nonce: BigInt(signingRequest.operation.nonce),
+    preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
+    signature: "0x",
+  }) as unknown as UserOperation<"0.7">;
+  const prepared = parsePreparedUserOperation({
+    version: OAATH_PREPARED_USER_OPERATION_VERSION,
+    kind: "revocation",
+    grantId: signingRequest.permissionRequest.requestId,
+    chainId: signingRequest.chainId,
+    entryPoint: { version: "0.7", address: signingRequest.entryPoint },
+    userOperation: {
+      sender: operation.sender,
+      nonce: operation.nonce.toString(10),
+      callData: operation.callData,
+      callGasLimit: operation.callGasLimit.toString(10),
+      verificationGasLimit: operation.verificationGasLimit.toString(10),
+      preVerificationGas: operation.preVerificationGas.toString(10),
+      maxFeePerGas: operation.maxFeePerGas.toString(10),
+      maxPriorityFeePerGas: operation.maxPriorityFeePerGas.toString(10),
+      factory: operation.factory
+        ? { address: operation.factory, data: operation.factoryData }
+        : null,
+      paymaster: null,
+    },
+    userOperationHash: signingRequest.expectedDigest,
+  });
+  if (prepared.entryPoint.address !== owner.deployment.entryPoint.address)
+    return inputInvalid("restored revocation has an unsupported EntryPoint");
+  return restoredRevocation(signingRequest, prepared, owner);
+}
+function restoredRevocation(
+  signingRequest: Readonly<KernelV4RevocationSigningRequest>,
+  prepared: Readonly<PreparedUserOperation>,
+  owner: ReturnType<typeof createKernelRuntime>,
+): Readonly<PreparedKernelPhoneRevocation> {
   const requestHash = hashKernelV4RevocationSigningRequest(signingRequest);
   return Object.freeze({
     signingRequest,

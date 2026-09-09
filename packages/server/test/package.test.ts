@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as apns from "../src/apns.js";
 import * as server from "../src/index.js";
+import * as kernel from "../src/kernel.js";
 import * as native from "../src/native.js";
 import * as postgres from "../src/postgres.js";
 
@@ -84,11 +85,24 @@ describe("package boundary", () => {
     expect(Object.keys(postgres).sort()).toEqual([
       "OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS",
       "OAATH_RELAY_POSTGRES_SCHEMA_VERSION",
+      "createPostgresOperationSchema",
+      "createPostgresOperationStoreAdapter",
       "createPostgresRelaySchema",
       "createPostgresRelayStore",
       "createPostgresServiceDirectorySchema",
       "createPostgresServiceDirectoryStore",
     ]);
+  });
+
+  it("keeps Kernel execution behind its explicit platform-neutral subpath", async () => {
+    expect(Object.keys(kernel)).toEqual(["createOwnerPhoneRevocationExecutor"]);
+    const graph = await entryGraph("kernel.ts");
+    expect(
+      [...graph.external].filter((target) => target.startsWith("node:") || target === "pg"),
+    ).toEqual([]);
+    expect(
+      [...(await entryGraph("index.ts")).external].some((name) => name.startsWith("@oaath/sdk")),
+    ).toBe(false);
   });
 
   it("exports only the experimental phone-approval preview owners", () => {
