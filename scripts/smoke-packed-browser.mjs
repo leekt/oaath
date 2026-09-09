@@ -182,6 +182,10 @@ const authorization = {
     ownerRequests.push(request.requestId);
     const state = await relayJson("/authorization/requests/" + request.requestId, OWNER_TOKEN);
     const scope = JSON.parse(state.requestedScope);
+    if (JSON.stringify(scope.context) !== JSON.stringify({
+      version: "oaath.workspace-account-context/v1", workspaceId: "personal-1",
+      workspaceKind: "personal", accountId: "account-1",
+    })) fail("owner review lost the connection's workspace/account context");
     // The owner device mints the replayable install approval itself, offline:
     // package derivation is pure and the account address is the owner's own
     // fact, so the smoke's throwing chain ports prove nothing was consulted.

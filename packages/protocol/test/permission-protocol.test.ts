@@ -50,7 +50,13 @@ const basePolicyCall = policy.calls[0];
 if (!basePolicyCall) throw new Error("missing policy call fixture");
 
 const request: PermissionRequest = {
-  version: "oaath.permission-request/v1",
+  version: "oaath.permission-request/v2",
+  context: {
+    version: "oaath.workspace-account-context/v1",
+    workspaceId: "personal-1",
+    workspaceKind: "personal",
+    accountId: "account-1",
+  },
   requestId: "permission-request-1",
   application: {
     applicationId: "oaath-tests",
@@ -220,7 +226,7 @@ function expectProtocolError(
 
 describe("PermissionRequest current codec", () => {
   it("captures the exact application/account/operator/policy request and creates its Grant", () => {
-    expect(OAATH_PERMISSION_REQUEST_VERSION).toBe("oaath.permission-request/v1");
+    expect(OAATH_PERMISSION_REQUEST_VERSION).toBe("oaath.permission-request/v2");
     expect(OAATH_PERMISSION_REQUEST_HASH_DOMAIN).toBe("@oaath/protocol:permission-request");
     const mutable = clone(request) as unknown as {
       requestId: string;
@@ -239,6 +245,7 @@ describe("PermissionRequest current codec", () => {
 
     expect(parsed).toEqual(request);
     expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.context)).toBe(true);
     expect(Object.isFrozen(parsed.application)).toBe(true);
     expect(Object.isFrozen(parsed.logicalAccount.ownerCredential)).toBe(true);
     expect(Object.isFrozen(parsed.operatorCredential)).toBe(true);
@@ -270,13 +277,16 @@ describe("PermissionRequest current codec", () => {
     expect(hashPermissionRequest(clone(request))).toBe(hashPermissionRequest(request));
     expect(encodePermissionRequest(request)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashPermissionRequest(request)).toBe(
-      "0xcc6a47d748bd8ac5f820c460ede3fa17a12511bc2636e43efc44c105d68d0bf5",
+      "0xcbe30e7120e91375f6095a775f7d1d3a82d6adc9adaff71223cf9dbca5decb13",
     );
     expect(
       hashPermissionRequest({ ...clone(request), requestId: "permission-request-2" }),
     ).not.toBe(hashPermissionRequest(request));
 
     const mutations: PermissionRequest[] = [
+      { ...clone(request), context: { ...request.context, workspaceId: "team-1" } },
+      { ...clone(request), context: { ...request.context, workspaceKind: "team" } },
+      { ...clone(request), context: { ...request.context, accountId: "account-2" } },
       { ...clone(request), application: { ...request.application, applicationId: "other-app" } },
       { ...clone(request), application: { ...request.application, clientId: "other-client" } },
       {
@@ -350,6 +360,10 @@ describe("PermissionRequest current codec", () => {
     });
     const invalidRequests: unknown[] = [
       { ...clone(request), version: "oaath.permission-request/v0" },
+      { ...clone(request), version: "oaath.permission-request/v1" },
+      { ...clone(request), context: undefined },
+      { ...clone(request), context: { ...request.context, accountId: "" } },
+      { ...clone(request), context: { ...request.context, workspaceKind: "organization" } },
       { ...clone(request), chainScope: "selected" },
       { ...clone(request), chainId: 1 },
       { ...clone(request), chains: [1] },
@@ -390,13 +404,27 @@ describe("PermissionRequest current codec", () => {
   });
 });
 
-describe("PermissionRequest session-signer custody binding", () => {
-  it("keeps frontend hashes stable and binds remote custody into the request hash", () => {
-    // Absent field and explicit null are both frontend custody: same parse
-    // result, byte-identical encoding, so every pre-custody hash stays valid.
+describe("PermissionRequest context and session-signer custody binding", () => {
+  it("refuses an approval from a different workspace/account context", () => {
+    const changed = {
+      ...clone(request),
+      context: { ...request.context, workspaceId: "team-1", workspaceKind: "team" as const },
+    };
+    expect(() =>
+      applyPermissionDecision({
+        request: changed,
+        grant: createGrantFromPermissionRequest(changed),
+        observation: { status: "available", decision: approve() },
+        evaluatedAt: 120,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "permission_decision_binding_mismatch" }));
+  });
+
+  it("requires explicit custody and binds remote custody into the request hash", () => {
     const { sessionSigner: _omitted, ...absent } = clone(request);
-    expect(parsePermissionRequest(absent)).toEqual(request);
-    expect(hashPermissionRequest(absent)).toBe(hashPermissionRequest(request));
+    expect(() => parsePermissionRequest(absent)).toThrowError(
+      expect.objectContaining({ code: "permission_request_invalid" }),
+    );
 
     const hosted = {
       ...clone(request),
@@ -424,8 +452,7 @@ describe("PermissionRequest session-signer custody binding", () => {
   });
 
   it.each([
-    // Frontend custody has exactly one non-null spelling: absence. An explicit
-    // frontend object would mint a second encoding of the same fact.
+    // Frontend custody has one spelling: null.
     [{ mode: "frontend", providerId: null }],
     [{ mode: "owner_hosted", providerId: "kms-primary" }],
     [{ mode: "oaath_hosted", providerId: "" }],
@@ -452,10 +479,10 @@ describe("PermissionDecision current codec", () => {
       expect(hashPermissionDecision(clone(parsed))).toBe(hashPermissionDecision(parsed));
     }
     expect(hashPermissionDecision(approve())).toBe(
-      "0x278654d2af0f368a267632aa9f49f03205ae6f2026705593ece39a09bfe72b2c",
+      "0x8dda86704747d99adb52d066871feb0f5be2ac6a69c2d341d272ff7008518dd8",
     );
     expect(hashPermissionDecision(reject())).toBe(
-      "0x951ceab50e2600891bbf97b7721003ec7a6d0ed5596f4f7f21a264b4e48f25b6",
+      "0x2662f67eb42c8433b88b78d6cf12ab5c59aa38770f26bdd763e061c8796869c1",
     );
     expect(hashPermissionDecision(approve({ capabilityHash: `0x${"66".repeat(32)}` }))).not.toBe(
       hashPermissionDecision(approve()),

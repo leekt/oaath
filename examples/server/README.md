@@ -72,7 +72,7 @@ the same call with `$CLIENT` returns `403 relay_forbidden`.
 
 ```sh
 curl -s $RELAY/authorization/requests/$REQUEST_ID -H "$OWNER"
-# {"requestId":"…","clientId":"demo-client","requestedScope":"{\"version\":\"oaath.permission-request/v1\",…}",
+# {"requestId":"…","clientId":"demo-client","requestedScope":"{\"version\":\"oaath.permission-request/v2\",…}",
 #  "expiresAt":1785810279241,"expired":false,"decision":null}
 ```
 
