@@ -24,6 +24,17 @@
  * @author taek <leekt216@gmail.com>
  */
 
+export type {
+  OwnerDeviceAuthentication,
+  OwnerDeviceCredentialRecord,
+  OwnerDeviceCredentialStore,
+  OwnerDeviceReference,
+} from "./native/authentication.js";
+export {
+  createMemoryOwnerDeviceCredentialStore,
+  createOwnerDeviceAuthentication,
+  OAATH_OWNER_DEVICE_CREDENTIAL_VERSION,
+} from "./native/authentication.js";
 export type { OwnerPhoneDecision, SubmitOwnerPhoneDecisionInput } from "./native/decision.js";
 export { submitOwnerPhoneDecision } from "./native/decision.js";
 export type { OwnerPhoneInbox } from "./native/inbox.js";

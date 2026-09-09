@@ -12,6 +12,10 @@ export {
   createPostgresServiceDirectoryStore,
 } from "./directory/postgres.js";
 export {
+  createPostgresOwnerDeviceCredentialSchema,
+  createPostgresOwnerDeviceCredentialStore,
+} from "./native/authentication-postgres.js";
+export {
   createPostgresOperationSchema,
   createPostgresOperationStoreAdapter,
 } from "./store/postgres/operation.js";
