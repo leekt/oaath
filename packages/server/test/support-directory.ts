@@ -1,4 +1,10 @@
-import type { RelayCaller, ServiceDirectoryDocument } from "../src/index.js";
+import { parseKernelV4ReplayableInstallOwnerSigningRequest } from "@oaath/protocol";
+import type {
+  EnrollOwnerDeviceInput,
+  RelayCaller,
+  ServiceDirectoryDocument,
+} from "../src/index.js";
+import { createKernelOwnerApprovalInput } from "./kernel-owner-signing-input.js";
 import { APPROVABLE_PERMISSION_SCOPE } from "./support.js";
 
 export function permissionScope(workspaceId = "personal-1"): string {
@@ -87,4 +93,28 @@ export function directoryDocument(): ServiceDirectoryDocument {
       { clientId: "client-a", subject: "subject-2", workspaceId: "team-1", accountId: "treasury" },
     ],
   };
+}
+
+/** Process-local public phone identity; no private or signature material is retained. */
+export function phoneEnrollment(
+  workspaceId = "personal-1",
+  expectedRevision = 1,
+): EnrollOwnerDeviceInput {
+  const document = directoryDocument();
+  const device = document.ownerDevices.find((entry) => entry.workspaceId === workspaceId)!;
+  const account = document.accounts.find((entry) => entry.workspaceId === workspaceId)!;
+  const ownerCredential = parseKernelV4ReplayableInstallOwnerSigningRequest(
+    JSON.parse(createKernelOwnerApprovalInput().requestedScope),
+  ).signer.ownerCredential;
+  return {
+    expectedRevision,
+    device,
+    accounts: [
+      { ...account, ownerValidator: null, account: { ...account.account, ownerCredential } },
+    ],
+  };
+}
+
+export function unenrolledDirectory(): ServiceDirectoryDocument {
+  return { ...directoryDocument(), ownerDevices: [], accounts: [] };
 }

@@ -55,8 +55,14 @@ The `oaath.service-directory/v1` document contains `workspaces`, `applications`,
 `memberships`, `accounts`, `ownerDevices`, and `selections`. Membership uses
 the authenticated `(clientId, subject)` pair; an account references an owner
 device within its workspace. Each account owns its Kernel profile, owner
-validator binding, and configured chain IDs. Owner-device records currently
-store enrollment references only; phone enrollment remains separate work.
+validator binding, and configured chain IDs. After authenticating pairing, a
+deployment calls `enrollOwnerDevice({ expectedRevision, device, accounts })` to
+register a phone and its new P-256 Kernel accounts atomically in one workspace.
+All accounts must bind that phone's same public owner key. Existing device or
+account identities cannot be overwritten; enrollment does not add membership.
+The deployment assigns the authenticated owner subject and separately issues
+relay credentials. The directory stores public account identity and routing,
+not private keys or bearer credentials.
 
 `resolveOwner(caller, request)` admits a canonical permission request only when
 its explicit workspace/account context, full account profile, and application

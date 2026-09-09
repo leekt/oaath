@@ -123,9 +123,10 @@ and selection records, with memory and PostgreSQL stores. Membership removal
 blocks subsequent bootstrap resolution and request admission; it does not revoke
 existing grants. The directory also resolves each permission request to the
 registered account's owner device, checking its explicit context and account
-profile rather than the current selection preference. Account selection UI and
-phone enrollment remain pending. The current phone remains the experimental
-surface described above.
+profile rather than the current selection preference. After deployment-authenticated
+pairing, `enrollOwnerDevice` registers a phone and its new P-256 accounts in one
+directory write. Account selection UI and migration of the runnable phone demo
+to canonical SDK permissions remain pending.
 
 ```ts
 import { createOAAth } from "@oaath/sdk";

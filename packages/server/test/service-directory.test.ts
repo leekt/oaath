@@ -10,7 +10,13 @@ import {
   post,
   REDIRECT_URI,
 } from "./support.js";
-import { directoryDocument, member, permissionScope } from "./support-directory.js";
+import {
+  directoryDocument,
+  member,
+  permissionScope,
+  phoneEnrollment,
+  unenrolledDirectory,
+} from "./support-directory.js";
 
 describe("service directory", () => {
   it("resolves the requested personal/team account independently of the selection preference", async () => {
@@ -183,5 +189,108 @@ describe("service directory", () => {
     await expect(unreadable.resolve(member("subject-1"))).rejects.toMatchObject({
       code: "relay_record_unreadable",
     });
+  });
+});
+
+describe("phone enrollment", () => {
+  it("registers a phone and its account together before personal/team bootstrap and owner routing", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: unenrolledDirectory() });
+    expect(await directory.resolve(member("subject-1"))).toBeNull();
+    for (const [workspaceId, expectedRevision] of [
+      ["personal-1", 1],
+      ["team-1", 2],
+    ] as const) {
+      const initial = phoneEnrollment(workspaceId, expectedRevision);
+      const additional = structuredClone(initial.accounts[0]!);
+      const enrollment = {
+        ...initial,
+        accounts: [
+          ...initial.accounts,
+          {
+            ...additional,
+            accountId: "second-account",
+            account: { ...additional.account, accountIndex: "2" },
+          },
+        ],
+      };
+      expect(await directory.enrollOwnerDevice(enrollment)).toBe(true);
+      const caller = member(workspaceId === "personal-1" ? "subject-1" : "subject-2");
+      const resolved = await directory.resolve(caller);
+      expect(resolved?.account).toEqual(enrollment.accounts[0]?.account);
+      const request = JSON.parse(permissionScope(workspaceId));
+      request.logicalAccount = resolved!.account;
+      expect(
+        await directory.resolveOwner(caller, {
+          requestId: "enrolled-request",
+          requestedScope: JSON.stringify(request),
+        }),
+      ).toEqual({
+        ownerDeviceId: enrollment.device.ownerDeviceId,
+        ownerSubject: enrollment.device.subject,
+      });
+    }
+    expect(await directory.resolve(member("unassigned"))).toBeNull();
+    expect((await directory.read())?.directory.memberships).toEqual(
+      directoryDocument().memberships,
+    );
+  });
+
+  it("rejects partial or inconsistent phone registration without changing the directory", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: unenrolledDirectory() });
+    const enrollment = phoneEnrollment();
+    const account = enrollment.accounts[0]!;
+    const otherKey = phoneEnrollment().accounts[0]!.account.ownerCredential;
+    for (const accounts of [
+      [],
+      [{ ...account, workspaceId: "team-1" }],
+      [{ ...account, ownerDeviceId: "other-phone" }],
+      [{ ...account, account: { ...account.account, factoryRoute: "meta_factory" } }],
+      [
+        account,
+        {
+          ...structuredClone(account),
+          accountId: "second",
+          account: {
+            ...structuredClone(account.account),
+            ownerCredential: otherKey,
+          },
+        },
+      ],
+      [directoryDocument().accounts[0]!],
+    ]) {
+      await expect(
+        directory.enrollOwnerDevice({ ...enrollment, accounts } as typeof enrollment),
+      ).rejects.toMatchObject({ code: "relay_request_invalid" });
+      expect((await directory.read())?.revision).toBe(1);
+      expect((await directory.read())?.directory.ownerDevices).toEqual([]);
+    }
+  });
+
+  it("never overwrites an existing phone or account and returns false for stale enrollment", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: unenrolledDirectory() });
+    const enrollment = phoneEnrollment();
+    expect(await directory.enrollOwnerDevice(enrollment)).toBe(true);
+    expect(await directory.enrollOwnerDevice(phoneEnrollment("team-1", 1))).toBe(false);
+    await expect(
+      directory.enrollOwnerDevice({ ...enrollment, expectedRevision: 2 }),
+    ).rejects.toMatchObject({ code: "relay_request_invalid" });
+    await expect(
+      directory.enrollOwnerDevice({
+        ...enrollment,
+        expectedRevision: 2,
+        device: { ...enrollment.device, ownerDeviceId: "replacement" },
+        accounts: enrollment.accounts.map((account) => ({
+          ...account,
+          ownerDeviceId: "replacement",
+        })),
+      }),
+    ).rejects.toMatchObject({ code: "relay_request_invalid" });
+    const snapshot = (await directory.read())!;
+    expect(snapshot.revision).toBe(2);
+    expect(snapshot.directory.ownerDevices).toEqual([enrollment.device]);
+    expect(snapshot.directory.accounts).toEqual(enrollment.accounts);
   });
 });
