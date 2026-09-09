@@ -1,5 +1,5 @@
 /**
- * Phone demo deployment: pairing and inbox transport around the shared relay.
+ * Phone demo deployment: pairing and optional notifications around the shared relay.
  * The SDK owns every application key, operation, observation and recovery.
  * @author taek <leekt216@gmail.com>
  */
@@ -35,12 +35,7 @@ import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import { build } from "esbuild";
 import QRCode from "qrcode";
 import { createAnvilChain } from "../browser/anvil-chain.mjs";
-import {
-  markInboxTerminal,
-  OneShotPairing,
-  serveDemoInbox,
-  servePairingSecret,
-} from "./demo-routes.mjs";
+import { OneShotPairing, servePairingSecret } from "./demo-routes.mjs";
 
 const CHAIN_IDS = [84_532, 421_614];
 const CLIENT_ID = "demo-web-app";
@@ -138,7 +133,6 @@ export async function startPhoneService({
     .join("");
   const expiresAt = Date.now() + 600_000;
   const pairing = new OneShotPairing({ hash: sha256(pairingCode), expiresAt });
-  const inbox = new Map();
   let activeDevice = null;
   let url;
   let pairingLink;
@@ -380,8 +374,8 @@ export async function startPhoneService({
     }
   }
 
-  async function deliver(operationId) {
-    if (inbox.has(operationId) || !activeDevice) return;
+  async function notifyOwner(operationId) {
+    if (simulate || !activeDevice) return;
     const response = await relay(
       new Request(`${url}/native/projections/${operationId}`, {
         headers: { authorization: `Bearer ${activeDevice.credential}` },
@@ -394,9 +388,7 @@ export async function startPhoneService({
       displayPayload: projection.displayPayload,
       expiresAt: projection.expiresAt,
     };
-    inbox.set(operationId, { inboxState: "pending", inboxSummary: summary });
-    // Push is secondary; a failed push leaves the pull inbox available.
-    void maybePush(summary).catch(() => console.error("phone notification unavailable"));
+    await maybePush(summary);
   }
 
   const server = createServer(async (incoming, outgoing) => {
@@ -411,17 +403,6 @@ export async function startPhoneService({
         outgoing.end(pathname === "/" ? page : bundle.outputFiles[0].contents);
         return;
       }
-      if (
-        serveDemoInbox({
-          incoming,
-          outgoing,
-          pathname,
-          activeDevice,
-          records: inbox,
-          now: Date.now,
-        })
-      )
-        return;
       if (
         await servePairingSecret({
           incoming,
@@ -459,18 +440,19 @@ export async function startPhoneService({
       if (incoming.method === "POST" && response.ok) {
         if (pathname === "/authorization/requests" && response.status === 201) {
           const { requestId } = await response.clone().json();
-          await deliver(requestId);
+          // Push is secondary; the relay records already own the pull inbox.
+          void notifyOwner(requestId).catch(() => console.error("phone notification unavailable"));
         } else if (/^\/grants\/[^/]+\/revocations\/[0-9]+$/.test(pathname)) {
           const status = await response.clone().json();
-          if (status.status === "pending") await deliver(status.operationId);
+          if (status.status === "pending" && response.status === 201)
+            void notifyOwner(status.operationId).catch(() =>
+              console.error("phone notification unavailable"),
+            );
           else if (status.status === "approved") scheduleRevocation(status.operationId);
         } else if (pathname.startsWith("/native/revocation-decisions/")) {
           const decision = await response.clone().json();
           const operationId = pathname.slice("/native/revocation-decisions/".length);
-          markInboxTerminal(inbox, operationId);
           if (decision.outcome === "approved") scheduleRevocation(operationId);
-        } else if (pathname.startsWith("/native/decisions/")) {
-          markInboxTerminal(inbox, pathname.slice("/native/decisions/".length));
         }
       }
       outgoing.writeHead(response.status, Object.fromEntries(response.headers));

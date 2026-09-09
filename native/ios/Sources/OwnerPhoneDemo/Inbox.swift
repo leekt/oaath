@@ -10,7 +10,7 @@
 import Foundation
 import OwnerPhone
 
-public let demoInboxVersion = "oaath.demo-inbox/v1"
+public let demoInboxVersion = "oaath.native-inbox/v1"
 public let demoInboxLimit = 20
 private let demoInboxMaximumBytes = 8_192
 

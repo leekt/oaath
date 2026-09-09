@@ -116,8 +116,7 @@ excluding expired or decided requests, and returns at most 20 ordered by expiry
 then operation ID. There is no separate inbox table or delivery flag to restore.
 PostgreSQL readers recover the list after service recreation. Listing does not
 prepare, sign, submit, or open an approval artifact; fetching consent checks
-current state again. The example phone's inbox transport is not yet switched to
-this endpoint.
+current state again. The example phone uses this endpoint for its pull inbox.
 
 Canonical phone permission approval requires `RelayHandlerOptions.permissionApprovals`.
 Wire its `prepare(request)` to `prepareKernelPhonePermissionApproval` from

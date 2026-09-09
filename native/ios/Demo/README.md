@@ -44,7 +44,7 @@ restart the example and use the fresh browser Pair flow.
 The push entitlement (`aps-environment`) requires a **paid Apple Developer
 membership** — free personal teams cannot use it. The checked-in target leaves
 **Code Signing Entitlements** empty by default and therefore uses the
-authenticated pull inbox; manual operation-id entry remains a fallback.
+authenticated `GET /native/inbox`; manual operation-id entry remains a fallback.
 
 With a paid membership:
 
