@@ -45,8 +45,9 @@ Then `chrome://extensions` → Developer mode → **Load unpacked** →
 
 ## Pair a dapp
 
-1. Run an OAAth service (e.g. `pnpm --filter @oaath/examples example:service`,
-   or your own deployment) and set its URL + chain id in the popup.
+1. Run your OAAth deployment and set its URL + chain ID in the popup. The
+   [phone service example](../phone) demonstrates the shared service components;
+   an extension deployment must configure its own client authentication and origins.
 2. The service must register a redirect URI on the dapp's origin — a Grant is
    only issued to origins the deployment knows.
 3. Open the dapp, open the popup, fill the scope (target, selector, value
