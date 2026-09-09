@@ -11,6 +11,7 @@ import { bytesToHex, hexToBytes } from "viem";
 import { describe, expect, it } from "vitest";
 import {
   kernelAllChainCapabilityHash,
+  kernelPermissionInstallNonce,
   prepareKernelPhonePermissionApproval,
 } from "../src/kernel.js";
 import {
@@ -59,12 +60,11 @@ function fixture() {
     expiresAt: 200,
   });
   const reads = createChainFixture().capability.reads;
-  const prepare = (value: Readonly<PermissionRequest> = request, installNonce = "0") =>
+  const prepare = (value: Readonly<PermissionRequest> = request) =>
     prepareKernelPhonePermissionApproval({
       request: value,
       chainId: CHAIN_ID,
       reads,
-      installNonce,
     });
   const sign = (prepared: Awaited<ReturnType<typeof prepare>>) => ({
     version: "oaath.owner-signing-artifact/v1" as const,
@@ -94,6 +94,9 @@ describe("canonical permission approval for the owner phone", () => {
     expect(decision.approvedPolicy).toEqual(fixed.request.policy);
     expect(decision.capabilityHash).toBe(kernelAllChainCapabilityHash(installApproval));
     expect(installApproval.digest).toBe(prepared.signingRequest.expectedDigest);
+    expect(installApproval.installNonce).toBe(
+      kernelPermissionInstallNonce(hashPermissionRequest(fixed.request)),
+    );
     expect(
       p256.verify(
         hexToBytes(installApproval.enableSignature),
@@ -141,7 +144,8 @@ describe("canonical permission approval for the owner phone", () => {
   it("rejects a signature artifact for another install request", async () => {
     const fixed = fixture();
     const first = await fixed.prepare();
-    const other = await fixed.prepare(fixed.request, "1");
+    const other = await fixed.prepare({ ...fixed.request, requestId: "phone-permission-2" });
+    expect(other.signingRequest.replay.nonce).not.toBe(first.signingRequest.replay.nonce);
     await expect(first.complete(fixed.sign(other), 110)).rejects.toMatchObject({
       code: "kernel_runtime_signature_invalid",
     });

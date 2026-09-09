@@ -25,11 +25,12 @@ import {
   kernelV4ReplayableInstallTypedData,
 } from "../../kernel-v4.js";
 import { createKernelRuntime } from "../create-kernel-runtime.js";
-import { exactInput, inputInvalid, inputUint, runtimeFail } from "../internal.js";
+import { exactInput, inputInvalid, runtimeFail } from "../internal.js";
 import { credentialKey } from "../key/credential.js";
 import { p256Key } from "../key/p256.js";
 import { ownerOperator } from "../operator/owner.js";
 import { sessionOperator } from "../operator/session.js";
+import { kernelPermissionInstallNonce } from "./install-nonce.js";
 import {
   approveKernelPermissionAllChain,
   type KernelAllChainApproval,
@@ -42,8 +43,6 @@ export interface PrepareKernelPhonePermissionApprovalInput {
   /** Configured chain used to bind the account; the resulting approval is replayable. */
   readonly chainId: number;
   readonly reads: Readonly<KernelV4AccountReadCapability>;
-  /** Deployment-owned install nonce. This helper does not allocate or advance it. */
-  readonly installNonce: string;
 }
 
 /** The existing decision and separately owned install approval consumed by createOAAth. */
@@ -65,14 +64,16 @@ export interface PreparedKernelPhonePermissionApproval {
  * Prepares the existing phone's P-256 Kernel approval from one captured request.
  * Account and permission packages come from createKernelRuntime; the phone
  * never needs an application session key, and preparation cannot sign.
- * Recreate with the same request and nonce to obtain the same signing request.
+ * Recreate with the same request to obtain the same signing request. Each
+ * request selects its own install key at sequence zero; see
+ * kernelPermissionInstallNonce for the account's global-minimum constraint.
  */
 export async function prepareKernelPhonePermissionApproval(
   value: PrepareKernelPhonePermissionApprovalInput,
 ): Promise<Readonly<PreparedKernelPhonePermissionApproval>> {
   const input = exactInput(
     value,
-    ["request", "chainId", "reads", "installNonce"],
+    ["request", "chainId", "reads"],
     "phone permission approval",
     new WeakSet(),
   );
@@ -86,11 +87,8 @@ export async function prepareKernelPhonePermissionApproval(
   if (typeof input.chainId !== "number") return inputInvalid("phone approval chain is invalid");
   const deployment = kernelV4Deployment(input.chainId);
   const reads = input.reads as Readonly<KernelV4AccountReadCapability>;
-  const installNonce = inputUint(
-    input.installNonce,
-    (1n << 256n) - 1n,
-    "phone approval install nonce",
-  ).toString(10);
+  const requestHash = hashPermissionRequest(request);
+  const installNonce = kernelPermissionInstallNonce(requestHash);
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({
@@ -125,7 +123,6 @@ export async function prepareKernelPhonePermissionApproval(
     replay: { nonce: installNonce, deadline: null },
   });
   const signingRequestHash = hashOwnerSigningRequest(signingRequest);
-  const requestHash = hashPermissionRequest(request);
 
   return Object.freeze({
     request,

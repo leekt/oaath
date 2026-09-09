@@ -159,8 +159,6 @@ export async function startPhoneService({ host = "127.0.0.1", port = 0, simulate
           request,
           chainId: CHAIN_ID,
           reads: chain.capability.reads,
-          // One grant per fresh demo account; allocation is deployment-owned.
-          installNonce: "0",
         });
         return {
           signingRequest: prepared.signingRequest,

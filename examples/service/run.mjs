@@ -40,6 +40,7 @@ import {
   ecdsaKey,
   encodeKernelV4PermissionUninstallCalls,
   kernelAllChainCapabilityHash,
+  kernelPermissionInstallNonce,
   kernelV4Deployment,
   ownerOperator,
   sessionOperator,
@@ -263,10 +264,11 @@ async function ownerConsole() {
         }),
         reads: chain.capability.reads,
       });
+      const requestHash = hashPermissionRequest({ ...scope, requestId });
       const installApproval = await approveKernelPermissionAllChain({
         owner: ownerKey,
         account: descriptor.account,
-        installNonce: "0",
+        installNonce: kernelPermissionInstallNonce(requestHash),
         packages: [...sessionRuntime.packages],
       });
       approvals.set(requestId, installApproval);
@@ -279,7 +281,7 @@ async function ownerConsole() {
             version: OAATH_PERMISSION_DECISION_VERSION,
             kind: "approve",
             requestId,
-            requestHash: hashPermissionRequest({ ...scope, requestId }),
+            requestHash,
             decidedAt: Math.floor(Date.now() / 1000),
             approvedPolicy: scope.policy,
             capabilityHash: kernelAllChainCapabilityHash(installApproval),
