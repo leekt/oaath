@@ -34,6 +34,7 @@
  * ```text
  * GET  /native/projections/{operationId}             owner   consent projection
  * POST /native/decisions/{operationId}               owner   approve or reject saga
+ * POST /native/revocation-decisions/{operationId}    owner   revocation custody decision
  * ```
  *
  * @author taek <leekt216@gmail.com>
@@ -68,6 +69,11 @@ import {
   projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,
 } from "../native/projection.js";
+import { REVOCATION_OPERATION_PREFIX } from "../revocation/records.js";
+import {
+  fetchOwnerPhoneRevocation,
+  submitOwnerPhoneRevocationDecision,
+} from "../revocation/service.js";
 import {
   authenticateCaller,
   type RelayAuthentication,
@@ -651,13 +657,37 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       if (segments.length === 3 && group === "projections") {
         requireMethod(request, "GET");
         const caller = await authenticate(request, "owner", "native.project");
-        const projection = await projectOwnerPhoneRequest({
-          store: captured.store,
-          clock: captured.clock,
-          caller,
-          requestId: canonicalIdentifier(third, "operationId", INVALID),
-        });
+        const operationId = canonicalIdentifier(third, "operationId", INVALID);
+        const projection = operationId.startsWith(REVOCATION_OPERATION_PREFIX)
+          ? await fetchOwnerPhoneRevocation({
+              store: captured.store,
+              clock: captured.clock,
+              caller,
+              operationId,
+            })
+          : await projectOwnerPhoneRequest({
+              store: captured.store,
+              clock: captured.clock,
+              caller,
+              requestId: canonicalIdentifier(third, "operationId", INVALID),
+            });
         return jsonResponse(200, projection);
+      }
+      if (segments.length === 3 && group === "revocation-decisions") {
+        requireMethod(request, "POST");
+        const caller = await authenticate(request, "owner", "native.revoke");
+        const command = phoneDecisionCommand(await bodyRecord(request, captured.maxBodyBytes));
+        return jsonResponse(
+          200,
+          await submitOwnerPhoneRevocationDecision({
+            store: captured.store,
+            clock: captured.clock,
+            kms: captured.kms,
+            caller,
+            operationId: canonicalIdentifier(third, "operationId", INVALID),
+            command,
+          }),
+        );
       }
       if (segments.length === 3 && group === "decisions") {
         requireMethod(request, "POST");

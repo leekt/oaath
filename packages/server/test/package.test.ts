@@ -54,6 +54,8 @@ describe("package boundary", () => {
       "OAATH_AUTHORIZATION_DECISION_RECORD_VERSION",
       "OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION",
       "OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION",
+      "OAATH_REVOCATION_DECISION_RECORD_VERSION",
+      "OAATH_REVOCATION_REQUEST_RECORD_VERSION",
       "OAATH_SERVICE_DIRECTORY_VERSION",
       "OaathRelayError",
       "REDACTED",
@@ -93,10 +95,13 @@ describe("package boundary", () => {
     expect(Object.keys(native).sort()).toEqual([
       "NATIVE_DISPLAY_PAYLOAD_LENGTH",
       "OAATH_NATIVE_PROJECTION_VERSION",
+      "fetchOwnerPhoneRevocation",
       "projectOwnerPhonePermissionSigning",
       "projectOwnerPhoneRequest",
       "projectOwnerPhoneRevocation",
+      "requestOwnerPhoneRevocation",
       "submitOwnerPhoneDecision",
+      "submitOwnerPhoneRevocationDecision",
     ]);
   });
 

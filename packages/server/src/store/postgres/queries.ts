@@ -110,3 +110,8 @@ export const CLAIM_ENCRYPTED_ARTIFACT = `
   SET claimed_at = $2
   WHERE artifact_id = $1 AND claimed_at IS NULL
 `;
+
+export const LOCK_REVOCATION_REQUEST = `SELECT record FROM oaath_relay_revocation_request_v1 WHERE operation_id = $1 FOR UPDATE`;
+export const INSERT_REVOCATION_REQUEST = `INSERT INTO oaath_relay_revocation_request_v1 (operation_id, record) VALUES ($1, $2::jsonb) ON CONFLICT (operation_id) DO NOTHING`;
+export const LOCK_REVOCATION_DECISION = `SELECT record FROM oaath_relay_revocation_decision_v1 WHERE operation_id = $1 FOR UPDATE`;
+export const INSERT_REVOCATION_DECISION = `INSERT INTO oaath_relay_revocation_decision_v1 (operation_id, record) VALUES ($1, $2::jsonb) ON CONFLICT (operation_id) DO NOTHING`;

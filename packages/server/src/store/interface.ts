@@ -5,14 +5,16 @@
  *
  * ```text
  * state and owner        authorization request (immutable), decision (terminal),
- *                        code (one-shot), encrypted artifact (one-shot)
+ *                        code (one-shot), encrypted artifact (one-shot);
+ *                        revocation request (immutable), phone decision (terminal)
  * persisted evidence     one row per record, one current schema version
  * resource occupied?     yes: a decision row occupies its request; a consumed
  *                        code and a claimed artifact are terminal
  * retry positively safe? no: an ambiguous commit is never retried
  * transitions            request -> decision(approved|rejected) once;
  *                        code: issued -> consumed once;
- *                        artifact: sealed -> claimed once
+ *                        artifact: sealed -> claimed once;
+ *                        revocation: pending -> approved|rejected once, no code
  * crash/reload           every transition is decided inside one transaction on a
  *                        row locked for update; a crash leaves the prior state
  * cleanup owner          the caller rolls back; the store releases its handle
@@ -27,6 +29,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import type { RevocationDecisionRecord, RevocationRequestRecord } from "../revocation/records.js";
 import type {
   AuthorizationCodeRecord,
   AuthorizationDecisionRecord,
@@ -36,6 +39,12 @@ import type {
 } from "./records.js";
 
 export interface RelayTransaction {
+  /** Lock the immutable request before reading or writing its terminal decision. */
+  lockRevocationRequest(operationId: string): Promise<RevocationRequestRecord | undefined>;
+  insertRevocationRequest(record: RevocationRequestRecord): Promise<boolean>;
+  lockRevocationDecision(operationId: string): Promise<RevocationDecisionRecord | undefined>;
+  insertRevocationDecision(record: RevocationDecisionRecord): Promise<boolean>;
+
   lockAuthorizationRequest(requestId: string): Promise<AuthorizationRequestRecord | undefined>;
   /** Returns false when the identifier already exists. */
   insertAuthorizationRequest(record: AuthorizationRequestRecord): Promise<boolean>;

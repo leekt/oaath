@@ -13,7 +13,9 @@
 import { p256 } from "@noble/curves/nist.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import {
+  hashKernelV4RevocationSigningRequest,
   hashOwnerSigningRequest,
+  type KernelV4RevocationSigningRequest,
   parseKernelV4ReplayableInstallOwnerSigningRequest,
   parseOwnerSigningArtifact,
   serializeOwnerSigningArtifact,
@@ -35,26 +37,57 @@ export function verifyKernelV4ReplayableInstallOwnerSigningArtifact(
     const request = parseKernelV4ReplayableInstallOwnerSigningRequest(requestValue);
     if (request.signer.ownerCredential.kind !== "p256") throw new TypeError();
 
-    const received = boundedText(
+    return verifyArtifact(
+      hashOwnerSigningRequest(request),
+      request.expectedDigest,
+      request.signer.ownerCredential.publicKey,
       artifactPlaintext,
-      RELAY_LIMITS.artifactPlaintext,
-      "owner signing artifact",
-      INVALID,
     );
-    const artifact = parseOwnerSigningArtifact(JSON.parse(received) as unknown);
-    const canonical = serializeOwnerSigningArtifact(artifact);
-    if (received !== canonical) throw new TypeError();
-    if (artifact.requestHash !== hashOwnerSigningRequest(request)) throw new TypeError();
-
-    const verified = p256.verify(
-      hexToBytes(artifact.signature.slice(2)),
-      hexToBytes(request.expectedDigest.slice(2)),
-      hexToBytes(request.signer.ownerCredential.publicKey.slice(2)),
-      { format: "compact", lowS: true, prehash: false },
-    );
-    if (!verified) throw new TypeError();
-    return canonical;
   } catch {
     return relayFailure(INVALID, "Kernel owner signing artifact is invalid");
   }
+}
+
+/** Stored signing request has already crossed the durable record boundary. */
+export function verifyKernelV4RevocationOwnerSigningArtifact(
+  request: Readonly<KernelV4RevocationSigningRequest>,
+  artifactPlaintext: unknown,
+): string {
+  try {
+    if (request.install.signer.ownerCredential.kind !== "p256") throw new TypeError();
+    return verifyArtifact(
+      hashKernelV4RevocationSigningRequest(request),
+      request.expectedDigest,
+      request.install.signer.ownerCredential.publicKey,
+      artifactPlaintext,
+    );
+  } catch {
+    return relayFailure(INVALID, "Kernel owner signing artifact is invalid");
+  }
+}
+function verifyArtifact(
+  requestHash: string,
+  digest: string,
+  publicKey: string,
+  artifactPlaintext: unknown,
+): string {
+  const received = boundedText(
+    artifactPlaintext,
+    RELAY_LIMITS.artifactPlaintext,
+    "owner signing artifact",
+    INVALID,
+  );
+  const artifact = parseOwnerSigningArtifact(JSON.parse(received) as unknown);
+  const canonical = serializeOwnerSigningArtifact(artifact);
+  if (received !== canonical) throw new TypeError();
+  if (artifact.requestHash !== requestHash) throw new TypeError();
+
+  const verified = p256.verify(
+    hexToBytes(artifact.signature.slice(2)),
+    hexToBytes(digest.slice(2)),
+    hexToBytes(publicKey.slice(2)),
+    { format: "compact", lowS: true, prehash: false },
+  );
+  if (!verified) throw new TypeError();
+  return canonical;
 }

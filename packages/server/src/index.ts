@@ -64,6 +64,11 @@ export type {
   RelaySessionSignerConfiguration,
 } from "./relay/handler.js";
 export { createRelayHandler } from "./relay/handler.js";
+export type { RevocationDecisionRecord, RevocationRequestRecord } from "./revocation/records.js";
+export {
+  OAATH_REVOCATION_DECISION_RECORD_VERSION,
+  OAATH_REVOCATION_REQUEST_RECORD_VERSION,
+} from "./revocation/records.js";
 export type {
   RelayAuthentication,
   RelayCaller,

@@ -11,6 +11,10 @@
  */
 
 import { relayFailure } from "../relay/errors.js";
+import {
+  parseRevocationDecisionRecord,
+  parseRevocationRequestRecord,
+} from "../revocation/records.js";
 import type { RelayStore, RelayTransaction } from "./interface.js";
 import {
   type AuthorizationCodeRecord,
@@ -26,6 +30,8 @@ import {
 } from "./records.js";
 
 interface Tables {
+  readonly revocationRequests: Map<string, unknown>;
+  readonly revocationDecisions: Map<string, unknown>;
   readonly requests: Map<string, unknown>;
   readonly decisions: Map<string, unknown>;
   readonly codes: Map<string, unknown>;
@@ -35,6 +41,8 @@ interface Tables {
 
 function emptyTables(): Tables {
   return {
+    revocationRequests: new Map(),
+    revocationDecisions: new Map(),
     requests: new Map(),
     decisions: new Map(),
     codes: new Map(),
@@ -45,6 +53,8 @@ function emptyTables(): Tables {
 
 function copyTables(tables: Tables): Tables {
   return {
+    revocationRequests: new Map(tables.revocationRequests),
+    revocationDecisions: new Map(tables.revocationDecisions),
     requests: new Map(tables.requests),
     decisions: new Map(tables.decisions),
     codes: new Map(tables.codes),
@@ -114,6 +124,18 @@ export function createMemoryRelayStore(): RelayStore {
       };
 
       return {
+        async lockRevocationRequest(operationId) {
+          return read(open().revocationRequests, operationId, parseRevocationRequestRecord);
+        },
+        async insertRevocationRequest(record) {
+          return insert(open().revocationRequests, record.operationId, record);
+        },
+        async lockRevocationDecision(operationId) {
+          return read(open().revocationDecisions, operationId, parseRevocationDecisionRecord);
+        },
+        async insertRevocationDecision(record) {
+          return insert(open().revocationDecisions, record.operationId, record);
+        },
         async lockAuthorizationRequest(requestId) {
           return read(open().requests, requestId, parseAuthorizationRequestRecord);
         },

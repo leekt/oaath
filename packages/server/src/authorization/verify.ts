@@ -43,25 +43,22 @@
  */
 
 import {
-  applyPermissionDecision,
-  createGrantFromPermissionRequest,
   type GrantVerificationResult,
   hashGrantPolicy,
   hashGrantPolicyCalls,
   OAATH_GRANT_REFERENCE_APPROVED_REVISION,
   OAATH_GRANT_REFERENCE_VERSION,
   type OaathGrantRef,
-  parsePermissionDecision,
   parseVerifyGrantRevisionInput,
   type VerifyGrantRevisionInput,
 } from "@oaath/protocol";
-import { openArtifact } from "../artifact/encrypt.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
 import type { RelayStore } from "../store/interface.js";
 import { withRelayTransaction } from "../store/interface.js";
+import { readApprovedPermission } from "./approved-permission.js";
 import { classifyStoredAuthorizationScope } from "./scope.js";
 
 export interface VerifyGrantReferenceInput {
@@ -140,42 +137,14 @@ export async function verifyGrantReference(
     }
     // The sealed artifact is the authoritative approval. Request policy is
     // only its upper bound; a terminal OAuth outcome alone names no call set.
-    const approval = await (async () => {
-      try {
-        const artifact = await transaction.lockEncryptedArtifactByRequestId(request.requestId);
-        if (
-          !artifact ||
-          artifact.requestId !== request.requestId ||
-          artifact.clientId !== request.clientId ||
-          artifact.createdAt !== decision.decidedAt
-        )
-          return null;
-        const value = JSON.parse(await openArtifact(input.kms, artifact.ciphertextRef)) as unknown;
-        // The current SDK appends its separately owned install capability to
-        // the protocol decision. It is not evidence of onchain installation.
-        const decisionValue =
-          value !== null && typeof value === "object" && "installApproval" in value
-            ? (({ installApproval: _install, ...permission }) => permission)(value)
-            : value;
-        const permission = parsePermissionDecision(decisionValue);
-        if (
-          permission.kind !== "approve" ||
-          permission.decidedAt > Math.floor(decision.decidedAt / 1_000)
-        )
-          return null;
-        const applied = applyPermissionDecision({
-          request: scope.request,
-          grant: createGrantFromPermissionRequest(scope.request),
-          observation: { status: "available", decision: permission },
-          evaluatedAt: permission.decidedAt,
-        });
-        return applied.status === "applied" && applied.grant.state === "approved"
-          ? permission
-          : null;
-      } catch {
-        return null;
-      }
-    })();
+    const retained = await readApprovedPermission(
+      transaction,
+      input.kms,
+      request,
+      decision,
+      scope.request,
+    );
+    const approval = retained?.permission ?? null;
     if (approval === null) return unknown("grant_unreadable");
     // The policy's inclusive expiry bounds the authority usable for covered
     // calls; it is always earlier than the Grant expiry, so it is the strict
