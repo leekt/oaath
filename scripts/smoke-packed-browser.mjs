@@ -37,7 +37,7 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
  * retain one pending Operation for reload-safe provider status recovery.
  */
 const SMOKE = String.raw`
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
+import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import {
   createOAAth,
 } from "@oaath/sdk";
@@ -531,12 +531,22 @@ if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invali
 
 // Public URL composition resolves each caller's selected context from the
 // packed server, then restores only that context's local session after reload.
-let selectedWorkspace = "personal-1";
 const selectedProfile = {
   version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   kind: "kernel", accountIndex: "0", kernelVersion: "0.4.0",
   factoryRoute: "kernel_factory", entryPoint: { version: "0.7" }, ownerCredential,
 };
+const contextDirectory = createServiceDirectory(createMemoryServiceDirectoryStore());
+await contextDirectory.replace({ expectedRevision: null, directory: {
+  version: "oaath.service-directory/v1",
+  applications: [{ clientId: "client-a", applicationId: "app-a", applicationName: "OAAth Packed Smoke" }],
+  workspaces: [{ workspaceId: "personal-1", kind: "personal" }, { workspaceId: "team-1", kind: "team" }],
+  memberships: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, clientId: "client-a", subject: SUBJECT })),
+  ownerDevices: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, ownerDeviceId: "owner-phone", subject: "phone-subject" })),
+  accounts: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, accountId: "account-1", ownerDeviceId: "owner-phone",
+    account: structuredClone(selectedProfile), ownerValidator: VALIDATOR, chainIds: [CHAIN_ID] })),
+  selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
+} });
 const contextRelay = createRelayHandler({
   store: createMemoryRelayStore(),
   authentication: { async authenticate(request) {
@@ -545,15 +555,7 @@ const contextRelay = createRelayHandler({
   } },
   kms: { async encrypt() { fail("context connection does not encrypt artifacts"); }, async decrypt() { fail("context connection does not decrypt artifacts"); } },
   clock: { now: () => clock * 1000 },
-  bootstrap: { async resolve(caller) {
-    if (caller.subject !== SUBJECT) return null;
-    return {
-      application: { applicationId: "app-a", applicationName: "OAAth Packed Smoke" },
-      context: { version: "oaath.workspace-account-context/v1", workspaceId: selectedWorkspace,
-        workspaceKind: selectedWorkspace === "personal-1" ? "personal" : "team", accountId: "account-1" },
-      account: selectedProfile, ownerValidator: VALIDATOR, chainIds: [CHAIN_ID],
-    };
-  } },
+  bootstrap: contextDirectory,
   chains: [{ chainId: CHAIN_ID, reads: async () => fail("bootstrap must not read a chain"),
     observation: async () => fail("bootstrap must not observe"), bundler: async () => fail("bootstrap must not select a bundler"),
     quote: async () => fail("bootstrap must not quote"), submission: async () => fail("bootstrap must not submit"),
@@ -574,14 +576,14 @@ async function contextLife() {
 const personal = await contextLife();
 const personalBinding = personal.client.binding;
 await personal.close();
-selectedWorkspace = "team-1";
+await contextDirectory.selectAccount(callers.get(CLIENT_TOKEN), { workspaceId: "team-1", accountId: "account-1" });
 const team = await contextLife();
 if (team.client.binding.bindingId === personalBinding.bindingId) fail("workspace bindings collided");
 if (team.client.binding.subject.deviceId === personalBinding.subject.deviceId) fail("workspace sessions collided");
 if (await team.connection.resume() !== null) fail("new workspace resumed foreign authority");
 await team.client.disconnect(null);
 await team.close();
-selectedWorkspace = "personal-1";
+await contextDirectory.selectAccount(callers.get(CLIENT_TOKEN), { workspaceId: "personal-1", accountId: "account-1" });
 const returned = await contextLife();
 if (returned.client.binding.bindingId !== personalBinding.bindingId) fail("personal context did not survive team cleanup");
 if (JSON.stringify(returned.client.binding.operatorCredential) !== JSON.stringify(personalBinding.operatorCredential)) fail("personal session did not survive reload");

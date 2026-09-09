@@ -371,6 +371,7 @@ import {
   createPostgresRelayStore,
   OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS,
   type PostgresRelayStoreOptions,
+  createPostgresServiceDirectoryStore,
 } from "@oaath/server/postgres";
 import type { Pool } from "pg";
 
@@ -393,6 +394,10 @@ export function relay(): RelayHandler {
 export function durable(pool: Pool): RelayStore {
   const options: PostgresRelayStoreOptions = { pool };
   return createPostgresRelayStore(options);
+}
+
+export function durableDirectory(pool: Pool) {
+  return createPostgresServiceDirectoryStore({ pool });
 }
 
 export const schema: readonly string[] = OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS;

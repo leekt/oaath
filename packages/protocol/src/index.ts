@@ -272,6 +272,7 @@ export {
   parsePermissionRequest,
 } from "./permission-protocol.js";
 export type {
+  ServiceAccount,
   ServiceBootstrap,
   ServiceBootstrapApplication,
   ServiceBootstrapChain,
@@ -281,6 +282,7 @@ export type {
   WorkspaceAccountContext,
 } from "./service-bootstrap.js";
 export {
+  captureServiceAccount,
   captureServiceBootstrap,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
   OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,

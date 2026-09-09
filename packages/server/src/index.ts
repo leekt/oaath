@@ -33,6 +33,22 @@ export { createAuthorizationRequest, fetchAuthorizationRequest } from "./authori
 export type { ResumeAuthorizationInput } from "./authorization/resume.js";
 export { resumeAuthorization } from "./authorization/resume.js";
 export type { RelayClock } from "./clock.js";
+export type {
+  DirectoryAccount,
+  DirectoryApplication,
+  DirectoryMembership,
+  DirectoryOwnerDevice,
+  DirectorySelection,
+  DirectoryWorkspace,
+  ServiceDirectoryDocument,
+} from "./directory/records.js";
+export { OAATH_SERVICE_DIRECTORY_VERSION } from "./directory/records.js";
+export type {
+  ServiceDirectory,
+  ServiceDirectorySnapshot,
+  ServiceDirectoryStore,
+} from "./directory/service.js";
+export { createMemoryServiceDirectoryStore, createServiceDirectory } from "./directory/service.js";
 export type { RelayErrorCode } from "./relay/errors.js";
 export { OaathRelayError, RELAY_ERROR_STATUS } from "./relay/errors.js";
 export type {

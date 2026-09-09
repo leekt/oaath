@@ -54,6 +54,7 @@ describe("package boundary", () => {
       "OAATH_AUTHORIZATION_DECISION_RECORD_VERSION",
       "OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION",
       "OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION",
+      "OAATH_SERVICE_DIRECTORY_VERSION",
       "OaathRelayError",
       "REDACTED",
       "RELAY_ERROR_STATUS",
@@ -62,7 +63,9 @@ describe("package boundary", () => {
       "createAuthorizationRequest",
       "createKmsSessionSignerProvider",
       "createMemoryRelayStore",
+      "createMemoryServiceDirectoryStore",
       "createRelayHandler",
+      "createServiceDirectory",
       "fetchAuthorizationRequest",
       "isCodeChallengeS256",
       "openArtifact",
@@ -81,6 +84,8 @@ describe("package boundary", () => {
       "OAATH_RELAY_POSTGRES_SCHEMA_VERSION",
       "createPostgresRelaySchema",
       "createPostgresRelayStore",
+      "createPostgresServiceDirectorySchema",
+      "createPostgresServiceDirectoryStore",
     ]);
   });
 
