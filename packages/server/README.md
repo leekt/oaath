@@ -32,7 +32,7 @@ authentication and grant reference verification retain the member's subject.
 ## Service directory
 
 `createServiceDirectory(store)` owns the records used to select a personal or
-team account. Pass the directory as the handler's `bootstrap` capability:
+team account. Pass the directory as both `bootstrap` and `ownerRouting`:
 
 ```ts
 import { createServiceDirectory } from "@oaath/server";
@@ -47,8 +47,8 @@ const directory = createServiceDirectory(
   createPostgresServiceDirectoryStore({ pool }),
 );
 await directory.replace({ expectedRevision: null, directory: initialDirectory });
-const handler = createRelayHandler({ store, authentication, ownerRouting, kms, clock, chains,
-  bootstrap: directory });
+const handler = createRelayHandler({ store, authentication, kms, clock, chains,
+  bootstrap: directory, ownerRouting: directory });
 ```
 
 The `oaath.service-directory/v1` document contains `workspaces`, `applications`,
@@ -56,8 +56,14 @@ The `oaath.service-directory/v1` document contains `workspaces`, `applications`,
 the authenticated `(clientId, subject)` pair; an account references an owner
 device within its workspace. Each account owns its Kernel profile, owner
 validator binding, and configured chain IDs. Owner-device records currently
-store enrollment references only; phone enrollment and approval routing are
-separate work.
+store enrollment references only; phone enrollment remains separate work.
+
+`resolveOwner(caller, request)` admits a canonical permission request only when
+its explicit workspace/account context, full account profile, and application
+match a current membership and registered account. It returns that account's
+owner-device route. Account selection is a preference, so changing it does not
+retarget requests from an existing connection. Membership removal refuses new
+requests; previously admitted requests retain their stored route.
 
 `read()` returns `{ revision, directory }` or `null`. Deployment administration
 replaces the document using that revision; `replace()` returns `false` if a

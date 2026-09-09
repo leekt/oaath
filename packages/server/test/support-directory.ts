@@ -1,4 +1,23 @@
 import type { RelayCaller, ServiceDirectoryDocument } from "../src/index.js";
+import { APPROVABLE_PERMISSION_SCOPE } from "./support.js";
+
+export function permissionScope(workspaceId = "personal-1"): string {
+  const document = directoryDocument();
+  const account = document.accounts.find((entry) => entry.workspaceId === workspaceId)!;
+  const workspace = document.workspaces.find((entry) => entry.workspaceId === workspaceId)!;
+  const scope = JSON.parse(APPROVABLE_PERMISSION_SCOPE);
+  return JSON.stringify({
+    ...scope,
+    context: {
+      version: "oaath.workspace-account-context/v1",
+      workspaceId,
+      workspaceKind: workspace.kind,
+      accountId: account.accountId,
+    },
+    application: { ...scope.application, applicationId: "app-a" },
+    logicalAccount: account.account,
+  });
+}
 
 export function member(subject: string): RelayCaller {
   return {

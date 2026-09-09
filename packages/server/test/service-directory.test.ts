@@ -1,9 +1,76 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryServiceDirectoryStore, createServiceDirectory } from "../src/index.js";
-import { CLIENT_TOKEN, createHarness, expectOk, get } from "./support.js";
-import { directoryDocument, member } from "./support-directory.js";
+import {
+  CLIENT_TOKEN,
+  codeChallenge,
+  createHarness,
+  expectFailure,
+  expectOk,
+  get,
+  post,
+  REDIRECT_URI,
+} from "./support.js";
+import { directoryDocument, member, permissionScope } from "./support-directory.js";
 
 describe("service directory", () => {
+  it("resolves the requested personal/team account independently of the selection preference", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: directoryDocument() });
+    const personalRequest = { requestId: "personal-request", requestedScope: permissionScope() };
+    const teamRequest = { requestId: "team-request", requestedScope: permissionScope("team-1") };
+    await directory.selectAccount(member("subject-1"), {
+      workspaceId: "team-1",
+      accountId: "treasury",
+    });
+    expect(await directory.resolveOwner(member("subject-1"), personalRequest)).toEqual({
+      ownerDeviceId: "phone-1",
+      ownerSubject: "phone-subject-1",
+    });
+    expect(await directory.resolveOwner(member("subject-1"), teamRequest)).toEqual({
+      ownerDeviceId: "phone-2",
+      ownerSubject: "phone-subject-2",
+    });
+    expect(await directory.resolveOwner(member("subject-2"), personalRequest)).toBeNull();
+    expect(await directory.resolveOwner(member("subject-2"), teamRequest)).not.toBeNull();
+  });
+
+  it("refuses context, account, and application substitutions before request creation", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: directoryDocument() });
+    const scope = JSON.parse(permissionScope());
+    for (const changed of [
+      { ...scope, context: { ...scope.context, workspaceKind: "team" } },
+      { ...scope, context: { ...scope.context, accountId: "missing" } },
+      { ...scope, logicalAccount: { ...scope.logicalAccount, accountIndex: "99" } },
+      { ...scope, application: { ...scope.application, clientId: "other-client" } },
+      { ...scope, application: { ...scope.application, applicationId: "other-app" } },
+      { ...scope, version: "oaath.permission-request/v1" },
+    ]) {
+      expect(
+        await directory.resolveOwner(member("subject-1"), {
+          requestId: "request-1",
+          requestedScope: JSON.stringify(changed),
+        }),
+      ).toBeNull();
+    }
+    const snapshot = (await directory.read())!;
+    await directory.replace({
+      expectedRevision: snapshot.revision,
+      directory: { ...snapshot.directory, memberships: [] },
+    });
+    const harness = createHarness({ ownerRouting: directory });
+    await expectFailure(
+      await harness.handler(
+        post("/authorization/requests", CLIENT_TOKEN, {
+          redirectUri: REDIRECT_URI,
+          codeChallenge: await codeChallenge(),
+          requestedScope: permissionScope(),
+        }),
+      ),
+      "relay_forbidden",
+    );
+  });
+
   it("resolves personal and team members through authenticated bootstrap", async () => {
     const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
     expect(

@@ -156,11 +156,7 @@ await directory.replace({
 
 step("serve the relay over HTTP");
 const relayHandler = createRelayHandler({
-  ownerRouting: {
-    async resolveOwner() {
-      return ownerRoute;
-    },
-  },
+  ownerRouting: directory,
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
