@@ -441,7 +441,7 @@ describe("Kernel v4 module and account codecs", () => {
       asHostile((value: never) =>
         encodeKernelV4PermissionUninstallCalls({ account, packages: value }),
       )(packages),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "signing_request_invalid" }));
     expect(() =>
       asHostile((value: never) =>
         encodeKernelV4PermissionUninstallCalls({ account, packages: value }),

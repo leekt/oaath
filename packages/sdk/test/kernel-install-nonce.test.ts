@@ -59,6 +59,6 @@ describe("Kernel install nonce invalidation codecs", () => {
         account,
         installNonce: ((9n << 64n) | ((1n << 64n) - 1n)).toString(10),
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "signing_request_invalid" }));
   });
 });

@@ -48,6 +48,20 @@ revert because Kernel requires an increase. Installed permissions still need
 uninstall calls. These codecs do not submit, establish finality, or complete
 configured-chain revocation.
 
+`prepareKernelPhoneRevocation` prepares one self-funded P-256 owner operation
+from a canonical permission request and its retained install approval. Supply
+the chain, root operation nonce, gas and the effect supported by chain evidence:
+`invalidate-install` or `uninstall-permission`. Retain its `prepared` operation
+and `signingRequest` before requesting owner consent. The phone request binds
+the workspace, application, install scope, chain, EntryPoint and exact removal
+calls; it contains no enable signature. `complete(phoneArtifact)` verifies and
+returns the signature for that operation. Preparation and completion never
+submit or prove revocation finished. Phone UI and configured-chain orchestration
+are separate integrations.
+
+The shared revocation call codecs are owned by `@oaath/protocol` and re-exported
+through `@oaath/sdk/kernel`; invalid input reports `signing_request_invalid`.
+
 The headless Grant provider returns `4200` for `wallet_showCallsStatus` unless
 the adopter supplies a wallet-owned status presenter. Executable
 `wallet_sendCalls` entries without `to` are valid contract-creation requests,

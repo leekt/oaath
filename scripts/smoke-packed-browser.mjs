@@ -47,6 +47,7 @@ import {
   p256Key,
   kernelPermissionInstallNonce,
   prepareKernelPhonePermissionApproval,
+  prepareKernelPhoneRevocation,
   ecdsaKey,
   encodeKernelV4NonceKey,
   encodeKernelV4InstallNonceInvalidationCall,
@@ -74,6 +75,7 @@ import { oaathProvider } from "@oaath/sdk/viem";
 import {
   hashOwnerSigningRequest,
   hashPermissionRequest,
+  hashKernelV4RevocationSigningRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -184,7 +186,17 @@ const relay = createRelayHandler({
         fail("phone preparation did not use the canonical request's install namespace");
       }
       return { signingRequest: prepared.signingRequest,
-        complete: async (artifact, decidedAt) => JSON.stringify(await prepared.complete(artifact, decidedAt)) };
+        complete: async (artifact, decidedAt) => {
+          const approved = await prepared.complete(artifact, decidedAt);
+          const revocation = await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
+            chainId: CHAIN_ID, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
+            gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } });
+          const revocationArtifact = { version: "oaath.owner-signing-artifact/v1", kind: "p256",
+            requestHash: hashKernelV4RevocationSigningRequest(revocation.signingRequest),
+            signature: bytesToHex(p256.sign(hexToBytes(revocation.signingRequest.expectedDigest), phoneKey, { prehash: false, lowS: true }).toCompactRawBytes()) };
+          if (await revocation.complete(revocationArtifact) !== revocationArtifact.signature) fail("phone revocation signature changed");
+          return JSON.stringify(approved);
+        } };
     },
   },
   ownerRouting: contextDirectory,
@@ -678,6 +690,11 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 /** The published types must resolve and compose under `nodenext` strict. */
 const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest, type OwnerSigningArtifact } from "@oaath/protocol";
 import { prepareKernelPhonePermissionApproval, type PrepareKernelPhonePermissionApprovalInput, type KernelPhonePermissionArtifact } from "@oaath/sdk/kernel";
+import { prepareKernelPhoneRevocation, type PrepareKernelPhoneRevocationInput } from "@oaath/sdk/kernel";
+
+export async function completePhoneRevocation(input: PrepareKernelPhoneRevocationInput, artifact: OwnerSigningArtifact): Promise<\`0x\${string}\`> {
+  return (await prepareKernelPhoneRevocation(input)).complete(artifact);
+}
 
 export async function completePhoneApproval(input: PrepareKernelPhonePermissionApprovalInput, artifact: OwnerSigningArtifact, decidedAt: number): Promise<Readonly<KernelPhonePermissionArtifact>> {
   return (await prepareKernelPhonePermissionApproval(input)).complete(artifact, decidedAt);

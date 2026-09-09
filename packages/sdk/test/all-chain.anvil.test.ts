@@ -9,9 +9,16 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { parseAbi, parseEther, toFunctionSelector } from "viem";
+import { p256 } from "@noble/curves/nist.js";
+import {
+  hashKernelV4RevocationSigningRequest,
+  hashOwnerSigningRequest,
+  parsePermissionRequest,
+} from "@oaath/protocol";
+import { bytesToHex, hexToBytes, parseAbi, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
+import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
@@ -29,6 +36,9 @@ import {
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
+  p256Key,
+  prepareKernelPhonePermissionApproval,
+  prepareKernelPhoneRevocation,
   sessionOperator,
 } from "../src/kernel.js";
 import {
@@ -39,6 +49,7 @@ import {
   lower,
   startAnvil,
 } from "./support/anvil.js";
+import { accountProfile, workspaceContext } from "./support/browser.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 /**
@@ -166,6 +177,182 @@ async function bringUp(
 }
 
 (requireAnvil ? describe : describe.skip)("all-chain materialization local proof", () => {
+  it.each(["invalidate-install", "uninstall-permission"] as const)(
+    "accepts the phone's exact P-256 %s operation on Kernel",
+    async (effect) => {
+      const chain = await startAnvil(CHAIN_A, "osaka");
+      chains.push(chain);
+      const harness = await createHarness(chain);
+      await deployKernelStack(harness);
+      for (const module of [
+        harness.fixture.p256Validator,
+        harness.fixture.ecdsaSigner,
+        harness.fixture.callPolicy,
+        harness.fixture.validityPolicy,
+        harness.fixture.rateLimitPolicy,
+      ])
+        await harness.deployModule(module);
+      const secret = p256.utils.randomPrivateKey();
+      const sessionAccount = privateKeyToAccount(generatePrivateKey());
+      const target = lower(privateKeyToAccount(generatePrivateKey()).address);
+      const now = Number((await harness.client.getBlock()).timestamp);
+      const request = parsePermissionRequest({
+        version: "oaath.permission-request/v2",
+        requestId: `phone-${effect}`,
+        context: workspaceContext,
+        application: {
+          applicationId: "app-1",
+          clientId: "client-1",
+          origin: "https://app.example",
+          deviceId: "device-1",
+        },
+        chainScope: "all",
+        logicalAccount: {
+          ...accountProfile,
+          ownerCredential: {
+            version: "oaath.owner-credential-profile/v1",
+            kind: "p256",
+            publicKey: bytesToHex(p256.getPublicKey(secret, false)),
+          },
+        },
+        operatorCredential: {
+          version: "oaath.operator-credential-profile/v1",
+          kind: "ecdsa",
+          address: lower(sessionAccount.address),
+        },
+        sessionSigner: null,
+        policy: {
+          version: "oaath.grant-policy/v1",
+          calls: [{ target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] }],
+          validAfter: 0,
+          validUntil: now + 600,
+          perChainOperationLimit: 3,
+        },
+        requestedAt: now,
+        expiresAt: now + 601,
+      });
+      let signatures = 0;
+      const sign = (digest: `0x${string}`, requestHash: `0x${string}`) => {
+        signatures += 1;
+        return {
+          version: "oaath.owner-signing-artifact/v1" as const,
+          kind: "p256" as const,
+          requestHash,
+          signature: bytesToHex(
+            p256
+              .sign(hexToBytes(digest), secret, { prehash: false, lowS: true })
+              .toCompactRawBytes(),
+          ),
+        };
+      };
+      const permission = await prepareKernelPhonePermissionApproval({
+        request,
+        chainId: CHAIN_A,
+        reads: harness.reads,
+      });
+      const { installApproval } = await permission.complete(
+        sign(
+          permission.signingRequest.expectedDigest,
+          hashOwnerSigningRequest(permission.signingRequest),
+        ),
+        now,
+      );
+      await harness.fund(installApproval.account, parseEther("1"));
+      const deployment = kernelV4Deployment(CHAIN_A);
+      const owner = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({
+          key: p256Key({
+            credential: request.logicalAccount.ownerCredential,
+            sign: async () => {
+              throw new Error("owner secret stays with phone fixture");
+            },
+          }),
+        }),
+        reads: harness.reads,
+      });
+      const session = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: sessionAccount,
+            validator: await harness.deployValidatorCreate2(),
+          }),
+          policies: deriveSessionPolicyProfiles(request.policy),
+        }),
+        reads: harness.reads,
+      });
+      const materialize = async () =>
+        materializeKernelPermission({
+          approval: installApproval,
+          runtime: session,
+          grantId: request.requestId,
+          account: await session.bindAccount({
+            accountIndex: "0",
+            initialPackages: owner.packages,
+          }),
+          nonceKey: "0",
+          sequence: effect === "uninstall-permission" ? "1" : "0",
+          calls: [{ target, value: "500", data: "0x12345678" }],
+          gas,
+        });
+      if (effect === "uninstall-permission") {
+        const installed = await materializeKernelPermission({
+          approval: installApproval,
+          runtime: session,
+          grantId: request.requestId,
+          account: await session.bindAccount({
+            accountIndex: "0",
+            initialPackages: owner.packages,
+          }),
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target, value: "500", data: "0x12345678" }],
+          gas,
+        });
+        expect(await harness.sendSigned(installed.prepared, installed.signature)).toBe("success");
+      }
+      const revocation = await prepareKernelPhoneRevocation({
+        request,
+        approval: installApproval,
+        chainId: CHAIN_A,
+        reads: harness.reads,
+        effect,
+        nonceKey: "0",
+        sequence: "0",
+        gas,
+      });
+      expect(revocation.prepared.userOperation.factory !== null).toBe(
+        effect === "invalidate-install",
+      );
+      const signature = await revocation.complete(
+        sign(
+          revocation.signingRequest.expectedDigest,
+          hashKernelV4RevocationSigningRequest(revocation.signingRequest),
+        ),
+      );
+      expect(await harness.sendSigned(revocation.prepared, signature)).toBe("success");
+      if (session.validation.kind !== "permission") throw new Error("permission validation absent");
+      const signer = session.packages.find((entry) => entry.moduleType === 6)?.module;
+      if (!signer) throw new Error("permission signer absent");
+      expect(
+        await harness.client.readContract({
+          address: installApproval.account,
+          abi: KERNEL_MODULE_VIEW_ABI,
+          functionName: "isModuleInstalled",
+          args: [6n, signer, session.validation.permissionId],
+        }),
+      ).toBe(false);
+      const refused = await materialize();
+      expect(await harness.rejectionOf(refused.prepared, refused.signature)).toMatchObject({
+        errorName: "FailedOpWithRevert",
+        args: [0n, "AA23 reverted", toFunctionSelector("InvalidNonce()")],
+      });
+      expect(signatures).toBe(2);
+    },
+    120_000,
+  );
+
   it("invalidates an unused chain approval without invalidating another grant", async () => {
     const owner = countingOwner();
     const sessionKey = privateKeyToAccount(generatePrivateKey());

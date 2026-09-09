@@ -44,7 +44,7 @@ or desired-state convergence.
 
 | Package | Purpose |
 | --- | --- |
-| `@oaath/protocol` | Runtime-neutral wire and durable contracts. |
+| `@oaath/protocol` | IO-free wire, durable contracts, and Kernel v4 signing profiles. |
 | `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
 | `@oaath/server` | Deployable relay and PostgreSQL boundary. |
 | `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
@@ -60,7 +60,7 @@ run the same check on macOS with `pnpm test:phone`.
 ## Status
 
 The fixed package group is versioned for its first public proof-of-concept
-release, `0.1.0`. `@oaath/protocol` owns the runtime-neutral wire and
+release, `0.1.0`. `@oaath/protocol` owns the shared wire and
 durable contracts: grants, grant policies, identity profiles, the pure
 `Operation` aggregate, the permission protocol, and the exact hostile-input
 capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
