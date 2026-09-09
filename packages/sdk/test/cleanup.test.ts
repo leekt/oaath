@@ -438,7 +438,13 @@ describe("cleanup coordinator", () => {
         },
       },
     };
-    const realm = createRealm({ stores });
+    const realm = createRealm({
+      stores,
+      chain: createChainFixture({
+        permissionInstalled: () => false,
+        installNonce: (nonce) => (BigInt(nonce) + 1n).toString(10),
+      }),
+    });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
 
@@ -500,6 +506,10 @@ describe("cleanup coordinator", () => {
     const tracked = trackedStores();
     const realm = createRealm({
       stores: tracked.stores,
+      chain: createChainFixture({
+        permissionInstalled: () => false,
+        installNonce: (nonce) => (BigInt(nonce) + 1n).toString(10),
+      }),
       issuerSignOut: async () => {
         throw new Error("relay sign-out failed");
       },

@@ -15,7 +15,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v2" as const;
+export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v3" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -141,6 +141,19 @@ export type ChainMaterialization =
   | RevokedMaterialization
   | UnreadableMaterialization;
 
+/** Finalized absence and Kernel's effective install nonce, read at the same block. */
+export interface ChainRevocationEvidence {
+  readonly permission: Readonly<ChainPermissionEvidence>;
+  readonly installNonce: string;
+}
+
+export interface GrantRevocation {
+  /** Fixed at begin_revocation, including previously bound chains. */
+  readonly targets: readonly Readonly<ChainBinding>[];
+  readonly installNonce: string;
+  readonly evidence: readonly Readonly<ChainRevocationEvidence>[];
+}
+
 export interface GrantApproval {
   readonly approvalHash: `0x${string}`;
   readonly capabilityHash: `0x${string}`;
@@ -183,6 +196,7 @@ interface GrantCommon {
   readonly approval: Readonly<GrantApproval> | null;
   readonly activatedAt: number | null;
   readonly revocationStartedAt: number | null;
+  readonly revocation: Readonly<GrantRevocation> | null;
   readonly capabilityInvalidation: Readonly<GrantCapabilityInvalidation> | null;
   readonly terminal: GrantTerminal | null;
   readonly materializations: readonly ChainMaterialization[];
@@ -308,6 +322,8 @@ export type GrantTransition =
   | Readonly<{
       type: "begin_revocation";
       identity: GrantIdentity;
+      targets: readonly Readonly<ChainBinding>[];
+      installNonce: string;
       revocationStartedAt: number;
     }>
   | Readonly<{
@@ -326,6 +342,11 @@ export type GrantTransition =
       type: "record_capability_invalidated";
       identity: GrantIdentity;
       invalidation: GrantCapabilityInvalidation;
+    }>
+  | Readonly<{
+      type: "record_revocation_evidence";
+      identity: GrantIdentity;
+      evidence: ChainRevocationEvidence;
     }>
   | Readonly<{
       type: "complete_revocation";
@@ -544,6 +565,82 @@ function parsePermissionEvidence(
   });
 }
 
+function parseRevocationTargets(
+  value: unknown,
+  code: GrantErrorCode,
+  context: CaptureContext,
+): readonly Readonly<ChainBinding>[] {
+  const targets = captureDenseArray(value, "revocation targets", context, captureFailure(code)).map(
+    (entry) => parseBinding(entry, code, context),
+  );
+  if (
+    targets.length === 0 ||
+    targets.some((entry, index) => entry.chainId <= (targets[index - 1]?.chainId ?? 0))
+  )
+    return invalid(code, "revocation targets must be nonempty and strictly sorted");
+  return Object.freeze(targets);
+}
+
+function parseRevocationEvidence(
+  value: unknown,
+  code: GrantErrorCode,
+  context: CaptureContext,
+): Readonly<ChainRevocationEvidence> {
+  const record = exactRecord(
+    value,
+    ["permission", "installNonce"],
+    "revocation evidence",
+    code,
+    context,
+  );
+  return Object.freeze({
+    permission: parsePermissionEvidence(record.permission, "permission_absent", code, context),
+    installNonce: uint256(record.installNonce, "observed install nonce", code),
+  });
+}
+
+function nonceConsumed(expected: string, observed: string): boolean {
+  return BigInt(expected) >> 64n === BigInt(observed) >> 64n && BigInt(observed) > BigInt(expected);
+}
+
+function parseRevocation(
+  value: unknown,
+  code: GrantErrorCode,
+  context: CaptureContext,
+): Readonly<GrantRevocation> | null {
+  if (value === null) return null;
+  const record = exactRecord(
+    value,
+    ["targets", "installNonce", "evidence"],
+    "grant revocation",
+    code,
+    context,
+  );
+  const targets = parseRevocationTargets(record.targets, code, context);
+  const installNonce = uint256(record.installNonce, "approval install nonce", code);
+  const evidence = captureDenseArray(
+    record.evidence,
+    "revocation evidence",
+    context,
+    captureFailure(code),
+  ).map((entry) => parseRevocationEvidence(entry, code, context));
+  for (const [index, entry] of evidence.entries()) {
+    const target = targets.find((candidate) => candidate.chainId === entry.permission.chainId);
+    if (
+      !target ||
+      !evidenceMatchesBinding(entry.permission, target) ||
+      !nonceConsumed(installNonce, entry.installNonce) ||
+      entry.permission.chainId <= (evidence[index - 1]?.permission.chainId ?? 0)
+    )
+      return invalid(code, "revocation evidence contradicts its scope");
+  }
+  return Object.freeze({ targets, installNonce, evidence: Object.freeze(evidence) });
+}
+
+function revocationComplete(revocation: Readonly<GrantRevocation> | null): boolean {
+  return revocation !== null && revocation.evidence.length === revocation.targets.length;
+}
+
 function parseApproval(
   value: unknown,
   code: GrantErrorCode,
@@ -634,7 +731,7 @@ function bindingFields(record: PlainRecord, code: GrantErrorCode): ChainBinding 
   };
 }
 
-function evidenceMatchesBinding(evidence: ChainPermissionEvidence, binding: ChainBinding): boolean {
+function evidenceMatchesBinding(evidence: ChainBinding, binding: ChainBinding): boolean {
   return (
     evidence.chainId === binding.chainId &&
     evidence.account === binding.account &&
@@ -923,6 +1020,7 @@ function latestGrantTime(input: {
   approval: Readonly<GrantApproval> | null;
   activatedAt: number | null;
   revocationStartedAt: number | null;
+  revocation: Readonly<GrantRevocation> | null;
   capabilityInvalidation: Readonly<GrantCapabilityInvalidation> | null;
   terminal: GrantTerminal | null;
   materializations: readonly ChainMaterialization[];
@@ -938,6 +1036,8 @@ function latestGrantTime(input: {
   for (const materialization of input.materializations) {
     latest = Math.max(latest, materialization.updatedAt);
   }
+  for (const entry of input.revocation?.evidence ?? [])
+    latest = Math.max(latest, entry.permission.observedAt);
   return latest;
 }
 
@@ -986,6 +1086,7 @@ function chronologyValid(input: {
   approval: Readonly<GrantApproval> | null;
   activatedAt: number | null;
   revocationStartedAt: number | null;
+  revocation: Readonly<GrantRevocation> | null;
   capabilityInvalidation: Readonly<GrantCapabilityInvalidation> | null;
   terminal: GrantTerminal | null;
   materializations: readonly ChainMaterialization[];
@@ -993,6 +1094,13 @@ function chronologyValid(input: {
   const approvedAt = input.approval?.approvedAt ?? null;
   return (
     input.expiresAt > input.requestedAt &&
+    (input.revocation === null) === (input.revocationStartedAt === null) &&
+    (input.revocation?.evidence.every(
+      (entry) =>
+        entry.permission.observedAt >= (input.revocationStartedAt ?? 0) &&
+        (input.terminal === null || entry.permission.observedAt <= input.terminal.recordedAt),
+    ) ??
+      true) &&
     (approvedAt === null || (approvedAt >= input.requestedAt && approvedAt < input.expiresAt)) &&
     (input.activatedAt === null ||
       (approvedAt !== null &&
@@ -1039,6 +1147,7 @@ function parseGrantUnsafe(value: unknown): Grant {
       "approval",
       "activatedAt",
       "revocationStartedAt",
+      "revocation",
       "capabilityInvalidation",
       "terminal",
       "materializations",
@@ -1062,6 +1171,7 @@ function parseGrantUnsafe(value: unknown): Grant {
     record.revocationStartedAt === null
       ? null
       : safeInteger(record.revocationStartedAt, "grant revocationStartedAt", code);
+  const revocation = parseRevocation(record.revocation, code, context);
   const capabilityInvalidation = parseInvalidation(record.capabilityInvalidation, code, context);
   const terminal = parseTerminal(record.terminal, code, context);
   const materializations = parseMaterializations(record.materializations, code, context);
@@ -1075,12 +1185,19 @@ function parseGrantUnsafe(value: unknown): Grant {
     approval,
     activatedAt,
     revocationStartedAt,
+    revocation,
     capabilityInvalidation,
     terminal,
     materializations,
   } as const;
 
   if (
+    (revocation !== null &&
+      materializations.some(
+        (entry) =>
+          entry.state !== "unsupported" &&
+          !revocation.targets.some((target) => evidenceMatchesBinding(entry, target)),
+      )) ||
     !chronologyValid(base) ||
     latestGrantTime(base) !== updatedAt ||
     (capabilityInvalidation !== null &&
@@ -1195,7 +1312,11 @@ function parseGrantUnsafe(value: unknown): Grant {
       return invalid(code, `${record.state} grant record is contradictory`);
     }
     const childCost = sumChildCosts(materializations, revokingChildCost, code);
-    const revokingMinimum = 3 + childCost + (capabilityInvalidation === null ? 0 : 1);
+    const revokingMinimum =
+      3 +
+      childCost +
+      (capabilityInvalidation === null ? 0 : 1) +
+      (revocation?.evidence.length ?? 0);
     if (record.state === "revoking") {
       if (terminal !== null || revision < revokingMinimum) {
         return invalid(code, "revoking grant record is contradictory");
@@ -1212,6 +1333,7 @@ function parseGrantUnsafe(value: unknown): Grant {
     if (
       terminal?.kind !== "revoked" ||
       capabilityInvalidation === null ||
+      !revocationComplete(revocation) ||
       revision < revokingMinimum + 1 ||
       materializations.some(
         (entry) =>
@@ -1278,7 +1400,8 @@ function parseGrantUnsafe(value: unknown): Grant {
       minimumRevision =
         4 +
         sumChildCosts(materializations, revokingChildCost, code) +
-        (capabilityInvalidation === null ? 0 : 1);
+        (capabilityInvalidation === null ? 0 : 1) +
+        (revocation?.evidence.length ?? 0);
     }
     if (revision < minimumRevision) return invalid(code, "expired grant revision is unreachable");
     return Object.freeze({ ...base, state: "expired", terminal });
@@ -1323,6 +1446,7 @@ export function createGrant(value: unknown): RequestedGrant {
       revocationStartedAt: null,
       capabilityInvalidation: null,
       terminal: null,
+      revocation: null,
       materializations: Object.freeze([]),
     });
   } catch {
@@ -1526,13 +1650,15 @@ function parseGrantTransition(value: unknown): GrantTransition {
   if (type === "begin_revocation") {
     const record = exactCapturedRecord(
       captured,
-      ["type", "identity", "revocationStartedAt"],
+      ["type", "identity", "revocationStartedAt", "targets", "installNonce"],
       "begin revocation transition",
       code,
     );
     return Object.freeze({
       type,
       identity: parseIdentity(record.identity, code, context),
+      targets: parseRevocationTargets(record.targets, code, context),
+      installNonce: uint256(record.installNonce, "approval install nonce", code),
       revocationStartedAt: safeInteger(
         record.revocationStartedAt,
         "transition revocationStartedAt",
@@ -1571,6 +1697,20 @@ function parseGrantTransition(value: unknown): GrantTransition {
       type,
       identity: parseIdentity(record.identity, code, context),
       invalidation,
+    });
+  }
+
+  if (type === "record_revocation_evidence") {
+    const record = exactCapturedRecord(
+      captured,
+      ["type", "identity", "evidence"],
+      "revocation evidence transition",
+      code,
+    );
+    return Object.freeze({
+      type,
+      identity: parseIdentity(record.identity, code, context),
+      evidence: parseRevocationEvidence(record.evidence, code, context),
     });
   }
 
@@ -1936,6 +2076,11 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
       state: "revoking",
       updatedAt: transition.revocationStartedAt,
       revocationStartedAt: transition.revocationStartedAt,
+      revocation: {
+        targets: transition.targets,
+        installNonce: transition.installNonce,
+        evidence: [],
+      },
     });
   }
 
@@ -2006,11 +2151,37 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
     });
   }
 
+  if (transition.type === "record_revocation_evidence") {
+    if (grant.state !== "revoking" || grant.revocation === null)
+      return forbiddenGrantTransition(grant, transition);
+    const { revocation } = grant;
+    const proof = transition.evidence;
+    const target = revocation.targets.find((entry) => entry.chainId === proof.permission.chainId);
+    if (!target || !evidenceMatchesBinding(proof.permission, target))
+      return invalid("grant_identity_mismatch", "revocation evidence belongs to another target");
+    if (revocation.evidence.some((entry) => entry.permission.chainId === target.chainId))
+      return forbiddenGrantTransition(grant, transition);
+    if (!nonceConsumed(revocation.installNonce, proof.installNonce))
+      return invalid("grant_transition_invalid", "approval install nonce has not been consumed");
+    if (proof.permission.observedAt < grant.revocationStartedAt)
+      return invalid("grant_transition_invalid", "revocation evidence predates revocation");
+    return advanceGrantRecord(grant, {
+      updatedAt: Math.max(grant.updatedAt, proof.permission.observedAt),
+      revocation: {
+        ...revocation,
+        evidence: [...revocation.evidence, proof].sort(
+          (a, b) => a.permission.chainId - b.permission.chainId,
+        ),
+      },
+    });
+  }
+
   if (transition.type === "complete_revocation") {
     if (grant.state !== "revoking") return forbiddenGrantTransition(grant, transition);
     requireGrantTime(grant, transition.revokedAt);
     if (
       grant.capabilityInvalidation === null ||
+      !revocationComplete(grant.revocation) ||
       grant.materializations.some(
         (entry) =>
           entry.state !== "unsupported" &&

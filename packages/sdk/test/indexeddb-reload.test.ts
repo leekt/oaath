@@ -86,6 +86,61 @@ async function readStoreNames(factory: IDBFactory): Promise<readonly string[]> {
 }
 
 describe("IndexedDB realm recreation", () => {
+  it("retains untouched revocation targets when configuration shrinks across reload", async () => {
+    const factory = new IDBFactory();
+    const scopeChain = 11_155_111;
+    const consumed = (nonce: string) => (BigInt(nonce) + 1n).toString(10);
+    const provenChain = () =>
+      createChainFixture({ permissionInstalled: () => false, installNonce: consumed });
+    const first = await openRealmDatabase(factory);
+    const before = createRealm({
+      stores: storesFor(first),
+      chains: [
+        provenChain(),
+        createChainFixture({ chainId: scopeChain, permissionInstalled: () => false }),
+      ],
+    });
+    const connection = await before.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    await connection.close();
+    first.close();
+    opened.splice(opened.indexOf(first), 1);
+
+    const second = await openRealmDatabase(factory);
+    // This transport cannot re-prove the first chain. Its retained proof survives.
+    const smaller = createRealm({ stores: storesFor(second), chain: createChainFixture() });
+    const resumed = await (await smaller.oaath.connect()).resume();
+    if (!resumed) throw new Error("missing revoking grant");
+    await resumed.revoke();
+    expect(resumed.state).toBe("revoking");
+    expect(smaller.invalidations()).toBe(0);
+    expect(smaller.chain.sends).toHaveLength(0);
+    await smaller.oaath.close();
+    second.close();
+    opened.splice(opened.indexOf(second), 1);
+
+    const third = await openRealmDatabase(factory);
+    const missing = createChainFixture({
+      chainId: scopeChain,
+      permissionInstalled: () => false,
+      installNonce: consumed,
+    });
+    const after = createRealm({
+      stores: storesFor(third),
+      chains: [createChainFixture(), missing],
+    });
+    const recovered = await (await after.oaath.connect()).resume();
+    if (!recovered) throw new Error("missing revoking grant");
+    await recovered.revoke();
+    expect(recovered.state).toBe("revoked");
+    expect(after.chain.sends).toHaveLength(0);
+    expect(missing.sends).toHaveLength(0);
+    expect(after.invalidations()).toBe(0);
+    await after.oaath.close();
+  });
+
   it("restores an active Grant, its journal, and key custody after full recreation", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
@@ -191,7 +246,10 @@ describe("IndexedDB realm recreation", () => {
       clock,
       relay,
       stores: storesFor(third),
-      chain: createChainFixture({ startSequence: 1 }),
+      chain: createChainFixture({
+        startSequence: 1,
+        installNonce: (nonce) => (BigInt(nonce) + 1n).toString(10),
+      }),
     });
     const revoking = await (await recovered.oaath.connect()).resume();
     if (!revoking) throw new Error("expected the revoking Grant to resume");

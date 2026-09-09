@@ -29,6 +29,7 @@
 import {
   advanceGrant,
   type CaptureContext,
+  type ChainBinding,
   type ChainPermissionEvidence,
   captureDenseArray,
   captureRecord,
@@ -58,6 +59,7 @@ import { sameInstall } from "../kernel/internal.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import type { KernelAllChainApproval } from "../kernel/permission/materialize.js";
+import { observeKernelPermissionRevocation } from "../kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import type {
   KernelRuntime,
@@ -351,7 +353,7 @@ export interface OaathChainCapability {
   readonly staticPaymasterConfigurationHash: `0x${string}` | null;
 }
 
-/** Proves the replayable approval capability can no longer authorize anything. */
+/** Records service admission invalidation; it does not invalidate an onchain signature. */
 export interface OaathCapabilityInvalidationCapability {
   readonly invalidateCapability: (
     request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
@@ -375,6 +377,10 @@ export interface OaathGrantHandle {
    * expiry or revocation. Reads only; null means no matching retained record.
    */
   readonly getOperation: (input: unknown) => Promise<Readonly<OaathOperationHandle> | null>;
+  /**
+   * Starts or retries configured-chain revocation. May resolve while pending;
+   * state becomes revoked only after every recorded chain has finalized proof.
+   */
   readonly revoke: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -3599,18 +3605,48 @@ export function createGrantHandle(
       );
     }
     if (grant.state === "active") {
+      const approval = input.installApproval;
+      if (approval === null)
+        return clientFail(
+          "oaath_client_state_conflict",
+          "revocation requires its retained install approval",
+        );
+      const targets = new Map<number, Readonly<ChainBinding>>();
+      for (const entry of grant.materializations) {
+        if (entry.state === "unsupported") continue;
+        targets.set(entry.chainId, {
+          chainId: entry.chainId,
+          account: entry.account,
+          permissionId: entry.permissionId,
+        });
+      }
+      for (const chainId of input.chains.keys()) {
+        const validation = sessionRuntime(chainId).validation;
+        if (validation.kind !== "permission")
+          return clientFail(
+            "oaath_client_state_conflict",
+            "revocation requires a permission binding",
+          );
+        targets.set(chainId, {
+          chainId,
+          account: approval.account,
+          permissionId: validation.permissionId,
+        });
+      }
       snapshot = await commit(
         snapshot,
         transition(grant, {
           type: "begin_revocation",
           identity: grant.identity,
           revocationStartedAt: input.now(),
+          targets: [...targets.values()].sort((a, b) => a.chainId - b.chainId),
+          installNonce: approval.installNonce,
         }),
       );
       grant = snapshot.value;
     }
-    // The replayable capability dies first, so no new chain can materialize
-    // while installed permissions await removal.
+    // Stop service admission first. The owner signature remains valid on a
+    // chain until that chain's install nonce is consumed.
     if (grant.capabilityInvalidation === null) {
       snapshot = await commit(snapshot, await invalidateCapability(grant));
       grant = snapshot.value;
@@ -3642,6 +3678,40 @@ export function createGrantHandle(
       grant = snapshot.value;
     }
     if (
+      grant.revocation === null ||
+      input.installApproval === null ||
+      grant.revocation.installNonce !== input.installApproval.installNonce
+    )
+      return clientFail(
+        "oaath_client_state_conflict",
+        "revocation scope contradicts its install approval",
+      );
+    for (const binding of grant.revocation.targets) {
+      if (grant.revocation?.evidence.some((entry) => entry.permission.chainId === binding.chainId))
+        continue;
+      const chain = input.chains.get(binding.chainId);
+      // A removed configuration entry cannot remove an already recorded obligation.
+      if (!chain) continue;
+      const evidence = await observeKernelPermissionRevocation({
+        binding,
+        approval: input.installApproval,
+        observation: chain.observation,
+        now: input.now,
+      });
+      if (evidence === null) continue;
+      snapshot = await commit(
+        snapshot,
+        transition(grant, {
+          type: "record_revocation_evidence",
+          identity: grant.identity,
+          evidence,
+        }),
+      );
+      grant = snapshot.value;
+    }
+    if (
+      grant.revocation === null ||
+      grant.revocation.evidence.length !== grant.revocation.targets.length ||
       grant.materializations.some(
         (entry) =>
           entry.state !== "unsupported" &&

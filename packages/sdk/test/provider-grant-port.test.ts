@@ -305,13 +305,13 @@ describe("private Grant provider port", () => {
       source: "grant_revocation_requested",
     });
     await revoking;
-    expect(grant.state).toBe("revoked");
+    expect(grant.state).toBe("revoking");
     expect(base.signatures).toHaveLength(0);
     expect(base.sends).toHaveLength(0);
     await connection.close();
   });
 
-  it("rejects publication after another handle durably revokes the Grant", async () => {
+  it("rejects publication after another handle durably begins revocation", async () => {
     const base = createChainFixture();
     let enterProbe!: () => void;
     let releaseProbe!: () => void;
@@ -347,8 +347,8 @@ describe("private Grant provider port", () => {
     releaseProbe();
 
     await expect(sending).rejects.toMatchObject({ code: "oaath_client_grant_inactive" });
-    expect(grant.state).toBe("revoked");
-    expect(revoker.state).toBe("revoked");
+    expect(grant.state).toBe("revoking");
+    expect(revoker.state).toBe("revoking");
     expect(base.signatures).toHaveLength(0);
     expect(base.sends).toHaveLength(0);
     await connection.close();
@@ -421,7 +421,7 @@ describe("private Grant provider port", () => {
       state: "abandoned",
       identity: { userOperationHash: exact.identity.userOperationHash },
     });
-    expect(revoker.state).toBe("revoked");
+    expect(revoker.state).toBe("revoking");
     expect(abandonments).toBe(1);
     expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
@@ -775,10 +775,12 @@ describe("private Grant provider port", () => {
       let supersede = true;
       let withholdReceipt = true;
       let blockOffset = 0;
+      let installed: boolean = test.installed;
       const chain = createChainFixture({
         withholdReceipt: () => withholdReceipt,
         entryPointNonce: (nonce) => (supersede ? String(BigInt(nonce) + 1n) : null),
-        permissionInstalled: () => test.installed,
+        permissionInstalled: () => installed,
+        installNonce: (nonce) => (BigInt(nonce) + 1n).toString(10),
         blockOffset: () => blockOffset,
       });
       const { realm, connection, grant, port } = await activeGrant(chain);
@@ -803,12 +805,14 @@ describe("private Grant provider port", () => {
       blockOffset = test.observationBlockOffset;
       await grant.revoke();
 
-      expect(grant.state).toBe("revoked");
+      expect(grant.state).toBe(test.installed ? "revoking" : "revoked");
       await expect(realm.stores.grants.get(exact.identity.grantId)).resolves.toMatchObject({
         value: { materializations: [{ state: test.expectedMaterialization }] },
       });
       expect(chain.sends).toHaveLength(test.expectedSends);
+      installed = false;
       await grant.revoke();
+      expect(grant.state).toBe("revoked");
       expect(chain.sends).toHaveLength(test.expectedSends);
       await connection.close();
     },
@@ -818,8 +822,9 @@ describe("private Grant provider port", () => {
     const memory = createMemoryStores();
     let failRevocationRead = false;
     let blockOffset = 0;
+    let installed = true;
     const chain = createChainFixture({
-      permissionInstalled: () => true,
+      permissionInstalled: () => installed,
       blockOffset: () => blockOffset,
     });
     const realm = createRealm({
@@ -856,6 +861,9 @@ describe("private Grant provider port", () => {
 
     await grant.revoke();
 
+    expect(grant.state).toBe("revoking");
+    installed = false;
+    await grant.revoke();
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
     await connection.close();
@@ -891,6 +899,9 @@ describe("private Grant provider port", () => {
     withholdReceipt = false;
     supersede = false;
     blockOffset = 2;
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    installed = false;
     await grant.revoke();
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(3);
@@ -935,6 +946,9 @@ describe("private Grant provider port", () => {
     bundlerState = "absent";
     await grant.revoke();
 
+    expect(grant.state).toBe("revoking");
+    installed = false;
+    await grant.revoke();
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
     await connection.close();

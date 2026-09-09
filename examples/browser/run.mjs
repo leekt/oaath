@@ -306,10 +306,8 @@ try {
 
   step("revoke");
   await grant.revoke();
-  // The replayable capability dies first; then, because this realm holds the
-  // owner's signing capability, revoke removes the installed chain permission
-  // with one owner-signed revocation operation and completes to `revoked`
-  // only after that operation's finalized success.
+  // Service admission stops first. This realm can sign the owner uninstall;
+  // finalized absence and a consumed install nonce complete its configured chain.
   expect(grant.state === "revoked", `the Grant is ${grant.state}`);
   expect(invalidations === 1, `the capability was invalidated ${invalidations} times`);
   expect(
@@ -320,7 +318,9 @@ try {
     chain.sends[1].kind === "revocation",
     `the removal operation kind is ${chain.sends[1].kind}`,
   );
-  say("  grant            revoked: capability dead, chain permission uninstalled by the owner");
+  say(
+    "  grant            revoked on the configured chain: permission absent, install nonce consumed",
+  );
   say(`  removal          ${chain.sends[1].userOperationHash} (owner-signed uninstall)`);
 
   step("sign out and close");

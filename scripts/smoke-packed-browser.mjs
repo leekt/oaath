@@ -433,7 +433,7 @@ let stores = durableStores();
 let signOuts = 0;
 let invalidations = 0;
 
-function createRealm() {
+function createRealm(chains = [chain]) {
   return createOAAth({
     binding: {
       issuer: ISSUER_URL,
@@ -474,7 +474,7 @@ function createRealm() {
       },
     },
     stores,
-    chains: [chain],
+    chains,
     signing: {
       owner: p256Key({ credential: ownerCredential, sign: async () => fail("application cannot sign as owner") }),
       session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
@@ -719,6 +719,42 @@ if (sends.length !== beforeRecovery.sends || quotes !== beforeRecovery.quotes ||
 await restoredJobs.close();
 await database.close();
 
+// Configured revocation includes untouched chains. No owner operation is
+// invented by polling; this fixture models effects completed by the phone owner.
+const configuredDb = new IDBFactory();
+const otherChainId = 8453;
+const effectChain = (chainId, consumed) => ({ ...chain, chainId, observation: {
+  close: async () => {}, async read(request) {
+    if (request.type === "chain_id") return chainId;
+    if (request.type === "finalized_block" || request.type === "canonical_block") return { number: "0x10", hash: "0x" + "aa".repeat(32) };
+    if (request.type === "kernel_permission_installed") return false;
+    if (request.type === "kernel_install_nonce") return "0x" + (BigInt(request.nonce) + (consumed ? 1n : 0n)).toString(16);
+    fail("unexpected configured revocation read");
+  },
+} });
+database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+const revokingClient = createRealm([effectChain(CHAIN_ID, true), effectChain(otherChainId, false)]);
+const configuredGrant = await (await revokingClient.connect()).requestPermission({
+  chainScope: "all", permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
+  expiresIn: EXPIRES_IN, perChainOperationLimit: 10,
+});
+const beforeRevoking = { sends: sends.length, invalidations };
+await configuredGrant.revoke();
+if (configuredGrant.state !== "revoking") fail("untouched chain completed without consumed install nonce");
+await revokingClient.close(); await database.close();
+database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+const smallerClient = createRealm([chain]);
+const smallerGrant = await (await smallerClient.connect()).resume();
+await smallerGrant.revoke();
+if (smallerGrant.state !== "revoking") fail("configuration shrink discarded a revocation target");
+await smallerClient.close(); await database.close();
+database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+const completedClient = createRealm([chain, effectChain(otherChainId, true)]);
+const completedGrant = await (await completedClient.connect()).resume();
+await completedGrant.revoke();
+if (completedGrant.state !== "revoked" || sends.length !== beforeRevoking.sends || invalidations !== beforeRevoking.invalidations + 1) fail("configured revocation recovery lost proof or repeated effects");
+await completedClient.close(); await database.close();
+
 // Public URL composition resolves each caller's selected context from the
 // packed server, then restores only that context's local session after reload.
 const contextRelay = createRelayHandler({
@@ -896,7 +932,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      phone enrollment, native approval, durable revocation custody/execution/recovery, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
+    "  golden path      phone enrollment, native approval, durable revocation custody/execution/recovery, configured-chain completion after reload, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

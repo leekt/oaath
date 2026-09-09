@@ -128,6 +128,10 @@ function beginRevocation(grant: Grant, at: number): Grant {
     type: "begin_revocation",
     identity,
     revocationStartedAt: at,
+    targets: grant.materializations.length
+      ? grant.materializations.map((entry) => binding(entry.chainId))
+      : [binding(1)],
+    installNonce: "0",
   });
 }
 
@@ -141,11 +145,20 @@ function beginChainRevocation(grant: Grant, chainId: number, at: number): Grant 
 }
 
 function revokeChain(grant: Grant, chainId: number, at: number): Grant {
-  return advanceGrant(grant, {
+  const removed = advanceGrant(grant, {
     type: "record_chain_revoked",
     identity,
     binding: binding(chainId),
     removal: absent(chainId, 11, at),
+  });
+  return proveRevocation(removed, chainId, at);
+}
+
+function proveRevocation(grant: Grant, chainId: number, at: number): Grant {
+  return advanceGrant(grant, {
+    type: "record_revocation_evidence",
+    identity,
+    evidence: { permission: absent(chainId, 12, at), installNonce: "1" },
   });
 }
 
@@ -174,6 +187,41 @@ function expectGrantError(action: () => unknown, code: OaathGrantError["code"]):
 }
 
 describe("Grant transitions", () => {
+  it("requires consumed install nonces and absence for the immutable configured scope", () => {
+    let grant = advanceGrant(active(), {
+      type: "begin_revocation",
+      identity,
+      revocationStartedAt: 40,
+      targets: [binding(1), binding(137)],
+      installNonce: "18446744073709551616",
+    });
+    grant = invalidateCapability(grant, 41);
+    const complete = () =>
+      advanceGrant(grant, { type: "complete_revocation", identity, revokedAt: 50 });
+    expectGrantError(complete, "grant_transition_forbidden");
+    const record = (chainId: number, nonce = "18446744073709551617") => ({
+      type: "record_revocation_evidence",
+      identity,
+      evidence: { permission: absent(chainId, 12, 42), installNonce: nonce },
+    });
+    for (const nonce of ["18446744073709551616", "18446744073709551615", "36893488147419103233"]) {
+      expectGrantError(() => advanceGrant(grant, record(1, nonce)), "grant_transition_invalid");
+    }
+    expectGrantError(() => advanceGrant(grant, record(10)), "grant_identity_mismatch");
+    grant = advanceGrant(grant, record(1));
+    grant = parseGrant(clone(grant));
+    expectGrantError(complete, "grant_transition_forbidden");
+    expectGrantError(() => advanceGrant(grant, record(1)), "grant_transition_forbidden");
+    grant = advanceGrant(grant, record(137));
+    const revoked = complete();
+    expect(revoked.state).toBe("revoked");
+    expect(revoked.materializations).toEqual([]);
+    expectGrantError(
+      () => parseGrant({ ...revoked, revocation: { ...revoked.revocation, evidence: [] } }),
+      "grant_record_invalid",
+    );
+  });
+
   it("materializes independent chains after one approval and revokes them after reload", () => {
     let grant = active();
     expect(grant).toMatchObject({ state: "active", revision: 2, materializations: [] });
@@ -224,7 +272,7 @@ describe("Grant transitions", () => {
 
     expect(grant).toMatchObject({
       state: "revoked",
-      revision: 16,
+      revision: 18,
       terminal: { kind: "revoked", recordedAt: 48 },
       materializations: [{ state: "revoked" }, { state: "revoked" }],
     });
@@ -364,6 +412,7 @@ describe("Grant transitions", () => {
       abandonedAt: 41,
     });
     revoking = invalidateCapability(revoking, 42);
+    revoking = proveRevocation(revoking, 1, 42);
     expect(
       advanceGrant(revoking, { type: "complete_revocation", identity, revokedAt: 43 }).state,
     ).toBe("revoked");
@@ -509,6 +558,8 @@ describe("Grant transitions", () => {
         () =>
           advanceGrant(active(), {
             type: "begin_revocation",
+            targets: [binding(1)],
+            installNonce: "0",
             identity: substitutedIdentity,
             revocationStartedAt: 40,
           }),
@@ -606,7 +657,14 @@ describe("Grant transitions", () => {
 
   it("rejects time regression, authority work at expiry, and contradictory block evidence", () => {
     expectGrantError(
-      () => advanceGrant(active(), { type: "begin_revocation", identity, revocationStartedAt: 29 }),
+      () =>
+        advanceGrant(active(), {
+          type: "begin_revocation",
+          identity,
+          revocationStartedAt: 29,
+          targets: [binding(1)],
+          installNonce: "0",
+        }),
       "grant_transition_invalid",
     );
     expectGrantError(() => addUnmaterialized(active(), 1, 100), "grant_transition_invalid");
@@ -762,6 +820,7 @@ describe("Grant transitions", () => {
     const expired = advanceGrant(requested(), { type: "expire", identity, expiredAt: 100 });
     let revoked = beginRevocation(active(), 40);
     revoked = invalidateCapability(revoked, 41);
+    revoked = proveRevocation(revoked, 1, 41);
     revoked = advanceGrant(revoked, { type: "complete_revocation", identity, revokedAt: 42 });
 
     const transitions: readonly GrantTransition[] = [
@@ -810,7 +869,13 @@ describe("Grant transitions", () => {
         observedAt: 50,
         reason: "provider_unavailable",
       },
-      { type: "begin_revocation", identity, revocationStartedAt: 50 },
+      {
+        type: "begin_revocation",
+        identity,
+        revocationStartedAt: 50,
+        targets: [binding(1)],
+        installNonce: "0",
+      },
       { type: "begin_chain_revocation", identity, binding: binding(1), startedAt: 50 },
       {
         type: "record_chain_revoked",
@@ -827,6 +892,11 @@ describe("Grant transitions", () => {
           evidenceHash: `0x${"88".repeat(32)}`,
           invalidatedAt: 50,
         },
+      },
+      {
+        type: "record_revocation_evidence",
+        identity,
+        evidence: { permission: absent(1, 12, 50), installNonce: "1" },
       },
       { type: "complete_revocation", identity, revokedAt: 50 },
     ];
@@ -860,6 +930,7 @@ describe("Grant transitions", () => {
           "begin_chain_revocation",
           "record_chain_revoked",
           "record_capability_invalidated",
+          "record_revocation_evidence",
           "complete_revocation",
         ),
       ],

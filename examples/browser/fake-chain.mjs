@@ -150,6 +150,12 @@ export function createFakeChain(chainId) {
       observation: {
         async read(request) {
           if (request.type === "chain_id") return chainId;
+          if (request.type === "kernel_permission_installed")
+            return submitted()?.kind !== "revocation";
+          if (request.type === "kernel_install_nonce")
+            return quantity(
+              BigInt(request.nonce) + (sends.some((entry) => entry.kind === "execution") ? 1n : 0n),
+            );
           if (request.type === "user_operation_receipt") {
             return userOperationReceipt(request.userOperationHash);
           }

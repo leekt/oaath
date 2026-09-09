@@ -23,6 +23,19 @@ import {
 } from "./support/browser.js";
 
 describe("browser golden path", () => {
+  it("keeps untouched configured chains pending after relay invalidation", async () => {
+    const realm = createRealm({
+      chains: [createChainFixture(), createChainFixture({ chainId: 11_155_111 })],
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    await grant.revoke();
+    expect(grant.state).toBe("revoking");
+    expect(realm.invalidations()).toBe(1);
+    expect(realm.chain.sends).toHaveLength(0);
+    await realm.oaath.close();
+  });
+
   it("quotes the exact selected validation domain for session and owner operations", async () => {
     const quoted: Readonly<OaathQuoteRequest>[] = [];
     const base = createChainFixture();
@@ -300,10 +313,8 @@ describe("browser golden path", () => {
     expect(stored?.value.identity.userOperationHash).toBe(prepared.userOperationHash);
 
     await grant.revoke();
-    // The replayable capability dies first, then this realm — which holds the
-    // owner's signing capability — removes the installed chain permission with
-    // an owner-signed revocation operation on its own lane, and only that
-    // operation's finalized success completes the Grant to `revoked`.
+    // The realm submits the owner uninstall; finalized permission absence and
+    // the consumed install nonce then complete the configured-chain proof.
     expect(grant.state).toBe("revoked");
     expect(realm.invalidations()).toBe(1);
     expect(realm.chain.sends).toHaveLength(2);

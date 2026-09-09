@@ -83,6 +83,15 @@ export type OperationObserverReadRequest =
       blockNumber: string;
     }>
   | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
+  | Readonly<{
+      /** Kernel account nonce(uint192), including its global effective minimum. */
+      type: "kernel_install_nonce";
+      chainId: number;
+      account: `0x${string}`;
+      /** The approval's install nonce; read its 192-bit key on the account, not EntryPoint. */
+      nonce: string;
+      blockNumber: string;
+    }>
   | Readonly<{ type: "block_by_hash"; chainId: number; blockHash: `0x${string}` }>
   | Readonly<{ type: "finalized_block"; chainId: number }>
   | Readonly<{
