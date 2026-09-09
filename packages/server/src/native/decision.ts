@@ -28,18 +28,24 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { type OwnerSigningArtifact, parseOwnerSigningArtifact } from "@oaath/protocol";
 import type {
   AuthorizationDecisionCommand,
   SubmittedAuthorizationDecision,
 } from "../authorization/decision.js";
 import { submitAuthorizationDecision } from "../authorization/decision.js";
 import { fetchAuthorizationRequest } from "../authorization/request.js";
-import type { RelayClock } from "../clock.js";
+import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
+import { type RelayClock, relayNow } from "../clock.js";
 import { OaathRelayError, relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayKms } from "../security/kms.js";
 import type { RelayStore } from "../store/interface.js";
 import type { AuthorizationDecisionOutcome } from "../store/records.js";
+import {
+  type OwnerPhonePermissionApprovals,
+  prepareOwnerPhonePermissionApproval,
+} from "./permission-approval.js";
 
 export interface SubmitOwnerPhoneDecisionInput {
   readonly store: RelayStore;
@@ -51,6 +57,7 @@ export interface SubmitOwnerPhoneDecisionInput {
   readonly operationId: string;
   readonly command: AuthorizationDecisionCommand;
   readonly codeTtlMs: number;
+  readonly permissionApprovals?: OwnerPhonePermissionApprovals;
 }
 
 export interface OwnerPhoneDecision {
@@ -70,6 +77,36 @@ export async function submitOwnerPhoneDecision(
   if (input.caller.role !== "owner") {
     return relayFailure("relay_forbidden", "caller may not act in the required role");
   }
+  const pending = await fetchAuthorizationRequest({ ...input, requestId: input.operationId });
+  // A committed outcome wins before preparation, even if the provider is now unavailable.
+  if (pending.decision !== null)
+    return Object.freeze({
+      operationId: input.operationId,
+      outcome: pending.decision.outcome,
+      decidedAt: pending.decision.decidedAt,
+      settlement: "replayed",
+      release: null,
+    });
+  let command = input.command;
+  if (command.outcome === "approved" && !pending.expired) {
+    const scope = classifyStoredAuthorizationScope(pending.requestedScope, pending.requestId);
+    if (scope.kind === "permission-request") {
+      const prepared = await prepareOwnerPhonePermissionApproval(
+        input.permissionApprovals,
+        scope.request,
+      );
+      let artifact: Readonly<OwnerSigningArtifact>;
+      try {
+        artifact = parseOwnerSigningArtifact(JSON.parse(command.artifact));
+      } catch {
+        return relayFailure("relay_request_invalid", "phone signing artifact is invalid");
+      }
+      command = {
+        outcome: "approved",
+        artifact: await prepared.complete(artifact, Math.floor(relayNow(input.clock) / 1000)),
+      };
+    }
+  }
   try {
     const release = await submitAuthorizationDecision({
       store: input.store,
@@ -77,7 +114,7 @@ export async function submitOwnerPhoneDecision(
       kms: input.kms,
       caller: input.caller,
       requestId: input.operationId,
-      command: input.command,
+      command,
       codeTtlMs: input.codeTtlMs,
     });
     return Object.freeze({

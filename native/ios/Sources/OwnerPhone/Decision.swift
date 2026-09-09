@@ -215,7 +215,7 @@ public struct OwnerPhoneReview: Equatable, Sendable {
         if outcome == .approved {
             switch projection.scope {
             case .permissionRequest:
-                break
+                throw TransitionError.authorizationRequired
             case let .ownerSigningRequest(scope):
                 guard scope.decisionCapability == .approveOrReject else {
                     throw TransitionError.notApprovable
@@ -232,18 +232,24 @@ public struct OwnerPhoneReview: Equatable, Sendable {
         state = .submitting(outcome)
     }
 
-    /// Reserves the exact Kernel approval while user-presence signing may
-    /// suspend. Permission approvals never enter this state.
+    /// Reserves the reviewed approval while user-presence signing may suspend.
     mutating func beginAuthorization(
         availability: OwnerPhoneApprovalAvailability,
         now: Int
     ) throws {
         guard case .pending = state else { throw TransitionError.notPending }
         guard now < projection.expiresAt else { throw TransitionError.expired }
-        guard availability == .kernelP256OwnerSigning,
-              case let .ownerSigningRequest(scope) = projection.scope,
-              scope.decisionCapability == .approveOrReject
-        else {
+        guard availability == .kernelP256OwnerSigning else {
+            throw TransitionError.notApprovable
+        }
+        switch projection.scope {
+        case .permissionRequest:
+            break // ApprovalModel binds the fetched Kernel packet before entering.
+        case let .ownerSigningRequest(scope):
+            guard scope.decisionCapability == .approveOrReject else {
+                throw TransitionError.notApprovable
+            }
+        case .raw:
             throw TransitionError.notApprovable
         }
         if let unresolvedIntent, unresolvedIntent != .approved {

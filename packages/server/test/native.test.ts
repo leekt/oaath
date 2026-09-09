@@ -11,14 +11,19 @@
  */
 
 import { readFileSync } from "node:fs";
-import { hashOwnerSigningRequest } from "@oaath/protocol";
+import {
+  hashOwnerSigningRequest,
+  parseKernelV4ReplayableInstallOwnerSigningRequest,
+} from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { createAuthorizationRequest } from "../src/authorization/request.js";
 import type { RelayClock } from "../src/clock.js";
 import { submitOwnerPhoneDecision } from "../src/native/decision.js";
+import type { OwnerPhonePermissionApprovals } from "../src/native/permission-approval.js";
 import {
   NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
+  projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,
 } from "../src/native/projection.js";
 import type { RelayCaller } from "../src/security/authentication.js";
@@ -49,6 +54,31 @@ import {
 /** An opaque scope string: projected as the labeled raw text, never dropped. */
 const RAW_SCOPE = '{"permission":"erc20-transfer","token":"0xdeadbeefcafe","chainScope":"all"}';
 const PERMISSION_SCOPE = APPROVABLE_PERMISSION_SCOPE;
+// Generated in memory. The packed consumer proves SDK completion; these unit
+// tests isolate the native port and existing decision transaction.
+const PHONE = createKernelOwnerApprovalInput();
+const PHONE_SIGNING = parseKernelV4ReplayableInstallOwnerSigningRequest(
+  JSON.parse(PHONE.requestedScope),
+);
+const BASE_PERMISSION = JSON.parse(PERMISSION_SCOPE);
+const PHONE_SCOPE = JSON.stringify({
+  ...BASE_PERMISSION,
+  logicalAccount: {
+    ...BASE_PERMISSION.logicalAccount,
+    factoryRoute: "kernel_factory",
+    ownerCredential: PHONE_SIGNING.signer.ownerCredential,
+  },
+});
+const PHONE_APPROVALS: OwnerPhonePermissionApprovals = {
+  async prepare() {
+    return {
+      signingRequest: PHONE_SIGNING,
+      async complete() {
+        return '{"grant":"approved"}';
+      },
+    };
+  },
+};
 const REQUEST_TTL_MS = 300_000;
 const CODE_TTL_MS = 60_000;
 
@@ -114,7 +144,7 @@ interface Fixture {
   readonly requestId: string;
 }
 
-async function fixture(requestedScope: string = PERMISSION_SCOPE): Promise<Fixture> {
+async function fixture(requestedScope: string = PHONE_SCOPE): Promise<Fixture> {
   const store = createMemoryRelayStore();
   const clock = createTestClock();
   const baseKms = createTestKms();
@@ -161,9 +191,10 @@ function decide(
     operationId: fixed.requestId,
     command:
       outcome === "approved"
-        ? { outcome: "approved", artifact: '{"grant":"approved"}' }
+        ? { outcome: "approved", artifact: PHONE.canonicalArtifact }
         : { outcome: "rejected" },
     codeTtlMs: CODE_TTL_MS,
+    permissionApprovals: PHONE_APPROVALS,
   });
 }
 
@@ -365,6 +396,140 @@ describe("experimental owner-phone projection", () => {
   });
 });
 
+describe("canonical phone permission signing", () => {
+  it("projects the prepared Kernel packet for the same authenticated consent", async () => {
+    const harness = createHarness({
+      permissionApprovals: {
+        async prepare(request) {
+          expect(request.requestId).toBe(requestId);
+          expect(request.context).toEqual(BASE_PERMISSION.context);
+          return PHONE_APPROVALS.prepare(request);
+        },
+      },
+    });
+    const requestId = await createOverWire(harness, PHONE_SCOPE);
+    const consent = await expectOk<Record<string, unknown>>(
+      await harness.handler(get(`/native/projections/${requestId}`, OWNER_TOKEN)),
+      200,
+    );
+    const signing = await expectOk<Record<string, unknown>>(
+      await harness.handler(get(`/native/permission-signing/${requestId}`, OWNER_TOKEN)),
+      200,
+    );
+    expect({ ...signing, scope: consent.scope }).toEqual(consent);
+    expect(signing.scope).toEqual({
+      kind: "owner-signing-request",
+      decision: "approve-or-reject",
+      requestHash: hashOwnerSigningRequest(PHONE_SIGNING),
+      request: PHONE_SIGNING,
+    });
+  });
+
+  it("requires configured preparation and never prepares for a foreign owner", async () => {
+    const fixed = await fixture();
+    await expectRelayFailure(
+      () => projectOwnerPhonePermissionSigning({ ...fixed, caller: OWNER }),
+      "relay_request_invalid",
+    );
+    let preparations = 0;
+    const permissionApprovals: OwnerPhonePermissionApprovals = {
+      async prepare(request) {
+        preparations += 1;
+        return PHONE_APPROVALS.prepare(request);
+      },
+    };
+    for (const caller of [CLIENT, OTHER_OWNER]) {
+      await expectRelayFailure(
+        () => projectOwnerPhonePermissionSigning({ ...fixed, caller, permissionApprovals }),
+        caller.role === "client" ? "relay_forbidden" : "relay_not_found",
+      );
+    }
+    expect(preparations).toBe(0);
+    await expectRelayFailure(
+      () =>
+        submitOwnerPhoneDecision({
+          ...fixed,
+          caller: OWNER,
+          operationId: fixed.requestId,
+          codeTtlMs: CODE_TTL_MS,
+          command: { outcome: "approved", artifact: PHONE.canonicalArtifact },
+        }),
+      "relay_request_invalid",
+    );
+    expect(fixed.kmsEncryptions()).toBe(0);
+    expect((await project(fixed)).scope.kind).toBe("permission-request");
+  });
+
+  it("refuses a packet for another Kernel request before completing or sealing", async () => {
+    const fixed = await fixture();
+    let completions = 0;
+    const foreign = createKernelOwnerApprovalInput();
+    await expectRelayFailure(
+      () =>
+        submitOwnerPhoneDecision({
+          ...fixed,
+          caller: OWNER,
+          operationId: fixed.requestId,
+          codeTtlMs: CODE_TTL_MS,
+          command: { outcome: "approved", artifact: foreign.canonicalArtifact },
+          permissionApprovals: {
+            async prepare() {
+              return {
+                signingRequest: PHONE_SIGNING,
+                async complete() {
+                  completions += 1;
+                  return "invalid";
+                },
+              };
+            },
+          },
+        }),
+      "relay_request_invalid",
+    );
+    expect(completions).toBe(0);
+    expect(fixed.kmsEncryptions()).toBe(0);
+    expect((await project(fixed)).scope.kind).toBe("permission-request");
+  });
+
+  it("keeps failed preparation pending and answers a committed decision without preparing again", async () => {
+    let preparations = 0;
+    let available = false;
+    const harness = createHarness({
+      permissionApprovals: {
+        async prepare(request) {
+          preparations += 1;
+          if (!available) throw new Error("preparation unavailable");
+          return PHONE_APPROVALS.prepare(request);
+        },
+      },
+    });
+    const requestId = await createOverWire(harness, PHONE_SCOPE);
+    const approve = () =>
+      harness.handler(
+        post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
+          command: "approve",
+          artifact: PHONE.canonicalArtifact,
+        }),
+      );
+    expect((await approve()).status).toBe(500);
+    expect(
+      (await harness.handler(get(`/native/projections/${requestId}`, OWNER_TOKEN))).status,
+    ).toBe(200);
+    available = true;
+    expect(await expectOk(await approve(), 200)).toMatchObject({
+      outcome: "approved",
+      settlement: "decided",
+    });
+    available = false;
+    expect(await expectOk(await approve(), 200)).toMatchObject({
+      outcome: "approved",
+      settlement: "replayed",
+      release: null,
+    });
+    expect(preparations).toBe(2);
+  });
+});
+
 describe("experimental owner-phone decision saga", () => {
   it("verifies one Kernel artifact and replays without a second release", async () => {
     const input = createKernelOwnerApprovalInput();
@@ -541,8 +706,8 @@ describe("experimental owner-phone preview routes", () => {
   });
 
   it("decides over the wire byte-for-byte from the shared golden fixture", async () => {
-    const harness = createHarness();
-    const requestId = await createOverWire(harness, PERMISSION_SCOPE);
+    const harness = createHarness({ permissionApprovals: PHONE_APPROVALS });
+    const requestId = await createOverWire(harness, PHONE_SCOPE);
     const decidedGolden = GOLDEN.decision.decidedApproved as Record<string, unknown> & {
       release: Record<string, unknown>;
     };
@@ -550,7 +715,7 @@ describe("experimental owner-phone preview routes", () => {
     const response = await harness.handler(
       post(`/native/decisions/${requestId}`, OWNER_TOKEN, {
         command: "approve",
-        artifact: '{"grant":"approved"}',
+        artifact: PHONE.canonicalArtifact,
       }),
     );
     expect(response.status).toBe(200);

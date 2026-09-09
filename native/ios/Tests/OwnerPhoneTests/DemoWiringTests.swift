@@ -360,6 +360,11 @@ final class DemoRelayEndpointTests: XCTestCase {
             projection.url?.absoluteString, "http://192.168.1.20:8787/native/projections/req-1")
         XCTAssertEqual(projection.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
 
+        let signing = endpoint.permissionSigningRequest(operationId: "req-1", credential: "cred")
+        XCTAssertEqual(signing.httpMethod, "GET")
+        XCTAssertEqual(signing.url?.absoluteString, "http://192.168.1.20:8787/native/permission-signing/req-1")
+        XCTAssertEqual(signing.value(forHTTPHeaderField: "Authorization"), "Bearer cred")
+
         let decision = endpoint.decisionRequest(
             operationId: "req-1", body: Data("{}".utf8), credential: "cred")
         XCTAssertEqual(decision.httpMethod, "POST")
@@ -406,11 +411,13 @@ final class DemoRelayEndpointTests: XCTestCase {
             onUnauthorized: { await unauthorized.record($0) })
         let projection = try await client.projection(operationId: "req-1")
         XCTAssertEqual(projection.operationId, "req-1")
+        _ = try await client.permissionSigningProjection(operationId: "req-1")
         let reportedPairing = await unauthorized.read()
         XCTAssertNil(reportedPairing)
         XCTAssertEqual(
             recorder.requests.map { $0.url?.absoluteString },
-            ["http://127.0.0.1:8787/native/projections/req-1"])
+            ["http://127.0.0.1:8787/native/projections/req-1",
+             "http://127.0.0.1:8787/native/permission-signing/req-1"])
     }
 
     func testTransportReportsTheExactPairingThatReceived401() async throws {

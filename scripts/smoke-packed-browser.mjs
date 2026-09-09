@@ -36,7 +36,7 @@ import { assert, builtExports, createConsumer } from "./packed-consumer.mjs";
  * in-memory adapters. Chain ports reject access until consent completes, then
  * retain one pending Operation for reload-safe provider status recovery.
  */
-const SMOKE = String.raw`
+const SMOKE = `
 import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import {
   createOAAth,
@@ -67,7 +67,6 @@ import {
 import { oaathProvider } from "@oaath/sdk/viem";
 import {
   hashOwnerSigningRequest,
-  parsePermissionRequest,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -138,6 +137,15 @@ const callers = new Map([
 ]);
 
 const relay = createRelayHandler({
+  permissionApprovals: {
+    async prepare(request) {
+      const prepared = await prepareKernelPhonePermissionApproval({
+        request, chainId: CHAIN_ID, reads: { read: accountRead }, installNonce: "0",
+      });
+      return { signingRequest: prepared.signingRequest,
+        complete: async (artifact, decidedAt) => JSON.stringify(await prepared.complete(artifact, decidedAt)) };
+    },
+  },
   ownerRouting: { async resolveOwner() { return { ownerDeviceId: "owner-phone", ownerSubject: "phone-subject" }; } },
   store: createMemoryRelayStore(),
   authentication: {
@@ -171,43 +179,39 @@ async function relayJson(path, token, init) {
   return response.json();
 }
 
-/** The owner console: reads the reviewed scope, posts the terminal decision. */
+/** Simulated phone transport: native consent -> signing packet -> decision. */
 const ownerRequests = [];
 const authorization = {
   async authorize(request) {
     ownerRequests.push(request.requestId);
-    const state = await relayJson("/authorization/requests/" + request.requestId, OWNER_TOKEN);
-    const scope = JSON.parse(state.requestedScope);
-    if (JSON.stringify(scope.context) !== JSON.stringify({
+    const consent = await relayJson("/native/projections/" + request.requestId, OWNER_TOKEN);
+    if (JSON.stringify(consent.scope.context) !== JSON.stringify({
       version: "oaath.workspace-account-context/v1", workspaceId: "personal-1",
       workspaceKind: "personal", accountId: "account-1",
     })) fail("owner review lost the connection's workspace/account context");
-    const prepared = await prepareKernelPhonePermissionApproval({
-      request: parsePermissionRequest({ ...scope, requestId: request.requestId }),
-      chainId: CHAIN_ID, reads: { read: accountRead }, installNonce: "0",
-    });
-    // Simulates the native phone's existing compact P-256 artifact. No private
-    // owner key is injected into the application's runtime.
-    const decision = await prepared.complete({
+    const signing = await relayJson("/native/permission-signing/" + request.requestId, OWNER_TOKEN);
+    if (JSON.stringify({ ...signing, scope: consent.scope }) !== JSON.stringify(consent)) {
+      fail("phone signing packet lost its consent binding");
+    }
+    const packet = signing.scope.request;
+    const artifact = {
       version: "oaath.owner-signing-artifact/v1", kind: "p256",
-      requestHash: hashOwnerSigningRequest(prepared.signingRequest),
-      signature: bytesToHex(p256.sign(hexToBytes(prepared.signingRequest.expectedDigest), phoneKey, {
+      requestHash: hashOwnerSigningRequest(packet),
+      signature: bytesToHex(p256.sign(hexToBytes(packet.expectedDigest), phoneKey, {
         prehash: false, lowS: true,
       }).toCompactRawBytes()),
-    }, now());
+    };
     const decided = await relayJson(
-      "/authorization/requests/" + request.requestId + "/decision",
+      "/native/decisions/" + request.requestId,
       OWNER_TOKEN,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ outcome: "approved", artifact: JSON.stringify(decision) }),
+        body: JSON.stringify({ command: "approve", artifact: JSON.stringify(artifact) }),
       },
     );
-    if (typeof decided.code !== "string") {
-      fail("owner decision failed: " + JSON.stringify(decided));
-    }
-    return { code: decided.code };
+    if (typeof decided.release?.code !== "string") fail("phone decision failed");
+    return { code: decided.release.code };
   },
 };
 
@@ -605,6 +609,7 @@ import {
   createMemoryGrantStoreAdapter,
 } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler, type RelayHandler } from "@oaath/server";
+import type { OwnerPhonePermissionApprovals } from "@oaath/server/native";
 
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
 
@@ -624,8 +629,9 @@ export async function permission(oaath: Readonly<Oaath>): Promise<Readonly<Oaath
   });
 }
 
-export function relay(): RelayHandler {
+export function relay(permissionApprovals: OwnerPhonePermissionApprovals): RelayHandler {
   return createRelayHandler({
+    permissionApprovals,
     ownerRouting: { async resolveOwner() { return null; } },
     store: createMemoryRelayStore(),
     authentication: { authenticate: async () => null },
@@ -687,7 +693,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      connect, consent, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
+    "  golden path      connect, native phone consent/signing/decision, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

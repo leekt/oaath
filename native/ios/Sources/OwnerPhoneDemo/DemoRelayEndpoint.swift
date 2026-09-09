@@ -74,6 +74,15 @@ public struct DemoRelayEndpoint: Equatable, Sendable {
         return request
     }
 
+    /// `GET /native/permission-signing/{operationId}`, owner-authenticated.
+    func permissionSigningRequest(operationId: String, credential: String) -> URLRequest {
+        var request = URLRequest(
+            url: baseURL.appendingPathComponent("native/permission-signing/\(operationId)"))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     /// `POST /native/decisions/{operationId}`, owner-authenticated.
     func decisionRequest(operationId: String, body: Data, credential: String) -> URLRequest {
         var request = URLRequest(
@@ -136,6 +145,9 @@ public func demoRelayClient(
         switch call.kind {
         case .fetchProjection:
             request = pairing.endpoint.projectionRequest(
+                operationId: call.operationId, credential: pairing.credential)
+        case .fetchPermissionSigningProjection:
+            request = pairing.endpoint.permissionSigningRequest(
                 operationId: call.operationId, credential: pairing.credential)
         case .submitDecision:
             request = pairing.endpoint.decisionRequest(

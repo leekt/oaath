@@ -620,10 +620,6 @@ public final class ApprovalModel: ObservableObject {
     @Published public private(set) var unresolvedNotice = false
 
     private let relay: any OwnerPhoneRelayClient
-    /// Produces the artifact an approval hands over for the reviewed structured
-    /// permission projection. Reject-only scopes are gated before this
-    /// deployment-injected boundary.
-    private let approvalArtifact: @Sendable (OwnerPhoneRequestProjection) async throws -> String
     private let kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding?
     private let now: @Sendable () -> Int
 
@@ -640,6 +636,7 @@ public final class ApprovalModel: ObservableObject {
     private struct RetainedKernelArtifact {
         let reviewTokenId: UUID
         let canonical: String
+        let signingProjection: OwnerPhoneRequestProjection
         var ambiguouslySubmitted: Bool
     }
 
@@ -652,12 +649,10 @@ public final class ApprovalModel: ObservableObject {
 
     public init(
         relay: any OwnerPhoneRelayClient,
-        approvalArtifact: @escaping @Sendable (OwnerPhoneRequestProjection) async throws -> String,
         kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding? = nil,
         now: @escaping @Sendable () -> Int = { Int(Date().timeIntervalSince1970 * 1000) }
     ) {
         self.relay = relay
-        self.approvalArtifact = approvalArtifact
         self.kernelP256ApprovalBinding = kernelP256ApprovalBinding
         self.now = now
     }
@@ -694,16 +689,16 @@ public final class ApprovalModel: ObservableObject {
 
     public func approve() async {
         guard let (token, review) = capturedReview() else { return }
-        switch approvalAvailability(for: review.projection) {
-        case .permission:
-            await approvePermission(token: token, review: review)
-        case .kernelP256OwnerSigning:
-            guard let binding = kernelP256ApprovalBinding else { return }
-            await approveKernel(
-                token: token,
-                review: review,
-                binding: binding)
-        case .rejectOnly:
+        guard approvalAvailability(for: review.projection) == .kernelP256OwnerSigning,
+              let binding = kernelP256ApprovalBinding
+        else { return }
+        switch review.projection.scope {
+        case .permissionRequest:
+            await approvePermission(token: token, review: review, binding: binding)
+        case .ownerSigningRequest:
+            await approveKernel(token: token, review: review, binding: binding,
+                                signingProjection: review.projection)
+        case .raw:
             return
         }
     }
@@ -714,8 +709,12 @@ public final class ApprovalModel: ObservableObject {
         for projection: OwnerPhoneRequestProjection
     ) -> OwnerPhoneApprovalAvailability {
         switch projection.scope {
-        case .permissionRequest:
-            return .permission
+        case let .permissionRequest(scope):
+            guard kernelP256ApprovalBinding != nil,
+                  case .p256 = scope.account.ownerCredential,
+                  scope.account.factoryRoute == "kernel_factory"
+            else { return .rejectOnly }
+            return .kernelP256OwnerSigning
         case let .ownerSigningRequest(scope):
             guard scope.decisionCapability == .approveOrReject,
                   let binding = kernelP256ApprovalBinding,
@@ -732,8 +731,7 @@ public final class ApprovalModel: ObservableObject {
         await decide(.rejected, token: token, review: review)
     }
 
-    /// ApprovalView is the sole lifecycle driver. Permission approvals do not
-    /// consult this state; only user-presence owner signing is foreground-bound.
+    /// ApprovalView is the sole lifecycle driver for user-presence owner signing.
     func setForeground(_ foreground: Bool) {
         if isForeground, !foreground {
             foregroundGeneration &+= 1
@@ -743,29 +741,54 @@ public final class ApprovalModel: ObservableObject {
 
     private func approvePermission(
         token: ReviewToken,
-        review: OwnerPhoneReview
+        review: OwnerPhoneReview,
+        binding: OwnerPhoneKernelP256ApprovalBinding
     ) async {
-        let request = review.projection
-        guard let artifact = try? await approvalArtifact(request) else {
-            return // artifact composition failed before any submission; still pending
+        guard case let .permissionRequest(consent) = review.projection.scope,
+              case .pending = review.state,
+              !Task.isCancelled, isForeground, binding.pairingIsCurrent(),
+              now() < review.projection.expiresAt
+        else { return }
+        let signing: OwnerPhoneRequestProjection
+        if let retained = retainedKernelArtifact,
+           retained.reviewTokenId == token.id, retained.ambiguouslySubmitted
+        {
+            signing = retained.signingProjection
+        } else {
+            guard let fetched = try? await relay.permissionSigningProjection(
+                operationId: review.projection.operationId)
+            else { return }
+            signing = fetched
         }
-        // Artifact generation suspended. It may be sent only if this exact
-        // pending review still owns the consent surface.
-        guard owns(token, displayedReview: review) else { return }
-        await decide(.approved(artifact: artifact), token: token, review: review)
+        // The authenticated signing packet belongs to the exact consent still
+        // displayed. The Kernel binding separately proves paired account/key.
+        guard owns(token, displayedReview: review),
+              signing.operationId == review.projection.operationId,
+              signing.client == review.projection.client,
+              signing.matchCode == review.projection.matchCode,
+              signing.expiresAt == review.projection.expiresAt,
+              case let .ownerSigningRequest(scope) = signing.scope,
+              scope.decisionCapability == .approveOrReject,
+              case let .eip712(request) = scope.request,
+              request.signer.ownerCredential.credential == consent.account.ownerCredential
+        else { return }
+        await approveKernel(token: token, review: review, binding: binding,
+                            signingProjection: signing)
     }
 
     private func approveKernel(
         token: ReviewToken,
         review capturedReview: OwnerPhoneReview,
-        binding: OwnerPhoneKernelP256ApprovalBinding
+        binding: OwnerPhoneKernelP256ApprovalBinding,
+        signingProjection: OwnerPhoneRequestProjection
     ) async {
+        let signingReview = OwnerPhoneReview(projection: signingProjection)
         let startedAt = now()
         guard owns(token, displayedReview: capturedReview),
               !Task.isCancelled,
               isForeground,
               binding.pairingIsCurrent(),
-              binding.validates(capturedReview, now: startedAt)
+              binding.validates(signingReview, now: startedAt)
         else { return }
 
         var review = capturedReview
@@ -790,7 +813,7 @@ public final class ApprovalModel: ObservableObject {
         } else {
             let signingTask = Task.detached {
                 try Task.checkCancellation()
-                return try binding.makeArtifact(capturedReview, now: startedAt)
+                return try binding.makeArtifact(signingReview, now: startedAt)
             }
             do {
                 artifact = try await withTaskCancellationHandler(
@@ -808,6 +831,7 @@ public final class ApprovalModel: ObservableObject {
             retainedKernelArtifact = RetainedKernelArtifact(
                 reviewTokenId: token.id,
                 canonical: artifact,
+                signingProjection: signingProjection,
                 ambiguouslySubmitted: false)
         }
 
@@ -818,7 +842,7 @@ public final class ApprovalModel: ObservableObject {
               foregroundGeneration == capturedForegroundGeneration,
               finishedAt < capturedReview.projection.expiresAt,
               binding.pairingIsCurrent(),
-              binding.validates(capturedReview, now: finishedAt)
+              binding.validates(signingReview, now: finishedAt)
         else {
             cancelAuthorizationIfOwned(
                 token: token,
@@ -1059,7 +1083,7 @@ public struct ApprovalView: View {
             HStack(spacing: 24) {
                 Button("Reject", role: .destructive) { Task { await model.reject() } }
                 switch model.approvalAvailability(for: review.projection) {
-                case .permission, .kernelP256OwnerSigning:
+                case .kernelP256OwnerSigning:
                     Button("Approve") { Task { await model.approve() } }
                         .buttonStyle(.borderedProminent)
                 case .rejectOnly:
@@ -1097,7 +1121,7 @@ public struct ApprovalView: View {
                         Text("Kernel owner-signing request — approve only while this exact review, pairing, and foreground consent remain current.")
                             .font(.footnote)
                             .bold()
-                    case .permission, .rejectOnly:
+                    case .rejectOnly:
                         Text("Owner-signing request — reject only. This build can inspect structured input and derive EIP-712 digests, but it cannot sign, approve, or guarantee an outcome.")
                             .font(.footnote)
                             .bold()

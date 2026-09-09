@@ -329,7 +329,6 @@ public enum OwnerPhoneSigningRequest: Equatable, Sendable {
 /// approval action. Kernel owner signing is available only when authenticated
 /// wire semantics and the separately injected local binding both agree.
 enum OwnerPhoneApprovalAvailability: Equatable, Sendable {
-    case permission
     case kernelP256OwnerSigning
     case rejectOnly
 }
