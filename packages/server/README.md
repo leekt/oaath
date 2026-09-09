@@ -22,6 +22,50 @@ const handler = createRelayHandler({
 });
 ```
 
+## Service directory
+
+`createServiceDirectory(store)` owns the records used to select a personal or
+team account. Pass the directory as the handler's `bootstrap` capability:
+
+```ts
+import { createServiceDirectory } from "@oaath/server";
+import {
+  createPostgresServiceDirectorySchema,
+  createPostgresServiceDirectoryStore,
+} from "@oaath/server/postgres";
+
+// Provision once in a new schema. Existing schemas are not migrated.
+await createPostgresServiceDirectorySchema(pool);
+const directory = createServiceDirectory(
+  createPostgresServiceDirectoryStore({ pool }),
+);
+await directory.replace({ expectedRevision: null, directory: initialDirectory });
+const handler = createRelayHandler({ store, authentication, kms, clock, chains,
+  bootstrap: directory });
+```
+
+The `oaath.service-directory/v1` document contains `workspaces`, `applications`,
+`memberships`, `accounts`, `ownerDevices`, and `selections`. Membership uses
+the authenticated `(clientId, subject)` pair; an account references an owner
+device within its workspace. Each account owns its Kernel profile, owner
+validator binding, and configured chain IDs. Owner-device records currently
+store enrollment references only; phone enrollment and approval routing are
+separate work.
+
+`read()` returns `{ revision, directory }` or `null`. Deployment administration
+replaces the document using that revision; `replace()` returns `false` if a
+concurrent writer won. `selectAccount(caller, { workspaceId, accountId })`
+checks membership and changes only that caller's selection, also returning
+`false` on a concurrent write. The deployment authenticates the caller before
+invoking this capability; it is not an open HTTP administration API.
+
+PostgreSQL stores one atomic document for the PoC. Each resolver reads current
+durable state; there is no process cache. An ambiguous write throws
+`relay_state_ambiguous` and is never retried automatically. The deployment owns
+pool shutdown. Membership/account removal can leave old selections behind;
+resolution checks current records and returns `null` rather than granting
+access through stale preferences. It does not revoke grants or delete operations.
+
 ## Endpoints
 
 ```text
@@ -66,8 +110,8 @@ How an application organization/audience maps to the OAAth client/realm:
 - One deployed relay URL can serve multiple personal and team workspaces.
   `bootstrap.resolve(caller)` selects the caller's workspace, logical account,
   and configured chains on each request. The SDK keeps local realms separate
-  by caller, workspace/account context, and complete account profile. Membership
-  and account selection records are currently supplied by the deployment.
+  by caller, workspace/account context, and complete account profile. The service
+  directory provides the versioned membership and account selection records.
 - `clientId`, the pairwise `subject`, and the `organizationAudience` are all
   asserted by the deployment's `RelayAuthentication` port. An application
   backend with its own cookie session obtains an authenticated OAAth caller by

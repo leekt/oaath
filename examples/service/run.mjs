@@ -44,7 +44,12 @@ import {
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
+import {
+  createMemoryRelayStore,
+  createMemoryServiceDirectoryStore,
+  createRelayHandler,
+  createServiceDirectory,
+} from "@oaath/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { createAnvilChain } from "../browser/anvil-chain.mjs";
 
@@ -103,6 +108,44 @@ function chainPort(capability) {
   };
 }
 
+const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+await directory.replace({
+  expectedRevision: null,
+  directory: {
+    version: "oaath.service-directory/v1",
+    applications: [
+      {
+        clientId: "demo-client",
+        applicationId: "demo-app",
+        applicationName: "OAAth Reference Service",
+      },
+    ],
+    workspaces: [{ workspaceId: "personal-1", kind: "personal" }],
+    memberships: [{ workspaceId: "personal-1", clientId: "demo-client", subject: "demo-subject" }],
+    ownerDevices: [
+      { workspaceId: "personal-1", ownerDeviceId: "demo-owner", subject: "demo-subject" },
+    ],
+    accounts: [
+      {
+        workspaceId: "personal-1",
+        accountId: "account-1",
+        ownerDeviceId: "demo-owner",
+        account: accountProfile,
+        ownerValidator: chain.validator,
+        chainIds: [chain.capability.chainId],
+      },
+    ],
+    selections: [
+      {
+        workspaceId: "personal-1",
+        accountId: "account-1",
+        clientId: "demo-client",
+        subject: "demo-subject",
+      },
+    ],
+  },
+});
+
 step("serve the relay over HTTP");
 const relayHandler = createRelayHandler({
   store: createMemoryRelayStore(),
@@ -139,23 +182,7 @@ const relayHandler = createRelayHandler({
     },
   },
   clock: { now: () => Date.now() },
-  bootstrap: {
-    resolve: async () => ({
-      application: {
-        applicationId: "demo-app",
-        applicationName: "OAAth Reference Service",
-      },
-      context: {
-        version: "oaath.workspace-account-context/v1",
-        workspaceId: "personal-1",
-        workspaceKind: "personal",
-        accountId: "account-1",
-      },
-      account: accountProfile,
-      ownerValidator: chain.validator,
-      chainIds: [chain.capability.chainId],
-    }),
-  },
+  bootstrap: directory,
   chains: [chainPort(chain.capability)],
 });
 

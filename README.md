@@ -101,7 +101,7 @@ never holds an owner signer and cannot choose a different account, owner, or
 chain surface than the deployment registered.
 
 The relay calls `bootstrap.resolve(caller)` on every authenticated bootstrap
-request. The deployment resolves the caller's current membership and account
+request. `createServiceDirectory(store)` resolves stored membership and account
 selection into `{ application, context, account, ownerValidator, chainIds }`;
 `null` means no assigned account. The relay derives the client ID, redirect
 URIs, and user handle from authentication, and advertises only selected chains
@@ -112,10 +112,12 @@ selection; existing connections retain their captured context.
 
 Local sessions and grant lookup are isolated by authenticated caller,
 workspace, and complete account profile. Switching contexts creates a distinct
-realm; switching back can resume its prior session. Bootstrap is read-only:
-membership storage, account selection UI, phone enrollment, and context-bound
-owner request routing remain deployment work pending their shared service
-implementation. The current phone remains the experimental surface described
+realm; switching back can resume its prior session. The service directory owns
+versioned workspace, application, membership, account, owner-device reference,
+and selection records, with memory and PostgreSQL stores. Membership removal
+blocks subsequent bootstrap resolution; it does not revoke existing grants.
+Account selection UI, phone enrollment, and context-bound owner request routing
+remain pending. The current phone remains the experimental surface described
 above.
 
 ```ts

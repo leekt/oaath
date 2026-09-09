@@ -57,6 +57,7 @@ describe("package boundary", () => {
       "captureIssuerIdentity",
       "captureOwnerSigningRequest",
       "captureRecord",
+      "captureServiceAccount",
       "captureServiceBootstrap",
       "captureSubjectBinding",
       "createGrant",

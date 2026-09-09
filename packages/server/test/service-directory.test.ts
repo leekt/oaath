@@ -1,0 +1,120 @@
+import { describe, expect, it } from "vitest";
+import { createMemoryServiceDirectoryStore, createServiceDirectory } from "../src/index.js";
+import { CLIENT_TOKEN, createHarness, expectOk, get } from "./support.js";
+import { directoryDocument, member } from "./support-directory.js";
+
+describe("service directory", () => {
+  it("resolves personal and team members through authenticated bootstrap", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    expect(
+      await directory.replace({ expectedRevision: null, directory: directoryDocument() }),
+    ).toBe(true);
+    const first = await directory.resolve(member("subject-1"));
+    const second = await directory.resolve(member("subject-2"));
+    expect(first?.context).toMatchObject({ workspaceId: "personal-1", accountId: "account-1" });
+    expect(second?.context).toMatchObject({ workspaceId: "team-1", accountId: "treasury" });
+    expect(await directory.resolve(member("unassigned"))).toBeNull();
+    expect(await directory.resolve({ ...member("subject-1"), clientId: "other-app" })).toBeNull();
+    const unused = async () => {
+      throw new Error("bootstrap must not access a chain");
+    };
+    const harness = createHarness({
+      bootstrap: directory,
+      chains: [
+        {
+          chainId: 31_337,
+          reads: unused,
+          observation: unused,
+          quote: unused,
+          bundler: unused,
+          submission: unused,
+          usage: null,
+          feePayer: null,
+          staticPaymasterConfigurationHash: null,
+        },
+      ],
+    });
+    const bootstrap = await expectOk<Record<string, unknown>>(
+      await harness.handler(get("/bootstrap", CLIENT_TOKEN)),
+      200,
+    );
+    expect(bootstrap).toMatchObject({
+      context: first?.context,
+      application: { clientId: "client-a" },
+      userHandle: "subject-1",
+    });
+  });
+
+  it("allows a member to select another assigned account and rejects foreign selections", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: directoryDocument() });
+    expect(
+      await directory.selectAccount(member("subject-1"), {
+        workspaceId: "team-1",
+        accountId: "treasury",
+      }),
+    ).toBe(true);
+    expect((await directory.resolve(member("subject-1")))?.context.workspaceId).toBe("team-1");
+    await expect(
+      directory.selectAccount(member("subject-2"), {
+        workspaceId: "personal-1",
+        accountId: "account-1",
+      }),
+    ).rejects.toMatchObject({ code: "relay_forbidden" });
+    await expect(
+      directory.selectAccount(member("subject-1"), { workspaceId: "team-1", accountId: "missing" }),
+    ).rejects.toMatchObject({ code: "relay_not_found" });
+  });
+
+  it("rejects stale writers without losing another caller's selection", async () => {
+    const store = createMemoryServiceDirectoryStore();
+    const first = createServiceDirectory(store);
+    const second = createServiceDirectory(store);
+    await first.replace({ expectedRevision: null, directory: directoryDocument() });
+    const stale = await first.read();
+    await second.selectAccount(member("subject-1"), {
+      workspaceId: "team-1",
+      accountId: "treasury",
+    });
+    expect(
+      await first.replace({ expectedRevision: stale!.revision, directory: stale!.directory }),
+    ).toBe(false);
+    expect((await first.resolve(member("subject-1")))?.context.workspaceId).toBe("team-1");
+  });
+
+  it("removal of membership denies bootstrap even when an old selection remains", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await directory.replace({ expectedRevision: null, directory: directoryDocument() });
+    const snapshot = (await directory.read())!;
+    await directory.replace({
+      expectedRevision: snapshot.revision,
+      directory: {
+        ...snapshot.directory,
+        memberships: snapshot.directory.memberships.filter(
+          (entry) => entry.subject !== "subject-1",
+        ),
+      },
+    });
+    expect(await directory.resolve(member("subject-1"))).toBeNull();
+    expect((await directory.resolve(member("subject-2")))?.context.workspaceId).toBe("team-1");
+  });
+
+  it("refuses dangling owner references and unreadable persisted state", async () => {
+    const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+    await expect(
+      directory.replace({
+        expectedRevision: null,
+        directory: { ...directoryDocument(), ownerDevices: [] },
+      }),
+    ).rejects.toMatchObject({ code: "relay_request_invalid" });
+    const unreadable = createServiceDirectory({
+      read: async () => ({ revision: 1, directory: {} }),
+      compareAndSwap: async () => {
+        throw new Error("must not write");
+      },
+    });
+    await expect(unreadable.resolve(member("subject-1"))).rejects.toMatchObject({
+      code: "relay_record_unreadable",
+    });
+  });
+});

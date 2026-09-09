@@ -93,6 +93,32 @@ export interface ServiceBootstrapApplication {
   readonly redirectUris: readonly string[];
 }
 
+/** Logical account and its deployment-owned owner-validator binding. */
+export interface ServiceAccount {
+  readonly account: Readonly<KernelAccountProfile>;
+  readonly ownerValidator: `0x${string}` | null;
+}
+
+export function captureServiceAccount(
+  accountValue: unknown,
+  validatorValue: unknown,
+  context: CaptureContext,
+  fail: CaptureFailure,
+): Readonly<ServiceAccount> {
+  const account = captureKernelAccountProfile(accountValue, context, fail);
+  let ownerValidator: `0x${string}` | null = null;
+  if (validatorValue !== null) {
+    if (typeof validatorValue !== "string" || !ADDRESS.test(validatorValue)) {
+      return fail("service account owner validator must be a lowercase address");
+    }
+    ownerValidator = validatorValue as `0x${string}`;
+  }
+  if ((account.ownerCredential.kind === "ecdsa") !== (ownerValidator !== null)) {
+    return fail("service account owner validator does not match the owner credential kind");
+  }
+  return Object.freeze({ account, ownerValidator });
+}
+
 export interface ServiceBootstrapChain {
   readonly chainId: number;
   /**
@@ -330,20 +356,12 @@ export function captureServiceBootstrap(
     chainIds.add(chain.chainId);
     return chain;
   });
-  const account = captureKernelAccountProfile(record.account, context, fail);
-  let ownerValidator: `0x${string}` | null = null;
-  if (record.ownerValidator !== null) {
-    if (typeof record.ownerValidator !== "string" || !ADDRESS.test(record.ownerValidator)) {
-      return fail("service bootstrap owner validator must be a lowercase address");
-    }
-    ownerValidator = record.ownerValidator as `0x${string}`;
-  }
-  // An ecdsa owner has no pinned validator module, so the deployment fact is
-  // required exactly when the owner credential is ecdsa and meaningless
-  // otherwise; a stray validator for another kind is refused, not ignored.
-  if ((account.ownerCredential.kind === "ecdsa") !== (ownerValidator !== null)) {
-    return fail("service bootstrap owner validator does not match the owner credential kind");
-  }
+  const { account, ownerValidator } = captureServiceAccount(
+    record.account,
+    record.ownerValidator,
+    context,
+    fail,
+  );
   return Object.freeze({
     version: OAATH_SERVICE_BOOTSTRAP_VERSION,
     context: captureWorkspaceAccountContext(record.context, context, fail),

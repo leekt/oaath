@@ -7,6 +7,10 @@
  * @author taek <leekt216@gmail.com>
  */
 
+export {
+  createPostgresServiceDirectorySchema,
+  createPostgresServiceDirectoryStore,
+} from "./directory/postgres.js";
 export type { RelaySchemaExecutor } from "./store/postgres/schema.js";
 export {
   createPostgresRelaySchema,
