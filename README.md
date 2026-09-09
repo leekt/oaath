@@ -120,10 +120,12 @@ workspace, and complete account profile. Switching contexts creates a distinct
 realm; switching back can resume its prior session. The service directory owns
 versioned workspace, application, membership, account, owner-device reference,
 and selection records, with memory and PostgreSQL stores. Membership removal
-blocks subsequent bootstrap resolution; it does not revoke existing grants.
-Account selection UI, phone enrollment, and context-bound owner request routing
-remain pending. The current phone remains the experimental surface described
-above.
+blocks subsequent bootstrap resolution and request admission; it does not revoke
+existing grants. The directory also resolves each permission request to the
+registered account's owner device, checking its explicit context and account
+profile rather than the current selection preference. Account selection UI and
+phone enrollment remain pending. The current phone remains the experimental
+surface described above.
 
 ```ts
 import { createOAAth } from "@oaath/sdk";

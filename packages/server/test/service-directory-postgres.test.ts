@@ -4,7 +4,7 @@ import {
   createPostgresServiceDirectorySchema,
   createPostgresServiceDirectoryStore,
 } from "../src/postgres.js";
-import { directoryDocument, member } from "./support-directory.js";
+import { directoryDocument, member, permissionScope } from "./support-directory.js";
 import {
   createPostgresFixture,
   type PostgresFixture,
@@ -51,6 +51,18 @@ import {
     const snapshot = (await restored.read())!;
     expect(snapshot.revision).toBe(2);
     expect(snapshot.directory.ownerDevices[1]?.subject).toBe("phone-subject-2");
+    expect(
+      await restored.resolveOwner(member("subject-1"), {
+        requestId: "restored-request",
+        requestedScope: permissionScope(),
+      }),
+    ).toEqual({ ownerDeviceId: "phone-1", ownerSubject: "phone-subject-1" });
+    expect(
+      await restored.resolveOwner(member("subject-2"), {
+        requestId: "team-request",
+        requestedScope: permissionScope("team-1"),
+      }),
+    ).toEqual({ ownerDeviceId: "phone-2", ownerSubject: "phone-subject-2" });
   });
 
   it("accepts exactly one writer at the same revision on independent connections", async () => {
@@ -89,6 +101,8 @@ import {
       createPostgresServiceDirectoryStore({ pool: fixture.createPool() }),
     );
     await admin.replace({ expectedRevision: null, directory: directoryDocument() });
+    const request = { requestId: "request-1", requestedScope: permissionScope("team-1") };
+    expect(await reader.resolveOwner(member("subject-1"), request)).not.toBeNull();
     expect(await reader.resolve(member("subject-1"))).not.toBeNull();
     const document = directoryDocument();
     await admin.replace({
@@ -99,6 +113,8 @@ import {
       },
     });
     expect(await reader.resolve(member("subject-1"))).toBeNull();
+    expect(await reader.resolveOwner(member("subject-1"), request)).toBeNull();
+    expect(await reader.resolveOwner(member("subject-2"), request)).not.toBeNull();
     expect(await reader.resolve(member("subject-2"))).not.toBeNull();
   });
 

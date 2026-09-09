@@ -5,6 +5,8 @@ import {
   parseAccountId,
   parseClientId,
 } from "@oaath/protocol";
+import type { RelayOwnerRouting } from "../authorization/request.js";
+import { classifyStoredAuthorizationScope } from "../authorization/scope.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayBootstrapConfiguration, RelayBootstrapSelection } from "../relay/handler.js";
 import type { RelayCaller } from "../security/authentication.js";
@@ -25,7 +27,7 @@ export interface ServiceDirectoryStore {
   ): Promise<boolean>;
 }
 
-export interface ServiceDirectory extends RelayBootstrapConfiguration {
+export interface ServiceDirectory extends RelayBootstrapConfiguration, RelayOwnerRouting {
   read(): Promise<Readonly<ServiceDirectorySnapshot> | null>;
   /** Deployment administration capability, never an unauthenticated HTTP endpoint. */
   replace(input: {
@@ -41,8 +43,8 @@ export interface ServiceDirectory extends RelayBootstrapConfiguration {
 
 /**
  * Owns membership/account selection over one versioned directory document.
- * Writes use compare-and-swap; bootstrap reads never reserve resources. A reload
- * reads durable state afresh. Member removal blocks new context resolution but
+ * Writes use compare-and-swap; bootstrap/admission reads never reserve resources.
+ * A reload reads durable state afresh. Member removal blocks new admission but
  * does not revoke grants or delete operation evidence. The deployment owns store
  * resources and cleanup; this service owns no connections and retries no writes.
  */
@@ -89,6 +91,43 @@ export function createServiceDirectory(store: ServiceDirectoryStore): Readonly<S
   }
   return Object.freeze<ServiceDirectory>({
     read,
+    async resolveOwner(caller, input) {
+      const scope = classifyStoredAuthorizationScope(input.requestedScope, input.requestId);
+      if (scope.kind !== "permission-request") return null;
+      const request = scope.request;
+      const snapshot = await read();
+      if (snapshot === null || !assigned(snapshot.directory, caller, request.context.workspaceId))
+        return null;
+      const directory = snapshot.directory;
+      const workspace = directory.workspaces.find(
+        (entry) => entry.workspaceId === request.context.workspaceId,
+      );
+      const application = directory.applications.find(
+        (entry) => entry.clientId === caller.clientId,
+      );
+      const account = directory.accounts.find(
+        (entry) =>
+          entry.workspaceId === request.context.workspaceId &&
+          entry.accountId === request.context.accountId,
+      );
+      if (
+        !workspace ||
+        !application ||
+        !account ||
+        workspace.kind !== request.context.workspaceKind ||
+        application.applicationId !== request.application.applicationId ||
+        caller.clientId !== request.application.clientId ||
+        JSON.stringify(account.account) !== JSON.stringify(request.logicalAccount)
+      )
+        return null;
+      const device = directory.ownerDevices.find(
+        (entry) =>
+          entry.workspaceId === workspace.workspaceId &&
+          entry.ownerDeviceId === account.ownerDeviceId,
+      );
+      if (!device) return null;
+      return Object.freeze({ ownerDeviceId: device.ownerDeviceId, ownerSubject: device.subject });
+    },
     async replace(input): Promise<boolean> {
       if (
         input.expectedRevision !== null &&

@@ -51,7 +51,7 @@ import {
   OAATH_PERMISSION_REQUEST_VERSION,
   parseGrantVerificationResult,
 } from "@oaath/protocol";
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
+import { createMemoryRelayStore, createMemoryServiceDirectoryStore, createRelayHandler, createServiceDirectory } from "@oaath/server";
 import { APNS_PAYLOAD_MAX_BYTES, createApnsSender } from "@oaath/server/apns";
 import { NATIVE_DISPLAY_PAYLOAD_LENGTH, projectOwnerPhoneRequest } from "@oaath/server/native";
 import {
@@ -77,6 +77,7 @@ const REDIRECT_URI = "https://app.example/callback";
 const CLIENT_TOKEN = "client-token";
 const OWNER_TOKEN = "owner-token";
 const SUBJECT = "subject-1";
+const TEAM_OWNER_TOKEN = "team-owner-token";
 const CODE_VERIFIER = "smoke-code-verifier-that-is-long-enough-0123";
 const ARTIFACT = JSON.stringify({ grant: "approved", smoke: true });
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
@@ -151,6 +152,25 @@ const requestedScope = JSON.stringify({
   sessionSigner: null,
 });
 
+const permission = JSON.parse(requestedScope);
+const teamAccount = { ...structuredClone(permission.logicalAccount), accountIndex: "1" };
+const directory = createServiceDirectory(createMemoryServiceDirectoryStore());
+await directory.replace({ expectedRevision: null, directory: {
+  version: "oaath.service-directory/v1",
+  applications: [{ clientId: "client-a", applicationId: permission.application.applicationId, applicationName: "Packed consumer" }],
+  workspaces: [{ workspaceId: "personal-1", kind: "personal" }, { workspaceId: "team-1", kind: "team" }],
+  memberships: ["personal-1", "team-1"].map((workspaceId) => ({ workspaceId, clientId: "client-a", subject: SUBJECT })),
+  ownerDevices: [
+    { workspaceId: "personal-1", ownerDeviceId: "owner-phone", subject: "phone-subject" },
+    { workspaceId: "team-1", ownerDeviceId: "team-phone", subject: "team-phone-subject" },
+  ],
+  accounts: [
+    { workspaceId: "personal-1", accountId: "account-1", ownerDeviceId: "owner-phone", account: permission.logicalAccount, ownerValidator: "0x" + "22".repeat(20), chainIds: [31337] },
+    { workspaceId: "team-1", accountId: "treasury", ownerDeviceId: "team-phone", account: teamAccount, ownerValidator: "0x" + "22".repeat(20), chainIds: [31337] },
+  ],
+  selections: [{ clientId: "client-a", subject: SUBJECT, workspaceId: "personal-1", accountId: "account-1" }],
+} });
+
 const callers = new Map([
   [
     CLIENT_TOKEN,
@@ -165,10 +185,11 @@ const callers = new Map([
   // The owner caller keeps the pre-audience port shape on purpose: a
   // deployment that declares no audience must keep authenticating.
   [OWNER_TOKEN, { role: "owner", clientId: "owner-console", subject: "phone-subject", redirectUris: [] }],
+  [TEAM_OWNER_TOKEN, { role: "owner", clientId: "owner-phone", subject: "team-phone-subject", redirectUris: [] }],
 ]);
 
 const handler = createRelayHandler({
-  ownerRouting: { async resolveOwner() { return { ownerDeviceId: "owner-phone", ownerSubject: "phone-subject" }; } },
+  ownerRouting: directory,
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {
@@ -209,6 +230,8 @@ async function ok(response, status, label) {
   return response.json();
 }
 
+// A captured personal request retains its account even after the selection changes.
+await directory.selectAccount(callers.get(CLIENT_TOKEN), { workspaceId: "team-1", accountId: "treasury" });
 // The relay's full wire round-trip: create, fetch, approve, consume, claim.
 const created = await ok(
   await handler(
@@ -265,6 +288,32 @@ const claimed = await ok(
 );
 if (claimed.artifact !== ARTIFACT) fail("the claimed artifact is not the sealed artifact");
 if (claimed.requestId !== created.requestId) fail("the artifact belongs to another request");
+
+// The same service routes a team account to its own phone, then keeps that
+// admitted route when membership is removed. New requests are refused.
+const teamScope = JSON.stringify({ ...permission,
+  context: { ...permission.context, workspaceId: "team-1", workspaceKind: "team", accountId: "treasury" },
+  logicalAccount: teamAccount,
+});
+const teamCreated = await ok(await handler(request("POST", "/authorization/requests", CLIENT_TOKEN, {
+  redirectUri: REDIRECT_URI, codeChallenge: deriveCodeChallenge(CODE_VERIFIER), requestedScope: teamScope,
+})), 201, "team create");
+const wrongOwner = await handler(request("GET", "/authorization/requests/" + teamCreated.requestId, OWNER_TOKEN));
+if (wrongOwner.status !== 404) fail("personal phone accessed the team request");
+const snapshot = await directory.read();
+await directory.replace({ expectedRevision: snapshot.revision, directory: { ...snapshot.directory, memberships: [] } });
+const refused = await handler(request("POST", "/authorization/requests", CLIENT_TOKEN, {
+  redirectUri: REDIRECT_URI, codeChallenge: deriveCodeChallenge(CODE_VERIFIER), requestedScope: teamScope,
+}));
+if (refused.status !== 403 || (await refused.json()).error?.code !== "relay_forbidden") fail("removed member created a request");
+const teamApproval = await ok(await handler(request("POST", "/authorization/requests/" + teamCreated.requestId + "/decision", TEAM_OWNER_TOKEN, {
+  outcome: "approved", artifact: ARTIFACT,
+})), 200, "team approve");
+const teamConsumed = await ok(await handler(request("POST", "/authorization/codes/consume", CLIENT_TOKEN, {
+  code: teamApproval.code, codeVerifier: CODE_VERIFIER, redirectUri: REDIRECT_URI,
+})), 200, "team consume");
+const teamClaimed = await ok(await handler(request("POST", "/authorization/artifacts/" + teamConsumed.artifactId + "/claim", CLIENT_TOKEN)), 200, "team claim");
+if (teamClaimed.requestId !== teamCreated.requestId || teamClaimed.artifact !== ARTIFACT) fail("team artifact binding was lost");
 
 // One-time claim: the replay must fail closed and disclose nothing.
 const replayed = await handler(
@@ -361,7 +410,9 @@ const TYPES = `import {
 } from "@oaath/protocol";
 import {
   createMemoryRelayStore,
+  createMemoryServiceDirectoryStore,
   createRelayHandler,
+  createServiceDirectory,
   type RelayClock,
   type RelayHandler,
   type RelayStore,
@@ -391,7 +442,7 @@ export const store: RelayStore = createMemoryRelayStore();
 
 export function relay(): RelayHandler {
   return createRelayHandler({
-    ownerRouting: { async resolveOwner() { return null; } },
+    ownerRouting: createServiceDirectory(createMemoryServiceDirectoryStore()),
     store,
     authentication: { authenticate: async () => null },
     kms: { encrypt: async (value: string) => value, decrypt: async (value: string) => value },
@@ -480,6 +531,9 @@ try {
     );
   }
   console.log("  relay            create, fetch, approve, consume, claim");
+  console.log(
+    "  directory        personal/team owner routes, selection independence, member removal",
+  );
   console.log(
     `  verify           exact revision ${report.verifyState}, newer revision ${report.verifyDenialCode}, replay identical`,
   );
