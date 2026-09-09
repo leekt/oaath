@@ -5,13 +5,12 @@ import {
   type KernelV4RevocationSigningRequest,
   parseKernelV4RevocationSigningRequest,
 } from "@oaath/protocol";
-import { sha256Base64Url } from "../authorization/challenge.js";
 import { relayFailure } from "../relay/errors.js";
 import {
-  NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
   type OwnerPhonePermissionScopeProjection,
   type OwnerPhoneRequestProjection,
+  ownerPhoneDisplayPayload,
   projectPermissionConsent,
 } from "./projection.js";
 
@@ -62,13 +61,10 @@ export async function projectOwnerPhoneRevocation(input: {
   )
     return relayFailure("relay_request_invalid", "revocation projection metadata is invalid");
   const request = parseKernelV4RevocationSigningRequest(input.request);
-  const display = await sha256Base64Url(
-    `oaath.native-display/v1:${input.ownerSubject}:${input.operationId}`,
-  );
   return Object.freeze({
     version: OAATH_NATIVE_PROJECTION_VERSION,
     operationId: input.operationId,
-    displayPayload: display.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
+    displayPayload: await ownerPhoneDisplayPayload(input.ownerSubject, input.operationId),
     expiresAt: input.expiresAt,
     client: Object.freeze({
       clientId: request.permissionRequest.application.clientId,

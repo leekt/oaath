@@ -108,9 +108,11 @@ describe("package boundary", () => {
   it("exports only the experimental phone-approval preview owners", () => {
     expect(Object.keys(native).sort()).toEqual([
       "NATIVE_DISPLAY_PAYLOAD_LENGTH",
+      "OAATH_NATIVE_INBOX_VERSION",
       "OAATH_NATIVE_PROJECTION_VERSION",
       "fetchClientPhoneRevocation",
       "fetchOwnerPhoneRevocation",
+      "listOwnerPhoneRequests",
       "projectOwnerPhonePermissionSigning",
       "projectOwnerPhoneRequest",
       "projectOwnerPhoneRevocation",

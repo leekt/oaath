@@ -22,6 +22,26 @@ const ARTIFACT_COLUMNS = `
   created_at, claimed_at
 `;
 
+/** One read snapshot of both existing request/decision pairs; no inbox table or lease. */
+export const LIST_PENDING_OWNER_REQUESTS = `
+  SELECT kind, record FROM (
+    SELECT 'authorization' AS kind, to_jsonb(request) AS record,
+      request.request_id AS operation_id, request.expires_at
+    FROM oaath_relay_authorization_request_v2 AS request
+    WHERE request.owner_subject = $1 AND request.expires_at > $2
+      AND NOT EXISTS (SELECT 1 FROM oaath_relay_authorization_decision_v1 AS decision
+        WHERE decision.request_id = request.request_id)
+    UNION ALL
+    SELECT 'revocation' AS kind, request.record,
+      request.operation_id, (request.record->>'expiresAt')::bigint AS expires_at
+    FROM oaath_relay_revocation_request_v1 AS request
+    WHERE request.record->>'ownerSubject' = $1 AND (request.record->>'expiresAt')::bigint > $2
+      AND NOT EXISTS (SELECT 1 FROM oaath_relay_revocation_decision_v1 AS decision
+        WHERE decision.operation_id = request.operation_id)
+  ) AS pending
+  ORDER BY expires_at, operation_id COLLATE "C" LIMIT $3
+`;
+
 export const LOCK_AUTHORIZATION_REQUEST = `
   SELECT ${REQUEST_COLUMNS}
   FROM oaath_relay_authorization_request_v2
