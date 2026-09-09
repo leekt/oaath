@@ -8,6 +8,7 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../src/kernel/modules.js";
+import { bindKernelPermissionApproval } from "../src/kernel/permission/materialize.js";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
@@ -401,6 +402,76 @@ describe("all-chain permission approval", () => {
 });
 
 describe("all-chain permission materialization", () => {
+  it("separates preparation from signing the restored snapshot through one bound approval", async () => {
+    const approval = await approve();
+    const bound = await local.session.bindAccount({
+      accountIndex: "0",
+      initialPackages: local.owner.packages,
+    });
+    let preparations = 0;
+    let signatures = 0;
+    const runtime = {
+      ...local.session,
+      prepareOperation: (input: Parameters<typeof local.session.prepareOperation>[0]) => {
+        preparations += 1;
+        return local.session.prepareOperation(input);
+      },
+      signOperation: (prepared: unknown) => {
+        signatures += 1;
+        return local.session.signOperation(prepared);
+      },
+    };
+    const permission = bindKernelPermissionApproval({ runtime, approval, account: bound.account });
+    const prepared = permission.prepareOperation({
+      kind: "execution",
+      grantId: "split-materialization",
+      account: bound,
+      nonceKey: "7",
+      sequence: "3",
+      calls: [{ target, value: "500", data: "0x" }],
+      gas,
+    });
+    expect(preparations).toBe(1);
+    expect(signatures).toBe(0);
+    expect(permission.dummySignature.includes(approval.enableSignature.slice(2))).toBe(true);
+
+    const restored = JSON.parse(JSON.stringify(prepared));
+    const recreated = bindKernelPermissionApproval({ runtime, approval, account: bound.account });
+    const signature = await recreated.signOperation(restored);
+    expect(preparations).toBe(1);
+    expect(signatures).toBe(1);
+    const external = await sessionAccount.sign({ hash: prepared.userOperationHash });
+    expect((await recreated.encodeVerifiedSignature(restored, external)) === signature).toBe(true);
+    expect(signatures).toBe(1);
+
+    const standard = local.session.prepareOperation({
+      kind: "execution",
+      grantId: "standard-is-not-materialization",
+      account: bound,
+      nonceKey: "7",
+      sequence: "3",
+      calls: [{ target, value: "500", data: "0x" }],
+      gas,
+    });
+    await expect(recreated.signOperation(standard)).rejects.toMatchObject({
+      code: "kernel_runtime_binding_mismatch",
+    });
+    const foreignAccount = {
+      ...restored,
+      userOperation: { ...restored.userOperation, sender: `0x${"67".repeat(20)}` },
+    };
+    await expect(recreated.signOperation(foreignAccount)).rejects.toMatchObject({
+      code: "kernel_runtime_binding_mismatch",
+    });
+    await expect(recreated.encodeVerifiedSignature(foreignAccount, external)).rejects.toMatchObject(
+      {
+        code: "kernel_runtime_binding_mismatch",
+      },
+    );
+    expect(signatures).toBe(1);
+    expect(preparations).toBe(1);
+  });
+
   it("prepares one enable-mode operation and wraps it in Kernel's enable envelope", async () => {
     const approval = await approve();
     const bound = await local.session.bindAccount({
