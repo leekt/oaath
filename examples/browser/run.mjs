@@ -92,6 +92,11 @@ const callers = new Map([
 ]);
 const KMS_PREFIX = "oaath-example-kms:v1:";
 const relay = createRelayHandler({
+  ownerRouting: {
+    async resolveOwner() {
+      return { ownerDeviceId: "demo-owner", ownerSubject: SUBJECT };
+    },
+  },
   store: createMemoryRelayStore(),
   authentication: {
     async authenticate(request) {

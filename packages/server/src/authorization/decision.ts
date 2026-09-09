@@ -20,7 +20,7 @@
  * cleanup owner          the relay transaction; refused approvals allocate nothing
  * ```
  *
- * Subject binding: the authoritative subject is recovered from the stored
+ * Owner binding: the approving subject is recovered from the stored
  * authorization request by `requestId` and compared against the authenticated
  * owner. No wire field names the subject. A decision envelope that carries a
  * subject identifier is rejected as an unknown field by exact capture, because a
@@ -142,9 +142,8 @@ export async function submitAuthorizationDecision(
 
   const redirectUri = await withRelayTransaction(input.store, async (transaction) => {
     const request = await transaction.lockAuthorizationRequest(input.requestId);
-    // The stored request owns the subject. A mismatch is reported as absence so
-    // the endpoint is not an existence oracle for another subject's request.
-    if (!request || request.subject !== input.caller.subject) {
+    // The request snapshots its approving subject independently of its requester.
+    if (!request || request.ownerSubject !== input.caller.subject) {
       return relayFailure("relay_not_found", "authorization request does not exist");
     }
     if (await transaction.lockAuthorizationDecision(input.requestId)) {

@@ -17,10 +17,17 @@ import { createPostgresRelayStore } from "@oaath/server/postgres";
 const handler = createRelayHandler({
   store: createPostgresRelayStore({ connectionString }),
   authentication, // deployment-owned client/device authentication
+  ownerRouting, // resolveOwner(caller, request) returns { ownerDeviceId, ownerSubject } or null
   kms, // deployment-owned encrypt/decrypt; plaintext never reaches the store
   clock: { now: () => Date.now() },
 });
 ```
+
+`ownerRouting.resolveOwner(caller, { requestId, requestedScope })` is required.
+The relay captures its route once in the immutable request; null refuses creation.
+The approving phone authenticates as `ownerSubject`, independently of the requesting
+member. Changing the resolver cannot redirect an existing request. Requester
+authentication and grant reference verification retain the member's subject.
 
 ## Service directory
 
@@ -40,7 +47,7 @@ const directory = createServiceDirectory(
   createPostgresServiceDirectoryStore({ pool }),
 );
 await directory.replace({ expectedRevision: null, directory: initialDirectory });
-const handler = createRelayHandler({ store, authentication, kms, clock, chains,
+const handler = createRelayHandler({ store, authentication, ownerRouting, kms, clock, chains,
   bootstrap: directory });
 ```
 
@@ -152,7 +159,7 @@ How an application organization/audience maps to the OAAth client/realm:
 ## Schema
 
 `createPostgresRelaySchema` creates the one current schema
-(`oaath.relay-postgres-schema/v1`). There is no migration runner: an obsolete
+(`oaath.relay-postgres-schema/v2`). There is no migration runner: an obsolete
 database is dropped and recreated.
 
 ## Tests

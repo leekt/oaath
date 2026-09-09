@@ -1,12 +1,16 @@
 /**
  * Create and read an authorization request.
  *
- * The request record is immutable once created. Its decision is a separate
- * terminal record, so "was this decided?" has exactly one owner.
+ * The request record snapshots the resolved approving device separately from
+ * the requesting member. It is immutable once created; reads and decisions never
+ * re-resolve the owner. A refused route creates no row. After a crash, the durable
+ * route remains authoritative. Creation does not automatically retry writes.
+ * Its decision is a separate terminal record, so "was this decided?" has one owner.
  *
  * @author taek <leekt216@gmail.com>
  */
 
+import { exactRecord } from "@oaath/protocol";
 import { type RelayClock, relayNow } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
@@ -14,16 +18,27 @@ import type { RelayStore, RelayTransaction } from "../store/interface.js";
 import { withRelayTransaction } from "../store/interface.js";
 import {
   type AuthorizationDecisionOutcome,
+  type AuthorizationOwnerRoute,
   type AuthorizationRequestRecord,
+  canonicalIdentifier,
   OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION,
 } from "../store/records.js";
 import { isCodeChallengeS256, randomIdentifier } from "./challenge.js";
+
+/** Resolves once at creation; existing requests never follow later routing changes. */
+export interface RelayOwnerRouting {
+  resolveOwner(
+    caller: Readonly<RelayCaller>,
+    request: Readonly<{ requestId: string; requestedScope: string }>,
+  ): Promise<Readonly<AuthorizationOwnerRoute> | null>;
+}
 
 export interface CreateAuthorizationRequestInput {
   readonly store: RelayStore;
   readonly clock: RelayClock;
   /** Authenticated `client` caller; it owns `clientId` and `subject`. */
   readonly caller: RelayCaller;
+  readonly ownerRouting: RelayOwnerRouting;
   readonly redirectUri: string;
   readonly codeChallenge: string;
   readonly requestedScope: string;
@@ -59,12 +74,29 @@ export async function createAuthorizationRequest(
   if (!input.caller.redirectUris.includes(input.redirectUri)) {
     return relayFailure("relay_forbidden", "redirectUri is not registered for this client");
   }
+  const requestId = randomIdentifier();
+  const resolved = await input.ownerRouting.resolveOwner(
+    input.caller,
+    Object.freeze({ requestId, requestedScope: input.requestedScope }),
+  );
+  if (resolved === null) return relayFailure("relay_forbidden", "no approving device is assigned");
+  const owner = exactRecord(
+    resolved,
+    ["ownerDeviceId", "ownerSubject"],
+    "owner route",
+    new WeakSet(),
+    (message) => relayFailure("relay_internal", message),
+  );
+  const ownerDeviceId = canonicalIdentifier(owner.ownerDeviceId, "ownerDeviceId", "relay_internal");
+  const ownerSubject = canonicalIdentifier(owner.ownerSubject, "ownerSubject", "relay_internal");
   const createdAt = relayNow(input.clock);
   const record: AuthorizationRequestRecord = Object.freeze({
     version: OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION,
-    requestId: randomIdentifier(),
+    requestId,
     clientId: input.caller.clientId,
     subject: input.caller.subject,
+    ownerDeviceId,
+    ownerSubject,
     organizationAudience: input.caller.organizationAudience,
     redirectUri: input.redirectUri,
     codeChallenge: input.codeChallenge,
@@ -131,7 +163,7 @@ export function fetchAuthorizationRequest(
       transaction,
       input.requestId,
       now,
-      (request) => request.subject === input.caller.subject,
+      (request) => request.ownerSubject === input.caller.subject,
     ),
   );
 }

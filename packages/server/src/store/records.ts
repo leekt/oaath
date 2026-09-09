@@ -19,7 +19,7 @@ import { type CaptureContext, exactRecord } from "@oaath/protocol";
 import { type RelayErrorCode, relayFailure } from "../relay/errors.js";
 
 export const OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION =
-  "oaath.authorization-request-record/v1" as const;
+  "oaath.authorization-request-record/v2" as const;
 export const OAATH_AUTHORIZATION_DECISION_RECORD_VERSION =
   "oaath.authorization-decision-record/v1" as const;
 export const OAATH_AUTHORIZATION_CODE_RECORD_VERSION =
@@ -42,12 +42,18 @@ export const RELAY_LIMITS = Object.freeze({
 
 const MAX_TIMESTAMP = Number.MAX_SAFE_INTEGER;
 
-export interface AuthorizationRequestRecord {
+/** Deployment-selected device reference and its authenticated approving subject. */
+export interface AuthorizationOwnerRoute {
+  readonly ownerDeviceId: string;
+  readonly ownerSubject: string;
+}
+
+export interface AuthorizationRequestRecord extends AuthorizationOwnerRoute {
   readonly version: typeof OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION;
   readonly requestId: string;
   /** Client bound by the deployment authentication port, never by wire input. */
   readonly clientId: string;
-  /** Pairwise user/device subject bound by the authentication port. */
+  /** Requesting member's subject, independent of the approving device. */
   readonly subject: string;
   /**
    * Organization/audience bound by the authentication port at creation time,
@@ -219,6 +225,8 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
       "requestId",
       "clientId",
       "subject",
+      "ownerDeviceId",
+      "ownerSubject",
       "organizationAudience",
       "redirectUri",
       "codeChallenge",
@@ -237,6 +245,8 @@ export function parseAuthorizationRequestRecord(value: unknown): AuthorizationRe
     requestId: canonicalIdentifier(record.requestId, "requestId", UNREADABLE),
     clientId: canonicalIdentifier(record.clientId, "clientId", UNREADABLE),
     subject: canonicalIdentifier(record.subject, "subject", UNREADABLE),
+    ownerDeviceId: canonicalIdentifier(record.ownerDeviceId, "ownerDeviceId", UNREADABLE),
+    ownerSubject: canonicalIdentifier(record.ownerSubject, "ownerSubject", UNREADABLE),
     organizationAudience:
       record.organizationAudience === null
         ? null

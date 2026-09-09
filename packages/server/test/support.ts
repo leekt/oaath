@@ -7,6 +7,7 @@
 
 import { expect } from "vitest";
 import { sha256Base64Url } from "../src/authorization/challenge.js";
+import type { RelayOwnerRouting } from "../src/authorization/request.js";
 import type { RelayClock } from "../src/clock.js";
 import { OaathRelayError, RELAY_ERROR_STATUS, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";
@@ -188,6 +189,14 @@ export function createTestAuthentication(): RelayAuthentication {
   };
 }
 
+export function createTestOwnerRouting(): RelayOwnerRouting {
+  return {
+    async resolveOwner() {
+      return { ownerDeviceId: "phone-1", ownerSubject: "subject-1" };
+    },
+  };
+}
+
 const KMS_PREFIX = "oaath-test-kms:v1:";
 
 /** Deterministic and reversible, so a "restart" can still open earlier references. */
@@ -224,6 +233,7 @@ export function createHarness(
     handler: createRelayHandler({
       store,
       authentication: createTestAuthentication(),
+      ownerRouting: createTestOwnerRouting(),
       clock,
       ...overrides,
       kms,

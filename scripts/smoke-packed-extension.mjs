@@ -290,6 +290,7 @@ try {
   };
 
   relay = createRelayHandler({
+    ownerRouting: { async resolveOwner() { return { ownerDeviceId: "chromium-phone", ownerSubject: "chromium-owner" }; } },
     store: relayStore,
     authentication: {
       async authenticate(request) {
@@ -298,7 +299,7 @@ try {
           return {
             role: "owner",
             clientId: "owner-console",
-            subject: "chromium-subject",
+            subject: "chromium-owner",
             redirectUris: [],
           };
         }

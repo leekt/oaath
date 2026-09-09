@@ -57,6 +57,7 @@ import {
   type AuthorizationState,
   createAuthorizationRequest,
   fetchAuthorizationRequest,
+  type RelayOwnerRouting,
 } from "../authorization/request.js";
 import { resumeAuthorization } from "../authorization/resume.js";
 import { verifyGrantReference } from "../authorization/verify.js";
@@ -175,6 +176,8 @@ export interface RelayPaymasterServiceConfiguration {
 export interface RelayHandlerOptions {
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
+  /** Required. Resolves an approving device independently of the requesting member. */
+  readonly ownerRouting: RelayOwnerRouting;
   readonly kms: RelayKms;
   readonly clock: RelayClock;
   /** Optional. There is no default limiter. */
@@ -200,6 +203,7 @@ export type RelayHandler = (request: Request) => Promise<Response>;
 const OPTION_KEYS: readonly string[] = [
   "store",
   "authentication",
+  "ownerRouting",
   "kms",
   "clock",
   "rateLimit",
@@ -267,6 +271,7 @@ function duration(value: unknown, fallback: number, label: string, maximum = MAX
 interface CapturedOptions {
   readonly store: RelayStore;
   readonly authentication: RelayAuthentication;
+  readonly ownerRouting: RelayOwnerRouting;
   readonly kms: RelayKms;
   readonly clock: RelayClock;
   readonly rateLimit: RelayRateLimiter | undefined;
@@ -444,6 +449,11 @@ function captureOptions(value: unknown): CapturedOptions {
       record.authentication,
       ["authenticate"],
       "authentication",
+    ),
+    ownerRouting: requirePort<RelayOwnerRouting>(
+      record.ownerRouting,
+      ["resolveOwner"],
+      "ownerRouting",
     ),
     kms: requirePort<RelayKms>(record.kms, ["encrypt", "decrypt"], "kms"),
     clock: requirePort<RelayClock>(record.clock, ["now"], "clock"),
@@ -926,6 +936,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       ]);
       const created = await createAuthorizationRequest({
         store: captured.store,
+        ownerRouting: captured.ownerRouting,
         clock: captured.clock,
         caller,
         redirectUri: boundedText(

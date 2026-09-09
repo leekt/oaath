@@ -242,13 +242,23 @@ const authentication = {
     const header = request.headers.get("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (token === CLIENT_TOKEN)
-      return { role: "client", clientId: CLIENT_ID, subject: SUBJECT, redirectUris: [redirectUri] };
+      return {
+        role: "client",
+        clientId: CLIENT_ID,
+        subject: "demo-member",
+        redirectUris: [redirectUri],
+      };
     if (token === OWNER_TOKEN || pairedDevices.has(token))
       return { role: "owner", clientId: "demo-owner-phone", subject: SUBJECT, redirectUris: [] };
     return null;
   },
 };
 const relayHandler = createRelayHandler({
+  ownerRouting: {
+    async resolveOwner() {
+      return { ownerDeviceId: "demo-owner-phone", ownerSubject: SUBJECT };
+    },
+  },
   store,
   authentication,
   kms,

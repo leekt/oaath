@@ -8,7 +8,7 @@
  */
 
 const REQUEST_COLUMNS = `
-  request_id, record_version, client_id, subject, organization_audience,
+  request_id, record_version, client_id, subject, owner_device_id, owner_subject, organization_audience,
   redirect_uri, code_challenge, requested_scope, created_at, expires_at
 `;
 
@@ -24,14 +24,14 @@ const ARTIFACT_COLUMNS = `
 
 export const LOCK_AUTHORIZATION_REQUEST = `
   SELECT ${REQUEST_COLUMNS}
-  FROM oaath_relay_authorization_request_v1
+  FROM oaath_relay_authorization_request_v2
   WHERE request_id = $1
   FOR UPDATE
 `;
 
 export const INSERT_AUTHORIZATION_REQUEST = `
-  INSERT INTO oaath_relay_authorization_request_v1 (${REQUEST_COLUMNS})
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+  INSERT INTO oaath_relay_authorization_request_v2 (${REQUEST_COLUMNS})
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
   ON CONFLICT (request_id) DO NOTHING
 `;
 
