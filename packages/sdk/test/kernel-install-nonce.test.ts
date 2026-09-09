@@ -1,5 +1,16 @@
+import { decodeFunctionData, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
-import { kernelPermissionInstallNonce } from "../src/kernel.js";
+import {
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
+  kernelPermissionInstallNonce,
+} from "../src/kernel.js";
+
+const account = `0x${"66".repeat(20)}` as const;
+const nonceAbi = parseAbi([
+  "function nonce(uint192 key) view returns (uint256)",
+  "function setNonce(uint192 nonceKey, uint64 seq)",
+]);
 
 describe("permission install nonce derivation", () => {
   it("uses the first 192 request-hash bits as the key, starting at sequence zero", () => {
@@ -21,4 +32,33 @@ describe("permission install nonce derivation", () => {
       );
     },
   );
+});
+
+describe("Kernel install nonce invalidation codecs", () => {
+  it("targets the same install key at the next sequence with a zero-value self-call", () => {
+    const key = (1n << 192n) - 1n;
+    const installNonce = ((key << 64n) | 7n).toString(10);
+    const call = encodeKernelV4InstallNonceInvalidationCall({ account, installNonce });
+    expect(call.target).toBe(account);
+    expect(call.value).toBe("0");
+    expect(decodeFunctionData({ abi: nonceAbi, data: call.data })).toEqual({
+      functionName: "setNonce",
+      args: [key, 8n],
+    });
+    expect(
+      decodeFunctionData({
+        abi: nonceAbi,
+        data: encodeKernelV4InstallNonceRead({ key: key.toString(10) }),
+      }),
+    ).toEqual({ functionName: "nonce", args: [key] });
+  });
+
+  it("refuses an exhausted sequence instead of overflowing into another install key", () => {
+    expect(() =>
+      encodeKernelV4InstallNonceInvalidationCall({
+        account,
+        installNonce: ((9n << 64n) | ((1n << 64n) - 1n)).toString(10),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+  });
 });
