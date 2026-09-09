@@ -728,7 +728,9 @@ private func decimalMagnitude(_ text: String) -> [UInt8]? {
     return word
 }
 
-private func decimalWord(_ text: String, signed: Bool, width: Int) -> [UInt8]? {
+// Shared with the closed Kernel operation codec. Callers capture canonical
+// decimal syntax first; this pure encoder owns integer-width enforcement.
+func decimalWord(_ text: String, signed: Bool, width: Int) -> [UInt8]? {
     guard let magnitude = decimalMagnitude(text) else { return nil }
     let byteWidth = width / 8
     var maximum = [UInt8](repeating: 0, count: 32)
@@ -752,7 +754,8 @@ private func decimalWord(_ text: String, signed: Bool, width: Int) -> [UInt8]? {
     return complement
 }
 
-private func decodeLowercaseEIP712Hex(_ text: String, exactBytes: Int? = nil) -> [UInt8]? {
+// Package-only byte decoding also serves the closed Kernel operation codec.
+func decodeLowercaseEIP712Hex(_ text: String, exactBytes: Int? = nil) -> [UInt8]? {
     let source = Array(text.utf8)
     guard source.count >= 2, source[0] == 48, source[1] == 120,
           (source.count - 2).isMultiple(of: 2)
