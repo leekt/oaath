@@ -126,9 +126,10 @@ existing grants. The directory also resolves each permission request to the
 registered account's owner device, checking its explicit context and account
 profile rather than the current selection preference. After deployment-authenticated
 pairing, `enrollOwnerDevice` registers a phone and its new P-256 accounts in one
-directory write. The runnable phone demo uses this directory, canonical native
-permission approval, and the URL SDK for bounded jobs and saved-operation
-observation. Account selection UI remains deployment-owned.
+directory write. The [reference phone service](examples/phone) uses this directory,
+canonical native permission approval, and the URL SDK for personal/team jobs,
+saved-operation recovery and revocation across two configured local chains.
+Account selection UI remains deployment-owned.
 
 ```ts
 import { createOAAth } from "@oaath/sdk";

@@ -36,9 +36,8 @@ if (anvilAvailable()) {
     env: { OAATH_PHONE_SIMULATE: "1", OAATH_PORT: "0" },
   });
   examples.push({ label: "all-chain", script: "all-chain/run.mjs", env: {} });
-  examples.push({ label: "service", script: "service/run.mjs", env: {} });
 } else {
-  console.log("examples:check: skipping phone, all-chain and service, Anvil is not installed");
+  console.log("examples:check: skipping phone and all-chain, Anvil is not installed");
 }
 
 const failures = [];
