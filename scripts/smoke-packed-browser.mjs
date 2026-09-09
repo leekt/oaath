@@ -22,6 +22,8 @@
  *     sponsored EIP-5792 bundle without another paymaster call or submission;
  *   - replaying its app-provided ID after recreation returns `5720` without
  *     opening another submission;
+ *   - a primary send exposes its stable operation ID; after full IndexedDB
+ *     recreation and grant expiry, public lookup only observes that operation;
  *   - the public surface carries no protocol mechanics;
  *   - the published types resolve under `nodenext` strict with no `@types/node`.
  *
@@ -245,6 +247,7 @@ const authorization = {
 let chainEnabled = false;
 let chainTouches = 0;
 const sends = [];
+let quotes = 0;
 const sponsorshipStages = [];
 function requireChain(port) {
   if (!chainEnabled) fail("requestPermission reached the chain " + port + " port");
@@ -319,6 +322,7 @@ const chain = {
   },
   async quote(request) {
     requireChain("quote");
+    quotes += 1;
     return {
       nonceKey: "0",
       sequence: String(sends.length),
@@ -548,6 +552,61 @@ await recreated.close();
 database.close();
 if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invalidated");
 
+// A separate application life proves primary send/recovery using only the ID
+// on the public handle. No provider bundle or injected journal supplies it.
+const operationDb = new IDBFactory();
+database = await openOaathDatabase({ factory: operationDb });
+stores = durableStores();
+const jobs = createRealm();
+const jobsConnection = await jobs.connect();
+const jobsGrant = await jobsConnection.requestPermission({
+  chainScope: "all",
+  permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
+  expiresIn: EXPIRES_IN,
+  perChainOperationLimit: 10,
+});
+const jobOperation = await jobsGrant.sendCalls({
+  chain: CHAIN_ID,
+  calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
+});
+const savedOperation = { chain: jobOperation.chainId, id: jobOperation.id };
+if (!/^0x[0-9a-f]{64}$/.test(savedOperation.id)) fail("public operation ID is missing");
+const beforeRecovery = { sends: sends.length, quotes, owners: ownerRequests.length };
+let occupiedCode = null;
+try {
+  await jobsGrant.sendCalls({
+    chain: CHAIN_ID,
+    calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" + "00".repeat(32) }],
+  });
+} catch (error) {
+  occupiedCode = error?.code;
+}
+if (occupiedCode !== "oaath_client_state_conflict") fail("occupied primary lane adopted new calls");
+await jobs.close();
+await database.close();
+clock += EXPIRES_IN + 1;
+database = await openOaathDatabase({ factory: operationDb });
+stores = durableStores();
+const restoredJobs = createRealm();
+const restoredJobsConnection = await restoredJobs.connect();
+const restoredGrant = await restoredJobsConnection.resume();
+if (restoredGrant === null) fail("expired grant lost its operation history");
+let inactiveCode = null;
+try {
+  await restoredGrant.sendCalls({ chain: CHAIN_ID, calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }] });
+} catch (error) {
+  inactiveCode = error?.code;
+}
+if (inactiveCode !== "oaath_client_grant_inactive") fail("expired grant allowed new execution");
+const restoredOperation = await restoredGrant.getOperation(savedOperation);
+if (restoredOperation?.id !== savedOperation.id) fail("lookup changed the public operation identity");
+if ((await restoredOperation.observe()).status !== "pending") fail("recovery invented inclusion");
+if (sends.length !== beforeRecovery.sends || quotes !== beforeRecovery.quotes || ownerRequests.length !== beforeRecovery.owners) {
+  fail("operation recovery quoted, submitted, or requested owner approval again");
+}
+await restoredJobs.close();
+await database.close();
+
 // Public URL composition resolves each caller's selected context from the
 // packed server, then restores only that context's local session after reload.
 const contextRelay = createRelayHandler({
@@ -611,6 +670,8 @@ import {
 import {
   type Oaath,
   type OaathGrantHandle,
+  type OaathGetOperationInput,
+  type OaathOperationHandle,
   createOAAth,
 } from "@oaath/sdk";
 import {
@@ -626,6 +687,11 @@ export function enrollPhone(directory: ServiceDirectory, enrollment: EnrollOwner
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
 
 export const grants: GrantStoreAdapter = createMemoryGrantStoreAdapter();
+
+export async function recover(grant: OaathGrantHandle, previous: OaathOperationHandle): Promise<Readonly<OaathOperationHandle> | null> {
+  const reference: OaathGetOperationInput = { chain: previous.chainId, id: previous.id };
+  return grant.getOperation(reference);
+}
 
 export function compose(configuration: Readonly<OaathConfiguration>): Readonly<Oaath> {
   return createOAAth(configuration);
@@ -656,7 +722,7 @@ export function relay(permissionApprovals: OwnerPhonePermissionApprovals): Relay
 const EXPECTED_SURFACES = {
   oaath: ["binding", "close", "connect", "disconnect"],
   connection: ["binding", "close", "requestPermission", "resume", "signOut"],
-  grant: ["account", "close", "expiresAt", "revoke", "sendCalls", "state"],
+  grant: ["account", "close", "expiresAt", "getOperation", "revoke", "sendCalls", "state"],
 };
 
 const consumer = await createConsumer({
@@ -705,7 +771,7 @@ try {
     `  runtime exports  protocol ${report.exported["@oaath/protocol"].length}, sdk ${report.exported["@oaath/sdk"].length}, server ${report.exported["@oaath/server"].length}`,
   );
   console.log(
-    "  golden path      phone enrollment, connect, native phone consent/signing/decision, sponsored wallet_sendCalls, realm recreation, duplicate 5720, exact status, signOut",
+    "  golden path      phone enrollment, native approval, sponsored provider status, primary send ID, occupied lane rejection, expired grant operation recovery after full realm recreation",
   );
   console.log("  types            nodenext strict, no @types/node");
 } catch (error) {

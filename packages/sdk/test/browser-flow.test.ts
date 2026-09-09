@@ -22,6 +22,60 @@ import {
 } from "./support/browser.js";
 
 describe("browser golden path", () => {
+  it("rejects new intent on an occupied lane without preparing, signing, or sending again", async () => {
+    let withhold = false;
+    const realm = createRealm({
+      chain: createChainFixture({ withholdReceipt: () => withhold }),
+    });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const installation = await grant.sendCalls(sendCallsInput());
+    expect((await installation.wait()).status).toBe("finalized");
+    withhold = true;
+    const pending = await grant.sendCalls(sendCallsInput());
+    for (const data of [CALL_DATA, `${CALL_DATA}${"00".repeat(32)}`]) {
+      await expect(
+        grant.sendCalls({ chain: CHAIN_ID, calls: [{ target: TARGET, value: "0", data }] }),
+      ).rejects.toMatchObject({ code: "oaath_client_state_conflict" });
+    }
+    expect(realm.chain.quotes).toBe(2);
+    expect(realm.chain.signatures).toHaveLength(2);
+    expect(realm.chain.sends).toHaveLength(2);
+    expect((await pending.observe()).status).toBe("pending");
+    await realm.oaath.close();
+  });
+
+  it("looks up only the named operation, including terminal history after lane replacement", async () => {
+    const otherChain = createChainFixture({ chainId: 11_155_111 });
+    const realm = createRealm({ chains: [createChainFixture(), otherChain] });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const first = await grant.sendCalls(sendCallsInput());
+    expect(first.id).toBe(realm.chain.sends[0]?.userOperationHash);
+    expect((await first.wait()).status).toBe("finalized");
+    const second = await grant.sendCalls(sendCallsInput());
+    expect(second.id).not.toBe(first.id);
+    const retained = await grant.getOperation({ chain: CHAIN_ID, id: first.id });
+    expect(retained?.id).toBe(first.id);
+    expect(retained?.outcome.status).toBe("finalized");
+    expect((await retained?.observe())?.status).toBe("finalized");
+    expect(await grant.getOperation({ chain: CHAIN_ID, id: `0x${"ff".repeat(32)}` })).toBeNull();
+    expect(
+      await grant.getOperation({ chain: otherChain.capability.chainId, id: first.id }),
+    ).toBeNull();
+    await expect(grant.getOperation({ chain: CHAIN_ID, id: "invalid" })).rejects.toMatchObject({
+      code: "oaath_client_input_invalid",
+    });
+    expect(realm.chain.quotes).toBe(2);
+    expect(realm.chain.sends).toHaveLength(2);
+    expect(otherChain.quotes).toBe(0);
+    expect(otherChain.sends).toHaveLength(0);
+    await realm.oaath.close();
+    await expect(grant.getOperation({ chain: CHAIN_ID, id: first.id })).rejects.toMatchObject({
+      code: "oaath_client_closed",
+    });
+  });
+
   it("refuses a persisted permission request from a different workspace context", async () => {
     const stores = createMemoryStores();
     const first = createRealm({ stores });
@@ -457,6 +511,7 @@ describe("browser golden path", () => {
       "account",
       "close",
       "expiresAt",
+      "getOperation",
       "revoke",
       "sendCalls",
       "state",
@@ -464,6 +519,7 @@ describe("browser golden path", () => {
     expect(Object.keys(operation).sort()).toEqual([
       "chainId",
       "close",
+      "id",
       "observe",
       "outcome",
       "receipt",

@@ -183,7 +183,7 @@ describe("durable provider recreation", () => {
       chain: CHAIN_ID,
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
     });
-    expect(followUp.outcome.status).toBe("finalized");
+    expect((await followUp.wait()).status).toBe("finalized");
     expect(chain.sends).toHaveLength(2);
     const followUpPrepared = chain.sends[1];
     if (followUpPrepared === undefined) throw new Error("expected the follow-up operation");

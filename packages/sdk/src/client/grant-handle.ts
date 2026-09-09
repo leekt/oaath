@@ -220,6 +220,12 @@ export interface OaathSendCallsInput {
   readonly calls: readonly Readonly<OaathCallInput>[];
 }
 
+export interface OaathGetOperationInput {
+  readonly chain: number;
+  /** The stable ID returned by an operation handle. */
+  readonly id: `0x${string}`;
+}
+
 /** OAAth's explicit experimental ERC-7836 external-key profile. */
 export interface OaathExternalPreparedCallKey {
   readonly type: "secp256k1" | "webauthn-p256";
@@ -349,7 +355,13 @@ export interface OaathGrantHandle {
    * chain. Public identity only: holding it authorizes nothing.
    */
   readonly account: (chain: unknown) => Promise<`0x${string}`>;
+  /** Starts new calls; an unresolved operation on this chain is a state conflict. */
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
+  /**
+   * Recovers an exact execution from this Grant's local history, even after
+   * expiry or revocation. Reads only; null means no matching retained record.
+   */
+  readonly getOperation: (input: unknown) => Promise<Readonly<OaathOperationHandle> | null>;
   readonly revoke: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -2312,7 +2324,6 @@ export function createGrantHandle(
 
   async function executeCalls(
     value: unknown,
-    action: "run" | "start",
     requestHash: `0x${string}` | null,
     publication?: Readonly<OaathProviderOperationPublication>,
     paymaster: Readonly<
@@ -2387,21 +2398,15 @@ export function createGrantHandle(
         : {}),
       ...(paymaster?.kind === "erc7902-static" ? { staticPaymaster: paymaster.paymaster } : {}),
     });
-    let result: OperationRunResult | OperationStartResult;
+    let result: OperationStartResult;
     try {
-      result =
-        action === "start"
-          ? await startOnce(sender, "execution", key)
-          : await runOnce(sender, "execution", key);
+      result = await startOnce(sender, "execution", key);
     } finally {
       // A cleanup failure never replaces the outcome of the send.
       await sender.close().catch(() => undefined);
     }
     // Raises a state conflict before any handle exists to leak.
     operationOutcome(result);
-    if (action === "run" && resolved.mode === "enable-replayable") {
-      await recordFinalizedMaterialization(resolved.binding, result).catch(() => undefined);
-    }
     return trackedOperationHandle({
       runner: runner({ ...shape, terminalBehavior: "reuse_same_kind" }),
       key,
@@ -2754,7 +2759,37 @@ export function createGrantHandle(
   }
 
   function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
-    return withExecution(() => executeCalls(value, "run", null));
+    return withExecution(() => executeCalls(value, null));
+  }
+
+  function getOperation(value: unknown): Promise<Readonly<OaathOperationHandle> | null> {
+    return withActivity(async () => {
+      const request = exactClientRecord(
+        value,
+        ["chain", "id"],
+        "getOperation input",
+        new WeakSet(),
+      );
+      const chainId = request.chain;
+      const id = request.id;
+      if (
+        typeof chainId !== "number" ||
+        !Number.isSafeInteger(chainId) ||
+        chainId < 1 ||
+        typeof id !== "string" ||
+        !USER_OPERATION_HASH.test(id)
+      ) {
+        return clientFail("oaath_client_input_invalid", "getOperation reference is invalid");
+      }
+      chainCapability(chainId);
+      const key = Object.freeze({
+        grantId: record.value.identity.grantId,
+        chainId,
+        kind: "execution" as const,
+      });
+      const operation = await exactOperation(key, id as `0x${string}`);
+      return operation === undefined ? null : observationHandle(key, operation);
+    });
   }
 
   function registeredPaymasterServiceUrl(chainId: number): string | null {
@@ -3090,7 +3125,6 @@ export function createGrantHandle(
       }
       return executeCalls(
         Object.freeze({ chain: request.chain, calls: request.calls }),
-        "start",
         request.requestHash as `0x${string}`,
         captureProviderPublication(publicationValue),
         providerPaymaster(request.chain, request.paymaster, context),
@@ -3657,6 +3691,7 @@ export function createGrantHandle(
     },
     account,
     sendCalls,
+    getOperation,
     revoke,
     async close(): Promise<void> {
       if (closed) return;

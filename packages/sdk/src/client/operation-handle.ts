@@ -84,6 +84,8 @@ export interface OaathOperationReceipt {
 
 export interface OaathOperationHandle {
   readonly chainId: number;
+  /** Stable operation ID. Retain it with chainId for Grant.getOperation. */
+  readonly id: `0x${string}`;
   /** Outcome of the run that produced this handle. */
   readonly outcome: Readonly<OaathOperationOutcome>;
   /** One read-only observation pass. */
@@ -289,6 +291,7 @@ export function createOperationHandle(
 
   return Object.freeze({
     chainId: input.key.chainId,
+    id: identity.userOperationHash,
     get outcome(): Readonly<OaathOperationOutcome> {
       return latest;
     },

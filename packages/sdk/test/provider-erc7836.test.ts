@@ -788,7 +788,7 @@ describe("experimental wallet prepared calls", () => {
       chain: CHAIN_ID,
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
     });
-    expect(intervening.outcome.status).toBe("finalized");
+    expect((await intervening.wait()).status).toBe("finalized");
     const signature = await signPreparedDigest(prepared.digest);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {

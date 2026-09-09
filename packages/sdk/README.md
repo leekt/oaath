@@ -3,6 +3,17 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+`grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
+without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`
+with the application's job. An unresolved operation occupies that grant/chain
+lane, so another send fails with `oaath_client_state_conflict`.
+
+After reconnecting and resuming the grant, `grant.getOperation({ chain, id })`
+recovers that exact execution from local history, including terminal records
+after a later operation replaces the lane. Lookup and observation do not quote,
+sign, or submit, and work after grant expiry or revocation. `null` means no
+matching retained record, never permission to retry a send.
+
 `@oaath/sdk/kernel` exposes `prepareKernelPhonePermissionApproval` for the
 owner-phone service integration. It binds a canonical permission request's
 account using public credentials and configured reads, derives its policy
