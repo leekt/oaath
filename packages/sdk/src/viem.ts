@@ -1,5 +1,6 @@
 /**
- * `@oaath/sdk/viem` exposes one active Grant as a narrow EIP-1193 provider.
+ * `@oaath/sdk/viem` provides default RPC chain ports and exposes one active
+ * Grant as a narrow EIP-1193 provider.
  *
  * `eth_accounts`, `eth_requestAccounts`, `eth_chainId`, and
  * `eth_sendTransaction` retain their existing Grant-backed behavior. Final
@@ -30,6 +31,9 @@ import {
   rpcFail,
   UNSUPPORTED_METHOD,
 } from "./provider/errors.js";
+
+export { createViemChainPorts, type ViemChainPortConfiguration } from "./viem/chain-ports.js";
+export { OaathRpcError, type OaathRpcErrorCode, type ViemChainPortOptions } from "./viem/rpc.js";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
