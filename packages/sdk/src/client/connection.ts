@@ -1,8 +1,8 @@
 /**
  * connect, requestPermission, resume, signOut, and close.
  *
- * The authorization journey runs entirely over the issuer's Fetch endpoints and
- * the protocol contracts; this module owns orchestration only:
+ * Issuer mode obtains the decision through Fetch endpoints; local mode obtains
+ * the same decision in-process. Protocol application and persistence are shared:
  *
  * ```text
  * requestPermission  PKCE verifier
@@ -148,10 +148,22 @@ export interface OaathConnection {
   readonly close: () => Promise<void>;
 }
 
+/** Local approval still returns the canonical protocol decision and Kernel capability. */
+export type LocalPermissionAuthorization = (
+  request: Readonly<PermissionRequest>,
+) => Promise<unknown>;
+
+type ConnectionAuthority =
+  | Readonly<{
+      kind: "issuer";
+      issuer: Readonly<OaathIssuerCapability>;
+      authorization: Readonly<OaathAuthorizationCapability>;
+    }>
+  | Readonly<{ kind: "local"; approve: LocalPermissionAuthorization }>;
+
 export interface CreateConnectionInput {
   readonly binding: Readonly<OaathBinding>;
-  readonly issuer: Readonly<OaathIssuerCapability>;
-  readonly authorization: Readonly<OaathAuthorizationCapability>;
+  readonly authority: ConnectionAuthority;
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
@@ -325,16 +337,18 @@ export function createConnection(
     path: string,
     body?: unknown,
   ): Promise<Record<string, unknown>> {
+    if (input.authority.kind !== "issuer")
+      return clientFail("oaath_client_internal", "local approval has no issuer transport");
     const headers = new Headers();
     if (body !== undefined) headers.set("content-type", "application/json");
-    const request = new Request(`${input.issuer.url}${path}`, {
+    const request = new Request(`${input.authority.issuer.url}${path}`, {
       method,
       headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     let response: Response;
     try {
-      response = await input.issuer.fetch(request);
+      response = await input.authority.issuer.fetch(request);
     } catch {
       return clientFail("oaath_client_issuer_unavailable", "the issuer could not be reached");
     }
@@ -441,40 +455,12 @@ export function createConnection(
     }
   }
 
-  async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
-    assertUsable();
-    const context: CaptureContext = new WeakSet();
-    const record = exactClientRecord(
-      value,
-      ["chainScope", "permissions", "expiresIn", "perChainOperationLimit"],
-      "requestPermission input",
-      context,
-    );
-    if (record.chainScope !== "all") {
-      return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
-    }
-    const requestedAt = input.now();
-    const expiresAt = requestedAt + safeCount(record.expiresIn, "expiresIn", MAX_EXPIRES_IN);
-    const policy = policyFromInput(
-      record.permissions,
-      requestedAt,
-      expiresAt,
-      safeCount(record.perChainOperationLimit, "perChainOperationLimit", 2 ** 32 - 1),
-      context,
-    );
-    const scope: PermissionScope = Object.freeze({
-      version: OAATH_PERMISSION_REQUEST_VERSION,
-      context: input.binding.context,
-      application: input.binding.application,
-      chainScope: "all",
-      logicalAccount: input.binding.account,
-      operatorCredential: input.binding.operatorCredential,
-      policy,
-      requestedAt,
-      expiresAt,
-      sessionSigner: input.sessionSigner,
-    });
-
+  async function authorizeAtIssuer(scope: PermissionScope): Promise<{
+    request: Readonly<PermissionRequest>;
+    artifact: unknown;
+  }> {
+    if (input.authority.kind !== "issuer")
+      return clientFail("oaath_client_internal", "local approval has no issuer transport");
     const verifier = newCodeVerifier();
     const created = await call("POST", "/authorization/requests", {
       redirectUri: input.binding.redirectUri,
@@ -491,7 +477,7 @@ export function createConnection(
 
     let authorized: unknown;
     try {
-      authorized = await input.authorization.authorize({
+      authorized = await input.authority.authorization.authorize({
         requestId,
         redirectUri: input.binding.redirectUri,
         expiresAt: relayExpiresAt,
@@ -547,10 +533,67 @@ export function createConnection(
       );
     }
 
+    try {
+      return { request, artifact: JSON.parse(text(claimed, "artifact")) as unknown };
+    } catch (error) {
+      return mapClientFailure(error, "the owner decision artifact is invalid");
+    }
+  }
+
+  async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
+    assertUsable();
+    const context: CaptureContext = new WeakSet();
+    const record = exactClientRecord(
+      value,
+      ["chainScope", "permissions", "expiresIn", "perChainOperationLimit"],
+      "requestPermission input",
+      context,
+    );
+    if (record.chainScope !== "all") {
+      return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
+    }
+    const requestedAt = input.now();
+    const expiresAt = requestedAt + safeCount(record.expiresIn, "expiresIn", MAX_EXPIRES_IN);
+    const policy = policyFromInput(
+      record.permissions,
+      requestedAt,
+      expiresAt,
+      safeCount(record.perChainOperationLimit, "perChainOperationLimit", 2 ** 32 - 1),
+      context,
+    );
+    const scope: PermissionScope = Object.freeze({
+      version: OAATH_PERMISSION_REQUEST_VERSION,
+      context: input.binding.context,
+      application: input.binding.application,
+      chainScope: "all",
+      logicalAccount: input.binding.account,
+      operatorCredential: input.binding.operatorCredential,
+      policy,
+      requestedAt,
+      expiresAt,
+      sessionSigner: input.sessionSigner,
+    });
+
+    let request: Readonly<PermissionRequest>;
+    let artifact: unknown;
+    if (input.authority.kind === "local") {
+      request = parsePermissionRequest({ ...scope, requestId: globalThis.crypto.randomUUID() });
+      try {
+        artifact = await input.authority.approve(request);
+      } catch (error) {
+        if (error instanceof OaathClientError) throw error;
+        return clientFail(
+          "oaath_client_decision_unavailable",
+          "the wallet approval could not be obtained",
+        );
+      }
+    } else {
+      ({ request, artifact } = await authorizeAtIssuer(scope));
+    }
+
     let decision: Readonly<PermissionDecision>;
     let installApproval: Readonly<KernelGrantApproval> | null = null;
     try {
-      const artifact = JSON.parse(text(claimed, "artifact")) as unknown;
       // An approval artifact carries the replayable Kernel install approval
       // beside the decision; the decision's own capabilityHash binds it below,
       // so the two cannot be mixed across requests or capabilities.
@@ -697,7 +740,8 @@ export function createConnection(
     // authentication refusal fails closed above inside `call`.
     let state: Record<string, unknown> | null = null;
     try {
-      state = await call("POST", "/authorization/resume", { requestId: context.grantId });
+      if (input.authority.kind === "issuer")
+        state = await call("POST", "/authorization/resume", { requestId: context.grantId });
     } catch (error) {
       if (error instanceof OaathClientError && error.source === "relay_not_found") state = null;
       else throw error;
@@ -735,9 +779,9 @@ export function createConnection(
   async function signOut(): Promise<void> {
     if (closed) clientFail("oaath_client_closed", "connection is closed");
     signedOut = true;
-    if (!input.issuer.signOut) return;
+    if (input.authority.kind !== "issuer" || !input.authority.issuer.signOut) return;
     try {
-      await input.issuer.signOut();
+      await input.authority.issuer.signOut();
     } catch (error) {
       return mapClientFailure(error, "issuer sign-out failed");
     }

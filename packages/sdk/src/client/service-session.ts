@@ -44,7 +44,9 @@ export interface ServiceSessionInput {
   readonly stores: ServiceSessionStores;
   readonly url: string;
   readonly origin: string;
-  readonly bootstrap: Readonly<ServiceBootstrap>;
+  readonly bootstrap: Readonly<
+    Pick<ServiceBootstrap, "application" | "userHandle" | "context" | "account">
+  >;
 }
 
 export interface PersistedServiceSession {
@@ -57,7 +59,7 @@ export interface PersistedServiceSession {
 function storageId(
   url: string,
   origin: string,
-  bootstrap: Readonly<ServiceBootstrap>,
+  bootstrap: ServiceSessionInput["bootstrap"],
 ): `0x${string}` {
   return keccak256(
     encodeAbiParameters(
@@ -88,7 +90,7 @@ function storageId(
 export function serviceSessionKeyId(
   url: string,
   origin: string,
-  bootstrap: Readonly<ServiceBootstrap>,
+  bootstrap: ServiceSessionInput["bootstrap"],
 ): string {
   return `service-session-${storageId(url, origin, bootstrap).slice(2, 34)}`;
 }

@@ -46,6 +46,7 @@ import {
   captureAuthorizationCapability,
   captureIssuerCapability,
   createConnection,
+  type LocalPermissionAuthorization,
   type OaathAuthorizationCapability,
   type OaathConnection,
   type OaathIssuerCapability,
@@ -60,6 +61,7 @@ import {
   type OaathOwnerRevocationCapability,
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
+import { createLocalRealm, type OaathLocalConfiguration } from "./client/local-realm.js";
 import {
   createOwnerRealm,
   type OaathOwnerClient,
@@ -258,11 +260,13 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * ```
  *
  * `mode: "owner"` executes directly from an existing Kernel v3.3 account with
- * a connected wallet. A configuration carrying `binding` is the injected
+ * a connected wallet. `mode: "local"` uses that wallet to approve a session Grant
+ * in the browser, with no issuer transport. A configuration carrying `binding` is the injected
  * composition for deterministic tests and custom deployments; other inputs
  * select URL mode, whose only normal production input is `url`.
  */
 export function createOAAth(configuration: OaathOwnerConfiguration): Readonly<OaathOwnerClient>;
+export function createOAAth(configuration: OaathLocalConfiguration): Readonly<Oaath>;
 export function createOAAth(configuration?: unknown): Readonly<Oaath>;
 export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
@@ -272,6 +276,7 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
     clientFailure("oaath_client_input_invalid"),
   );
   if (record.mode === "owner") return createOwnerRealm(configuration);
+  if (record.mode === "local") return createLocalRealm(record, composeInjectedRealm);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
   // Every URL-mode key is optional, so exactness here is only the closed key
   // set: an unknown key fails instead of being silently ignored.
@@ -283,7 +288,10 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
   return createServiceRealm(record, composeInjectedRealm);
 }
 
-function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
+function composeInjectedRealm(
+  configuration: unknown,
+  localAuthorization?: LocalPermissionAuthorization,
+): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
   const optionalKeys =
     typeof configuration === "object" && configuration !== null
@@ -291,7 +299,12 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       : [];
   const record = exactClientRecord(
     configuration,
-    [...CONFIGURATION_KEYS, ...optionalKeys],
+    [
+      ...CONFIGURATION_KEYS.filter(
+        (key) => !localAuthorization || (key !== "issuer" && key !== "authorization"),
+      ),
+      ...optionalKeys,
+    ],
     "OAAth configuration",
     context,
   );
@@ -306,14 +319,20 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
           context,
         );
   const binding = captureOaathBinding(record.binding);
-  const issuer = captureIssuerCapability(record.issuer);
-  if (issuer.url !== binding.issuer.url) {
+  const issuer = localAuthorization ? null : captureIssuerCapability(record.issuer);
+  if (issuer !== null && issuer.url !== binding.issuer.url) {
     clientFail(
       "oaath_client_capability_invalid",
       "the issuer transport does not serve the bound issuer",
     );
   }
-  const authorization = captureAuthorizationCapability(record.authorization);
+  const authority = localAuthorization
+    ? { kind: "local" as const, approve: localAuthorization }
+    : {
+        kind: "issuer" as const,
+        issuer: issuer!,
+        authorization: captureAuthorizationCapability(record.authorization),
+      };
   const invalidation = storePort<Readonly<OaathCapabilityInvalidationCapability>>(
     record.invalidation,
     ["invalidateCapability"],
@@ -450,8 +469,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
     const connection = createConnection({
       binding,
-      issuer,
-      authorization,
+      authority,
       grants: new GrantStore(connectionStores.grants),
       operations: connectionStores.operations,
       walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),

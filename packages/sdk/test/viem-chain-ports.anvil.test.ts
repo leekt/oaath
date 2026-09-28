@@ -1,16 +1,25 @@
 import { createServer } from "node:http";
 import { OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION } from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
-import { decodeEventLog, encodeFunctionData, parseEther, toHex } from "viem";
+import {
+  createWalletClient,
+  custom,
+  decodeEventLog,
+  encodeFunctionData,
+  parseEther,
+  toHex,
+} from "viem";
 import {
   entryPoint07Abi,
   getUserOperationHash,
   toPackedUserOperation,
   type UserOperation,
 } from "viem/account-abstraction";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { OaathUsageRequest } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
+import { createOAAth, type Oaath } from "../src/index.js";
 import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel.js";
 import {
   createIndexedDbCleanupStore,
@@ -38,13 +47,42 @@ import { deployKernelV33Account } from "./support/kernel-v33.js";
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
   "default ports against a real local chain",
   () => {
-    it.each(["0.4.0", "0.3.3"] as const)(
-      "Kernel %s Grant recovers a lost enable reply after reload and executes the installed session",
-      async (version) => {
+    it.each([
+      ["0.4.0", "issuer"],
+      ["0.3.3", "issuer"],
+      ["0.3.3", "local"],
+    ] as const)(
+      "Kernel %s %s Grant recovers a lost enable reply after reload and executes the installed session",
+      async (version, mode) => {
         const local = await startAnvil(CHAIN_ID, "prague", 1);
         const harness = await createHarness(local);
         const clock = createClock(Math.floor(Date.now() / 1000));
-        let realm: ReturnType<typeof createRealm> | undefined;
+        let realm:
+          | { oaath: Readonly<Oaath>; relay: ReturnType<typeof createRealm>["relay"] | null }
+          | undefined;
+        const ownerAccount = privateKeyToAccount(generatePrivateKey());
+        let approvalPrompts = 0;
+        let ownerOperationPrompts = 0;
+        const wallet = createWalletClient({
+          account: ownerAccount.address,
+          transport: custom({
+            async request({ method, params }) {
+              if (method === "eth_signTypedData_v4") {
+                approvalPrompts += 1;
+                const [signer, payload] = params as [string, string];
+                expect(signer.toLowerCase()).toBe(ownerAccount.address.toLowerCase());
+                return ownerAccount.signTypedData(JSON.parse(payload));
+              }
+              if (method === "personal_sign") {
+                ownerOperationPrompts += 1;
+                const [raw, signer] = params as [`0x${string}`, string];
+                expect(signer.toLowerCase()).toBe(ownerAccount.address.toLowerCase());
+                return ownerAccount.signMessage({ message: { raw } });
+              }
+              throw new Error("unexpected wallet request");
+            },
+          }),
+        });
         const factory = new IDBFactory();
         let database = await openOaathDatabase({ factory });
         function stores() {
@@ -187,7 +225,11 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
         try {
           const existing =
             version === "0.3.3"
-              ? await deployKernelV33Account(harness, CHAIN_ID, ownerCredential.address)
+              ? await deployKernelV33Account(
+                  harness,
+                  CHAIN_ID,
+                  mode === "local" ? ownerAccount.address : ownerCredential.address,
+                )
               : null;
           if (existing === null) await deployKernelStack(harness);
           for (const module of [
@@ -224,7 +266,35 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                     ownerCredential,
                   },
                 };
-          function newRealm(relay?: ReturnType<typeof createRealm>["relay"]) {
+          function newRealm(relay?: ReturnType<typeof createRealm>["relay"] | null) {
+            if (mode === "local") {
+              if (!existing || !ports) throw new Error("local account unavailable");
+              return {
+                relay: null,
+                oaath: createOAAth({
+                  mode: "local",
+                  owner: wallet,
+                  account: existing.address,
+                  chains: [
+                    {
+                      ...ports,
+                      usage: async (request: Readonly<OaathUsageRequest>) => {
+                        usageRequest = request;
+                        try {
+                          return await ports!.usage!(request);
+                        } catch (error) {
+                          usageError = (error as { code?: string }).code ?? "unclassified";
+                          throw error;
+                        }
+                      },
+                    },
+                  ],
+                  stores: stores(),
+                  origin: "https://local.example",
+                  now: clock.now,
+                }),
+              };
+            }
             return createRealm({
               binding,
               stores: stores(),
@@ -234,7 +304,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               chain: {
                 capability: {
                   ...ports!,
-                  usage: async (request) => {
+                  usage: async (request: Readonly<OaathUsageRequest>) => {
                     usageRequest = request;
                     try {
                       return await ports!.usage!(request);
@@ -265,6 +335,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           }
           realm = newRealm();
           let grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+          expect(approvalPrompts).toBe(mode === "local" ? 1 : 0);
           const address = await grant.account(CHAIN_ID);
           if (existing !== null) expect(address).toBe(existing.address.toLowerCase());
           if (version === "0.3.3") {
@@ -315,6 +386,8 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           expect(sends).toBe(2);
           expect(modeBytes).toEqual([version === "0.3.3" ? 1n : 12n, 0n]);
           expect(estimates).toBe(2);
+          expect(approvalPrompts).toBe(mode === "local" ? 1 : 0);
+          expect(ownerOperationPrompts).toBe(0);
           if (version === "0.3.3") {
             await grant.revoke();
             expect(sends).toBe(3);
@@ -352,6 +425,8 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             await unused.revoke();
             expect(unused.state).toBe("revoked");
             expect(sends).toBe(4);
+            expect(approvalPrompts).toBe(mode === "local" ? 2 : 0);
+            expect(ownerOperationPrompts).toBe(mode === "local" ? 2 : 0);
           }
           expect(
             methods.every((method) =>
