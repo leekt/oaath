@@ -11,12 +11,14 @@
  */
 import {
   hashPermissionRequest,
+  type KernelAccountProfile,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
   type OperatorCredentialProfile,
   parseGrantPolicy,
+  parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   sameOperatorCredentialProfile,
 } from "@oaath/protocol";
@@ -40,20 +42,24 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../../src/kernel/modules.js";
+import {
+  type KernelGrantApproval,
+  kernelGrantCapabilityHash,
+} from "../../src/kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../../src/kernel/permission/profiles.js";
 import {
   approveKernelPermissionAllChain,
+  approveKernelV33Permission,
   createKernelRuntime,
   ecdsaKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  type KernelAllChainApproval,
-  type KernelV4AccountReadRequest,
   type KeyProfile,
-  kernelAllChainCapabilityHash,
   kernelV4Deployment,
+  kernelV33Deployment,
+  kernelV33PermissionInstallNonce,
   ownerOperator,
   type PreparedUserOperation,
   sessionOperator,
@@ -332,8 +338,22 @@ async function ownerInstallApproval(
   operatorCredential: Readonly<OperatorCredentialProfile>,
   operatorKey: Readonly<KeyProfile> | undefined,
   validator: `0x${string}`,
-): Promise<Readonly<KernelAllChainApproval>> {
+  account: Readonly<KernelAccountProfile>,
+): Promise<Readonly<KernelGrantApproval>> {
   const owner = ecdsaKey({ account: ownerAccount, validator });
+  if (account.kernelVersion === "0.3.3") {
+    const runtime = createKernelRuntime({
+      deployment: kernelV33Deployment(CHAIN_ID),
+      operator: sessionOperator({
+        key: ownerApprovedOperatorKey(operatorCredential, operatorKey),
+        policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
+      }),
+      reads,
+    });
+    const descriptor = await runtime.bindAccount({ address: account.address });
+    const nonce = await kernelV33PermissionInstallNonce({ runtime, account: descriptor, reads });
+    return approveKernelV33Permission({ owner, runtime, account: descriptor, nonce });
+  }
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({ key: owner }),
@@ -398,6 +418,7 @@ export function createOwnerAuthorization(
           operator,
           options.operatorKey,
           validator,
+          parseKernelAccountProfile(scope.logicalAccount),
         );
         const decision = {
           version: OAATH_PERMISSION_DECISION_VERSION,
@@ -406,7 +427,7 @@ export function createOwnerAuthorization(
           requestHash: hashPermissionRequest(full),
           decidedAt: clock.now(),
           approvedPolicy,
-          capabilityHash: kernelAllChainCapabilityHash(installApproval),
+          capabilityHash: kernelGrantCapabilityHash(installApproval),
           installApproval,
         };
         const body = {
@@ -627,7 +648,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   const capability: Readonly<OaathChainCapability> = Object.freeze({
     chainId,
     reads: Object.freeze({
-      async read(request: KernelV4AccountReadRequest): Promise<unknown> {
+      async read(request: Parameters<OaathChainCapability["reads"]["read"]>[0]): Promise<unknown> {
         if (request.type === "chain_id") return request.chainId;
         if (request.type === "runtime_code_hash") {
           return runtimeCodeHash(request.address, selectedDeployment);

@@ -54,26 +54,18 @@ import {
   type KernelCapability,
   kernelKeyCapability,
 } from "../kernel/capabilities.js";
-import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
+import type { KernelV33ReadRequest } from "../kernel/deployment/v33.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
-import {
-  bindKernelPermissionApproval,
-  type KernelAllChainApproval,
-} from "../kernel/permission/materialize.js";
+import type { KernelGrantApproval } from "../kernel/permission/approval.js";
 import { observeKernelPermissionRevocation } from "../kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
-import type {
-  KernelRuntime,
-  KernelRuntimePrepareInput,
-  KernelRuntimeValidationMode,
-  KeyProfile,
-} from "../kernel/types.js";
+import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "../kernel/permission/v33.js";
+import type { KernelRuntime, KernelRuntimeValidationMode, KeyProfile } from "../kernel/types.js";
 import {
   encodeKernelV4PermissionUninstallCalls,
-  type KernelV4AccountDescriptor,
-  type KernelV4AccountReadCapability,
+  type KernelV4AccountReadRequest,
   type KernelV4Call,
   type KernelV4UserOperationGas,
   type KernelV4ValidityTimeRange,
@@ -149,6 +141,13 @@ import {
   mapClientFailure,
   OaathClientError,
 } from "./errors.js";
+import {
+  createGrantKernelRuntime,
+  type GrantKernelAccount,
+  type GrantKernelExecution,
+  type GrantKernelPrepareInput,
+  type GrantKernelRuntime,
+} from "./grant-runtime.js";
 import {
   createOperationHandle,
   type OaathOperationHandle,
@@ -377,7 +376,9 @@ export interface OaathRegisteredPaymasterService {
 export interface OaathChainCapability {
   readonly gas?: Readonly<KernelGasPolicy>;
   readonly chainId: number;
-  readonly reads: KernelV4AccountReadCapability;
+  readonly reads: {
+    readonly read: (request: KernelV4AccountReadRequest | KernelV33ReadRequest) => Promise<unknown>;
+  };
   readonly observation: OperationObserverCapabilities;
   readonly bundler: OaathBundlerProbeCapability;
   readonly submission: OaathSubmissionCapability;
@@ -541,7 +542,7 @@ export interface CreateGrantHandleInput {
    * first covered execution on a chain spends it in enable-replayable mode;
    * without it no unmaterialized chain can execute.
    */
-  readonly installApproval: Readonly<KernelAllChainApproval> | null;
+  readonly installApproval: Readonly<KernelGrantApproval> | null;
   readonly record: GrantStoreRecord;
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
@@ -673,7 +674,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
   return Object.freeze({
     chainId,
     gas,
-    reads: capabilityObject<KernelV4AccountReadCapability>(
+    reads: capabilityObject<OaathChainCapability["reads"]>(
       record.reads,
       ["read"],
       "chain reads",
@@ -923,8 +924,8 @@ export function createGrantHandle(
   interface ValidityAdmissionEvidence {
     readonly chainId: number;
     readonly range: Readonly<KernelV4ValidityTimeRange>;
-    readonly runtime: Readonly<KernelRuntime>;
-    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+    readonly runtime: Readonly<GrantKernelRuntime>;
+    readonly descriptor: Readonly<GrantKernelAccount>;
   }
 
   interface ExecutionRouteAdmissionEvidence {
@@ -1105,11 +1106,13 @@ export function createGrantHandle(
     return current;
   }
 
-  function ownerRuntime(chainId: number): Readonly<KernelRuntime> {
+  function ownerRuntime(chainId: number): Readonly<GrantKernelRuntime> {
     const chain = chainCapability(chainId);
     try {
-      return createKernelRuntime({
-        deployment: kernelV4Deployment(chainId),
+      return createGrantKernelRuntime({
+        account: input.binding.account,
+        ownerKey: input.ownerKey,
+        chainId,
         operator: ownerOperator({ key: input.ownerKey }),
         reads: chain.reads,
         ...(chain.gas === undefined ? {} : { gas: chain.gas }),
@@ -1119,11 +1122,13 @@ export function createGrantHandle(
     }
   }
 
-  function sessionRuntime(chainId: number): Readonly<KernelRuntime> {
+  function sessionRuntime(chainId: number): Readonly<GrantKernelRuntime> {
     const chain = chainCapability(chainId);
     try {
-      return createKernelRuntime({
-        deployment: kernelV4Deployment(chainId),
+      return createGrantKernelRuntime({
+        account: input.binding.account,
+        ownerKey: input.ownerKey,
+        chainId,
         // The session composition point is opaque here: this handle supplies the
         // key and the policy profiles derived from the approved Grant scope, and
         // never reaches into how the authority is installed.
@@ -1140,8 +1145,8 @@ export function createGrantHandle(
   }
 
   /**
-   * The account identity is the owner runtime's initial packages, on every chain
-   * and for every authority: a session never redefines the account it acts for.
+   * Account identity comes from the approved versioned profile and owner:
+   * v4 binds initial packages; v3.3 proves the existing address and current owner.
    *
    * The descriptor is bound per send and never cached. A descriptor freezes the
    * account state observed at bind time, so reusing one after the account's first
@@ -1149,22 +1154,11 @@ export function createGrantHandle(
    */
   async function accountDescriptor(
     chainId: number,
-    bindingRuntime?: Readonly<KernelRuntime>,
-  ): Promise<Readonly<KernelV4AccountDescriptor>> {
-    if (input.binding.account.kernelVersion !== "0.4.0")
-      return clientFail(
-        "oaath_client_input_invalid",
-        "Kernel v3.3 Grant execution is not yet available",
-      );
-    const owner = ownerRuntime(chainId);
-    const runtime = bindingRuntime ?? owner;
+    bindingRuntime?: Readonly<GrantKernelRuntime>,
+  ): Promise<Readonly<GrantKernelAccount>> {
+    const runtime = bindingRuntime ?? ownerRuntime(chainId);
     try {
-      return await runtime.bindAccount({
-        accountIndex: input.binding.account.accountIndex,
-        // Account identity always comes from the owner; a session runtime only
-        // performs the bind so its signer and exact policy runtime are proven.
-        initialPackages: [...owner.packages],
-      });
+      return await runtime.bindAccount();
     } catch (error) {
       return mapClientFailure(error, "Kernel account could not be bound");
     }
@@ -1240,11 +1234,11 @@ export function createGrantHandle(
   interface ExecutionShape {
     readonly chainId: number;
     readonly chain: Readonly<OaathChainCapability>;
-    readonly runtime: Readonly<KernelRuntime>;
-    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+    readonly runtime: Readonly<GrantKernelRuntime>;
+    readonly descriptor: Readonly<GrantKernelAccount>;
     readonly calls: readonly Readonly<KernelV4Call>[];
     readonly mode: "standard" | "enable-replayable";
-    readonly materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
+    readonly materializer: GrantKernelExecution | null;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly binding: Readonly<{
       chainId: number;
@@ -1266,14 +1260,6 @@ export function createGrantHandle(
     const grantSnapshot = await requireActive();
     const grant = grantSnapshot.value;
     const chain = chainCapability(chainId);
-    const deployment = (() => {
-      try {
-        return kernelV4Deployment(chainId);
-      } catch (error) {
-        return mapClientFailure(error, "chain is not a supported Kernel deployment");
-      }
-    })();
-
     requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
     requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
     requireKernelCapability(chainId, "hook_call");
@@ -1297,7 +1283,7 @@ export function createGrantHandle(
     }
     const bundler =
       executionRouteAdmission?.bundler ??
-      (await classifiedBundler(chainId, chain, deployment.entryPoint.address));
+      (await classifiedBundler(chainId, chain, runtime.deployment.entryPoint.address));
     const decision = decideExecution({
       operationKind: "execution",
       sessionCoverage: coverage,
@@ -1405,13 +1391,13 @@ export function createGrantHandle(
   }
 
   function permissionMaterializer(
-    runtime: Readonly<KernelRuntime>,
+    runtime: Readonly<GrantKernelRuntime>,
     account: `0x${string}`,
-  ): ReturnType<typeof bindKernelPermissionApproval> {
+  ): GrantKernelExecution {
     const approval = input.installApproval;
     if (approval === null) return unsupported("grant_capability_unavailable");
     try {
-      return bindKernelPermissionApproval({ runtime, account, approval });
+      return runtime.bindApproval(approval, account);
     } catch (error) {
       return mapClientFailure(error, "the install approval does not bind this permission runtime");
     }
@@ -1433,9 +1419,9 @@ export function createGrantHandle(
       kind: OperationKind;
       signer: OaathExecutionSigner;
       grantId: string;
-      runtime: Readonly<KernelRuntime>;
-      materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
-      descriptor: Readonly<KernelV4AccountDescriptor>;
+      runtime: Readonly<GrantKernelRuntime>;
+      materializer: GrantKernelExecution | null;
+      descriptor: Readonly<GrantKernelAccount>;
       mode: "standard" | "enable-replayable";
       calls: readonly Readonly<KernelV4Call>[];
       validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
@@ -1519,7 +1505,7 @@ export function createGrantHandle(
         : { validityTimeRange: shape.validityTimeRange }),
     };
     const execution = shape.materializer ?? shape.runtime;
-    const operation: KernelRuntimePrepareInput = { kind: "execution", ...fields };
+    const operation: GrantKernelPrepareInput = { kind: "execution", ...fields };
     let resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null = null;
     const prepared =
       options.paymaster?.kind === "resolve-erc7677"
@@ -1559,8 +1545,8 @@ export function createGrantHandle(
     readonly connectedFeePayer?: Readonly<ConnectedEoa> | null;
     readonly chainId: number;
     readonly kind: OperationKind;
-    readonly runtime: Readonly<KernelRuntime>;
-    readonly descriptor: Readonly<KernelV4AccountDescriptor>;
+    readonly runtime: Readonly<GrantKernelRuntime>;
+    readonly descriptor: Readonly<GrantKernelAccount>;
     readonly calls: readonly Readonly<KernelV4Call>[];
     /** The proven authority; a denied decision never reaches a runner. */
     readonly signer: OaathExecutionSigner;
@@ -1571,7 +1557,7 @@ export function createGrantHandle(
      * session signature.
      */
     readonly mode: "standard" | "enable-replayable";
-    readonly materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
+    readonly materializer: GrantKernelExecution | null;
     readonly decision: Readonly<OaathExecutionDecision>;
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
@@ -1635,7 +1621,7 @@ export function createGrantHandle(
                 ? {}
                 : { validityTimeRange: spec.validityTimeRange }),
             };
-            const operation: KernelRuntimePrepareInput = { kind: spec.kind, ...fields };
+            const operation: GrantKernelPrepareInput = { kind: spec.kind, ...fields };
             if (spec.sponsorship === undefined) {
               return execution.prepareOperation(operation);
             }
@@ -2674,6 +2660,8 @@ export function createGrantHandle(
   async function prepareCallsWork(
     value: unknown,
   ): Promise<Readonly<OaathExternalPreparedCallPlan>> {
+    if (input.binding.account.kernelVersion === "0.3.3")
+      return unsupported("kernel_v33_external_prepared_calls_unsupported");
     const context: CaptureContext = new WeakSet();
     const invalidInput = (message: string): never =>
       clientFail("oaath_client_input_invalid", message);
@@ -3146,7 +3134,12 @@ export function createGrantHandle(
     }>,
   ): Promise<Readonly<ValidityAdmissionEvidence> | null> {
     const requested = captureProviderValidityAdmissionInput(value);
-    if (revocationRequested || !input.chains.has(requested.chain)) return null;
+    if (
+      input.binding.account.kernelVersion === "0.3.3" ||
+      revocationRequested ||
+      !input.chains.has(requested.chain)
+    )
+      return null;
     try {
       await requireActive();
       const at = input.now();
@@ -3800,6 +3793,8 @@ export function createGrantHandle(
   }
 
   async function revokeGrant(): Promise<void> {
+    if (input.installApproval?.version === OAATH_KERNEL_V33_APPROVAL_VERSION)
+      return unsupported("kernel_v33_revocation_unsupported");
     let snapshot = await refresh();
     let grant = snapshot.value;
     if (grant.state === "revoked") return;
@@ -3956,6 +3951,8 @@ export function createGrantHandle(
 
   async function revoke(): Promise<void> {
     assertOpen();
+    if (input.binding.account.kernelVersion === "0.3.3")
+      return unsupported("kernel_v33_revocation_unsupported");
     revocationRequested = true;
     const active =
       revoking ??

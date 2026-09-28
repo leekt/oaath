@@ -418,7 +418,21 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
 
     const capability: Readonly<OaathChainCapability> = Object.freeze({
       chainId: CHAIN_ID,
-      reads: harness.reads,
+      reads: {
+        async read(request: Parameters<OaathChainCapability["reads"]["read"]>[0]) {
+          if (
+            [
+              "kernel_ecdsa_owner",
+              "kernel_v33_permission_nonce",
+              "kernel_account_version",
+              "kernel_account_entrypoint",
+              "kernel_account_root_validator",
+            ].includes(request.type)
+          )
+            throw new Error("v3.3 read in v4 fixture");
+          return harness.reads.read(request as Parameters<typeof harness.reads.read>[0]);
+        },
+      },
       observation: Object.freeze({ read: observe, async close() {} }),
       bundler: Object.freeze({
         async probe(request: { readonly chainId: number; readonly entryPoint: `0x${string}` }) {

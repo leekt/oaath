@@ -210,10 +210,10 @@ export interface KernelRuntimeBindAccountInput {
  */
 export type KernelRuntimeValidationMode = "standard" | "enable-replayable";
 
-export interface KernelRuntimePrepareInput {
+export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> {
   readonly kind: "execution" | "revocation";
   readonly grantId: string;
-  readonly account: Readonly<KernelV4AccountDescriptor>;
+  readonly account: Readonly<Account>;
   readonly nonceKey: string;
   readonly sequence: string;
   readonly calls: readonly KernelV4Call[];

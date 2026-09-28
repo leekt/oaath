@@ -19,7 +19,12 @@ import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import {
+  kernelGrantCapabilityHash,
+  parseKernelGrantApproval,
+} from "../src/kernel/permission/approval.js";
+import {
   approveKernelV33Permission,
+  bindKernelV33PermissionApproval,
   kernelV33PermissionEnableTypedData,
   kernelV33PermissionInstallNonce,
   materializeKernelV33Permission,
@@ -222,6 +227,60 @@ describe("Kernel v3.3 session composition", () => {
     });
     return { runtime, input, approval, sign, session };
   }
+
+  it("prepares enable without signing and refuses standard operations at the approval boundary", async () => {
+    const { runtime, input, approval, sign } = await sessionFixture();
+    const bound = bindKernelV33PermissionApproval({
+      runtime,
+      approval,
+      account: input.account.account,
+    });
+    const prepared = bound.prepareOperation(input);
+    expect(sign).not.toHaveBeenCalled();
+    expect(bound.dummySignature.length > runtime.dummySignature.length).toBe(true);
+    await expect(bound.signOperation(runtime.prepareOperation(input))).rejects.toMatchObject({
+      code: "kernel_runtime_binding_mismatch",
+    });
+    expect(sign).not.toHaveBeenCalled();
+    const signature = await bound.signOperation(prepared);
+    expect(sign).toHaveBeenCalledTimes(1);
+    const { kind: _kind, ...oneShot } = input;
+    const materialized = await materializeKernelV33Permission({ ...oneShot, runtime, approval });
+    expect(signature === materialized.signature).toBe(true);
+    expect(prepared.userOperationHash).toBe(materialized.prepared.userOperationHash);
+  });
+
+  it("binds a Grant approval to the account version and existing address", async () => {
+    const { approval } = await sessionFixture();
+    const profile = {
+      version: "oaath.kernel-existing-account-profile/v1",
+      kind: "kernel",
+      kernelVersion: "0.3.3",
+      address: account,
+      entryPoint: { version: "0.7" },
+      ownerCredential: {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "ecdsa",
+        address: account,
+      },
+    } as const;
+    const captured = parseKernelGrantApproval(JSON.parse(JSON.stringify(approval)), profile);
+    expect(kernelGrantCapabilityHash(captured) === kernelGrantCapabilityHash(approval)).toBe(true);
+    expect(() => parseKernelGrantApproval(approval, { ...profile, address: validator })).toThrow();
+    expect(() =>
+      parseKernelGrantApproval(approval, {
+        ...profile,
+        version: "oaath.kernel-account-profile/v1",
+        kernelVersion: "0.4.0",
+        accountIndex: "0",
+        factoryRoute: "kernel_factory",
+      }),
+    ).toThrow();
+    expect(
+      kernelGrantCapabilityHash({ ...approval, enableSignature: "0x01" }) ===
+        kernelGrantCapabilityHash(approval),
+    ).toBe(false);
+  });
 
   it("enables with an all-chain approval while preserving the actual operation identity", async () => {
     const { runtime, input, approval, sign } = await sessionFixture();

@@ -48,10 +48,10 @@ import {
   sameGrantIdentity,
 } from "@oaath/protocol";
 import {
-  type KernelAllChainApproval,
-  kernelAllChainCapabilityHash,
-  parseKernelAllChainApproval,
-} from "../kernel/permission/materialize.js";
+  type KernelGrantApproval,
+  kernelGrantCapabilityHash,
+  parseKernelGrantApproval,
+} from "../kernel/permission/approval.js";
 import type { KeyProfile } from "../kernel/types.js";
 import {
   OAATH_CLIENT_CONTEXT_VERSION,
@@ -397,7 +397,7 @@ export function createConnection(
     record: GrantStoreRecord,
     request: Readonly<PermissionRequest>,
     approvedPolicy: Readonly<GrantPolicy>,
-    installApproval: Readonly<KernelAllChainApproval> | null,
+    installApproval: Readonly<KernelGrantApproval> | null,
   ): Readonly<OaathGrantHandle> {
     const created = createGrantHandle({
       binding: input.binding,
@@ -423,7 +423,7 @@ export function createConnection(
   async function writeContext(
     request: Readonly<PermissionRequest>,
     approvedPolicy: Readonly<GrantPolicy>,
-    installApproval: Readonly<KernelAllChainApproval> | null,
+    installApproval: Readonly<KernelGrantApproval> | null,
   ): Promise<void> {
     const context: OaathClientContext = Object.freeze({
       version: OAATH_CLIENT_CONTEXT_VERSION,
@@ -548,7 +548,7 @@ export function createConnection(
     }
 
     let decision: Readonly<PermissionDecision>;
-    let installApproval: Readonly<KernelAllChainApproval> | null = null;
+    let installApproval: Readonly<KernelGrantApproval> | null = null;
     try {
       const artifact = JSON.parse(text(claimed, "artifact")) as unknown;
       // An approval artifact carries the replayable Kernel install approval
@@ -559,7 +559,7 @@ export function createConnection(
           string,
           unknown
         >;
-        installApproval = parseKernelAllChainApproval(rawApproval);
+        installApproval = parseKernelGrantApproval(rawApproval, request.logicalAccount);
         decision = parsePermissionDecision(decisionValue);
       } else {
         decision = parsePermissionDecision(artifact);
@@ -615,7 +615,7 @@ export function createConnection(
     // one whose capability the owner never named, never activates.
     if (
       installApproval === null ||
-      kernelAllChainCapabilityHash(installApproval) !== decision.capabilityHash
+      kernelGrantCapabilityHash(installApproval) !== decision.capabilityHash
     ) {
       return clientFail(
         "oaath_client_state_conflict",
