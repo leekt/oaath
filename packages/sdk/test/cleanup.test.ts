@@ -69,6 +69,19 @@ function cleanup(input: {
 }
 
 describe("cleanup coordinator", () => {
+  it.each([false, true])(
+    "disconnect signs out after a connection closed (another open: %s)",
+    async (anotherOpen) => {
+      const realm = createRealm();
+      const first = await realm.oaath.connect();
+      await first.close();
+      if (anotherOpen) await realm.oaath.connect();
+      const result = await realm.oaath.disconnect(null);
+      expect(result.unfinished).toEqual([]);
+      expect(realm.signOutCalls()).toBe(1);
+    },
+  );
+
   it("completes every effect and clears its checkpoint", async () => {
     const checkpoints = createMemoryCleanupStore();
     const record = recorder();

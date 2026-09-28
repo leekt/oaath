@@ -50,7 +50,13 @@ import {
   type OaathConnection,
   type OaathIssuerCapability,
 } from "./client/connection.js";
-import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
+import {
+  clientCapability,
+  clientFail,
+  clientFailure,
+  exactClientRecord,
+  mapClientFailure,
+} from "./client/errors.js";
 import {
   captureChainCapability,
   grantProviderPort,
@@ -397,7 +403,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
 
   function open(): Readonly<OaathConnection> {
     if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
-    const connection = createConnection({
+    const inner = createConnection({
       binding,
       issuer,
       authorization,
@@ -415,6 +421,14 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       sessionSigner,
       now,
     });
+    const connection = Object.freeze({
+      ...inner,
+      async close() {
+        await inner.close();
+        const index = connections.indexOf(connection);
+        if (index >= 0) connections.splice(index, 1);
+      },
+    });
     connections.push(connection);
     return connection;
   }
@@ -426,13 +440,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     const attempt = (async () => {
       const childFailures: unknown[] = [];
       for (const connection of [...connections]) {
-        await connection
-          .close()
-          .then(() => {
-            const index = connections.indexOf(connection);
-            if (index >= 0) connections.splice(index, 1);
-          })
-          .catch((error: unknown) => childFailures.push(error));
+        await connection.close().catch((error: unknown) => childFailures.push(error));
       }
       if (childFailures[0] !== undefined) throw childFailures[0];
 
@@ -501,7 +509,6 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       if (grant !== null && typeof grant.revoke !== "function") {
         clientFail("oaath_client_input_invalid", "disconnect grant is invalid");
       }
-      const open_ = [...connections];
       const revocationUnneeded = grant === null ? true : await revocationIsUnneeded(grant);
       const revokeRequired = grant !== null && !revocationUnneeded;
       // Order: authority first, then authentication, then local state, then
@@ -509,7 +516,17 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       const effects: OaathCleanupEffect[] = [
         ...(revokeRequired ? [revokeEffect(grant)] : []),
         signOutEffect(async () => {
-          for (const connection of open_) await connection.signOut();
+          const open = [...connections];
+          if (open.length > 0) {
+            for (const connection of open) await connection.signOut();
+          } else {
+            // Closing connections releases resources, not issuer authentication.
+            try {
+              await issuer.signOut?.();
+            } catch (error) {
+              return mapClientFailure(error, "issuer sign-out failed");
+            }
+          }
         }),
         forgetLocalEffect({
           keys: stores.keys,
