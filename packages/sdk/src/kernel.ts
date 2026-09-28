@@ -35,8 +35,10 @@ export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,
   EcdsaSignRequest,
+  EcdsaWalletClient,
+  EcdsaWalletKeyInput,
 } from "./kernel/key/ecdsa.js";
-export { ecdsaKey } from "./kernel/key/ecdsa.js";
+export { ecdsaKey, ecdsaWalletKey } from "./kernel/key/ecdsa.js";
 export type {
   P256KeyInput,
   P256SignRequest,

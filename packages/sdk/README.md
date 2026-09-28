@@ -11,7 +11,7 @@ permissions and high-level owner `sendCalls` are still pending.
 
 ```ts
 import {
-  createKernelRuntime, createKernelV33Reads, ecdsaKey,
+  createKernelRuntime, createKernelV33Reads, ecdsaWalletKey,
   kernelV33Deployment, ownerOperator,
 } from "@oaath/sdk/kernel";
 
@@ -19,7 +19,7 @@ const deployment = kernelV33Deployment(chainId);
 const runtime = createKernelRuntime({
   deployment,
   operator: ownerOperator({
-    key: ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator }),
+    key: ecdsaWalletKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
   }),
   reads: createKernelV33Reads(publicClient),
 });
@@ -31,7 +31,12 @@ const prepared = runtime.prepareOperation({
 const signature = await runtime.signOperation(prepared);
 ```
 
-`ownerAccount` supplies the existing `ecdsaKey` raw-hash signing interface.
+`walletClient` is a connected viem wallet client with an account. `ecdsaWalletKey`
+requests one `personal_sign` signature over the exact 32-byte operation digest
+and verifies the EIP-191 signature against that captured account locally. It
+does not request accounts or retry a rejected signature. The validator must
+support EIP-191, as the canonical Kernel v3.3 ECDSA validator does. Local accounts
+using raw-hash signing can continue to use `ecdsaKey({ account, validator })`.
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
 schema calls its context label `grantId`; no Grant is created or needed here.
