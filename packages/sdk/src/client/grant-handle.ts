@@ -375,6 +375,8 @@ export interface OaathGrantHandle {
    * chain. Public identity only: holding it authorizes nothing.
    */
   readonly account: (chain: unknown) => Promise<`0x${string}`>;
+  /** Read-only execution facts; does not reserve a nonce, authorize, sign, or submit. */
+  readonly reviewCalls: (input: unknown) => Promise<Readonly<OaathCallsReview>>;
   /** Starts new calls; an unresolved operation on this chain is a state conflict. */
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
   /**
@@ -388,6 +390,29 @@ export interface OaathGrantHandle {
    */
   readonly revoke: () => Promise<void>;
   readonly close: () => Promise<void>;
+}
+
+/** Current execution facts for exact calls, not a durable authorization or reservation. */
+export interface OaathCallsReview {
+  readonly grantId: string;
+  readonly chainId: number;
+  readonly accountId: string;
+  readonly account: `0x${string}`;
+  readonly calls: readonly Readonly<OaathCallInput>[];
+  readonly signer: "session";
+  readonly route: "bundler" | "entrypoint-handleops";
+  /** Structured route facts, including an unreadable bundler that forbids fallback. */
+  readonly reasons: OaathExecutionDecision["reasons"];
+  readonly enforcement: Readonly<{
+    readonly calls: "onchain";
+    readonly expiry: "onchain";
+    readonly operationCount: "onchain";
+  }>;
+  /** Grant lifetime; policy validity is reported separately below. */
+  readonly expiresAt: number;
+  readonly validAfter: number;
+  readonly validUntil: number;
+  readonly perChainOperationLimit: number;
 }
 
 /** Internal provider capability. It is deliberately absent from the package root. */
@@ -1159,12 +1184,13 @@ export function createGrantHandle(
     readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
   }
 
-  async function resolveExecutionShape(
+  /** Shared pre-effect checks for public review and operation execution. */
+  async function resolveExecutionRead(
     chainId: number,
     calls: readonly Readonly<KernelV4Call>[],
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
-  ): Promise<Readonly<ExecutionShape>> {
+  ) {
     const grantSnapshot = await requireActive();
     const grant = grantSnapshot.value;
     const chain = chainCapability(chainId);
@@ -1207,6 +1233,24 @@ export function createGrantHandle(
     requireKernelCapability(chainId, "hook_call");
     const runtime = validityAdmission?.runtime ?? sessionRuntime(chainId);
     const descriptor = validityAdmission?.descriptor ?? (await accountDescriptor(chainId, runtime));
+    if (runtime.validation.kind !== "permission") {
+      return unsupported("session_validation_not_permission");
+    }
+    return Object.freeze({ grantSnapshot, chain, runtime, descriptor, decision });
+  }
+
+  async function resolveExecutionShape(
+    chainId: number,
+    calls: readonly Readonly<KernelV4Call>[],
+    validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
+    executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
+  ): Promise<Readonly<ExecutionShape>> {
+    const { grantSnapshot, chain, runtime, descriptor, decision } = await resolveExecutionRead(
+      chainId,
+      calls,
+      validityAdmission,
+      executionRouteAdmission,
+    );
     requireExecutionPublication();
     let publicationSnapshot = await requireActive();
     requireExecutionPublication();
@@ -2712,6 +2756,68 @@ export function createGrantHandle(
     return withExecution(() => executeCalls(value, null));
   }
 
+  function reviewCalls(value: unknown): Promise<Readonly<OaathCallsReview>> {
+    return withActivity(async () => {
+      const context: CaptureContext = new WeakSet();
+      const request = exactClientRecord(value, ["chain", "calls"], "reviewCalls input", context);
+      const chainId = request.chain;
+      if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
+        return clientFail("oaath_client_input_invalid", "reviewCalls chain is invalid");
+      }
+      const calls = captureCalls(request.calls, context);
+      requireExecutionPublication();
+      const resolved = await resolveExecutionRead(chainId, calls);
+      requireExecutionPublication();
+      const current = await requireActive();
+      if (current.storeRevision !== resolved.grantSnapshot.storeRevision) {
+        return clientFail(
+          "oaath_client_state_conflict",
+          "the Grant changed during execution review",
+          "grant_store_conflict",
+        );
+      }
+      const materialization = current.value.materializations.find(
+        (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+      );
+      if (materialization?.state !== "installed") {
+        if (
+          materialization !== undefined &&
+          materialization.state !== "unmaterialized" &&
+          materialization.state !== "installing"
+        ) {
+          return unsupported(`grant_materialization_${materialization.state}`);
+        }
+        // Binding checks the retained approval without materializing or persisting it.
+        permissionMaterializer(resolved.runtime, resolved.descriptor.account);
+      }
+      const { route, signer } = resolved.decision;
+      const policy = input.approvedPolicy;
+      if (route === "none" || signer !== "session" || policy.validUntil === null) {
+        return unsupported("execution_review_unavailable");
+      }
+      requireExecutionPublication();
+      return Object.freeze({
+        grantId: current.value.identity.grantId,
+        chainId,
+        accountId: input.binding.context.accountId,
+        account: resolved.descriptor.account,
+        calls,
+        signer,
+        route,
+        reasons: resolved.decision.reasons,
+        enforcement: Object.freeze({
+          calls: "onchain" as const,
+          expiry: "onchain" as const,
+          operationCount: "onchain" as const,
+        }),
+        expiresAt: current.value.expiresAt,
+        validAfter: policy.validAfter,
+        validUntil: policy.validUntil,
+        perChainOperationLimit: policy.perChainOperationLimit,
+      });
+    });
+  }
+
   function getOperation(value: unknown): Promise<Readonly<OaathOperationHandle> | null> {
     return withActivity(async () => {
       const request = exactClientRecord(
@@ -3721,6 +3827,7 @@ export function createGrantHandle(
       return record.value.expiresAt;
     },
     account,
+    reviewCalls,
     sendCalls,
     getOperation,
     revoke,

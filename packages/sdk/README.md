@@ -8,6 +8,16 @@ without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation
 with the application's job. An unresolved operation occupies that grant/chain
 lane, so another send fails with `oaath_client_state_conflict`.
 
+`grant.reviewCalls({ chain, calls })` returns immutable current execution facts:
+the public grant/account identities, captured calls, session signer, selected
+submission route, policy validity window, operation limit, and actual onchain
+enforcement. It checks the same scope, runtime, and account evidence as sending,
+without quoting a nonce, signing, submitting, or writing Grant/Operation state.
+Failures use `OaathClientError` codes. An unreadable bundler is reported in
+`reasons` and stays on the bundler route; it never authorizes fallback. Review
+is a snapshot, not a reservation or authorization: sending rechecks current
+state, and applications should review again after relevant facts change.
+
 After reconnecting and resuming the grant, `grant.getOperation({ chain, id })`
 recovers that exact execution from local history, including terminal records
 after a later operation replaces the lane. Lookup and observation do not quote,
