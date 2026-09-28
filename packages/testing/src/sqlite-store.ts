@@ -8,8 +8,10 @@ import {
   type StoreRecord,
 } from "@oaath/sdk/advanced";
 
+import type { OaathContextStore } from "@oaath/sdk/persistence";
+
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
-const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v1";
+const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v2";
 
 const METADATA_SCHEMA = `
   CREATE TABLE oaath_test_store_schema_v1 (
@@ -41,7 +43,15 @@ const OPERATION_SCHEMA = `
   ) STRICT, WITHOUT ROWID
 `;
 
+const CONTEXT_SCHEMA = `
+  CREATE TABLE oaath_test_context_store_v1 (
+    binding_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL
+  ) STRICT, WITHOUT ROWID
+`;
+
 const EXPECTED_SCHEMAS = new Map([
+  ["oaath_test_context_store_v1", CONTEXT_SCHEMA],
   ["oaath_test_store_schema_v1", METADATA_SCHEMA],
   ["oaath_test_grant_store_v1", GRANT_SCHEMA],
   ["oaath_test_operation_store_v1", OPERATION_SCHEMA],
@@ -113,6 +123,7 @@ function initializeOrValidateSchema(database: DatabaseSync): void {
       database.exec(METADATA_SCHEMA);
       database.exec(GRANT_SCHEMA);
       database.exec(OPERATION_SCHEMA);
+      database.exec(CONTEXT_SCHEMA);
       database
         .prepare("INSERT INTO oaath_test_store_schema_v1 (schema_id, version) VALUES (?, ?)")
         .run("oaath", SQLITE_SCHEMA_VERSION);
@@ -207,7 +218,7 @@ function envelope(row: StoredRow | undefined): Readonly<StoreRecord<unknown>> | 
 }
 
 /** Test-only durable SQLite Grant store. It makes no production durability claim. */
-export function createSqliteGrantStore(filePath: string): GrantStore {
+export function createSqliteGrantStoreAdapter(filePath: string): GrantStoreAdapter {
   const database = openDatabase(filePath);
   return prepareStore(database, () => {
     const get = database.prepare(`
@@ -249,12 +260,12 @@ export function createSqliteGrantStore(filePath: string): GrantStore {
         database.close();
       },
     };
-    return new GrantStore(adapter);
+    return adapter;
   });
 }
 
 /** Test-only durable SQLite Operation store. It makes no production durability claim. */
-export function createSqliteOperationStore(filePath: string): OperationStore {
+export function createSqliteOperationStoreAdapter(filePath: string): OperationStoreAdapter {
   const database = openDatabase(filePath);
   return prepareStore(database, () => {
     const get = database.prepare(`
@@ -387,6 +398,43 @@ export function createSqliteOperationStore(filePath: string): OperationStore {
         database.close();
       },
     };
-    return new OperationStore(adapter);
+    return adapter;
+  });
+}
+
+/** Validated aggregate owners for tests that exercise stores directly. */
+export function createSqliteGrantStore(filePath: string): GrantStore {
+  return new GrantStore(createSqliteGrantStoreAdapter(filePath));
+}
+export function createSqliteOperationStore(filePath: string): OperationStore {
+  return new OperationStore(createSqliteOperationStoreAdapter(filePath));
+}
+
+/** Durable direct-client context; the SDK owns its current context codec. */
+export function createSqliteContextStore(filePath: string): OaathContextStore {
+  const database = openDatabase(filePath);
+  return prepareStore(database, () => {
+    const read = database.prepare(
+      "SELECT payload FROM oaath_test_context_store_v1 WHERE binding_id = ?",
+    );
+    const write = database.prepare(
+      "INSERT INTO oaath_test_context_store_v1 (binding_id, payload) VALUES (?, ?) ON CONFLICT (binding_id) DO UPDATE SET payload = excluded.payload",
+    );
+    const clear = database.prepare("DELETE FROM oaath_test_context_store_v1 WHERE binding_id = ?");
+    return {
+      async read(bindingId) {
+        const row = read.get(bindingId) as { payload: string } | undefined;
+        return row ? decode(row.payload) : undefined;
+      },
+      async write(context) {
+        write.run(context.bindingId, encode(context));
+      },
+      async clear(bindingId) {
+        clear.run(bindingId);
+      },
+      async close() {
+        database.close();
+      },
+    };
   });
 }

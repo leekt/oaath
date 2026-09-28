@@ -1,9 +1,6 @@
 /** OAAth-owned local-chain fixture for external consumers. Never a production dependency. */
 import {
   hashPermissionRequest,
-  OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
-  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
   parseGrantPolicy,
 } from "@oaath/protocol";
@@ -19,24 +16,22 @@ import {
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbPreparedCallStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
-  type OaathDatabase,
-  openOaathDatabase,
-} from "@oaath/sdk/persistence";
 import { createMemoryRelayStore, createRelayHandler, type RelayCaller } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { LOCAL_ISSUER, LOCAL_REDIRECT, localClientBinding } from "./anvil-binding.js";
 import { createAnvilChain } from "./anvil-chain.mjs";
+import { captureLocalAnvilRecovery, type LocalAnvilRecovery } from "./anvil-recovery.js";
+import { openLocalClientStores } from "./anvil-stores.js";
+
+export { type LocalAnvilRecovery, openLocalAnvilRecoveryClient } from "./anvil-recovery.js";
 
 export interface LocalAnvilFixture {
   readonly chainIds: readonly number[];
+  /** Owned Anvil PIDs for parent-harness cleanup after killing the client process. */
+  readonly processIds: readonly number[];
+  /** Public identities/endpoints only; present when stateDirectory is configured. */
+  readonly recovery: Readonly<LocalAnvilRecovery> | null;
   /** Loopback-only URL for ordinary public-chain reads by the consumer. */
   readonly rpcUrl: (chainId: number) => string;
   /** Closes prior SDK/database instances and opens a new client over retained state. */
@@ -54,8 +49,11 @@ export interface LocalAnvilFixture {
  * authorization service. No credentials, signatures, or raw errors escape.
  */
 export async function createLocalAnvilFixture(
-  input: Readonly<{ chainIds?: readonly number[] }> = {},
+  input: Readonly<{ chainIds?: readonly number[]; stateDirectory?: string }> = {},
 ): Promise<Readonly<LocalAnvilFixture>> {
+  const stateDirectory = input.stateDirectory;
+  if (stateDirectory !== undefined && (typeof stateDirectory !== "string" || !stateDirectory))
+    throw new Error("local_fixture_storage_invalid");
   const chainIds = [...(input.chainIds ?? [421_614])];
   if (
     chainIds.length < 1 ||
@@ -78,8 +76,8 @@ export async function createLocalAnvilFixture(
   const now = () => Math.floor(Date.now() / 1000);
   const owner = privateKeyToAccount(generatePrivateKey());
   const session = privateKeyToAccount(generatePrivateKey());
-  const issuerUrl = "https://local-fixture.example";
-  const redirectUri = "https://consumer.example/callback";
+  const issuerUrl = LOCAL_ISSUER;
+  const redirectUri = LOCAL_REDIRECT;
   const clientToken = crypto.randomUUID();
   const ownerToken = crypto.randomUUID();
   const kms = new Map<string, string>();
@@ -203,7 +201,7 @@ export async function createLocalAnvilFixture(
   };
   const factory = new IDBFactory();
   let client: Readonly<Oaath> | undefined;
-  let database: OaathDatabase | undefined;
+  let storage: Awaited<ReturnType<typeof openLocalClientStores>> | undefined;
   let closed = false;
   async function closeClient(): Promise<void> {
     const results = await Promise.allSettled([
@@ -214,9 +212,8 @@ export async function createLocalAnvilFixture(
     // SDK resource cleanup must finish before closing its backing connection.
     results.push(
       ...(await Promise.allSettled([
-        Promise.resolve().then(() => {
-          database?.close();
-          database = undefined;
+        storage?.close().then(() => {
+          storage = undefined;
         }),
       ])),
     );
@@ -225,6 +222,26 @@ export async function createLocalAnvilFixture(
   }
   return Object.freeze({
     chainIds: Object.freeze(chainIds),
+    processIds: Object.freeze(
+      [...chains.values()].map((chain) => {
+        if (chain.processId === undefined) throw new Error("local_fixture_process_missing");
+        return chain.processId;
+      }),
+    ),
+    recovery:
+      stateDirectory === undefined
+        ? null
+        : captureLocalAnvilRecovery({
+            version: "oaath.local-anvil-recovery/v1",
+            owner: owner.address,
+            session: session.address,
+            chains: [...chains.values()].map((chain) => ({
+              chainId: chain.capability.chainId,
+              rpcUrl: chain.url,
+              validator: chain.validator,
+              feePayer: chain.capability.feePayer,
+            })),
+          }),
     rpcUrl(chainId: number): string {
       const chain = chains.get(chainId);
       if (!chain) throw new Error("local_fixture_chain_unknown");
@@ -239,42 +256,9 @@ export async function createLocalAnvilFixture(
     async openClient(): Promise<Readonly<Oaath>> {
       if (closed) throw new Error("local_fixture_closed");
       await closeClient();
-      database = await openOaathDatabase({ factory });
+      storage = await openLocalClientStores(factory, stateDirectory);
       client = createOAAth({
-        binding: {
-          issuer: issuerUrl,
-          applicationId: "fixture-application",
-          applicationName: "Local SDK Consumer",
-          clientId: "fixture-client",
-          origin: "https://consumer.example",
-          redirectUri,
-          deviceId: "fixture-device",
-          userHandle: "fixture-user",
-          context: {
-            version: "oaath.workspace-account-context/v1",
-            workspaceId: "fixture-workspace",
-            workspaceKind: "personal",
-            accountId: "fixture-account",
-          },
-          account: {
-            version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
-            kind: "kernel",
-            accountIndex: "0",
-            kernelVersion: "0.4.0",
-            factoryRoute: "kernel_factory",
-            entryPoint: { version: "0.7" },
-            ownerCredential: {
-              version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-              kind: "ecdsa",
-              address: owner.address.toLowerCase(),
-            },
-          },
-          operatorCredential: {
-            version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-            kind: "ecdsa",
-            address: session.address.toLowerCase(),
-          },
-        },
+        binding: localClientBinding(owner.address, session.address),
         issuer: {
           url: issuerUrl,
           fetch: (request: Request) => relay(authorized(request, clientToken)),
@@ -287,15 +271,7 @@ export async function createLocalAnvilFixture(
             throw new Error("local_fixture_revocation_unsupported");
           },
         },
-        stores: {
-          grants: createIndexedDbGrantStoreAdapter(database),
-          operations: createIndexedDbOperationStoreAdapter(database),
-          walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
-          preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
-          keys: createIndexedDbKeyStore(database),
-          cleanup: createIndexedDbCleanupStore(database),
-          context: createIndexedDbContextStore(database),
-        },
+        stores: storage.stores,
         chains: [...chains.values()].map((chain) => chain.capability),
         signing: {
           owner: ecdsaKey({ account: owner, validator: first.validator }),
