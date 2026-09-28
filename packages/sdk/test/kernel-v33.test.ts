@@ -14,6 +14,7 @@ import {
   createKernelV33Reads,
   kernelV33Deployment,
 } from "../src/kernel/deployment/v33.js";
+import { kernelV33OperationSigningHash } from "../src/kernel/deployment/v33-operation.js";
 import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
@@ -29,7 +30,7 @@ import {
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
 } from "../src/kernel-v4.js";
-import { prepareUserOperation } from "../src/prepared-user-operation.js";
+import { deriveOperationId, prepareUserOperation } from "../src/prepared-user-operation.js";
 
 const account = "0xc3a56de6dfc1dcef5113927ec09513918e8c44aa";
 const implementation = "0xd6cedde84be40893d153be9d467cd6ad37875b28";
@@ -219,10 +220,10 @@ describe("Kernel v3.3 session composition", () => {
       account: bound,
       nonce: "1",
     });
-    return { runtime, input, approval, sign };
+    return { runtime, input, approval, sign, session };
   }
 
-  it("enables with a chain-bound approval and signs subsequent operations with the v3.3 prefix", async () => {
+  it("enables with an all-chain approval while preserving the actual operation identity", async () => {
     const { runtime, input, approval, sign } = await sessionFixture();
     const { kind: _kind, ...materializationInput } = input;
     const enabled = await materializeKernelV33Permission({
@@ -232,13 +233,33 @@ describe("Kernel v3.3 session composition", () => {
     });
     expect(BigInt(enabled.prepared.userOperation.nonce) >> 248n).toBe(1n);
     expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");
-    expect(enabled.signature.startsWith("0x0000000000000000000000000000000000000001")).toBe(true);
+    expect(approval).toMatchObject({
+      version: "oaath.kernel.v33-permission-approval/v2",
+      chainScope: "all",
+    });
+    expect(Object.hasOwn(approval, "chainId")).toBe(false);
+    const signingHash = kernelV33OperationSigningHash(enabled.prepared);
+    expect(signingHash).not.toBe(enabled.prepared.userOperationHash);
+    expect(sign).toHaveBeenNthCalledWith(1, { hash: signingHash });
+    const anotherChain = prepareUserOperation({
+      kind: enabled.prepared.kind,
+      grantId: enabled.prepared.grantId,
+      chainId: 480,
+      entryPoint: enabled.prepared.entryPoint,
+      userOperation: enabled.prepared.userOperation,
+    });
+    expect(anotherChain.userOperationHash).not.toBe(enabled.prepared.userOperationHash);
+    expect(deriveOperationId(anotherChain, null)).not.toEqual(
+      deriveOperationId(enabled.prepared, null),
+    );
+    expect(kernelV33OperationSigningHash(anotherChain)).toBe(signingHash);
     const standard = runtime.prepareOperation(input);
     expect(BigInt(standard.userOperation.nonce) >> 248n).toBe(0n);
     expect(standard.userOperation.verificationGasLimit).toBe("300000");
     const signature = await runtime.signOperation(standard);
     expect(signature.startsWith("0xff")).toBe(true);
     expect(signature.length).toBe(134);
+    expect(kernelV33OperationSigningHash(standard)).toBe(standard.userOperationHash);
     expect(sign).toHaveBeenCalledTimes(2);
     expect(parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval)))).toEqual(
       approval,
@@ -258,15 +279,15 @@ describe("Kernel v3.3 session composition", () => {
       ).rejects.toThrow();
     }
     const { version: _version, digest: _digest, enableSignature: _signature, ...scope } = approval;
-    const otherChain = { ...scope, chainId: 480 };
+    const otherAccount = { ...scope, account: validator as `0x${string}` };
     await expect(
       materializeKernelV33Permission({
         ...materializationInput,
         runtime,
         approval: {
           ...approval,
-          chainId: 480,
-          digest: hashTypedData(kernelV33PermissionEnableTypedData(otherChain)),
+          account: validator,
+          digest: hashTypedData(kernelV33PermissionEnableTypedData(otherAccount)),
         },
       }),
     ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
@@ -283,6 +304,30 @@ describe("Kernel v3.3 session composition", () => {
     });
     await expect(runtime.signOperation(lowGas)).rejects.toThrow();
     expect(sign).not.toHaveBeenCalled();
+  });
+
+  it("verifies external enable signatures against the replayable digest only", async () => {
+    const { runtime, input, session, sign, approval } = await sessionFixture();
+    const prepared = runtime.prepareOperation({ ...input, mode: "enable" });
+    await expect(
+      runtime.encodeVerifiedSignature(
+        prepared,
+        await session.sign({ hash: prepared.userOperationHash }),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
+    expect(
+      await runtime.encodeVerifiedSignature(
+        prepared,
+        await session.sign({ hash: kernelV33OperationSigningHash(prepared) }),
+      ),
+    ).toMatch(/^0xff/u);
+    expect(sign).not.toHaveBeenCalled();
+    expect(() =>
+      parseKernelV33PermissionApproval({
+        ...approval,
+        version: "oaath.kernel.v33-permission-approval/v1",
+      }),
+    ).toThrow();
   });
 
   it("does not invent a nonce from unavailable or malformed chain evidence", async () => {

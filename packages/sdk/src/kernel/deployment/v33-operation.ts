@@ -1,4 +1,6 @@
 import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
+import { keccak256, stringToHex } from "viem";
+import { getUserOperationHash } from "viem/account-abstraction";
 import {
   encodeKernelV4Execution,
   encodeKernelV4Nonce,
@@ -6,11 +8,40 @@ import {
   type KernelV4UserOperationGas,
   type KernelV4Validation,
 } from "../../kernel-v4.js";
-import { type PreparedUserOperation, prepareUserOperation } from "../../prepared-user-operation.js";
+import {
+  asViemUserOperation,
+  type PreparedUserOperation,
+  parsePreparedUserOperation,
+  prepareUserOperation,
+} from "../../prepared-user-operation.js";
 import { applyKernelGasPolicy, type KernelGasPolicy } from "../gas-policy.js";
 import { exactInput, inputInvalid } from "../internal.js";
 import type { KernelV33RuntimePrepareInput } from "../types.js";
 import { provenKernelV33Account } from "./v33.js";
+
+/** Kernel v3.3's signature marker selects its chain-zero enable domain and operation hash. */
+export const KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX = keccak256(
+  stringToHex("kernel.replayable.signature"),
+);
+
+/**
+ * Digest verified by Kernel v3.3, without changing the prepared operation's
+ * chain-specific EntryPoint hash or durable identity. Enable always uses the
+ * native replayable path; installed sessions and owners sign the actual hash.
+ */
+export function kernelV33OperationSigningHash(value: unknown): `0x${string}` {
+  const prepared = parsePreparedUserOperation(value);
+  const mode = BigInt(prepared.userOperation.nonce) >> 248n;
+  if (mode === 0n) return prepared.userOperationHash;
+  if (mode !== 1n || ((BigInt(prepared.userOperation.nonce) >> 240n) & 0xffn) !== 2n)
+    return inputInvalid("Kernel v3.3 signing mode is unsupported");
+  return getUserOperationHash({
+    chainId: 0,
+    entryPointAddress: prepared.entryPoint.address,
+    entryPointVersion: prepared.entryPoint.version,
+    userOperation: asViemUserOperation(prepared.userOperation),
+  });
+}
 
 /** v3.3 uses mode 0x01 for enable; its validation/namespace layout matches v4. */
 export function encodeKernelV33NonceKey(value: {

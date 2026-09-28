@@ -1,8 +1,10 @@
 /**
- * Kernel 0.3.3 chain-bound permission enable. Contract reference:
+ * Kernel 0.3.3 all-chain permission enable. Contract reference:
  * zerodevapp/kernel cd697c7e21715d015e0643af22310a99aa17433b,
  * ValidationManager._enableDigest/_enableMode/_installPermission.
- * The normal EntryPoint operation hash is signed; no replayable-hash prefix is used.
+ * Replayable enable uses domain chainId zero and the signature marker also
+ * selects Kernel's chain-zero UserOperation signing hash. Operation identity
+ * and observation still use the actual chain's EntryPoint hash.
  */
 import { concat, encodeAbiParameters, hashTypedData, pad } from "viem";
 import {
@@ -14,9 +16,9 @@ import {
 import {
   type KernelV33AccountDescriptor,
   type KernelV33Reads,
-  kernelV33Deployment,
   provenKernelV33Account,
 } from "../deployment/v33.js";
+import { KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX } from "../deployment/v33-operation.js";
 import {
   captureInput,
   captureKeyProfile,
@@ -34,11 +36,11 @@ import type { KernelV33Runtime, KernelV33RuntimePrepareInput, KeyProfile } from 
 import type { KernelPermissionMaterialization } from "./materialize.js";
 
 const NO_HOOK = "0x0000000000000000000000000000000000000001" as const;
-export const OAATH_KERNEL_V33_APPROVAL_VERSION = "oaath.kernel.v33-permission-approval/v1" as const;
-const SCOPE_KEYS = ["chainId", "account", "nonce", "permissionId", "packages"] as const;
+export const OAATH_KERNEL_V33_APPROVAL_VERSION = "oaath.kernel.v33-permission-approval/v2" as const;
+const SCOPE_KEYS = ["chainScope", "account", "nonce", "permissionId", "packages"] as const;
 
 export interface KernelV33PermissionScope {
-  readonly chainId: number;
+  readonly chainScope: "all";
   readonly account: `0x${string}`;
   /** Effective uint32 validation nonce from Kernel's currentNonce/validationConfig. */
   readonly nonce: string;
@@ -54,7 +56,8 @@ export interface KernelV33PermissionApproval extends KernelV33PermissionScope {
 }
 
 function captureScope(record: Record<string, unknown>): Readonly<KernelV33PermissionScope> {
-  const chainId = kernelV33Deployment(record.chainId).chainId;
+  if (record.chainScope !== "all")
+    return inputInvalid("Kernel v3.3 approval chain scope is unsupported");
   const nonce = inputUint(record.nonce, (1n << 32n) - 1n, "Kernel v3.3 validation nonce");
   if (nonce === 0n) return inputInvalid("Kernel v3.3 validation nonce must be positive");
   if (typeof record.permissionId !== "string" || !/^0x[0-9a-f]{8}$/u.test(record.permissionId))
@@ -81,7 +84,7 @@ function captureScope(record: Record<string, unknown>): Readonly<KernelV33Permis
       return inputInvalid("Kernel v3.3 permission configuration does not match its authority");
   }
   return Object.freeze({
-    chainId,
+    chainScope: "all",
     account: inputAddress(record.account, "Kernel v3.3 permission account"),
     nonce: nonce.toString(10),
     permissionId,
@@ -94,7 +97,7 @@ function typedData(scope: Readonly<KernelV33PermissionScope>) {
     domain: {
       name: "Kernel",
       version: "0.3.3",
-      chainId: scope.chainId,
+      chainId: 0,
       verifyingContract: scope.account,
     },
     types: {
@@ -148,7 +151,7 @@ function runtimeScope(
   )
     return inputInvalid("Kernel v3.3 approval requires a session runtime for this account chain");
   return captureScope({
-    chainId: account.chainId,
+    chainScope: "all",
     account: account.account,
     nonce,
     permissionId: runtime.validation.permissionId,
@@ -189,7 +192,7 @@ export async function kernelV33PermissionInstallNonce(value: {
   try {
     result = await read({
       type: "kernel_v33_permission_nonce",
-      chainId: scope.chainId,
+      chainId: (record.runtime as KernelV33Runtime).deployment.chainId,
       account: scope.account,
       permissionId: scope.permissionId,
     });
@@ -204,7 +207,7 @@ export async function kernelV33PermissionInstallNonce(value: {
   return nonce.toString(10);
 }
 
-/** Approves this account, chain and permission only; no operation is submitted. */
+/** One owner signature for the same account, permission and validation nonce on all chains. */
 export async function approveKernelV33Permission(
   value: ApproveKernelV33PermissionInput,
 ): Promise<Readonly<KernelV33PermissionApproval>> {
@@ -286,7 +289,6 @@ export async function materializeKernelV33Permission(
   const approval = parseKernelV33PermissionApproval(input.approval);
   const scope = runtimeScope(input.runtime, input.account, approval.nonce);
   if (
-    scope.chainId !== approval.chainId ||
     scope.account !== approval.account ||
     scope.permissionId !== approval.permissionId ||
     scope.packages.length !== approval.packages.length ||
@@ -311,6 +313,7 @@ export async function materializeKernelV33Permission(
   return Object.freeze({
     prepared,
     signature: concat([
+      KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX,
       NO_HOOK,
       encodeAbiParameters(
         [

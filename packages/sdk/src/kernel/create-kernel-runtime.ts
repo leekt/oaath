@@ -24,7 +24,11 @@ import {
   type KernelV33AccountDescriptor,
   type KernelV33Reads,
 } from "./deployment/v33.js";
-import { encodeKernelV33NonceKey, prepareKernelV33Operation } from "./deployment/v33-operation.js";
+import {
+  encodeKernelV33NonceKey,
+  kernelV33OperationSigningHash,
+  prepareKernelV33Operation,
+} from "./deployment/v33-operation.js";
 import {
   applyKernelGasPolicy,
   captureKernelGasPolicy,
@@ -451,7 +455,9 @@ export function createKernelRuntime(
   async function signOperation(prepared: unknown): Promise<`0x${string}`> {
     const operation = boundOperation(prepared);
     return operator.encodeSignature(
-      await operator.key.sign(operation.userOperationHash),
+      await operator.key.sign(
+        isV33 ? kernelV33OperationSigningHash(operation) : operation.userOperationHash,
+      ),
       deployment,
     );
   }
@@ -472,7 +478,12 @@ export function createKernelRuntime(
     ) {
       return inputInvalid("Kernel external key signature is invalid");
     }
-    if (!(await operator.key.verify(operation.userOperationHash, signature))) {
+    if (
+      !(await operator.key.verify(
+        isV33 ? kernelV33OperationSigningHash(operation) : operation.userOperationHash,
+        signature,
+      ))
+    ) {
       return runtimeFail(
         "kernel_runtime_signature_invalid",
         "Kernel external key signature does not verify against the bound public material",
