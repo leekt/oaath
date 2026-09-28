@@ -1,0 +1,220 @@
+/* Shared tokens and controls for the extension's own pages (popup, call
+ * confirmation, call status). Light and dark follow the browser setting. */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --sunken: #eef0f3;
+  --border: #d6dae1;
+  --text: #16181d;
+  --muted: #5b6270;
+  --accent: #15803d;
+  --accent-text: #ffffff;
+  --accent-soft: #dcf3e4;
+  --danger: #b42318;
+  --danger-text: #ffffff;
+  --danger-soft: #fde7e5;
+  --warn: #8a5a00;
+  --warn-soft: #fbefd6;
+  --focus: #2563eb;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #14151f;
+    --surface: #1c1e2b;
+    --sunken: #10111a;
+    --border: #343849;
+    --text: #e8eaf0;
+    --muted: #a3a9b8;
+    --accent: #4ade80;
+    --accent-text: #0b1a10;
+    --accent-soft: #173524;
+    --danger: #f87171;
+    --danger-text: #1f0a0a;
+    --danger-soft: #3a1a1c;
+    --warn: #fbbf24;
+    --warn-soft: #3a2e12;
+    --focus: #93b4ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px / 1.45 var(--sans);
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+/* Controls */
+button {
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: 600 13px var(--sans);
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--sunken);
+}
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+button.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+button.danger-fill {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--danger-text);
+}
+button.danger-fill:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(1.08);
+}
+button:disabled {
+  border-color: var(--border);
+  background: var(--sunken);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.field > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--sunken);
+  color: var(--text);
+  font: 12.5px var(--mono);
+}
+input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.error {
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+/* Status vocabulary */
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--muted);
+  font: 600 11px var(--sans);
+  white-space: nowrap;
+}
+.badge[data-tone="ok"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge[data-tone="warn"] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.badge[data-tone="danger"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.message {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+}
+.message[data-tone="danger"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.message[data-tone="ok"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Fact list: label on the left, exact value on the right. */
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+}
+dl.facts dt {
+  color: var(--muted);
+}
+dl.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Exact facts as the worker formatted them. */
+pre.exact {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sunken);
+  font: 12.5px / 1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

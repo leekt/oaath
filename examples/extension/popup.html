@@ -2,87 +2,181 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <title>OAAth</title>
+    <link rel="stylesheet" href="theme.css" />
     <style>
       body {
-        font-family: ui-monospace, monospace;
-        width: 340px;
+        width: 360px;
+        padding: 14px 16px 16px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      header h1 {
         margin: 0;
+        font-size: 15px;
+      }
+      #origin {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font: 12px var(--mono);
+      }
+      .panel {
         padding: 12px;
-        background: #1a1a2e;
-        color: #e5e7eb;
-        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
       }
-      h1 {
-        font-size: 14px;
+      .state-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #state-detail {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+      dl.facts {
+        margin: 10px 0 0;
+      }
+      section {
+        margin-top: 14px;
+      }
+      section > h2 {
         margin: 0 0 8px;
-        color: #4ade80;
+        font-size: 13px;
       }
-      label {
-        display: block;
-        margin-top: 6px;
-        color: #9ca3af;
+      .fields {
+        display: grid;
+        gap: 10px;
       }
-      input {
-        width: 100%;
-        box-sizing: border-box;
-        background: #0f0f1a;
-        color: #e5e7eb;
-        border: 1px solid #374151;
-        border-radius: 4px;
-        padding: 4px 6px;
-        font-family: inherit;
+      .pair-limits {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: start;
+        gap: 8px;
       }
-      button {
-        margin-top: 10px;
-        margin-right: 6px;
-        background: #4ade80;
-        color: #0f0f1a;
-        border: 0;
-        border-radius: 4px;
-        padding: 6px 10px;
-        font-family: inherit;
-        font-weight: bold;
-        cursor: pointer;
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
       }
-      button.secondary {
-        background: #374151;
-        color: #e5e7eb;
+      .actions button {
+        flex: 1;
       }
-      #status {
-        margin: 8px 0;
-        padding: 8px;
-        background: #0f0f1a;
-        border-radius: 4px;
-        word-break: break-all;
-        white-space: pre-wrap;
+      #revoke-confirm p {
+        margin: 0 0 4px;
       }
       details {
-        margin-top: 8px;
+        margin-top: 14px;
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
       }
       summary {
         cursor: pointer;
-        color: #9ca3af;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      details .fields {
+        margin-top: 10px;
+      }
+      .note {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
       }
     </style>
   </head>
   <body>
-    <h1>OAAth</h1>
-    <div id="status">reading…</div>
-    <details>
-      <summary>service</summary>
-      <label>service URL <input id="url" /></label>
-      <label>chain id <input id="chain" /></label>
-      <button type="button" id="save" class="secondary">save</button>
-    </details>
-    <details open>
-      <summary>pair this origin</summary>
-      <label>target <input id="target" placeholder="0x…" /></label>
-      <label>selector <input id="selector" placeholder="0xa9059cbb" /></label>
-      <label>value limit (wei) <input id="valueLimit" value="0" /></label>
-      <label>expires in (s) <input id="expiresIn" value="1800" /></label>
-      <label>per-chain operation limit <input id="operationLimit" value="10" /></label>
-      <button type="button" id="pair">request permission</button>
-      <button type="button" id="revoke" class="secondary">revoke</button>
+    <header>
+      <h1>OAAth</h1>
+      <span id="origin" title="">Reading the current tab…</span>
+    </header>
+
+    <div class="panel" aria-live="polite">
+      <div class="state-row">
+        <strong id="state-title">Checking this site</strong>
+        <span id="state-badge" class="badge" data-tone="neutral">…</span>
+      </div>
+      <p id="state-detail">Reading the stored permission for this site.</p>
+      <dl class="facts" id="facts" hidden></dl>
+    </div>
+    <p id="status" class="message" role="status" aria-live="polite" hidden></p>
+
+    <section id="pair-section" hidden>
+      <h2>Request permission for this site</h2>
+      <form id="pair-form" class="fields" novalidate>
+        <label class="field">
+          <span>Contract address</span>
+          <input id="target" name="target" placeholder="0x…" autocomplete="off" spellcheck="false" required />
+          <small class="error" id="target-error" hidden></small>
+        </label>
+        <label class="field">
+          <span>Function selector</span>
+          <input id="selector" name="selector" placeholder="0xa9059cbb" autocomplete="off" spellcheck="false" required />
+          <small class="hint" id="selector-hint">4 bytes: the first 8 hex digits of the call data.</small>
+          <small class="error" id="selector-error" hidden></small>
+        </label>
+        <div class="pair-limits">
+          <label class="field">
+            <span>Wei per call</span>
+            <input id="valueLimit" name="valueLimit" value="0" inputmode="numeric" autocomplete="off" />
+            <small class="error" id="valueLimit-error" hidden></small>
+          </label>
+          <label class="field">
+            <span>Expires in (s)</span>
+            <input id="expiresIn" name="expiresIn" value="1800" inputmode="numeric" autocomplete="off" />
+            <small class="error" id="expiresIn-error" hidden></small>
+          </label>
+          <label class="field">
+            <span>Ops per chain</span>
+            <input id="operationLimit" name="operationLimit" value="10" inputmode="numeric" autocomplete="off" />
+            <small class="error" id="operationLimit-error" hidden></small>
+          </label>
+        </div>
+        <button type="submit" id="pair" class="primary">Request permission</button>
+        <p class="note">The owner reviews and approves this request on their own device. Keep this popup open, or reopen it after approving.</p>
+      </form>
+    </section>
+
+    <section id="revoke-section" hidden>
+      <div class="actions" id="revoke-actions">
+        <button type="button" id="revoke" class="danger">Revoke permission</button>
+      </div>
+      <div id="revoke-confirm" hidden>
+        <p><strong>Revoke this site's permission?</strong></p>
+        <p class="note">The site stops sending calls immediately. The owner then removes the permission on each chain.</p>
+        <div class="actions">
+          <button type="button" id="revoke-cancel">Cancel</button>
+          <button type="button" id="revoke-confirm-button" class="danger-fill">Revoke</button>
+        </div>
+      </div>
+    </section>
+
+    <details id="service-details">
+      <summary>Service</summary>
+      <form id="service-form" class="fields" novalidate>
+        <label class="field">
+          <span>Service URL</span>
+          <input id="url" placeholder="http://127.0.0.1:8787" autocomplete="off" spellcheck="false" />
+          <small class="error" id="url-error" hidden></small>
+        </label>
+        <label class="field">
+          <span>Chain ID</span>
+          <input id="chain" placeholder="421614" inputmode="numeric" autocomplete="off" />
+          <small class="error" id="chain-error" hidden></small>
+        </label>
+        <button type="submit" id="save">Save service</button>
+        <p class="note">Leave a field empty to use its default. Changing the service URL starts a fresh permission for every site.</p>
+      </form>
     </details>
     <script src="popup.js"></script>
   </body>

@@ -33,6 +33,7 @@ for (const file of [
   "status.html",
   "status.js",
   "status-presentation.js",
+  "theme.css",
   "transaction-confirmation.html",
   "transaction-confirmation.js",
   "transaction-confirmation-presentation.js",
