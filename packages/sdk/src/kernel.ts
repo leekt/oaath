@@ -30,7 +30,10 @@ export {
   createKernelV33Reads,
   kernelV33Deployment,
 } from "./kernel/deployment/v33.js";
-export { encodeKernelV33NonceKey } from "./kernel/deployment/v33-operation.js";
+export {
+  encodeKernelV33NonceKey,
+  kernelV33OperationSigningHash,
+} from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
 export type {
   EcdsaKeyAccount,

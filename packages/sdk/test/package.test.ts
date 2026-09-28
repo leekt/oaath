@@ -71,6 +71,7 @@ describe("package boundary", () => {
       "kernelAllChainCapabilityHash",
       "kernelPermissionInstallNonce",
       "kernelV33Deployment",
+      "kernelV33OperationSigningHash",
       "kernelV33PermissionEnableTypedData",
       "kernelV33PermissionInstallNonce",
       "kernelV4Deployment",
