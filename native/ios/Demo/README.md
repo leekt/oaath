@@ -26,14 +26,14 @@ stability guarantee and no production qualification.
    Mac's loopback address. Tap **Scan pairing QR** and scan the browser's
    transient QR (or use the system Camera/tap/paste path). It carries both the
    reachable LAN relay URL and pairing code. Review the filled fields, then tap
-   "Pair this device". The phone and Mac must be on the same network; allow the
+   "Pair this phone". The phone and Mac must be on the same network; allow the
    app's Local Network prompt so it can connect to the relay on the Mac.
 
 The device keeps the normalized relay endpoint, issued credential, owner account,
 public key, and configured chain/EntryPoint pairs in one versioned Keychain value.
 Installs paired before persisted pairing v4 must pair once again; the app rejects
 records that lack the current account and chain binding.
-While paired, new pairing links are ignored until **Clear pairing** explicitly
+While paired, new pairing links are ignored until **Device → Unpair this phone** explicitly
 forgets that bound identity. The pairing code is one-shot and expires. If the
 bound relay refuses the credential, the app clears the whole pairing and
 returns to the pairing screen. Restarting the default in-memory devnet command

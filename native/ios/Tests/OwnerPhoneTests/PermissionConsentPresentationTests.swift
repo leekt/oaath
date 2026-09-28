@@ -79,6 +79,39 @@ final class PermissionConsentPresentationTests: XCTestCase {
         })
     }
 
+    func testHighlightsSummarizeEveryRequestedConstraint() {
+        let presentation = PermissionConsentPresentation(
+            client: OwnerPhoneClientIdentity(
+                clientId: "authenticated-client",
+                redirectUri: "https://app.example/callback"),
+            scope: scope(
+                owner: .p256(publicKey: ownerPublicKey),
+                operatorCredential: .p256(publicKey: operatorPublicKey),
+                sessionSigner: nil))
+
+        XCTAssertEqual(presentation.highlights.map(\.id), ["call.0", "call.1", "limit", "window"])
+        XCTAssertEqual(presentation.highlights[0].title, "Call 0x12345678 on \(firstTarget)")
+        XCTAssertEqual(presentation.highlights[0].detail, .text("Up to 100 wei per call · 2 argument constraints"))
+        XCTAssertEqual(presentation.highlights[1].title, "Call 0x90abcdef on \(secondTarget)")
+        XCTAssertEqual(presentation.highlights[1].detail, .text("No native value"))
+        XCTAssertEqual(presentation.highlights[2].title, "Up to 10 operations per chain")
+        XCTAssertEqual(presentation.highlights[2].detail, .text("Chain scope: all"))
+        XCTAssertEqual(presentation.highlights[3].detail, .window(from: 1_753_000_100, until: 1_753_003_600))
+        XCTAssertEqual(
+            presentation.identityFacts.map(\.id),
+            ["application.applicationId", "application.origin", "application.redirectUri",
+             "context.workspaceId", "context.workspaceKind", "context.accountId"])
+
+        let unbounded = PermissionConsentPresentation(
+            client: OwnerPhoneClientIdentity(clientId: "authenticated-client", redirectUri: nil),
+            scope: scope(
+                owner: .p256(publicKey: ownerPublicKey),
+                operatorCredential: .p256(publicKey: operatorPublicKey),
+                sessionSigner: nil,
+                policyValidUntil: nil))
+        XCTAssertEqual(unbounded.highlights.last?.title, "No end date")
+    }
+
     func testPresentsEveryAuthorityDefiningPermissionFact() {
         let presentation = PermissionConsentPresentation(
             client: OwnerPhoneClientIdentity(

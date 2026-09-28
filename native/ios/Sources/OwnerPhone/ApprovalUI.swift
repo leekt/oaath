@@ -74,6 +74,18 @@ struct PermissionConsentFact: Equatable, Identifiable, Sendable {
     let value: Value
 }
 
+/// One plain-language line summarizing a requested constraint.
+struct PermissionConsentHighlight: Equatable, Identifiable, Sendable {
+    enum Detail: Equatable, Sendable {
+        case text(String)
+        case window(from: Int, until: Int)
+    }
+
+    let id: String
+    let title: String
+    let detail: Detail
+}
+
 /// A titled group of permission facts. Stable identifiers make repeated calls
 /// and argument rules distinct even when their displayed values are identical.
 struct PermissionConsentSection: Equatable, Identifiable, Sendable {
@@ -92,8 +104,49 @@ struct PermissionConsentPresentation: Equatable, Sendable {
         + "requested constraints are not guaranteed."
 
     let sections: [PermissionConsentSection]
+    /// Every authority-defining requested constraint, in reading order: each
+    /// permitted call with its value limit and argument constraints, the
+    /// per-chain operation limit with chain scope, and the policy window.
+    let highlights: [PermissionConsentHighlight]
+
+    /// Who is asking and for which workspace/account, in display order. The
+    /// same immutable facts also appear in `sections`.
+    var identityFacts: [PermissionConsentFact] {
+        let order = [
+            "application.applicationId", "application.origin", "application.redirectUri",
+            "context.workspaceId", "context.workspaceKind", "context.accountId",
+        ]
+        let facts = sections.flatMap(\.facts)
+        return order.compactMap { id in facts.first { $0.id == id } }
+    }
 
     init(client: OwnerPhoneClientIdentity, scope: OwnerPhonePermissionScope) {
+        var highlights = scope.calls.enumerated().map { index, call in
+            var detail = call.valueLimit == "0"
+                ? "No native value"
+                : "Up to \(call.valueLimit) wei per call"
+            if !call.argumentEquals.isEmpty {
+                let count = call.argumentEquals.count
+                detail += " · \(count) argument constraint\(count == 1 ? "" : "s")"
+            }
+            return PermissionConsentHighlight(
+                id: "call.\(index)",
+                title: "Call \(call.selector) on \(call.target)",
+                detail: .text(detail))
+        }
+        let limit = scope.perChainOperationLimit
+        highlights.append(PermissionConsentHighlight(
+            id: "limit",
+            title: "Up to \(limit) operation\(limit == 1 ? "" : "s") per chain",
+            detail: .text("Chain scope: \(scope.chainScope)")))
+        highlights.append(PermissionConsentHighlight(
+            id: "window",
+            title: scope.policyValidUntil == nil ? "No end date" : "Time limited",
+            detail: scope.policyValidUntil.map {
+                .window(from: scope.policyValidAfter, until: $0)
+            } ?? .text("Valid from the policy start with no upper bound")))
+        self.highlights = highlights
+
         var sections = [
             PermissionConsentSection(
                 id: "application",
@@ -604,6 +657,23 @@ struct OwnerSigningConsentPresentation: Equatable, Sendable {
     }
 }
 
+/// Why the last explicit Approve or Reject tap did not proceed. Display only:
+/// a notice never authorizes, retries, or decides anything.
+public enum ApprovalActionNotice: Equatable, Sendable {
+    /// The request expired before the decision could start.
+    case expired
+    /// An earlier submission is unresolved; only that same decision may retry.
+    case conflictingIntent
+    /// The signing packet could not be fetched from the relay.
+    case signingUnavailable
+    /// The signing packet did not match the displayed consent.
+    case signingMismatch
+    /// This phone's pairing, foreground state, or verification no longer agrees.
+    case cannotSign
+    /// Signing was cancelled or interrupted before a signature existed.
+    case signingCancelled
+}
+
 @MainActor
 public final class ApprovalModel: ObservableObject {
     public enum Phase {
@@ -618,6 +688,9 @@ public final class ApprovalModel: ObservableObject {
     /// Set when a submission ended ambiguously; retrying is explicit and safe
     /// because a retry answers the stored outcome, never decides again.
     @Published public private(set) var unresolvedNotice = false
+    /// Feedback for the latest tap that could not proceed; cleared on the
+    /// next tap or request.
+    @Published public private(set) var actionNotice: ApprovalActionNotice?
 
     private let relay: any OwnerPhoneRelayClient
     private let kernelP256ApprovalBinding: OwnerPhoneKernelP256ApprovalBinding?
@@ -689,6 +762,11 @@ public final class ApprovalModel: ObservableObject {
 
     public func approve() async {
         guard let (token, review) = capturedReview() else { return }
+        actionNotice = nil
+        guard now() < review.projection.expiresAt else {
+            notice(.expired, token: token)
+            return
+        }
         guard approvalAvailability(for: review.projection) == .kernelP256OwnerSigning,
               let binding = kernelP256ApprovalBinding
         else { return }
@@ -733,6 +811,7 @@ public final class ApprovalModel: ObservableObject {
 
     public func reject() async {
         guard let (token, review) = capturedReview() else { return }
+        actionNotice = nil
         await decide(.rejected, token: token, review: review)
     }
 
@@ -753,7 +832,10 @@ public final class ApprovalModel: ObservableObject {
               case .pending = review.state,
               !Task.isCancelled, isForeground, binding.pairingIsCurrent(),
               now() < review.projection.expiresAt
-        else { return }
+        else {
+            notice(.cannotSign, token: token)
+            return
+        }
         let signing: OwnerPhoneRequestProjection
         if let retained = retainedKernelArtifact,
            retained.reviewTokenId == token.id, retained.ambiguouslySubmitted
@@ -762,7 +844,10 @@ public final class ApprovalModel: ObservableObject {
         } else {
             guard let fetched = try? await relay.permissionSigningProjection(
                 operationId: review.projection.operationId)
-            else { return }
+            else {
+                notice(.signingUnavailable, token: token)
+                return
+            }
             signing = fetched
         }
         // The authenticated signing packet belongs to the exact consent still
@@ -776,7 +861,10 @@ public final class ApprovalModel: ObservableObject {
               scope.decisionCapability == .approveOrReject,
               case let .eip712(request) = scope.request,
               request.signer.ownerCredential.credential == consent.account.ownerCredential
-        else { return }
+        else {
+            notice(.signingMismatch, token: token)
+            return
+        }
         await approveKernel(token: token, review: review, binding: binding,
                             signingProjection: signing)
     }
@@ -794,7 +882,10 @@ public final class ApprovalModel: ObservableObject {
               isForeground,
               binding.pairingIsCurrent(),
               binding.validates(signingReview, now: startedAt)
-        else { return }
+        else {
+            notice(.cannotSign, token: token)
+            return
+        }
 
         var review = capturedReview
         do {
@@ -828,6 +919,7 @@ public final class ApprovalModel: ObservableObject {
                 cancelAuthorizationIfOwned(
                     token: token,
                     authorizationToken: authorizationToken)
+                notice(.signingCancelled, token: token)
                 return
             }
             guard ownsAuthorization(token, authorizationToken: authorizationToken) else {
@@ -852,6 +944,7 @@ public final class ApprovalModel: ObservableObject {
             cancelAuthorizationIfOwned(
                 token: token,
                 authorizationToken: authorizationToken)
+            notice(.signingCancelled, token: token)
             return
         }
 
@@ -881,6 +974,7 @@ public final class ApprovalModel: ObservableObject {
         activeAuthorizationToken = nil
         retainedKernelArtifact = nil
         unresolvedNotice = false
+        actionNotice = nil
         phase = .loading
         return token
     }
@@ -897,6 +991,12 @@ public final class ApprovalModel: ObservableObject {
         guard activeLoadToken == loadToken else { return }
         activeLoadToken = nil
         phase = .failed(code)
+    }
+
+    /// Records feedback only while the tapped review still owns the screen.
+    private func notice(_ value: ApprovalActionNotice, token: ReviewToken) {
+        guard owns(token) else { return }
+        actionNotice = value
     }
 
     private func capturedReview() -> (ReviewToken, OwnerPhoneReview)? {
@@ -959,8 +1059,14 @@ public final class ApprovalModel: ObservableObject {
         var review = capturedReview
         do {
             try review.beginSubmission(command.outcome, now: now())
+        } catch OwnerPhoneReview.TransitionError.expired {
+            notice(.expired, token: token)
+            return
+        } catch OwnerPhoneReview.TransitionError.conflictingUnresolvedIntent {
+            notice(.conflictingIntent, token: token)
+            return
         } catch {
-            return // forbidden transition; the current state already renders why
+            return // other forbidden transitions expose no control for this tap
         }
         phase = .review(review)
         await submit(
@@ -1037,222 +1143,564 @@ public final class ApprovalModel: ObservableObject {
 public struct ApprovalView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: ApprovalModel
+    private let onDone: (() -> Void)?
 
-    public init(model: ApprovalModel) {
+    /// `onDone` leaves a settled, failed, or expired review; it never decides.
+    public init(model: ApprovalModel, onDone: (() -> Void)? = nil) {
         self.model = model
+        self.onDone = onDone
     }
 
     public var body: some View {
-        VStack(spacing: 16) {
-            Text("EXPERIMENTAL PREVIEW")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                switch model.phase {
+                case .idle:
+                    stateMessage(
+                        icon: "tray",
+                        title: "No request open",
+                        detail: "Choose a pending request to review it.")
+                case .loading:
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading the request…")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                case let .failed(code):
+                    failure(code)
+                case let .review(review):
+                    reviewBody(review)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .safeAreaInset(edge: .bottom) {
             switch model.phase {
-            case .idle:
-                Text("Waiting for an approval request.")
-            case .loading:
-                ProgressView()
-            case let .failed(code):
-                Text("Request unavailable (\(code)).")
             case let .review(review):
-                reviewBody(review)
+                actionBar(review)
+            case .failed:
+                if let onDone { bar { doneButton(onDone) } }
+            case .idle, .loading:
+                EmptyView()
             }
         }
-        .padding()
         .onAppear { model.setForeground(scenePhase == .active) }
         .onChange(of: scenePhase) { phase in
             model.setForeground(phase == .active)
         }
     }
 
+    // MARK: Review content
+
     @ViewBuilder
     private func reviewBody(_ review: OwnerPhoneReview) -> some View {
-        Text(review.projection.matchCode.display)
-            .font(.system(.largeTitle, design: .monospaced))
-            .bold()
-        Text("Compare this code with the one your browser shows.")
-            .font(.footnote)
-        consentBody(review.projection)
-        Text(review.projection.operationId)
-            .font(.caption2.monospaced())
-            .foregroundStyle(.secondary)
-        Text("Request expires \(Date(timeIntervalSince1970: Double(review.projection.expiresAt) / 1000).formatted())")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+        let projection = review.projection
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title(for: projection))
+                .font(.title2.bold())
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Experimental preview. Review every fact before you decide.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
 
-        switch review.state {
-        case .pending:
-            if model.unresolvedNotice, let intent = review.unresolvedIntent {
-                Text("The previous \(intent == .approved ? "approval" : "rejection") outcome is unknown. Retrying is safe: a retry answers the stored outcome and never decides again.")
-                    .font(.footnote)
+        matchCodeCard(projection)
+
+        switch projection.scope {
+        case let .permissionRequest(scope):
+            permissionBody(
+                PermissionConsentPresentation(client: projection.client, scope: scope),
+                redirectUri: projection.client.redirectUri)
+        case let .ownerSigningRequest(scope):
+            switch model.approvalAvailability(for: projection) {
+            case .kernelP256OwnerSigning:
+                callout(
+                    "Approve only if you started this. This phone signs only while this exact review, pairing, and screen stay current.",
+                    icon: "signature", color: .accentColor)
+            case .rejectOnly:
+                callout(
+                    "Reject only. This phone can inspect this request but can't verify it well enough to sign, approve, or predict its outcome.",
+                    icon: "exclamationmark.triangle", color: .orange)
             }
-            HStack(spacing: 24) {
-                Button("Reject", role: .destructive) { Task { await model.reject() } }
+            factSections(OwnerSigningConsentPresentation(scope: scope).sections.map(FactGroup.init))
+        case let .kernelRevocation(scope):
+            callout(
+                "Approving lets the service submit this removal on one configured chain. It is finished only when the service confirms it onchain.",
+                icon: "arrow.uturn.backward.circle", color: .accentColor)
+            if model.approvalAvailability(for: projection) == .rejectOnly {
+                callout(
+                    "This request doesn't match this phone's paired account, key, or configured chain. Reject only.",
+                    icon: "exclamationmark.triangle", color: .orange)
+            }
+            factSections(KernelRevocationConsentPresentation(scope: scope).sections.map(FactGroup.init))
+        case let .raw(text):
+            // Explicit unstructured state: the owner reviews the raw text or
+            // rejects; nothing is summarized that was not parsed.
+            callout(
+                "This request isn't structured, so this phone can't summarize it. Review the raw text below, or reject it.",
+                icon: "exclamationmark.triangle", color: .orange)
+            Text(text)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(groupBackground)
+        }
+
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Operation ID")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text(projection.operationId)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func title(for projection: OwnerPhoneRequestProjection) -> String {
+        switch projection.scope {
+        case .permissionRequest:
+            return "\(projection.client.clientId) is asking for permission"
+        case let .kernelRevocation(scope):
+            return "Remove the permission for \(projection.client.clientId) on chain \(scope.operation.chainId)"
+        case .ownerSigningRequest:
+            return "\(projection.client.clientId) is asking for an owner signature"
+        case .raw:
+            return "\(projection.client.clientId) sent an unstructured request"
+        }
+    }
+
+    private func matchCodeCard(_ projection: OwnerPhoneRequestProjection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Match code")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(projection.matchCode.display)
+                .font(.system(.largeTitle, design: .monospaced).weight(.bold))
+                .textSelection(.enabled)
+                .accessibilityLabel("Match code \(projection.matchCode.value.map(String.init).joined(separator: " "))")
+            Text("If the requesting app shows a code, it must match this one exactly.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            ExpiryLine(expiresAt: projection.expiresAt)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(groupBackground)
+    }
+
+    @ViewBuilder
+    private func permissionBody(
+        _ presentation: PermissionConsentPresentation,
+        redirectUri: String?
+    ) -> some View {
+        group("What this allows") {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(presentation.highlights) { highlight in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(highlight.title)
+                                .font(.subheadline.monospaced().weight(.medium))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(detailText(highlight.detail))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+
+        callout(PermissionConsentPresentation.evidenceNotice,
+                icon: "exclamationmark.triangle", color: .orange)
+
+        group("Requested by") {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(presentation.identityFacts) { fact in
+                    factRow(fact.label, fact.value.display, evidence: fact.evidence)
+                }
+            }
+        }
+
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(presentation.sections) { section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(section.title)
+                            .font(.subheadline.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
+                        ForEach(section.facts) { fact in
+                            factRow(fact.label, fact.value.display, evidence: fact.evidence)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 12)
+        } label: {
+            Text("All request details")
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding(16)
+        .background(groupBackground)
+    }
+
+    private func detailText(_ detail: PermissionConsentHighlight.Detail) -> String {
+        switch detail {
+        case let .text(text):
+            return text
+        case let .window(from, until):
+            let start = Date(timeIntervalSince1970: Double(from))
+            let end = Date(timeIntervalSince1970: Double(until))
+            return "From \(start.formatted(date: .abbreviated, time: .shortened)) until \(end.formatted(date: .abbreviated, time: .shortened))"
+        }
+    }
+
+    /// Owner-signing and revocation facts are the substance of the request,
+    /// so they render expanded.
+    private struct FactGroup: Identifiable {
+        let id: String
+        let title: String
+        let facts: [(id: String, label: String, value: String)]
+
+        init(_ section: OwnerSigningConsentSection) {
+            id = section.id
+            title = section.title
+            facts = section.facts.map { ($0.id, $0.label, $0.value) }
+        }
+    }
+
+    private func factSections(_ groups: [FactGroup]) -> some View {
+        ForEach(groups) { entry in
+            group(entry.title) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(entry.facts, id: \.id) { fact in
+                        factRow(fact.label, fact.value, evidence: nil)
+                    }
+                }
+            }
+        }
+    }
+
+    private func factRow(
+        _ label: String, _ value: String, evidence: PermissionConsentEvidence?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let evidence {
+                    Text(evidence.shortDisplay)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(evidence == .relayBound ? Color.accentColor : .orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .overlay(
+                            Capsule().stroke(
+                                (evidence == .relayBound ? Color.accentColor : .orange).opacity(0.5),
+                                lineWidth: 1))
+                        .accessibilityLabel(evidence.display)
+                }
+            }
+            Text(value)
+                .font(.subheadline.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Decision bar
+
+    @ViewBuilder
+    private func actionBar(_ review: OwnerPhoneReview) -> some View {
+        bar {
+            switch review.state {
+            case .pending:
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let expired = Int(context.date.timeIntervalSince1970 * 1000)
+                        >= review.projection.expiresAt
+                    pendingControls(review, expired: expired)
+                }
+            case .authorizing:
+                progress("Signing your approval…")
+            case let .submitting(outcome):
+                progress(outcome == .approved ? "Sending your approval…" : "Sending your rejection…")
+            case let .settled(decision):
+                settledBody(decision, overridden: review.storedOutcomeOverrodeCommand,
+                            domain: review.projection.decisionDomain)
+                if let onDone { doneButton(onDone) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pendingControls(_ review: OwnerPhoneReview, expired: Bool) -> some View {
+        if expired {
+            Label("This request expired. Nothing was decided.", systemImage: "clock.badge.xmark")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let onDone { doneButton(onDone) }
+        } else {
+            if let notice = model.actionNotice {
+                noticeLine(noticeText(notice))
+            }
+            if model.unresolvedNotice, let intent = review.unresolvedIntent {
+                noticeLine("We couldn't confirm your \(intent == .approved ? "approval" : "rejection") reached the relay. Retrying is safe: it returns the stored outcome and never decides twice.")
+                decisionButton(
+                    intent == .approved ? "Retry approval" : "Retry rejection",
+                    prominent: intent == .approved,
+                    destructive: intent == .rejected
+                ) {
+                    Task { intent == .approved ? await model.approve() : await model.reject() }
+                }
+            } else {
                 switch model.approvalAvailability(for: review.projection) {
                 case .kernelP256OwnerSigning:
-                    Button("Approve") { Task { await model.approve() } }
-                        .buttonStyle(.borderedProminent)
+                    HStack(spacing: 12) {
+                        decisionButton("Reject", prominent: false, destructive: true) {
+                            Task { await model.reject() }
+                        }
+                        decisionButton("Approve", prominent: true, destructive: false) {
+                            Task { await model.approve() }
+                        }
+                    }
                 case .rejectOnly:
-                    EmptyView()
-                }
-            }
-        case .authorizing:
-            ProgressView("Authorizing…")
-        case .submitting:
-            ProgressView("Submitting…")
-        case let .settled(decision):
-            settledBody(decision, overridden: review.storedOutcomeOverrodeCommand,
-                        domain: review.projection.decisionDomain)
-        }
-    }
-
-    /// The consent facts: who is asking, and exactly what they may do.
-    @ViewBuilder
-    private func consentBody(_ projection: OwnerPhoneRequestProjection) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(projection.decisionDomain == .revocation
-                     ? "Remove authority for \(projection.client.clientId)"
-                     : "\(projection.client.clientId) requests authority")
-                    .font(.subheadline)
-                    .bold()
-                if let redirectUri = projection.client.redirectUri {
-                    Text("Code delivery: \(redirectUri)")
-                        .font(.caption.monospaced())
+                    Text("This phone can't verify this request, so it can only be rejected.")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
-                }
-                switch projection.scope {
-                case let .permissionRequest(scope):
-                    permissionBody(PermissionConsentPresentation(
-                        client: projection.client,
-                        scope: scope))
-                case let .ownerSigningRequest(scope):
-                    switch model.approvalAvailability(for: projection) {
-                    case .kernelP256OwnerSigning:
-                        Text("Kernel owner-signing request — approve only while this exact review, pairing, and foreground consent remain current.")
-                            .font(.footnote)
-                            .bold()
-                    case .rejectOnly:
-                        Text("Owner-signing request — reject only. This build can inspect structured input and derive EIP-712 digests, but it cannot sign, approve, or guarantee an outcome.")
-                            .font(.footnote)
-                            .bold()
-                            .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    decisionButton("Reject", prominent: false, destructive: true) {
+                        Task { await model.reject() }
                     }
-                    ownerSigningBody(OwnerSigningConsentPresentation(scope: scope).sections)
-                case let .kernelRevocation(scope):
-                    Text("Approval authorizes the operation below on one configured chain. The service must submit it and confirm onchain completion.")
-                        .font(.footnote)
-                    if model.approvalAvailability(for: projection) == .rejectOnly {
-                        Text("This request does not match this phone's paired account, key, or configured chain. Reject only.")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-                    ownerSigningBody(KernelRevocationConsentPresentation(scope: scope).sections)
-                case let .raw(text):
-                    // Explicit unstructured state: the owner reviews the raw
-                    // text or rejects; nothing is summarized that was not parsed.
-                    Text("Unstructured scope — review the raw text:")
-                        .font(.footnote)
-                        .bold()
-                        .foregroundStyle(.orange)
-                    ScrollView {
-                        Text(text)
-                            .font(.caption2.monospaced())
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 120)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    @ViewBuilder
-    private func permissionBody(_ presentation: PermissionConsentPresentation) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(PermissionConsentPresentation.evidenceNotice)
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                ForEach(presentation.sections) { section in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(section.title)
-                            .font(.footnote)
-                            .bold()
-                        ForEach(section.facts) { fact in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(fact.label)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Text(fact.evidence.display)
-                                    .font(.caption2)
-                                    .bold()
-                                    .foregroundStyle(
-                                        fact.evidence == .relayBound ? Color.blue : Color.orange)
-                                Text(fact.value.display)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+    private func noticeText(_ notice: ApprovalActionNotice) -> String {
+        switch notice {
+        case .expired:
+            return "This request expired, so nothing was sent."
+        case .conflictingIntent:
+            return "An earlier decision is still unresolved. Retry that same decision."
+        case .signingUnavailable:
+            return "Couldn't get the signing details from the relay. Nothing was signed; try Approve again."
+        case .signingMismatch:
+            return "The relay's signing details don't match this request. Nothing was signed. Reject it."
+        case .cannotSign:
+            return "This phone can't sign right now. Keep the app open and paired, then try again. Nothing was signed."
+        case .signingCancelled:
+            return "Signing was cancelled. Nothing was sent; you can try again."
         }
-        .frame(maxHeight: 320)
-    }
-
-    @ViewBuilder
-    private func ownerSigningBody(_ sections: [OwnerSigningConsentSection]) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(section.title)
-                            .font(.footnote)
-                            .bold()
-                        ForEach(section.facts) { fact in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(fact.label)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Text(fact.value)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .frame(maxHeight: 360)
     }
 
     @ViewBuilder
     private func settledBody(_ decision: OwnerPhoneDecision, overridden: Bool,
                              domain: OwnerPhoneDecisionDomain) -> some View {
-        Text(decision.outcome == .approved ? "Approved" : "Rejected")
-            .font(.title2)
-            .bold()
-        if domain == .revocation, decision.outcome == .approved {
-            Text("Revocation approved. Onchain completion has not been confirmed by this phone.")
-                .font(.footnote)
+        let approved = decision.outcome == .approved
+        VStack(alignment: .leading, spacing: 6) {
+            Label(approved ? "Approved" : "Rejected",
+                  systemImage: approved ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.title3.bold())
+                .foregroundStyle(approved ? Color.accentColor : .red)
+            if domain == .revocation, approved {
+                Text("The service can now submit the removal. This phone hasn't confirmed it onchain.")
+                    .font(.subheadline)
+            }
+            switch decision.settlement {
+            case .decided:
+                Text("Your decision was recorded.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            case .replayed:
+                Text("This request was already decided. This is the stored outcome; nothing new was released.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if overridden {
+                    Text("The stored outcome differs from the decision this phone just sent.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+            }
         }
-        switch decision.settlement {
-        case .decided:
-            Text("This device decided the request.")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Building blocks
+
+    private func failure(_ code: String) -> some View {
+        stateMessage(
+            icon: "exclamationmark.triangle",
+            title: code == "projection_mismatch"
+                ? "This notification doesn't match the request"
+                : "This request couldn't be opened",
+            detail: code == "projection_mismatch"
+                ? "The relay returned a different request than the notification described. Don't approve it."
+                : "It may have expired or already been decided, or the relay can't be reached right now.",
+            code: code)
+    }
+
+    private func stateMessage(
+        icon: String, title: String, detail: String, code: String? = nil
+    ) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.largeTitle.weight(.light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            if let code {
+                Text(code)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+    }
+
+    private func group<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(groupBackground)
+    }
+
+    private var groupBackground: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.primary.opacity(0.04))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1))
+    }
+
+    private func callout(_ text: String, icon: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(text)
                 .font(.footnote)
-        case .replayed:
-            Text("Already decided: this is the stored outcome. Nothing was released to this call.")
-                .font(.footnote)
-            if overridden {
-                Text("The stored outcome differs from the command this device sent.")
-                    .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(color.opacity(0.1)))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func noticeLine(_ text: String) -> some View {
+        Label(text, systemImage: "info.circle")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func bar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 12) {
+            content()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func progress(_ text: String) -> some View {
+        HStack(spacing: 12) {
+            ProgressView()
+            Text(text).font(.body)
+        }
+        .frame(maxWidth: .infinity, minHeight: 50)
+    }
+
+    private func decisionButton(
+        _ title: String, prominent: Bool, destructive: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Group {
+            if prominent {
+                Button(action: action) {
+                    Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(role: destructive ? .destructive : nil, action: action) {
+                    Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
+                }
+                .buttonStyle(.bordered)
+                .tint(destructive ? .red : nil)
+            }
+        }
+        .controlSize(.large)
+    }
+
+    private func doneButton(_ action: @escaping () -> Void) -> some View {
+        decisionButton("Done", prominent: true, destructive: false, action: action)
+    }
+}
+
+/// "Expires in 4:12" that keeps counting, then "Expired".
+private struct ExpiryLine: View {
+    let expiresAt: Int
+
+    private var expiry: Date { Date(timeIntervalSince1970: Double(expiresAt) / 1000) }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if context.date < expiry {
+                (Text("Expires in ") + Text(expiry, style: .timer)
+                    + Text(" · \(expiry.formatted(date: .omitted, time: .shortened))"))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Expired")
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.red)
             }
+        }
+    }
+}
+
+extension PermissionConsentEvidence {
+    /// Compact tag text; `display` stays the full accessible statement.
+    var shortDisplay: String {
+        switch self {
+        case .relayBound: return "Relay-bound"
+        case .requestedScope: return "Requested"
+        case .requestedConstraint: return "Unproven limit"
         }
     }
 }
