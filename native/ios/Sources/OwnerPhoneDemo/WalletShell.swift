@@ -1,11 +1,13 @@
 /**
- EXPERIMENTAL PREVIEW — the wallet shell: four tabs over one DemoModel.
+ EXPERIMENTAL PREVIEW — the paired shell: Requests and Device over one DemoModel.
 
- TURN-1 design, screens 1a–1e: Wallet, Activity, Approvals, Settings. The
- shell adds chrome only — pairing, inbox polling, review, decisions,
- and unpairing stay exactly the DemoModel behavior the wiring tests pin. The
- Approvals tab is the real consent path; every other surface renders live
- facts where the app holds them and says "SAMPLE" where it does not.
+ This app is an owner approval device, so the shell shows only what the phone
+ actually holds: pending requests from the authenticated inbox, the bound
+ account and configured chains, the owner key custody state, and the pairing.
+ It invents no balances, history, or grants. The shell adds chrome only —
+ pairing, inbox polling, review, decisions, and unpairing stay exactly the
+ DemoModel behavior the wiring tests pin. Opening a request pushes the review
+ screen; approving and rejecting stay explicit buttons inside `ApprovalView`.
 
  @author taek <leekt216@gmail.com>
  */
@@ -13,305 +15,318 @@
 import OwnerPhone
 import SwiftUI
 
-enum WalletTab: String, CaseIterable {
-    case wallet = "Wallet"
-    case activity = "Activity"
-    case approvals = "Approvals"
-    case settings = "Settings"
-
-    var icon: String {
-        switch self {
-        case .wallet: return "creditcard"
-        case .activity: return "waveform.path.ecg"
-        case .approvals: return "shield"
-        case .settings: return "gearshape"
-        }
-    }
-}
-
 struct WalletShellView: View {
     @ObservedObject var model: DemoModel
-    @State private var tab: WalletTab = .wallet
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                WalletTheme.paper.ignoresSafeArea()
-                switch tab {
-                case .wallet:
-                    WalletHomeView(model: model) { tab = .approvals }
-                case .activity:
-                    WalletActivityView(model: model)
-                case .approvals:
-                    WalletApprovalsView(model: model)
-                case .settings:
-                    WalletSecurityView(model: model)
-                }
-            }
-            tabBar
+        TabView {
+            WalletRequestsScreen(model: model)
+                .tabItem { Label("Requests", systemImage: "tray.full") }
+                .badge(model.inbox.count)
+            WalletDeviceScreen(model: model)
+                .tabItem { Label("Device", systemImage: "key.horizontal") }
         }
-        .background(WalletTheme.paper)
         .task(id: model.pollingIdentity) { await model.pollInbox() }
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(WalletTab.allCases, id: \.self) { entry in
-                Button {
-                    tab = entry
-                } label: {
-                    VStack(spacing: 4) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: entry.icon)
-                                .font(.system(size: 20, weight: .regular))
-                            if entry == .approvals, !model.inbox.isEmpty {
-                                Text("\(model.inbox.count)")
-                                    .font(WalletTheme.mono(9, .semibold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 16, height: 16)
-                                    .background(WalletTheme.red)
-                                    .clipShape(Circle())
-                                    .offset(x: 10, y: -6)
-                            }
-                        }
-                        Text(entry.rawValue).font(WalletTheme.speech(10, .medium))
-                    }
-                    .foregroundStyle(tab == entry ? WalletTheme.ink : WalletTheme.faint)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.bottom, 2)
-        .background(WalletTheme.card.opacity(0.94))
-        .overlay(alignment: .top) { WalletTheme.border.frame(height: 1) }
     }
 }
 
-/// The real approval surface: pending requests, the consent flow, manual open,
-/// status lines — plus the granted-authority section (1d) beneath it.
-struct WalletApprovalsView: View {
+/// Pending requests. Selecting one opens the review; nothing here decides.
+struct WalletRequestsScreen: View {
     @ObservedObject var model: DemoModel
+    @State private var showingManualOpen = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Approvals")
-                    .font(WalletTheme.speech(30, .semibold))
-                    .foregroundStyle(WalletTheme.ink)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    WalletAccountStrip(model: model)
 
-                HStack {
-                    WalletSectionLabel(text: "Awaiting your approval")
-                    Spacer()
-                    Button("Refresh") { Task { await model.refreshInbox() } }
-                        .font(WalletTheme.speech(12, .medium))
-                        .foregroundStyle(WalletTheme.teal)
-                        .buttonStyle(.plain)
-                }
-
-                if model.inbox.isEmpty {
-                    WalletCard {
-                        Text("No pending requests.")
-                            .font(WalletTheme.speech(13))
-                            .foregroundStyle(WalletTheme.muted)
+                    if !model.statusLine.isEmpty {
+                        WalletNotice(text: model.statusLine) { model.clearStatusLine() }
                     }
-                } else {
-                    ForEach(model.inbox) { item in
-                        WalletCard(emphasized: true) {
+                    if model.inboxUnavailable {
+                        WalletNotice(
+                            text: "Can't reach the relay. Showing the last requests received; pull down to try again.",
+                            tone: .warning)
+                    }
+
+                    if model.inbox.isEmpty {
+                        emptyState
+                    } else {
+                        WalletSectionLabel(text: model.inbox.count == 1
+                            ? "1 waiting for you" : "\(model.inbox.count) waiting for you")
+                            .padding(.top, 4)
+                        ForEach(model.inbox) { item in
                             WalletPendingRow(item: item) {
                                 Task { await model.openInboxItem(item) }
                             }
                         }
+                        Text("Opening a request only shows it. Nothing is approved until you tap Approve.")
+                            .font(WalletTheme.speech(.footnote))
+                            .foregroundStyle(WalletTheme.muted)
                     }
                 }
-                if !model.inboxStatusLine.isEmpty {
-                    Text(model.inboxStatusLine)
-                        .font(WalletTheme.speech(11))
-                        .foregroundStyle(WalletTheme.muted)
-                }
-
-                if let approval = model.approval {
-                    ApprovalView(model: approval)
-                }
-
-                manualOpen
-
-                WalletGrantsSection()
-
-                if !model.statusLine.isEmpty {
-                    Text(model.statusLine)
-                        .font(WalletTheme.speech(12))
-                        .foregroundStyle(WalletTheme.muted)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            .refreshable { await model.refreshInbox() }
+            .walletScreen()
+            .navigationTitle("Requests")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            Task { await model.refreshInbox() }
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        Button {
+                            showingManualOpen = true
+                        } label: {
+                            Label("Open by operation ID", systemImage: "number")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 24)
+            .navigationDestination(isPresented: $model.reviewPresented) {
+                WalletReviewScreen(model: model)
+            }
+            .sheet(isPresented: $showingManualOpen) {
+                WalletManualOpenSheet(model: model) { showingManualOpen = false }
+            }
         }
     }
 
-    private var manualOpen: some View {
-        WalletCard {
-            VStack(alignment: .leading, spacing: 9) {
-                WalletSectionLabel(text: "Open by operation id")
-                Text("Inbox unavailable? Paste the operation id from the web example.")
-                    .font(WalletTheme.speech(11.5))
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.shield")
+                .font(.system(.largeTitle).weight(.light))
+                .foregroundStyle(WalletTheme.teal)
+                .accessibilityHidden(true)
+            Text("Nothing waiting")
+                .font(WalletTheme.speech(.title3, .semibold))
+                .foregroundStyle(WalletTheme.ink)
+            Text("When an app asks for authority over your account, the request appears here within a few seconds.")
+                .font(WalletTheme.speech(.subheadline))
+                .foregroundStyle(WalletTheme.muted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, 16)
+        .background(WalletTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WalletTheme.border, lineWidth: 1)
+        )
+    }
+}
+
+/// The paired account in one line: address, chains, and key custody.
+struct WalletAccountStrip: View {
+    @ObservedObject var model: DemoModel
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            Image(systemName: "person.crop.circle")
+                .font(.system(.title2))
+                .foregroundStyle(WalletTheme.ink)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shortAddress(model.account))
+                    .font(WalletTheme.mono(.subheadline, .medium))
+                    .foregroundStyle(WalletTheme.ink)
+                Text(chainSummary(model.chainIds))
+                    .font(WalletTheme.speech(.footnote))
                     .foregroundStyle(WalletTheme.muted)
-                TextField("operation id", text: $model.operationIdText)
-                    .textFieldStyle(.plain)
-                    .autocorrectionDisabled()
-                    .font(WalletTheme.mono(12))
-                    .padding(10)
-                    .background(WalletTheme.paper)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                WalletSecondaryButton(title: "Open request", height: 40) {
-                    Task { await model.openManually() }
-                }
             }
+            if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
+            WalletCustodyPill(ownerKey: model.ownerKey)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(WalletTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WalletTheme.border, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Account \(model.account ?? "not derived"), \(chainSummary(model.chainIds))")
+    }
+}
+
+struct WalletCustodyPill: View {
+    let ownerKey: (any DemoOwnerSigning)?
+
+    var body: some View {
+        if let ownerKey {
+            ownerKey.secureEnclave
+                ? WalletStatusPill(text: "ENCLAVE", color: WalletTheme.teal, background: WalletTheme.tealWash)
+                : WalletStatusPill(text: "SIMULATOR KEY", color: WalletTheme.amber, background: WalletTheme.amberWash)
+        } else {
+            WalletStatusPill(text: "NO KEY", color: WalletTheme.red, background: WalletTheme.redWash)
         }
     }
 }
 
-/// One pending authorization: match code first, then the exact identifiers.
+/// One pending request: match code first, then expiry. The whole row opens it.
 struct WalletPendingRow: View {
     let item: DemoInboxItem
     let review: () -> Void
 
+    private var expiry: Date { Date(timeIntervalSince1970: Double(item.expiresAt) / 1000) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Authorization request")
-                        .font(WalletTheme.speech(15, .semibold))
+        Button(action: review) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.matchCode.display)
+                        .font(WalletTheme.mono(.title2, .bold))
                         .foregroundStyle(WalletTheme.ink)
                     Text(item.operationId)
-                        .font(WalletTheme.mono(10.5))
+                        .font(WalletTheme.mono(.caption))
                         .foregroundStyle(WalletTheme.muted)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    WalletExpiryText(expiry: expiry)
                 }
                 Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("MATCH")
-                        .font(WalletTheme.mono(9.5))
-                        .kerning(1)
-                        .foregroundStyle(WalletTheme.muted)
-                    Text(item.matchCode.display)
-                        .font(WalletTheme.mono(15, .bold))
-                        .foregroundStyle(WalletTheme.ink)
+                HStack(spacing: 4) {
+                    Text("Review").font(WalletTheme.speech(.subheadline, .semibold))
+                    Image(systemName: "chevron.right").font(WalletTheme.speech(.footnote, .semibold))
                 }
+                .foregroundStyle(WalletTheme.teal)
             }
-            Button(action: review) {
-                Text("Review")
-                    .font(WalletTheme.speech(14, .medium))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background(WalletTheme.teal)
-                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(WalletTheme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(WalletTheme.ink, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(WalletPressStyle())
+        .accessibilityLabel("Request with match code \(item.matchCode.display)")
+        .accessibilityHint("Opens the review. Nothing is decided until you approve or reject.")
+    }
+}
+
+/// "Expires in 4 min" that keeps counting, or "Expired".
+struct WalletExpiryText: View {
+    let expiry: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if context.date < expiry {
+                (Text("Expires in ") + Text(expiry, style: .relative))
+                    .font(WalletTheme.speech(.footnote))
+                    .foregroundStyle(WalletTheme.muted)
+            } else {
+                Text("Expired")
+                    .font(WalletTheme.speech(.footnote, .medium))
+                    .foregroundStyle(WalletTheme.red)
             }
-            .buttonStyle(.plain)
-            Text("Expires \(Date(timeIntervalSince1970: Double(item.expiresAt) / 1000).formatted()) · nothing is decided until you tap")
-                .font(WalletTheme.speech(11))
-                .foregroundStyle(WalletTheme.muted)
         }
     }
 }
 
-/// Granted authority (1d). This phone reviews and revokes through the web
-/// half; it holds no grant records itself, so the cards are labeled samples.
-struct WalletGrantsSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                WalletSectionLabel(text: "Granted authority")
-                WalletSampleBadge()
-            }
-            Text("Apps you let act for you without asking each time. Revoking is chain-local: each chain is revoked where it was materialized. This preview holds no grant records — the web half owns them.")
-                .font(WalletTheme.speech(12))
-                .foregroundStyle(WalletTheme.muted)
+/// The pushed consent screen. `ApprovalView` owns every decision control.
+struct WalletReviewScreen: View {
+    @ObservedObject var model: DemoModel
 
-            WalletCard(emphasized: true, padding: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Text("A")
-                                .font(WalletTheme.speech(13, .semibold))
-                                .foregroundStyle(WalletTheme.ink)
-                                .frame(width: 38, height: 38)
-                                .background(WalletTheme.chip)
-                                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("app.example")
-                                    .font(WalletTheme.speech(15.5, .semibold))
-                                    .foregroundStyle(WalletTheme.ink)
-                                Text("demo-web-app · all chains")
-                                    .font(WalletTheme.mono(11.5))
-                                    .foregroundStyle(WalletTheme.muted)
-                            }
-                            Spacer()
-                            WalletStatusPill.active()
-                        }
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("May call swap() on the router")
-                            Text("May not move ETH — value limit 0")
-                            Text("7 of 10 operations used per chain")
-                        }
-                        .font(WalletTheme.speech(13))
-                        .foregroundStyle(WalletTheme.ink)
-                        GeometryReader { proxy in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(WalletTheme.chip)
-                                Capsule().fill(WalletTheme.ink)
-                                    .frame(width: proxy.size.width * 0.7)
-                            }
-                        }
-                        .frame(height: 6)
-                        HStack {
-                            Text("EXPIRES IN 22 MIN")
-                            Spacer()
-                            Text("SESSION KEY 0x44…4444")
-                        }
-                        .font(WalletTheme.mono(10.5))
-                        .foregroundStyle(WalletTheme.muted)
-                    }
-                    .padding(15)
-                    WalletTheme.hairline.frame(height: 1)
-                    VStack(alignment: .leading, spacing: 10) {
-                        WalletSectionLabel(text: "Materialized on")
-                        HStack(spacing: 7) {
-                            grantChain("Arbitrum One", live: true)
-                            grantChain("Robinhood Chain", live: true)
-                            grantChain("Ethereum · not yet", live: false)
-                        }
-                        HStack(spacing: 8) {
-                            WalletSecondaryButton(title: "Revoke everywhere", destructive: true) {}
-                            WalletSecondaryButton(title: "Full facts") {}
-                                .frame(width: 110)
-                        }
-                    }
-                    .padding(15)
-                    .background(WalletTheme.paper.opacity(0.55))
+    var body: some View {
+        Group {
+            if let approval = model.approval {
+                ApprovalView(model: approval) { model.reviewPresented = false }
+            } else {
+                Text("This pairing ended. Pair again to review requests.")
+                    .font(WalletTheme.speech(.body))
+                    .foregroundStyle(WalletTheme.muted)
+                    .padding()
+            }
+        }
+        .background(WalletTheme.paper.ignoresSafeArea())
+        .navigationTitle("Review request")
+        #if os(iOS)
+        .toolbar(.hidden, for: .tabBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(WalletTheme.paper, for: .navigationBar)
+        #endif
+    }
+}
+
+/// Fallback when the inbox is unavailable: open one request by its ID.
+struct WalletManualOpenSheet: View {
+    @ObservedObject var model: DemoModel
+    let close: () -> Void
+
+    private var trimmed: String {
+        model.operationIdText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Use this only if a request doesn't appear in Requests. Paste the operation ID shown by the service.")
+                    .font(WalletTheme.speech(.subheadline))
+                    .foregroundStyle(WalletTheme.muted)
+                TextField("Operation ID", text: $model.operationIdText)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                    .font(WalletTheme.mono(.body))
+                    .padding(12)
+                    .background(WalletTheme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(WalletTheme.border, lineWidth: 1)
+                    )
+                WalletPrimaryButton(title: "Open request", enabled: !trimmed.isEmpty) {
+                    close()
+                    Task { await model.openManually() }
+                }
+                Spacer()
+            }
+            .padding(20)
+            .background(WalletTheme.paper.ignoresSafeArea())
+            .navigationTitle("Open by ID")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: close)
                 }
             }
         }
-        .padding(.top, 10)
+        .presentationDetents([.medium])
     }
+}
 
-    private func grantChain(_ name: String, live: Bool) -> some View {
-        Text(name)
-            .font(WalletTheme.speech(11.5, .medium))
-            .foregroundStyle(live ? WalletTheme.ink : WalletTheme.muted)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(live ? WalletTheme.card : Color.clear)
-            .overlay(
-                Capsule().strokeBorder(
-                    live ? WalletTheme.border : WalletTheme.dash,
-                    style: StrokeStyle(lineWidth: 1, dash: live ? [] : [3, 3])
-                )
-            )
+func shortAddress(_ account: String?) -> String {
+    guard let account, account.count > 12 else { return account ?? "Account not derived" }
+    return "\(account.prefix(6))…\(account.suffix(4))"
+}
+
+func chainSummary(_ chainIds: [Int]) -> String {
+    switch chainIds.count {
+    case 0: return "No configured chains"
+    case 1: return "Chain \(chainIds[0])"
+    default: return "\(chainIds.count) chains · " + chainIds.map(String.init).joined(separator: ", ")
     }
 }
 #endif

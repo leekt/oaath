@@ -590,7 +590,36 @@ final class ApprovalModelRaceTests: XCTestCase {
             XCTAssertEqual(harness.signer.callCount(), 0)
             XCTAssertEqual(submissions, 0)
             XCTAssertEqual(displayedReview(model)?.state, .pending)
+            XCTAssertEqual(model.actionNotice, .signingMismatch)
         }
+    }
+
+    func testExpiredDecisionTapsExplainThemselvesAndSendNothing() async throws {
+        let request = OwnerPhoneRequestProjection.fixture(
+            operationId: "expired-review",
+            matchCode: "AAAA1111",
+            expiresAt: 2_000_000_000_000,
+            scope: .raw(#"{"chainScope":"all"}"#)
+        )
+        let relay = ImmediateDecisionRelay(request)
+        let clock = ExpiryClock(1_800_000_000_000)
+        let model = ApprovalModel(relay: relay, now: { clock.now })
+
+        await model.open(operationId: request.operationId)
+        XCTAssertNil(model.actionNotice)
+        clock.now = request.expiresAt
+
+        await model.reject()
+        XCTAssertEqual(model.actionNotice, .expired)
+        await model.approve()
+        XCTAssertEqual(model.actionNotice, .expired)
+        let submissions = await relay.recordedSubmissions()
+        XCTAssertEqual(submissions, [])
+        XCTAssertEqual(displayedReview(model)?.state, .pending)
+
+        // A newer request clears feedback that belonged to the older review.
+        await model.open(operationId: request.operationId)
+        XCTAssertNil(model.actionNotice)
     }
 
     func testDormantKernelApprovalSignsAndSubmitsExactlyOnce() async throws {
@@ -975,4 +1004,9 @@ final class ApprovalModelRaceTests: XCTestCase {
         XCTAssertEqual(displayedReview(model)?.state, .pending)
         XCTAssertFalse(model.unresolvedNotice)
     }
+}
+
+private final class ExpiryClock: @unchecked Sendable {
+    var now: Int
+    init(_ now: Int) { self.now = now }
 }

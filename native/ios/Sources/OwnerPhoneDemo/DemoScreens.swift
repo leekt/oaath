@@ -46,6 +46,15 @@ public final class DemoModel: ObservableObject {
     @Published public private(set) var pollingIdentity = UUID()
     /// The smart account address the relay derived from this key at pairing.
     @Published public private(set) var account: String?
+    /// Configured service chains bound to the current pairing, ascending.
+    @Published public private(set) var chainIds: [Int] = []
+    /// True only while this model's pairing request is in flight.
+    @Published public private(set) var pairingInFlight = false
+    /// True after the latest inbox read failed; cleared by the next success.
+    @Published public private(set) var inboxUnavailable = false
+    /// Presentation only: whether the review screen is showing. Opening a
+    /// request sets it; it never decides anything.
+    @Published public var reviewPresented = false
 
     /// Set only through the exact APNs-token boundary; until then a random
     /// valid placeholder keeps pairing usable (pushes to it go nowhere —
@@ -152,7 +161,7 @@ public final class DemoModel: ObservableObject {
         guard let endpoint = try? DemoRelayEndpoint(baseURLText: link.relayURL) else { return }
         baseURLText = endpoint.baseURL.absoluteString
         pairingCodeText = link.pairingCode
-        statusLine = "Pairing link read. Review and tap \"Pair this device\"."
+        statusLine = "Pairing link read. Check the relay, then tap \"Pair this phone\"."
     }
 
     /// Camera boundary: scanned bytes may only become the exact PairingLink
@@ -234,7 +243,11 @@ public final class DemoModel: ObservableObject {
         let capturedDeviceToken = deviceToken
         let token = UUID()
         inFlightPairingAttempts.insert(attemptIdentity)
-        defer { inFlightPairingAttempts.remove(attemptIdentity) }
+        pairingInFlight = true
+        defer {
+            inFlightPairingAttempts.remove(attemptIdentity)
+            pairingInFlight = !inFlightPairingAttempts.isEmpty
+        }
         pairingAttempt = token
         do {
             let device = try await OwnerPhoneDemo.pair(
@@ -311,8 +324,14 @@ public final class DemoModel: ObservableObject {
         }
     }
 
+    /// Clears the informational status line. It never changes authority.
+    public func clearStatusLine() {
+        statusLine = ""
+    }
+
     public func openManually() async {
         guard let approval else { return }
+        reviewPresented = true
         await approval.open(
             operationId: operationIdText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -338,6 +357,7 @@ public final class DemoModel: ObservableObject {
             else { return }
             inboxRefreshToken = nil
             inbox = items
+            inboxUnavailable = false
             inboxStatusLine = items.isEmpty ? "No pending requests." : "Pending requests refreshed."
         } catch {
             guard inboxRefreshToken == token,
@@ -346,6 +366,7 @@ public final class DemoModel: ObservableObject {
                   !Task.isCancelled
             else { return }
             inboxRefreshToken = nil
+            inboxUnavailable = true
             inboxStatusLine = "Inbox unavailable (refresh_failed)."
         }
     }
@@ -368,11 +389,13 @@ public final class DemoModel: ObservableObject {
     public func openInboxItem(_ item: DemoInboxItem) async {
         guard inbox.contains(item), pairingIdentity != nil, let approval else { return }
         operationIdText = item.operationId
+        reviewPresented = true
         await approval.open(operationId: item.operationId)
     }
 
     public func receive(push: OwnerPhonePush) async {
         guard let approval else { return }
+        reviewPresented = true
         await approval.receive(push: push)
     }
 
@@ -411,6 +434,7 @@ public final class DemoModel: ObservableObject {
         pairingIdentity = boundPairing
         baseURLText = boundPairing.endpoint.baseURL.absoluteString
         account = boundPairing.account
+        chainIds = boundPairing.chains.entryPoints.keys.sorted()
         let client = demoRelayClient(
             pairing: boundPairing,
             http: http,
@@ -485,6 +509,9 @@ public final class DemoModel: ObservableObject {
         approval = nil
         paired = false
         account = nil
+        chainIds = []
+        inboxUnavailable = false
+        reviewPresented = false
         baseURLText = ""
         pairingCodeText = ""
     }
@@ -498,6 +525,9 @@ public final class DemoModel: ObservableObject {
         approval = nil
         paired = false
         account = nil
+        chainIds = []
+        inboxUnavailable = false
+        reviewPresented = false
         storedPairingBlocked = true
         statusLine = message
     }
@@ -510,16 +540,17 @@ public struct DemoRootView: View {
         self.model = model
     }
 
-    /// TURN-1 wallet design: onboarding until paired, then the four-tab shell.
-    /// Every decision-bearing behavior stays on DemoModel; the shell is chrome.
+    /// Onboarding until paired, then the Requests/Device shell. Every
+    /// decision-bearing behavior stays on DemoModel; the shell is chrome.
     public var body: some View {
-        NavigationStack {
+        Group {
             if model.paired {
                 WalletShellView(model: model)
             } else {
                 WalletOnboardingView(model: model)
             }
         }
+        .tint(WalletTheme.teal)
     }
 }
 #endif
