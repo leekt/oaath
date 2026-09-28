@@ -342,3 +342,11 @@ once. A recreated IndexedDB realm resumes the retained prepared operation and
 any ambiguous send without preparing, signing, or submitting another operation;
 older, unreadable, stale, and already-consumed contexts do not authorize a new
 operation.
+
+
+Owner `reviewCalls` estimates the complete call list as one UserOperation and
+returns `capacity: { kind: "single-operation", gas }`. Estimation includes any
+explicitly selected sponsorship. It prompts and submits nothing, does not
+reserve an operation slot, and fails when capacity cannot be established.
+`sendCalls` obtains a fresh quote through the existing operation journal; a
+review estimate is not an inclusion guarantee.
