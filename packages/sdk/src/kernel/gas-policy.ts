@@ -27,20 +27,26 @@ export function captureKernelGasPolicy(chainId: number, value: unknown): Readonl
   return Object.freeze({ enableVerificationGasFloor: floor });
 }
 
-/** Current Kernel v4 enable-replayable nonce mode, owned by the runtime codec. */
+/** v4 replayable enable and v3.3 chain-bound enable both install permission state. */
 export function enableVerificationFloorForNonce(
   nonce: string,
   policy: Readonly<KernelGasPolicy>,
 ): bigint {
-  return isKernelV4EnableNonce(nonce) ? policy.enableVerificationGasFloor : 0n;
+  return isKernelV4EnableNonce(nonce) || BigInt(nonce) >> 248n === 1n
+    ? policy.enableVerificationGasFloor
+    : 0n;
 }
 
 export function applyKernelGasPolicy(
   value: KernelV4UserOperationGas,
-  mode: KernelRuntimeValidationMode,
+  mode: KernelRuntimeValidationMode | "enable",
   policy: Readonly<KernelGasPolicy>,
 ): Readonly<KernelV4UserOperationGas> {
-  if (mode !== "enable-replayable" || policy.enableVerificationGasFloor === 0n) return value;
+  if (
+    (mode !== "enable-replayable" && mode !== "enable") ||
+    policy.enableVerificationGasFloor === 0n
+  )
+    return value;
   const gas = exactInput(
     value,
     [

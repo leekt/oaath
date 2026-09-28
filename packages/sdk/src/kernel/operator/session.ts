@@ -1,5 +1,5 @@
 /**
- * Session authority: Kernel v4 permission validation. Accepts any KeyProfile,
+ * Session authority: Kernel permission validation. Accepts any KeyProfile,
  * compiles the requested scope into a policy package, and owns authority
  * semantics only.
  *
@@ -98,8 +98,13 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
     // describe a different package count than the permission holds. No reviewed
     // policy module reads a signature of its own, so every policy slice is empty
     // and the signer slice, which Kernel requires last, carries the key signature.
-    encodeSignature: (signature: `0x${string}`) =>
-      encodeKernelV4PermissionSignature([...policy.packages.map(() => "0x" as const), signature]),
+    encodeSignature: (signature: `0x${string}`, deployment: Readonly<KernelDeployment>) =>
+      exactKernelDeployment(deployment).kernelVersion === "0.3.3"
+        ? concat(["0xff", signature])
+        : encodeKernelV4PermissionSignature([
+            ...policy.packages.map(() => "0x" as const),
+            signature,
+          ]),
     resolveValidation: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze({ kind: "permission" as const, permissionId });

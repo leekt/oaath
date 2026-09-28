@@ -1,4 +1,11 @@
-import { encodeAbiParameters, encodeFunctionData, pad, parseAbi, recoverAddress } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  hashTypedData,
+  pad,
+  parseAbi,
+  recoverAddress,
+} from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
@@ -9,6 +16,14 @@ import {
 } from "../src/kernel/deployment/v33.js";
 import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
+import { sessionOperator } from "../src/kernel/operator/session.js";
+import {
+  approveKernelV33Permission,
+  kernelV33PermissionEnableTypedData,
+  kernelV33PermissionInstallNonce,
+  materializeKernelV33Permission,
+  parseKernelV33PermissionApproval,
+} from "../src/kernel/permission/v33.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -159,6 +174,141 @@ describe("existing Kernel v3.3 account binding", () => {
     expect(client.getStorageAt).toHaveBeenCalledWith({
       address: account,
       slot: KERNEL_V4_IMPLEMENTATION_SLOT,
+    });
+  });
+});
+
+describe("Kernel v3.3 session composition", () => {
+  async function sessionFixture() {
+    const owner = privateKeyToAccount(generatePrivateKey());
+    const session = privateKeyToAccount(generatePrivateKey());
+    const sign = vi.fn(session.sign.bind(session));
+    const { read } = fixture();
+    const runtime = createKernelRuntime({
+      deployment: kernelV33Deployment(143),
+      operator: sessionOperator({
+        key: ecdsaKey({ account: { address: session.address, sign }, validator }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: account, selector: "0x00000000", valueLimit: "5" }],
+          },
+        ],
+      }),
+      reads: { read },
+    });
+    const bound = await runtime.bindAccount({ address: account });
+    const input = {
+      account: bound,
+      kind: "execution" as const,
+      grantId: "v33-session",
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target: account as `0x${string}`, value: "1", data: "0x" as const }],
+      gas: {
+        callGasLimit: "100000",
+        verificationGasLimit: "300000",
+        preVerificationGas: "50000",
+        maxFeePerGas: "1000000000",
+        maxPriorityFeePerGas: "100000000",
+      },
+    };
+    const approval = await approveKernelV33Permission({
+      owner: ecdsaKey({ account: owner, validator }),
+      runtime,
+      account: bound,
+      nonce: "1",
+    });
+    return { runtime, input, approval, sign };
+  }
+
+  it("enables with a chain-bound approval and signs subsequent operations with the v3.3 prefix", async () => {
+    const { runtime, input, approval, sign } = await sessionFixture();
+    const { kind: _kind, ...materializationInput } = input;
+    const enabled = await materializeKernelV33Permission({
+      ...materializationInput,
+      runtime,
+      approval,
+    });
+    expect(BigInt(enabled.prepared.userOperation.nonce) >> 248n).toBe(1n);
+    expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");
+    expect(enabled.signature.startsWith("0x0000000000000000000000000000000000000001")).toBe(true);
+    const standard = runtime.prepareOperation(input);
+    expect(BigInt(standard.userOperation.nonce) >> 248n).toBe(0n);
+    expect(standard.userOperation.verificationGasLimit).toBe("300000");
+    const signature = await runtime.signOperation(standard);
+    expect(signature.startsWith("0xff")).toBe(true);
+    expect(signature.length).toBe(134);
+    expect(sign).toHaveBeenCalledTimes(2);
+    expect(parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval)))).toEqual(
+      approval,
+    );
+  });
+
+  it("rejects approval reassociation and v4 enable mode before session signing", async () => {
+    const { runtime, input, approval, sign } = await sessionFixture();
+    const { kind: _kind, ...materializationInput } = input;
+    for (const altered of [
+      { ...approval, chainId: 480 },
+      { ...approval, nonce: "2" },
+      { ...approval, permissionId: "0x12345678" as const },
+    ]) {
+      await expect(
+        materializeKernelV33Permission({ ...materializationInput, runtime, approval: altered }),
+      ).rejects.toThrow();
+    }
+    const { version: _version, digest: _digest, enableSignature: _signature, ...scope } = approval;
+    const otherChain = { ...scope, chainId: 480 };
+    await expect(
+      materializeKernelV33Permission({
+        ...materializationInput,
+        runtime,
+        approval: {
+          ...approval,
+          chainId: 480,
+          digest: hashTypedData(kernelV33PermissionEnableTypedData(otherChain)),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    expect(() =>
+      runtime.prepareOperation({ ...input, mode: "enable-replayable" } as never),
+    ).toThrow();
+    const enabled = runtime.prepareOperation({ ...input, mode: "enable" });
+    const lowGas = prepareUserOperation({
+      kind: enabled.kind,
+      grantId: enabled.grantId,
+      chainId: enabled.chainId,
+      entryPoint: enabled.entryPoint,
+      userOperation: { ...enabled.userOperation, verificationGasLimit: "1" },
+    });
+    await expect(runtime.signOperation(lowGas)).rejects.toThrow();
+    expect(sign).not.toHaveBeenCalled();
+  });
+
+  it("does not invent a nonce from unavailable or malformed chain evidence", async () => {
+    const { runtime, input } = await sessionFixture();
+    for (const result of [undefined, null, "0", "4294967296", "01"]) {
+      await expect(
+        kernelV33PermissionInstallNonce({
+          runtime,
+          account: input.account,
+          reads: { read: async () => result },
+        }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      kernelV33PermissionInstallNonce({
+        runtime,
+        account: input.account,
+        reads: {
+          read: async () => {
+            throw new Error("private provider diagnostic");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "kernel_runtime_read_unavailable",
+      message: "Kernel v3.3 validation nonce could not be read",
     });
   });
 });

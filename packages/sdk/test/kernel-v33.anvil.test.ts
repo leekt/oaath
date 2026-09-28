@@ -29,6 +29,12 @@ import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
+import { sessionOperator } from "../src/kernel/operator/session.js";
+import {
+  approveKernelV33Permission,
+  kernelV33PermissionInstallNonce,
+  materializeKernelV33Permission,
+} from "../src/kernel/permission/v33.js";
 import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
@@ -39,7 +45,7 @@ let chain: AnvilChain | undefined;
 afterAll(() => chain?.stop());
 
 (requireAnvil ? describe : describe.skip)("existing Kernel v3.3 / EntryPoint 0.7", () => {
-  it("executes from an existing factory-deployed account without migration or an enable envelope", async () => {
+  it("executes owner calls and scoped session calls at the same existing account", async () => {
     chain = await startAnvil(143, "prague", 1);
     const harness = await createHarness(chain);
     const deployment = kernelV33Deployment(143);
@@ -442,5 +448,110 @@ afterAll(() => chain?.stop());
       await recreated.close();
       await rm(directory, { recursive: true, force: true });
     }
+
+    for (const module of [
+      harness.fixture.ecdsaSigner,
+      harness.fixture.callPolicy,
+      harness.fixture.validityPolicy,
+      harness.fixture.rateLimitPolicy,
+    ])
+      await harness.deployModule(module);
+    const sessionTarget = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const sessionKey = ecdsaKey({
+      account: privateKeyToAccount(generatePrivateKey()),
+      validator: deployment.ecdsaValidator,
+    });
+    const now = Number((await harness.client.getBlock()).timestamp);
+    const sessionRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: sessionKey,
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "5" }],
+          },
+          { kind: "expiry", validAfter: "0", validUntil: String(now + 600) },
+          { kind: "operation-limit", maximumOperations: "2" },
+        ],
+      }),
+      reads: createKernelV33Reads(harness.client),
+    });
+    const sessionAccount = await sessionRuntime.bindAccount({ address });
+    if (sessionRuntime.validation.kind !== "permission")
+      throw new Error("expected session permission");
+    const nonce = await kernelV33PermissionInstallNonce({
+      runtime: sessionRuntime,
+      account: sessionAccount,
+      reads: ports[0]!.reads,
+    });
+    expect(nonce).toBe("1");
+    const approvalInput = {
+      owner: ecdsaKey({ account: owner, validator: deployment.ecdsaValidator }),
+      runtime: sessionRuntime,
+      account: sessionAccount,
+      nonce: nonce as string,
+    };
+    const sessionInput = {
+      runtime: sessionRuntime,
+      account: sessionAccount,
+      grantId: "existing-v33-session",
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target: sessionTarget, value: "3", data: "0x" as const }],
+      gas: {
+        callGasLimit: "200000",
+        verificationGasLimit: "300000",
+        preVerificationGas: "50000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    };
+    const wrongNonce = await materializeKernelV33Permission({
+      ...sessionInput,
+      approval: await approveKernelV33Permission({ ...approvalInput, nonce: "2" }),
+    });
+    expect((await harness.rejectionOf(wrongNonce.prepared, wrongNonce.signature)).errorName).toBe(
+      "FailedOpWithRevert",
+    );
+    const enabled = await materializeKernelV33Permission({
+      ...sessionInput,
+      approval: await approveKernelV33Permission(approvalInput),
+    });
+    expect(enabled.prepared.userOperation.sender).toBe(address.toLowerCase());
+    expect(enabled.prepared.userOperation.factory).toBeNull();
+    expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");
+    expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+    expect(
+      await kernelV33PermissionInstallNonce({
+        runtime: sessionRuntime,
+        account: sessionAccount,
+        reads: createKernelV33Reads(harness.client),
+      }),
+    ).toBe("2");
+    const { runtime: _runtime, ...standardInput } = sessionInput;
+    const forbidden = sessionRuntime.prepareOperation({
+      ...standardInput,
+      kind: "execution",
+      calls: [{ target, value: "1", data: "0x" }],
+    });
+    expect(
+      (await harness.rejectionOf(forbidden, await sessionRuntime.signOperation(forbidden)))
+        .errorName,
+    ).toBe("FailedOpWithRevert");
+    const subsequent = sessionRuntime.prepareOperation({ ...standardInput, kind: "execution" });
+    expect(
+      await harness.sendSigned(subsequent, await sessionRuntime.signOperation(subsequent)),
+    ).toBe("success");
+    expect(await harness.client.getBalance({ address: sessionTarget })).toBe(6n);
+    const exhausted = sessionRuntime.prepareOperation({
+      ...standardInput,
+      kind: "execution",
+      sequence: "1",
+    });
+    expect(
+      (await harness.rejectionOf(exhausted, await sessionRuntime.signOperation(exhausted)))
+        .errorName,
+    ).toBe("FailedOpWithRevert");
   }, 30_000);
 });
