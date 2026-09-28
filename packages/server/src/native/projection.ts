@@ -223,6 +223,8 @@ function projectCredential(
 export async function projectPermissionConsent(
   request: Readonly<PermissionRequest>,
 ): Promise<OwnerPhonePermissionScopeProjection> {
+  if (request.logicalAccount.kernelVersion !== "0.4.0")
+    return relayFailure("relay_request_invalid", "phone consent requires a Kernel v4 account");
   return Object.freeze({
     kind: "permission-request",
     decision: "approve-or-reject",
