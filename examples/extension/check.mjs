@@ -1,9 +1,7 @@
 /**
  * The extension's documentation gate: the bundle builds from the current
- * workspace and ships a coherent MV3 artifact. Chrome itself is the only
- * runtime for the worker, so this proves buildability and shape, not runtime
- * behavior — the provider surface it exposes is `@oaath/sdk/viem`, which the
- * SDK's own suite covers.
+ * workspace and ships a coherent MV3 artifact. Focused worker tests cover realm initialization with injected capabilities;
+ * the packed Chrome smoke owns the real worker and IndexedDB runtime proof.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -21,6 +19,11 @@ import {
 } from "./transaction-confirmation-presentation.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const workerTests = spawnSync("node", ["--test", "worker.test.mjs"], {
+  cwd: HERE,
+  stdio: "inherit",
+});
+if (workerTests.status !== 0) process.exit(1);
 
 function expect(fact, message) {
   if (!fact) {
