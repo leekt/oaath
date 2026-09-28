@@ -89,14 +89,14 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 operatorCredential: .p256(publicKey: operatorPublicKey),
                 sessionSigner: nil))
 
-        XCTAssertEqual(presentation.highlights.map(\.id), ["call.0", "call.1", "limit", "window"])
+        XCTAssertEqual(presentation.highlights.map(\.id), ["call.0", "call.1", "limit", "recipient", "window"])
         XCTAssertEqual(presentation.highlights[0].title, "Call 0x12345678 on \(firstTarget)")
         XCTAssertEqual(presentation.highlights[0].detail, .text("Up to 100 wei per call · 2 argument constraints"))
         XCTAssertEqual(presentation.highlights[1].title, "Call 0x90abcdef on \(secondTarget)")
         XCTAssertEqual(presentation.highlights[1].detail, .text("No native value"))
         XCTAssertEqual(presentation.highlights[2].title, "Up to 10 operations per chain")
         XCTAssertEqual(presentation.highlights[2].detail, .text("Chain scope: all"))
-        XCTAssertEqual(presentation.highlights[3].detail, .window(from: 1_753_000_100, until: 1_753_003_600))
+        XCTAssertEqual(presentation.highlights[4].detail, .window(from: 1_753_000_100, until: 1_753_003_600))
         XCTAssertEqual(
             presentation.identityFacts.map(\.id),
             ["application.applicationId", "application.origin", "application.redirectUri",
@@ -110,6 +110,35 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 sessionSigner: nil,
                 policyValidUntil: nil))
         XCTAssertEqual(unbounded.highlights.last?.title, "No end date")
+        XCTAssertEqual(unbounded.highlights.last?.detail, .startingAt(1_753_000_100))
+        XCTAssertEqual(unbounded.highlights.first { $0.id == "recipient" }?.detail,
+                       .text("P-256 key 0x33333333…33333333 · Held in the requesting app's browser"))
+    }
+
+    func testRecipientSummaryNamesBackendCustodyAndCredentialKind() {
+        for mode in ["application_backend", "oaath_hosted"] {
+            for credential in [OwnerPhoneCredential.ecdsa(address: firstTarget),
+                               .webauthn(publicKey: operatorPublicKey,
+                                         authenticatorIdHash: authenticatorIdHash)] {
+                let presentation = PermissionConsentPresentation(
+                    client: OwnerPhoneClientIdentity(clientId: "client", redirectUri: nil),
+                    scope: scope(owner: .p256(publicKey: ownerPublicKey),
+                                 operatorCredential: credential,
+                                 sessionSigner: OwnerPhoneSessionSigner(mode: mode, providerId: "kms-primary")))
+                let recipient = presentation.highlights.first { $0.id == "recipient" }
+                XCTAssertEqual(recipient?.title, "Authority goes to this session signer")
+                guard case let .text(detail) = recipient?.detail else {
+                    return XCTFail("missing recipient summary")
+                }
+                XCTAssertTrue(detail.contains("kms-primary"))
+                XCTAssertTrue(detail.contains(mode == "oaath_hosted" ? "Held by OAAth" : "Held by the application's backend"))
+                switch credential {
+                case .ecdsa: XCTAssertTrue(detail.hasPrefix("ECDSA address 0x44444444…44444444"))
+                case .webauthn: XCTAssertTrue(detail.hasPrefix("WebAuthn key 0x33333333…33333333"))
+                default: XCTFail("unexpected fixture")
+                }
+            }
+        }
     }
 
     func testPresentsEveryAuthorityDefiningPermissionFact() {

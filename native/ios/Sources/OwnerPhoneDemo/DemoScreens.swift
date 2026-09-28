@@ -421,8 +421,7 @@ public final class DemoModel: ObservableObject {
                     "Stored pairing data is unreadable. Forget it explicitly before pairing again.")
                 return
             case .absent:
-                approval = nil
-                paired = false
+                resetPairingUI()
                 return
             }
         }

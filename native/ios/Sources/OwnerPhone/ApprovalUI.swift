@@ -79,6 +79,7 @@ struct PermissionConsentHighlight: Equatable, Identifiable, Sendable {
     enum Detail: Equatable, Sendable {
         case text(String)
         case window(from: Int, until: Int)
+        case startingAt(Int)
     }
 
     let id: String
@@ -139,12 +140,30 @@ struct PermissionConsentPresentation: Equatable, Sendable {
             id: "limit",
             title: "Up to \(limit) operation\(limit == 1 ? "" : "s") per chain",
             detail: .text("Chain scope: \(scope.chainScope)")))
+        let kind: String
+        let key: String
+        switch scope.operatorCredential {
+        case let .ecdsa(address): (kind, key) = ("ECDSA address", address)
+        case let .p256(publicKey): (kind, key) = ("P-256 key", publicKey)
+        case let .webauthn(publicKey, _): (kind, key) = ("WebAuthn key", publicKey)
+        }
+        let custody: String
+        if let signer = scope.sessionSigner {
+            let holder = signer.mode == "oaath_hosted" ? "OAAth" : "the application's backend"
+            custody = "Held by \(holder) (\(signer.providerId))"
+        } else {
+            custody = "Held in the requesting app's browser"
+        }
+        highlights.append(PermissionConsentHighlight(
+            id: "recipient",
+            title: "Authority goes to this session signer",
+            detail: .text("\(kind) \(key.prefix(10))…\(key.suffix(8)) · \(custody)")))
         highlights.append(PermissionConsentHighlight(
             id: "window",
             title: scope.policyValidUntil == nil ? "No end date" : "Time limited",
             detail: scope.policyValidUntil.map {
                 .window(from: scope.policyValidAfter, until: $0)
-            } ?? .text("Valid from the policy start with no upper bound")))
+            } ?? .startingAt(scope.policyValidAfter)))
         self.highlights = highlights
 
         var sections = [
@@ -728,6 +747,10 @@ public final class ApprovalModel: ObservableObject {
         self.relay = relay
         self.kernelP256ApprovalBinding = kernelP256ApprovalBinding
         self.now = now
+    }
+
+    func hasExpired(_ review: OwnerPhoneReview) -> Bool {
+        now() >= review.projection.expiresAt
     }
 
     public func receive(push: OwnerPhonePush) async {
@@ -1380,6 +1403,9 @@ public struct ApprovalView: View {
             let start = Date(timeIntervalSince1970: Double(from))
             let end = Date(timeIntervalSince1970: Double(until))
             return "From \(start.formatted(date: .abbreviated, time: .shortened)) until \(end.formatted(date: .abbreviated, time: .shortened))"
+        case let .startingAt(from):
+            let start = Date(timeIntervalSince1970: Double(from))
+            return "From \(start.formatted(date: .abbreviated, time: .shortened)), with no end date"
         }
     }
 
@@ -1446,10 +1472,8 @@ public struct ApprovalView: View {
         bar {
             switch review.state {
             case .pending:
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let expired = Int(context.date.timeIntervalSince1970 * 1000)
-                        >= review.projection.expiresAt
-                    pendingControls(review, expired: expired)
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    pendingControls(review, expired: model.hasExpired(review))
                 }
             case .authorizing:
                 progress("Signing your approval…")
