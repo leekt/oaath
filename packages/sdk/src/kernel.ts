@@ -35,6 +35,8 @@ export {
   kernelV33OperationSigningHash,
 } from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
+export type { CredentialKeyInput } from "./kernel/key/credential.js";
+export { credentialKey } from "./kernel/key/credential.js";
 export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,

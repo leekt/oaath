@@ -12,16 +12,21 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type {
-  CaptureContext,
-  OperatorCredentialProfile,
-  OwnerCredentialProfile,
+import {
+  type CaptureContext,
+  captureRecord,
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+  type OperatorCredentialProfile,
+  type OwnerCredentialProfile,
+  parseOperatorCredentialProfile,
+  parseOwnerCredentialProfile,
 } from "@oaath/protocol";
 import { encodeAbiParameters } from "viem";
 import type { KernelDeployment } from "../deployment/profile.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";
 import type { KeyProfile } from "../types.js";
+import { webauthnDummySignature } from "./webauthn.js";
 
 const POINT_PARAMETERS = [
   { name: "x", type: "uint256" },
@@ -37,11 +42,11 @@ const WEBAUTHN_MATERIAL_PARAMETERS = [
 const DUMMY: Readonly<Record<OwnerCredentialProfile["kind"], `0x${string}`>> = Object.freeze({
   ecdsa: `0x${"11".repeat(32)}${"22".repeat(32)}1c`,
   p256: `0x${"33".repeat(32)}${"44".repeat(32)}`,
-  webauthn: `0x${"55".repeat(64)}`,
+  webauthn: webauthnDummySignature("https://example.invalid"),
 });
 
 export interface CredentialKeyInput {
-  /** Parsed protocol credential; owner/session behavior belongs to the operator. */
+  /** Exact public protocol credential; owner/session behavior belongs to the operator. */
   readonly credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>;
   /**
    * ECDSA root validator, if root authority will be composed. Session-only
@@ -75,15 +80,15 @@ function publicMaterial(
 export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["credential", "validator"], "credential key", context);
-  const credential = record.credential as Readonly<
-    OwnerCredentialProfile | OperatorCredentialProfile
-  >;
-  if (
-    credential === null ||
-    typeof credential !== "object" ||
-    (credential.kind !== "ecdsa" && credential.kind !== "p256" && credential.kind !== "webauthn")
-  ) {
-    return inputInvalid("credential key requires a parsed credential profile");
+  const captured = captureRecord(record.credential, "public credential", context, inputInvalid);
+  let credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>;
+  try {
+    credential =
+      captured.version === OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION
+        ? parseOperatorCredentialProfile(captured)
+        : parseOwnerCredentialProfile(captured);
+  } catch {
+    return inputInvalid("credential key requires a valid public credential profile");
   }
   if (credential.kind !== "ecdsa" && record.validator !== null) {
     return inputInvalid("credential key validator does not match the credential kind");

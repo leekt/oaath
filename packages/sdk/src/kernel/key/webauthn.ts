@@ -61,6 +61,18 @@ const PUBLIC_MATERIAL_PARAMETERS = [
   { name: "authenticatorIdHash", type: "bytes32" },
 ] as const;
 
+/** ABI-valid estimation material shared by signing and public-only profiles. */
+export function webauthnDummySignature(origin: string): `0x${string}` {
+  return encodeAbiParameters(ASSERTION_PARAMETERS, [
+    `0x${"55".repeat(MIN_AUTHENTICATOR_DATA_BYTES)}`,
+    `{"type":"webauthn.get","challenge":"${"A".repeat(43)}","origin":"${origin}"}`,
+    1n,
+    BigInt(`0x${"66".repeat(32)}`) % P256_ORDER,
+    BigInt(`0x${"77".repeat(32)}`) % P256_HALF_ORDER,
+    false,
+  ]);
+}
+
 export interface WebAuthnAssertionRequest {
   /** The 32-byte hash to be signed; also the raw WebAuthn challenge. */
   readonly hash: `0x${string}`;
@@ -257,14 +269,7 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
     // duplication of the capture layer's check — this factory is publicly
     // exported, so direct callers need the guarantee too. Do not "clean it up".
     signerModule: null,
-    dummySignature: encodeAbiParameters(ASSERTION_PARAMETERS, [
-      `0x${"55".repeat(MIN_AUTHENTICATOR_DATA_BYTES)}`,
-      `{"type":"webauthn.get","challenge":"${"A".repeat(43)}","origin":"${origin}"}`,
-      1n,
-      BigInt(`0x${"66".repeat(32)}`) % P256_ORDER,
-      BigInt(`0x${"77".repeat(32)}`) % P256_HALF_ORDER,
-      false,
-    ]),
+    dummySignature: webauthnDummySignature(origin),
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
       if (!isHash(hash)) {
         return runtimeFail("kernel_runtime_signature_invalid", "WebAuthn challenge is invalid");

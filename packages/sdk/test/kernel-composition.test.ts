@@ -26,6 +26,7 @@ import {
 import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
+  credentialKey,
   ecdsaKey,
   encodeKernelV4PermissionSignature,
   encodeKernelV4PolicyData,
@@ -1265,6 +1266,45 @@ describe("Kernel module registry", () => {
     // validate.
     expect(keyProfiles.ecdsa().publicMaterial).toMatch(/^0x[0-9a-f]{40}$/u);
     expect(keyProfiles.webauthn().publicMaterial).toMatch(/^0x[0-9a-f]{192}$/u);
+  });
+
+  it("composes the same permission from public passkey material without signing authority", async () => {
+    const publicKey = credentialKey({ credential: webauthnCredential, validator: null });
+    const signingKey = keyProfiles.webauthn();
+    expect(publicKey.publicMaterial).toBe(signingKey.publicMaterial);
+    const policies = [
+      {
+        kind: "call" as const,
+        permissions: [{ target, selector: "0x00000000" as const, valueLimit: "0" }],
+      },
+    ];
+    expect(sessionOperator({ key: publicKey, policies }).resolvePackages(deployment)).toEqual(
+      sessionOperator({ key: signingKey, policies }).resolvePackages(deployment),
+    );
+    await expect(publicKey.sign(`0x${"11".repeat(32)}`)).rejects.toMatchObject({
+      code: "kernel_runtime_signing_failed",
+    });
+    expect(await publicKey.verify(`0x${"11".repeat(32)}`, signingKey.dummySignature)).toBe(false);
+    // Estimation needs the same ABI shape even though no assertion can verify.
+    expect(
+      decodeAbiParameters(
+        [
+          { type: "bytes" },
+          { type: "string" },
+          { type: "uint256" },
+          { type: "uint256" },
+          { type: "uint256" },
+          { type: "bool" },
+        ],
+        publicKey.dummySignature,
+      ),
+    ).toHaveLength(6);
+    expect(() =>
+      credentialKey({
+        credential: { ...webauthnCredential, publicKey: `0x04${"00".repeat(64)}` },
+        validator: null,
+      }),
+    ).toThrow();
   });
 });
 

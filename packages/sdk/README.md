@@ -34,6 +34,9 @@ Use the same `approveKernelV33Permission` / `materializeKernelV33Permission`
 flow as ECDSA sessions. Root-owner binding remains ECDSA-only; the permission's
 signer is independent of that root. This custom Kernel API does not replace
 the application's durable operation journal or implement browser credential UI.
+For approval and preparation with only public identity, use
+`credentialKey({ credential, validator: null })` in the session operator. It
+derives the same permission as the matching signing profile and cannot sign.
 
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:

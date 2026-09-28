@@ -49,6 +49,7 @@ import {
 import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
+  credentialKey,
   kernelV33Deployment,
   sessionOperator,
   webauthnKey,
@@ -174,6 +175,16 @@ const passkeySession = createKernelRuntime({
 });
 if (passkeySession.keyKind !== "webauthn" || passkeySession.authority !== "session" ||
     passkeySession.packages.at(-1)?.moduleType !== 6) fail("v3.3 passkey composition failed");
+const publicSession = sessionOperator({
+  key: credentialKey({
+    credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
+    validator: null,
+  }),
+  policies: [{ kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] }],
+});
+if (JSON.stringify(publicSession.resolvePackages(kernelV33Deployment(CHAIN_ID))) !== JSON.stringify(passkeySession.packages)) {
+  fail("public credential changed the approved passkey permission");
+}
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   kind: "ecdsa",
