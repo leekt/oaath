@@ -17,6 +17,7 @@ import {
   decideWalletCallConfirmation,
   formatWalletCallConfirmation,
   rejectClosedWalletCallConfirmation,
+  summarizeWalletCallConfirmation,
 } from "./transaction-confirmation-presentation.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,7 @@ for (const piece of [
   "status.html",
   "status.js",
   "status-presentation.js",
+  "theme.css",
   "transaction-confirmation.html",
   "transaction-confirmation.js",
   "transaction-confirmation-presentation.js",
@@ -172,6 +174,11 @@ expect(
       `approve before ${exactCalls.confirmationExpiresAt} seconds`,
     ),
   "confirmation page must render the exact ordered call and approval deadline",
+);
+expect(
+  JSON.stringify(summarizeWalletCallConfirmation(approvalRecord)) ===
+    JSON.stringify({ origin: "https://example.test", chain: "1", calls: 1, totalValue: "0" }),
+  "confirmation headline must summarize the same exact capture",
 );
 expect(
   await decideWalletCallConfirmation(confirmationExtension, approvalToken, "approved"),

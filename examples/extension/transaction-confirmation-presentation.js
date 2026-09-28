@@ -233,8 +233,7 @@ export async function rejectClosedWalletCallConfirmation(extension, tabId) {
   return false;
 }
 
-/** Validates and formats only the public model captured by the worker. */
-export function formatWalletCallConfirmation(record) {
+function captureStoredConfirmation(record) {
   const hasValidityTimeRange = hasOwnField(record, "validityTimeRange");
   const hasConfirmationDeadline = hasOwnField(record, "confirmationExpiresAt");
   const recordKeys = ["origin", "account", "chainId", "calls"];
@@ -243,13 +242,29 @@ export function formatWalletCallConfirmation(record) {
   if (!exactKeys(record, recordKeys)) {
     throw new Error("wallet call confirmation is unavailable");
   }
-  const exact = capturePublicConfirmation(record.origin, {
+  return capturePublicConfirmation(record.origin, {
     account: record.account,
     chainId: record.chainId,
     calls: record.calls,
     ...(hasConfirmationDeadline ? { confirmationExpiresAt: record.confirmationExpiresAt } : {}),
     ...(hasValidityTimeRange ? { validityTimeRange: record.validityTimeRange } : {}),
   });
+}
+
+/** The page headline facts, from the same exact capture as the full text. */
+export function summarizeWalletCallConfirmation(record) {
+  const exact = captureStoredConfirmation(record);
+  return Object.freeze({
+    origin: exact.origin,
+    chain: BigInt(exact.chainId).toString(),
+    calls: exact.calls.length,
+    totalValue: exact.calls.reduce((sum, call) => sum + BigInt(call.value), 0n).toString(),
+  });
+}
+
+/** Validates and formats only the public model captured by the worker. */
+export function formatWalletCallConfirmation(record) {
+  const exact = captureStoredConfirmation(record);
   const lines = [
     `origin   ${exact.origin}`,
     `account  ${exact.account}`,

@@ -30,6 +30,7 @@ const EXTENSION_FILES = [
   "status-presentation.js",
   "status.html",
   "status.js",
+  "theme.css",
   "transaction-confirmation-presentation.js",
   "transaction-confirmation.html",
   "transaction-confirmation.js",

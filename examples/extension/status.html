@@ -2,31 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>OAAth call status</title>
+    <title>Wallet call status · OAAth</title>
+    <link rel="stylesheet" href="theme.css" />
     <style>
-      body {
-        max-width: 760px;
-        margin: 48px auto;
-        padding: 0 20px;
-        background: #1a1a2e;
-        color: #e5e7eb;
-        font: 14px/1.5 ui-monospace, monospace;
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 20px 48px;
+      }
+      .headline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
       }
       h1 {
-        color: #4ade80;
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.01em;
       }
-      #status {
-        padding: 16px;
-        overflow-wrap: anywhere;
-        background: #0f0f1a;
-        border-radius: 6px;
-        white-space: pre-wrap;
+      .badge {
+        font-size: 12px;
+      }
+      #detail {
+        margin: 0 0 20px;
+        color: var(--muted);
+        font-size: 14px;
+        max-width: 62ch;
       }
     </style>
   </head>
   <body>
-    <h1>Wallet call status</h1>
-    <div id="status">reading…</div>
+    <main>
+      <div class="headline">
+        <h1>Wallet call status</h1>
+        <span id="badge" class="badge" hidden></span>
+      </div>
+      <p id="detail">Reading the status…</p>
+      <pre class="exact" id="status">reading…</pre>
+    </main>
     <script type="module" src="status.js"></script>
   </body>
 </html>

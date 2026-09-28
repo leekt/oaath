@@ -86,6 +86,7 @@ async function realmFor(origin) {
     chain: configured.chain,
     connection,
     grant: null,
+    pairing: false,
     providers: new Map(),
   };
   realms.set(origin, realm);
@@ -146,15 +147,17 @@ async function handlePopup(message) {
   }
   if (message.command === "status") {
     const realm = await realmFor(origin);
-    const grant = await activeGrant(realm);
+    // A revoking, revoked, or expired Grant authorizes nothing, but the popup
+    // still reports it so the owner can finish or see the revocation.
+    const grant = (await activeGrant(realm)) ?? realm.grant;
     return {
       ok: true,
       result: {
         origin,
         url: realm.url,
         chain: realm.chain,
-        state: grant?.state ?? "unpaired",
-        account: grant ? await grant.account(realm.chain) : null,
+        state: grant?.state ?? (realm.pairing ? "requested" : "unpaired"),
+        account: grant ? await grant.account(realm.chain).catch(() => null) : null,
         expiresAt: grant?.expiresAt ?? null,
       },
     };
@@ -163,32 +166,51 @@ async function handlePopup(message) {
     const scope = message.scope;
     if (!scope || typeof scope !== "object") return rpcError(-32602, "pair requires a scope");
     const realm = await realmFor(origin);
-    // The owner still reviews and approves through the service's own flow;
-    // this only submits the request and waits for the decision.
-    const grant = await realm.connection.requestPermission({
-      chainScope: "all",
-      permissions: [
-        {
-          calls: [
-            {
-              target: String(scope.target),
-              selectors: [String(scope.selector)],
-              valueLimit: String(scope.valueLimit ?? "0"),
-            },
-          ],
-        },
-      ],
-      expiresIn: Number(scope.expiresIn ?? 1_800),
-      perChainOperationLimit: Number(scope.perChainOperationLimit ?? 10),
-    });
+    // One request at a time per origin, and never over a Grant that is still
+    // in force or still being revoked: the realm tracks exactly one Grant.
+    if (realm.pairing) {
+      return rpcError(-32002, "a permission request is already waiting for the owner");
+    }
+    const current = (await activeGrant(realm)) ?? realm.grant;
+    if (current?.state === "active" || current?.state === "revoking") {
+      return rpcError(-32000, "this origin already holds a permission; revoke it first");
+    }
+    realm.pairing = true;
+    let grant;
+    try {
+      // The owner still reviews and approves through the service's own flow;
+      // this only submits the request and waits for the decision.
+      grant = await realm.connection.requestPermission({
+        chainScope: "all",
+        permissions: [
+          {
+            calls: [
+              {
+                target: String(scope.target),
+                selectors: [String(scope.selector)],
+                valueLimit: String(scope.valueLimit ?? "0"),
+              },
+            ],
+          },
+        ],
+        expiresIn: Number(scope.expiresIn ?? 1_800),
+        perChainOperationLimit: Number(scope.perChainOperationLimit ?? 10),
+      });
+    } finally {
+      realm.pairing = false;
+    }
     realm.grant = grant;
     realm.providers.clear();
     return { ok: true, result: { state: grant.state, account: await grant.account(realm.chain) } };
   }
   if (message.command === "revoke") {
     const realm = await realmFor(origin);
-    const grant = await activeGrant(realm);
-    if (grant === null) return rpcError(-32000, "nothing to revoke for this origin");
+    // A revoking Grant is retried: each call re-checks the chains and
+    // completes to revoked once the permission is observed absent.
+    const grant = (await activeGrant(realm)) ?? realm.grant;
+    if (grant === null || (grant.state !== "active" && grant.state !== "revoking")) {
+      return rpcError(-32000, "nothing to revoke for this origin");
+    }
     await grant.revoke();
     realm.grant = null;
     realm.providers.clear();
