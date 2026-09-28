@@ -49,8 +49,9 @@ or desired-state convergence.
 | `@oaath/server` | Deployable relay and PostgreSQL boundary. |
 | `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
 
-All four publish together in one fixed `0.x.y` release group. The first release
-is `0.1.0`; no package becomes `1.0.0` during this program.
+All four use one fixed `0.x.y` release group. The current source is versioned
+`0.2.0`, following the initial `0.1.0` proof of concept; no package becomes
+`1.0.0` during this program. Versioned source does not imply npm publication.
 
 [`native/ios`](native/ios/README.md) carries the experimental owner-phone
 SwiftUI approval app. Use its source from the same repository revision used to
@@ -61,8 +62,8 @@ run the same check on macOS with `pnpm test:phone`.
 
 ## Status
 
-The fixed package group is versioned for its first public proof-of-concept
-release, `0.1.0`. `@oaath/protocol` owns the shared wire and
+The fixed package group is versioned for the next proof-of-concept release,
+`0.2.0`. `@oaath/protocol` owns the shared wire and
 durable contracts: grants, grant policies, identity profiles, the pure
 `Operation` aggregate, the permission protocol, and the exact hostile-input
 capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
