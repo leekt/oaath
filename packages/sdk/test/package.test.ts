@@ -70,6 +70,7 @@ describe("package boundary", () => {
       "encodeKernelV4ValidatorData",
       "kernelAllChainCapabilityHash",
       "kernelPermissionInstallNonce",
+      "kernelV33CapabilityHash",
       "kernelV33Deployment",
       "kernelV33OperationSigningHash",
       "kernelV33PermissionEnableTypedData",

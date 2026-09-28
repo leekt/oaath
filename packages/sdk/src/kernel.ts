@@ -100,6 +100,7 @@ export type {
 } from "./kernel/permission/v33.js";
 export {
   approveKernelV33Permission,
+  kernelV33CapabilityHash,
   kernelV33PermissionEnableTypedData,
   kernelV33PermissionInstallNonce,
   materializeKernelV33Permission,

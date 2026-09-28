@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSqliteOperationStoreAdapter } from "@oaath/testing";
@@ -10,14 +10,10 @@ import {
   decodeEventLog,
   encodeAbiParameters,
   encodeFunctionData,
-  getCreate2Address,
   type Hex,
   http,
-  parseAbi,
   parseEther,
   toHex,
-  zeroAddress,
-  zeroHash,
 } from "viem";
 import {
   entryPoint07Abi,
@@ -40,10 +36,10 @@ import {
   materializeKernelV33Permission,
   parseKernelV33PermissionApproval,
 } from "../src/kernel/permission/v33.js";
-import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
+import { deployKernelV33Account } from "./support/kernel-v33.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 const chains: AnvilChain[] = [];
@@ -55,66 +51,7 @@ async function setupV33(chainId: number, owner: ReturnType<typeof privateKeyToAc
   const chain = await startAnvil(chainId, "prague", 1);
   chains.push(chain);
   const harness = await createHarness(chain);
-  const deployment = kernelV33Deployment(chainId);
-  const fixture = JSON.parse(
-    await readFile(new URL("./fixtures/kernel-v33-deployments.json", import.meta.url), "utf8"),
-  ) as {
-    version: string;
-    kernel: { address: Hex; deploymentInput: Hex };
-    factory: { address: Hex; deploymentInput: Hex };
-    ecdsaValidator: { address: Hex; deploymentInput: Hex };
-  };
-  expect(fixture.version).toBe("oaath.kernel-v33-deployments/v1");
-  const entryPoint = JSON.parse(
-    await readFile(
-      new URL(`../node_modules/${harness.fixture.entryPoint.artifact}`, import.meta.url),
-      "utf8",
-    ),
-  ) as { bytecode: Hex };
-  await harness.deployCreate2(
-    concat([harness.fixture.entryPoint.deploymentSalt, entryPoint.bytecode]),
-  );
-  for (const module of [fixture.kernel, fixture.factory, fixture.ecdsaValidator]) {
-    expect(
-      getCreate2Address({
-        from: KERNEL_V4_CREATE2_DEPLOYER,
-        salt: `0x${module.deploymentInput.slice(2, 66)}`,
-        bytecode: `0x${module.deploymentInput.slice(66)}`,
-      }).toLowerCase(),
-    ).toBe(module.address);
-    await harness.deployCreate2(module.deploymentInput);
-  }
-  expect(fixture.kernel.address).toBe(deployment.implementation);
-  expect(fixture.factory.address).toBe(deployment.factory);
-  expect(fixture.ecdsaValidator.address).toBe(deployment.ecdsaValidator);
-  const init = encodeFunctionData({
-    abi: parseAbi([
-      "function initialize(bytes21 rootValidator, address hook, bytes validatorData, bytes hookData, bytes[] initConfig)",
-    ]),
-    functionName: "initialize",
-    args: [`0x01${deployment.ecdsaValidator.slice(2)}`, zeroAddress, owner.address, "0x", []],
-  });
-  const factoryAbi = parseAbi([
-    "function createAccount(bytes data, bytes32 salt) returns (address)",
-    "function getAddress(bytes data, bytes32 salt) view returns (address)",
-  ]);
-  const address = await harness.client.readContract({
-    address: deployment.factory,
-    abi: factoryAbi,
-    functionName: "getAddress",
-    args: [init, zeroHash],
-  });
-  const creation = await harness.wallet.writeContract({
-    chain: null,
-    address: deployment.factory,
-    abi: factoryAbi,
-    functionName: "createAccount",
-    args: [init, zeroHash],
-  });
-  expect((await harness.client.waitForTransactionReceipt({ hash: creation })).status).toBe(
-    "success",
-  );
-  await harness.fund(address, parseEther("1"));
+  const { deployment, address } = await deployKernelV33Account(harness, chainId, owner.address);
 
   return { chain, harness, deployment, address };
 }

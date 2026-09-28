@@ -23,6 +23,7 @@ import {
   type KernelV33ReadRequest,
   type KernelV33Reads,
 } from "../kernel/deployment/v33.js";
+import { encodeKernelV33NonceKey } from "../kernel/deployment/v33-operation.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { resolvePolicyModule } from "../kernel/modules.js";
 import {
@@ -496,12 +497,23 @@ export function createViemChainPorts(
         )
           return invalid();
         const nonceKey = "0";
-        const key = encodeKernelV4NonceKey({
+        const v4Key = encodeKernelV4NonceKey({
           mode: request.mode,
           validation: request.validation,
           nonceKey,
         });
-        if (BigInt(prepared.userOperation.nonce) !== BigInt(key) << 64n) return invalid();
+        // The prepared runtime owns the actual validation mode byte. Both
+        // versions use the same permission/namespace layout but different enable modes.
+        const key = (BigInt(prepared.userOperation.nonce) >> 64n).toString();
+        const v33Key =
+          request.mode === "enable-replayable" && request.validation.kind === "permission"
+            ? encodeKernelV33NonceKey({ mode: "enable", validation: request.validation, nonceKey })
+            : v4Key;
+        if (
+          (key !== v4Key && key !== v33Key) ||
+          BigInt(prepared.userOperation.nonce) !== BigInt(key) << 64n
+        )
+          return invalid();
         const nonce = word(
           await publicRpc("eth_call", [
             {
