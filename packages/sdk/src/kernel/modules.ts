@@ -25,7 +25,7 @@ import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from ".
  * 8f6a71992e297f2e7caa61df2c6eb0b6d9145d2d, src/P256Validator.sol, compiled with
  * solc 0.8.26+commit.8a97fa7a (optimizer 200 runs, no via-IR) and deployed through
  * KERNEL_V4_CREATE2_DEPLOYER with a zero salt, which fixes this address on every
- * chain. test/fixtures/kernel-v4-v0.7-deployments.json carries the exact
+ * chain. contracts/artifacts/KernelV4Runtime.json carries the exact
  * deployment input — taken from the module's own Ethereum Sepolia broadcast record,
  * whose creation code a recompile of that source reproduces byte for byte — so both
  * the address and the runtime code hash derive from it offline.
@@ -81,7 +81,7 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${stri
 /**
  * Permission signer modules (moduleType 6) bound per key kind and deployed through
  * KERNEL_V4_CREATE2_DEPLOYER with a zero salt, which fixes each address on every
- * chain. test/fixtures/kernel-v4-v0.7-deployments.json carries each exact deployment
+ * chain. contracts/artifacts/KernelV4Runtime.json carries each exact deployment
  * input, and the local Kernel composition proof deploys it and shows the code
  * landing on the address pinned here.
  *

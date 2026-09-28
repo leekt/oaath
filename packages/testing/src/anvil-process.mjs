@@ -4,9 +4,8 @@
  * ponytail: this is a minimal inlined copy of `packages/sdk/test/support/anvil.ts`,
  * whose own header carries the consolidation marker — both copies collapse into
  * `@oaath/testing`'s chain fixtures when that package's `anvil.ts` lands, and the
- * examples will import it from there. Until then the deployment bytecode has no
- * published home, so this file reads the SDK's own deployment fixture rather than
- * keeping a second copy of it: one fact, one owner.
+ * examples will import it from there. The contract artifacts own the deployment
+ * bytecode; the ECDSA validator mock stays separate and test-only.
  *
  * Every address here is CREATE2-derived, so two chains started from this module
  * carry the identical stack at the identical addresses — which is what makes one
@@ -30,7 +29,13 @@ import {
   parseEther,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import fixture from "../../sdk/test/fixtures/kernel-v4-v0.7-deployments.json" with { type: "json" };
+import runtime from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
+import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json" with {
+  type: "json",
+};
+import ecdsaValidator from "../../sdk/test/fixtures/kernel-ecdsa-mock.json" with { type: "json" };
+
+const fixture = { ...runtime, ecdsaValidator, validityPolicy: validity.deployment };
 
 /** Kernel v4 pins no ECDSA validator, so the examples deploy one under this salt. */
 const VALIDATOR_SALT = `0x${"00".repeat(32)}`;
