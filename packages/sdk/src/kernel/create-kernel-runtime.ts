@@ -24,7 +24,7 @@ import {
   type KernelV33AccountDescriptor,
   type KernelV33Reads,
 } from "./deployment/v33.js";
-import { prepareKernelV33OwnerOperation } from "./deployment/v33-operation.js";
+import { encodeKernelV33NonceKey, prepareKernelV33Operation } from "./deployment/v33-operation.js";
 import {
   applyKernelGasPolicy,
   captureKernelGasPolicy,
@@ -150,8 +150,8 @@ export function createKernelRuntime(
   const gasPolicy = captureKernelGasPolicy(deployment.chainId, record.gas);
   const operator = captureOperator(record.operator, context);
   const isV33 = deployment.kernelVersion === "0.3.3";
-  if (isV33 && (operator.authority !== "owner" || operator.key.kind !== "ecdsa")) {
-    return inputInvalid("Kernel v3.3 composition currently requires ECDSA root authority");
+  if (isV33 && operator.key.kind !== "ecdsa") {
+    return inputInvalid("Kernel v3.3 composition currently requires an ECDSA key");
   }
   const read = inputCapability<KernelV4AccountReadCapability["read"]>(
     exactInput(record.reads, ["read"], "Kernel runtime reads", context).read,
@@ -159,7 +159,10 @@ export function createKernelRuntime(
   );
   const authorityModule = operator.resolveAuthorityModule(deployment);
   const validation: Readonly<KernelV4Validation> = operator.resolveValidation(deployment);
-  const packages = isV33 ? Object.freeze([]) : operator.resolvePackages(deployment);
+  const packages =
+    isV33 && operator.authority === "owner"
+      ? Object.freeze([])
+      : operator.resolvePackages(deployment);
   const rootPackage: Readonly<KernelV4Install> | undefined = packages[0];
   if (!isV33 && !rootPackage) return inputInvalid("Kernel operator resolved no install packages");
   // Kernel's ValidationManager forbids enable mode on root validation — a root
@@ -246,6 +249,33 @@ export function createKernelRuntime(
         address: binding.address as `0x${string}`,
         reads: { read: readV33 },
       });
+      if (operator.authority === "session") {
+        await proveAuthorityModule();
+        await proveValidityPolicy();
+        for (const install of packages) {
+          if (install.moduleType !== 5) continue;
+          let code: unknown;
+          try {
+            code = await read({
+              type: "code",
+              chainId: deployment.chainId,
+              address: install.module,
+            });
+          } catch {
+            return runtimeFail(
+              "kernel_runtime_policy_unavailable",
+              "Kernel policy code could not be read",
+            );
+          }
+          if (!isBytes(code) || code === "0x")
+            return runtimeFail(
+              "kernel_runtime_policy_unavailable",
+              "Kernel policy carries no code on this chain",
+            );
+        }
+        boundV33Accounts.add(descriptor.account);
+        return descriptor;
+      }
       if (
         authorityModule !== deployment.ecdsaValidator ||
         descriptor.rootValidator !== `0x01${authorityModule.slice(2)}`
@@ -308,7 +338,11 @@ export function createKernelRuntime(
     input: KernelRuntimePrepareInput | KernelV33RuntimePrepareInput,
   ): PreparedUserOperation {
     if (isV33) {
-      const operation = prepareKernelV33OwnerOperation(input as KernelV33RuntimePrepareInput);
+      const operation = prepareKernelV33Operation(
+        input as KernelV33RuntimePrepareInput,
+        validation,
+        gasPolicy,
+      );
       return boundOperation(operation);
     }
     const requestsValidityRange = Object.hasOwn(input, "validityTimeRange");
@@ -371,7 +405,7 @@ export function createKernelRuntime(
     ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
-        "Kernel v3.3 operation does not use an account bound to this owner",
+        "Kernel v3.3 operation does not use an account bound to this runtime",
       );
     }
     // The nonce carries Kernel's validation mode, type and identifier, so
@@ -395,9 +429,16 @@ export function createKernelRuntime(
     const namespace = ((nonce >> 64n) & 0xffffn).toString(10);
     const key = (nonce >> 64n).toString(10);
     if (
-      !reachableModes.some(
-        (mode) => encodeKernelV4NonceKey({ mode, validation, nonceKey: namespace }) === key,
-      )
+      !(isV33
+        ? (validation.kind === "root"
+            ? (["standard"] as const)
+            : (["standard", "enable"] as const)
+          ).some(
+            (mode) => encodeKernelV33NonceKey({ mode, validation, nonceKey: namespace }) === key,
+          )
+        : reachableModes.some(
+            (mode) => encodeKernelV4NonceKey({ mode, validation, nonceKey: namespace }) === key,
+          ))
     ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
@@ -409,7 +450,10 @@ export function createKernelRuntime(
 
   async function signOperation(prepared: unknown): Promise<`0x${string}`> {
     const operation = boundOperation(prepared);
-    return operator.encodeSignature(await operator.key.sign(operation.userOperationHash));
+    return operator.encodeSignature(
+      await operator.key.sign(operation.userOperationHash),
+      deployment,
+    );
   }
 
   async function encodeVerifiedSignature(
@@ -434,7 +478,7 @@ export function createKernelRuntime(
         "Kernel external key signature does not verify against the bound public material",
       );
     }
-    return operator.encodeSignature(signature);
+    return operator.encodeSignature(signature, deployment);
   }
 
   return Object.freeze({
@@ -447,7 +491,7 @@ export function createKernelRuntime(
     packages,
     // Simulation must receive the same authority envelope shape as a real
     // signature. Owner encoding is raw; session encoding adds policy/signer slices.
-    dummySignature: operator.encodeSignature(operator.key.dummySignature),
+    dummySignature: operator.encodeSignature(operator.key.dummySignature, deployment),
     bindAccount,
     prepareOperation,
     signOperation,

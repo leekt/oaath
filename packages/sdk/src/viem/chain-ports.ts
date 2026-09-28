@@ -463,6 +463,7 @@ export function createViemChainPorts(
             case "kernel_account_entrypoint":
             case "kernel_account_root_validator":
             case "kernel_ecdsa_owner":
+            case "kernel_v33_permission_nonce":
               return v33Reads.read(request);
             default:
               return v4Reads.read(request as KernelV4AccountReadRequest);

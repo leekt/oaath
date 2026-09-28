@@ -4,28 +4,56 @@ import {
   encodeKernelV4Nonce,
   encodeKernelV4NonceKey,
   type KernelV4UserOperationGas,
+  type KernelV4Validation,
 } from "../../kernel-v4.js";
 import { type PreparedUserOperation, prepareUserOperation } from "../../prepared-user-operation.js";
+import { applyKernelGasPolicy, type KernelGasPolicy } from "../gas-policy.js";
 import { exactInput, inputInvalid } from "../internal.js";
 import type { KernelV33RuntimePrepareInput } from "../types.js";
 import { provenKernelV33Account } from "./v33.js";
 
-/** Root nonce and ERC-7579 execute encoding are identical in Kernel 0.3.3 and 0.4.0. */
-export function prepareKernelV33OwnerOperation(
+/** v3.3 uses mode 0x01 for enable; its validation/namespace layout matches v4. */
+export function encodeKernelV33NonceKey(value: {
+  mode: "standard" | "enable";
+  validation: Readonly<KernelV4Validation>;
+  nonceKey: string;
+}): string {
+  const input = exactInput(
+    value,
+    ["mode", "validation", "nonceKey"],
+    "Kernel v3.3 nonce key",
+    new WeakSet(),
+  );
+  if (input.mode !== "standard" && input.mode !== "enable")
+    return inputInvalid("Kernel v3.3 validation mode is unsupported");
+  const key = BigInt(
+    encodeKernelV4NonceKey({
+      mode: "standard",
+      validation: input.validation as KernelV4Validation,
+      nonceKey: input.nonceKey as string,
+    }),
+  );
+  if (input.mode === "enable" && ((key >> 176n) & 0xffn) !== 2n)
+    return inputInvalid("Kernel v3.3 enable requires permission authority");
+  return (key | (input.mode === "enable" ? 1n << 184n : 0n)).toString(10);
+}
+
+export function prepareKernelV33Operation(
   value: KernelV33RuntimePrepareInput,
+  validation: Readonly<KernelV4Validation>,
+  gasPolicy: Readonly<KernelGasPolicy>,
 ): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
-  const captured = captureRecord(value, "Kernel v3.3 owner operation", context, inputInvalid);
+  const captured = captureRecord(value, "Kernel v3.3 operation", context, inputInvalid);
   const optional = ["mode", "paymaster"].filter((key) => Object.hasOwn(captured, key));
   const record = exactCapturedRecord(
     captured,
     ["account", "kind", "grantId", "nonceKey", "sequence", "calls", "gas", ...optional],
-    "Kernel v3.3 owner operation",
+    "Kernel v3.3 operation",
     inputInvalid,
   );
-  if (record.mode !== undefined && record.mode !== "standard")
-    return inputInvalid("Kernel root authority does not use enable mode");
   const account = provenKernelV33Account(record.account);
+  const mode = (record.mode === undefined ? "standard" : record.mode) as "standard" | "enable";
   const gas = exactInput(
     record.gas,
     [
@@ -46,9 +74,9 @@ export function prepareKernelV33OwnerOperation(
     userOperation: {
       sender: account.account,
       nonce: encodeKernelV4Nonce({
-        key: encodeKernelV4NonceKey({
-          mode: "standard",
-          validation: { kind: "root" },
+        key: encodeKernelV33NonceKey({
+          mode,
+          validation,
           nonceKey: record.nonceKey as string,
         }),
         sequence: record.sequence as string,
@@ -56,7 +84,7 @@ export function prepareKernelV33OwnerOperation(
       callData: encodeKernelV4Execution({
         calls: record.calls as KernelV33RuntimePrepareInput["calls"],
       }),
-      ...(gas as unknown as KernelV4UserOperationGas),
+      ...applyKernelGasPolicy(gas as unknown as KernelV4UserOperationGas, mode, gasPolicy),
       factory: null,
       paymaster: (record.paymaster ?? null) as KernelV33RuntimePrepareInput["paymaster"] &
         (object | null),
