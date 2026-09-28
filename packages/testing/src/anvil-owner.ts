@@ -3,11 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createOAAth, type OaathConnectedEoaFeePayer, type OaathOwnerClient } from "@oaath/sdk";
-import {
-  type EcdsaWalletClient,
-  KERNEL_V4_CREATE2_DEPLOYER,
-  kernelV33Deployment,
-} from "@oaath/sdk/kernel";
+import { type EcdsaWalletClient, kernelV33Deployment } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
   createWalletClient,
@@ -15,11 +11,8 @@ import {
   encodeFunctionData,
   type Hex,
   http,
-  parseAbi,
   parseEther,
   toHex,
-  zeroAddress,
-  zeroHash,
 } from "viem";
 import {
   entryPoint07Abi,
@@ -28,9 +21,9 @@ import {
   type UserOperation,
 } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import { readLocalOperationReceipt } from "./anvil-observation.mjs";
 import { deployKernelStack, startAnvil } from "./anvil-process.mjs";
+import { deployLocalV33Account } from "./anvil-v33.js";
 import { createSqliteOperationStoreAdapter } from "./sqlite-store.js";
 
 type OwnerWallet = EcdsaWalletClient & OaathConnectedEoaFeePayer["wallet"];
@@ -74,47 +67,8 @@ export async function createLocalOwnerAnvilFixture(
   try {
     const stack = await deployKernelStack(chain);
     const deployment = kernelV33Deployment(chainId);
-    for (const module of [v33.kernel, v33.factory, v33.ecdsaValidator]) {
-      const hash = await stack.wallet.sendTransaction({
-        account: stack.submitter,
-        chain: null,
-        to: KERNEL_V4_CREATE2_DEPLOYER,
-        data: module.deploymentInput as Hex,
-        gas: 10_000_000n,
-      });
-      if ((await chain.client.waitForTransactionReceipt({ hash })).status !== "success")
-        throw new Error("local_fixture_deployment_failed");
-    }
     const owner = privateKeyToAccount(generatePrivateKey());
-    const init = encodeFunctionData({
-      abi: parseAbi([
-        "function initialize(bytes21 rootValidator, address hook, bytes validatorData, bytes hookData, bytes[] initConfig)",
-      ]),
-      functionName: "initialize",
-      args: [`0x01${deployment.ecdsaValidator.slice(2)}`, zeroAddress, owner.address, "0x", []],
-    });
-    const factoryAbi = parseAbi([
-      "function createAccount(bytes data, bytes32 salt) returns (address)",
-      "function getAddress(bytes data, bytes32 salt) view returns (address)",
-    ]);
-    const address = (
-      await chain.client.readContract({
-        address: deployment.factory,
-        abi: factoryAbi,
-        functionName: "getAddress",
-        args: [init, zeroHash],
-      })
-    ).toLowerCase() as Hex;
-    const creation = await stack.wallet.writeContract({
-      account: stack.submitter,
-      chain: null,
-      address: deployment.factory,
-      abi: factoryAbi,
-      functionName: "createAccount",
-      args: [init, zeroHash],
-    });
-    if ((await chain.client.waitForTransactionReceipt({ hash: creation })).status !== "success")
-      throw new Error("local_fixture_account_failed");
+    const address = await deployLocalV33Account(chain, stack, owner.address);
     await stack.fund(address, parseEther("10"));
     await stack.fund(owner.address, parseEther("10"));
     let signatures = 0,

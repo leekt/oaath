@@ -3,7 +3,7 @@
 OAAth deterministic fixtures and clean-consumer harnesses. Never a production
 dependency. See the [repository README](https://github.com/leekt/oaath#readme).
 
-`@oaath/testing/anvil` exports `createLocalAnvilFixture({ chainIds, stateDirectory })` for explicit
+`@oaath/testing/anvil` exports `createLocalAnvilFixture({ chainIds, stateDirectory, kernelVersion })` for explicit
 local integration tests. It starts one or two loopback Anvil chains with the
 pinned EntryPoint and Kernel contracts. `openClient()` returns the public SDK
 client and recreates all prior SDK/database handles over retained IndexedDB
@@ -11,6 +11,11 @@ test storage. The local test owner approves requested grants; this is not a
 production authorization service. `approvalCount` and `submissionCount` support
 zero-resubmission assertions. `rpcUrl(chainId)` exposes ordinary chain reads.
 Always call `close()` in `finally` to release every local process.
+`kernelVersion: "0.3.3"` deploys the existing ECDSA-root account before creating
+the SDK client; the default is `"0.4.0"`. The v3.3 path installs the actual scoped
+permission with one all-chain approval, then reuses it silently. Fixed fixture
+gas limits prove execution, not production bundler estimation. Recovery descriptor
+`oaath.local-anvil-recovery/v2` binds the existing address and rejects old versions.
 
 With `stateDirectory`, the SDK writes its direct Grant, Operation and client
 context to `client.sqlite`. The returned `recovery` descriptor contains only

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { captureLocalAnvilRecovery } from "../src/anvil-recovery.js";
 
 const descriptor = {
-  version: "oaath.local-anvil-recovery/v1",
+  version: "oaath.local-anvil-recovery/v2",
+  existingAccount: null,
   owner: `0x${"11".repeat(20)}`,
   session: `0x${"22".repeat(20)}`,
   chains: [
@@ -44,6 +45,7 @@ describe("local recovery descriptor", () => {
     }
     for (const value of [
       { ...descriptor, version: "unsupported" },
+      { ...descriptor, existingAccount: "0x1234" },
       { ...descriptor, unrelated: true },
       { ...descriptor, chains: [] },
       { ...descriptor, chains: [descriptor.chains[0], descriptor.chains[0]] },

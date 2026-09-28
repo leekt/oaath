@@ -19,8 +19,11 @@
 import {
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
+  encodeKernelV33NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
+  kernelV33Deployment,
 } from "@oaath/sdk/kernel";
+import { createViemChainPorts } from "@oaath/sdk/viem";
 import { parseEther } from "viem";
 import {
   createLocalAnvilObservation,
@@ -28,6 +31,7 @@ import {
   readLocalPermissionInstalled,
 } from "./anvil-observation.mjs";
 import { deployKernelStack, startAnvil } from "./anvil-process.mjs";
+import { deployLocalV33Account } from "./anvil-v33.js";
 
 /** Generous fixed limits: a devnet needs no estimation to prove the journey. */
 const GAS = {
@@ -38,10 +42,21 @@ const GAS = {
   maxPriorityFeePerGas: "1000000000",
 };
 
-export async function createAnvilChain(chainId, { p256 = false } = {}) {
+/**
+ * @param {number} chainId
+ * @param {{ p256?: boolean, existingOwner?: import("viem").Hex | null }} [options]
+ */
+export async function createAnvilChain(chainId, options = {}) {
+  const { p256 = false, existingOwner = null } = options;
   const chain = await startAnvil(chainId, p256 ? "osaka" : "prague");
   try {
     const stack = await deployKernelStack(chain, { p256 });
+    const existingAccount =
+      existingOwner === null ? null : await deployLocalV33Account(chain, stack, existingOwner);
+    // Use only the public read port here; this fixture owns submission below.
+    const reads = createViemChainPorts({
+      [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: chain.url },
+    })[0].reads;
     const feePayerBalance = await chain.client.getBalance({ address: stack.submitter.address });
     const sends = [];
     const userOperationReceipt = (hash) => readLocalOperationReceipt(chain, hash);
@@ -49,11 +64,18 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
 
     async function nonceQuote(request) {
       const nonceKey = "0";
-      const key = encodeKernelV4NonceKey({
-        mode: request.mode,
-        validation: request.validation,
-        nonceKey,
-      });
+      const key =
+        existingAccount === null
+          ? encodeKernelV4NonceKey({
+              mode: request.mode,
+              validation: request.validation,
+              nonceKey,
+            })
+          : encodeKernelV33NonceKey({
+              mode: request.mode === "enable-replayable" ? "enable" : "standard",
+              validation: request.validation,
+              nonceKey,
+            });
       const raw = await chain.rpc("eth_call", [
         {
           to: KERNEL_V4_ENTRY_POINT_V07,
@@ -71,8 +93,10 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
     return {
       url: chain.url,
       processId: chain.processId,
-      label: `local Anvil at ${chain.url} with Kernel v4`,
-      validator: stack.validator,
+      label: `local Anvil at ${chain.url} with Kernel ${existingAccount === null ? "v4" : "v3.3"}`,
+      validator:
+        existingAccount === null ? stack.validator : kernelV33Deployment(chainId).ecdsaValidator,
+      existingAccount,
       sends,
       fund: (account) => stack.fund(account, parseEther("1")),
       /** Pure local deployment quote. The retained approval supplies the permission identity. */
@@ -106,7 +130,7 @@ export async function createAnvilChain(chainId, { p256 = false } = {}) {
       stop: () => chain.stop(),
       capability: {
         chainId,
-        reads: stack.reads,
+        reads,
         observation: createLocalAnvilObservation(chain),
         bundler: {
           async probe(request) {

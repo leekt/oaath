@@ -8,11 +8,15 @@ import { createOAAth, type Oaath } from "@oaath/sdk";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
+  approveKernelV33Permission,
   createKernelRuntime,
   ecdsaKey,
   kernelAllChainCapabilityHash,
   kernelPermissionInstallNonce,
   kernelV4Deployment,
+  kernelV33CapabilityHash,
+  kernelV33Deployment,
+  kernelV33PermissionInstallNonce,
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
@@ -50,8 +54,14 @@ export interface LocalAnvilFixture {
  * authorization service. No credentials, signatures, or raw errors escape.
  */
 export async function createLocalAnvilFixture(
-  input: Readonly<{ chainIds?: readonly number[]; stateDirectory?: string }> = {},
+  input: Readonly<{
+    chainIds?: readonly number[];
+    stateDirectory?: string;
+    kernelVersion?: "0.4.0" | "0.3.3";
+  }> = {},
 ): Promise<Readonly<LocalAnvilFixture>> {
+  const version = input.kernelVersion ?? "0.4.0";
+  if (version !== "0.4.0" && version !== "0.3.3") throw new Error("local_fixture_kernel_invalid");
   const stateDirectory = input.stateDirectory;
   if (stateDirectory !== undefined && (typeof stateDirectory !== "string" || !stateDirectory))
     throw new Error("local_fixture_storage_invalid");
@@ -65,8 +75,14 @@ export async function createLocalAnvilFixture(
     throw new Error("local_fixture_chains_invalid");
   }
   const chains = new Map<number, Awaited<ReturnType<typeof createAnvilChain>>>();
+  const owner = privateKeyToAccount(generatePrivateKey());
+  const session = privateKeyToAccount(generatePrivateKey());
   try {
-    for (const id of chainIds) chains.set(id, await createAnvilChain(id));
+    for (const id of chainIds)
+      chains.set(
+        id,
+        await createAnvilChain(id, { existingOwner: version === "0.3.3" ? owner.address : null }),
+      );
   } catch {
     for (const chain of chains.values()) chain.stop();
     throw new Error("local_fixture_start_failed");
@@ -75,8 +91,10 @@ export async function createLocalAnvilFixture(
   const firstChainId = chainIds[0];
   if (!first || firstChainId === undefined) throw new Error("local_fixture_chains_invalid");
   const now = () => Math.floor(Date.now() / 1000);
-  const owner = privateKeyToAccount(generatePrivateKey());
-  const session = privateKeyToAccount(generatePrivateKey());
+  if ([...chains.values()].some((chain) => chain.existingAccount !== first.existingAccount)) {
+    for (const chain of chains.values()) chain.stop();
+    throw new Error("local_fixture_account_mismatch");
+  }
   const issuerUrl = LOCAL_ISSUER;
   const redirectUri = LOCAL_REDIRECT;
   const clientToken = crypto.randomUUID();
@@ -147,31 +165,56 @@ export async function createLocalAnvilFixture(
       const state = await stateResponse.json();
       const scope = JSON.parse(state.requestedScope);
       const ownerKey = ecdsaKey({ account: owner, validator: first.validator });
-      const deployment = kernelV4Deployment(firstChainId);
-      const ownerRuntime = createKernelRuntime({
-        deployment,
-        operator: ownerOperator({ key: ownerKey }),
-        reads: first.capability.reads,
-      });
-      const descriptor = await ownerRuntime.bindAccount({
-        accountIndex: "0",
-        initialPackages: [...ownerRuntime.packages],
-      });
-      const sessionRuntime = createKernelRuntime({
-        deployment,
-        operator: sessionOperator({
-          key: ecdsaKey({ account: session, validator: first.validator }),
-          policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-        }),
-        reads: first.capability.reads,
-      });
       const requestHash = hashPermissionRequest({ ...scope, requestId });
-      const installApproval = await approveKernelPermissionAllChain({
-        owner: ownerKey,
-        account: descriptor.account,
-        installNonce: kernelPermissionInstallNonce(requestHash),
-        packages: [...sessionRuntime.packages],
-      });
+      const installApproval = await (async () => {
+        if (first.existingAccount !== null) {
+          const deployment = kernelV33Deployment(firstChainId);
+          const runtime = createKernelRuntime({
+            deployment,
+            operator: sessionOperator({
+              key: ecdsaKey({ account: session, validator: first.validator }),
+              policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
+            }),
+            reads: first.capability.reads,
+          });
+          const descriptor = await runtime.bindAccount({ address: first.existingAccount });
+          const nonce = await kernelV33PermissionInstallNonce({
+            runtime,
+            account: descriptor,
+            reads: first.capability.reads,
+          });
+          return approveKernelV33Permission({
+            owner: ownerKey,
+            runtime,
+            account: descriptor,
+            nonce,
+          });
+        }
+        const deployment = kernelV4Deployment(firstChainId);
+        const ownerRuntime = createKernelRuntime({
+          deployment,
+          operator: ownerOperator({ key: ownerKey }),
+          reads: first.capability.reads,
+        });
+        const descriptor = await ownerRuntime.bindAccount({
+          accountIndex: "0",
+          initialPackages: [...ownerRuntime.packages],
+        });
+        const sessionRuntime = createKernelRuntime({
+          deployment,
+          operator: sessionOperator({
+            key: ecdsaKey({ account: session, validator: first.validator }),
+            policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
+          }),
+          reads: first.capability.reads,
+        });
+        return approveKernelPermissionAllChain({
+          owner: ownerKey,
+          account: descriptor.account,
+          installNonce: kernelPermissionInstallNonce(requestHash),
+          packages: [...sessionRuntime.packages],
+        });
+      })();
       const response = await relay(
         authorized(
           new Request(`${issuerUrl}/authorization/requests/${requestId}/decision`, {
@@ -186,7 +229,10 @@ export async function createLocalAnvilFixture(
                 requestHash,
                 decidedAt: now(),
                 approvedPolicy: scope.policy,
-                capabilityHash: kernelAllChainCapabilityHash(installApproval),
+                capabilityHash:
+                  installApproval.version === "oaath.kernel.v33-permission-approval/v2"
+                    ? kernelV33CapabilityHash(installApproval)
+                    : kernelAllChainCapabilityHash(installApproval),
                 installApproval,
               }),
             }),
@@ -233,7 +279,8 @@ export async function createLocalAnvilFixture(
       stateDirectory === undefined
         ? null
         : captureLocalAnvilRecovery({
-            version: "oaath.local-anvil-recovery/v1",
+            version: "oaath.local-anvil-recovery/v2",
+            existingAccount: first.existingAccount,
             owner: owner.address,
             session: session.address,
             chains: [...chains.values()].map((chain) => ({
@@ -259,7 +306,7 @@ export async function createLocalAnvilFixture(
       await closeClient();
       storage = await openLocalClientStores(factory, stateDirectory);
       client = createOAAth({
-        binding: localClientBinding(owner.address, session.address),
+        binding: localClientBinding(owner.address, session.address, first.existingAccount),
         issuer: {
           url: issuerUrl,
           fetch: (request: Request) => relay(authorized(request, clientToken)),
