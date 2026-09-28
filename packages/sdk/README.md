@@ -295,6 +295,44 @@ Custom observation adapters receive an optional
 `transaction: { hash, entryPoint }` hint on `user_operation_receipt`. Receipt and
 execution projection also pass the verified inclusion transaction as a hint.
 
+Applications with their own operation journal can verify a saved public
+UserOperation reference without constructing an OAAth Grant or Operation:
+
+```ts
+import { createUserOperationObserver } from "@oaath/sdk/advanced";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const [port] = createViemChainPorts({
+  [chainId]: { publicRpcUrls: [rpcUrl], bundlerUrl },
+}, { retry: { attempts: 1 }, timeoutMs: 8_000, maxRequests: 96 });
+const observer = createUserOperationObserver(port.observation);
+try {
+  const result = await observer.observeReference({
+    // Exact fields; lowercase addresses/hash and a canonical decimal nonce.
+    reference: { chainId, entryPoint, account, nonce, userOperationHash },
+    observedAt: Date.now(),
+    timeoutMs: 25_000,
+    // transactionHash: savedDirectTransactionHash, when already known
+  });
+  // result.status: pending | unreadable | finalized
+} finally {
+  await observer.close();
+}
+```
+
+`parseUserOperationReference` from `@oaath/protocol` captures the same immutable
+identity at an application's input boundary. Observation verifies the exact
+EntryPoint event, sender, nonce, hash, containing transaction, canonical block
+and finality through the same pipeline as OAAth operation recovery. An
+`unreadable` result may retain a verified receipt when finality is unproven;
+only `finalized` proves finality. Receipt logs are scoped to that operation and
+include its terminal `UserOperationEvent`. This reader neither derives executed
+calls nor verifies application postconditions. It owns no journal, never checks
+for replacements, and cannot authorize retries or release an application lane.
+Recreate it after reload using the saved reference; `close()` drains active
+bounded observations and closes the supplied capability. A missing or unreadable
+receipt leaves the saved identity unresolved.
+
 Operation records now use `oaath.operation/v3`. Older records are rejected;
 IndexedDB schema 14 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must

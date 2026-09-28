@@ -1,5 +1,8 @@
 import { createServer } from "node:http";
-import { OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+  type UserOperationReference,
+} from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
 import {
   createWalletClient,
@@ -17,7 +20,7 @@ import {
 } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import type { OaathUsageRequest } from "../src/advanced.js";
+import { createUserOperationObserver, type OaathUsageRequest } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../src/index.js";
 import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel.js";
@@ -98,6 +101,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
         }
         const modeBytes: bigint[] = [];
         const receipts = new Map<string, unknown>();
+        const references = new Map<string, Readonly<UserOperationReference>>();
         const methods: string[] = [];
         let sends = 0;
         let estimates = 0;
@@ -152,6 +156,16 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                 entryPointVersion: "0.7",
                 chainId: CHAIN_ID,
               });
+              references.set(
+                hash,
+                Object.freeze({
+                  chainId: CHAIN_ID,
+                  entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+                  account: operation.sender.toLowerCase() as `0x${string}`,
+                  nonce: String(operation.nonce),
+                  userOperationHash: hash,
+                }),
+              );
               const transactionHash = await harness.wallet.sendTransaction({
                 account: harness.submitter,
                 chain: null,
@@ -378,6 +392,33 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             reason: "reason" in recoveryOutcome ? recoveryOutcome.reason : null,
           }).toMatchObject({ status: "finalized" });
           expect(sends).toBe(1);
+          const reference = references.get(exactId);
+          if (!reference) throw new Error("fixture did not retain operation reference");
+          const referencePort = chainPorts()[0];
+          if (!referencePort) throw new Error("fixture did not configure observation");
+          const referenceObserver = createUserOperationObserver(referencePort.observation);
+          try {
+            const result = await referenceObserver.observeReference({
+              reference,
+              observedAt: clock.now(),
+              timeoutMs: 10_000,
+            });
+            expect(result.status).toBe("finalized");
+            if (result.status === "finalized")
+              expect(result.receipt.transactionHash).toBe(recoveryOutcome.transactionHash);
+            expect(
+              await referenceObserver.observeReference({
+                reference: { ...reference, nonce: String(BigInt(reference.nonce) + 1n) },
+                observedAt: clock.now(),
+                timeoutMs: 10_000,
+              }),
+            ).toMatchObject({ status: "unreadable", reason: "receipt_invalid", receipt: null });
+            expect(sends).toBe(1);
+            expect(estimates).toBe(1);
+            expect(ownerOperationPrompts).toBe(0);
+          } finally {
+            await referenceObserver.close();
+          }
           const second = await grant.sendCalls(sendCallsInput());
           expect((await second.wait()).status).toBe("finalized");
           if (!usageRequest) throw new Error("missing usage request");

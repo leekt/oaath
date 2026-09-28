@@ -13,6 +13,7 @@ import { createSqliteOperationStore } from "@oaath/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createOperationObserver,
+  createUserOperationObserver,
   OaathOperationObserverError,
   type OperationObserverBlockEvidence,
   type OperationObserverCapabilities,
@@ -937,5 +938,192 @@ describe("OperationObserver", () => {
     await expect(
       observer.observeOperation({ operation: submitted(), observedAt: 13, timeoutMs: 1_000 }),
     ).rejects.toMatchObject({ code: "operation_observer_closed" });
+  });
+});
+
+const reference = Object.freeze({
+  chainId: identity.chainId,
+  entryPoint: identity.entryPoint,
+  account: identity.account,
+  nonce: identity.nonce,
+  userOperationHash: identity.userOperationHash,
+});
+const referenceInput = { reference, observedAt: 100, timeoutMs: 1000 };
+
+describe("reference-only UserOperation observation", () => {
+  it("verifies the exact receipt without manufacturing a Grant or journal transition", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const captured = { ...reference };
+    const pending = observer.observeReference({ ...referenceInput, reference: captured });
+    captured.nonce = "8";
+    const result = await pending;
+    expect(result.status).toBe("finalized");
+    expect(result.reference).toEqual(reference);
+    expect(Object.isFrozen(result.reference)).toBe(true);
+    if (result.status === "finalized") {
+      expect(result.receipt).toMatchObject({
+        transactionHash: targetTransactionHash,
+        blockHash: targetBlockHash,
+        outcome: "success",
+      });
+      expect(result.receipt.logs).toEqual([target.event]);
+      expect(result.finality.blockHash).toBe(finalityBlockHash);
+    }
+    expect(result).not.toHaveProperty("operation");
+    expect(
+      adapter.requests.some(
+        (request) =>
+          request.type === "replacement_candidate" || request.type === "entry_point_nonce",
+      ),
+    ).toBe(false);
+    await observer.close();
+    expect(adapter.closeCalls()).toBe(1);
+    await expect(observer.observeReference(referenceInput)).rejects.toMatchObject({
+      code: "operation_observer_closed",
+    });
+  });
+
+  it("missing evidence never seeks a replacement or releases another owner's lane", async () => {
+    const adapter = fixture({ targetReceipt: null });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({
+      status: "pending",
+      reason: "receipt_missing",
+      reference,
+    });
+    expect(adapter.requests.map((request) => request.type)).toEqual([
+      "chain_id",
+      "user_operation_receipt",
+      "chain_id",
+    ]);
+    await observer.close();
+  });
+
+  it("rejects another sender, nonce, operation, containing transaction or changed chain", async () => {
+    for (const change of [
+      { sender: zeroAddress },
+      { nonce: "0x8" },
+      { userOperationHash: replacementHash },
+    ]) {
+      const adapter = fixture({ targetReceipt: { ...target.receipt, ...change } });
+      const observer = createUserOperationObserver(adapter.capabilities);
+      expect(await observer.observeReference(referenceInput)).toMatchObject({
+        status: "unreadable",
+        reason: "receipt_invalid",
+        receipt: null,
+      });
+      await observer.close();
+    }
+    let chainReads = 0;
+    const adapter = fixture({
+      mutate: (request, value) => (request.type === "chain_id" && ++chainReads > 1 ? 1 : value),
+    });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({
+      status: "unreadable",
+      reason: "receipt_invalid",
+      receipt: null,
+    });
+    await observer.close();
+  });
+
+  it("retains verified inclusion when finality is unavailable, but not when the event is invalid", async () => {
+    const adapter = fixture({ finality: null });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const result = await observer.observeReference(referenceInput);
+    expect(result).toMatchObject({
+      status: "unreadable",
+      reason: "finality_unproven",
+      receipt: { transactionHash: targetTransactionHash, outcome: "success" },
+    });
+    await observer.close();
+    const invalid = fixture({
+      mutate: (request, value) =>
+        request.type === "transaction_receipt"
+          ? { ...target.transactionReceipt, logs: [target.boundary] }
+          : value,
+    });
+    const invalidObserver = createUserOperationObserver(invalid.capabilities);
+    expect(await invalidObserver.observeReference(referenceInput)).toMatchObject({
+      status: "unreadable",
+      receipt: null,
+    });
+    await invalidObserver.close();
+  });
+
+  it("binds a direct transaction hint to the same operation and exact containing transaction", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(
+      (
+        await observer.observeReference({
+          ...referenceInput,
+          transactionHash: targetTransactionHash,
+        })
+      ).status,
+    ).toBe("finalized");
+    expect(
+      adapter.requests.find((request) => request.type === "user_operation_receipt"),
+    ).toMatchObject({
+      transaction: { hash: targetTransactionHash, entryPoint: reference.entryPoint },
+    });
+    expect(
+      await observer.observeReference({
+        ...referenceInput,
+        transactionHash: replacementTransactionHash,
+      }),
+    ).toMatchObject({ status: "unreadable", receipt: null });
+    await observer.close();
+  });
+
+  it("captures exact bounded input before any RPC and drops raw provider failures", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    for (const input of [
+      { ...referenceInput, reference: identity },
+      { ...referenceInput, reference: { ...reference, nonce: "07" } },
+      { ...referenceInput, timeoutMs: 0 },
+      { ...referenceInput, timeoutMs: 60001 },
+      { ...referenceInput, observedAt: -1 },
+      { ...referenceInput, transactionHash: "0x01" },
+      { ...referenceInput, extra: true },
+    ]) {
+      await expect(observer.observeReference(input)).rejects.toMatchObject({
+        code: "operation_observer_input_invalid",
+      });
+    }
+    expect(adapter.requests).toEqual([]);
+    await observer.close();
+    const unavailable = createUserOperationObserver({
+      read: async () => {
+        throw Error("secret-provider-cause");
+      },
+      close: async () => {},
+    });
+    const result = await unavailable.observeReference(referenceInput);
+    expect(result).toMatchObject({
+      status: "unreadable",
+      reason: "provider_unavailable",
+      receipt: null,
+    });
+    expect(JSON.stringify(result)).not.toContain("secret-provider-cause");
+    await unavailable.close();
+  });
+
+  it("bounds stalled reads and lets close drain the outstanding observation", async () => {
+    const requests: OperationObserverReadRequest[] = [];
+    const observer = createUserOperationObserver({
+      read: async (request: OperationObserverReadRequest) => {
+        requests.push(request);
+        return new Promise(() => {});
+      },
+      close: async () => {},
+    });
+    const pending = observer.observeReference({ ...referenceInput, timeoutMs: 5 });
+    const closing = observer.close();
+    expect(await pending).toMatchObject({ status: "pending", reason: "timeout" });
+    await closing;
+    expect(requests).toHaveLength(1);
   });
 });

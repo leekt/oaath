@@ -369,7 +369,12 @@ function parseIdentity(
   });
 }
 
-function parseUserOperationReference(
+/** Capture the exact public identity required to verify one UserOperation. */
+export function parseUserOperationReference(value: unknown): Readonly<UserOperationReference> {
+  return captureUserOperationReference(value, "operation_input_invalid", new WeakSet());
+}
+
+function captureUserOperationReference(
   value: unknown,
   code: OperationErrorCode,
   context: CaptureContext,
@@ -540,7 +545,7 @@ function parseDrop(
     code,
     context,
   );
-  const replacementIdentity = parseUserOperationReference(
+  const replacementIdentity = captureUserOperationReference(
     replacementRecord.identity,
     code,
     context,

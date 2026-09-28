@@ -223,6 +223,7 @@ export {
   parseOperation,
   parseOperationIdentity,
   parseOperationSubmissionEvidence,
+  parseUserOperationReference,
 } from "./operation.js";
 export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
 export {
