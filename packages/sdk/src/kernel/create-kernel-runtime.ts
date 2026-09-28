@@ -156,8 +156,11 @@ export function createKernelRuntime(
   const gasPolicy = captureKernelGasPolicy(deployment.chainId, record.gas);
   const operator = captureOperator(record.operator, context);
   const isV33 = deployment.kernelVersion === "0.3.3";
-  if (isV33 && operator.key.kind !== "ecdsa") {
-    return inputInvalid("Kernel v3.3 composition currently requires an ECDSA key");
+  // Existing-account root binding below proves the ECDSA validator's owner.
+  // A session instead resolves its own signer module and public material; its
+  // key kind is independent of the account's root validator.
+  if (isV33 && operator.authority === "owner" && operator.key.kind !== "ecdsa") {
+    return inputInvalid("Kernel v3.3 root composition currently requires an ECDSA key");
   }
   const read = inputCapability<KernelV4AccountReadCapability["read"]>(
     exactInput(record.reads, ["read"], "Kernel runtime reads", context).read,

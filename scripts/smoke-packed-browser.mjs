@@ -48,6 +48,10 @@ import {
 } from "@oaath/sdk";
 import {
   compileKernelPermissionPolicy,
+  createKernelRuntime,
+  kernelV33Deployment,
+  sessionOperator,
+  webauthnKey,
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   p256Key,
   kernelPermissionInstallNonce,
@@ -154,6 +158,22 @@ const ownerCredential = {
   kind: "p256",
   publicKey: bytesToHex(p256.getPublicKey(phoneKey, false)),
 };
+const passkeySession = createKernelRuntime({
+  deployment: kernelV33Deployment(CHAIN_ID),
+  reads: { read: async () => fail("composition must not read the chain") },
+  operator: sessionOperator({
+    key: webauthnKey({
+      credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
+      credentialId: "AAECAwQFBgcICQoLDA0ODw",
+      rpId: "app.example",
+      origin: "https://app.example",
+      authenticate: async () => fail("composition must not request a passkey assertion"),
+    }),
+    policies: [{ kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] }],
+  }),
+});
+if (passkeySession.keyKind !== "webauthn" || passkeySession.authority !== "session" ||
+    passkeySession.packages.at(-1)?.moduleType !== 6) fail("v3.3 passkey composition failed");
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   kind: "ecdsa",

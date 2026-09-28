@@ -1,8 +1,11 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { p256 } from "@noble/curves/nist.js";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { createSqliteOperationStoreAdapter } from "@oaath/testing";
 import {
+  bytesToHex,
   concat,
   createWalletClient,
   custom,
@@ -11,8 +14,12 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   type Hex,
+  hexToBytes,
   http,
+  keccak256,
   parseEther,
+  sha256,
+  stringToBytes,
   toFunctionSelector,
   toHex,
 } from "viem";
@@ -29,6 +36,7 @@ import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import { kernelV33OperationSigningHash } from "../src/kernel/deployment/v33-operation.js";
 import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
+import { webauthnKey } from "../src/kernel/key/webauthn.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import {
@@ -61,6 +69,45 @@ async function setupV33(chainId: number, owner: ReturnType<typeof privateKeyToAc
   const { deployment, address } = await deployKernelV33Account(harness, chainId, owner.address);
 
   return { chain, harness, deployment, address };
+}
+
+function passkeySession() {
+  const secret = p256.utils.randomPrivateKey();
+  const credentialId = "AAECAwQFBgcICQoLDA0ODw";
+  const rpId = "app.example";
+  const origin = "https://app.example";
+  return webauthnKey({
+    credential: {
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "webauthn",
+      publicKey: bytesToHex(p256.getPublicKey(secret, false)),
+      authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f"),
+    },
+    credentialId,
+    rpId,
+    origin,
+    authenticate: async (request) => {
+      expect(request.credentialId).toBe(credentialId);
+      expect(request.rpId).toBe(rpId);
+      expect(request.origin).toBe(origin);
+      const clientDataJSON = JSON.stringify({
+        type: "webauthn.get",
+        challenge: request.challenge,
+        origin,
+        crossOrigin: false,
+      });
+      const authenticatorData = concat([sha256(stringToBytes(rpId)), "0x0500000001"]);
+      const message = sha256(concat([authenticatorData, sha256(stringToBytes(clientDataJSON))]));
+      const signature = p256.sign(hexToBytes(message), secret, { lowS: true, prehash: false });
+      return {
+        authenticatorData,
+        clientDataJSON,
+        responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+        r: toHex(signature.r, { size: 32 }),
+        s: toHex(signature.s, { size: 32 }),
+      };
+    },
+  });
 }
 
 (requireAnvil ? describe : describe.skip)("existing Kernel v3.3 / EntryPoint 0.7", () => {
@@ -231,111 +278,152 @@ async function setupV33(chainId: number, owner: ReturnType<typeof privateKeyToAc
     30_000,
   );
 
-  it("uses one owner approval on two chains and keeps EntryPoint identities chain-specific", async () => {
-    const owner = privateKeyToAccount(generatePrivateKey());
-    const ownerSign = vi.fn(owner.sign.bind(owner));
-    const sessionKey = ecdsaKey({
-      account: privateKeyToAccount(generatePrivateKey()),
-      validator: kernelV33Deployment(143).ecdsaValidator,
-    });
-    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
-    let approval: Awaited<ReturnType<typeof approveKernelV33Permission>> | undefined;
-    const operationHashes: Hex[] = [];
-    const signingHashes: Hex[] = [];
-    let existingAddress: string | undefined;
-    for (const chainId of [143, 480]) {
-      const { harness, address, deployment } = await setupV33(chainId, owner);
-      existingAddress ??= address;
-      expect(address).toBe(existingAddress);
-      for (const module of [harness.fixture.ecdsaSigner, harness.fixture.callPolicy])
-        await harness.deployModule(module);
-      const reads = createKernelV33Reads(harness.client);
-      const runtime = createKernelRuntime({
-        deployment,
-        reads,
-        operator: sessionOperator({
-          key: sessionKey,
-          policies: [
-            { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "5" }] },
-          ],
-        }),
-      });
-      const account = await runtime.bindAccount({ address });
-      const nonce = await kernelV33PermissionInstallNonce({ runtime, account, reads });
-      expect(nonce).toBe("1");
-      approval ??= await approveKernelV33Permission({
-        owner: ecdsaKey({
-          account: { address: owner.address, sign: ownerSign },
-          validator: deployment.ecdsaValidator,
-        }),
-        runtime,
-        account,
-        nonce,
-      });
-      // Recreate the approval from persisted JSON before using it on either chain.
-      const restored = parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval)));
-      const input = {
-        runtime,
-        account,
-        grantId: "same-v33-grant",
-        nonceKey: "0",
-        sequence: "0",
-        calls: [{ target, value: "3", data: "0x" as const }],
-        gas: {
-          callGasLimit: "200000",
-          verificationGasLimit: "2000000",
-          preVerificationGas: "50000",
-          maxFeePerGas: "2000000000",
-          maxPriorityFeePerGas: "1000000000",
-        },
-      };
-      const enabled = await materializeKernelV33Permission({ ...input, approval: restored });
-      operationHashes.push(enabled.prepared.userOperationHash);
-      signingHashes.push(kernelV33OperationSigningHash(enabled.prepared));
-      // A normal chain-specific key signature cannot replace the replayable one.
-      const parameters = [
-        { type: "bytes" },
-        { type: "bytes" },
-        { type: "bytes" },
-        { type: "bytes" },
-        { type: "bytes" },
-      ] as const;
-      const envelope = decodeAbiParameters(parameters, `0x${enabled.signature.slice(106)}`);
-      const wrongSignature = concat([
-        enabled.signature.slice(0, 106) as Hex,
-        encodeAbiParameters(parameters, [
-          envelope[0],
-          envelope[1],
-          envelope[2],
-          envelope[3],
-          concat(["0xff", await sessionKey.sign(enabled.prepared.userOperationHash)]),
-        ]),
-      ]);
-      expect((await harness.rejectionOf(enabled.prepared, wrongSignature)).errorName).toBe(
-        "FailedOp",
-      );
-      expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
-      const { runtime: _runtime, ...standardInput } = input;
-      const installed = runtime.prepareOperation({ ...standardInput, kind: "execution" });
-      expect(kernelV33OperationSigningHash(installed)).toBe(installed.userOperationHash);
-      expect(await harness.sendSigned(installed, await runtime.signOperation(installed))).toBe(
-        "success",
-      );
-      expect(await harness.client.getBalance({ address: target })).toBe(6n);
-      const consumedApproval = await materializeKernelV33Permission({
-        ...input,
-        sequence: "1",
-        approval: restored,
-      });
-      expect(
-        (await harness.rejectionOf(consumedApproval.prepared, consumedApproval.signature))
-          .errorName,
-      ).toBe("FailedOpWithRevert");
-    }
-    expect(ownerSign).toHaveBeenCalledTimes(1);
-    expect(operationHashes[0]).not.toBe(operationHashes[1]);
-    expect(signingHashes[0]).toBe(signingHashes[1]);
-  }, 30_000);
+  it.each(["ecdsa", "webauthn"] as const)(
+    "uses one owner approval for %s on two chains and keeps EntryPoint identities chain-specific",
+    async (kind) => {
+      const owner = privateKeyToAccount(generatePrivateKey());
+      const ownerSign = vi.fn(owner.sign.bind(owner));
+      const sessionKey =
+        kind === "webauthn"
+          ? passkeySession()
+          : ecdsaKey({
+              account: privateKeyToAccount(generatePrivateKey()),
+              validator: kernelV33Deployment(143).ecdsaValidator,
+            });
+      const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+      let approval: Awaited<ReturnType<typeof approveKernelV33Permission>> | undefined;
+      const operationHashes: Hex[] = [];
+      const signingHashes: Hex[] = [];
+      let existingAddress: string | undefined;
+      for (const chainId of [143, 480]) {
+        const { harness, address, deployment } = await setupV33(chainId, owner);
+        existingAddress ??= address;
+        expect(address).toBe(existingAddress);
+        for (const module of [
+          kind === "webauthn" ? harness.fixture.webAuthnSigner : harness.fixture.ecdsaSigner,
+          harness.fixture.callPolicy,
+        ])
+          await harness.deployModule(module);
+        if (kind === "webauthn") {
+          await harness.deployCreate2(harness.fixture.p256Verifier.deploymentInput);
+          expect(
+            keccak256(
+              (await harness.client.getCode({
+                address: harness.fixture.p256Verifier.expectedAddress,
+              }))!,
+            ),
+          ).toBe(harness.fixture.p256Verifier.runtimeCodeHash);
+        }
+        const reads = createKernelV33Reads(harness.client);
+        const recreate = () =>
+          createKernelRuntime({
+            deployment,
+            reads,
+            operator: sessionOperator({
+              key: sessionKey,
+              policies: [
+                {
+                  kind: "call",
+                  permissions: [{ target, selector: "0x00000000", valueLimit: "5" }],
+                },
+              ],
+            }),
+          });
+        const runtime = recreate();
+        const account = await runtime.bindAccount({ address });
+        const nonce = await kernelV33PermissionInstallNonce({ runtime, account, reads });
+        expect(nonce).toBe("1");
+        approval ??= await approveKernelV33Permission({
+          owner: ecdsaKey({
+            account: { address: owner.address, sign: ownerSign },
+            validator: deployment.ecdsaValidator,
+          }),
+          runtime,
+          account,
+          nonce,
+        });
+        // Recreate the approval from persisted JSON before using it on either chain.
+        const restored = parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval)));
+        const input = {
+          runtime,
+          account,
+          grantId: "same-v33-grant",
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target, value: "3", data: "0x" as const }],
+          gas: {
+            callGasLimit: "200000",
+            verificationGasLimit: "2000000",
+            preVerificationGas: "50000",
+            maxFeePerGas: "2000000000",
+            maxPriorityFeePerGas: "1000000000",
+          },
+        };
+        const enabled = await materializeKernelV33Permission({ ...input, approval: restored });
+        operationHashes.push(enabled.prepared.userOperationHash);
+        signingHashes.push(kernelV33OperationSigningHash(enabled.prepared));
+        // A normal chain-specific key signature cannot replace the replayable one.
+        const parameters = [
+          { type: "bytes" },
+          { type: "bytes" },
+          { type: "bytes" },
+          { type: "bytes" },
+          { type: "bytes" },
+        ] as const;
+        const envelope = decodeAbiParameters(parameters, `0x${enabled.signature.slice(106)}`);
+        const wrongSignature = concat([
+          enabled.signature.slice(0, 106) as Hex,
+          encodeAbiParameters(parameters, [
+            envelope[0],
+            envelope[1],
+            envelope[2],
+            envelope[3],
+            concat(["0xff", await sessionKey.sign(enabled.prepared.userOperationHash)]),
+          ]),
+        ]);
+        expect((await harness.rejectionOf(enabled.prepared, wrongSignature)).errorName).toBe(
+          "FailedOp",
+        );
+        expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+        const { runtime: _runtime, ...standardInput } = input;
+        const restoredRuntime = recreate();
+        const installed = restoredRuntime.prepareOperation({
+          ...standardInput,
+          account: await restoredRuntime.bindAccount({ address }),
+          kind: "execution",
+        });
+        expect(kernelV33OperationSigningHash(installed)).toBe(installed.userOperationHash);
+        expect(
+          await harness.sendSigned(installed, await restoredRuntime.signOperation(installed)),
+        ).toBe("success");
+        expect(await harness.client.getBalance({ address: target })).toBe(6n);
+        const excessive = restoredRuntime.prepareOperation({
+          ...standardInput,
+          kind: "execution",
+          sequence: "1",
+          calls: [{ target, value: "6", data: "0x" }],
+        });
+        expect(
+          (await harness.rejectionOf(excessive, await restoredRuntime.signOperation(excessive)))
+            .errorName,
+        ).toBe("FailedOpWithRevert");
+        expect(await harness.client.getBalance({ address: target })).toBe(6n);
+        const consumedApproval = await materializeKernelV33Permission({
+          ...input,
+          sequence: "1",
+          approval: restored,
+        });
+        expect(
+          (await harness.rejectionOf(consumedApproval.prepared, consumedApproval.signature))
+            .errorName,
+        ).toBe("FailedOpWithRevert");
+      }
+      expect(ownerSign).toHaveBeenCalledTimes(1);
+      expect(operationHashes[0]).not.toBe(operationHashes[1]);
+      expect(signingHashes[0]).toBe(signingHashes[1]);
+    },
+    30_000,
+  );
 
   it("revokes installed and unused approvals without disabling another permission", async () => {
     const ownerAccount = privateKeyToAccount(generatePrivateKey());

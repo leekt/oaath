@@ -24,6 +24,17 @@ licenses are in that fixture directory's `licenses/` folder. This primitive is
 available through the Kernel API; the default permission-request schema still
 exposes its existing lifetime operation bound.
 
+Existing Kernel `0.3.3` accounts also support custom passkey sessions through
+`createKernelRuntime({ deployment: kernelV33Deployment(chainId), reads,
+operator: sessionOperator({ key: webauthnKey(passkey), policies }) })` from
+`@oaath/sdk/kernel`. The caller supplies the selected credential and authenticator
+callback; `webauthnKey` checks its challenge, credential public key, RP ID, exact
+HTTPS origin, user presence and verification before returning a signature.
+Use the same `approveKernelV33Permission` / `materializeKernelV33Permission`
+flow as ECDSA sessions. Root-owner binding remains ECDSA-only; the permission's
+signer is independent of that root. This custom Kernel API does not replace
+the application's durable operation journal or implement browser credential UI.
+
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
 
