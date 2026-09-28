@@ -6,6 +6,11 @@ import {
   parsePermissionRequest,
 } from "@oaath/protocol";
 import { bytesToHex, hexToBytes } from "viem";
+import {
+  getUserOperationHash,
+  toUserOperation,
+  type UserOperation,
+} from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import {
@@ -207,18 +212,32 @@ describe("phone revocation preparation", () => {
     },
   );
 
-  it("rejects execution calldata in a revocation request", async () => {
+  it("rejects correctly hashed execution calldata in a revocation request", async () => {
     const { input } = await fixture();
     const prepared = await prepareKernelPhoneRevocation(input);
+    const operation = {
+      ...prepared.signingRequest.operation,
+      callData: encodeKernelV4Execution({
+        calls: [{ target: `0x${"44".repeat(20)}`, value: "1", data: "0x" }],
+      }),
+    };
+    const expectedDigest = getUserOperationHash({
+      chainId: prepared.signingRequest.chainId,
+      entryPointAddress: prepared.signingRequest.entryPoint,
+      entryPointVersion: "0.7",
+      userOperation: toUserOperation({
+        ...operation,
+        nonce: BigInt(operation.nonce),
+        preVerificationGas: BigInt(operation.preVerificationGas),
+        signature: "0x",
+      }) as unknown as UserOperation<"0.7">,
+    });
+    expect(expectedDigest === prepared.signingRequest.expectedDigest).toBe(false);
     expect(() =>
       parseKernelV4RevocationSigningRequest({
         ...prepared.signingRequest,
-        operation: {
-          ...prepared.signingRequest.operation,
-          callData: encodeKernelV4Execution({
-            calls: [{ target: `0x${"44".repeat(20)}`, value: "1", data: "0x" }],
-          }),
-        },
+        operation,
+        expectedDigest,
       }),
     ).toThrowError(expect.objectContaining({ code: "signing_request_invalid" }));
   });
