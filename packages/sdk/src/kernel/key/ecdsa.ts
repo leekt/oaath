@@ -6,7 +6,7 @@
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
 import { recoverAddress } from "viem";
-import type { KernelV4Deployment } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
   inputAddress,
@@ -64,7 +64,7 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
   return Object.freeze({
     kind: "ecdsa" as const,
     publicMaterial: owner,
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidator: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return validator;
     },

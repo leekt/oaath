@@ -20,6 +20,12 @@ import {
   parsePreparedUserOperation,
 } from "../prepared-user-operation.js";
 import {
+  bindKernelAccount,
+  type KernelV33AccountDescriptor,
+  type KernelV33Reads,
+} from "./deployment/v33.js";
+import { prepareKernelV33OwnerOperation } from "./deployment/v33-operation.js";
+import {
   captureKeyProfile,
   exactInput,
   inputCapability,
@@ -35,10 +41,14 @@ import {
 } from "./modules.js";
 import type {
   CreateKernelRuntimeInput,
+  CreateKernelV33RuntimeInput,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
+  KernelV33Runtime,
+  KernelV33RuntimeBindAccountInput,
+  KernelV33RuntimePrepareInput,
   KeyProfile,
   OperatorProfile,
 } from "./types.js";
@@ -118,20 +128,28 @@ function captureOperator(value: unknown, context: CaptureContext): CapturedOpera
  * Validator and policy resolution happen once, here, so an unavailable module
  * fails closed before any account address or operation identity exists.
  */
-export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<KernelRuntime> {
+export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<KernelRuntime>;
+export function createKernelRuntime(value: CreateKernelV33RuntimeInput): Readonly<KernelV33Runtime>;
+export function createKernelRuntime(
+  value: unknown,
+): Readonly<KernelRuntime> | Readonly<KernelV33Runtime> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["deployment", "operator", "reads"], "Kernel runtime", context);
   const deployment = exactKernelDeployment(record.deployment);
   const operator = captureOperator(record.operator, context);
+  const isV33 = deployment.kernelVersion === "0.3.3";
+  if (isV33 && (operator.authority !== "owner" || operator.key.kind !== "ecdsa")) {
+    return inputInvalid("Kernel v3.3 composition currently requires ECDSA root authority");
+  }
   const read = inputCapability<KernelV4AccountReadCapability["read"]>(
     exactInput(record.reads, ["read"], "Kernel runtime reads", context).read,
     "Kernel runtime read capability",
   );
   const authorityModule = operator.resolveAuthorityModule(deployment);
   const validation: Readonly<KernelV4Validation> = operator.resolveValidation(deployment);
-  const packages = operator.resolvePackages(deployment);
-  const rootPackage: Readonly<KernelV4Install> =
-    packages[0] ?? inputInvalid("Kernel operator resolved no install packages");
+  const packages = isV33 ? Object.freeze([]) : operator.resolvePackages(deployment);
+  const rootPackage: Readonly<KernelV4Install> | undefined = packages[0];
+  if (!isV33 && !rootPackage) return inputInvalid("Kernel operator resolved no install packages");
   // Kernel's ValidationManager forbids enable mode on root validation — a root
   // authority is the account's own last-resort access path and has nothing to
   // enable — so a root runtime's only reachable mode is standard. kernel-v4.ts
@@ -145,6 +163,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       (install) => install.moduleType === 5 && install.module === OAATH_KERNEL_V4_VALIDITY_POLICY,
     );
   const validityPolicyProvenDescriptors = new WeakSet<object>();
+  const boundV33Accounts = new Set<string>();
 
   /**
    * Proves this authority's module carries code on the action chain. An owner's
@@ -204,23 +223,65 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
   }
 
   async function bindAccount(
-    input: KernelRuntimeBindAccountInput,
-  ): Promise<Readonly<KernelV4AccountDescriptor>> {
+    input: KernelRuntimeBindAccountInput | KernelV33RuntimeBindAccountInput,
+  ): Promise<Readonly<KernelV4AccountDescriptor> | Readonly<KernelV33AccountDescriptor>> {
+    if (deployment.kernelVersion === "0.3.3") {
+      const binding = exactInput(input, ["address"], "Kernel v3.3 runtime account", new WeakSet());
+      const readV33 = read as KernelV33Reads["read"];
+      const descriptor = await bindKernelAccount({
+        version: "0.3.3",
+        chainId: deployment.chainId,
+        address: binding.address as `0x${string}`,
+        reads: { read: readV33 },
+      });
+      if (
+        authorityModule !== deployment.ecdsaValidator ||
+        descriptor.rootValidator !== `0x01${authorityModule.slice(2)}`
+      ) {
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel v3.3 account does not use this root validator",
+        );
+      }
+      let owner: unknown;
+      try {
+        owner = await readV33({
+          type: "kernel_ecdsa_owner",
+          chainId: deployment.chainId,
+          account: descriptor.account,
+        });
+      } catch {
+        return runtimeFail(
+          "kernel_runtime_read_unavailable",
+          "Kernel v3.3 root owner could not be read",
+        );
+      }
+      if (owner !== operator.key.publicMaterial) {
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel v3.3 account does not belong to this owner key",
+        );
+      }
+      boundV33Accounts.add(descriptor.account);
+      return descriptor;
+    }
     await proveAuthorityModule();
     await proveValidityPolicy();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
     // field below; each caller field is read exactly once into its argument.
     const descriptor = await bindKernelV4Account({
       chainId: deployment.chainId,
-      initialPackages: input.initialPackages,
-      accountIndex: input.accountIndex,
+      initialPackages: (input as KernelRuntimeBindAccountInput).initialPackages,
+      accountIndex: (input as KernelRuntimeBindAccountInput).accountIndex,
       reads: Object.freeze({ read }),
     });
     // An owner runtime holds root authority only over an account whose initial
     // packages install this owner's validator and public material.
     if (
       operator.authority === "owner" &&
-      !descriptor.initialPackages.some((install) => sameInstall(install, rootPackage))
+      !descriptor.initialPackages.some(
+        (install) => rootPackage && sameInstall(install, rootPackage),
+      )
     ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
@@ -231,7 +292,13 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     return descriptor;
   }
 
-  function prepareOperation(input: KernelRuntimePrepareInput): PreparedUserOperation {
+  function prepareOperation(
+    input: KernelRuntimePrepareInput | KernelV33RuntimePrepareInput,
+  ): PreparedUserOperation {
+    if (isV33) {
+      const operation = prepareKernelV33OwnerOperation(input as KernelV33RuntimePrepareInput);
+      return boundOperation(operation);
+    }
     const requestsValidityRange = Object.hasOwn(input, "validityTimeRange");
     const account = input.account;
     if (
@@ -248,7 +315,7 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     return prepareKernelV4UserOperation({
       kind: input.kind,
       grantId: input.grantId,
-      account,
+      account: account as KernelV4AccountDescriptor,
       nonce: {
         mode: runtimeMode(input.mode),
         validation,
@@ -257,7 +324,9 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       },
       calls: input.calls,
       gas: input.gas,
-      ...(requestsValidityRange ? { validityTimeRange: input.validityTimeRange } : {}),
+      ...(requestsValidityRange
+        ? { validityTimeRange: (input as KernelRuntimePrepareInput).validityTimeRange }
+        : {}),
       paymaster: input.paymaster ?? null,
     });
   }
@@ -280,6 +349,16 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
         "Prepared UserOperation does not match this Kernel runtime",
+      );
+    }
+    if (
+      isV33 &&
+      (!boundV33Accounts.has(operation.userOperation.sender) ||
+        operation.userOperation.factory !== null)
+    ) {
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Kernel v3.3 operation does not use an account bound to this owner",
       );
     }
     // The nonce carries Kernel's validation mode, type and identifier, so
@@ -350,5 +429,5 @@ export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<K
     prepareOperation,
     signOperation,
     encodeVerifiedSignature,
-  });
+  }) as Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
 }

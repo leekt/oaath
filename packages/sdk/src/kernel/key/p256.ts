@@ -8,7 +8,7 @@
 import { p256 } from "@noble/curves/nist.js";
 import { type CaptureContext, parseOwnerCredentialProfile } from "@oaath/protocol";
 import { encodeAbiParameters, hexToBytes } from "viem";
-import type { KernelV4Deployment } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
   inputCapability,
@@ -70,7 +70,7 @@ export function p256Key(value: P256KeyInput): Readonly<KeyProfile> {
       BigInt(`0x${publicKey.slice(4, 68)}`),
       BigInt(`0x${publicKey.slice(68)}`),
     ]),
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidator: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return resolvePinnedValidator("p256");
     },

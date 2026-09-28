@@ -42,6 +42,7 @@ import { credentialKey } from "../key/credential.js";
 import { p256Key } from "../key/p256.js";
 import { ownerOperator } from "../operator/owner.js";
 import { sessionOperator } from "../operator/session.js";
+import type { KernelRuntime } from "../types.js";
 import { kernelPermissionInstallNonce } from "./install-nonce.js";
 import { type KernelAllChainApproval, parseKernelAllChainApproval } from "./materialize.js";
 import { deriveSessionPolicyProfiles } from "./profiles.js";
@@ -248,7 +249,7 @@ export function restoreKernelPhoneRevocation(
 function restoredRevocation(
   signingRequest: Readonly<KernelV4RevocationSigningRequest>,
   prepared: Readonly<PreparedUserOperation>,
-  owner: ReturnType<typeof createKernelRuntime>,
+  owner: Readonly<KernelRuntime>,
 ): Readonly<PreparedKernelPhoneRevocation> {
   const requestHash = hashKernelV4RevocationSigningRequest(signingRequest);
   return Object.freeze({

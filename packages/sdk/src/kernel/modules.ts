@@ -14,7 +14,9 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type KernelV4Deployment, kernelV4Deployment } from "../kernel-v4.js";
+import { kernelV4Deployment } from "../kernel-v4.js";
+import type { KernelDeployment } from "./deployment/profile.js";
+import { kernelV33Deployment } from "./deployment/v33.js";
 import { inputInvalid, isBuiltInKeyKind, runtimeFail } from "./internal.js";
 import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from "./types.js";
 
@@ -197,17 +199,20 @@ const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x$
     "operation-limit": RATE_LIMIT_POLICY,
   });
 
-/** Accepts only the exact frozen deployment profile owned by kernel-v4.ts. */
-export function exactKernelDeployment(value: unknown): Readonly<KernelV4Deployment> {
+/** Accepts only an exact frozen profile minted by a supported Kernel deployment owner. */
+export function exactKernelDeployment(value: unknown): Readonly<KernelDeployment> {
   let chainId: unknown;
+  let version: unknown;
   try {
     chainId = (value as { readonly chainId?: unknown } | null | undefined)?.chainId;
+    version = (value as { readonly kernelVersion?: unknown } | null | undefined)?.kernelVersion;
   } catch {
     return inputInvalid("Kernel deployment profile is invalid");
   }
-  const deployment = kernelV4Deployment(chainId);
+  const deployment =
+    version === "0.3.3" ? kernelV33Deployment(chainId) : kernelV4Deployment(chainId);
   if (deployment !== value) {
-    return inputInvalid("Kernel deployment profile is not the pinned Kernel v4 profile");
+    return inputInvalid("Kernel deployment profile is not the supported Kernel profile");
   }
   return deployment;
 }

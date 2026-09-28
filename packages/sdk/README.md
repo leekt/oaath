@@ -3,6 +3,43 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+Existing Kernel `0.3.3` accounts support ECDSA owner operations through the
+lower-level runtime. The account stays at its current address; its implementation,
+EntryPoint, root validator and current ECDSA owner are checked before binding.
+This path does not install permissions or change ownership. Kernel 3.3 Grant
+permissions and high-level owner `sendCalls` are still pending.
+
+```ts
+import {
+  createKernelRuntime, createKernelV33Reads, ecdsaKey,
+  kernelV33Deployment, ownerOperator,
+} from "@oaath/sdk/kernel";
+
+const deployment = kernelV33Deployment(chainId);
+const runtime = createKernelRuntime({
+  deployment,
+  operator: ownerOperator({
+    key: ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator }),
+  }),
+  reads: createKernelV33Reads(publicClient),
+});
+const account = await runtime.bindAccount({ address: existingKernelAddress });
+const prepared = runtime.prepareOperation({
+  kind: "execution", grantId: operationContextId, account,
+  nonceKey: "0", sequence, calls, gas,
+});
+const signature = await runtime.signOperation(prepared);
+```
+
+`ownerAccount` supplies the existing `ecdsaKey` raw-hash signing interface.
+`sequence` is the current EntryPoint nonce sequence for this account and key;
+`gas` contains canonical decimal strings. The low-level prepared-operation
+schema calls its context label `grantId`; no Grant is created or needed here.
+Preparation and signing do not submit. The caller must retain the prepared
+operation and submission evidence using its chosen transport. An unavailable
+read returns `kernel_runtime_read_unavailable`; it never creates an account or
+selects a different Kernel version.
+
 `grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
 without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`
 with the application's job. An unresolved operation occupies that grant/chain

@@ -18,7 +18,7 @@ import {
   stringToBytes,
   toHex,
 } from "viem";
-import type { KernelV4Deployment } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
   inputCapability,
@@ -246,7 +246,7 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
       BigInt(`0x${publicKey.slice(68)}`),
       credential.authenticatorIdHash,
     ]),
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidator: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return resolvePinnedValidator("webauthn");
     },

@@ -213,8 +213,14 @@ const hash = await wallet.sendTransaction({ account, to, value, data, chain: nul
 
 ## Kernel runtime
 
-The only supported account runtime is Kernel v4 UUPS (`0.4.0`) through
-EntryPoint `0.7`. The runtime is open over chains: every address in the
+The Grant workflow uses Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.7`.
+Existing Kernel `0.3.3` accounts can also bind at their current address and
+prepare and sign ECDSA owner operations through `createKernelRuntime`; see the
+[SDK example](packages/sdk/README.md). This lower-level path preserves ownership
+and needs no enable approval. Kernel 3.3 session permissions and the high-level
+owner `sendCalls` workflow are not yet available.
+
+The v4 runtime is open over chains: every address in the
 deployment profile is the same CREATE2 canonical address on every chain, so
 any EVM chain carrying the canonical Kernel v4 deployment resolves, and
 `bindKernelV4Account` proves the actual capability from read evidence before
@@ -222,8 +228,7 @@ any account depends on it — EntryPoint and factory runtime code hashes are
 pinned globally, and the implementation is proven by its per-chain pinned
 runtime hash where one has been reviewed (Arbitrum Sepolia, Ethereum Sepolia,
 Robinhood Chain Testnet) or by nonempty code at the canonical CREATE2 address
-elsewhere; a chain missing the deployment fails closed at bind. OAAth does not
-retain Kernel 3.3 profiles or translate their permission representation.
+elsewhere; a chain missing the deployment fails closed at bind.
 
 `@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7

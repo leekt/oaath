@@ -5,7 +5,8 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import { encodeKernelV4ValidatorData, type KernelV4Deployment } from "../../kernel-v4.js";
+import { encodeKernelV4ValidatorData } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import { captureKeyProfile, exactInput } from "../internal.js";
 import { exactKernelDeployment } from "../modules.js";
 import type { KeyProfile, OperatorProfile } from "../types.js";
@@ -26,16 +27,16 @@ export function ownerOperator(value: OwnerOperatorInput): Readonly<OperatorProfi
     authority: "owner" as const,
     key,
     policy: null,
-    resolveAuthorityModule: (deployment: Readonly<KernelV4Deployment>) =>
+    resolveAuthorityModule: (deployment: Readonly<KernelDeployment>) =>
       key.resolveValidator(exactKernelDeployment(deployment)),
     // Root validation carries no envelope: Kernel hands the signature straight to
     // the validator module.
     encodeSignature: (signature: `0x${string}`) => signature,
-    resolveValidation: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidation: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze({ kind: "root" as const });
     },
-    resolvePackages: (deployment: Readonly<KernelV4Deployment>) =>
+    resolvePackages: (deployment: Readonly<KernelDeployment>) =>
       Object.freeze([
         Object.freeze({
           moduleType: 1 as const,
