@@ -1010,6 +1010,39 @@ describe("URL-only service surface", () => {
     });
   });
 
+  it.each([
+    ["submissions", -32500, { code: -32500 }],
+    ["submissions", -32603, null],
+    ["quote", -32500, null],
+    ["reads", -32500, null],
+  ] as const)(
+    "forwards only closed submission rejection evidence from %s code %s",
+    async (route, rpcCode, rejection) => {
+      const failure = async () => {
+        throw Object.assign(new Error("private-provider-prose"), {
+          code: "oaath_rpc_rejected",
+          rpcCode,
+          rawProviderData: "private-provider-data",
+        });
+      };
+      const harness = createHarness(
+        bootstrapOptions({
+          chains: [chainPort({ submission: failure, quote: failure, reads: failure })],
+        }),
+      );
+      const response = await harness.handler(
+        post(`/chains/31337/${route}`, CLIENT_TOKEN, { request: {} }),
+      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: {
+          code: "relay_chain_unavailable",
+          ...(rejection === null ? {} : { bundlerRejection: rejection }),
+        },
+      });
+    },
+  );
+
   it("fails closed on unknown chains, ports, callers, and throwing ports", async () => {
     const throwing = chainPort({
       quote: async () => {

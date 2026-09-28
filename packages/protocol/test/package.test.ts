@@ -6,6 +6,7 @@ describe("package boundary", () => {
     expect(Object.keys(protocol).sort()).toEqual([
       "KERNEL_V4_INSTALL_COMPONENTS",
       "OAATH_CLIENT_BINDING_VERSION",
+      "OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES",
       "OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN",
       "OAATH_GRANT_POLICY_HASH_DOMAIN",
       "OAATH_GRANT_POLICY_USAGE_VERSION",
@@ -40,6 +41,7 @@ describe("package boundary", () => {
       "advanceOperation",
       "applyPermissionDecision",
       "applyVerifiedOperationObservation",
+      "captureBundlerRejection",
       "captureCanonicalEip712TypedData",
       "captureClientBinding",
       "captureDenseArray",
@@ -104,6 +106,7 @@ describe("package boundary", () => {
       "parseSubjectId",
       "parseVerifyGrantRevisionInput",
       "parseWorkspaceAccountContext",
+      "readRpcBundlerRejection",
       "readValidationGasDiagnostic",
       "sameGrantIdentity",
       "sameKernelAccountProfile",

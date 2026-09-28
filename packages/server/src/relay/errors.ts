@@ -7,7 +7,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { captureValidationGasDiagnostic, type ValidationGasDiagnostic } from "@oaath/protocol";
+import {
+  type BundlerRejection,
+  captureBundlerRejection,
+  captureValidationGasDiagnostic,
+  type ValidationGasDiagnostic,
+} from "@oaath/protocol";
 
 export type RelayErrorCode =
   /** Wire input is missing, malformed, oversized, or contains unknown fields. */
@@ -96,6 +101,7 @@ export const RELAY_ERROR_STATUS: Readonly<Record<RelayErrorCode, number>> = Obje
 });
 
 export class OaathRelayError extends Error {
+  readonly bundlerRejection: Readonly<BundlerRejection> | null;
   readonly code: RelayErrorCode;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
@@ -103,11 +109,14 @@ export class OaathRelayError extends Error {
     code: RelayErrorCode,
     message: string,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    bundlerRejection: Readonly<BundlerRejection> | null = null,
   ) {
     super(message);
     this.name = "OaathRelayError";
     this.code = code;
     this.diagnostic = captureValidationGasDiagnostic(diagnostic);
+    this.bundlerRejection =
+      code === "relay_chain_unavailable" ? captureBundlerRejection(bundlerRejection) : null;
   }
 }
 
@@ -115,8 +124,9 @@ export function relayFailure(
   code: RelayErrorCode,
   message: string,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  bundlerRejection: Readonly<BundlerRejection> | null = null,
 ): never {
-  throw new OaathRelayError(code, message, diagnostic);
+  throw new OaathRelayError(code, message, diagnostic, bundlerRejection);
 }
 
 /** Any non-relay throw is an unreadable internal failure, never caller-visible detail. */
@@ -132,11 +142,18 @@ const RESPONSE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
 export function relayErrorResponse(
   code: RelayErrorCode,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  bundlerRejection: Readonly<BundlerRejection> | null = null,
 ): Response {
   const captured =
     code === "relay_chain_unavailable" ? captureValidationGasDiagnostic(diagnostic) : null;
+  const rejection =
+    code === "relay_chain_unavailable" ? captureBundlerRejection(bundlerRejection) : null;
   return jsonResponse(RELAY_ERROR_STATUS[code], {
-    error: { code, ...(captured === null ? {} : { diagnostic: captured }) },
+    error: {
+      code,
+      ...(captured === null ? {} : { diagnostic: captured }),
+      ...(rejection === null ? {} : { bundlerRejection: rejection }),
+    },
   });
 }
 
