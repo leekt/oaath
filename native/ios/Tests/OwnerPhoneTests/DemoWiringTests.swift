@@ -1472,6 +1472,50 @@ final class DemoPairingIdentityTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
+    func testPresentationStateResetsOnUnpairAndBlockedPairing() async throws {
+        for clearSucceeds in [true, false] {
+            let pairing = try PersistedPairing(
+                endpoint: DemoRelayEndpoint(baseURLText: "http://relay.example:8787"),
+                credential: deviceCredentialA,
+                account: "0x" + String(repeating: "66", count: 20),
+                chains: configuredTestChains,
+                ownerPublicMaterial: fakeOwnerPublicMaterial)
+            let store = InMemoryPairingStore(result: .stored(pairing), mutationsSucceed: clearSucceeds)
+            let http = DeferredHTTP()
+            let model = DemoModel(pairings: store, http: http, ownerKey: FakeOwnerSigning())
+            XCTAssertEqual(model.chainIds, configuredTestChains.entryPoints.keys.sorted())
+            model.reviewPresented = true
+            let key = "auth:Bearer \(deviceCredentialA):inbox"
+
+            let failed = Task { await model.refreshInbox() }
+            await http.wait(for: key)
+            await http.fail(key)
+            await failed.value
+            XCTAssertTrue(model.inboxUnavailable)
+
+            let recovered = Task { await model.refreshInbox() }
+            await http.wait(for: key)
+            await http.succeed(key, body: try inboxResponse([]))
+            await recovered.value
+            XCTAssertFalse(model.inboxUnavailable)
+            XCTAssertTrue(model.reviewPresented)
+
+            if clearSucceeds {
+                model.unpair()
+            } else {
+                let rejected = Task { await model.refreshInbox() }
+                await http.wait(for: key)
+                await http.succeed(key, body: Data(), status: 401)
+                await rejected.value
+                XCTAssertTrue(model.storedPairingBlocked)
+            }
+            XCTAssertFalse(model.reviewPresented)
+            XCTAssertEqual(model.chainIds, [])
+            XCTAssertFalse(model.inboxUnavailable)
+            XCTAssertNil(model.approval)
+        }
+    }
+
     func testInboxRefreshAndSelectionOpenExactProjectionWithoutDeciding() async throws {
         let store = InMemoryPairingStore()
         try store.installIfAbsent(PersistedPairing(

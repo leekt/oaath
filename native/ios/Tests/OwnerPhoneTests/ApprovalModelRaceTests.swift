@@ -663,7 +663,10 @@ final class ApprovalModelRaceTests: XCTestCase {
 
         await model.open(operationId: request.operationId)
         XCTAssertNil(model.actionNotice)
+        let review = try XCTUnwrap(displayedReview(model))
+        XCTAssertFalse(model.hasExpired(review))
         clock.now = request.expiresAt
+        XCTAssertTrue(model.hasExpired(review))
 
         await model.reject()
         XCTAssertEqual(model.actionNotice, .expired)
