@@ -16,6 +16,7 @@ import type {
   OperationInclusion,
   OperationKind,
   OperationOutcome,
+  ValidationGasDiagnostic,
 } from "@oaath/protocol";
 import { verifyOperationExecutionEvidence } from "../operation-execution.js";
 import {
@@ -43,6 +44,8 @@ export type OaathOperationStatus =
   | "unreadable";
 
 export interface OaathOperationOutcome {
+  /** Ephemeral display hint from this submission attempt; never retry authority. */
+  readonly diagnostic?: Readonly<ValidationGasDiagnostic>;
   readonly status: OaathOperationStatus;
   readonly state: Operation["state"];
   readonly transactionHash: `0x${string}` | null;
@@ -168,7 +171,12 @@ export function operationOutcome(
   if (result.status === "submission_uncertain") {
     // A send was attempted and its outcome is unknown. The identity stays exactly
     // as submitted and only observation may resolve it.
-    return Object.freeze({ status: "pending", ...base, reason: result.reason });
+    return Object.freeze({
+      status: "pending",
+      ...base,
+      reason: result.reason,
+      ...(result.diagnostic === undefined ? {} : { diagnostic: result.diagnostic }),
+    });
   }
   if (operation.state === "finalized") {
     return Object.freeze({ status: "finalized", ...base, reason: null });
@@ -214,6 +222,7 @@ export function createOperationHandle(
   input: Readonly<CreateOperationHandleInput>,
 ): Readonly<OaathOperationHandle> {
   let latest = operationOutcome(input.initial);
+  const submissionDiagnostic = latest.diagnostic;
   const identity: Readonly<OperationIdentity> = input.initial.record.value.identity;
   let current = input.initial.record.value;
   let closed = false;
@@ -239,7 +248,11 @@ export function createOperationHandle(
     }
     const observed = operationOutcome(result);
     current = result.record.value;
-    latest = observed;
+    latest =
+      submissionDiagnostic !== undefined &&
+      (observed.status === "pending" || observed.status === "unreadable")
+        ? Object.freeze({ ...observed, diagnostic: submissionDiagnostic })
+        : observed;
     // Grant materialization is secondary bookkeeping. Its durable installing
     // marker remains retryable, but it can never replace this exact outcome.
     if (input.onObserved) await input.onObserved(result).catch(() => undefined);

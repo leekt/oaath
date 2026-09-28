@@ -192,7 +192,7 @@ describe("relay handler", () => {
     expect(resumed.decision).toEqual({ outcome: "rejected", decidedAt: rejected.decidedAt });
   });
 
-  it("never returns a body field other than the error code", async () => {
+  it("returns only the error code for ordinary relay failures", async () => {
     const harness = createHarness();
     const response = await harness.handler(get("/authorization/requests/unknown-id", OWNER_TOKEN));
     expect(response.status).toBe(404);

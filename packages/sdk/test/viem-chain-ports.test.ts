@@ -105,15 +105,20 @@ describe("default viem chain ports", () => {
 
   it("routes paymaster calls only to their registered URL and never retries them", async () => {
     let calls = 0;
-    const [chain] = createViemChainPorts(config, {
-      fetch: async (request) => {
-        calls += 1;
-        expect(new URL(request.url).hostname).toBe("paymaster.test");
-        const { method } = await request.json();
-        expect(method).toBe("pm_getPaymasterStubData");
-        return new Response("busy", { status: 429 });
+    const [chain] = createViemChainPorts(
+      { 143: { ...config[143], paymasterUrl: "https://paymaster.test?project=demo" } },
+      {
+        fetch: async (request) => {
+          calls += 1;
+          expect(new URL(request.url).hostname).toBe("paymaster.test");
+          expect(new URL(request.url).search).toBe("?project=demo");
+          const { method } = await request.json();
+          expect(method).toBe("pm_getPaymasterStubData");
+          return new Response("busy", { status: 429 });
+        },
       },
-    });
+    );
+    expect(chain!.paymasterService!.url).toBe("https://paymaster.test");
     await expect(
       chain!.paymasterService!.request({
         method: "pm_getPaymasterStubData",

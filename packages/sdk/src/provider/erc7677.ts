@@ -15,6 +15,7 @@ import {
   exactCapturedRecord,
   OAATH_ISSUER_VERSION,
   parseIssuerIdentity,
+  readValidationGasDiagnostic,
 } from "@oaath/protocol";
 import type { KernelV4UserOperationGas } from "../kernel-v4.js";
 import {
@@ -446,8 +447,12 @@ async function invokeEstimator(
 ): Promise<unknown> {
   try {
     return await Reflect.apply(estimate, undefined, [value]);
-  } catch {
-    return invalidEvidence("ERC-7677 gas estimator did not answer");
+  } catch (error) {
+    return routingFail(
+      "routing_sponsorship_invalid",
+      "ERC-7677 gas estimator did not answer",
+      readValidationGasDiagnostic(error),
+    );
   }
 }
 

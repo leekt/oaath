@@ -49,6 +49,7 @@ describe("package boundary", () => {
       "captureServiceAccount",
       "captureServiceBootstrap",
       "captureSubjectBinding",
+      "captureValidationGasDiagnostic",
       "createGrant",
       "createGrantFromPermissionRequest",
       "createKernelAccountActionInput",
@@ -102,11 +103,13 @@ describe("package boundary", () => {
       "parseSubjectId",
       "parseVerifyGrantRevisionInput",
       "parseWorkspaceAccountContext",
+      "readValidationGasDiagnostic",
       "sameGrantIdentity",
       "sameKernelAccountProfile",
       "sameOperatorCredentialProfile",
       "sameOwnerCredentialProfile",
       "serializeOwnerSigningArtifact",
+      "validationGasDiagnosticMessage",
     ]);
   });
 });

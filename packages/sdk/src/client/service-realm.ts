@@ -22,7 +22,11 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { parseServiceBootstrap, type ServiceBootstrap } from "@oaath/protocol";
+import {
+  captureValidationGasDiagnostic,
+  parseServiceBootstrap,
+  type ServiceBootstrap,
+} from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
@@ -129,7 +133,20 @@ async function fetchJson(
     return clientFail("oaath_client_issuer_unavailable", `${label} could not be reached`);
   }
   if (!response.ok) {
-    return clientFail("oaath_client_issuer_rejected", `${label} answered ${response.status}`);
+    let diagnostic = null;
+    try {
+      const body = (await response.json()) as { error?: { code?: unknown; diagnostic?: unknown } };
+      if (body.error?.code === "relay_chain_unavailable")
+        diagnostic = captureValidationGasDiagnostic(body.error.diagnostic);
+    } catch {
+      /* Preserve the generic failure when the body is absent or unreadable. */
+    }
+    return clientFail(
+      "oaath_client_issuer_rejected",
+      `${label} answered ${response.status}`,
+      null,
+      diagnostic,
+    );
   }
   try {
     return await response.json();
@@ -223,6 +240,9 @@ function serviceChainCapability(
         });
   return Object.freeze({
     chainId: chain.chainId,
+    ...(chain.gas === undefined
+      ? {}
+      : { gas: { enableVerificationGasFloor: BigInt(chain.gas.enableVerificationGasFloor) } }),
     reads: Object.freeze({ read: port("reads") }),
     observation: Object.freeze({ read: port("observation"), close: async () => undefined }),
     bundler: Object.freeze({ probe: port("bundler") }),

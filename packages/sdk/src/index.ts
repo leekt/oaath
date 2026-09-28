@@ -8,6 +8,8 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
+export type { ValidationGasDiagnostic } from "@oaath/protocol";
 export type {
   OaathConnection,
   OaathPermissionCallInput,

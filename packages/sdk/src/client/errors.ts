@@ -15,8 +15,12 @@ import {
   type CaptureContext,
   type CaptureFailure,
   captureRecord,
+  captureValidationGasDiagnostic,
   type ExactRecord,
   exactCapturedRecord,
+  readValidationGasDiagnostic,
+  type ValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 
 export type OaathClientErrorCode =
@@ -63,12 +67,20 @@ export class OaathClientError extends Error {
   readonly code: OaathClientErrorCode;
   /** The structured code of the owner that failed, never prose. */
   readonly source: string | null;
+  readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
-  constructor(code: OaathClientErrorCode, message: string, source: string | null = null) {
-    super(message);
+  constructor(
+    code: OaathClientErrorCode,
+    message: string,
+    source: string | null = null,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  ) {
+    const captured = captureValidationGasDiagnostic(diagnostic);
+    super(captured === null ? message : validationGasDiagnosticMessage(captured));
     this.name = "OaathClientError";
     this.code = code;
     this.source = source;
+    this.diagnostic = captured;
   }
 }
 
@@ -76,8 +88,9 @@ export function clientFail(
   code: OaathClientErrorCode,
   message: string,
   source: string | null = null,
+  diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
 ): never {
-  throw new OaathClientError(code, message, source);
+  throw new OaathClientError(code, message, source, diagnostic);
 }
 
 export function clientFailure(code: OaathClientErrorCode): CaptureFailure {
@@ -147,6 +160,7 @@ const BY_NAME: Readonly<Record<string, OaathClientErrorCode>> = Object.freeze({
   OaathPermissionProtocolError: "oaath_client_state_conflict",
   OaathProtocolError: "oaath_client_input_invalid",
   OaathPreparedUserOperationError: "oaath_client_preparation_failed",
+  OaathRpcError: "oaath_client_preparation_failed",
 });
 
 function structured(error: unknown): Readonly<{ name: string; code: string | null }> {
@@ -163,8 +177,9 @@ function structured(error: unknown): Readonly<{ name: string; code: string | nul
 export function mapClientFailure(error: unknown, fallbackMessage: string): never {
   if (error instanceof OaathClientError) throw error;
   const { name, code } = structured(error);
+  const diagnostic = readValidationGasDiagnostic(error);
   if (name === "OaathOperationRunnerError" && code !== null && code in RUNNER_CODES) {
-    clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code);
+    clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
   }
   if (name === "OaathKernelRuntimeError" && code !== null && code in KERNEL_CODES) {
     clientFail(KERNEL_CODES[code] ?? "oaath_client_internal", fallbackMessage, code);
@@ -180,5 +195,5 @@ export function mapClientFailure(error: unknown, fallbackMessage: string): never
       code,
     );
   }
-  clientFail(BY_NAME[name] ?? "oaath_client_internal", fallbackMessage, code);
+  clientFail(BY_NAME[name] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
 }

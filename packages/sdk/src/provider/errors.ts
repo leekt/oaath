@@ -7,6 +7,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import {
+  captureValidationGasDiagnostic,
+  readValidationGasDiagnostic,
+  type ValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
+} from "@oaath/protocol";
 import { OaathClientError, type OaathClientErrorCode } from "../client/errors.js";
 
 export const CONTRACT_CREATION_UNSUPPORTED = -32000;
@@ -59,11 +65,21 @@ export const OAATH_PROVIDER_ERROR_MESSAGES = Object.freeze(PROVIDER_ERROR_MESSAG
 
 export class OaathProviderRpcError extends Error {
   readonly code: OaathProviderErrorCode;
+  readonly data?: Readonly<{ diagnostic: Readonly<ValidationGasDiagnostic>; message: string }>;
 
-  constructor(code: OaathProviderErrorCode) {
+  constructor(
+    code: OaathProviderErrorCode,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  ) {
     super(OAATH_PROVIDER_ERROR_MESSAGES[code]);
     this.name = "OaathProviderRpcError";
     this.code = code;
+    const captured = captureValidationGasDiagnostic(diagnostic);
+    if (captured !== null)
+      this.data = Object.freeze({
+        diagnostic: captured,
+        message: validationGasDiagnosticMessage(captured),
+      });
   }
 }
 
@@ -110,7 +126,7 @@ export function mapProviderFailure(error: unknown, appOwnedInput = false): never
       return rpcFail(USER_REJECTED_REQUEST);
     }
   }
-  return rpcFail(INTERNAL_ERROR);
+  throw new OaathProviderRpcError(INTERNAL_ERROR, readValidationGasDiagnostic(error));
 }
 
 /**

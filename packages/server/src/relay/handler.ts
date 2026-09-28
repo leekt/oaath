@@ -49,6 +49,7 @@ import {
   exactCapturedRecord,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
   parseServiceBootstrap,
+  readValidationGasDiagnostic,
   type ServiceBootstrap,
 } from "@oaath/protocol";
 import { claimEncryptedArtifact } from "../artifact/claim.js";
@@ -117,6 +118,7 @@ const INVALID = "relay_request_invalid" as const;
  * hygiene, so port meaning stays with its SDK owner.
  */
 export interface RelayChainPort {
+  readonly gas?: Readonly<{ enableVerificationGasFloor: bigint }>;
   readonly chainId: number;
   readonly reads: (request: unknown) => Promise<unknown>;
   readonly observation: (request: unknown) => Promise<unknown>;
@@ -339,7 +341,40 @@ function captureChainPorts(value: unknown): ReadonlyMap<number, Readonly<RelayCh
     if (chains.has(port.chainId)) {
       return relayFailure("relay_internal", "chain ports repeat a chainId");
     }
-    chains.set(port.chainId, port);
+    let gas: RelayChainPort["gas"];
+    const configuredGas = port.gas;
+    if (configuredGas !== undefined) {
+      const policy = exactCapturedRecord(
+        captureRecord(configuredGas, "chain gas policy", new WeakSet(), () =>
+          relayFailure("relay_internal", "chain gas policy is invalid"),
+        ),
+        ["enableVerificationGasFloor"],
+        "chain gas policy",
+        () => relayFailure("relay_internal", "chain gas policy is invalid"),
+      );
+      if (
+        typeof policy.enableVerificationGasFloor !== "bigint" ||
+        policy.enableVerificationGasFloor < 0n ||
+        policy.enableVerificationGasFloor >= 1n << 120n
+      )
+        return relayFailure("relay_internal", "chain gas floor is invalid");
+      gas = Object.freeze({ enableVerificationGasFloor: policy.enableVerificationGasFloor });
+    }
+    chains.set(
+      port.chainId,
+      Object.freeze({
+        chainId: port.chainId,
+        reads: port.reads,
+        observation: port.observation,
+        bundler: port.bundler,
+        quote: port.quote,
+        submission: port.submission,
+        usage: port.usage,
+        feePayer: port.feePayer,
+        staticPaymasterConfigurationHash: port.staticPaymasterConfigurationHash,
+        ...(gas === undefined ? {} : { gas }),
+      }),
+    );
   }
   return chains;
 }
@@ -820,6 +855,13 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
             const paymasterService = captured.paymasterServices.get(port.chainId);
             return {
               chainId: port.chainId,
+              ...(port.gas === undefined
+                ? {}
+                : {
+                    gas: {
+                      enableVerificationGasFloor: port.gas.enableVerificationGasFloor.toString(),
+                    },
+                  }),
               usage: port.usage !== null,
               feePayer: port.feePayer,
               paymasterService:
@@ -1043,10 +1085,14 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       let result: unknown;
       try {
         result = await capability(body.request);
-      } catch {
+      } catch (error) {
         // Port meaning stays with its SDK owner; the relay reports only that
         // this chain surface did not answer. Nothing here retries.
-        return relayFailure("relay_chain_unavailable", "chain port did not answer");
+        return relayFailure(
+          "relay_chain_unavailable",
+          "chain port did not answer",
+          readValidationGasDiagnostic(error),
+        );
       }
       // JSON cannot carry `undefined`, and several ports mean it ("no such
       // fact"), so the envelope states presence explicitly.
@@ -1199,7 +1245,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
     try {
       return await route(request);
     } catch (error) {
-      return relayErrorResponse(relayErrorCode(error));
+      return relayErrorResponse(relayErrorCode(error), readValidationGasDiagnostic(error));
     }
   };
 }
