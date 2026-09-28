@@ -1,4 +1,4 @@
-import { createAnvilChain } from "../browser/anvil-chain.mjs";
+import { createAnvilChain } from "../../packages/testing/src/anvil-chain.mjs";
 
 /** Local networks have their own lifetime, independent of the HTTP service. */
 export async function startPhoneDevnet() {

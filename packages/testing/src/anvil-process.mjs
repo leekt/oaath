@@ -30,11 +30,8 @@ import {
   parseEther,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import fixture from "../../sdk/test/fixtures/kernel-v4-v0.7-deployments.json" with { type: "json" };
 
-const FIXTURE = new URL(
-  "../../packages/sdk/test/fixtures/kernel-v4-v0.7-deployments.json",
-  import.meta.url,
-);
 /** Kernel v4 pins no ECDSA validator, so the examples deploy one under this salt. */
 const VALIDATOR_SALT = `0x${"00".repeat(32)}`;
 
@@ -62,6 +59,7 @@ async function reservePort() {
  * feature rather than a deployment: the pinned raw P-256 validator staticcalls
  * the RIP-7212 / EIP-7951 precompile at 0x100, which Prague does not carry and
  * Osaka does. The phone demo asks for `osaka`; everything else keeps Prague.
+ * @returns {Promise<{ chainId: number, url: string, client: import("viem").PublicClient, rpc: (method: string, params?: unknown[]) => Promise<any>, stop: () => void }>}
  */
 export async function startAnvil(chainId, hardfork = "prague") {
   const port = await reservePort();
@@ -90,13 +88,17 @@ export async function startAnvil(chainId, hardfork = "prague") {
     { stdio: "ignore" },
   );
   child.once("error", () => {});
+  /** @type {import("viem").PublicClient} */
   const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
   for (let attempt = 0; ; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Anvil exited before chain ${chainId} was ready`);
     try {
       if ((await client.getChainId()) === chainId) break;
     } catch {
-      if (attempt >= 200) throw new Error(`Anvil did not become ready for chain ${chainId}`);
+      if (attempt >= 200) {
+        child.kill("SIGTERM");
+        throw new Error(`Anvil did not become ready for chain ${chainId}`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
@@ -111,7 +113,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
       });
       const body = await response.json();
-      if (body.error) throw new Error(`${method}: ${body.error.message ?? "rpc failed"}`);
+      if (body.error) throw new Error("local_rpc_failed");
       return body.result;
     },
     stop: () => child.kill("SIGTERM"),
@@ -122,13 +124,21 @@ export async function startAnvil(chainId, hardfork = "prague") {
  * Deploys EntryPoint 0.7, both Kernel v4 implementations, the factory, the pinned
  * policy and signer modules, and one ECDSA validator, and returns the funded
  * submitter every direct `EntryPoint.handleOps` submission uses.
+ * @returns {Promise<{
+ *   submitter: import("viem/accounts").PrivateKeyAccount,
+ *   wallet: import("viem").WalletClient,
+ *   validator: import("viem").Address,
+ *   reads: import("@oaath/sdk/kernel").KernelV4AccountReadCapability,
+ *   fund: (address: import("viem").Address, value: bigint) => Promise<void>,
+ *   sendSigned: (prepared: import("@oaath/sdk/kernel").PreparedUserOperation, signature: import("viem").Hex, onTransactionHash?: (hash: import("viem").Hex) => void) => Promise<{ status: string, transactionHash: import("viem").Hex, userOperationHash: import("viem").Hex, evidence: object }>
+ * }>}
  */
 export async function deployKernelStack(chain, { p256 = false } = {}) {
-  const fixture = JSON.parse(await readFile(FIXTURE, "utf8"));
   const entryPoint = JSON.parse(
     await readFile(createRequire(import.meta.url).resolve(fixture.entryPoint.artifact), "utf8"),
   );
   const submitter = privateKeyToAccount(`0x${"c0ffee".padEnd(64, "0")}`);
+  /** @type {import("viem").WalletClient} */
   const wallet = createWalletClient({
     account: submitter,
     transport: http(chain.url, { retryCount: 0 }),
@@ -163,6 +173,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   ]) {
     await deploy(module.deploymentInput);
   }
+  /** @type {import("viem").Address} */
   const validator = getCreate2Address({
     from: KERNEL_V4_CREATE2_DEPLOYER,
     salt: VALIDATOR_SALT,

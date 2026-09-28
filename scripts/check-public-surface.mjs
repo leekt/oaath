@@ -54,7 +54,7 @@ const DIRECTION = {
   "@oaath/protocol": [],
   "@oaath/sdk": ["@oaath/protocol"],
   "@oaath/server": ["@oaath/protocol", "@oaath/sdk"],
-  "@oaath/testing": ["@oaath/protocol", "@oaath/sdk"],
+  "@oaath/testing": ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
   "@oaath/contracts": [],
 };
 

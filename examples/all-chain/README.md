@@ -53,9 +53,7 @@ itself stays a walkthrough.
 
 This example is the narrated version of `packages/sdk/test/all-chain.anvil.test.ts`,
 which is the authoritative proof and also runs as `pnpm smoke:all-chain`. The Anvil
-harness in [../support/anvil.mjs](../support/anvil.mjs) is a minimal inlined copy of
-that suite's `test/support/anvil.ts`; both collapse into `@oaath/testing`'s chain
-fixtures when that package's `anvil.ts` lands, and the marker for that
-consolidation lives in the SDK harness header. The deployment bytecode has no
-published home yet, so the copy here reads the SDK's own deployment fixture rather
-than keeping a second copy of it.
+harness now lives in [@oaath/testing](../../packages/testing/README.md), which
+also exposes the packed `@oaath/testing/anvil` client fixture for external
+consumers. The example and packed fixture share one deployment implementation
+and the SDK's canonical deployment bytecode fixture.

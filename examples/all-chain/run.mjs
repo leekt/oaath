@@ -29,7 +29,11 @@ import {
 } from "@oaath/sdk/kernel";
 import { parseEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { anvilAvailable, deployKernelStack, startAnvil } from "../support/anvil.mjs";
+import {
+  anvilAvailable,
+  deployKernelStack,
+  startAnvil,
+} from "../../packages/testing/src/anvil-process.mjs";
 
 const CHAIN_A = 421_614;
 const CHAIN_B = 11_155_111;
