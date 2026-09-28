@@ -1,4 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createSqliteOperationStoreAdapter } from "@oaath/testing";
 import {
   concat,
   createWalletClient,
@@ -27,6 +30,7 @@ import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deploym
 import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
+import { encodeHandleOps } from "../src/routing/handle-ops.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
@@ -195,7 +199,7 @@ afterAll(() => chain?.stop());
           else if (method === "eth_getUserOperationReceipt")
             result = receipts.get(params[0]) ?? null;
           else if (method === "eth_estimateUserOperationGas") {
-            expect(params[0].nonce).toBe("0x2");
+            expect(params[0].nonce).toBe(toHex(2 + directSends));
             expect(params[0].factory).toBeUndefined();
             expect(params[0].signature.length).toBe(132);
             result = {
@@ -298,6 +302,89 @@ afterAll(() => chain?.stop());
       expect((await operation.execution()).route).toBe("bundler");
     } finally {
       await client.close();
+    }
+
+    // A real custom direct adapter acknowledges the transaction. Recreate every
+    // SDK/store instance before finalizing, then recover with no wallet or bundler.
+    const directory = await mkdtemp(join(tmpdir(), "oaath-direct-receipt-"));
+    const filePath = join(directory, "operations.db");
+    let eoaSends = 0;
+    const direct = createOAAth({
+      mode: "owner",
+      operations: createSqliteOperationStoreAdapter(filePath),
+      chains: [
+        {
+          ...ports[0]!,
+          submission: {
+            async open({ prepared, signature }) {
+              const encoded = encodeHandleOps({
+                prepared,
+                signature,
+                beneficiary: harness.submitter.address,
+              });
+              return {
+                async send() {
+                  eoaSends++;
+                  const transactionHash = await harness.wallet.sendTransaction({
+                    account: harness.submitter,
+                    chain: null,
+                    to: encoded.entryPoint,
+                    data: encoded.data,
+                    gas: 2_000_000n,
+                  });
+                  return {
+                    userOperationHash: encoded.userOperationHash,
+                    submission: { route: "entrypoint-handleops", transactionHash },
+                  };
+                },
+                async close() {},
+              };
+            },
+          },
+        },
+      ],
+    });
+    let saved: { chain: number; id: Hex };
+    try {
+      const operation = await direct
+        .account(address)
+        .owner(wallet)
+        .sendCalls({ chain: 143, calls: [{ target, value: "17", data: "0x" }] });
+      saved = { chain: operation.chainId, id: operation.id };
+      expect(operation.outcome.status).toBe("pending");
+    } finally {
+      await direct.close();
+    }
+    await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+    const recreated = createOAAth({
+      mode: "owner",
+      operations: createSqliteOperationStoreAdapter(filePath),
+      chains: createViemChainPorts(
+        { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "http://unused.test" } },
+        {
+          fetch: async (request) => {
+            expect(new URL(request.url).hostname).not.toBe("unused.test");
+            return fetch(request);
+          },
+        },
+      ),
+    });
+    try {
+      const recovered = await recreated.account(address).getOperation(saved);
+      expect(recovered).not.toBeNull();
+      expect((await recovered!.wait()).status).toBe("finalized");
+      expect((await recovered!.receipt()).status).toBe("success");
+      expect(await recovered!.execution()).toMatchObject({
+        route: "entrypoint-handleops",
+        id: saved.id,
+        calls: [{ target, value: "17", data: "0x" }],
+      });
+      expect(eoaSends).toBe(1);
+      expect(prompts).toBe(3);
+      expect(await harness.client.getBalance({ address: target })).toBe(48n);
+    } finally {
+      await recreated.close();
+      await rm(directory, { recursive: true, force: true });
     }
   }, 30_000);
 });

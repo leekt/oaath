@@ -1,3 +1,5 @@
+import { encodeAbiParameters, encodeEventTopics, zeroAddress } from "viem";
+import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { KERNEL_V4_ENTRY_POINT_V07, prepareUserOperation } from "../src/kernel.js";
 import { createViemChainPorts } from "../src/viem.js";
@@ -12,6 +14,81 @@ const config = {
 const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
 
 describe("default viem chain ports", () => {
+  it.each([
+    "success",
+    "reverted-operation",
+    "pending",
+    "reverted-transaction",
+    "wrong-operation",
+    "wrong-entrypoint",
+    "duplicate",
+    "wrong-transaction",
+  ])(
+    "locates a direct %s receipt using only public RPC without trusting the hint as inclusion",
+    async (scenario) => {
+      const hash = `0x${"11".repeat(32)}` as const;
+      const transactionHash = `0x${"22".repeat(32)}` as const;
+      const blockHash = `0x${"33".repeat(32)}` as const;
+      const sender = `0x${"44".repeat(20)}` as const;
+      const event = {
+        address: scenario === "wrong-entrypoint" ? sender : KERNEL_V4_ENTRY_POINT_V07,
+        topics: encodeEventTopics({
+          abi: entryPoint07Abi,
+          eventName: "UserOperationEvent",
+          args: {
+            userOpHash: scenario === "wrong-operation" ? blockHash : hash,
+            sender,
+            paymaster: zeroAddress,
+          },
+        }),
+        data: encodeAbiParameters(
+          [{ type: "uint256" }, { type: "bool" }, { type: "uint256" }, { type: "uint256" }],
+          [7n, scenario !== "reverted-operation", 9n, 10n],
+        ),
+      };
+      const receipt = {
+        transactionHash: scenario === "wrong-transaction" ? blockHash : transactionHash,
+        blockHash,
+        blockNumber: "0x14",
+        status: scenario === "reverted-transaction" ? "0x0" : "0x1",
+        logs: scenario === "duplicate" ? [event, event] : [event],
+      };
+      const [chain] = createViemChainPorts(config, {
+        fetch: async (request) => {
+          expect(new URL(request.url).hostname).toMatch(/^public-/u);
+          const { id, method, params } = await request.json();
+          if (method === "eth_chainId") return rpc(id, "0x8f");
+          expect(method).toBe("eth_getTransactionReceipt");
+          expect(params).toEqual([transactionHash]);
+          return rpc(id, scenario === "pending" ? null : receipt);
+        },
+      });
+      const result = chain!.observation.read({
+        type: "user_operation_receipt",
+        chainId: 143,
+        userOperationHash: hash,
+        transaction: { hash: transactionHash, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+      });
+      if (scenario === "duplicate" || scenario === "wrong-transaction") {
+        await expect(result).rejects.toMatchObject({ code: "oaath_rpc_evidence_invalid" });
+      } else if (scenario === "success" || scenario === "reverted-operation") {
+        await expect(result).resolves.toEqual({
+          userOperationHash: hash,
+          entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+          sender,
+          nonce: "0x7",
+          paymaster: zeroAddress,
+          actualGasCost: "0x9",
+          actualGasUsed: "0xa",
+          success: scenario === "success",
+          transactionHash,
+          blockNumber: "0x14",
+          blockHash,
+        });
+      } else await expect(result).resolves.toBeNull();
+    },
+  );
+
   it("bounds timeout and concurrency without a queue", async () => {
     let started = 0;
     const [chain] = createViemChainPorts(config, {

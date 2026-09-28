@@ -3,9 +3,12 @@ import {
   createPublicClient,
   custom,
   decodeAbiParameters,
+  decodeEventLog,
   encodeFunctionData,
+  getAbiItem,
   pad,
   parseAbi,
+  toEventSelector,
   toHex,
 } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
@@ -84,6 +87,9 @@ const BUNDLER_METHODS = [
   "eth_getUserOperationReceipt",
 ];
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+const USER_OPERATION_EVENT = toEventSelector(
+  getAbiItem({ abi: entryPoint07Abi, name: "UserOperationEvent" }),
+);
 const RATE_ABI = parseAbi([
   "function status(bytes32 id, address account) view returns (uint8)",
   "function rateLimitConfigs(bytes32 id, address account) view returns (uint48 interval, uint48 count, uint48 startAt)",
@@ -171,6 +177,62 @@ function estimated(raw: unknown) {
   };
 }
 
+/** A transaction hint locates an event; OperationObserver still verifies every inclusion fact. */
+async function directReceipt(
+  publicRpc: RpcRequest,
+  request: Extract<OperationObserverReadRequest, { type: "user_operation_receipt" }>,
+) {
+  const hint = request.transaction;
+  if (hint === undefined) return evidence();
+  const raw = await publicRpc("eth_getTransactionReceipt", [hint.hash]);
+  if (raw === null) return null;
+  const receipt = object(raw);
+  if (hex(receipt.transactionHash) !== hint.hash || !Array.isArray(receipt.logs)) return evidence();
+  if (receipt.logs.length > 10_000) return evidence();
+  if (quantity(receipt.status) === 0n) return null;
+  if (quantity(receipt.status) !== 1n) return evidence();
+  let result: unknown = null;
+  for (const rawLog of receipt.logs) {
+    const log = object(rawLog);
+    if (address(log.address) !== hint.entryPoint || !Array.isArray(log.topics)) continue;
+    if (
+      typeof log.topics[0] !== "string" ||
+      log.topics[0].toLowerCase() !== USER_OPERATION_EVENT ||
+      typeof log.topics[1] !== "string" ||
+      log.topics[1].toLowerCase() !== request.userOperationHash
+    )
+      continue;
+    if (result !== null) return evidence();
+    const event = (() => {
+      try {
+        return decodeEventLog({
+          abi: entryPoint07Abi,
+          topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+          data: hex(log.data),
+          strict: true,
+        });
+      } catch {
+        return evidence();
+      }
+    })();
+    if (event.eventName !== "UserOperationEvent") return evidence();
+    result = {
+      userOperationHash: hex(event.args.userOpHash),
+      entryPoint: hint.entryPoint,
+      sender: address(event.args.sender),
+      nonce: toHex(event.args.nonce),
+      paymaster: address(event.args.paymaster),
+      actualGasCost: toHex(event.args.actualGasCost),
+      actualGasUsed: toHex(event.args.actualGasUsed),
+      success: event.args.success,
+      transactionHash: hint.hash,
+      blockNumber: toHex(quantity(receipt.blockNumber)),
+      blockHash: hex(receipt.blockHash),
+    };
+  }
+  return result;
+}
+
 function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
   return Object.freeze({
     async read(request: OperationObserverReadRequest): Promise<unknown> {
@@ -178,6 +240,7 @@ function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
         case "chain_id":
           return Number(quantity(await publicRpc("eth_chainId")));
         case "user_operation_receipt": {
+          if (request.transaction !== undefined) return directReceipt(publicRpc, request);
           const raw = await bundler("eth_getUserOperationReceipt", [request.userOperationHash]);
           if (raw === null) return null;
           const value = object(raw);

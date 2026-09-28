@@ -7,6 +7,7 @@ import {
   createOperation,
   type Operation,
   type OperationIdentity,
+  type OperationSubmissionEvidence,
 } from "@oaath/protocol";
 import { createSqliteOperationStore } from "@oaath/testing";
 import { afterEach, describe, expect, it } from "vitest";
@@ -61,7 +62,7 @@ function word(value: bigint | number): string {
   return BigInt(value).toString(16).padStart(64, "0");
 }
 
-function submitted(): Operation {
+function submitted(submission: OperationSubmissionEvidence | null = null): Operation {
   const prepared = createOperation({ identity, preparedAt: 10 });
   const attempted = advanceOperation(prepared, {
     type: "mark_submission_attempted",
@@ -70,7 +71,7 @@ function submitted(): Operation {
   });
   return advanceOperation(attempted, {
     type: "mark_submitted",
-    submission: null,
+    submission,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: 12,
@@ -288,6 +289,40 @@ function expectObserverError(
 }
 
 describe("OperationObserver", () => {
+  it("uses the direct transaction hint only for its own identity, never a nonce replacement", async () => {
+    const adapter = fixture({
+      targetReceipt: null,
+      replacementCandidate: { userOperationHash: replacementHash },
+    });
+    const observer = createOperationObserver(adapter.capabilities);
+    const result = await observer.observeOperation({
+      operation: submitted({
+        route: "entrypoint-handleops",
+        transactionHash: targetTransactionHash,
+      }),
+      observedAt: 100,
+      timeoutMs: 1000,
+    });
+    expect(result.status).toBe("dropped");
+    const receipts = adapter.requests.filter(
+      (request) => request.type === "user_operation_receipt",
+    );
+    expect(receipts).toEqual([
+      {
+        type: "user_operation_receipt",
+        chainId: identity.chainId,
+        userOperationHash: identity.userOperationHash,
+        transaction: { hash: targetTransactionHash, entryPoint: identity.entryPoint },
+      },
+      {
+        type: "user_operation_receipt",
+        chainId: identity.chainId,
+        userOperationHash: replacementHash,
+      },
+    ]);
+    await observer.close();
+  });
+
   it.each([
     [true, "success"],
     [false, "reverted"],
