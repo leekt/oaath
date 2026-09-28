@@ -8,7 +8,7 @@
  * therefore submits the byte-identical prepared and signed operation the bundler
  * route would have submitted.
  *
- * Decision table (48 total fact combinations):
+ * Default decision table (48 total fact combinations):
  *
  * ```text
  * signer
@@ -16,10 +16,12 @@
  *   execution,  covered               -> session (session_covers_calls)
  *   execution,  uncovered             -> none    (session_calls_uncovered)
  *   execution,  unreadable            -> none    (session_coverage_unreadable)
+ *   explicit signer: owner            -> owner   (owner_explicit)
  *
  * A denied signer denies the whole decision: owner authority is wider than the
  * session policy the owner approved, so uncovered or inconclusively covered
- * calls select no authority, no route, and no fee payer.
+ * session requests select no authority, no route, and no fee payer. Root
+ * execution requires an explicit owner request; it is never inferred from denial.
  *
  * route
  *   bundler available,  any fee payer -> bundler              (bundler_available)
@@ -56,6 +58,8 @@ import {
 } from "./types.js";
 
 export interface DecideExecutionInput {
+  /** Explicit root authority; absence retains session coverage rules for execution. */
+  readonly signer?: "owner" | "session";
   /** `revocation` is owner-authorized root work; `execution` may use a session. */
   readonly operationKind: OperationKind;
   readonly sessionCoverage: OaathSessionCoverage;
@@ -122,15 +126,29 @@ export function decideExecution(input: DecideExecutionInput): Readonly<OaathExec
   const context: CaptureContext = new WeakSet();
   const record = exactRoutingRecord(
     input,
-    ["operationKind", "sessionCoverage", "bundler", "feePayer"],
+    [
+      "operationKind",
+      "sessionCoverage",
+      "bundler",
+      "feePayer",
+      ...(input !== null && typeof input === "object" && Object.hasOwn(input, "signer")
+        ? ["signer"]
+        : []),
+    ],
     "routing decision input",
     context,
     inputInvalid,
   );
-  const signer = decideSigner(
+  if (Object.hasOwn(record, "signer") && record.signer !== "owner" && record.signer !== "session")
+    return inputInvalid("requested signer is unsupported");
+  const defaultSigner = decideSigner(
     operationKind(record.operationKind),
     captureSessionCoverage(record.sessionCoverage, inputInvalid),
   );
+  const signer =
+    record.signer === "owner"
+      ? { signer: "owner" as const, reason: "owner_explicit" as const }
+      : defaultSigner;
   const route = decideRoute(
     bundlerCapability(record.bundler, inputInvalid),
     feePayerDescriptor(record.feePayer, context, inputInvalid),

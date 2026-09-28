@@ -3,21 +3,32 @@ import {
   concat,
   createWalletClient,
   custom,
+  decodeEventLog,
   encodeFunctionData,
   getCreate2Address,
   type Hex,
   parseAbi,
   parseEther,
+  toHex,
   zeroAddress,
   zeroHash,
 } from "viem";
+import {
+  entryPoint07Abi,
+  getUserOperationHash,
+  toPackedUserOperation,
+  type UserOperation,
+} from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
+import { createOAAth } from "../src/index.js";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
+import { createMemoryOperationStoreAdapter } from "../src/testing.js";
+import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
@@ -26,7 +37,7 @@ afterAll(() => chain?.stop());
 
 (requireAnvil ? describe : describe.skip)("existing Kernel v3.3 / EntryPoint 0.7", () => {
   it("executes from an existing factory-deployed account without migration or an enable envelope", async () => {
-    chain = await startAnvil(143);
+    chain = await startAnvil(143, "prague", 1);
     const harness = await createHarness(chain);
     const deployment = kernelV33Deployment(143);
     const fixture = JSON.parse(
@@ -165,5 +176,127 @@ afterAll(() => chain?.stop());
     expect(connectedSignature.length).toBe(132);
     expect(await harness.sendSigned(next, connectedSignature)).toBe("success");
     expect(await harness.client.getBalance({ address: target })).toBe(18n);
+
+    const rpcUrl = chain.url;
+    const receipts = new Map<string, unknown>();
+    let directSends = 0;
+    // The bundler supplies a fixed estimate. Account reads, signing, execution,
+    // receipts and finality use the real contracts on the local chain.
+    const ports = createViemChainPorts(
+      { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://bundler.test" } },
+      {
+        maxRequests: 200,
+        fetch: async (request) => {
+          if (request.url.startsWith(rpcUrl)) return fetch(request);
+          const { id, method, params } = await request.json();
+          let result: unknown;
+          if (method === "eth_chainId") result = "0x8f";
+          else if (method === "eth_supportedEntryPoints") result = [deployment.entryPoint.address];
+          else if (method === "eth_getUserOperationReceipt")
+            result = receipts.get(params[0]) ?? null;
+          else if (method === "eth_estimateUserOperationGas") {
+            expect(params[0].nonce).toBe("0x2");
+            expect(params[0].factory).toBeUndefined();
+            expect(params[0].signature.length).toBe(132);
+            result = {
+              callGasLimit: toHex(200000),
+              verificationGasLimit: toHex(300000),
+              preVerificationGas: toHex(50000),
+            };
+          } else if (method === "eth_sendUserOperation") {
+            directSends++;
+            const wire = params[0] as Record<string, string>;
+            const operation = {
+              ...wire,
+              nonce: BigInt(wire.nonce!),
+              callGasLimit: BigInt(wire.callGasLimit!),
+              verificationGasLimit: BigInt(wire.verificationGasLimit!),
+              preVerificationGas: BigInt(wire.preVerificationGas!),
+              maxFeePerGas: BigInt(wire.maxFeePerGas!),
+              maxPriorityFeePerGas: BigInt(wire.maxPriorityFeePerGas!),
+            } as UserOperation<"0.7">;
+            const hash = getUserOperationHash({
+              userOperation: operation,
+              entryPointAddress: deployment.entryPoint.address,
+              entryPointVersion: "0.7",
+              chainId: 143,
+            });
+            const transactionHash = await harness.wallet.sendTransaction({
+              account: harness.submitter,
+              chain: null,
+              to: deployment.entryPoint.address,
+              gas: 2_000_000n,
+              data: encodeFunctionData({
+                abi: entryPoint07Abi,
+                functionName: "handleOps",
+                args: [[toPackedUserOperation(operation)], harness.submitter.address],
+              }),
+            });
+            const receipt = await harness.client.waitForTransactionReceipt({
+              hash: transactionHash,
+            });
+            expect(receipt.status).toBe("success");
+            const event = receipt.logs
+              .map((log) => {
+                try {
+                  return decodeEventLog({
+                    abi: entryPoint07Abi,
+                    topics: log.topics,
+                    data: log.data,
+                  });
+                } catch {
+                  return null;
+                }
+              })
+              .find((event) => event?.eventName === "UserOperationEvent");
+            if (!event || event.eventName !== "UserOperationEvent")
+              throw new Error("operation event missing");
+            expect(event.args.success).toBe(true);
+            receipts.set(hash, {
+              userOpHash: hash,
+              entryPoint: deployment.entryPoint.address,
+              sender: operation.sender,
+              nonce: toHex(operation.nonce),
+              actualGasCost: toHex(event.args.actualGasCost),
+              actualGasUsed: toHex(event.args.actualGasUsed),
+              success: event.args.success,
+              receipt: {
+                transactionHash,
+                blockHash: receipt.blockHash,
+                blockNumber: toHex(receipt.blockNumber),
+              },
+            });
+            await harness.client.request({
+              method: "anvil_mine" as never,
+              params: ["0x3"] as never,
+            });
+            result = hash;
+          } else throw new Error("non-4337 request reached bundler");
+          return Response.json({ jsonrpc: "2.0", id, result });
+        },
+      },
+    );
+    const client = createOAAth({
+      mode: "owner",
+      chains: ports,
+      operations: createMemoryOperationStoreAdapter(),
+    });
+    try {
+      const ownerHandle = client.account(address).owner(wallet);
+      const calls = { chain: 143, calls: [{ target, value: "13", data: "0x" }] };
+      expect(await ownerHandle.reviewCalls(calls)).toMatchObject({
+        account: address.toLowerCase(),
+        signer: "owner",
+      });
+      expect(prompts).toBe(1);
+      const operation = await ownerHandle.sendCalls(calls);
+      expect(prompts).toBe(2);
+      expect((await operation.wait()).status).toBe("finalized");
+      expect(directSends).toBe(1);
+      expect(await harness.client.getBalance({ address: target })).toBe(31n);
+      expect((await operation.receipt()).status).toBe("success");
+    } finally {
+      await client.close();
+    }
   }, 30_000);
 });

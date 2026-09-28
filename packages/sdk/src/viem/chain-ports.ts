@@ -15,13 +15,19 @@ import type {
   OaathRegisteredPaymasterService,
   OaathUsageRequest,
 } from "../client/grant-handle.js";
+import {
+  createKernelV33Reads,
+  type KernelV33ReadRequest,
+  type KernelV33Reads,
+} from "../kernel/deployment/v33.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { resolvePolicyModule } from "../kernel/modules.js";
 import {
   createKernelV4Reads,
   encodeKernelV4InstallNonceRead,
   encodeKernelV4NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
+  type KernelV4AccountReadRequest,
+  type KernelV4ReadClient,
 } from "../kernel-v4.js";
 import type { OperationObserverReadRequest } from "../operation-observer.js";
 import {
@@ -50,6 +56,10 @@ export interface ViemChainPortConfiguration {
   readonly bundlerUrl: string;
   readonly paymasterUrl?: string;
   readonly gas?: Readonly<KernelGasPolicy>;
+}
+
+export interface ViemChainCapability extends OaathChainCapability {
+  readonly reads: OaathChainCapability["reads"] & KernelV33Reads;
 }
 
 const PUBLIC_METHODS = [
@@ -341,7 +351,7 @@ async function usage(publicRpc: RpcRequest, request: Readonly<OaathUsageRequest>
 export function createViemChainPorts(
   configuration: Readonly<Record<number, Readonly<ViemChainPortConfiguration>>>,
   options: ViemChainPortOptions = {},
-): readonly Readonly<OaathChainCapability>[] {
+): readonly Readonly<ViemChainCapability>[] {
   const entries = Object.entries(record(configuration));
   if (entries.length === 0 || entries.length > 64) return invalid();
   const owner = rpcOwner(options);
@@ -372,7 +382,7 @@ export function createViemChainPorts(
           { retryCount: 0 },
         ),
       });
-      const reads = createKernelV4Reads({
+      const readClient: KernelV4ReadClient = {
         getChainId: async () => Number(quantity(await publicRpc("eth_chainId"))),
         getCode: async ({ address }) => hex(await publicRpc("eth_getCode", [address, "latest"])),
         getStorageAt: async ({ address, slot }) =>
@@ -380,6 +390,21 @@ export function createViemChainPorts(
         call: async ({ to, data }) => ({
           data: hex(await publicRpc("eth_call", [{ to, data }, "latest"])),
         }),
+      };
+      const v4Reads = createKernelV4Reads(readClient);
+      const v33Reads = createKernelV33Reads(readClient);
+      const reads = Object.freeze({
+        read(request: KernelV4AccountReadRequest | KernelV33ReadRequest): Promise<unknown> {
+          switch (request.type) {
+            case "kernel_account_version":
+            case "kernel_account_entrypoint":
+            case "kernel_account_root_validator":
+            case "kernel_ecdsa_owner":
+              return v33Reads.read(request);
+            default:
+              return v4Reads.read(request as KernelV4AccountReadRequest);
+          }
+        },
       });
       const observation = observer(publicRpc, bundler);
 

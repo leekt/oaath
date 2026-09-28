@@ -32,7 +32,11 @@ import {
   UNSUPPORTED_METHOD,
 } from "./provider/errors.js";
 
-export { createViemChainPorts, type ViemChainPortConfiguration } from "./viem/chain-ports.js";
+export {
+  createViemChainPorts,
+  type ViemChainCapability,
+  type ViemChainPortConfiguration,
+} from "./viem/chain-ports.js";
 export { OaathRpcError, type OaathRpcErrorCode, type ViemChainPortOptions } from "./viem/rpc.js";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;

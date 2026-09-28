@@ -60,6 +60,11 @@ import {
   type OaathOwnerRevocationCapability,
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
+import {
+  createOwnerRealm,
+  type OaathOwnerClient,
+  type OaathOwnerConfiguration,
+} from "./client/owner-realm.js";
 import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
@@ -252,17 +257,21 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * const oaath = createOAAth(); // local development: http://localhost:8787
  * ```
  *
- * A configuration carrying `binding` is the injected composition for
- * deterministic tests and custom deployments; anything else is the URL mode,
- * whose only normal production input is `url`.
+ * `mode: "owner"` executes directly from an existing Kernel v3.3 account with
+ * a connected wallet. A configuration carrying `binding` is the injected
+ * composition for deterministic tests and custom deployments; other inputs
+ * select URL mode, whose only normal production input is `url`.
  */
-export function createOAAth(configuration: unknown = {}): Readonly<Oaath> {
+export function createOAAth(configuration: OaathOwnerConfiguration): Readonly<OaathOwnerClient>;
+export function createOAAth(configuration?: unknown): Readonly<Oaath>;
+export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
     configuration,
     "OAAth configuration",
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
+  if (record.mode === "owner") return createOwnerRealm(configuration);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
   // Every URL-mode key is optional, so exactness here is only the closed key
   // set: an unknown key fails instead of being silently ignored.
