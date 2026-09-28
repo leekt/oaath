@@ -16,7 +16,7 @@ function configuration(stores?: OaathStoreConfiguration) {
   return {
     mode: "local" as const,
     owner: { ...owner, signTypedData },
-    account: { kind: "existing" as const, address: `0x${"33".repeat(20)}` as const },
+    account: `0x${"33".repeat(20)}` as const,
     chains: [createChainFixture().capability],
     origin: "https://consumer.example",
     ...(stores ? { stores } : {}),

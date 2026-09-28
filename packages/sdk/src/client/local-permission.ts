@@ -1,10 +1,8 @@
-/** In-process issuer: the ordinary permission protocol, with wallet-owned consent. */
+/** Wallet-owned consent through the canonical local Grant authorization boundary. */
 import {
-  deriveCodeChallenge,
   hashPermissionRequest,
   OAATH_PERMISSION_DECISION_VERSION,
   type PermissionRequest,
-  parsePermissionRequest,
 } from "@oaath/protocol";
 import { hashTypedData, keccak256, recoverAddress, stringToHex } from "viem";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
@@ -27,19 +25,18 @@ import type { OaathBinding } from "./binding.js";
 import { clientFail, mapClientFailure } from "./errors.js";
 import type { OaathChainCapability } from "./grant-handle.js";
 
-type Pending = {
-  readonly request: Readonly<PermissionRequest>;
-  readonly challenge: string;
-  readonly code: string;
-  stage: "requested" | "approving" | "approved" | "consumed";
-  approval: Readonly<KernelV33PermissionApproval> | null;
-};
-
 export type LocalPermissionSign = (
   request: ReturnType<typeof kernelV33PermissionEnableTypedData> & {
     readonly account?: `0x${string}`;
   },
 ) => Promise<unknown>;
+
+export interface OaathLocalApprovalReview {
+  readonly account: `0x${string}`;
+  readonly chainScope: "all";
+  readonly policy: Readonly<PermissionRequest["policy"]>;
+  readonly typedData: ReturnType<typeof kernelV33PermissionEnableTypedData>;
+}
 
 export function createLocalPermissionAuthority(input: {
   readonly binding: Readonly<OaathBinding>;
@@ -49,18 +46,17 @@ export function createLocalPermissionAuthority(input: {
   readonly chains: readonly Readonly<OaathChainCapability>[];
   readonly signTypedData: LocalPermissionSign;
   readonly localWallet: boolean;
+  readonly onApproval: ((review: Readonly<OaathLocalApprovalReview>) => Promise<void>) | null;
   readonly now: () => number;
 }) {
-  let pending: Pending | null = null;
-  let signedOut = false;
+  let pending = false;
+  let closed = false;
   const fail = () => clientFail("oaath_client_state_conflict", "local permission state disagrees");
-  function current(id: string) {
-    if (signedOut) clientFail("oaath_client_signed_out", "local authority signed out");
-    if (!pending || pending.request.requestId !== id || input.now() >= pending.request.expiresAt)
-      return fail();
-    return pending;
+  function assertActive(request: Readonly<PermissionRequest>) {
+    if (closed) return clientFail("oaath_client_closed", "local authority is closed");
+    if (input.now() >= request.expiresAt) return fail();
   }
-  async function approve(request: Readonly<PermissionRequest>) {
+  async function signApproval(request: Readonly<PermissionRequest>) {
     if (request.logicalAccount.kernelVersion !== "0.3.3") return fail();
     const address = request.logicalAccount.address;
     let scope: Readonly<KernelV33PermissionScope> | undefined;
@@ -101,10 +97,22 @@ export function createLocalPermissionAuthority(input: {
     if (!scope) return fail();
     const typedData = kernelV33PermissionEnableTypedData(scope);
     const digest = hashTypedData(typedData);
-    const produced = await input.signTypedData({
-      ...typedData,
-      ...(input.localWallet ? {} : { account: input.owner.publicMaterial as `0x${string}` }),
-    });
+    await input
+      .onApproval?.(
+        structuredClone({ account: address, chainScope: "all", policy: request.policy, typedData }),
+      )
+      .catch(() =>
+        clientFail("oaath_client_decision_unavailable", "local permission approval failed"),
+      );
+    assertActive(request);
+    const produced = await input
+      .signTypedData({
+        ...typedData,
+        ...(input.localWallet ? {} : { account: input.owner.publicMaterial as `0x${string}` }),
+      })
+      .catch(() =>
+        clientFail("oaath_client_decision_unavailable", "local permission approval failed"),
+      );
     if (typeof produced !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(produced))
       return clientFail("oaath_client_signing_failed", "local permission signature is invalid");
     const signature = produced.toLowerCase() as `0x${string}`;
@@ -138,7 +146,6 @@ export function createLocalPermissionAuthority(input: {
             JSON.stringify(input.binding.operatorCredential)
         )
           return fail();
-        if (pending?.request.requestId === request.grantId) pending = null;
         // Local admission is stopped by the durable revoking state, which every
         // fresh Grant handle reads. This acknowledges that exact state only;
         // the Grant still requires separate finalized onchain revocation proof.
@@ -159,122 +166,36 @@ export function createLocalPermissionAuthority(input: {
         });
       },
     }),
-    issuer: Object.freeze({
-      url: input.binding.issuer.url,
-      async fetch(request: Request): Promise<Response> {
-        if (signedOut)
-          return Response.json({ error: { code: "local_signed_out" } }, { status: 401 });
-        const path = request.url.slice(input.binding.issuer.url.length);
-        if (!request.url.startsWith(`${input.binding.issuer.url}/`) || request.method !== "POST")
-          return fail();
-        if (path === "/authorization/resume") {
-          // No external authentication exists in this mode. Durable Grant validation
-          // and fresh chain evidence still govern all execution and recovery.
-          return Response.json({ decision: null });
-        }
-        if (path === "/authorization/requests") {
-          if (pending && input.now() < pending.request.expiresAt)
-            return Response.json({ error: { code: "local_request_pending" } }, { status: 409 });
-          const body = await request.json();
-          if (
-            body.redirectUri !== input.binding.redirectUri ||
-            typeof body.codeChallenge !== "string"
-          )
-            return fail();
-          const scope = parsePermissionRequest({
-            ...JSON.parse(body.requestedScope),
-            requestId: crypto.randomUUID(),
-          });
-          if (
-            JSON.stringify(scope.logicalAccount) !== JSON.stringify(input.binding.account) ||
-            JSON.stringify(scope.operatorCredential) !==
-              JSON.stringify(input.binding.operatorCredential) ||
-            JSON.stringify(scope.application) !== JSON.stringify(input.binding.application) ||
-            JSON.stringify(scope.context) !== JSON.stringify(input.binding.context) ||
-            scope.sessionSigner !== null
-          )
-            return fail();
-          pending = {
-            request: scope,
-            challenge: body.codeChallenge,
-            code: crypto.randomUUID(),
-            stage: "requested",
-            approval: null,
-          };
-          return Response.json({ requestId: scope.requestId, expiresAt: scope.expiresAt });
-        }
-        if (path === "/authorization/codes/consume") {
-          const body = await request.json();
-          const value = current(pending?.request.requestId ?? "");
-          if (
-            value.stage !== "approved" ||
-            body.code !== value.code ||
-            body.redirectUri !== input.binding.redirectUri ||
-            deriveCodeChallenge(body.codeVerifier, fail) !== value.challenge
-          )
-            return fail();
-          value.stage = "consumed";
-          return Response.json({
-            requestId: value.request.requestId,
-            artifactId: value.request.requestId,
-          });
-        }
-        const match = /^\/authorization\/artifacts\/([^/]+)\/claim$/.exec(path);
-        if (match) {
-          const value = current(match[1]!);
-          if (value.stage !== "consumed" || !value.approval) return fail();
-          const artifact = {
-            version: OAATH_PERMISSION_DECISION_VERSION,
-            kind: "approve",
-            requestId: value.request.requestId,
-            requestHash: hashPermissionRequest(value.request),
-            decidedAt: input.now(),
-            approvedPolicy: value.request.policy,
-            capabilityHash: kernelV33CapabilityHash(value.approval),
-            installApproval: value.approval,
-          };
-          pending = null;
-          return Response.json({
-            requestId: value.request.requestId,
-            artifact: JSON.stringify(artifact),
-          });
-        }
-        return fail();
-      },
-      async signOut() {
-        signedOut = true;
-        pending = null;
-      },
-    }),
-    authorization: Object.freeze({
-      async authorize(request: {
-        readonly requestId: string;
-        readonly redirectUri: string;
-        readonly expiresAt: number;
-      }) {
-        const value = current(request.requestId);
-        if (
-          value.stage !== "requested" ||
-          request.redirectUri !== input.binding.redirectUri ||
-          request.expiresAt !== value.request.expiresAt
-        )
-          return fail();
-        value.stage = "approving";
-        try {
-          const approval = await approve(value.request);
-          if (current(request.requestId) !== value) return fail();
-          value.approval = approval;
-          value.stage = "approved";
-          return { code: value.code };
-        } catch (error) {
-          if (pending === value) pending = null;
-          return mapClientFailure(error, "local permission approval failed");
-        }
-      },
-    }),
+    async approve(request: Readonly<PermissionRequest>) {
+      assertActive(request);
+      if (pending)
+        return clientFail(
+          "oaath_client_state_conflict",
+          "local permission approval is pending",
+          "local_request_pending",
+        );
+      pending = true;
+      try {
+        const approval = await signApproval(request);
+        assertActive(request);
+        return Object.freeze({
+          version: OAATH_PERMISSION_DECISION_VERSION,
+          kind: "approve",
+          requestId: request.requestId,
+          requestHash: hashPermissionRequest(request),
+          decidedAt: input.now(),
+          approvedPolicy: request.policy,
+          capabilityHash: kernelV33CapabilityHash(approval),
+          installApproval: approval,
+        });
+      } catch (error) {
+        return mapClientFailure(error, "local permission approval failed");
+      } finally {
+        pending = false;
+      }
+    },
     close() {
-      signedOut = true;
-      pending = null;
+      closed = true;
     },
   });
 }

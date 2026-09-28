@@ -46,6 +46,7 @@ import {
   captureAuthorizationCapability,
   captureIssuerCapability,
   createConnection,
+  type LocalPermissionAuthorization,
   type OaathAuthorizationCapability,
   type OaathConnection,
   type OaathIssuerCapability,
@@ -288,7 +289,10 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
   return createServiceRealm(record, composeInjectedRealm);
 }
 
-function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
+function composeInjectedRealm(
+  configuration: unknown,
+  localAuthorization?: LocalPermissionAuthorization,
+): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
   const optionalKeys =
     typeof configuration === "object" && configuration !== null
@@ -296,7 +300,12 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
       : [];
   const record = exactClientRecord(
     configuration,
-    [...CONFIGURATION_KEYS, ...optionalKeys],
+    [
+      ...CONFIGURATION_KEYS.filter(
+        (key) => !localAuthorization || (key !== "issuer" && key !== "authorization"),
+      ),
+      ...optionalKeys,
+    ],
     "OAAth configuration",
     context,
   );
@@ -311,14 +320,20 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
           context,
         );
   const binding = captureOaathBinding(record.binding);
-  const issuer = captureIssuerCapability(record.issuer);
-  if (issuer.url !== binding.issuer.url) {
+  const issuer = localAuthorization ? null : captureIssuerCapability(record.issuer);
+  if (issuer !== null && issuer.url !== binding.issuer.url) {
     clientFail(
       "oaath_client_capability_invalid",
       "the issuer transport does not serve the bound issuer",
     );
   }
-  const authorization = captureAuthorizationCapability(record.authorization);
+  const authority = localAuthorization
+    ? { kind: "local" as const, approve: localAuthorization }
+    : {
+        kind: "issuer" as const,
+        issuer: issuer!,
+        authorization: captureAuthorizationCapability(record.authorization),
+      };
   const invalidation = storePort<Readonly<OaathCapabilityInvalidationCapability>>(
     record.invalidation,
     ["invalidateCapability"],
@@ -405,8 +420,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
     const inner = createConnection({
       binding,
-      issuer,
-      authorization,
+      authority,
       grants: new GrantStore(connectionStores.grants),
       operations: connectionStores.operations,
       walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),
@@ -522,7 +536,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
           } else {
             // Closing connections releases resources, not issuer authentication.
             try {
-              await issuer.signOut?.();
+              await issuer?.signOut?.();
             } catch (error) {
               return mapClientFailure(error, "issuer sign-out failed");
             }

@@ -40,9 +40,10 @@ same existing account and either a browser or local viem wallet:
 ```ts
 const oaath = createOAAth({
   mode: "local",
-  account: { kind: "existing", address: existingKernelAddress },
+  account: existingKernelAddress,
   owner: walletClient,
   chains: createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } }),
+  onApproval: async (review) => { await showPermissionPolicy(review.policy); },
 });
 const connection = await oaath.connect();
 const grant = await connection.resume() ?? await connection.requestPermission({
@@ -57,7 +58,9 @@ await oaath.close();
 ```
 
 The session key is encrypted in IndexedDB before consent. One wallet EIP-712
-approval covers the exact permission on all configured chains; the SDK verifies
+approval covers the exact permission on all configured chains. The optional
+`onApproval` callback displays the decoded policy before the wallet prompt and
+may throw to cancel. The SDK verifies
 their root owner and matching permission nonce before prompting. The first send
 enables the permission and executes its calls together. Reopening the same
 origin/account/owner restores the session and operation journal; covered calls

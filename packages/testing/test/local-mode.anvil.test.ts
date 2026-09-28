@@ -37,7 +37,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       createOAAth({
         mode: "local",
         owner,
-        account: { kind: "existing", address: fixture.address },
+        account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
       });
@@ -50,7 +50,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       );
       await entered;
       await expect(connection.requestPermission(permission)).rejects.toMatchObject({
-        code: "oaath_client_issuer_rejected",
+        code: "oaath_client_state_conflict",
         source: "local_request_pending",
       });
       const closing = client.close();
@@ -76,7 +76,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       createOAAth({
         mode: "local",
         owner: fixture.wallet,
-        account: { kind: "existing", address: fixture.address },
+        account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
       });
@@ -114,7 +114,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
           createOAAth({
             mode: "local",
             owner,
-            account: { kind: "existing", address: fixture.address },
+            account: fixture.address,
             chains: fixture.createChainPorts(),
             origin: "https://consumer.example",
           });
@@ -180,7 +180,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const client = createOAAth({
       mode: "local",
       owner: { ...fixture.wallet, signTypedData: rejected },
-      account: { kind: "existing", address: fixture.address },
+      account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",
     });
@@ -206,7 +206,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const client = createOAAth({
       mode: "local",
       owner: { ...fixture.wallet, account: { address: target }, signTypedData: consent },
-      account: { kind: "existing", address: fixture.address },
+      account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",
     });

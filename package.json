@@ -28,6 +28,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "check:public-surface": "node scripts/check-public-surface.mjs",
+    "smoke:local-wallet": "node scripts/smoke-packed-local-wallet.mjs",
     "smoke:browser": "node scripts/smoke-packed-browser.mjs",
     "smoke:extension": "node scripts/smoke-packed-extension.mjs",
     "smoke:server": "node scripts/smoke-packed-server.mjs",

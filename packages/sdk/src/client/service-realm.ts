@@ -33,7 +33,7 @@ import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
 import { OaathRpcError } from "../viem/rpc.js";
-import { defaultStores, type OwnedDefaultStores } from "./default-stores.js";
+import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathRegisteredPaymasterService } from "./grant-handle.js";
 import {

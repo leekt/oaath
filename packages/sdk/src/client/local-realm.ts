@@ -23,7 +23,8 @@ import { type EcdsaWalletClient, ecdsaKey, ecdsaWalletKey } from "../kernel/key/
 import { routingAddress } from "../routing/capabilities.js";
 import { GrantStore, type OperationStoreAdapter } from "../store.js";
 import { captureOaathBinding } from "./binding.js";
-import { defaultStores, type OwnedDefaultStores } from "./default-stores.js";
+import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
+import type { LocalPermissionAuthorization } from "./connection.js";
 import {
   clientCapability,
   clientFail,
@@ -33,17 +34,24 @@ import {
   OaathClientError,
 } from "./errors.js";
 import { captureChainCapability, type OaathChainCapability } from "./grant-handle.js";
-import { createLocalPermissionAuthority, type LocalPermissionSign } from "./local-permission.js";
+import {
+  createLocalPermissionAuthority,
+  type LocalPermissionSign,
+  type OaathLocalApprovalReview,
+} from "./local-permission.js";
 import { createOwnerRealm, type OaathOwnerClient } from "./owner-realm.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
 import { captureStoreConfiguration } from "./store-configuration.js";
 
 export type OaathLocalWallet = EcdsaWalletClient & { readonly signTypedData: LocalPermissionSign };
+export type { OaathLocalApprovalReview } from "./local-permission.js";
 export interface OaathLocalConfiguration {
   readonly mode: "local";
-  readonly account: Readonly<{ kind: "existing"; address: Address }>;
+  readonly account: Address;
   readonly owner: OaathLocalWallet;
   readonly chains: readonly Readonly<OaathChainCapability>[];
+  /** Display the decoded policy before wallet consent. Throw to cancel. */
+  readonly onApproval?: (review: Readonly<OaathLocalApprovalReview>) => Promise<void>;
   /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
   readonly stores?: Readonly<OaathStoreConfiguration>;
   /** Defaults to the actual browser origin; required outside a browser. */
@@ -54,7 +62,7 @@ export interface OaathLocalClient extends Oaath, OaathOwnerClient {}
 
 export function createLocalRealm(
   value: unknown,
-  compose: (configuration: unknown) => Readonly<Oaath>,
+  compose: (configuration: unknown, authorization: LocalPermissionAuthorization) => Readonly<Oaath>,
 ): Readonly<OaathLocalClient> {
   const fail = clientFailure("oaath_client_input_invalid");
   const context = new WeakSet();
@@ -66,19 +74,19 @@ export function createLocalRealm(
       "account",
       "owner",
       "chains",
-      ...["stores", "origin", "now"].filter((key) => Object.hasOwn(initial, key)),
+      ...["stores", "origin", "now", "onApproval"].filter((key) => Object.hasOwn(initial, key)),
     ],
     "local configuration",
     new WeakSet(),
   );
-  const requested = exactClientRecord(
-    config.account,
-    ["kind", "address"],
-    "existing account",
-    context,
-  );
-  if (requested.kind !== "existing") return fail("local mode requires an existing account");
-  const address = routingAddress(requested.address, "local account", fail);
+  const address = routingAddress(config.account, "local account", fail);
+  const onApproval =
+    config.onApproval === undefined
+      ? null
+      : clientCapability<NonNullable<OaathLocalConfiguration["onApproval"]>>(
+          config.onApproval,
+          "local approval display",
+        );
   const wallet = captureRecord(config.owner, "local wallet", context, fail);
   const walletAccount = captureRecord(wallet.account, "local wallet account", context, fail);
   const signTypedData = clientCapability<LocalPermissionSign>(
@@ -115,12 +123,12 @@ export function createLocalRealm(
       ? () => Math.floor(Date.now() / 1000)
       : clientCapability<() => number>(config.now, "local clock");
   const bindingInput = {
-    issuer: `${origin}/.oaath/local`,
+    issuer: origin,
     applicationId: "local",
     applicationName: "Local OAAth",
     clientId: "local",
     origin,
-    redirectUri: `${origin}/.oaath/local/callback`,
+    redirectUri: `${origin}/oaath/local`,
     userHandle: ownerKey.publicMaterial,
     context: {
       version: "oaath.workspace-account-context/v1",
@@ -221,6 +229,7 @@ export function createLocalRealm(
         chains,
         signTypedData: signTypedData.bind(config.owner),
         localWallet: walletAccount.type === "local",
+        onApproval,
         now,
       });
       // This realm owns raw stores. Child realms close only their own handles.
@@ -230,17 +239,18 @@ export function createLocalRealm(
           Object.freeze({ ...port, close: async () => undefined }),
         ]),
       );
-      inner = compose({
-        binding,
-        issuer: authority.issuer,
-        authorization: authority.authorization,
-        stores: borrowed,
-        chains,
-        invalidation: authority.invalidation,
-        signing: { owner: ownerKey, session: sessionKey },
-        localKeyIds: [serviceSessionKeyId(continuity.url, continuity.origin, bootstrap)],
-        now,
-      });
+      inner = compose(
+        {
+          binding,
+          stores: borrowed,
+          chains,
+          invalidation: authority.invalidation,
+          signing: { owner: ownerKey, session: sessionKey },
+          localKeyIds: [serviceSessionKeyId(continuity.url, continuity.origin, bootstrap)],
+          now,
+        },
+        authority.approve,
+      );
       return inner;
     })().catch((error) => {
       composing = undefined;

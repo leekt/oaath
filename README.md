@@ -219,8 +219,10 @@ Existing ECDSA-root Kernel `0.3.3` accounts support
 It prompts once, creates no Grant, and uses the existing address with no enable
 approval. IndexedDB retains exact operations for wallet-free `getOperation`
 recovery. See the [SDK example](packages/sdk/README.md), including the lower-level
-`createKernelRuntime` path. Kernel 3.3 session permissions, Grant signer auto
-selection, and the local permission issuer are still pending.
+`createKernelRuntime` path. Existing v3.3 accounts also support session Grants through
+`createOAAth({ mode: "local", owner: walletClient, account: address, chains })`,
+with one wallet typed-data approval, browser custody and reload recovery.
+Local mode needs no phone or relay. Grant signer auto selection is still pending.
 
 The v4 runtime is open over chains: every address in the
 deployment profile is the same CREATE2 canonical address on every chain, so
