@@ -17,6 +17,7 @@ import type {
   OperationKind,
   OperationOutcome,
 } from "@oaath/protocol";
+import { verifyOperationExecutionEvidence } from "../operation-execution.js";
 import {
   type OperationObserverCapabilities,
   type OperationObserverReadRequest,
@@ -82,6 +83,22 @@ export interface OaathOperationReceipt {
   readonly logs: readonly Readonly<OaathOperationLog>[];
 }
 
+/** Finalized calls decoded from the exact UserOperation's containing transaction. */
+export interface OaathOperationExecution {
+  readonly id: `0x${string}`;
+  readonly chainId: number;
+  readonly sender: `0x${string}`;
+  readonly calls: readonly Readonly<{
+    target: `0x${string}`;
+    value: string;
+    data: `0x${string}`;
+  }>[];
+  readonly transactionHash: `0x${string}`;
+  readonly blockNumber: string;
+  readonly blockHash: `0x${string}`;
+  readonly outcome: "success" | "reverted";
+}
+
 export interface OaathOperationHandle {
   readonly chainId: number;
   /** Stable operation ID. Retain it with chainId for Grant.getOperation. */
@@ -94,6 +111,8 @@ export interface OaathOperationHandle {
   readonly wait: (input?: unknown) => Promise<Readonly<OaathOperationOutcome>>;
   /** The terminal operation's exact call-relevant receipt. Reads only. */
   readonly receipt: () => Promise<Readonly<OaathOperationReceipt>>;
+  /** Exact finalized execution facts. Reads only; never prepares or submits. */
+  readonly execution: () => Promise<Readonly<OaathOperationExecution>>;
   readonly close: () => Promise<void>;
 }
 
@@ -297,6 +316,53 @@ export function createOperationHandle(
     },
     observe: observeOnce,
     receipt,
+    async execution(): Promise<Readonly<OaathOperationExecution>> {
+      if (closed) clientFail("oaath_client_closed", "operation handle is closed");
+      // Reobserve through the existing finality owner, including after reload.
+      await observeOnce();
+      if (latest.status !== "finalized" || current.state !== "finalized") {
+        return clientFail(
+          "oaath_client_observation_unavailable",
+          "operation is not finalized",
+          latest.reason,
+        );
+      }
+      const inclusion = current.inclusion;
+      const verifiedReceipt = await receipt();
+      let transaction: unknown;
+      try {
+        transaction = await input.observation({
+          type: "transaction_execution",
+          chainId: identity.chainId,
+          transactionHash: inclusion.transactionHash,
+        });
+      } catch {
+        return clientFail(
+          "oaath_client_observation_unavailable",
+          "execution transaction could not be read",
+          "provider_unavailable",
+        );
+      }
+      try {
+        const facts = verifyOperationExecutionEvidence({ identity, inclusion, transaction });
+        return Object.freeze({
+          id: identity.userOperationHash,
+          chainId: identity.chainId,
+          sender: facts.sender,
+          calls: facts.calls,
+          transactionHash: inclusion.transactionHash,
+          blockNumber: inclusion.blockNumber,
+          blockHash: inclusion.blockHash,
+          outcome: verifiedReceipt.status,
+        });
+      } catch {
+        return clientFail(
+          "oaath_client_observation_unavailable",
+          "execution evidence does not match this operation",
+          "execution_invalid",
+        );
+      }
+    },
     async wait(value?: unknown): Promise<Readonly<OaathOperationOutcome>> {
       const attempts = attemptCount(value);
       const terminal = (status: OaathOperationStatus) =>

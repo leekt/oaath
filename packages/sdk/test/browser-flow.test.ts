@@ -586,6 +586,7 @@ describe("browser golden path", () => {
     expect(Object.keys(operation).sort()).toEqual([
       "chainId",
       "close",
+      "execution",
       "id",
       "observe",
       "outcome",

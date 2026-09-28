@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { IDBFactory } from "fake-indexeddb";
 import { decodeEventLog, encodeFunctionData, parseEther, toEventSelector } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -34,6 +35,17 @@ import {
   ownerOperator,
   type PreparedUserOperation,
 } from "../src/kernel.js";
+import {
+  createIndexedDbCleanupStore,
+  createIndexedDbContextStore,
+  createIndexedDbGrantStoreAdapter,
+  createIndexedDbKeyStore,
+  createIndexedDbOperationStoreAdapter,
+  createIndexedDbPreparedCallStoreAdapter,
+  createIndexedDbWalletCallBundleStoreAdapter,
+  type OaathDatabase,
+  openOaathDatabase,
+} from "../src/persistence.js";
 import { oaathProvider } from "../src/viem.js";
 import {
   createHarness,
@@ -338,6 +350,16 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           transactionIndex: quantity(required(transaction.transactionIndex, "transaction index")),
         } satisfies OperationObserverTransactionEvidence);
       }
+      if (request.type === "transaction_execution") {
+        const transaction = await harness.client.getTransaction({ hash: request.transactionHash });
+        return Object.freeze({
+          hash: lower(transaction.hash),
+          to: transaction.to === null ? null : lower(transaction.to),
+          blockNumber: quantity(required(transaction.blockNumber, "execution block number")),
+          blockHash: lower(required(transaction.blockHash, "execution block hash")),
+          input: lower(transaction.input),
+        });
+      }
       if (request.type === "finalized_block") {
         return blockEvidence(await harness.client.getBlock({ blockTag: "finalized" }));
       }
@@ -552,11 +574,25 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
   return Object.freeze({ address: log.address, topics: log.topics, data: log.data });
 }
 
+function durableStores(database: OaathDatabase) {
+  return {
+    grants: createIndexedDbGrantStoreAdapter(database),
+    operations: createIndexedDbOperationStoreAdapter(database),
+    walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+    preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
+    keys: createIndexedDbKeyStore(database),
+    cleanup: createIndexedDbCleanupStore(database),
+    context: createIndexedDbContextStore(database),
+  };
+}
+
 (requireAnvil ? describe : describe.skip)("EIP-5792 provider local Anvil evidence", () => {
   it("proves atomic success/full revert, exact log filtering, and observation-only status", async () => {
     const clock = createClock(Math.floor(Date.now() / 1_000));
     let live: Readonly<LiveProviderChain> | undefined;
     let closeRealm: (() => Promise<void>) | undefined;
+    const factory = new IDBFactory();
+    let database: OaathDatabase | undefined;
     try {
       live = await createLiveProviderChain(clock);
       const successA = lower(privateKeyToAccount(generatePrivateKey()).address);
@@ -575,7 +611,13 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
       const revertingTarget = lower(
         required(deploymentReceipt.contractAddress, "reverting target address"),
       );
-      const realm = createRealm({ clock, chain: live.chain, validator: live.validator });
+      database = await openOaathDatabase({ factory });
+      const realm = createRealm({
+        clock,
+        chain: live.chain,
+        validator: live.validator,
+        stores: durableStores(database),
+      });
       closeRealm = async () => realm.oaath.close();
       const connection = await realm.oaath.connect();
       const grant = await connection.requestPermission(
@@ -625,6 +667,23 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
 
       const successHash = required(live.targetHashes[0], "success UserOperation hash");
       const containing = await live.receiptForTarget(0);
+      const successOperation = required(
+        await grant.getOperation({ chain: CHAIN_ID, id: successHash }),
+        "success operation",
+      );
+      expect(await successOperation.execution()).toEqual({
+        id: successHash,
+        chainId: CHAIN_ID,
+        sender: account,
+        calls: [
+          { target: successA, value: "1", data: CALL_SELECTOR },
+          { target: successB, value: "2", data: CALL_SELECTOR },
+        ],
+        transactionHash: containing.transactionHash,
+        blockNumber: BigInt(containing.blockNumber).toString(10),
+        blockHash: containing.blockHash,
+        outcome: "success",
+      });
       const eventIndices = containing.logs.flatMap((log, index) =>
         log.address === KERNEL_V4_ENTRY_POINT_V07 && log.topics[0] === USER_OPERATION_EVENT
           ? [index]
@@ -687,6 +746,20 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
         status: 500,
         receipts: [{ status: "0x1" }],
       });
+      const revertedOperation = required(
+        await grant.getOperation({
+          chain: CHAIN_ID,
+          id: required(live.targetHashes[1], "reverted operation ID"),
+        }),
+        "reverted operation",
+      );
+      expect(await revertedOperation.execution()).toMatchObject({
+        outcome: "reverted",
+        calls: [
+          { target: rollbackTarget, value: "1", data: CALL_SELECTOR },
+          { target: revertingTarget, value: "0", data: CALL_SELECTOR },
+        ],
+      });
       expect(await live.harness.client.getBalance({ address: rollbackTarget })).toBe(
         beforeRollback,
       );
@@ -717,15 +790,43 @@ function publicLog(log: Readonly<OperationObserverLogEvidence>) {
         chain: CHAIN_ID,
         calls: [{ target: successA, value: "1", data: CALL_SELECTOR }],
       });
-      expect((await third.wait()).status).toBe("finalized");
-      expect(third.outcome.outcome).toBe("success");
+      expect(third.outcome.status).toBe("pending");
+      const retained = { chain: third.chainId, id: third.id };
+      await realm.oaath.close();
+      await database.close();
+      database = await openOaathDatabase({ factory });
+      // The operation is still unresolved in durable state when all client,
+      // Grant, runner, and Operation handles are discarded and recreated.
+      const restoredRealm = createRealm({
+        clock,
+        chain: live.chain,
+        validator: live.validator,
+        stores: durableStores(database),
+        relay: realm.relay,
+      });
+      closeRealm = async () => restoredRealm.oaath.close();
+      const restoredConnection = await restoredRealm.oaath.connect();
+      const restoredGrant = required(await restoredConnection.resume(), "restored grant");
+      const restoredOperation = required(
+        await restoredGrant.getOperation(retained),
+        "restored operation",
+      );
+      expect(await restoredOperation.execution()).toMatchObject({
+        id: retained.id,
+        chainId: CHAIN_ID,
+        sender: account,
+        outcome: "success",
+        calls: [{ target: successA, value: "1", data: CALL_SELECTOR }],
+      });
+      expect(restoredOperation.outcome.status).toBe("finalized");
       expect(await live.harness.client.getBalance({ address: successA })).toBe(2n);
       expect(live.opened()).toBe(3);
       expect(live.submitted()).toBe(3);
 
-      await connection.close();
+      await restoredConnection.close();
     } finally {
       await closeRealm?.().catch(() => undefined);
+      await database?.close();
       live?.stop();
     }
   }, 90_000);

@@ -459,6 +459,34 @@ describe("exact UserOperation receipt evidence", () => {
 });
 
 describe("operation handle receipt binding", () => {
+  it("never projects execution from a dropped operation or its replacement", async () => {
+    let reads = 0;
+    const handle = operationHandle(droppedOperation(), async () => {
+      reads += 1;
+      return null;
+    });
+    await expect(handle.execution()).rejects.toMatchObject({
+      code: "oaath_client_observation_unavailable",
+    });
+    expect(reads).toBe(0);
+  });
+
+  it("maps invalid transaction calldata to a structured observation error", async () => {
+    const logs = [beforeExecution(0), log(1), userOperationEvent(2)];
+    const handle = operationHandle(finalizedOperation(), async (request) => {
+      if (request.type === "user_operation_receipt") return operationReceipt();
+      if (request.type === "transaction_receipt") return transactionReceipt(logs);
+      return { input: "private provider diagnostic" };
+    });
+    await expect(handle.execution()).rejects.toMatchObject({
+      code: "oaath_client_observation_unavailable",
+      source: "execution_invalid",
+      message: "execution evidence does not match this operation",
+    });
+    await handle.close();
+    await expect(handle.execution()).rejects.toMatchObject({ code: "oaath_client_closed" });
+  });
+
   it("never follows a finalized replacement lane", async () => {
     const operation = droppedOperation();
     if (operation.state !== "dropped") throw new Error("expected a dropped operation");
