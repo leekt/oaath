@@ -18,8 +18,8 @@ import {
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   KERNEL_V4_EXECUTE_SELECTOR,
-  type KernelV4Deployment,
 } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import { captureKeyProfile, denseInput, exactInput, inputInvalid } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedSigner } from "../modules.js";
 import { compileCapturedKernelPermissionPolicy } from "../permission/compile.js";
@@ -87,7 +87,7 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
     authority: "session" as const,
     key,
     policy,
-    resolveAuthorityModule: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveAuthorityModule: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return signer;
     },
@@ -100,11 +100,11 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
     // and the signer slice, which Kernel requires last, carries the key signature.
     encodeSignature: (signature: `0x${string}`) =>
       encodeKernelV4PermissionSignature([...policy.packages.map(() => "0x" as const), signature]),
-    resolveValidation: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidation: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze({ kind: "permission" as const, permissionId });
     },
-    resolvePackages: (deployment: Readonly<KernelV4Deployment>) => {
+    resolvePackages: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       return Object.freeze([
         ...policy.packages.map((entry) =>

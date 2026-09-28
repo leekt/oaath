@@ -17,9 +17,16 @@ import type {
   KernelV4ValidityTimeRange,
 } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
+import type { KernelDeployment } from "./deployment/profile.js";
+import type {
+  KernelV33AccountDescriptor,
+  KernelV33Deployment,
+  KernelV33Reads,
+} from "./deployment/v33.js";
 
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
+  | "kernel_runtime_read_unavailable"
   | "kernel_runtime_validator_unavailable"
   | "kernel_runtime_signer_unavailable"
   | "kernel_runtime_policy_unavailable"
@@ -71,7 +78,7 @@ export interface KeyProfile {
    * Resolves the validator module for this key on one deployment. Fails closed
    * with kernel_runtime_validator_unavailable when no reviewed module is bound.
    */
-  readonly resolveValidator: (deployment: Readonly<KernelV4Deployment>) => `0x${string}`;
+  readonly resolveValidator: (deployment: Readonly<KernelDeployment>) => `0x${string}`;
   /**
    * Caller-bound ERC-7579 permission signer module (moduleType 6) for a
    * consumer-authored kind, or null for a reviewed kind, whose signer module is
@@ -167,7 +174,7 @@ export interface OperatorProfile {
    * authority, a permission signer module for a session. Fails closed when no
    * reviewed module is pinned for this key kind.
    */
-  readonly resolveAuthorityModule: (deployment: Readonly<KernelV4Deployment>) => `0x${string}`;
+  readonly resolveAuthorityModule: (deployment: Readonly<KernelDeployment>) => `0x${string}`;
   /**
    * Wraps one normalized key signature in this authority's Kernel signature
    * envelope: identity for root, the permission signature envelope for a
@@ -176,11 +183,11 @@ export interface OperatorProfile {
   readonly encodeSignature: (signature: `0x${string}`) => `0x${string}`;
   /** Kernel validation binding used for nonce keys and validation type. */
   readonly resolveValidation: (
-    deployment: Readonly<KernelV4Deployment>,
+    deployment: Readonly<KernelDeployment>,
   ) => Readonly<KernelV4Validation>;
   /** ERC-7579 packages this authority requires on the action chain. */
   readonly resolvePackages: (
-    deployment: Readonly<KernelV4Deployment>,
+    deployment: Readonly<KernelDeployment>,
   ) => readonly Readonly<KernelV4Install>[];
 }
 
@@ -260,4 +267,27 @@ export interface KernelRuntime {
     prepared: unknown,
     signature: unknown,
   ) => Promise<`0x${string}`>;
+}
+
+/** Existing ECDSA-root Kernel 0.3.3 accounts require no initializer or factory index. */
+export interface CreateKernelV33RuntimeInput {
+  readonly deployment: Readonly<KernelV33Deployment>;
+  readonly operator: Readonly<OperatorProfile>;
+  readonly reads: KernelV33Reads;
+}
+export interface KernelV33RuntimeBindAccountInput {
+  readonly address: `0x${string}`;
+}
+export interface KernelV33RuntimePrepareInput
+  extends Omit<KernelRuntimePrepareInput, "account" | "validityTimeRange" | "mode"> {
+  readonly account: Readonly<KernelV33AccountDescriptor>;
+  readonly mode?: "standard";
+}
+export interface KernelV33Runtime
+  extends Omit<KernelRuntime, "deployment" | "bindAccount" | "prepareOperation"> {
+  readonly deployment: Readonly<KernelV33Deployment>;
+  readonly bindAccount: (
+    input: KernelV33RuntimeBindAccountInput,
+  ) => Promise<Readonly<KernelV33AccountDescriptor>>;
+  readonly prepareOperation: (input: KernelV33RuntimePrepareInput) => PreparedUserOperation;
 }

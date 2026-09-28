@@ -17,6 +17,19 @@ export type {
 } from "./kernel/capabilities.js";
 export { diagnoseKernelCapability } from "./kernel/capabilities.js";
 export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
+export type { KernelDeployment } from "./kernel/deployment/profile.js";
+export type {
+  BindKernelAccountInput,
+  KernelV33AccountDescriptor,
+  KernelV33Deployment,
+  KernelV33ReadRequest,
+  KernelV33Reads,
+} from "./kernel/deployment/v33.js";
+export {
+  bindKernelAccount,
+  createKernelV33Reads,
+  kernelV33Deployment,
+} from "./kernel/deployment/v33.js";
 export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,
@@ -75,6 +88,7 @@ export {
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
+  CreateKernelV33RuntimeInput,
   KernelBuiltInKeyKind,
   KernelCallPolicyPermission,
   KernelCallPolicyProfile,
@@ -89,6 +103,9 @@ export type {
   KernelRuntimeErrorCode,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
+  KernelV33Runtime,
+  KernelV33RuntimeBindAccountInput,
+  KernelV33RuntimePrepareInput,
   KeyProfile,
   OperatorProfile,
 } from "./kernel/types.js";

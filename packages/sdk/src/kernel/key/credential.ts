@@ -18,7 +18,7 @@ import type {
   OwnerCredentialProfile,
 } from "@oaath/protocol";
 import { encodeAbiParameters } from "viem";
-import type { KernelV4Deployment } from "../../kernel-v4.js";
+import type { KernelDeployment } from "../deployment/profile.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";
 import type { KeyProfile } from "../types.js";
@@ -94,7 +94,7 @@ export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
   return Object.freeze({
     kind: credential.kind,
     publicMaterial: publicMaterial(credential),
-    resolveValidator: (deployment: Readonly<KernelV4Deployment>) => {
+    resolveValidator: (deployment: Readonly<KernelDeployment>) => {
       exactKernelDeployment(deployment);
       if (validator !== null) return validator;
       if (credential.kind === "ecdsa")
