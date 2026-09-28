@@ -33,9 +33,8 @@ struct WalletOnboardingView: View {
         }
         .animation(.easeOut(duration: 0.2), value: step)
         // A scanned or opened pairing link means the owner is ready to pair.
-        .onChange(of: model.pairingCodeText) { code in
-            if !code.isEmpty, model.ownerKey != nil, !model.storedPairingBlocked { step = 1 }
-        }
+        .onAppear { preparePairingStep() }
+        .onChange(of: model.pairingCodeText) { _ in preparePairingStep() }
     }
 
     // MARK: Step 1 of 2 — the key
@@ -128,10 +127,13 @@ struct WalletOnboardingView: View {
 
     // MARK: Step 2 of 2 — pair
 
-    private var canPair: Bool {
-        model.ownerKey != nil
-            && !model.baseURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !model.pairingCodeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private func preparePairingStep() {
+        if let link = parsePairingLink(model.pairingCodeText) {
+            model.apply(link: link)
+        }
+        if !model.pairingCodeText.isEmpty, model.ownerKey != nil, !model.storedPairingBlocked {
+            step = 1
+        }
     }
 
     private var pairStep: some View {
@@ -186,7 +188,7 @@ struct WalletOnboardingView: View {
                 } else {
                     WalletPrimaryButton(
                         title: model.pairingInFlight ? "Pairing…" : "Pair this phone",
-                        enabled: canPair,
+                        enabled: model.canPair,
                         busy: model.pairingInFlight
                     ) {
                         Task { await model.pair() }
@@ -208,6 +210,9 @@ struct WalletOnboardingView: View {
                 field(
                     "Pairing code", placeholder: "Code or oaath-demo:// link",
                     text: $model.pairingCodeText)
+                Text("Paste the full pairing link to fill both fields, or enter the relay URL and code separately.")
+                    .font(WalletTheme.speech(.footnote))
+                    .foregroundStyle(WalletTheme.muted)
             }
         }
     }

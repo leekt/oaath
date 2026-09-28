@@ -56,6 +56,15 @@ public final class DemoModel: ObservableObject {
     /// request sets it; it never decides anything.
     @Published public var reviewPresented = false
 
+    /// Form readiness only. A full link already carries the relay; preparing
+    /// these candidates never spends its code or starts a pairing request.
+    var canPair: Bool {
+        guard ownerKey != nil, !paired, !storedPairingBlocked, !pairingInFlight else { return false }
+        if parsePairingLink(pairingCodeText) != nil { return true }
+        return (try? DemoRelayEndpoint(baseURLText: baseURLText)) != nil
+            && PairingCode(pairingCodeText) != nil
+    }
+
     /// Set only through the exact APNs-token boundary; until then a random
     /// valid placeholder keeps pairing usable (pushes to it go nowhere —
     /// manual operation-id entry still works).
