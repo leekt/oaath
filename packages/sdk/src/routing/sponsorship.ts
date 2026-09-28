@@ -6,6 +6,11 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
+import {
+  captureKernelGasPolicy,
+  enableVerificationFloorForNonce,
+  type KernelGasPolicy,
+} from "../kernel/gas-policy.js";
 import type { KernelRuntimePrepareInput } from "../kernel/types.js";
 import type { KernelV4UserOperationGas } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
@@ -16,11 +21,14 @@ const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
 export interface OaathKernelSponsorshipRuntime {
+  readonly gasPolicy?: Readonly<KernelGasPolicy>;
   readonly dummySignature: `0x${string}`;
   readonly prepareOperation: (input: KernelRuntimePrepareInput) => PreparedUserOperation;
 }
 
 export interface OaathKernelSponsorshipRequest {
+  /** Captured runtime floor, applied by the adapter before final paymaster authorization. */
+  readonly verificationGasFloor?: string;
   readonly prepared: Readonly<PreparedUserOperation>;
   readonly simulationSignature: `0x${string}`;
 }
@@ -158,15 +166,20 @@ export async function prepareSponsoredKernelOperation(
     return routingFail("routing_sponsorship_invalid", "simulation signature is invalid");
 
   const prepared = runtime.prepareOperation(operation);
+  const verificationGasFloor = enableVerificationFloorForNonce(
+    prepared.userOperation.nonce,
+    captureKernelGasPolicy(prepared.chainId, runtime.gasPolicy),
+  ).toString(10);
   const result = captureResult(
     await Reflect.apply(sponsor, undefined, [
       Object.freeze({
         prepared,
         simulationSignature,
+        verificationGasFloor,
       }),
     ]),
   );
-  return runtime.prepareOperation({
+  const final = runtime.prepareOperation({
     kind: operation.kind,
     grantId: operation.grantId,
     account: operation.account,
@@ -180,4 +193,8 @@ export async function prepareSponsoredKernelOperation(
       : { validityTimeRange: operation.validityTimeRange }),
     paymaster: result.paymaster,
   });
+  if (final.userOperation.verificationGasLimit !== result.gas.verificationGasLimit) {
+    return invalidEvidence("Sponsorship verification gas is below the configured floor");
+  }
+  return final;
 }

@@ -23,6 +23,7 @@ import type {
   KernelV33Deployment,
   KernelV33Reads,
 } from "./deployment/v33.js";
+import type { KernelGasPolicy } from "./gas-policy.js";
 
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
@@ -230,12 +231,14 @@ export interface KernelRuntimePrepareInput {
 }
 
 export interface CreateKernelRuntimeInput {
+  readonly gas?: Readonly<KernelGasPolicy>;
   readonly deployment: Readonly<KernelV4Deployment>;
   readonly operator: Readonly<OperatorProfile>;
   readonly reads: KernelV4AccountReadCapability;
 }
 
 export interface KernelRuntime {
+  readonly gasPolicy: Readonly<KernelGasPolicy>;
   readonly deployment: Readonly<KernelV4Deployment>;
   readonly authority: KernelOperatorAuthority;
   readonly keyKind: KernelKeyKind;
@@ -271,6 +274,7 @@ export interface KernelRuntime {
 
 /** Existing ECDSA-root Kernel 0.3.3 accounts require no initializer or factory index. */
 export interface CreateKernelV33RuntimeInput {
+  readonly gas?: Readonly<KernelGasPolicy>;
   readonly deployment: Readonly<KernelV33Deployment>;
   readonly operator: Readonly<OperatorProfile>;
   readonly reads: KernelV33Reads;

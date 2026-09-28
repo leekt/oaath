@@ -5,7 +5,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { CaptureContext } from "@oaath/protocol";
+import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
 import {
   bindKernelV4Account,
   encodeKernelV4NonceKey,
@@ -25,6 +25,11 @@ import {
   type KernelV33Reads,
 } from "./deployment/v33.js";
 import { prepareKernelV33OwnerOperation } from "./deployment/v33-operation.js";
+import {
+  applyKernelGasPolicy,
+  captureKernelGasPolicy,
+  enableVerificationFloorForNonce,
+} from "./gas-policy.js";
 import {
   captureKeyProfile,
   exactInput,
@@ -134,8 +139,15 @@ export function createKernelRuntime(
   value: unknown,
 ): Readonly<KernelRuntime> | Readonly<KernelV33Runtime> {
   const context: CaptureContext = new WeakSet();
-  const record = exactInput(value, ["deployment", "operator", "reads"], "Kernel runtime", context);
+  const captured = captureRecord(value, "Kernel runtime", context, inputInvalid);
+  const record = exactCapturedRecord(
+    captured,
+    ["deployment", "operator", "reads", ...(Object.hasOwn(captured, "gas") ? ["gas"] : [])],
+    "Kernel runtime",
+    inputInvalid,
+  );
   const deployment = exactKernelDeployment(record.deployment);
+  const gasPolicy = captureKernelGasPolicy(deployment.chainId, record.gas);
   const operator = captureOperator(record.operator, context);
   const isV33 = deployment.kernelVersion === "0.3.3";
   if (isV33 && (operator.authority !== "owner" || operator.key.kind !== "ecdsa")) {
@@ -312,18 +324,19 @@ export function createKernelRuntime(
     }
     // prepareKernelV4UserOperation owns exact capture of the account descriptor,
     // calls, gas, and nonce; this axis only binds the authority's validation.
+    const mode = runtimeMode(input.mode);
     return prepareKernelV4UserOperation({
       kind: input.kind,
       grantId: input.grantId,
       account: account as KernelV4AccountDescriptor,
       nonce: {
-        mode: runtimeMode(input.mode),
+        mode,
         validation,
         nonceKey: input.nonceKey,
         sequence: input.sequence,
       },
       calls: input.calls,
-      gas: input.gas,
+      gas: applyKernelGasPolicy(input.gas, mode, gasPolicy),
       ...(requestsValidityRange
         ? { validityTimeRange: (input as KernelRuntimePrepareInput).validityTimeRange }
         : {}),
@@ -370,6 +383,15 @@ export function createKernelRuntime(
     // operation carrying any of Kernel's four unreachable modes is refused here
     // rather than signed.
     const nonce = BigInt(operation.userOperation.nonce);
+    if (
+      BigInt(operation.userOperation.verificationGasLimit) <
+      enableVerificationFloorForNonce(operation.userOperation.nonce, gasPolicy)
+    ) {
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Prepared enable operation is below the configured verification gas floor",
+      );
+    }
     const namespace = ((nonce >> 64n) & 0xffffn).toString(10);
     const key = (nonce >> 64n).toString(10);
     if (
@@ -417,6 +439,7 @@ export function createKernelRuntime(
 
   return Object.freeze({
     deployment,
+    gasPolicy,
     authority: operator.authority,
     keyKind: operator.key.kind,
     authorityModule,

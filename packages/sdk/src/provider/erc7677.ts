@@ -12,6 +12,7 @@ import {
   type CaptureContext,
   captureDenseArray,
   captureRecord,
+  exactCapturedRecord,
   OAATH_ISSUER_VERSION,
   parseIssuerIdentity,
 } from "@oaath/protocol";
@@ -516,12 +517,25 @@ export function createErc7677SponsorshipCapability(
       if (state.started) return invalidEvidence("ERC-7677 sponsorship capability was already used");
       state.started = true;
       state.resultCapabilities = undefined;
-      const sponsorInput = exactRoutingRecord(
+      const captured = captureRecord(
         value,
-        ["prepared", "simulationSignature"],
         "ERC-7677 sponsorship request",
         new WeakSet(),
         invalidEvidence,
+      );
+      const sponsorInput = exactCapturedRecord(
+        captured,
+        [
+          "prepared",
+          "simulationSignature",
+          ...(Object.hasOwn(captured, "verificationGasFloor") ? ["verificationGasFloor"] : []),
+        ],
+        "ERC-7677 sponsorship request",
+        invalidEvidence,
+      );
+      const floor = decimal(
+        sponsorInput.verificationGasFloor ?? "0",
+        "ERC-7677 verification gas floor",
       );
       let prepared: Readonly<PreparedUserOperation>;
       try {
@@ -543,7 +557,7 @@ export function createErc7677SponsorshipCapability(
           paymasterRequest("pm_getPaymasterStubData", initialWire, prepared, paymasterContext),
         ),
       );
-      const estimate = captureEstimate(
+      const estimated = captureEstimate(
         await invokeEstimator(
           estimateGas,
           Object.freeze({
@@ -555,6 +569,13 @@ export function createErc7677SponsorshipCapability(
           }),
         ),
       );
+      const estimate = Object.freeze({
+        ...estimated,
+        verificationGasLimit:
+          BigInt(estimated.verificationGasLimit) < BigInt(floor)
+            ? floor
+            : estimated.verificationGasLimit,
+      });
       const paymasterVerificationGasLimit =
         stub.verificationGasLimit ?? estimate.paymasterVerificationGasLimit;
       if (paymasterVerificationGasLimit === null) {

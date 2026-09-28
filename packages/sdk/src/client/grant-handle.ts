@@ -55,6 +55,7 @@ import {
   kernelKeyCapability,
 } from "../kernel/capabilities.js";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
+import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import {
@@ -333,6 +334,7 @@ export interface OaathRegisteredPaymasterService {
 }
 
 export interface OaathChainCapability {
+  readonly gas?: Readonly<KernelGasPolicy>;
   readonly chainId: number;
   readonly reads: KernelV4AccountReadCapability;
   readonly observation: OperationObserverCapabilities;
@@ -394,6 +396,8 @@ export interface OaathGrantHandle {
 
 /** Current execution facts for exact calls, not a durable authorization or reservation. */
 export interface OaathCallsReview {
+  /** Applicable first-operation floor; null once installed or when no floor is configured. */
+  readonly enableVerificationGasFloor: string | null;
   readonly grantId: string;
   readonly chainId: number;
   readonly accountId: string;
@@ -565,16 +569,24 @@ function capabilityObject<Capability>(
 /** Captures one chain capability set exactly; sub-capabilities keep their owners. */
 export function captureChainCapability(value: unknown): Readonly<OaathChainCapability> {
   const context: CaptureContext = new WeakSet();
-  const record = exactClientRecord(
-    value,
-    CHAIN_KEYS,
+  const captured = captureRecord(value, "OAAth chain capability", context, (message) =>
+    clientFail("oaath_client_capability_invalid", message),
+  );
+  const record = exactCapturedRecord(
+    captured,
+    [...CHAIN_KEYS, ...(Object.hasOwn(captured, "gas") ? ["gas"] : [])],
     "OAAth chain capability",
-    context,
-    "oaath_client_capability_invalid",
+    (message) => clientFail("oaath_client_capability_invalid", message),
   );
   const chainId = record.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return clientFail("oaath_client_capability_invalid", "chain capability chainId is invalid");
+  }
+  let gas: Readonly<KernelGasPolicy>;
+  try {
+    gas = captureKernelGasPolicy(chainId, record.gas);
+  } catch (error) {
+    return mapClientFailure(error, "chain gas policy is invalid");
   }
   let paymasterService: Readonly<OaathRegisteredPaymasterService> | null = null;
   if (record.paymasterService !== null) {
@@ -619,6 +631,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
   }
   return Object.freeze({
     chainId,
+    gas,
     reads: capabilityObject<KernelV4AccountReadCapability>(
       record.reads,
       ["read"],
@@ -1055,6 +1068,7 @@ export function createGrantHandle(
         deployment: kernelV4Deployment(chainId),
         operator: ownerOperator({ key: input.ownerKey }),
         reads: chain.reads,
+        ...(chain.gas === undefined ? {} : { gas: chain.gas }),
       });
     } catch (error) {
       return mapClientFailure(error, "owner runtime could not be composed");
@@ -1074,6 +1088,7 @@ export function createGrantHandle(
           policies: deriveSessionPolicyProfiles(input.approvedPolicy),
         }),
         reads: chain.reads,
+        ...(chain.gas === undefined ? {} : { gas: chain.gas }),
       });
     } catch (error) {
       return mapClientFailure(error, "session runtime could not be composed");
@@ -2805,6 +2820,11 @@ export function createGrantHandle(
         signer,
         route,
         reasons: resolved.decision.reasons,
+        enableVerificationGasFloor:
+          materialization?.state !== "installed" &&
+          resolved.runtime.gasPolicy.enableVerificationGasFloor > 0n
+            ? resolved.runtime.gasPolicy.enableVerificationGasFloor.toString(10)
+            : null,
         enforcement: Object.freeze({
           calls: "onchain" as const,
           expiry: "onchain" as const,

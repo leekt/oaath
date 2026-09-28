@@ -1163,6 +1163,11 @@ export function encodeKernelV4NonceKey(value: KernelV4NonceKeyInput): string {
   return captureNonceKey(record, context).value;
 }
 
+/** Internal: checks the mode of an already validated prepared-operation nonce. */
+export function isKernelV4EnableNonce(nonce: string): boolean {
+  return BigInt(nonce) >> 248n === BigInt(VALIDATION_MODES["enable-replayable"]);
+}
+
 /** Encodes EntryPoint 0.7 getNonce(sender, key) calldata for the canonical nonce key. */
 export function encodeKernelV4NonceRead(value: KernelV4NonceReadInput): Hex {
   const context: CaptureContext = new WeakSet();
