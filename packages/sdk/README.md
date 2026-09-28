@@ -3,11 +3,38 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
-Existing Kernel `0.3.3` accounts support ECDSA owner operations through the
-lower-level runtime. The account stays at its current address; its implementation,
-EntryPoint, root validator and current ECDSA owner are checked before binding.
-This path does not install permissions or change ownership. Kernel 3.3 Grant
-permissions and high-level owner `sendCalls` are still pending.
+For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
+connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
+
+```ts
+import { createOAAth } from "@oaath/sdk";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const oaath = createOAAth({ mode: "owner", chains: createViemChainPorts({
+  143: { publicRpcUrls: [publicRpcUrl], bundlerUrl },
+}) });
+const account = oaath.account(existingKernelAddress);
+const owner = account.owner(walletClient);
+const calls = { chain: 143, calls: [{ target, value: "0", data }] };
+const review = await owner.reviewCalls(calls); // owner signer and route; no prompt or quote
+const operation = await owner.sendCalls(calls); // one personal_sign prompt, one UserOperation
+await operation.wait();
+// Retain operation.id; after recreating the client, recovery requires no wallet:
+const saved = await account.getOperation({ chain: 143, id: operation.id });
+await oaath.close();
+```
+
+The default operation journal uses IndexedDB. Custom deployments may inject an
+`operations` adapter; the client owns its close. An unresolved operation occupies
+one account/chain slot. Concurrent sends and sends after reload fail with a state
+conflict until observation resolves it; `getOperation` only observes the exact
+saved identity. Closing releases resources and does not revoke account authority.
+The account stays at its existing address. Each send checks its implementation,
+EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
+bundler route without sponsorship. Grant `signer: "auto"`, v3.3 session permissions,
+and the local permission issuer are still pending.
+
+The same owner operation is available through the lower-level runtime:
 
 ```ts
 import {

@@ -76,6 +76,7 @@ export type OaathExecutionSignerDecision = OaathExecutionSigner | "none";
 export type OaathExecutionRoute = "bundler" | "entrypoint-handleops" | "none";
 
 export type OaathExecutionSignerReason =
+  | "owner_explicit"
   | "root_operation_requires_owner"
   | "session_covers_calls"
   | "session_calls_uncovered"

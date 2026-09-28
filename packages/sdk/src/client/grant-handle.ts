@@ -695,7 +695,10 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
   });
 }
 
-function captureCalls(value: unknown, context: CaptureContext): readonly Readonly<KernelV4Call>[] {
+export function captureCalls(
+  value: unknown,
+  context: CaptureContext,
+): readonly Readonly<KernelV4Call>[] {
   const entries = captureDenseArray(value, "calls", context, (message) =>
     clientFail("oaath_client_input_invalid", message),
   );
@@ -838,7 +841,7 @@ function coverageToRouting(result: GrantPolicyCoverageResult): OaathSessionCover
   return result.status === "denied" ? "uncovered" : "unreadable";
 }
 
-function quoteFields(value: unknown): Readonly<{
+export function quoteFields(value: unknown): Readonly<{
   nonceKey: string;
   sequence: string;
   gas: Readonly<KernelV4UserOperationGas>;
@@ -883,7 +886,7 @@ function quoteFields(value: unknown): Readonly<{
   });
 }
 
-function captureSubmissionSession(value: unknown): Readonly<OperationSubmissionSession> {
+export function captureSubmissionSession(value: unknown): Readonly<OperationSubmissionSession> {
   const context: CaptureContext = new WeakSet();
   const record = exactClientRecord(
     value,

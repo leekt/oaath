@@ -33,5 +33,12 @@ export type {
   OaathOperationReceipt,
   OaathOperationStatus,
 } from "./client/operation-handle.js";
+export type {
+  OaathOwnerAccount,
+  OaathOwnerCallsReview,
+  OaathOwnerClient,
+  OaathOwnerConfiguration,
+  OaathOwnerHandle,
+} from "./client/owner-realm.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";

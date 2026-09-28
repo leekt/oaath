@@ -143,6 +143,24 @@ function everyFactCombination() {
 }
 
 describe("routing decision", () => {
+  it("selects root authority only when explicitly requested for execution", () => {
+    const facts = {
+      operationKind: "execution" as const,
+      sessionCoverage: "uncovered" as const,
+      bundler: "available" as const,
+      feePayer: null,
+    };
+    expect(decideExecution(facts).signer).toBe("none");
+    expect(decideExecution({ ...facts, signer: "session" }).signer).toBe("none");
+    expect(decideExecution({ ...facts, signer: "owner" })).toMatchObject({
+      signer: "owner",
+      route: "bundler",
+      reasons: ["owner_explicit", "bundler_available"],
+    });
+    expect(() => decideExecution({ ...facts, signer: "auto" } as never)).toThrowError(
+      expect.objectContaining({ code: "routing_input_invalid" }),
+    );
+  });
   it("selects sponsorship exactly for bundler routes", () => {
     expect(bundlers.map((bundler) => [bundler, supportsBundlerSponsorship(bundler)])).toEqual([
       ["available", true],
