@@ -680,6 +680,17 @@ const jobsGrant = await jobsConnection.requestPermission({
   expiresIn: EXPIRES_IN,
   perChainOperationLimit: 10,
 });
+const beforeReview = { sends: sends.length, quotes, owners: ownerRequests.length };
+const callsReview = await jobsGrant.reviewCalls({
+  chain: CHAIN_ID, calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
+});
+if (callsReview.account !== ACCOUNT || callsReview.accountId !== "account-1" ||
+    callsReview.signer !== "session" || callsReview.route !== "bundler" ||
+    callsReview.calls[0]?.data !== "0xa9059cbb" ||
+    callsReview.enforcement.calls !== "onchain" || callsReview.enforcement.expiry !== "onchain" ||
+    callsReview.enforcement.operationCount !== "onchain" || !Object.isFrozen(callsReview) ||
+    sends.length !== beforeReview.sends || quotes !== beforeReview.quotes ||
+    ownerRequests.length !== beforeReview.owners) fail("public execution review changed authority or lost exact facts");
 const jobOperation = await jobsGrant.sendCalls({
   chain: CHAIN_ID,
   calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
@@ -950,6 +961,8 @@ import {
   type Oaath,
   type OaathGrantHandle,
   type OaathGetOperationInput,
+  type OaathCallsReview,
+  type OaathSendCallsInput,
   type OaathOperationHandle,
   createOAAth,
 } from "@oaath/sdk";
@@ -968,6 +981,10 @@ export function enrollPhone(directory: ServiceDirectory, enrollment: EnrollOwner
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
 
 export const grants: GrantStoreAdapter = createMemoryGrantStoreAdapter();
+
+export function review(grant: OaathGrantHandle, calls: OaathSendCallsInput): Promise<Readonly<OaathCallsReview>> {
+  return grant.reviewCalls(calls);
+}
 
 export async function recover(grant: OaathGrantHandle, previous: OaathOperationHandle): Promise<Readonly<OaathOperationHandle> | null> {
   const reference: OaathGetOperationInput = { chain: previous.chainId, id: previous.id };
@@ -1003,7 +1020,16 @@ export function relay(permissionApprovals: OwnerPhonePermissionApprovals): Relay
 const EXPECTED_SURFACES = {
   oaath: ["binding", "close", "connect", "disconnect"],
   connection: ["binding", "close", "requestPermission", "resume", "signOut"],
-  grant: ["account", "close", "expiresAt", "getOperation", "revoke", "sendCalls", "state"],
+  grant: [
+    "account",
+    "close",
+    "expiresAt",
+    "getOperation",
+    "reviewCalls",
+    "revoke",
+    "sendCalls",
+    "state",
+  ],
 };
 
 const consumer = await createConsumer({

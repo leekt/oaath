@@ -578,6 +578,7 @@ describe("browser golden path", () => {
       "close",
       "expiresAt",
       "getOperation",
+      "reviewCalls",
       "revoke",
       "sendCalls",
       "state",

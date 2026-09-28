@@ -18,6 +18,7 @@ export type { OaathClientErrorCode } from "./client/errors.js";
 export { OaathClientError } from "./client/errors.js";
 export type {
   OaathCallInput,
+  OaathCallsReview,
   OaathGetOperationInput,
   OaathGrantHandle,
   OaathSendCallsInput,
