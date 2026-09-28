@@ -30,6 +30,7 @@ export {
   createKernelV33Reads,
   kernelV33Deployment,
 } from "./kernel/deployment/v33.js";
+export type { KernelGasPolicy } from "./kernel/gas-policy.js";
 export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,

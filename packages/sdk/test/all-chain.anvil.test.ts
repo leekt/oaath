@@ -180,6 +180,51 @@ async function bringUp(
 }
 
 (requireAnvil ? describe : describe.skip)("all-chain materialization local proof", () => {
+  it("applies the Monad enable gas floor before signing an actual first operation", async () => {
+    const target = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const stack = await bringUp(
+      143,
+      countingOwner(),
+      privateKeyToAccount(generatePrivateKey()),
+      target,
+    );
+    const approval = await approveKernelPermissionAllChain({
+      owner: stack.ownerKey,
+      account: stack.account.account,
+      installNonce: "0",
+      packages: stack.sessionRuntime.packages,
+    });
+    const quoted = { ...gas, verificationGasLimit: "200000" };
+    const first = await materializeKernelPermission({
+      approval,
+      runtime: stack.sessionRuntime,
+      grantId: "enable-floor",
+      account: stack.account,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" }],
+      gas: quoted,
+    });
+    expect(first.prepared.userOperation.verificationGasLimit).toBe("2000000");
+    expect(await stack.harness.sendSigned(first.prepared, first.signature)).toBe("success");
+    const account = await stack.sessionRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: stack.ownerRuntime.packages,
+    });
+    const second = stack.sessionRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "installed-no-floor",
+      account,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" }],
+      gas: quoted,
+    });
+    expect(second.userOperation.verificationGasLimit).toBe("200000");
+    expect(await stack.harness.send(stack.sessionRuntime, second)).toBe("success");
+    expect(await stack.harness.client.getBalance({ address: target })).toBe(2n);
+  }, 30_000);
+
   it.each(["invalidate-install", "uninstall-permission"] as const)(
     "accepts the phone's exact P-256 %s operation on Kernel",
     async (effect) => {

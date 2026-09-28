@@ -293,6 +293,7 @@ export function bindKernelPermissionApproval(
 
   return Object.freeze({
     dummySignature: envelope(runtime.dummySignature),
+    gasPolicy: runtime.gasPolicy,
     prepareOperation(input: KernelRuntimePrepareInput): PreparedUserOperation {
       if (
         input.kind !== "execution" ||

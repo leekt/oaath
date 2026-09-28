@@ -83,6 +83,29 @@ and read that key's sequence. The root, enable, and standard permission paths
 have separate nonce domains; the SDK supplies the authority and the deployment
 supplies its current chain sequence and gas.
 
+Configure an enable gas floor on each chain capability when needed:
+
+```ts
+createOAAth({
+  // Other existing client options...
+  chains: [{ ...monadPorts, gas: { enableVerificationGasFloor: 2_000_000n } }],
+});
+```
+
+Monad (143) defaults to `2_000_000n`; other chains default to zero. An explicit
+nonnegative uint120 `bigint` overrides that default. The first session-enable
+operation uses the greater of the quoted verification gas and this floor.
+Owner operations and installed-session operations keep their quoted gas.
+`grant.reviewCalls()` reports `enableVerificationGasFloor` as a decimal string,
+or `null` when no floor applies, without quoting or reserving a nonce.
+The lower-level `createKernelRuntime` accepts the same `gas` option.
+
+ERC-7677 sponsorship applies the floor before requesting final paymaster data.
+Custom sponsorship adapters receive `verificationGasFloor` with their prepared
+candidate and must honor it before authorizing the final gas. A reply below the
+floor is rejected before signing; its authorized fields are never changed after
+the paymaster response. This policy does not retry failed validation or submission.
+
 `@oaath/sdk/kernel` exposes `prepareKernelPhonePermissionApproval` for the
 owner-phone service integration. It binds a canonical permission request's
 account using public credentials and configured reads, derives its policy
