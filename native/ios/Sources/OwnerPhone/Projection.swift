@@ -53,7 +53,6 @@ public struct MatchCode: Equatable, Sendable {
     }
 
     /// Rendered in two groups of four for comparison by eye: `"ABCD EFGH"`.
-    /// The browser shows the same eight characters unspaced.
     public var display: String {
         let middle = value.index(value.startIndex, offsetBy: 4)
         return "\(value[..<middle]) \(value[middle...])"

@@ -12,6 +12,7 @@
 
 import { exactRecord } from "@oaath/protocol";
 import { type RelayClock, relayNow } from "../clock.js";
+import { ownerPhoneDisplayPayload } from "../native/display.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayStore, RelayTransaction } from "../store/interface.js";
@@ -46,6 +47,8 @@ export interface CreateAuthorizationRequestInput {
 }
 
 export interface CreatedAuthorizationRequest {
+  /** Non-secret comparison code shown by the approving phone. */
+  readonly matchCode: string;
   readonly requestId: string;
   readonly expiresAt: number;
 }
@@ -104,13 +107,14 @@ export async function createAuthorizationRequest(
     createdAt,
     expiresAt: createdAt + input.requestTtlMs,
   });
+  const matchCode = await ownerPhoneDisplayPayload(ownerSubject, requestId);
   await withRelayTransaction(input.store, async (transaction) => {
     if (!(await transaction.insertAuthorizationRequest(record))) {
       // 256 bits of CSPRNG output collided, or the store contradicts itself.
       return relayFailure("relay_internal", "authorization request identifier is not unique");
     }
   });
-  return Object.freeze({ requestId: record.requestId, expiresAt: record.expiresAt });
+  return Object.freeze({ requestId: record.requestId, expiresAt: record.expiresAt, matchCode });
 }
 
 /**

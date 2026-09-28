@@ -19,9 +19,9 @@ import { describe, expect, it } from "vitest";
 import { createAuthorizationRequest } from "../src/authorization/request.js";
 import type { RelayClock } from "../src/clock.js";
 import { submitOwnerPhoneDecision } from "../src/native/decision.js";
+import { NATIVE_DISPLAY_PAYLOAD_LENGTH } from "../src/native/display.js";
 import type { OwnerPhonePermissionApprovals } from "../src/native/permission-approval.js";
 import {
-  NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
   projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,

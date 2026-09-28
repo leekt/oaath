@@ -37,6 +37,7 @@ export {
 } from "./native/authentication.js";
 export type { OwnerPhoneDecision, SubmitOwnerPhoneDecisionInput } from "./native/decision.js";
 export { submitOwnerPhoneDecision } from "./native/decision.js";
+export { NATIVE_DISPLAY_PAYLOAD_LENGTH } from "./native/display.js";
 export type { OwnerPhoneInbox } from "./native/inbox.js";
 export { listOwnerPhoneRequests, OAATH_NATIVE_INBOX_VERSION } from "./native/inbox.js";
 export type {
@@ -50,7 +51,6 @@ export type {
   ProjectOwnerPhoneRequestInput,
 } from "./native/projection.js";
 export {
-  NATIVE_DISPLAY_PAYLOAD_LENGTH,
   OAATH_NATIVE_PROJECTION_VERSION,
   projectOwnerPhonePermissionSigning,
   projectOwnerPhoneRequest,
@@ -60,7 +60,6 @@ export type {
   OwnerPhoneRevocationScopeProjection,
 } from "./native/revocation.js";
 export { projectOwnerPhoneRevocation } from "./native/revocation.js";
-
 export type {
   OwnerPhoneRevocationStatus,
   RequestOwnerPhoneRevocationInput,

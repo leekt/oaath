@@ -290,6 +290,7 @@ export async function expectOk<Value>(response: Response, status: number): Promi
 }
 
 export interface CreatedRequest {
+  readonly matchCode: string;
   readonly requestId: string;
   readonly expiresAt: number;
 }
