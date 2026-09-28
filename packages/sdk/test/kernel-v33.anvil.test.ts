@@ -295,6 +295,7 @@ afterAll(() => chain?.stop());
       expect(directSends).toBe(1);
       expect(await harness.client.getBalance({ address: target })).toBe(31n);
       expect((await operation.receipt()).status).toBe("success");
+      expect((await operation.execution()).route).toBe("bundler");
     } finally {
       await client.close();
     }

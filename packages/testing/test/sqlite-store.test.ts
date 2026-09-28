@@ -129,6 +129,7 @@ function finalizedOperation(
   });
   operation = advanceOperation(operation, {
     type: "mark_submitted",
+    submission: null,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: 12,
@@ -305,6 +306,7 @@ describe("test-only durable SQLite stores", () => {
     storeRevision = await commitOperation(store, first, storeRevision);
     first = advanceOperation(first, {
       type: "mark_submitted",
+      submission: null,
       identity,
       returnedUserOperationHash: identity.userOperationHash,
       submittedAt: 12,

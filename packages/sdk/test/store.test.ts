@@ -112,6 +112,7 @@ function finalizedOperation(
   });
   operation = advanceOperation(operation, {
     type: "mark_submitted",
+    submission: null,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: 12,
@@ -929,6 +930,34 @@ describe("aggregate store boundary", () => {
     await expect(
       adapter.getArchived({ key, userOperationHash: current.identity.userOperationHash }),
     ).resolves.toBeUndefined();
+  });
+
+  it("cannot erase or replace an acknowledged submission for the same operation", async () => {
+    const key = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+    const store = new OperationStore(createMemoryOperationStoreAdapter());
+    const submission = {
+      route: "entrypoint-handleops" as const,
+      transactionHash: `0x${"77".repeat(32)}` as const,
+    };
+    const current = { ...finalizedOperation(), submission };
+    await store.compareAndSwap({ key, expectedStoreRevision: null, next: current });
+    for (const replacement of [
+      null,
+      { route: "bundler", transactionHash: null },
+      { ...submission, transactionHash: `0x${"88".repeat(32)}` },
+    ]) {
+      await expectStoreError(
+        () =>
+          store.compareAndSwap({
+            key,
+            expectedStoreRevision: 0,
+            next: { ...current, revision: current.revision + 1, submission: replacement },
+          }),
+        "store_identity_mismatch",
+      );
+    }
+    expect((await store.get(key))?.value.submission).toEqual(submission);
+    await store.close();
   });
 
   it("atomically rejects archived hash reuse in the memory Operation store", async () => {

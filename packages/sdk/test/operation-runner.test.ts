@@ -316,6 +316,79 @@ function expectRunnerError(
 }
 
 describe("OperationRunner", () => {
+  it.each([
+    { route: "bundler", transactionHash: null },
+    { route: "entrypoint-handleops", transactionHash: `0x${"44".repeat(32)}` },
+  ] as const)(
+    "retains $route acknowledgement after full SQLite recreation without sending again",
+    async (submission) => {
+      const directory = await mkdtemp(join(tmpdir(), "oaath-runner-route-"));
+      temporaryDirectories.push(directory);
+      const filePath = join(directory, "store.db");
+      const snapshot = prepared("execution");
+      const firstCount = counters();
+      const first = runner({
+        store: createSqliteOperationStore(filePath),
+        prepared: snapshot,
+        counters: firstCount,
+        async submit() {
+          firstCount.sends += 1;
+          return { userOperationHash: snapshot.userOperationHash, submission };
+        },
+      });
+      const result = await first.runOperation(runInput("execution"));
+      expect(result).toMatchObject({
+        status: "observed",
+        observation: { status: "pending" },
+        record: { value: { state: "submitted", submission } },
+      });
+      await first.close();
+
+      const recreatedCount = counters();
+      const recreated = runner({
+        store: createSqliteOperationStore(filePath),
+        prepared: snapshot,
+        counters: recreatedCount,
+        observer: terminalObserver("finalized"),
+      });
+      const recovered = await recreated.runOperation({ ...runInput("execution"), observedAt: 14 });
+      expect(recovered).toMatchObject({
+        status: "observed",
+        record: { value: { state: "finalized", submission } },
+      });
+      expect(firstCount.sends).toBe(1);
+      expect(recreatedCount).toMatchObject({ prepares: 0, opens: 0, sends: 0 });
+      await recreated.close();
+    },
+  );
+
+  it.each([
+    { route: "entrypoint-handleops", transactionHash: null },
+    { route: "bundler", transactionHash: `0x${"44".repeat(32)}` },
+    { route: "bundler", transactionHash: null, providerMessage: "private" },
+  ])("keeps malformed route acknowledgements uncertain and never resends", async (submission) => {
+    const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
+    const count = counters();
+    const snapshot = prepared("execution");
+    const operationRunner = runner({
+      store: memoryStore(control),
+      prepared: snapshot,
+      counters: count,
+      async submit() {
+        count.sends += 1;
+        return { userOperationHash: snapshot.userOperationHash, submission };
+      },
+    });
+    expect(await operationRunner.runOperation(runInput("execution"))).toMatchObject({
+      status: "submission_uncertain",
+      reason: "result_invalid",
+      record: { value: { state: "submission_attempted", submission: null } },
+    });
+    await operationRunner.runOperation({ ...runInput("execution"), observedAt: 14 });
+    expect(count).toMatchObject({ prepares: 1, opens: 1, sends: 1 });
+    await operationRunner.close();
+  });
+
   it("invokes the bound submit session with exactly zero arguments", async () => {
     const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
     const snapshot = prepared("execution");

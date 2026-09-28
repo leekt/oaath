@@ -9,6 +9,12 @@ requests and decisions, grants, operations, and owner signing. `deriveCodeChalle
 owns PKCE S256 challenge derivation. Authorization request/code storage, decision
 transactions, code consumption, and HTTP responses belong to `@oaath/server`.
 
+`oaath.operation/v3` retains nullable `submission` evidence: a bundler
+acknowledgement or an EntryPoint `handleOps` transaction hash. The closed
+`OperationSubmissionEvidence` type and `parseOperationSubmissionEvidence` own
+that shape. It is transport evidence only; authoritative observation still owns
+inclusion, finality, and lane release. Retired record versions are rejected.
+
 `parseKernelV4RevocationSigningRequest` captures the self-funded Kernel 0.4.0 /
 EntryPoint 0.7 owner-phone revocation profile. Its packed operation must contain
 only the declared install-nonce invalidation or permission-uninstall calls.

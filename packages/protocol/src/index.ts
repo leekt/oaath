@@ -194,6 +194,7 @@ export type {
   OperationInclusion,
   OperationKind,
   OperationOutcome,
+  OperationSubmissionEvidence,
   OperationSupersession,
   OperationTransition,
   OperationWeakObservation,
@@ -212,6 +213,7 @@ export {
   operationOccupiesLane,
   parseOperation,
   parseOperationIdentity,
+  parseOperationSubmissionEvidence,
 } from "./operation.js";
 export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
 export {

@@ -6,7 +6,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v2" as const;
+export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v3" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -111,7 +111,13 @@ export interface OperationAbandonment {
   readonly reason: "submission_not_attempted";
 }
 
+/** Adapter acknowledgement only. Inclusion and finality still require chain evidence. */
+export type OperationSubmissionEvidence =
+  | Readonly<{ route: "bundler"; transactionHash: null }>
+  | Readonly<{ route: "entrypoint-handleops"; transactionHash: `0x${string}` }>;
+
 interface OperationCommon {
+  readonly submission: Readonly<OperationSubmissionEvidence> | null;
   readonly version: typeof OAATH_OPERATION_RECORD_VERSION;
   readonly identity: Readonly<OperationIdentity>;
   readonly revision: number;
@@ -203,6 +209,7 @@ export type OperationTransition =
       identity: OperationIdentity;
       returnedUserOperationHash: string;
       submittedAt: number;
+      readonly submission: Readonly<OperationSubmissionEvidence> | null;
     }>;
 
 export type VerifiedOperationObservationTransition =
@@ -588,6 +595,8 @@ function baseRecord(record: PlainRecord, code: OperationErrorCode, context: Capt
     return invalid(code, "operation record version is unsupported");
   }
   return {
+    submission:
+      record.submission === null ? null : parseSubmission(record.submission, code, context),
     version: OAATH_OPERATION_RECORD_VERSION,
     identity: parseIdentity(record.identity, code, context),
     revision: safeInteger(record.revision, "operation revision", code),
@@ -602,6 +611,7 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
   const captured = captureRecord(value, "operation record", code, context);
   const state = captured.state;
   const commonKeys = [
+    "submission",
     "version",
     "identity",
     "revision",
@@ -610,6 +620,14 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
     "updatedAt",
     "observation",
   ] as const;
+
+  if (
+    (state === "prepared" || state === "abandoned" || state === "submission_attempted") &&
+    captured.submission !== null
+  )
+    return invalid(code, "operation has no submission acknowledgement");
+  if (captured.submittedAt === null && captured.submission !== null)
+    return invalid(code, "operation submission has no acknowledgement time");
 
   if (state === "prepared") {
     const record = exactCapturedRecord(captured, commonKeys, "prepared operation record", code);
@@ -892,6 +910,41 @@ export function parseOperationIdentity(value: unknown): Readonly<OperationIdenti
   }
 }
 
+function parseSubmission(
+  value: unknown,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationSubmissionEvidence> {
+  const record = exactRecord(
+    value,
+    ["route", "transactionHash"],
+    "operation submission evidence",
+    code,
+    context,
+  );
+  if (record.route === "bundler" && record.transactionHash === null)
+    return Object.freeze({ route: "bundler", transactionHash: null });
+  if (record.route === "entrypoint-handleops")
+    return Object.freeze({
+      route: "entrypoint-handleops",
+      transactionHash: hash(record.transactionHash, "submission transaction hash", code),
+    });
+  return invalid(code, "operation submission evidence is invalid");
+}
+
+export function parseOperationSubmissionEvidence(
+  value: unknown,
+): Readonly<OperationSubmissionEvidence> {
+  try {
+    return parseSubmission(value, "operation_record_invalid", new WeakSet());
+  } catch {
+    throw new OaathOperationError(
+      "operation_record_invalid",
+      "operation submission evidence could not be captured safely",
+    );
+  }
+}
+
 export function createOperation(value: unknown): PreparedOperation {
   try {
     const context: CaptureContext = new WeakSet();
@@ -909,6 +962,7 @@ export function createOperation(value: unknown): PreparedOperation {
     );
     return Object.freeze({
       version: OAATH_OPERATION_RECORD_VERSION,
+      submission: null,
       identity: parseIdentity(record.identity, "operation_input_invalid", context),
       revision: 0,
       state: "prepared",
@@ -975,7 +1029,7 @@ function parseTransition(value: unknown): InternalOperationTransition {
   if (type === "mark_submitted") {
     const record = exactCapturedRecord(
       captured,
-      ["type", "identity", "returnedUserOperationHash", "submittedAt"],
+      ["type", "identity", "returnedUserOperationHash", "submittedAt", "submission"],
       "submitted transition",
       code,
     );
@@ -988,6 +1042,8 @@ function parseTransition(value: unknown): InternalOperationTransition {
         code,
       ),
       submittedAt: safeInteger(record.submittedAt, "transition submittedAt", code),
+      submission:
+        record.submission === null ? null : parseSubmission(record.submission, code, context),
     });
   }
 
@@ -1197,6 +1253,7 @@ function advanceParsedOperation(
       ...operation,
       revision: nextRevision(operation),
       state: "submitted",
+      submission: transition.submission,
       submittedAt: transition.submittedAt,
       updatedAt: transition.submittedAt,
       observation: null,
@@ -1309,7 +1366,9 @@ function advanceParsedOperation(
     requireTime(operation, transition.drop.replacement.finality.observedAt);
     const attemptedAt = operation.attemptedAt;
     const submittedAt =
-      operation.state === "submitted" || operation.state === "included"
+      operation.state === "submitted" ||
+      operation.state === "included" ||
+      operation.state === "superseded"
         ? operation.submittedAt
         : null;
     const priorInclusion = operation.state === "included" ? operation.inclusion : null;
@@ -1318,6 +1377,7 @@ function advanceParsedOperation(
       identity: operation.identity,
       revision: nextRevision(operation),
       state: "dropped",
+      submission: operation.submission,
       preparedAt: operation.preparedAt,
       attemptedAt,
       submittedAt,
@@ -1341,6 +1401,7 @@ function advanceParsedOperation(
       identity: operation.identity,
       revision: nextRevision(operation),
       state: "superseded",
+      submission: operation.submission,
       preparedAt: operation.preparedAt,
       attemptedAt: operation.attemptedAt,
       submittedAt: operation.state === "submitted" ? operation.submittedAt : null,
