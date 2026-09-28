@@ -6,19 +6,23 @@
  * selects Kernel's chain-zero UserOperation signing hash. Operation identity
  * and observation still use the actual chain's EntryPoint hash.
  */
-import { concat, encodeAbiParameters, hashTypedData, pad } from "viem";
+import { concat, encodeAbiParameters, hashTypedData, keccak256, pad } from "viem";
 import {
   captureKernelV4Installs,
   encodeKernelV4SignerData,
   KERNEL_V4_EXECUTE_SELECTOR,
   type KernelV4Install,
 } from "../../kernel-v4.js";
+import type { PreparedUserOperation } from "../../prepared-user-operation.js";
 import {
   type KernelV33AccountDescriptor,
   type KernelV33Reads,
   provenKernelV33Account,
 } from "../deployment/v33.js";
-import { KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX } from "../deployment/v33-operation.js";
+import {
+  encodeKernelV33NonceKey,
+  KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX,
+} from "../deployment/v33-operation.js";
 import {
   captureInput,
   captureKeyProfile,
@@ -286,21 +290,13 @@ export async function materializeKernelV33Permission(
     "Kernel v3.3 materialization",
   );
   const input = record as unknown as MaterializeKernelV33PermissionInput;
-  const approval = parseKernelV33PermissionApproval(input.approval);
-  const scope = runtimeScope(input.runtime, input.account, approval.nonce);
-  if (
-    scope.account !== approval.account ||
-    scope.permissionId !== approval.permissionId ||
-    scope.packages.length !== approval.packages.length ||
-    !scope.packages.every((install, index) => sameInstall(install, approval.packages[index]!))
-  )
-    return runtimeFail(
-      "kernel_runtime_binding_mismatch",
-      "Kernel v3.3 approval does not match this session",
-    );
-  const prepared = input.runtime.prepareOperation({
+  const bound = bindKernelV33PermissionApproval({
+    runtime: input.runtime,
+    account: input.account.account,
+    approval: parseKernelV33PermissionApproval(input.approval),
+  });
+  const prepared = bound.prepareOperation({
     kind: "execution",
-    mode: "enable",
     grantId: input.grantId,
     account: input.account,
     nonceKey: input.nonceKey,
@@ -309,10 +305,46 @@ export async function materializeKernelV33Permission(
     gas: input.gas,
     paymaster: input.paymaster ?? null,
   });
-  const message = typedData(scope).message;
-  return Object.freeze({
-    prepared,
-    signature: concat([
+  return Object.freeze({ prepared, signature: await bound.signOperation(prepared) });
+}
+
+/** Decision binding for an exact v3.3 all-chain enable artifact. */
+export function kernelV33CapabilityHash(
+  value: Readonly<KernelV33PermissionApproval>,
+): `0x${string}` {
+  const approval = parseKernelV33PermissionApproval(value);
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "string" }, { type: "bytes32" }, { type: "bytes32" }],
+      [OAATH_KERNEL_V33_APPROVAL_VERSION, approval.digest, keccak256(approval.enableSignature)],
+    ),
+  );
+}
+
+/** Internal enable composition: preparation never invokes either signing key. */
+export function bindKernelV33PermissionApproval(
+  value: Readonly<{
+    runtime: Readonly<KernelV33Runtime>;
+    approval: Readonly<KernelV33PermissionApproval>;
+    account: `0x${string}`;
+  }>,
+) {
+  const { runtime, approval } = value;
+  if (
+    runtime.authority !== "session" ||
+    runtime.validation.kind !== "permission" ||
+    runtime.validation.permissionId !== approval.permissionId ||
+    value.account !== approval.account ||
+    runtime.packages.length !== approval.packages.length ||
+    !runtime.packages.every((install, index) => sameInstall(install, approval.packages[index]!))
+  )
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "Kernel v3.3 approval does not match this session",
+    );
+  const message = typedData(approval).message;
+  function envelope(signature: `0x${string}`): `0x${string}` {
+    return concat([
       KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX,
       NO_HOOK,
       encodeAbiParameters(
@@ -328,9 +360,51 @@ export async function materializeKernelV33Permission(
           message.hookData,
           message.selectorData,
           approval.enableSignature,
-          await input.runtime.signOperation(prepared),
+          signature,
         ],
       ),
-    ]),
+    ]);
+  }
+  function requireMaterialization(prepared: Readonly<PreparedUserOperation>): void {
+    const nonce = BigInt(prepared.userOperation.nonce);
+    if (
+      prepared.kind !== "execution" ||
+      prepared.userOperation.sender !== approval.account ||
+      (nonce >> 64n).toString() !==
+        encodeKernelV33NonceKey({
+          mode: "enable",
+          validation: runtime.validation,
+          nonceKey: ((nonce >> 64n) & 0xffffn).toString(),
+        })
+    )
+      runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Kernel v3.3 approval does not cover this materialization",
+      );
+  }
+  return Object.freeze({
+    gasPolicy: runtime.gasPolicy,
+    dummySignature: envelope(runtime.dummySignature),
+    prepareOperation(input: KernelV33RuntimePrepareInput): PreparedUserOperation {
+      if (input.kind !== "execution" || (input.mode !== undefined && input.mode !== "enable"))
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel v3.3 materialization requires an enable execution",
+        );
+      const prepared = runtime.prepareOperation({ ...input, mode: "enable" });
+      requireMaterialization(prepared);
+      return prepared;
+    },
+    async signOperation(prepared: Readonly<PreparedUserOperation>): Promise<`0x${string}`> {
+      requireMaterialization(prepared);
+      return envelope(await runtime.signOperation(prepared));
+    },
+    async encodeVerifiedSignature(
+      prepared: Readonly<PreparedUserOperation>,
+      signature: `0x${string}`,
+    ): Promise<`0x${string}`> {
+      requireMaterialization(prepared);
+      return envelope(await runtime.encodeVerifiedSignature(prepared, signature));
+    },
   });
 }

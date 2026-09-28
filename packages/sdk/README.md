@@ -31,8 +31,8 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default. Grant `signer: "auto"`, v3.3 Grant integration,
-and the local permission issuer are still pending.
+bundler route by default. Grant `signer: "auto"` and the local permission issuer
+are still pending.
 
 The same owner operation is available through the lower-level runtime:
 
@@ -117,12 +117,24 @@ digest. The stored prepared operation always retains its actual chain and
 EntryPoint hash. Installed sessions and owner operations sign that actual hash.
 The Monad enable gas floor applies before hashing or signing. Missing signer or
 policy deployments prevent binding. These primitives prepare and sign only;
-submission journaling and observation remain the caller's responsibility until
-v3.3 Grant integration lands. A missing receipt never authorizes another send.
+submission journaling and observation remain the caller's responsibility when
+using them directly. A missing receipt never authorizes another send.
 The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
 chain-bound approval records are rejected and must be recreated.
 
-For Kernel v4 Grant execution, build the `chains` property of a custom
+Custom issuer configurations can execute a v3.3 Grant using an account profile
+with version `oaath.kernel-existing-account-profile/v1`, `kernelVersion: "0.3.3"`,
+the existing `address`, EntryPoint version `0.7`, and its current ECDSA
+`ownerCredential`. The issuer supplies a v3.3 approval beside the permission
+decision and binds it with `kernelV33CapabilityHash(approval)`. The permission
+packages must be derived from the exact approved policy and session credential.
+`grant.sendCalls` then enables on first use and uses the installed session on
+later calls, at the same address. It journals before signing; `resume` and
+`getOperation` recover the original operation without resubmission after reload.
+V3.3 Grant revocation, external prepared-call signing, request-time validity
+attenuation, and phone approval are not supported yet.
+
+For Kernel v4 or v3.3 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:
 
 ```ts

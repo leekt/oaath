@@ -41,9 +41,9 @@ import {
 } from "@oaath/protocol";
 import type { Address, Hash } from "viem";
 import {
-  type KernelAllChainApproval,
-  parseKernelAllChainApproval,
-} from "../kernel/permission/materialize.js";
+  type KernelGrantApproval,
+  parseKernelGrantApproval,
+} from "../kernel/permission/approval.js";
 import {
   captureWalletCallResultCapabilities,
   type OaathWalletCallResultCapabilities,
@@ -594,7 +594,7 @@ export interface OaathClientContext {
    * so any supported chain can materialize the permission later. Null only
    * for contexts persisted before an approval carried one.
    */
-  readonly installApproval: Readonly<KernelAllChainApproval> | null;
+  readonly installApproval: Readonly<KernelGrantApproval> | null;
   readonly updatedAt: number;
 }
 
@@ -634,12 +634,14 @@ export function parseClientContext(value: unknown): Readonly<OaathClientContext>
   }
   let request: Readonly<PermissionRequest>;
   let approvedPolicy: Readonly<GrantPolicy>;
-  let installApproval: Readonly<KernelAllChainApproval> | null;
+  let installApproval: Readonly<KernelGrantApproval> | null;
   try {
     request = parsePermissionRequest(record.request);
     approvedPolicy = parseGrantPolicy(record.approvedPolicy);
     installApproval =
-      record.installApproval === null ? null : parseKernelAllChainApproval(record.installApproval);
+      record.installApproval === null
+        ? null
+        : parseKernelGrantApproval(record.installApproval, request.logicalAccount);
   } catch {
     return persistenceFail(code, "client context permission request or policy is invalid");
   }
