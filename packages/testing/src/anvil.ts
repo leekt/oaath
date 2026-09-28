@@ -24,6 +24,7 @@ import { createAnvilChain } from "./anvil-chain.mjs";
 import { captureLocalAnvilRecovery, type LocalAnvilRecovery } from "./anvil-recovery.js";
 import { openLocalClientStores } from "./anvil-stores.js";
 
+export { createLocalOwnerAnvilFixture, type LocalOwnerAnvilFixture } from "./anvil-owner.js";
 export { type LocalAnvilRecovery, openLocalAnvilRecoveryClient } from "./anvil-recovery.js";
 
 export interface LocalAnvilFixture {
