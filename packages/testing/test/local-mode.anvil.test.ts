@@ -39,14 +39,16 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
         expect(fixture.bundlerSubmissionCount).toBe(0);
         if (sessionValidation === "rejected") {
           const owner = client.account(fixture.address).owner(fixture.wallet);
-          expect(await owner.reviewCalls({ chain: fixture.chainId, calls })).toMatchObject({
-            signer: "owner",
-          });
-          const operation = await owner.sendCalls({ chain: fixture.chainId, calls });
-          expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
-          expect(await operation.execution()).toMatchObject({ sender: fixture.address, calls });
-          expect(fixture.signatureCount).toBe(2);
-          expect(fixture.bundlerSubmissionCount).toBe(1);
+          for (let index = 0; index < 2; index++) {
+            expect(await owner.reviewCalls({ chain: fixture.chainId, calls })).toMatchObject({
+              signer: "owner",
+            });
+            const operation = await owner.sendCalls({ chain: fixture.chainId, calls });
+            expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
+            expect(await operation.execution()).toMatchObject({ sender: fixture.address, calls });
+            expect(fixture.signatureCount).toBe(index + 2);
+            expect(fixture.bundlerSubmissionCount).toBe(index + 1);
+          }
         }
       } finally {
         await client.close();

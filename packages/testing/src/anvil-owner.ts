@@ -42,6 +42,8 @@ export interface LocalOwnerAnvilFixture {
   readonly bundlerSubmissionCount: number;
   readonly fallbackSubmissionCount: number;
   readonly sessionEstimationCount: number;
+  /** SDK HTTP requests across all port instances; setup transactions are excluded. */
+  readonly rpcRequestCount: number;
   /** Reopens the SDK and SQLite journal; no prior operation handle survives. */
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
   /** Fresh bounded public SDK ports for testing local client composition. */
@@ -86,6 +88,7 @@ export async function createLocalOwnerAnvilFixture(
       bundlerSends = 0,
       fallbackSends = 0;
     let sessionEstimates = 0;
+    let rpcRequests = 0;
     let rejected: UserOperation<"0.7"> | undefined;
     const localWallet = createWalletClient({
       account: owner,
@@ -167,8 +170,9 @@ export async function createLocalOwnerAnvilFixture(
       createViemChainPorts(
         { [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: "http://owner-bundler.test" } },
         {
-          maxRequests: 500,
+          maxRequests: 1_000,
           fetch: async (request) => {
+            rpcRequests++;
             if (new URL(request.url).origin === chain.url) return fetch(request);
             if (new URL(request.url).hostname !== "owner-bundler.test")
               throw new Error("local_fixture_endpoint_invalid");
@@ -290,6 +294,9 @@ export async function createLocalOwnerAnvilFixture(
       },
       get sessionEstimationCount() {
         return sessionEstimates;
+      },
+      get rpcRequestCount() {
+        return rpcRequests;
       },
       async openClient() {
         if (closed) throw new Error("local_fixture_closed");
