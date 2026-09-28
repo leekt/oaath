@@ -2,9 +2,23 @@
 
 OAAth is OAuth for scoped smart-account authority.
 
-The intended product is a personal or team-operated delegation service: a
-phone owns account approval, and applications execute bounded jobs across
-configured chains. Both modes use the same model:
+Existing ECDSA-root Kernel **0.3.3** accounts keep their current address;
+no v4 migration or ownership transfer is required. Choose the workflow that
+matches the application:
+
+| Workflow | Constructor | Approval |
+| --- | --- | --- |
+| [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ mode: "owner", chains })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
+| [Local browser Grant](packages/sdk/README.md#local-wallet-mode) | `createOAAth({ mode: "local", owner, account, chains })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
+| [Phone service](#service-url-mode) | `createOAAth({ url })` | The service selects the account and chains; its owner phone approves the Grant. |
+
+Owner and local modes currently use existing v3.3 ECDSA accounts. The phone
+service uses Kernel v4 with a P-256 owner. All paths retain exact operation
+identity for observation after reload. Before adopting a chain, check its
+[runtime readiness](#kernel-runtime); the six-chain production v4 rollout is
+still deferred.
+
+The personal or team-operated phone service uses this model:
 
 | Entity | Owns |
 | --- | --- |
@@ -36,9 +50,10 @@ connect application
 → revoke authority
 ```
 
-Kernel/ZeroDev is the opinionated first runtime. OAAth never depends on Moesi,
-and it does not own deployment manifests, drift detection, deployment planning,
-or desired-state convergence.
+Kernel/ZeroDev is the opinionated first runtime. OAAth never depends on Moesi.
+The CLI deploys OAAth's pinned runtime contracts. Application deployment
+manifests, drift detection and desired-state convergence remain the consumer's
+responsibility.
 
 ## Packages
 
@@ -48,8 +63,9 @@ or desired-state convergence.
 | `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
 | `@oaath/server` | Deployable relay and PostgreSQL boundary. |
 | `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
+| `oaath` | Node CLI: runtime readiness, deployment planning and deterministic deployment. |
 
-All four use one fixed `0.x.y` release group. The current source is versioned
+All five use one fixed `0.x.y` release group. The current source is versioned
 `0.2.0`, following the initial `0.1.0` proof of concept; no package becomes
 `1.0.0` during this program. Versioned source does not imply npm publication.
 
@@ -105,10 +121,10 @@ The Draft profiles are not advertised as stable or as generic conformance.
 ERC-7902 `multiDimensionalNonce`, AA gas parameter overrides, and
 `eip7702Auth` are explicitly unsupported and deferred.
 
-## Browser golden path
+## Service URL mode
 
-`createOAAth` is the one supported constructor, and the OAAth service URL is
-the only deployment fact an application supplies. `connect()` bootstraps the
+In service URL mode, the OAAth service URL is the only deployment fact an
+application supplies to `createOAAth`. `connect()` bootstraps the
 authenticated, versioned service context — client identity, selected workspace, the logical
 account and owner credential, and the chains the service executes on — and
 the SDK derives the rest locally: the origin, a registered same-origin
@@ -421,7 +437,7 @@ itself.
 
 ## Release
 
-All four packages are one fixed `0.x.y` group and publish together. Publishing is
+All five packages are one fixed `0.x.y` group and publish together. Publishing is
 a manual, owner-authorized action; no workflow runs it.
 
 ```sh
