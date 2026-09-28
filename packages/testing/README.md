@@ -11,11 +11,23 @@ test storage. The local test owner approves requested grants; this is not a
 production authorization service. `approvalCount` and `submissionCount` support
 zero-resubmission assertions. `rpcUrl(chainId)` exposes ordinary chain reads.
 Always call `close()` in `finally` to release every local process.
+
 `kernelVersion: "0.3.3"` deploys the existing ECDSA-root account before creating
 the SDK client; the default is `"0.4.0"`. The v3.3 path installs the actual scoped
 permission with one all-chain approval, then reuses it silently. Fixed fixture
 gas limits prove execution, not production bundler estimation. Recovery descriptor
 `oaath.local-anvil-recovery/v2` binds the existing address and rejects old versions.
+
+For existing v3.3 owner and local-session flows, use
+`createLocalOwnerAnvilFixture({ chainId, wallet: "browser" })`. Its `wallet`
+implements a local EIP-1193 owner and `rpcFetch(Request)` handles POST requests
+to `rpcUrl` or `http://owner-bundler.test`. A browser harness can forward its
+own loopback HTTP routes to this handler while the browser uses the normal SDK
+transport and native storage. The harness owns exact host/origin checks,
+request budgets and its HTTP server's cleanup. `rpcFetch` rejects unrelated
+origins, non-POST requests and calls after `close()`; it does not start a server.
+Signature, submission and RPC counters cover these calls too. Do not retain
+request payloads, signatures, approval data or browser profiles as evidence.
 
 With `stateDirectory`, the SDK writes its direct Grant, Operation and client
 context to `client.sqlite`. The returned `recovery` descriptor contains only

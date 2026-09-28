@@ -271,6 +271,35 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     }
   }, 60_000);
 
+  it("exposes its fixture RPC bridge and rejects use after close", async () => {
+    const fixture = await createLocalOwnerAnvilFixture({ chainId: 8453 });
+    const request = () =>
+      new Request("http://owner-bundler.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+      });
+    try {
+      expect(await (await fixture.rpcFetch(request())).json()).toEqual({
+        jsonrpc: "2.0",
+        id: 1,
+        result: "0x2105",
+      });
+      expect(fixture.rpcRequestCount).toBe(1);
+      await expect(
+        fixture.rpcFetch(new Request("https://unrelated.example", { method: "POST" })),
+      ).rejects.toThrow("local_fixture_endpoint_invalid");
+      await expect(fixture.rpcFetch(new Request("http://owner-bundler.test"))).rejects.toThrow(
+        "local_fixture_request_invalid",
+      );
+      expect(fixture.signatureCount).toBe(0);
+      expect(fixture.bundlerSubmissionCount).toBe(0);
+    } finally {
+      await fixture.close();
+    }
+    await expect(fixture.rpcFetch(request())).rejects.toThrow("local_fixture_closed");
+  });
+
   it("creates no Grant or operation when the wallet rejects consent", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const fixture = await createLocalOwnerAnvilFixture();

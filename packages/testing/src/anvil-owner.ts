@@ -44,6 +44,8 @@ export interface LocalOwnerAnvilFixture {
   readonly sessionEstimationCount: number;
   /** SDK HTTP requests across all port instances; setup transactions are excluded. */
   readonly rpcRequestCount: number;
+  /** Existing local RPC handler for browser harnesses. The caller owns HTTP hosting and budgets. */
+  readonly rpcFetch: (request: Request) => Promise<Response>;
   /** Reopens the SDK and SQLite journal; no prior operation handle survives. */
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
   /** Fresh bounded public SDK ports for testing local client composition. */
@@ -166,119 +168,117 @@ export async function createLocalOwnerAnvilFixture(
               return fallback(request.data, request.to);
             },
           };
+    const rpcFetch = async (request: Request): Promise<Response> => {
+      if (closed) throw new Error("local_fixture_closed");
+      if (request.method !== "POST") throw new Error("local_fixture_request_invalid");
+      rpcRequests++;
+      if (new URL(request.url).origin === chain.url) return fetch(request);
+      if (new URL(request.url).origin !== "http://owner-bundler.test")
+        throw new Error("local_fixture_endpoint_invalid");
+      const { id, method, params } = await request.json();
+      let result: unknown;
+      if (method === "eth_chainId") result = toHex(chainId);
+      else if (method === "eth_supportedEntryPoints") result = [deployment.entryPoint.address];
+      // Fixed local estimate; real EntryPoint validation and execution prove fit.
+      else if (method === "eth_estimateUserOperationGas") {
+        // Kernel's permission validation type is the byte below the mode byte.
+        if (((BigInt(params[0].nonce) >> 240n) & 0xffn) === 2n) {
+          sessionEstimates++;
+          if (input.sessionValidation === "unavailable") return new Response(null, { status: 503 });
+          if (input.sessionValidation === "rejected")
+            return Response.json({
+              jsonrpc: "2.0",
+              id,
+              error: {
+                code: -32500,
+                message: "fixture account validation rejection",
+                data: encodeErrorResult({
+                  abi: entryPoint07Abi,
+                  errorName: "FailedOpWithRevert",
+                  args: [0n, "AA23 reverted", "0x"],
+                }),
+              },
+            });
+        }
+        result = {
+          callGasLimit: toHex(5_000_000),
+          // Cold installation includes call, time, and operation-limit policies.
+          // The fixture must fit this on ordinary EVM chains, without
+          // relying on a chain-specific gas multiplier.
+          verificationGasLimit: toHex(1_000_000),
+          preVerificationGas: toHex(100_000),
+        };
+      } else if (method === "eth_getUserOperationReceipt") {
+        const receipt = await readLocalOperationReceipt(chain, params[0]);
+        result =
+          receipt === null
+            ? null
+            : {
+                userOpHash: receipt.userOperationHash,
+                entryPoint: receipt.entryPoint,
+                sender: receipt.sender,
+                nonce: receipt.nonce,
+                actualGasCost: receipt.actualGasCost,
+                actualGasUsed: receipt.actualGasUsed,
+                success: receipt.success,
+                receipt: {
+                  transactionHash: receipt.transactionHash,
+                  blockHash: receipt.blockHash,
+                  blockNumber: receipt.blockNumber,
+                },
+              };
+      } else if (method === "eth_sendUserOperation") {
+        bundlerSends++;
+        const wire = params[0];
+        const operation = {
+          ...wire,
+          ...Object.fromEntries(
+            [
+              "nonce",
+              "callGasLimit",
+              "verificationGasLimit",
+              "preVerificationGas",
+              "maxFeePerGas",
+              "maxPriorityFeePerGas",
+            ].map((key) => [key, BigInt(wire[key])]),
+          ),
+        } as UserOperation<"0.7">;
+        if (input.bundler === "uncertain") return new Response(null, { status: 503 });
+        if (input.bundler === "reject") {
+          rejected = operation;
+          return Response.json({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32500, message: "local refusal" },
+          });
+        }
+        const hash = await stack.wallet.sendTransaction({
+          account: stack.submitter,
+          chain: null,
+          to: deployment.entryPoint.address,
+          gas: 8_000_000n,
+          data: encodeFunctionData({
+            abi: entryPoint07Abi,
+            functionName: "handleOps",
+            args: [[toPackedUserOperation(operation)], stack.submitter.address],
+          }),
+        });
+        if ((await chain.client.waitForTransactionReceipt({ hash })).status !== "success")
+          throw new Error("local_fixture_operation_reverted");
+        await mine();
+        result = getUserOperationHash({
+          userOperation: operation,
+          entryPointAddress: deployment.entryPoint.address,
+          entryPointVersion: "0.7",
+          chainId,
+        });
+      } else throw new Error("local_fixture_bundler_method_invalid");
+      return Response.json({ jsonrpc: "2.0", id, result });
+    };
     const ports = () =>
       createViemChainPorts(
         { [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: "http://owner-bundler.test" } },
-        {
-          maxRequests: 1_000,
-          fetch: async (request) => {
-            rpcRequests++;
-            if (new URL(request.url).origin === chain.url) return fetch(request);
-            if (new URL(request.url).hostname !== "owner-bundler.test")
-              throw new Error("local_fixture_endpoint_invalid");
-            const { id, method, params } = await request.json();
-            let result: unknown;
-            if (method === "eth_chainId") result = toHex(chainId);
-            else if (method === "eth_supportedEntryPoints")
-              result = [deployment.entryPoint.address];
-            // Fixed local estimate; real EntryPoint validation and execution prove fit.
-            else if (method === "eth_estimateUserOperationGas") {
-              // Kernel's permission validation type is the byte below the mode byte.
-              if (((BigInt(params[0].nonce) >> 240n) & 0xffn) === 2n) {
-                sessionEstimates++;
-                if (input.sessionValidation === "unavailable")
-                  return new Response(null, { status: 503 });
-                if (input.sessionValidation === "rejected")
-                  return Response.json({
-                    jsonrpc: "2.0",
-                    id,
-                    error: {
-                      code: -32500,
-                      message: "fixture account validation rejection",
-                      data: encodeErrorResult({
-                        abi: entryPoint07Abi,
-                        errorName: "FailedOpWithRevert",
-                        args: [0n, "AA23 reverted", "0x"],
-                      }),
-                    },
-                  });
-              }
-              result = {
-                callGasLimit: toHex(5_000_000),
-                // Cold installation includes call, time, and operation-limit policies.
-                // The fixture must fit this on ordinary EVM chains, without
-                // relying on a chain-specific gas multiplier.
-                verificationGasLimit: toHex(1_000_000),
-                preVerificationGas: toHex(100_000),
-              };
-            } else if (method === "eth_getUserOperationReceipt") {
-              const receipt = await readLocalOperationReceipt(chain, params[0]);
-              result =
-                receipt === null
-                  ? null
-                  : {
-                      userOpHash: receipt.userOperationHash,
-                      entryPoint: receipt.entryPoint,
-                      sender: receipt.sender,
-                      nonce: receipt.nonce,
-                      actualGasCost: receipt.actualGasCost,
-                      actualGasUsed: receipt.actualGasUsed,
-                      success: receipt.success,
-                      receipt: {
-                        transactionHash: receipt.transactionHash,
-                        blockHash: receipt.blockHash,
-                        blockNumber: receipt.blockNumber,
-                      },
-                    };
-            } else if (method === "eth_sendUserOperation") {
-              bundlerSends++;
-              const wire = params[0];
-              const operation = {
-                ...wire,
-                ...Object.fromEntries(
-                  [
-                    "nonce",
-                    "callGasLimit",
-                    "verificationGasLimit",
-                    "preVerificationGas",
-                    "maxFeePerGas",
-                    "maxPriorityFeePerGas",
-                  ].map((key) => [key, BigInt(wire[key])]),
-                ),
-              } as UserOperation<"0.7">;
-              if (input.bundler === "uncertain") return new Response(null, { status: 503 });
-              if (input.bundler === "reject") {
-                rejected = operation;
-                return Response.json({
-                  jsonrpc: "2.0",
-                  id,
-                  error: { code: -32500, message: "local refusal" },
-                });
-              }
-              const hash = await stack.wallet.sendTransaction({
-                account: stack.submitter,
-                chain: null,
-                to: deployment.entryPoint.address,
-                gas: 8_000_000n,
-                data: encodeFunctionData({
-                  abi: entryPoint07Abi,
-                  functionName: "handleOps",
-                  args: [[toPackedUserOperation(operation)], stack.submitter.address],
-                }),
-              });
-              if ((await chain.client.waitForTransactionReceipt({ hash })).status !== "success")
-                throw new Error("local_fixture_operation_reverted");
-              await mine();
-              result = getUserOperationHash({
-                userOperation: operation,
-                entryPointAddress: deployment.entryPoint.address,
-                entryPointVersion: "0.7",
-                chainId,
-              });
-            } else throw new Error("local_fixture_bundler_method_invalid");
-            return Response.json({ jsonrpc: "2.0", id, result });
-          },
-        },
+        { maxRequests: 1_000, fetch: rpcFetch },
       );
     return Object.freeze({
       chainId,
@@ -286,6 +286,7 @@ export async function createLocalOwnerAnvilFixture(
       address,
       wallet,
       createChainPorts: ports,
+      rpcFetch,
       get signatureCount() {
         return signatures;
       },
