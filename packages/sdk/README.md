@@ -40,6 +40,50 @@ operation and submission evidence using its chosen transport. An unavailable
 read returns `kernel_runtime_read_unavailable`; it never creates an account or
 selects a different Kernel version.
 
+For Kernel v4 Grant execution, build the `chains` property of a custom
+`createOAAth` configuration from RPC URLs:
+
+```ts
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const chains = createViemChainPorts({
+  480: {
+    publicRpcUrls: [publicRpcUrl, backupPublicRpcUrl],
+    bundlerUrl,
+    paymasterUrl, // optional registered ERC-7677 service
+  },
+}, {
+  retry: { attempts: 3 },
+  timeoutMs: 10_000,
+  maxRequests: 1_000,
+  maxConcurrency: 4,
+});
+```
+
+Account reads, nonce, fees, finalized usage, and transaction/block evidence use
+the public pool. Each endpoint must report the configured chain. The bundler
+receives only ERC-4337 discovery, estimation, submission, and operation-receipt
+calls; paymaster methods go only to `paymasterUrl`. Usage comes from the pinned
+RateLimitPolicy at an exact finalized canonical block. An unavailable or absent
+policy contract is not zero usage. RPCs must support `finalized` and EIP-1898
+block-hash reads. The default quote uses nonce namespace zero and viem's fee
+estimation. Existing gas-floor configuration can be supplied as `gas` per chain.
+
+Read failures such as HTTP 429/5xx, invalid JSON, and timeouts retry within the
+configured attempt count and fail over across public endpoints. Defaults are
+three attempts, 100 ms between attempts, and a 10-second deadline per request.
+Submissions, estimates, and paymaster stages make one attempt. A send timeout or
+ambiguous response remains uncertain and is never resubmitted. The default
+route uses the bundler, with no EOA fee payer or replacement-transaction indexer.
+
+The shared lifetime budget counts chain checks and retries across all configured
+chains; exhaustion throws `OaathRpcError` with `oaath_rpc_budget_exhausted`.
+Concurrency above the limit fails with `oaath_rpc_concurrency_exceeded` rather
+than queueing. Recreating ports explicitly starts a new budget; recover existing
+operations for observation instead of repeating sends. Errors omit URLs,
+provider prose, and request bodies. An optional `fetch(Request)` can supply an
+application transport or local test fixture. Construction performs no I/O.
+
 `grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
 without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`
 with the application's job. An unresolved operation occupies that grant/chain

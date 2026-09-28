@@ -165,8 +165,12 @@ describe("package boundary", () => {
     ]);
   });
 
-  it("exposes only the EIP-1193 adapter on /viem", () => {
-    expect(Object.keys(viem).sort()).toEqual(["oaathProvider"]);
+  it("exposes the provider and default chain ports on /viem", () => {
+    expect(Object.keys(viem).sort()).toEqual([
+      "OaathRpcError",
+      "createViemChainPorts",
+      "oaathProvider",
+    ]);
   });
 
   it("keeps every surface disjoint", () => {
