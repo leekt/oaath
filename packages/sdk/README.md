@@ -102,17 +102,25 @@ const { prepared, signature } = await materializeKernelV33Permission({
 });
 ```
 
-This approval binds one chain, account, effective validation nonce and exact
-permission. Store it using its versioned representation and restore with
-`parseKernelV33PermissionApproval`. It is not a v4 all-chain approval. The first
-operation enables and executes together; after confirmed installation, use the
+This approval binds the account, effective validation nonce and exact permission
+on every chain. Store it using its versioned representation and restore with
+`parseKernelV33PermissionApproval`. Each destination must have the same effective
+validation nonce; stale or mismatched state rejects rather than requesting another
+signature silently. The first operation enables and executes together; after confirmed installation, use the
 same runtime's `prepareOperation` and `signOperation` in `standard` mode.
 `encodeKernelV33NonceKey` derives the EntryPoint key for each mode; read that
 key's sequence before preparing. Enable and standard mode have distinct keys.
+Kernel v3.3's replayable enable uses an EIP-712 domain with `chainId: 0` and a
+chain-zero session signing digest. `kernelV33OperationSigningHash` returns the
+digest for an external session signer; `encodeVerifiedSignature` verifies that
+digest. The stored prepared operation always retains its actual chain and
+EntryPoint hash. Installed sessions and owner operations sign that actual hash.
 The Monad enable gas floor applies before hashing or signing. Missing signer or
 policy deployments prevent binding. These primitives prepare and sign only;
 submission journaling and observation remain the caller's responsibility until
 v3.3 Grant integration lands. A missing receipt never authorizes another send.
+The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
+chain-bound approval records are rejected and must be recreated.
 
 For Kernel v4 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:

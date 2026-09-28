@@ -13,6 +13,7 @@ import {
   hashGrantPolicy,
   hashPermissionDecision,
   hashPermissionRequest,
+  type KernelV4AccountProfile,
   OAATH_PERMISSION_DECISION_HASH_DOMAIN,
   OAATH_PERMISSION_DECISION_VERSION,
   OAATH_PERMISSION_REQUEST_HASH_DOMAIN,
@@ -49,7 +50,7 @@ const policy: GrantPolicy = {
 const basePolicyCall = policy.calls[0];
 if (!basePolicyCall) throw new Error("missing policy call fixture");
 
-const request: PermissionRequest = {
+const request: PermissionRequest & { readonly logicalAccount: KernelV4AccountProfile } = {
   version: "oaath.permission-request/v2",
   context: {
     version: "oaath.workspace-account-context/v1",
@@ -225,6 +226,64 @@ function expectProtocolError(
 }
 
 describe("PermissionRequest current codec", () => {
+  it("binds an existing v3.3 account address and ECDSA owner into the request and Grant", () => {
+    const existing = parsePermissionRequest({
+      ...request,
+      logicalAccount: {
+        version: "oaath.kernel-existing-account-profile/v1",
+        kind: "kernel",
+        kernelVersion: "0.3.3",
+        address: target,
+        entryPoint: { version: "0.7" },
+        ownerCredential: {
+          version: "oaath.owner-credential-profile/v1",
+          kind: "ecdsa",
+          address: ownerAddress,
+        },
+      },
+    });
+    const hash = hashPermissionRequest(existing);
+    expect(hash).not.toBe(hashPermissionRequest(request));
+    expect(
+      hashPermissionRequest({
+        ...existing,
+        logicalAccount: { ...existing.logicalAccount, address: operatorAddress },
+      }),
+    ).not.toBe(hash);
+    expect(
+      hashPermissionRequest({
+        ...existing,
+        logicalAccount: {
+          ...existing.logicalAccount,
+          ownerCredential: { ...existing.logicalAccount.ownerCredential, address: operatorAddress },
+        },
+      }),
+    ).not.toBe(hash);
+    const grant = createGrantFromPermissionRequest(existing);
+    expect(grant.identity.logicalAccount).toEqual(existing.logicalAccount);
+    const approval = {
+      approvalHash: `0x${"99".repeat(32)}` as const,
+      capabilityHash,
+      approvedAt: 110,
+    };
+    expect(advanceGrant(grant, { type: "approve", identity: grant.identity, approval }).state).toBe(
+      "approved",
+    );
+    expect(() =>
+      advanceGrant(grant, {
+        type: "approve",
+        identity: {
+          ...grant.identity,
+          logicalAccount: parsePermissionRequest({
+            ...existing,
+            logicalAccount: { ...existing.logicalAccount, address: operatorAddress },
+          }).logicalAccount,
+        },
+        approval,
+      }),
+    ).toThrow(expect.objectContaining({ code: "grant_identity_mismatch" }));
+  });
+
   it("captures the exact application/account/operator/policy request and creates its Grant", () => {
     expect(OAATH_PERMISSION_REQUEST_VERSION).toBe("oaath.permission-request/v2");
     expect(OAATH_PERMISSION_REQUEST_HASH_DOMAIN).toBe("@oaath/protocol:permission-request");

@@ -288,6 +288,7 @@ export interface KernelV33RuntimeBindAccountInput {
 export interface KernelV33RuntimePrepareInput
   extends Omit<KernelRuntimePrepareInput, "account" | "validityTimeRange" | "mode"> {
   readonly account: Readonly<KernelV33AccountDescriptor>;
+  /** Enable uses v3.3's replayable signature wrapper; the materializer supplies it. */
   readonly mode?: "standard" | "enable";
 }
 export interface KernelV33Runtime

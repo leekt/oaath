@@ -296,6 +296,29 @@ export function parsePermissionRequest(value: unknown): Readonly<PermissionReque
 }
 
 function hashKernelAccountProfile(profile: KernelAccountProfile): `0x${string}` {
+  if (profile.kernelVersion === "0.3.3")
+    return keccak256(
+      encodeAbiParameters(
+        [
+          { type: "string" },
+          { type: "string" },
+          { type: "string" },
+          { type: "string" },
+          { type: "address" },
+          { type: "string" },
+          { type: "bytes32" },
+        ],
+        [
+          KERNEL_PROFILE_HASH_DOMAIN,
+          profile.version,
+          profile.kind,
+          profile.kernelVersion,
+          profile.address,
+          profile.entryPoint.version,
+          hashOwnerCredentialProfile(profile.ownerCredential),
+        ],
+      ),
+    );
   return keccak256(
     encodeAbiParameters(
       [

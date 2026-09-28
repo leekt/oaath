@@ -9,6 +9,14 @@ requests and decisions, grants, operations, and owner signing. `deriveCodeChalle
 owns PKCE S256 challenge derivation. Authorization request/code storage, decision
 transactions, code consumption, and HTTP responses belong to `@oaath/server`.
 
+`KernelAccountProfile` distinguishes derived Kernel v4 accounts from existing
+Kernel v3.3 accounts. The latter use
+`oaath.kernel-existing-account-profile/v1` with `kernelVersion: "0.3.3"`, an
+`address`, EntryPoint `0.7`, and an ECDSA `ownerCredential`; factory indices and
+routes are rejected. Permission hashes and Grant identity bind that existing
+address and owner. Parsing the profile does not prove deployment or ownership;
+the runtime checks those facts on each action chain.
+
 `oaath.operation/v3` retains nullable `submission` evidence: a bundler
 acknowledgement or an EntryPoint `handleOps` transaction hash. The closed
 `OperationSubmissionEvidence` type and `parseOperationSubmissionEvidence` own

@@ -64,6 +64,30 @@ function expectClientError(action: () => unknown, code: string): void {
 }
 
 describe("hostile input at the client boundary", () => {
+  it("keeps existing v3.3 account addresses distinct in the browser binding", () => {
+    const account = {
+      version: "oaath.kernel-existing-account-profile/v1",
+      kind: "kernel",
+      kernelVersion: "0.3.3",
+      address: TARGET,
+      entryPoint: { version: "0.7" },
+      ownerCredential: bindingInput.account.ownerCredential,
+    };
+    const original = captureOaathBinding({ ...bindingInput, account });
+    const changed = captureOaathBinding({
+      ...bindingInput,
+      account: { ...account, address: VALIDATOR },
+    });
+    expect(original.account).toEqual(account);
+    expect(changed.bindingId).not.toBe(original.bindingId);
+    expect(
+      captureOaathBinding({ ...bindingInput, account: structuredClone(account) }).bindingId,
+    ).toBe(original.bindingId);
+    expect(() =>
+      captureOaathBinding({ ...bindingInput, account: { ...account, accountIndex: "0" } }),
+    ).toThrow();
+  });
+
   it("binds workspace, account identity, and complete account profile independently", () => {
     const original = captureOaathBinding(bindingInput);
     const alternatives = [
@@ -81,6 +105,8 @@ describe("hostile input at the client boundary", () => {
     ];
     for (const alternative of alternatives) {
       const other = captureOaathBinding({ ...bindingInput, ...alternative });
+      if (other.account.kernelVersion !== "0.4.0" || original.account.kernelVersion !== "0.4.0")
+        throw new Error("expected v4 fixture");
       expect(other.account.accountIndex).toBe(original.account.accountIndex);
       expect(other.bindingId).not.toBe(original.bindingId);
     }

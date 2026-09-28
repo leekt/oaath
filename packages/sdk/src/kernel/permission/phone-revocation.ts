@@ -84,7 +84,11 @@ export async function prepareKernelPhoneRevocation(
   const request = parsePermissionRequest(input.request);
   const approval = parseKernelAllChainApproval(input.approval);
   const ownerCredential = request.logicalAccount.ownerCredential;
-  if (ownerCredential.kind !== "p256" || request.logicalAccount.factoryRoute !== "kernel_factory")
+  if (
+    ownerCredential.kind !== "p256" ||
+    request.logicalAccount.kernelVersion !== "0.4.0" ||
+    request.logicalAccount.factoryRoute !== "kernel_factory"
+  )
     return inputInvalid("phone revocation requires the P-256 Kernel owner");
   if (
     typeof input.chainId !== "number" ||
