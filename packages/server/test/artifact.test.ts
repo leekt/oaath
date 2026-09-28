@@ -52,6 +52,14 @@ function createRecordingStore(): { store: RelayStore; written: unknown[] } {
   return { store, written };
 }
 
+function containsPlaintext(value: unknown, plaintext: string): boolean {
+  if (typeof value === "string") return value.includes(plaintext);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).some((nested) => containsPlaintext(nested, plaintext));
+  }
+  return false;
+}
+
 describe("encrypted artifact claim", () => {
   it("releases the artifact exactly once", async () => {
     const harness = createHarness();
@@ -153,10 +161,12 @@ describe("encrypted artifact claim", () => {
     await expectOk(await consume(harness, decision.code), 200);
     await expectOk(await claim(harness, decision.artifactId), 200);
 
-    const serialized = JSON.stringify(recording.written);
-    expect(serialized.includes(artifact)).toBe(false);
+    // Prove the assertion sees plaintext even when nested JSON would escape it.
+    expect(containsPlaintext([{ nested: { artifact } }], artifact)).toBe(true);
+    expect(containsPlaintext([{ nested: { code: decision.code } }], decision.code)).toBe(true);
+    expect(containsPlaintext(recording.written, artifact)).toBe(false);
     // The released code is only ever stored as its digest.
-    expect(serialized.includes(decision.code)).toBe(false);
+    expect(containsPlaintext(recording.written, decision.code)).toBe(false);
     expect(recording.written).toHaveLength(4);
   });
 });
