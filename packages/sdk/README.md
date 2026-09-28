@@ -3,6 +3,8 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+## Local wallet mode
+
 For a browser app using an existing ECDSA-root Kernel `0.3.3` account, local
 mode approves a Grant through the connected wallet without a phone or relay:
 
@@ -53,6 +55,8 @@ cleared custody requires a new approval and does not revoke an old permission.
 it completes only after finalized onchain evidence. `disconnect(grant)` also
 forgets local custody. Local mode currently supports existing Kernel v3.3 accounts.
 
+## Owner operations
+
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
 
@@ -83,10 +87,12 @@ The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
 bundler route by default.
 
+## Choosing a Grant signer
+
 Existing Grant users may explicitly prefer the available owner:
 
 ```ts
-const request = { chain: 143, calls, signer: "auto" as const };
+const request = { chain: 143, calls: [{ target, value: "0", data }], signer: "auto" as const };
 const review = await grant.reviewCalls(request); // chosen signer and structured reason
 const operation = await grant.sendCalls(request);
 ```
@@ -106,6 +112,8 @@ Owner and session sends share the Grant/chain operation lane. `getOperation`
 recovers either signer without another signature or submission. Custom injected
 signing configurations declare an available owner unless they provide a
 public-only `credentialKey`; a failed signer never becomes a session fallback.
+
+## Runtime primitives
 
 The same owner operation is available through the lower-level runtime:
 
@@ -212,6 +220,8 @@ enable nonce. An uncertain revocation remains `revoking` across reload and is
 observed again without resubmission. Other permissions remain usable.
 V3.3 external prepared-call signing, request-time validity attenuation, and phone
 approval are not supported yet.
+
+## Chain ports
 
 For Kernel v4 or v3.3 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:
