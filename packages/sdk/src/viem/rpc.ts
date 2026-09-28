@@ -19,15 +19,19 @@ export type OaathRpcErrorCode =
 
 /** Contains no URL, provider prose, request body, signature, or raw error. */
 export class OaathRpcError extends Error {
+  readonly code: OaathRpcErrorCode;
+  readonly rpcCode: number | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
   constructor(
-    readonly code: OaathRpcErrorCode,
-    readonly rpcCode: number | null = null,
+    code: OaathRpcErrorCode,
+    rpcCode: number | null = null,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
     super(captured === null ? code : validationGasDiagnosticMessage(captured));
     this.name = "OaathRpcError";
+    this.code = code;
+    this.rpcCode = rpcCode;
     this.diagnostic = captured;
   }
 }
