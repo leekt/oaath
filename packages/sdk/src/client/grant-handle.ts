@@ -135,6 +135,14 @@ import {
 } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import {
+  type ConnectedEoa,
+  captureConnectedEoa,
+  connectedEoaReview,
+  type OaathConnectedEoaFallbackReview,
+  type OaathConnectedEoaFeePayer,
+  withConnectedEoaFallback,
+} from "./connected-eoa.js";
+import {
   clientCapability,
   clientFail,
   exactClientRecord,
@@ -228,6 +236,7 @@ export interface OaathCallInput {
 }
 
 export interface OaathSendCallsInput {
+  readonly feePayer?: Readonly<OaathConnectedEoaFeePayer>;
   readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
@@ -426,6 +435,7 @@ export interface OaathGrantHandle {
 
 /** Current execution facts for exact calls, not a durable authorization or reservation. */
 export interface OaathCallsReview {
+  readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
   /** Applicable first-operation floor; null once installed or when no floor is configured. */
   readonly enableVerificationGasFloor: string | null;
@@ -1541,6 +1551,7 @@ export function createGrantHandle(
   }
 
   function runner(spec: {
+    readonly connectedFeePayer?: Readonly<ConnectedEoa> | null;
     readonly chainId: number;
     readonly kind: OperationKind;
     readonly runtime: Readonly<KernelRuntime>;
@@ -1712,13 +1723,16 @@ export function createGrantHandle(
             // runner's durable submission-attempt transition, for this exact
             // snapshot and nothing else.
             const signature = spec.externalSignature ?? (await execution.signOperation(prepared));
-            return captureSubmissionSession(
-              await chain.submission.open({
-                prepared,
-                signature,
-                route: spec.decision.route,
-                feePayer: spec.decision.feePayer,
-              }),
+            const submission = {
+              prepared,
+              signature,
+              route: spec.decision.route,
+              feePayer: spec.decision.feePayer,
+            };
+            return withConnectedEoaFallback(
+              captureSubmissionSession(await chain.submission.open(submission)),
+              submission,
+              spec.connectedFeePayer ?? null,
             );
           },
           close: async () => undefined,
@@ -2442,6 +2456,7 @@ export function createGrantHandle(
     > | null = null,
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
+    connectedFeePayer: Readonly<ConnectedEoa> | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -2463,6 +2478,11 @@ export function createGrantHandle(
         `${paymaster.kind}_bundler_unavailable`,
       );
     }
+    if (connectedFeePayer !== null && resolved.decision.route !== "bundler")
+      return clientFail(
+        "oaath_client_capability_unsupported",
+        "connected fee payer requires the initial bundler route",
+      );
     const key = Object.freeze({
       grantId: resolved.grantId,
       chainId,
@@ -2494,6 +2514,7 @@ export function createGrantHandle(
     // submit twice for one identity.
     const sender = runner({
       ...shape,
+      connectedFeePayer,
       terminalBehavior: "replace",
       ...(publication ? { publication } : {}),
       ...(paymaster?.kind === "erc7677"
@@ -2868,6 +2889,9 @@ export function createGrantHandle(
     return withExecution(() => {
       const context: CaptureContext = new WeakSet();
       const request = capturePlainCalls(value, context);
+      const connectedFeePayer = Object.hasOwn(request, "feePayer")
+        ? captureConnectedEoa(request.feePayer, context)
+        : null;
       const sponsorship = Object.hasOwn(request, "paymasterService")
         ? capturePaymasterService(
             request.paymasterService,
@@ -2886,6 +2910,9 @@ export function createGrantHandle(
               sponsorship,
               resultCapabilities: () => readCompletedErc7677ResultCapabilities(sponsorship),
             },
+        null,
+        null,
+        connectedFeePayer,
       );
     });
   }
@@ -2894,6 +2921,9 @@ export function createGrantHandle(
     return withActivity(async () => {
       const context: CaptureContext = new WeakSet();
       const request = capturePlainCalls(value, context);
+      const connectedFeePayer = Object.hasOwn(request, "feePayer")
+        ? captureConnectedEoa(request.feePayer, context)
+        : null;
       const chainId = request.chain;
       if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
         return clientFail("oaath_client_input_invalid", "reviewCalls chain is invalid");
@@ -2932,6 +2962,11 @@ export function createGrantHandle(
         permissionMaterializer(resolved.runtime, resolved.descriptor.account);
       }
       const { route, signer } = resolved.decision;
+      if (connectedFeePayer !== null && route !== "bundler")
+        return clientFail(
+          "oaath_client_capability_unsupported",
+          "connected fee payer requires the initial bundler route",
+        );
       if (selectedPaymaster !== null && route !== "bundler") {
         return clientFail(
           "oaath_client_capability_unsupported",
@@ -2946,6 +2981,7 @@ export function createGrantHandle(
       requireExecutionPublication();
       return Object.freeze({
         grantId: current.value.identity.grantId,
+        fallback: connectedEoaReview(connectedFeePayer),
         paymasterService:
           selectedPaymaster === null
             ? null

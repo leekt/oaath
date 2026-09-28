@@ -11,6 +11,10 @@
 
 export type { ValidationGasDiagnostic } from "@oaath/protocol";
 export type {
+  OaathConnectedEoaFallbackReview,
+  OaathConnectedEoaFeePayer,
+} from "./client/connected-eoa.js";
+export type {
   OaathConnection,
   OaathPermissionCallInput,
   OaathPermissionInput,

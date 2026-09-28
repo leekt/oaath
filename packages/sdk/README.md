@@ -175,6 +175,35 @@ IndexedDB schema 14 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.
 
+Plain Grant and owner calls can explicitly use a connected EOA as a fallback:
+
+```ts
+const request = {
+  chain,
+  calls,
+  feePayer: { kind: "connected-eoa", wallet: walletClient },
+};
+const review = await grant.reviewCalls(request); // initial route plus conditional fallback
+const operation = await grant.sendCalls(request);
+```
+
+The initial route stays `bundler`. A closed pre-acceptance rejection from the
+default RPC transport allows one wallet `eth_sendTransaction` carrying the exact
+same signed operation through EntryPoint `handleOps`. The wallet must already be
+connected to the requested chain and expose the captured EOA through
+`eth_accounts`; the SDK neither connects nor switches it. The wallet approves
+and funds the outer transaction. No second operation signature is requested.
+Review reports the conditional fallback address without contacting the wallet.
+
+Acceptance, timeouts, HTTP errors (including 502), unknown RPC codes, and
+malformed results never trigger fallback. A late rejection after the submission
+session closes cannot start it either. Wallet rejection or a lost response never
+retries the transaction. Retain the operation ID and observe it. This option
+cannot be combined with paymaster sponsorship, which remains on the bundler
+route. Custom direct transports must preserve `OaathRpcError` conclusive
+rejections from `@oaath/sdk/viem`; the relay currently strips this evidence, so
+connected fallback through a relay is not yet supported.
+
 Custom observation transports answer `transaction_execution` with exactly
 `{ hash, to, blockNumber, blockHash, input }` from the requested chain's
 transaction. Addresses, hashes, and input are lowercase hex; blockNumber is a
