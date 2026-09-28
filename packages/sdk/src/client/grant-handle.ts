@@ -98,7 +98,6 @@ import {
 } from "../prepared-user-operation.js";
 import type { WalletCallBundleStore } from "../provider/bundle-store.js";
 import {
-  createErc7677SponsorshipCapability,
   type Erc7677GasEstimator,
   type Erc7677RegisteredPaymasterService,
   readCompletedErc7677ResultCapabilities,
@@ -147,6 +146,11 @@ import {
   type OaathOperationHandle,
   operationOutcome,
 } from "./operation-handle.js";
+import {
+  capturePaymasterService,
+  capturePlainCalls,
+  type OaathPaymasterServiceInput,
+} from "./sponsorship.js";
 
 const SUBMISSION_TIMEOUT_MS = 30_000;
 const MAX_CALLS = 64;
@@ -224,6 +228,7 @@ export interface OaathCallInput {
 }
 
 export interface OaathSendCallsInput {
+  readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
 }
@@ -421,6 +426,7 @@ export interface OaathGrantHandle {
 
 /** Current execution facts for exact calls, not a durable authorization or reservation. */
 export interface OaathCallsReview {
+  readonly paymasterService: Readonly<{ url: string }> | null;
   /** Applicable first-operation floor; null once installed or when no floor is configured. */
   readonly enableVerificationGasFloor: string | null;
   readonly grantId: string;
@@ -2859,18 +2865,47 @@ export function createGrantHandle(
   }
 
   function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
-    return withExecution(() => executeCalls(value, null));
+    return withExecution(() => {
+      const context: CaptureContext = new WeakSet();
+      const request = capturePlainCalls(value, context);
+      const sponsorship = Object.hasOwn(request, "paymasterService")
+        ? capturePaymasterService(
+            request.paymasterService,
+            chainCapability(request.chain).paymasterService,
+            context,
+          )
+        : null;
+      return executeCalls(
+        { chain: request.chain, calls: request.calls },
+        null,
+        undefined,
+        sponsorship === null
+          ? null
+          : {
+              kind: "erc7677",
+              sponsorship,
+              resultCapabilities: () => readCompletedErc7677ResultCapabilities(sponsorship),
+            },
+      );
+    });
   }
 
   function reviewCalls(value: unknown): Promise<Readonly<OaathCallsReview>> {
     return withActivity(async () => {
       const context: CaptureContext = new WeakSet();
-      const request = exactClientRecord(value, ["chain", "calls"], "reviewCalls input", context);
+      const request = capturePlainCalls(value, context);
       const chainId = request.chain;
       if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
         return clientFail("oaath_client_input_invalid", "reviewCalls chain is invalid");
       }
       const calls = captureCalls(request.calls, context);
+      const selectedPaymaster = Object.hasOwn(request, "paymasterService")
+        ? capturePaymasterService(
+            request.paymasterService,
+            chainCapability(chainId).paymasterService,
+            context,
+          )
+        : null;
       requireExecutionPublication();
       const resolved = await resolveExecutionRead(chainId, calls);
       requireExecutionPublication();
@@ -2897,6 +2932,13 @@ export function createGrantHandle(
         permissionMaterializer(resolved.runtime, resolved.descriptor.account);
       }
       const { route, signer } = resolved.decision;
+      if (selectedPaymaster !== null && route !== "bundler") {
+        return clientFail(
+          "oaath_client_capability_unsupported",
+          "paymaster sponsorship requires the bundler route",
+          "erc7677_bundler_unavailable",
+        );
+      }
       const policy = input.approvedPolicy;
       if (route === "none" || signer !== "session" || policy.validUntil === null) {
         return unsupported("execution_review_unavailable");
@@ -2904,6 +2946,10 @@ export function createGrantHandle(
       requireExecutionPublication();
       return Object.freeze({
         grantId: current.value.identity.grantId,
+        paymasterService:
+          selectedPaymaster === null
+            ? null
+            : Object.freeze({ url: chainCapability(chainId).paymasterService!.url }),
         chainId,
         accountId: input.binding.context.accountId,
         account: resolved.descriptor.account,
@@ -3150,32 +3196,7 @@ export function createGrantHandle(
     context: CaptureContext,
   ): Readonly<OaathKernelSponsorshipCapability> | null {
     if (value === null) return null;
-    const requested = exactClientRecord(
-      value,
-      ["url", "context"],
-      "provider paymaster service",
-      context,
-    );
-    if (typeof requested.url !== "string") {
-      return clientFail("oaath_client_input_invalid", "provider paymaster URL is invalid");
-    }
-    const registered = chainCapability(chainId).paymasterService ?? null;
-    if (registered === null || requested.url !== registered.url) {
-      return clientFail(
-        "oaath_client_capability_invalid",
-        "provider paymaster service is not registered",
-        "erc7677_service_unregistered",
-      );
-    }
-    try {
-      return createErc7677SponsorshipCapability({
-        requested: { url: requested.url, context: requested.context },
-        service: Object.freeze({ url: registered.url, request: registered.request }),
-        estimator: Object.freeze({ estimate: registered.estimate }),
-      });
-    } catch (error) {
-      return mapClientFailure(error, "provider paymaster service could not be selected");
-    }
+    return capturePaymasterService(value, chainCapability(chainId).paymasterService, context);
   }
 
   function providerPaymaster(

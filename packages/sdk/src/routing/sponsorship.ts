@@ -11,7 +11,7 @@ import {
   enableVerificationFloorForNonce,
   type KernelGasPolicy,
 } from "../kernel/gas-policy.js";
-import type { KernelRuntimePrepareInput } from "../kernel/types.js";
+import type { KernelRuntimePrepareInput, KernelV33RuntimePrepareInput } from "../kernel/types.js";
 import type { KernelV4UserOperationGas } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "./types.js";
@@ -20,10 +20,14 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
-export interface OaathKernelSponsorshipRuntime {
+type SponsorableOperation = KernelRuntimePrepareInput | KernelV33RuntimePrepareInput;
+
+export interface OaathKernelSponsorshipRuntime<
+  Operation extends SponsorableOperation = KernelRuntimePrepareInput,
+> {
   readonly gasPolicy?: Readonly<KernelGasPolicy>;
   readonly dummySignature: `0x${string}`;
-  readonly prepareOperation: (input: KernelRuntimePrepareInput) => PreparedUserOperation;
+  readonly prepareOperation: (input: Operation) => PreparedUserOperation;
 }
 
 export interface OaathKernelSponsorshipRequest {
@@ -42,9 +46,11 @@ export interface OaathKernelSponsorshipResult {
   readonly paymaster: Readonly<PreparedPaymaster>;
 }
 
-export interface PrepareSponsoredKernelOperationInput {
-  readonly runtime: Readonly<OaathKernelSponsorshipRuntime>;
-  readonly operation: KernelRuntimePrepareInput;
+export interface PrepareSponsoredKernelOperationInput<
+  Operation extends SponsorableOperation = KernelRuntimePrepareInput,
+> {
+  readonly runtime: Readonly<OaathKernelSponsorshipRuntime<Operation>>;
+  readonly operation: Operation;
   /** Validation-shaped bytes used only by the paymaster's pre-sign simulation. */
   readonly simulationSignature: `0x${string}`;
   readonly sponsorship: OaathKernelSponsorshipCapability;
@@ -125,8 +131,8 @@ function captureResult(value: unknown): Readonly<OaathKernelSponsorshipResult> {
  * sponsorship capability receives no signer and cannot provide replacement
  * operation fields beyond exact gas and paymaster evidence.
  */
-export async function prepareSponsoredKernelOperation(
-  input: PrepareSponsoredKernelOperationInput,
+export async function prepareSponsoredKernelOperation<Operation extends SponsorableOperation>(
+  input: PrepareSponsoredKernelOperationInput<Operation>,
 ): Promise<PreparedUserOperation> {
   const context: CaptureContext = new WeakSet();
   const record = exactRoutingRecord(
@@ -136,7 +142,7 @@ export async function prepareSponsoredKernelOperation(
     context,
     capabilityInvalid,
   );
-  const runtime = record.runtime as Readonly<OaathKernelSponsorshipRuntime>;
+  const runtime = record.runtime as Readonly<OaathKernelSponsorshipRuntime<Operation>>;
   if (
     !runtime ||
     typeof runtime !== "object" ||
@@ -156,7 +162,7 @@ export async function prepareSponsoredKernelOperation(
   if (typeof capabilityRecord.sponsor !== "function")
     return capabilityInvalid("sponsorship capability is invalid");
   const sponsor = capabilityRecord.sponsor as OaathKernelSponsorshipCapability["sponsor"];
-  const operation = record.operation as KernelRuntimePrepareInput;
+  const operation = record.operation as Operation;
   const simulationSignature = record.simulationSignature;
   if (
     typeof simulationSignature !== "string" ||
@@ -188,11 +194,11 @@ export async function prepareSponsoredKernelOperation(
     calls: operation.calls,
     gas: result.gas,
     ...(operation.mode === undefined ? {} : { mode: operation.mode }),
-    ...(operation.validityTimeRange === undefined
+    ...(!("validityTimeRange" in operation) || operation.validityTimeRange === undefined
       ? {}
       : { validityTimeRange: operation.validityTimeRange }),
     paymaster: result.paymaster,
-  });
+  } as Operation);
   if (final.userOperation.verificationGasLimit !== result.gas.verificationGasLimit) {
     return invalidEvidence("Sponsorship verification gas is below the configured floor");
   }
