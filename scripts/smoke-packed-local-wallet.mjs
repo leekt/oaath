@@ -1,6 +1,8 @@
 /** Packed local wallet consumer in Chromium, with real IndexedDB and full page reload. */
 import { createConsumer } from "./packed-consumer.mjs";
 
+const AUTO = process.argv.includes("--auto");
+
 const APP = `
 import { createOAAth } from "@oaath/sdk";
 import { createWalletClient, custom } from "viem";
@@ -25,10 +27,12 @@ const chains = [{
   feePayer: null, paymasterService: null, staticPaymasterConfigurationHash: null,
 }];
 const realm = createOAAth({ mode: "local", owner: wallet, account: address, chains });
-const calls = { chain: 143, calls: [{ target, data: "0x12345678", value: "0" }] };
+const calls = { chain: 143, calls: [{ target, data: "0x12345678", value: "0" }], ...(window.signerAuto ? { signer: "auto" } : {}) };
 window.app = {
   async start() {
     const grant = await (await realm.connect()).requestPermission({ chainScope: "all", permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "0" }] }], expiresIn: 1800, perChainOperationLimit: 2 });
+    const review = await grant.reviewCalls(calls);
+    if (review.signer !== (window.signerAuto ? "owner" : "session")) throw new Error("wrong reviewed signer");
     const operation = await grant.sendCalls(calls);
     localStorage.setItem("operation-id", operation.id);
     localStorage.setItem("binding-id", realm.binding.bindingId);
@@ -58,12 +62,13 @@ import { build } from "esbuild";
 import puppeteer from "puppeteer-core";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const owner = privateKeyToAccount(generatePrivateKey());
-let approvals = 0, sends = 0;
+const auto = ${AUTO};
+let approvals = 0, sends = 0, ownerSignatures = 0;
 await build({ entryPoints: ["app.js"], bundle: true, format: "esm", platform: "browser", outfile: "bundle.js" });
 const bundle = await readFile("bundle.js");
 const server = createServer((request, response) => {
   if (request.url === "/bundle.js") response.writeHead(200, { "content-type": "application/javascript" }).end(bundle);
-  else if (request.url === "/") response.writeHead(200, { "content-type": "text/html" }).end('<script>window.ownerAddress="' + owner.address + '"</script><script type="module" src="/bundle.js"></script>');
+  else if (request.url === "/") response.writeHead(200, { "content-type": "text/html" }).end('<script>window.ownerAddress="' + owner.address + '";window.signerAuto=' + auto + '</script><script type="module" src="/bundle.js"></script>');
   else response.writeHead(404).end();
 });
 let browser;
@@ -73,25 +78,29 @@ try {
   browser = await puppeteer.launch({ executablePath, headless: true, userDataDir: join(process.cwd(), "browser-profile"), args: ["--no-sandbox"] });
   const page = await browser.newPage();
   await page.exposeFunction("walletRequest", async ({ method, params }) => {
+    if (auto && method === "personal_sign" && params[1].toLowerCase() === owner.address.toLowerCase()) {
+      ownerSignatures++;
+      return owner.signMessage({ message: { raw: params[0] } });
+    }
     if (method !== "eth_signTypedData_v4" || params[0].toLowerCase() !== owner.address.toLowerCase()) throw new Error("unexpected wallet request");
     approvals++;
     return owner.signTypedData(JSON.parse(params[1]));
   });
   await page.exposeFunction("sendOperation", async (prepared) => {
-    if (prepared.userOperation.sender !== "0x1111111111111111111111111111111111111111" || BigInt(prepared.userOperation.nonce) >> 248n !== 1n) throw new Error("incorrect enable operation");
+    if (prepared.userOperation.sender !== "0x1111111111111111111111111111111111111111" || BigInt(prepared.userOperation.nonce) >> 248n !== (auto ? 0n : 1n)) throw new Error("incorrect enable operation");
     sends++;
   });
   await page.goto("http://127.0.0.1:" + server.address().port);
   await page.waitForFunction(() => !!window.app);
   const before = await page.evaluate(() => window.app.start().catch((error) => { throw new Error(error.code + "/" + error.source); }));
-  if (approvals !== 1 || sends !== 1 || before.state !== "active") throw new Error("local approval/send count mismatch");
+  if (approvals !== 1 || sends !== 1 || ownerSignatures !== (auto ? 1 : 0) || before.state !== "active") throw new Error("local approval/send count mismatch");
   await page.evaluate(() => window.app.close());
   await page.reload();
   await page.waitForFunction(() => !!window.app);
   const after = await page.evaluate(() => window.app.resume().catch((error) => { throw new Error(error.code + "/" + error.source); }));
-  if (JSON.stringify(before) !== JSON.stringify(after) || approvals !== 1 || sends !== 1) throw new Error("reload changed authority or resubmitted");
+  if (JSON.stringify(before) !== JSON.stringify(after) || approvals !== 1 || sends !== 1 || ownerSignatures !== (auto ? 1 : 0)) throw new Error("reload changed authority or resubmitted");
   await page.evaluate(() => window.app.close());
-  console.log("packed Chromium local Grant: one typed-data approval, one enable send, IndexedDB page-reload recovery without resubmission");
+  console.log(auto ? "packed Chromium auto Grant: one owner operation signature, no enable, page-reload recovery without resubmission" : "packed Chromium local Grant: one typed-data approval, one enable send, IndexedDB page-reload recovery without resubmission");
 } finally {
   await browser?.close();
   await new Promise((resolve) => server.close(resolve));
@@ -106,9 +115,15 @@ const consumer = await createConsumer({
     "app.js": APP,
     "run.mjs": RUN,
     "surface.ts": `
-import { createOAAth, type OaathLocalConfiguration, type OaathLocalApprovalReview } from "@oaath/sdk";
+import { createOAAth, type OaathLocalConfiguration, type OaathLocalApprovalReview, type OaathGrantHandle, type OaathSendCallsInput } from "@oaath/sdk";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import { createWalletClient, custom, type EIP1193Provider, type Address } from "viem";
+export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSendCallsInput) {
+  const review = await grant.reviewCalls({ ...request, signer: "auto" });
+  if (review.signer === "owner") { const limits: null = review.perChainOperationLimit; void limits; }
+  else { const limit: number = review.perChainOperationLimit; void limit; }
+  return grant.sendCalls({ ...request, signer: "auto" });
+}
 export function connect(provider: EIP1193Provider, owner: Address, account: Address) {
   const wallet = createWalletClient({ account: owner, transport: custom(provider) });
   const config: OaathLocalConfiguration = { mode: "local", owner: wallet, account, chains: createViemChainPorts({ 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } }), onApproval: async (review: Readonly<OaathLocalApprovalReview>) => { void review.policy; } };

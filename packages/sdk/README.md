@@ -81,7 +81,31 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default. Grant `signer: "auto"` is still pending.
+bundler route by default.
+
+Existing Grant users may explicitly prefer the available owner:
+
+```ts
+const request = { chain: 143, calls, signer: "auto" as const };
+const review = await grant.reviewCalls(request); // chosen signer and structured reason
+const operation = await grant.sendCalls(request);
+```
+
+Default sends (or `signer: "session"`) still use only the approved session.
+`auto` selects owner authority when the realm has a signer; URL mode's public-only
+owner profile selects session. Each accepted plain call bundle encodes one atomic
+UserOperation. The API does not split oversized bundles, and an estimate, wallet
+rejection or uncertain submission never changes the selected signer or retries.
+Root execution does not enable the permission or consume its operation limit.
+Its review reports no onchain Grant call/expiry/count enforcement and null policy
+bounds; the client still requires an active, unexpired Grant. Owner approval of
+the exact calls authorizes that wider root operation. For a one-off change with
+no Grant approval at all, use the standalone owner mode above.
+
+Owner and session sends share the Grant/chain operation lane. `getOperation`
+recovers either signer without another signature or submission. Custom injected
+signing configurations declare an available owner unless they provide a
+public-only `credentialKey`; a failed signer never becomes a session fallback.
 
 The same owner operation is available through the lower-level runtime:
 

@@ -61,6 +61,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           | { oaath: Readonly<Oaath>; relay: ReturnType<typeof createRealm>["relay"] | null }
           | undefined;
         const ownerAccount = privateKeyToAccount(generatePrivateKey());
+        const ownerOffset = mode === "local" ? 1 : 0;
         let approvalPrompts = 0;
         let ownerOperationPrompts = 0;
         const wallet = createWalletClient({
@@ -197,7 +198,11 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                   blockNumber: toHex(receipt.blockNumber),
                 },
               });
-              if (sends === 1 || (version === "0.3.3" && (sends === 3 || sends === 4))) {
+              if (
+                sends === 1 ||
+                sends === 1 + ownerOffset ||
+                (version === "0.3.3" && (sends === 3 + ownerOffset || sends === 4 + ownerOffset))
+              ) {
                 // Acceptance happened, but the response is lost. Observation is
                 // the only recovery; the transport must not send again.
                 response.writeHead(502).end("lost reply");
@@ -348,6 +353,40 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           }
           await harness.fund(await grant.account(CHAIN_ID), parseEther("1"));
           await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+          if (mode === "local") {
+            const calls = { ...(sendCallsInput() as Record<string, unknown>), signer: "auto" };
+            const ownerReview = await grant.reviewCalls(calls);
+            expect(ownerReview).toMatchObject({
+              signer: "owner",
+              enableVerificationGasFloor: null,
+              enforcement: { calls: "none", expiry: "client", operationCount: "none" },
+            });
+            expect(ownerReview.reasons).toContain("owner_auto_single_operation");
+            expect(ownerOperationPrompts).toBe(0);
+            const rootOperation = await grant.sendCalls(calls);
+            expect(sends).toBe(1);
+            expect(ownerOperationPrompts).toBe(1);
+            grant = await reopenGrant();
+            const rootRecovered = await grant.getOperation({
+              chain: CHAIN_ID,
+              id: rootOperation.id,
+            });
+            if (!rootRecovered) throw new Error("root operation missing after reload");
+            await harness.client.request({
+              method: "anvil_mine" as never,
+              params: ["0x3"] as never,
+            });
+            expect((await rootRecovered.wait()).status).toBe("finalized");
+            expect(sends).toBe(1);
+            expect(ownerOperationPrompts).toBe(1);
+            // Root execution never created session installation evidence. The
+            // next send must still use enable and leave the policy count at one.
+            const review = await grant.reviewCalls(sendCallsInput());
+            const durable = (await stores().grants.get(review.grantId)) as {
+              value: { materializations: unknown[] };
+            };
+            expect(durable.value.materializations).toHaveLength(0);
+          }
           const reviewed = await grant.reviewCalls(sendCallsInput()).then(
             () => true,
             () => false,
@@ -361,7 +400,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                 `first operation failed: ${error.code ?? "unknown"}/${error.source ?? "unknown"}`,
               );
             });
-          expect(sends).toBe(1);
+          expect(sends).toBe(1 + ownerOffset);
           // Close every SDK/store/port instance before advancing chain finality.
           const exactId = first.id;
           grant = await reopenGrant();
@@ -369,7 +408,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           if (recovered === null) throw new Error("operation was not restored");
           expect(recovered.id).toBe(exactId);
           expect(await grant.account(CHAIN_ID)).toBe(address);
-          expect(sends).toBe(1);
+          expect(sends).toBe(1 + ownerOffset);
           await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
           const recoveryOutcome = await recovered.wait();
           expect({
@@ -377,25 +416,29 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             state: recoveryOutcome.state,
             reason: "reason" in recoveryOutcome ? recoveryOutcome.reason : null,
           }).toMatchObject({ status: "finalized" });
-          expect(sends).toBe(1);
+          expect(sends).toBe(1 + ownerOffset);
           const second = await grant.sendCalls(sendCallsInput());
           expect((await second.wait()).status).toBe("finalized");
           if (!usageRequest) throw new Error("missing usage request");
           const observed = await ports.usage!(usageRequest);
           expect(observed).toMatchObject({ status: "complete", finalizedOperationCount: "2" });
-          expect(sends).toBe(2);
-          expect(modeBytes).toEqual([version === "0.3.3" ? 1n : 12n, 0n]);
-          expect(estimates).toBe(2);
+          expect(sends).toBe(2 + ownerOffset);
+          expect(modeBytes).toEqual([
+            ...(ownerOffset ? [0n] : []),
+            version === "0.3.3" ? 1n : 12n,
+            0n,
+          ]);
+          expect(estimates).toBe(2 + ownerOffset);
           expect(approvalPrompts).toBe(mode === "local" ? 1 : 0);
-          expect(ownerOperationPrompts).toBe(0);
+          expect(ownerOperationPrompts).toBe(ownerOffset);
           if (version === "0.3.3") {
             await grant.revoke();
-            expect(sends).toBe(3);
+            expect(sends).toBe(3 + ownerOffset);
             expect(grant.state).toBe("revoking");
             grant = await reopenGrant();
             expect(grant.state).toBe("revoking");
             await grant.revoke();
-            expect(sends).toBe(3);
+            expect(sends).toBe(3 + ownerOffset);
             await harness.client.request({
               method: "anvil_mine" as never,
               params: ["0x3"] as never,
@@ -403,7 +446,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             await grant.revoke();
             expect(grant.state).toBe("revoked");
             await grant.revoke();
-            expect(sends).toBe(3);
+            expect(sends).toBe(3 + ownerOffset);
             await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
               code: "oaath_client_grant_inactive",
             });
@@ -414,19 +457,19 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             );
             await unused.revoke();
             expect(unused.state).toBe("revoking");
-            expect(sends).toBe(4);
+            expect(sends).toBe(4 + ownerOffset);
             unused = await reopenGrant();
             await unused.revoke();
-            expect(sends).toBe(4);
+            expect(sends).toBe(4 + ownerOffset);
             await harness.client.request({
               method: "anvil_mine" as never,
               params: ["0x3"] as never,
             });
             await unused.revoke();
             expect(unused.state).toBe("revoked");
-            expect(sends).toBe(4);
+            expect(sends).toBe(4 + ownerOffset);
             expect(approvalPrompts).toBe(mode === "local" ? 2 : 0);
-            expect(ownerOperationPrompts).toBe(mode === "local" ? 2 : 0);
+            expect(ownerOperationPrompts).toBe(mode === "local" ? 3 : 0);
           }
           expect(
             methods.every((method) =>

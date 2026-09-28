@@ -9,7 +9,7 @@ export interface OaathPaymasterServiceInput {
 }
 
 /** One exact plain-call request shared by owner and Grant execution/review. */
-export function capturePlainCalls(value: unknown, context: CaptureContext) {
+export function capturePlainCalls(value: unknown, context: CaptureContext, allowSigner = false) {
   const fail = clientFailure("oaath_client_input_invalid");
   const captured = captureRecord(value, "sendCalls input", context, fail);
   const request = exactCapturedRecord(
@@ -17,12 +17,16 @@ export function capturePlainCalls(value: unknown, context: CaptureContext) {
     [
       "chain",
       "calls",
+      ...(allowSigner && Object.hasOwn(captured, "signer") ? ["signer"] : []),
       ...(Object.hasOwn(captured, "paymasterService") ? ["paymasterService"] : []),
       ...(Object.hasOwn(captured, "feePayer") ? ["feePayer"] : []),
     ],
     "sendCalls input",
     fail,
   );
+  if (Object.hasOwn(request, "signer") && request.signer !== "auto" && request.signer !== "session")
+    return fail("Grant signer must be auto or session");
+  const signer = request.signer as "auto" | "session" | undefined;
   const chain = request.chain;
   if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1)
     return fail("sendCalls chain is invalid");
@@ -31,6 +35,7 @@ export function capturePlainCalls(value: unknown, context: CaptureContext) {
   return Object.freeze({
     chain,
     calls: request.calls,
+    ...(signer === undefined ? {} : { signer }),
     ...(Object.hasOwn(request, "feePayer") ? { feePayer: request.feePayer } : {}),
     ...(Object.hasOwn(request, "paymasterService")
       ? { paymasterService: request.paymasterService }
