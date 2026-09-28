@@ -2,8 +2,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createOAAth, type OaathConnectedEoaFeePayer, type OaathOwnerClient } from "@oaath/sdk";
-import { type EcdsaWalletClient, kernelV33Deployment } from "@oaath/sdk/kernel";
+import {
+  createOAAth,
+  type OaathConnectedEoaFeePayer,
+  type OaathLocalWallet,
+  type OaathOwnerClient,
+} from "@oaath/sdk";
+import { kernelV33Deployment } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
   createWalletClient,
@@ -26,7 +31,7 @@ import { deployKernelStack, startAnvil } from "./anvil-process.mjs";
 import { deployLocalV33Account } from "./anvil-v33.js";
 import { createSqliteOperationStoreAdapter } from "./sqlite-store.js";
 
-type OwnerWallet = EcdsaWalletClient & OaathConnectedEoaFeePayer["wallet"];
+type OwnerWallet = OaathLocalWallet & OaathConnectedEoaFeePayer["wallet"];
 export interface LocalOwnerAnvilFixture {
   readonly chainId: number;
   readonly rpcUrl: string;
@@ -37,6 +42,8 @@ export interface LocalOwnerAnvilFixture {
   readonly fallbackSubmissionCount: number;
   /** Reopens the SDK and SQLite journal; no prior operation handle survives. */
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
+  /** Fresh bounded public SDK ports for testing local client composition. */
+  readonly createChainPorts: () => ReturnType<typeof createViemChainPorts>;
   readonly mine: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -112,6 +119,13 @@ export async function createLocalOwnerAnvilFixture(
                   signatures++;
                   return owner.signMessage({ message: { raw: digest } });
                 }
+                if (method === "eth_signTypedData_v4") {
+                  const [signer, encoded] = params as [string, string];
+                  if (signer.toLowerCase() !== owner.address.toLowerCase())
+                    throw new Error("local_fixture_owner_changed");
+                  signatures++;
+                  return owner.signTypedData(JSON.parse(encoded));
+                }
                 if (method === "eth_sendTransaction") {
                   const [tx] = params as [
                     { from: Hex; to: Hex; data: Hex; value: Hex; chainId: Hex },
@@ -133,6 +147,10 @@ export async function createLocalOwnerAnvilFixture(
             async signMessage(request: Parameters<typeof localWallet.signMessage>[0]) {
               signatures++;
               return localWallet.signMessage(request);
+            },
+            async signTypedData(request: Parameters<OaathLocalWallet["signTypedData"]>[0]) {
+              signatures++;
+              return localWallet.signTypedData(request);
             },
             async sendTransaction(request: Parameters<typeof localWallet.sendTransaction>[0]) {
               if (!request.to || !request.data || request.value !== 0n)
@@ -235,6 +253,7 @@ export async function createLocalOwnerAnvilFixture(
       rpcUrl: chain.url,
       address,
       wallet,
+      createChainPorts: ports,
       get signatureCount() {
         return signatures;
       },

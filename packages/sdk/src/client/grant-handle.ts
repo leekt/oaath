@@ -4034,6 +4034,11 @@ export function createGrantHandle(
         } catch {
           /* Unavailable state never authorizes another submission or completion. */
         }
+        // Admission of the owner operation fences the Grant with a new store
+        // revision, even when it leaves the aggregate unchanged. Commit the
+        // observed revocation against that current revision.
+        snapshot = await refresh();
+        grant = snapshot.value;
         evidence = await observeKernelPermissionRevocation({
           binding,
           approval: input.installApproval,

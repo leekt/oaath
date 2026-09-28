@@ -40,11 +40,15 @@ interface ServiceSessionStores {
   };
 }
 
+type SessionContext = Pick<ServiceBootstrap, "account" | "context" | "userHandle"> & {
+  readonly application: Pick<ServiceBootstrap["application"], "applicationId" | "clientId">;
+};
+
 export interface ServiceSessionInput {
   readonly stores: ServiceSessionStores;
   readonly url: string;
   readonly origin: string;
-  readonly bootstrap: Readonly<ServiceBootstrap>;
+  readonly bootstrap: Readonly<SessionContext>;
 }
 
 export interface PersistedServiceSession {
@@ -57,7 +61,7 @@ export interface PersistedServiceSession {
 function storageId(
   url: string,
   origin: string,
-  bootstrap: Readonly<ServiceBootstrap>,
+  bootstrap: Readonly<SessionContext>,
 ): `0x${string}` {
   return keccak256(
     encodeAbiParameters(
@@ -88,7 +92,7 @@ function storageId(
 export function serviceSessionKeyId(
   url: string,
   origin: string,
-  bootstrap: Readonly<ServiceBootstrap>,
+  bootstrap: Readonly<SessionContext>,
 ): string {
   return `service-session-${storageId(url, origin, bootstrap).slice(2, 34)}`;
 }

@@ -31,8 +31,49 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default. Grant `signer: "auto"` and the local permission issuer
-are still pending.
+bundler route by default. Automatic owner fallback after session-validation
+failure is still pending.
+
+For scoped sessions without an issuer service or phone, use local mode with the
+same existing account and either a browser or local viem wallet:
+
+```ts
+const oaath = createOAAth({
+  mode: "local",
+  account: { kind: "existing", address: existingKernelAddress },
+  owner: walletClient,
+  chains: createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } }),
+});
+const connection = await oaath.connect();
+const grant = await connection.resume() ?? await connection.requestPermission({
+  chainScope: "all",
+  permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
+  expiresIn: 3600,
+  perChainOperationLimit: 10,
+});
+const operation = await grant.sendCalls({ chain: 143, calls: [{ target, data, value: "0" }] });
+await operation.wait();
+await oaath.close();
+```
+
+The session key is encrypted in IndexedDB before consent. One wallet EIP-712
+approval covers the exact permission on all configured chains; the SDK verifies
+their root owner and matching permission nonce before prompting. The first send
+enables the permission and executes its calls together. Reopening the same
+origin/account/owner restores the session and operation journal; covered calls
+then need no owner prompt. `resume()` can also return a revoked, expired, or
+revoking Grant for observation or cleanup; only an active covering Grant may send.
+Another permission request requires explicit wallet consent. No issuer network
+request is made. Chain RPC and bundler calls still use the configured ports.
+
+Outside a browser, supply an explicit `origin` and durable `stores` through
+`OaathLocalConfiguration`. Local mode fails if default IndexedDB is unavailable;
+it does not silently create an ephemeral session. The same client also exposes
+`oaath.account(existingKernelAddress).owner(walletClient)` and account-level
+operation recovery. `close()` releases resources without revocation;
+`disconnect(grant)` revokes installed or unused approval onchain, signs out
+locally, and deletes local key custody only after revocation completes. Failed
+cleanup remains retryable. Missing receipts never authorize another submission.
 
 The same owner operation is available through the lower-level runtime:
 

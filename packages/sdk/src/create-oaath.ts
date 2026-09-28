@@ -61,11 +61,17 @@ import {
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
 import {
+  createLocalRealm,
+  type OaathLocalClient,
+  type OaathLocalConfiguration,
+} from "./client/local-realm.js";
+import {
   createOwnerRealm,
   type OaathOwnerClient,
   type OaathOwnerConfiguration,
 } from "./client/owner-realm.js";
 import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
+import { captureStoreConfiguration } from "./client/store-configuration.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
 import type {
@@ -166,16 +172,6 @@ function captureSessionSigner(
   return Object.freeze({ mode: record.mode, providerId: record.providerId });
 }
 
-const STORE_KEYS: readonly string[] = Object.freeze([
-  "grants",
-  "operations",
-  "walletCallBundles",
-  "preparedCallContexts",
-  "keys",
-  "cleanup",
-  "context",
-]);
-
 function storePort<Port>(
   value: unknown,
   methods: readonly string[],
@@ -258,11 +254,13 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * ```
  *
  * `mode: "owner"` executes directly from an existing Kernel v3.3 account with
- * a connected wallet. A configuration carrying `binding` is the injected
+ * a connected wallet. `mode: "local"` adds wallet-approved durable sessions
+ * for that existing account, without a service or phone. A configuration carrying `binding` is the injected
  * composition for deterministic tests and custom deployments; other inputs
  * select URL mode, whose only normal production input is `url`.
  */
 export function createOAAth(configuration: OaathOwnerConfiguration): Readonly<OaathOwnerClient>;
+export function createOAAth(configuration: OaathLocalConfiguration): Readonly<OaathLocalClient>;
 export function createOAAth(configuration?: unknown): Readonly<Oaath>;
 export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
@@ -272,6 +270,7 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
     clientFailure("oaath_client_input_invalid"),
   );
   if (record.mode === "owner") return createOwnerRealm(configuration);
+  if (record.mode === "local") return createLocalRealm(configuration, composeInjectedRealm);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
   // Every URL-mode key is optional, so exactness here is only the closed key
   // set: an unknown key fails instead of being silently ignored.
@@ -320,57 +319,7 @@ function composeInjectedRealm(configuration: unknown): Readonly<Oaath> {
     "capability invalidation",
     context,
   );
-  const storeRecord = exactClientRecord(
-    record.stores,
-    STORE_KEYS,
-    "OAAth stores",
-    context,
-    "oaath_client_capability_invalid",
-  );
-  const stores = Object.freeze({
-    grants: storePort<GrantStoreAdapter>(
-      storeRecord.grants,
-      ["get", "compareAndSwap", "close"],
-      "Grant store",
-      context,
-    ),
-    operations: storePort<OperationStoreAdapter>(
-      storeRecord.operations,
-      ["get", "getArchived", "compareAndSwap", "close"],
-      "Operation store",
-      context,
-    ),
-    walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
-      storeRecord.walletCallBundles,
-      ["get", "compareAndSwap", "close"],
-      "wallet call bundle store",
-      context,
-    ),
-    preparedCallContexts: storePort<PreparedCallStoreAdapter>(
-      storeRecord.preparedCallContexts,
-      ["get", "compareAndSwap", "close"],
-      "prepared call context store",
-      context,
-    ),
-    keys: storePort<OaathKeyStore>(
-      storeRecord.keys,
-      ["store", "get", "delete", "close"],
-      "key store",
-      context,
-    ),
-    cleanup: storePort<OaathCleanupCheckpointStore>(
-      storeRecord.cleanup,
-      ["read", "write", "clear", "close"],
-      "cleanup store",
-      context,
-    ),
-    context: storePort<OaathContextStore>(
-      storeRecord.context,
-      ["read", "write", "clear", "close"],
-      "context store",
-      context,
-    ),
-  });
+  const stores = captureStoreConfiguration(record.stores, context);
   const chains = chainMap(record.chains, context);
   const signing = exactClientRecord(
     record.signing,
