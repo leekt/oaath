@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   chain: 421_614,
 });
 
-/** origin -> { url, connection, grant, providers: Map<chain, provider> } */
+/** origin -> { url, promise }: initialization and pairing are shared by first callers. */
 const realms = new Map();
 
 async function settings() {
@@ -52,45 +52,68 @@ async function settings() {
 async function realmFor(origin) {
   const configured = await settings();
   const cached = realms.get(origin);
-  if (cached && cached.url === configured.url) {
-    // The realm is service-bound; the chain is only a provider parameter, so
-    // a saved chain change takes effect immediately (providers are keyed by
-    // chain, so stale ones are simply never consulted again).
-    cached.chain = configured.chain;
-    return cached;
+  const entry =
+    cached?.url === configured.url
+      ? cached
+      : { url: configured.url, promise: initializeRealm(origin, configured, cached?.promise) };
+  realms.set(origin, entry);
+  try {
+    const realm = await entry.promise;
+    // A chain change reuses this service-bound realm and its provider map.
+    realm.chain = configured.chain;
+    return realm;
+  } catch (error) {
+    if (realms.get(origin) === entry) realms.delete(origin);
+    throw error;
   }
-  if (cached) await cached.connection.close().catch(() => undefined);
+}
+
+async function initializeRealm(origin, configured, previous) {
+  if (previous) {
+    const old = await previous.catch(() => null);
+    if (old) await old.close().catch(() => undefined);
+  }
   const database = await openOaathDatabase({
     factory: indexedDB,
     // One database per (service, origin): a service change starts fresh
     // rather than resuming authority issued by another service.
     name: `oaath-extension:${configured.url}:${origin}`,
   });
-  const oaath = createOAAth({
-    url: configured.url,
-    origin,
-    stores: {
-      grants: createIndexedDbGrantStoreAdapter(database),
-      operations: createIndexedDbOperationStoreAdapter(database),
-      walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
-      preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
-      keys: createIndexedDbKeyStore(database),
-      cleanup: createIndexedDbCleanupStore(database),
-      context: createIndexedDbContextStore(database),
-    },
-  });
-  const connection = await oaath.connect();
-  const realm = {
-    origin,
-    url: configured.url,
-    chain: configured.chain,
-    connection,
-    grant: null,
-    pairing: false,
-    providers: new Map(),
-  };
-  realms.set(origin, realm);
-  return realm;
+  try {
+    const oaath = createOAAth({
+      url: configured.url,
+      origin,
+      stores: {
+        grants: createIndexedDbGrantStoreAdapter(database),
+        operations: createIndexedDbOperationStoreAdapter(database),
+        walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
+        preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
+        keys: createIndexedDbKeyStore(database),
+        cleanup: createIndexedDbCleanupStore(database),
+        context: createIndexedDbContextStore(database),
+      },
+    });
+    const connection = await oaath.connect();
+    return {
+      origin,
+      url: configured.url,
+      chain: configured.chain,
+      connection,
+      async close() {
+        try {
+          await connection.close();
+        } finally {
+          database.close();
+        }
+      },
+      grant: null,
+      pairing: false,
+      providers: new Map(),
+    };
+  } catch (error) {
+    database.close();
+    throw error;
+  }
 }
 
 async function activeGrant(realm) {
