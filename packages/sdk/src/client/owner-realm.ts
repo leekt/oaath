@@ -16,6 +16,7 @@ import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/o
 import { probeBundlerCapability } from "../routing/bundler.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
+import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
 import type { OaathExecutionDecision } from "../routing/types.js";
 import { OperationStore, type OperationStoreAdapter, type OperationStoreKey } from "../store.js";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
@@ -32,6 +33,7 @@ import {
   type OaathOperationHandle,
   operationOutcome,
 } from "./operation-handle.js";
+import { capturePaymasterService, capturePlainCalls } from "./sponsorship.js";
 
 interface OwnerChain extends OaathChainCapability {
   readonly reads: OaathChainCapability["reads"] & KernelV33Reads;
@@ -43,6 +45,7 @@ export interface OaathOwnerConfiguration {
   readonly operations?: OperationStoreAdapter;
 }
 export interface OaathOwnerCallsReview {
+  readonly paymasterService: Readonly<{ url: string }> | null;
   readonly chainId: number;
   readonly account: `0x${string}`;
   readonly kernelVersion: "0.3.3";
@@ -232,9 +235,12 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
         async function shape(value: unknown) {
           assertOpen();
           const context = new WeakSet<object>();
-          const request = exactClientRecord(value, ["chain", "calls"], "owner calls", context);
+          const request = capturePlainCalls(value, context);
           const chain = chainFor(request.chain);
           const calls = captureCalls(request.calls, context);
+          const sponsorship = Object.hasOwn(request, "paymasterService")
+            ? capturePaymasterService(request.paymasterService, chain.paymasterService, context)
+            : null;
           const runtime = createKernelRuntime({
             deployment: kernelV33Deployment(chain.chainId),
             operator: ownerOperator({ key }),
@@ -269,7 +275,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
               "oaath_client_route_unavailable",
               "owner bundler route is unavailable",
             );
-          return { chain, calls, runtime, bound, simulation, decision };
+          return { chain, calls, runtime, bound, simulation, decision, sponsorship };
         }
         return Object.freeze({
           reviewCalls: (value: unknown) =>
@@ -284,11 +290,15 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 signer: "owner" as const,
                 route: "bundler" as const,
                 reasons: resolved.decision.reasons,
+                paymasterService:
+                  resolved.sponsorship === null
+                    ? null
+                    : Object.freeze({ url: resolved.chain.paymasterService!.url }),
               });
             }),
           sendCalls: (value: unknown) =>
             activity(async () => {
-              const { chain, calls, runtime, bound, simulation } = await shape(value);
+              const { chain, calls, runtime, bound, simulation, sponsorship } = await shape(value);
               const lane = keyFor(chain.chainId);
               const sender = await runner(
                 chain,
@@ -296,7 +306,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                   assertOpen();
                   const quote = quoteFields(
                     await chain.quote({
-                      purpose: "estimate",
+                      purpose: sponsorship === null ? "estimate" : "sponsorship",
                       chainId: chain.chainId,
                       kind: "execution",
                       signer: "owner",
@@ -308,15 +318,23 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                       simulation: { prepared: simulation, signature: runtime.dummySignature },
                     }),
                   );
-                  return runtime.prepareOperation({
-                    kind: "execution",
+                  const operation = {
+                    kind: "execution" as const,
                     grantId: contextId,
                     account: bound,
                     nonceKey: quote.nonceKey,
                     sequence: quote.sequence,
                     calls,
                     gas: quote.gas,
-                  });
+                  };
+                  return sponsorship === null
+                    ? runtime.prepareOperation(operation)
+                    : prepareSponsoredKernelOperation({
+                        runtime,
+                        operation,
+                        simulationSignature: runtime.dummySignature,
+                        sponsorship,
+                      });
                 },
                 async (prepared) => {
                   assertOpen();

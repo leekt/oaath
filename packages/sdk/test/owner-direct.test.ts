@@ -62,6 +62,69 @@ function fixture(pending = false, lostReply = false) {
 }
 
 describe("owner-direct account calls", () => {
+  it("finalizes an explicitly requested paymaster before the owner prompt", async () => {
+    const { chain, wallet, base, prompts } = fixture();
+    const stages: string[] = [];
+    const paymaster = `0x${"33".repeat(20)}` as const;
+    const client = createOAAth({
+      mode: "owner",
+      operations: createMemoryOperationStoreAdapter(),
+      chains: [
+        {
+          ...chain,
+          quote: async (request) => {
+            expect(request.purpose).toBe("sponsorship");
+            return chain.quote(request);
+          },
+          paymasterService: {
+            url: "https://paymaster.test",
+            request: async (request) => {
+              expect(prompts()).toBe(0);
+              stages.push(request.method);
+              return request.method === "pm_getPaymasterStubData"
+                ? { paymaster, paymasterData: "0x01", paymasterPostOpGasLimit: "0x64" }
+                : { paymaster, paymasterData: "0x02" };
+            },
+            estimate: async (request) => {
+              expect(prompts()).toBe(0);
+              expect(request.userOperation.signature.length).toBe(132);
+              stages.push("estimate");
+              return {
+                callGasLimit: "200000",
+                verificationGasLimit: "300000",
+                preVerificationGas: "50000",
+                paymasterVerificationGasLimit: "100000",
+              };
+            },
+          },
+        },
+      ],
+    });
+    try {
+      const owner = client.account(ACCOUNT).owner(wallet);
+      const request = {
+        ...(sendCallsInput() as Record<string, unknown>),
+        paymasterService: { url: "https://paymaster.test", context: {} },
+      };
+      expect(await owner.reviewCalls(request)).toMatchObject({
+        paymasterService: { url: "https://paymaster.test" },
+      });
+      expect(stages).toEqual([]);
+      expect(prompts()).toBe(0);
+      const operation = await owner.sendCalls(request);
+      expect(stages).toEqual(["pm_getPaymasterStubData", "estimate", "pm_getPaymasterData"]);
+      expect(base.sends[0]?.userOperation.paymaster).toMatchObject({
+        address: paymaster,
+        data: "0x02",
+      });
+      expect(base.sends[0]?.userOperation.nonce).toBe("0");
+      expect(prompts()).toBe(1);
+      expect((await operation.wait()).status).toBe("finalized");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("retains an uncertain send and never opens another signature or submission", async () => {
     const { create, wallet, base, prompts } = fixture(true, true);
     const client = create();

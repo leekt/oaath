@@ -31,7 +31,7 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route without sponsorship. Grant `signer: "auto"`, v3.3 session permissions,
+bundler route. Grant `signer: "auto"`, v3.3 session permissions,
 and the local permission issuer are still pending.
 
 The same owner operation is available through the lower-level runtime:
@@ -199,6 +199,22 @@ The lower-level `createKernelRuntime` accepts the same `gas` option.
 Relay bootstrap preserves an explicitly configured floor.
 
 ERC-7677 sponsorship applies the floor before requesting final paymaster data.
+Both Grant and owner calls accept an explicit registered service:
+
+```ts
+const request = { chain, calls, paymasterService: {
+  url: registeredPaymasterUrl, context: { policyId: "application-policy" },
+} };
+await grant.reviewCalls(request); // reports the selected URL; no sponsorship request
+const operation = await grant.sendCalls(request); // owner.sendCalls accepts the same selection
+```
+
+The URL must exactly match that chain's registered service. The SDK requests stub
+data, estimates, and obtains final data once each before signing the final
+operation. An invalid or unavailable sponsor fails the request; it never selects
+an unsponsored send. Sponsorship requires the bundler route. `reviewCalls`
+reports `paymasterService: { url }` or `null` and does not contact the sponsor.
+
 Custom sponsorship adapters receive `verificationGasFloor` with their prepared
 candidate and must honor it before authorizing the final gas. A reply below the
 floor is rejected before signing; its authorized fields are never changed after

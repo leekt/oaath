@@ -492,3 +492,93 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     await reconnected.close();
   });
 });
+
+describe("plain sendCalls ERC-7677", () => {
+  it.each([
+    { name: "direct", create: createRealm },
+    { name: "relay", create: createUrlRealm },
+  ])(
+    "sponsors $name Grant calls before signing and preserves the enable floor",
+    async ({ name, create }) => {
+      const base = createChainFixture();
+      const registered = registeredService();
+      const chain = replaceChain(base, {
+        paymasterService: registered.service,
+        gas: { enableVerificationGasFloor: 2_000_000n },
+      });
+      const invoke = (method: Erc7677PaymasterServiceRequest["method"], request: unknown) =>
+        registered.service.request({
+          method,
+          params: (request as { params: Erc7677PaymasterServiceRequest["params"] }).params,
+        });
+      const realm =
+        name === "relay"
+          ? createUrlRealm({
+              chain,
+              paymasterService: {
+                providerId: "plain-sponsor",
+                requestTimeoutMs: 1000,
+                provider: {
+                  getPaymasterStubData: (request) => invoke("pm_getPaymasterStubData", request),
+                  getPaymasterData: (request) => invoke("pm_getPaymasterData", request),
+                },
+              },
+            })
+          : create({ chain });
+      try {
+        const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+        const request = {
+          chain: CHAIN_ID,
+          calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+          paymasterService: { url: SERVICE_URL, context: { policyId: "plain" } },
+        };
+        expect(await grant.reviewCalls(request)).toMatchObject({
+          paymasterService: { url: SERVICE_URL },
+        });
+        expect(registered.stages).toEqual([]);
+        expect(base.quotes).toBe(0);
+        expect(base.signatures).toHaveLength(0);
+        const operation = await grant.sendCalls(request);
+        expect(registered.stages).toEqual(["stub", "estimate", "final"]);
+        expect(registered.serviceRequests[1]?.params[0].verificationGasLimit).toBe("0x1e8480");
+        expect(base.sends[0]?.userOperation).toMatchObject({
+          verificationGasLimit: "2000000",
+          paymaster: { address: PAYMASTER, data: "0x01020305" },
+        });
+        expect(base.signatures).toHaveLength(1);
+        expect((await operation.wait()).status).toBe("finalized");
+      } finally {
+        await realm.oaath.close();
+      }
+    },
+  );
+
+  it.each(["unregistered", "malformed"])(
+    "refuses %s sponsorship without a signature or unsponsored send",
+    async (failure) => {
+      const base = createChainFixture();
+      const registered = registeredService({ malformedEstimate: failure === "malformed" });
+      const realm = createRealm({
+        chain: replaceChain(base, { paymasterService: registered.service }),
+      });
+      try {
+        const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+        await expect(
+          grant.sendCalls({
+            chain: CHAIN_ID,
+            calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+            paymasterService: {
+              url: failure === "unregistered" ? FOREIGN_URL : SERVICE_URL,
+              context: {},
+            },
+          }),
+        ).rejects.toMatchObject({ code: expect.stringMatching(/^oaath_client_/u) });
+        expect(base.signatures).toHaveLength(0);
+        expect(base.sends).toHaveLength(0);
+        expect(registered.stages).toEqual(failure === "unregistered" ? [] : ["stub", "estimate"]);
+      } finally {
+        await realm.oaath.close();
+      }
+    },
+  );
+});
