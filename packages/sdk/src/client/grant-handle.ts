@@ -1151,6 +1151,11 @@ export function createGrantHandle(
     chainId: number,
     bindingRuntime?: Readonly<KernelRuntime>,
   ): Promise<Readonly<KernelV4AccountDescriptor>> {
+    if (input.binding.account.kernelVersion !== "0.4.0")
+      return clientFail(
+        "oaath_client_input_invalid",
+        "Kernel v3.3 Grant execution is not yet available",
+      );
     const owner = ownerRuntime(chainId);
     const runtime = bindingRuntime ?? owner;
     try {

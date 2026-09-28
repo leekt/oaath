@@ -81,7 +81,10 @@ export async function prepareKernelPhonePermissionApproval(
   const ownerCredential = request.logicalAccount.ownerCredential;
   if (ownerCredential.kind !== "p256")
     return inputInvalid("phone permission approval requires a P-256 owner");
-  if (request.logicalAccount.factoryRoute !== "kernel_factory") {
+  if (
+    request.logicalAccount.kernelVersion !== "0.4.0" ||
+    request.logicalAccount.factoryRoute !== "kernel_factory"
+  ) {
     return inputInvalid("Kernel v4 phone approval requires the Kernel factory route");
   }
   if (typeof input.chainId !== "number") return inputInvalid("phone approval chain is invalid");

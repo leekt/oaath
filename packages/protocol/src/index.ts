@@ -116,6 +116,8 @@ export type {
   IdentityProfileErrorCode,
   KernelAccountActionInput,
   KernelAccountProfile,
+  KernelV4AccountProfile,
+  KernelV33AccountProfile,
   OperatorCredentialKind,
   OperatorCredentialProfile,
   OwnerCredentialKind,
@@ -127,6 +129,7 @@ export type {
 export {
   createKernelAccountActionInput,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+  OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OaathIdentityProfileError,

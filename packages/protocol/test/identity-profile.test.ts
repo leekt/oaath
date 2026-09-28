@@ -11,6 +11,7 @@ import {
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
+  sameKernelAccountProfile,
 } from "../src/index.js";
 
 const p256PublicKey =
@@ -83,6 +84,44 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
 }
 
 describe("identity profile codecs", () => {
+  it("captures an existing v3.3 address without factory derivation and keeps its owner bound", () => {
+    const existing = {
+      version: "oaath.kernel-existing-account-profile/v1",
+      kind: "kernel",
+      kernelVersion: "0.3.3",
+      address: `0x${"55".repeat(20)}`,
+      entryPoint: { version: "0.7" },
+      ownerCredential: ownerEcdsa,
+    };
+    const parsed = parseKernelAccountProfile(existing);
+    expect(parsed).toEqual(existing);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(createKernelAccountActionInput(parsed, 143)).toEqual({
+      chainId: 143,
+      kernelVersion: "0.3.3",
+      address: existing.address,
+      entryPointVersion: "0.7",
+      ownerCredential: ownerEcdsa,
+    });
+    expect(sameKernelAccountProfile(parsed, parseKernelAccountProfile(clone(parsed)))).toBe(true);
+    expect(
+      sameKernelAccountProfile(
+        parsed,
+        parseKernelAccountProfile({ ...existing, address: `0x${"66".repeat(20)}` }),
+      ),
+    ).toBe(false);
+    expect(sameKernelAccountProfile(parsed, accountProfile)).toBe(false);
+    for (const altered of [
+      { ...existing, version: "oaath.kernel-account-profile/v1" },
+      { ...existing, kernelVersion: "0.3.2" },
+      { ...existing, address: `0x${"00".repeat(20)}` },
+      { ...existing, accountIndex: "0" },
+      { ...existing, factoryRoute: "kernel_factory" },
+      { ...existing, ownerCredential: ownerP256 },
+    ])
+      expect(() => parseKernelAccountProfile(altered)).toThrow();
+  });
+
   it("round-trips the three exact owner public-identity shapes immutably", () => {
     expect(OAATH_OWNER_CREDENTIAL_PROFILE_VERSION).toBe("oaath.owner-credential-profile/v1");
     for (const profile of [ownerEcdsa, ownerP256, ownerWebAuthn]) {
