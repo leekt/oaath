@@ -44,6 +44,19 @@ describe("PKCE S256 verification", () => {
 });
 
 describe("authorization decision", () => {
+  it("returns the same non-secret match code as the phone's authenticated projection", async () => {
+    const harness = createHarness();
+    const created = await createRequest(harness);
+    const projection = await expectOk<{ displayPayload: string }>(
+      await harness.handler(get(`/native/projections/${created.requestId}`, OWNER_TOKEN)),
+      200,
+    );
+    expect(created.matchCode).toMatch(/^[A-Za-z0-9_-]{8}$/u);
+    expect(created.matchCode === projection.displayPayload).toBe(true);
+    expect(Object.keys(created).sort()).toEqual(["expiresAt", "matchCode", "requestId"]);
+    expect((await createRequest(harness)).matchCode).not.toBe(created.matchCode);
+  });
+
   it.each([
     ["raw", '{"permission":"opaque"}'],
     [

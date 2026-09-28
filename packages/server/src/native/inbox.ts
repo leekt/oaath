@@ -8,7 +8,8 @@ import { type RelayClock, relayNow } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import { type RelayStore, withRelayTransaction } from "../store/interface.js";
-import { type OwnerPhonePushProjection, ownerPhoneDisplayPayload } from "./projection.js";
+import { ownerPhoneDisplayPayload } from "./display.js";
+import type { OwnerPhonePushProjection } from "./projection.js";
 
 export const OAATH_NATIVE_INBOX_VERSION = "oaath.native-inbox/v1" as const;
 const INBOX_LIMIT = 20;

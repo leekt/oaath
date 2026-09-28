@@ -3,6 +3,13 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+In service URL mode, `requestPermission` accepts an optional
+`onPending({ requestId, matchCode, expiresAt })` callback before waiting for the
+owner. Display the eight-character code for comparison with the phone and clear
+it when the request settles. `expiresAt` is in Unix milliseconds; the code is
+non-secret display metadata and grants no authority. Local wallet mode does not
+call this callback.
+
 ## Local wallet mode
 
 For a browser app using an existing ECDSA-root Kernel `0.3.3` account, local

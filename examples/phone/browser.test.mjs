@@ -377,3 +377,44 @@ test("unreadable saved job cannot be orphaned by a new permission", async () => 
   assert.equal(permissions, 0);
   assert.equal(storage.getItem(savedJobKey), "unreadable");
 });
+
+for (const outcome of ["approved", "rejected"]) {
+  test(`match code is visible only while its permission is pending (${outcome})`, async () => {
+    const decision = deferred();
+    const storage = new MemoryStorage();
+    let requestCount = 0;
+    const nodes = await pageRealm({
+      storage,
+      createOAAth: () => ({
+        connect: async () => ({
+          resume: async () => null,
+          requestPermission: async ({ onPending }) => {
+            requestCount += 1;
+            onPending({
+              requestId: "request-1",
+              matchCode: "Ab1-_9Zz",
+              expiresAt: Date.now() + 60_000,
+            });
+            await decision.promise;
+            if (outcome === "rejected") throw new Error("refused");
+            return { state: "active" };
+          },
+        }),
+      }),
+    });
+    await nodes.get("unlock").onclick();
+    const request = nodes.get("permission").onclick();
+    await new Promise(setImmediate);
+    assert.equal(requestCount, 1);
+    assert.equal(nodes.get("permission-match").hidden, false);
+    assert.equal(nodes.get("permission-match-code").textContent, "Ab1- _9Zz");
+    assert.equal(
+      storage.snapshot().some((value) => value.includes("Ab1-_9Zz")),
+      false,
+    );
+    decision.resolve();
+    await request;
+    assert.equal(nodes.get("permission-match").hidden, true);
+    assert.equal(nodes.get("permission-match-code").textContent, "");
+  });
+}

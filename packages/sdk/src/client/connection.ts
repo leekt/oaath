@@ -33,6 +33,7 @@ import {
   captureRecord,
   createGrantFromPermissionRequest,
   deriveCodeChallenge,
+  exactCapturedRecord,
   type Grant,
   type GrantPolicy,
   OAATH_GRANT_POLICY_VERSION,
@@ -132,6 +133,18 @@ export interface OaathPermissionInput {
 }
 
 export interface OaathRequestPermissionInput {
+  /**
+   * Issuer mode only: display this code while waiting for the owner, then clear
+   * it when requestPermission settles. Compare it with the phone; it is not authority.
+   */
+  readonly onPending?: (
+    request: Readonly<{
+      requestId: string;
+      matchCode: string;
+      /** Issuer request expiry in Unix milliseconds. */
+      expiresAt: number;
+    }>,
+  ) => void | Promise<void>;
   readonly chainScope: "all";
   readonly permissions: readonly Readonly<OaathPermissionInput>[];
   /** Seconds of Grant lifetime from now. */
@@ -455,7 +468,10 @@ export function createConnection(
     }
   }
 
-  async function authorizeAtIssuer(scope: PermissionScope): Promise<{
+  async function authorizeAtIssuer(
+    scope: PermissionScope,
+    onPending: OaathRequestPermissionInput["onPending"],
+  ): Promise<{
     request: Readonly<PermissionRequest>;
     artifact: unknown;
   }> {
@@ -470,6 +486,10 @@ export function createConnection(
       requestedScope: JSON.stringify(scope),
     });
     const requestId = text(created, "requestId");
+    const matchCode = created.matchCode;
+    if (typeof matchCode !== "string" || !/^[A-Za-z0-9_-]{8}$/u.test(matchCode)) {
+      return clientFail("oaath_client_issuer_unavailable", "the issuer match code is invalid");
+    }
     const relayExpiresAt = created.expiresAt;
     if (typeof relayExpiresAt !== "number" || !Number.isSafeInteger(relayExpiresAt)) {
       return clientFail("oaath_client_issuer_unavailable", "the issuer expiry is invalid");
@@ -477,6 +497,7 @@ export function createConnection(
 
     let authorized: unknown;
     try {
+      await onPending?.(Object.freeze({ requestId, matchCode, expiresAt: relayExpiresAt }));
       authorized = await input.authority.authorization.authorize({
         requestId,
         redirectUri: input.binding.redirectUri,
@@ -543,12 +564,27 @@ export function createConnection(
   async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
     assertUsable();
     const context: CaptureContext = new WeakSet();
-    const record = exactClientRecord(
-      value,
-      ["chainScope", "permissions", "expiresIn", "perChainOperationLimit"],
+    const fail = (message: string): never => clientFail("oaath_client_input_invalid", message);
+    const record = captureRecord(value, "requestPermission input", context, fail);
+    exactCapturedRecord(
+      record,
+      [
+        "chainScope",
+        "permissions",
+        "expiresIn",
+        "perChainOperationLimit",
+        ...(Object.hasOwn(record, "onPending") ? ["onPending"] : []),
+      ],
       "requestPermission input",
-      context,
+      fail,
     );
+    const onPending =
+      record.onPending === undefined
+        ? undefined
+        : clientCapability<NonNullable<OaathRequestPermissionInput["onPending"]>>(
+            record.onPending,
+            "onPending",
+          );
     if (record.chainScope !== "all") {
       return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
     }
@@ -588,7 +624,7 @@ export function createConnection(
         );
       }
     } else {
-      ({ request, artifact } = await authorizeAtIssuer(scope));
+      ({ request, artifact } = await authorizeAtIssuer(scope, onPending));
     }
 
     let decision: Readonly<PermissionDecision>;

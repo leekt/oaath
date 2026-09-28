@@ -304,6 +304,7 @@ describe("hostile input at the client boundary", () => {
       { expiresIn: 86_401 },
       { expiresIn: 1.5 },
       { perChainOperationLimit: 0 },
+      { onPending: "not a callback" },
       { permissions: [] },
       { permissions: [{}] },
       { permissions: [{ calls: [{ target: TARGET, selectors: ["0x1234"], valueLimit: "0" }] }] },

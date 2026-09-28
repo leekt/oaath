@@ -499,7 +499,15 @@ const oaath = createRealm();
 const connection = await oaath.connect();
 if ((await connection.resume()) !== null) fail("nothing may resume before consent");
 
+let matchCodeDisplays = 0;
 const grant = await connection.requestPermission({
+  onPending: async (pending) => {
+    const consent = await relayJson("/native/projections/" + pending.requestId, OWNER_TOKEN);
+    if (pending.matchCode !== consent.displayPayload || pending.expiresAt !== consent.expiresAt) {
+      fail("requesting application and phone comparison codes differ");
+    }
+    matchCodeDisplays += 1;
+  },
   chainScope: "all",
   permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
   expiresIn: EXPIRES_IN,
@@ -507,6 +515,7 @@ const grant = await connection.requestPermission({
 });
 
 if (grant.state !== "active") fail("Grant state is " + grant.state);
+if (matchCodeDisplays !== 1) fail("pending comparison code must be exposed once");
 
 // Public packed SDK -> durable service -> phone transport. The grant artifact
 // has already been claimed by the browser; preparation reads retained custody.
@@ -966,6 +975,7 @@ import {
   type Oaath,
   type OaathGrantHandle,
   type OaathGetOperationInput,
+  type OaathRequestPermissionInput,
   type OaathCallsReview,
   type OaathSendCallsInput,
   type OaathOperationHandle,
@@ -1006,12 +1016,17 @@ export function compose(configuration: Readonly<OaathConfiguration>): Readonly<O
 
 export async function permission(oaath: Readonly<Oaath>): Promise<Readonly<OaathGrantHandle>> {
   const connection = await oaath.connect();
-  return connection.requestPermission({
+  const input: OaathRequestPermissionInput = {
+    onPending: ({ matchCode, requestId, expiresAt }) => {
+      const display: readonly [string, string, number] = [matchCode, requestId, expiresAt];
+      void display;
+    },
     chainScope: "all",
     permissions: [{ calls: [{ target: "0x00", selectors: ["0x00"], valueLimit: "0" }] }],
     expiresIn: 1800,
     perChainOperationLimit: 10,
-  });
+  };
+  return connection.requestPermission(input);
 }
 
 export function relay(permissionApprovals: OwnerPhonePermissionApprovals): RelayHandler {

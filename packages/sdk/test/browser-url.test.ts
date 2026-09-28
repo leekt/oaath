@@ -8,7 +8,7 @@
 import { createKmsSessionSignerProvider } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
-import { createOAAth } from "../src/index.js";
+import { createOAAth, type OaathRequestPermissionInput } from "../src/index.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -53,6 +53,75 @@ import {
 } from "./support/browser.js";
 
 describe("URL-only golden path", () => {
+  it("exposes the issued match code once before polling for the owner decision", async () => {
+    const upstream = createUrlRealm();
+    let issued: unknown;
+    const realm = createUrlRealm({
+      relay: async (request) => {
+        const response = await upstream.relay(request);
+        if (
+          request.method === "POST" &&
+          new URL(request.url).pathname === "/authorization/requests"
+        ) {
+          issued = await response.clone().json();
+        }
+        return response;
+      },
+    });
+    const displays: Parameters<NonNullable<OaathRequestPermissionInput["onPending"]>>[0][] = [];
+    let polledBeforeDisplay = false;
+    const onPending: NonNullable<OaathRequestPermissionInput["onPending"]> = (pending) => {
+      displays.push(pending);
+      polledBeforeDisplay = realm.fetched.some((path) => path.endsWith("/code"));
+    };
+    const grant = await (await realm.oaath.connect()).requestPermission(
+      permissionInput({ onPending }),
+    );
+    expect(displays).toHaveLength(1);
+    expect(displays[0]).toEqual(issued);
+    expect(Object.isFrozen(displays[0])).toBe(true);
+    expect(polledBeforeDisplay).toBe(false);
+    expect(grant.state).toBe("active");
+    await realm.oaath.close();
+    await upstream.oaath.close();
+  });
+
+  it.each([undefined, "short", "123456789", "abcd ef!"])(
+    "rejects an invalid issuer match code before display or code redemption (%s)",
+    async (matchCode) => {
+      const upstream = createUrlRealm();
+      const realm = createUrlRealm({
+        relay: async (request) => {
+          const response = await upstream.relay(request);
+          if (
+            request.method !== "POST" ||
+            new URL(request.url).pathname !== "/authorization/requests"
+          )
+            return response;
+          return new Response(JSON.stringify({ ...(await response.json()), matchCode }), {
+            status: 201,
+          });
+        },
+      });
+      let displays = 0;
+      await expect(
+        (await realm.oaath.connect()).requestPermission(
+          permissionInput({
+            onPending: () => {
+              displays += 1;
+            },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "oaath_client_issuer_unavailable" });
+      expect(displays).toBe(0);
+      expect(
+        realm.fetched.some((path) => path.endsWith("/code") || path.endsWith("/consume")),
+      ).toBe(false);
+      await realm.oaath.close();
+      await upstream.oaath.close();
+    },
+  );
+
   it.each([
     {
       label: "native rejection",
