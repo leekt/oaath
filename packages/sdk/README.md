@@ -3,6 +3,27 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+Custom Kernel sessions can set a fixed-window quota with
+`{ kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" }`
+in `sessionOperator({ key, policies })`. Include a `call` profile; expiry and an
+independent lifetime `operation-limit` can be included too. The quota belongs
+to the onchain permission/account pair. Installation starts the first window;
+the first validation after it ends replenishes the count and starts the next
+interval. A validated operation consumes a slot even if execution reverts.
+Reopening a runtime does not reset quota, and missing receipts still cannot
+authorize resubmission.
+
+The reset policy is pinned by `OAATH_KERNEL_RATE_LIMIT_POLICY` and
+`OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH` from `@oaath/sdk/kernel`.
+The matching module must already be deployed on the action chain; binding
+fails with `kernel_runtime_policy_unavailable` for missing or different code.
+The repository's `packages/sdk/test/fixtures/kernel-rate-limit-deployment.json`
+contains the deterministic deployment input. Its complete Solidity input is
+reproduced by `pnpm --filter @oaath/sdk check:rate-limit-artifact`; bundled source
+licenses are in that fixture directory's `licenses/` folder. This primitive is
+available through the Kernel API; the default permission-request schema still
+exposes its existing lifetime operation bound.
+
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
 

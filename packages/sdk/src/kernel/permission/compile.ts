@@ -38,6 +38,7 @@ import type {
   CompiledKernelPermissionPolicy,
   CompiledKernelPolicyPackage,
   KernelCallPolicyProfile,
+  KernelRateLimitPolicyProfile,
 } from "../types.js";
 
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -130,13 +131,14 @@ export function compileCapturedKernelPermissionPolicy(
   entries: readonly unknown[],
   context: CaptureContext,
 ): Readonly<CompiledKernelPermissionPolicy> {
-  if (entries.length < 1 || entries.length > 3) {
+  if (entries.length < 1 || entries.length > 4) {
     return inputInvalid("Kernel policy profile count is invalid");
   }
   let permissions: KernelCallPolicyProfile["permissions"] | null = null;
   let validAfter: string | null = null;
   let validUntil: string | null = null;
   let maximumOperations: string | null = null;
+  let rateLimit: Readonly<Omit<KernelRateLimitPolicyProfile, "kind">> | null = null;
 
   for (const entry of entries) {
     const captured = captureInput(entry, "Kernel policy profile", context);
@@ -181,6 +183,23 @@ export function compileCapturedKernelPermissionPolicy(
       );
       if (limit === 0n) return inputInvalid("Kernel operation limit policy maximum is invalid");
       maximumOperations = limit.toString(10);
+      continue;
+    }
+    if (kind === "rate-limit") {
+      if (rateLimit) return inputInvalid("Kernel policy profiles contain a duplicate kind");
+      const record = exactCaptured(
+        captured,
+        ["kind", "intervalSeconds", "maximumOperations"],
+        "Kernel rate limit policy profile",
+      );
+      const interval = inputUint(record.intervalSeconds, MAX_UINT48, "Kernel rate limit interval");
+      const count = inputUint(record.maximumOperations, MAX_UINT32, "Kernel rate limit count");
+      if (interval === 0n || count === 0n)
+        return inputInvalid("Kernel rate limit must have a positive interval and count");
+      rateLimit = Object.freeze({
+        intervalSeconds: interval.toString(10),
+        maximumOperations: count.toString(10),
+      });
       continue;
     }
     return inputInvalid("Kernel policy profile kind is unsupported");
@@ -240,11 +259,24 @@ export function compileCapturedKernelPermissionPolicy(
     );
   }
 
+  if (rateLimit !== null) {
+    packages.push(
+      Object.freeze({
+        module: resolvePolicyModule("rate-limit"),
+        policyData: concat([
+          toHex(BigInt(rateLimit.intervalSeconds), { size: 6 }),
+          toHex(BigInt(rateLimit.maximumOperations), { size: 6 }),
+        ]),
+      }),
+    );
+  }
+
   return Object.freeze({
     packages: Object.freeze(packages),
     permissions,
     validAfter,
     validUntil,
     maximumOperations,
+    rateLimit,
   });
 }

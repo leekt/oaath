@@ -47,6 +47,8 @@ import {
   createOAAth,
 } from "@oaath/sdk";
 import {
+  compileKernelPermissionPolicy,
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
   p256Key,
   kernelPermissionInstallNonce,
   prepareKernelPhonePermissionApproval,
@@ -106,6 +108,14 @@ const START = 1800000000;
 const EXPIRES_IN = 1800;
 const VALIDATOR = "0x" + "22".repeat(20);
 const TARGET = "0x" + "44".repeat(20);
+const resetting = compileKernelPermissionPolicy([
+  { kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] },
+  { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" },
+]);
+if (resetting.rateLimit?.intervalSeconds !== "86400" || resetting.rateLimit.maximumOperations !== "25" ||
+    resetting.maximumOperations !== null || resetting.packages.at(-1)?.module !== OAATH_KERNEL_RATE_LIMIT_POLICY) {
+  fail("resetting quota did not preserve its independent policy boundary");
+}
 const ACCOUNT = "0x" + "66".repeat(20);
 const unusedInstallNonce = kernelPermissionInstallNonce("0x" + "aa".repeat(32));
 const invalidationCall = encodeKernelV4InstallNonceInvalidationCall({ account: ACCOUNT, installNonce: unusedInstallNonce });
@@ -941,6 +951,9 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 
 /** The published types must resolve and compose under `nodenext` strict. */
 const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest, type OwnerSigningArtifact } from "@oaath/protocol";
+import { compileKernelPermissionPolicy, type KernelRateLimitPolicyProfile } from "@oaath/sdk/kernel";
+export const dailyCap: KernelRateLimitPolicyProfile = { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" };
+export const dailyPolicy = compileKernelPermissionPolicy([{ kind: "call", permissions: [{ target: "0x1111111111111111111111111111111111111111", selector: "0x00000000", valueLimit: "0" }] }, dailyCap]);
 import { prepareKernelPhonePermissionApproval, type PrepareKernelPhonePermissionApprovalInput, type KernelPhonePermissionArtifact } from "@oaath/sdk/kernel";
 import { prepareKernelPhoneRevocation, type PrepareKernelPhoneRevocationInput } from "@oaath/sdk/kernel";
 

@@ -171,6 +171,18 @@ export const OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH =
 const RATE_LIMIT_POLICY = "0xf63d4139b25c836334edd76641356c6b74c86873" as const;
 
 /**
+ * Fixed-window RateLimitPolicy from kernel-7579-plugins a267d794, compiled for
+ * Paris with solc 0.8.30, via-IR, optimizer 200, no CBOR metadata. The complete
+ * standard JSON input and zero-salt deployment artifact are retained in the SDK
+ * fixtures. This is a distinct deployment from the old non-resetting count cap
+ * and ZeroDev's historical reset-module address. Availability must be proved on
+ * the action chain; a pin is not evidence that the module has been deployed.
+ */
+export const OAATH_KERNEL_RATE_LIMIT_POLICY = "0xe2663e2f94ef2dc11cc06a7914a037d78a0652dc" as const;
+export const OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH =
+  "0x6bb7a4d8507d7824e806f730683d532961dc2117ce530a8216765ddd2b1f17b5" as const;
+
+/**
  * Policy modules bound per policy axis. CallPolicy enforces the call and value
  * axes together, in one module, from one configuration. A session installs one
  * package per distinct module, so a scope spanning several axes installs several
@@ -197,6 +209,7 @@ const PINNED_POLICIES: Readonly<Partial<Record<KernelPolicyProfile["kind"], `0x$
     call: CALL_POLICY,
     expiry: OAATH_KERNEL_V4_VALIDITY_POLICY,
     "operation-limit": RATE_LIMIT_POLICY,
+    "rate-limit": OAATH_KERNEL_RATE_LIMIT_POLICY,
   });
 
 /** Accepts only an exact frozen profile minted by a supported Kernel deployment owner. */

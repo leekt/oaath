@@ -134,10 +134,19 @@ export interface KernelOperationLimitPolicyProfile {
   readonly maximumOperations: string;
 }
 
+export interface KernelRateLimitPolicyProfile {
+  readonly kind: "rate-limit";
+  /** Positive canonical decimal uint48 seconds per fixed window. */
+  readonly intervalSeconds: string;
+  /** Positive canonical decimal uint32 operations allowed in each window. */
+  readonly maximumOperations: string;
+}
+
 export type KernelPolicyProfile =
   | KernelCallPolicyProfile
   | KernelExpiryPolicyProfile
-  | KernelOperationLimitPolicyProfile;
+  | KernelOperationLimitPolicyProfile
+  | KernelRateLimitPolicyProfile;
 
 /** One policy module and the exact payload it receives after the permission ID. */
 export interface CompiledKernelPolicyPackage {
@@ -159,6 +168,8 @@ export interface CompiledKernelPermissionPolicy {
   readonly validUntil: string | null;
   /** Canonical decimal uint32 count, or null when no operation limit was requested. */
   readonly maximumOperations: string | null;
+  /** Resetting per-chain quota; independent of the lifetime operation cap. */
+  readonly rateLimit: Readonly<Omit<KernelRateLimitPolicyProfile, "kind">> | null;
 }
 
 /**

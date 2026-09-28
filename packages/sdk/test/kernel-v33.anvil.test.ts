@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSqliteOperationStoreAdapter } from "@oaath/testing";
@@ -13,6 +13,7 @@ import {
   type Hex,
   http,
   parseEther,
+  toFunctionSelector,
   toHex,
 } from "viem";
 import {
@@ -44,7 +45,7 @@ import {
 } from "../src/kernel/permission/v33-revocation.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
-import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
+import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
 import { deployKernelV33Account } from "./support/kernel-v33.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
@@ -63,6 +64,173 @@ async function setupV33(chainId: number, owner: ReturnType<typeof privateKeyToAc
 }
 
 (requireAnvil ? describe : describe.skip)("existing Kernel v3.3 / EntryPoint 0.7", () => {
+  it.each([false, true])(
+    "enforces a resetting daily quota with lifetime cap %s through enable and standard operations",
+    async (lifetimeCap) => {
+      const ownerAccount = privateKeyToAccount(generatePrivateKey());
+      const { harness, address, deployment } = await setupV33(8453, ownerAccount);
+      const fixture = JSON.parse(
+        await readFile(
+          new URL("./fixtures/kernel-rate-limit-deployment.json", import.meta.url),
+          "utf8",
+        ),
+      ) as ModuleFixture & { version: string };
+      expect(fixture.version).toBe("oaath.kernel-rate-limit-artifact/v1");
+      for (const module of [
+        harness.fixture.ecdsaSigner,
+        harness.fixture.callPolicy,
+        harness.fixture.validityPolicy,
+        harness.fixture.rateLimitPolicy,
+      ])
+        await harness.deployModule(module);
+      const reads = createKernelV33Reads(harness.client);
+      const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+      const started = (await harness.client.getBlock()).timestamp;
+      const expires = started + 2n * 86_400n;
+      const key = ecdsaKey({
+        account: privateKeyToAccount(generatePrivateKey()),
+        validator: deployment.ecdsaValidator,
+      });
+      const create = () =>
+        createKernelRuntime({
+          deployment,
+          reads,
+          operator: sessionOperator({
+            key,
+            policies: [
+              { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+              { kind: "expiry", validAfter: "0", validUntil: expires.toString() },
+              { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "2" },
+              ...(lifetimeCap
+                ? [{ kind: "operation-limit" as const, maximumOperations: "3" }]
+                : []),
+            ],
+          }),
+        });
+      // A configured address without the exact policy code cannot authorize a bind.
+      await expect(create().bindAccount({ address })).rejects.toMatchObject({
+        code: "kernel_runtime_policy_unavailable",
+      });
+      await harness.client.request({
+        method: "anvil_setCode" as "eth_chainId",
+        params: [fixture.expectedAddress, "0x6000"] as never,
+      });
+      await expect(create().bindAccount({ address })).rejects.toMatchObject({
+        code: "kernel_runtime_policy_unavailable",
+      });
+      await harness.client.request({
+        method: "anvil_setCode" as "eth_chainId",
+        params: [fixture.expectedAddress, "0x"] as never,
+      });
+      await harness.deployModule(fixture);
+      const runtime = create();
+      const account = await runtime.bindAccount({ address });
+      const nonce = await kernelV33PermissionInstallNonce({ runtime, account, reads });
+      const approval = await approveKernelV33Permission({
+        owner: ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator }),
+        runtime,
+        account,
+        nonce,
+      });
+      const gas = {
+        callGasLimit: "200000",
+        verificationGasLimit: "3000000",
+        preVerificationGas: "100000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      };
+      const input = {
+        account,
+        grantId: "daily-operator",
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "1", data: "0x" as const }],
+        gas,
+      };
+      const enabled = await materializeKernelV33Permission({
+        ...input,
+        runtime,
+        approval: parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval))),
+      });
+      expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+      const installTime = (await harness.client.getBlock()).timestamp;
+      const send = async (sequence: string) => {
+        // Recreate composition and bind after every transition; no in-memory quota.
+        const restored = create();
+        const prepared = restored.prepareOperation({
+          ...input,
+          account: await restored.bindAccount({ address }),
+          kind: "execution",
+          sequence,
+        });
+        return harness.sendSigned(prepared, await restored.signOperation(prepared));
+      };
+      expect(await send("0")).toBe("success");
+      const exhausted = runtime.prepareOperation({ ...input, kind: "execution", sequence: "1" });
+      expect(
+        await harness.rejectionOf(exhausted, await runtime.signOperation(exhausted)),
+      ).toMatchObject({
+        errorName: "FailedOpWithRevert",
+        args: [0n, "AA23 reverted", toFunctionSelector("RateLimited()")],
+      });
+      expect(await harness.client.getBalance({ address: target })).toBe(2n);
+      await harness.client.request({
+        method: "evm_setNextBlockTimestamp" as "eth_chainId",
+        params: [Number(installTime + 86_400n)] as never,
+      });
+      await harness.client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
+      expect(await send("1")).toBe("success");
+      if (lifetimeCap) {
+        const lifetimeExhausted = runtime.prepareOperation({
+          ...input,
+          kind: "execution",
+          sequence: "2",
+        });
+        expect(
+          await harness.rejectionOf(
+            lifetimeExhausted,
+            await runtime.signOperation(lifetimeExhausted),
+          ),
+        ).toMatchObject({
+          errorName: "FailedOpWithRevert",
+          args: [
+            0n,
+            "AA23 reverted",
+            concat([
+              toFunctionSelector("PolicyFailed(uint256)"),
+              encodeAbiParameters([{ type: "uint256" }], [2n]),
+            ]),
+          ],
+        });
+        expect(await harness.client.getBalance({ address: target })).toBe(3n);
+        return;
+      }
+      expect(await send("2")).toBe("success");
+      expect(await harness.client.getBalance({ address: target })).toBe(4n);
+      const exhaustedAgain = runtime.prepareOperation({
+        ...input,
+        kind: "execution",
+        sequence: "3",
+      });
+      expect(
+        await harness.rejectionOf(exhaustedAgain, await runtime.signOperation(exhaustedAgain)),
+      ).toMatchObject({
+        errorName: "FailedOpWithRevert",
+        args: [0n, "AA23 reverted", toFunctionSelector("RateLimited()")],
+      });
+      await harness.client.request({
+        method: "evm_setNextBlockTimestamp" as "eth_chainId",
+        params: [Number(expires + 86_400n)] as never,
+      });
+      await harness.client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
+      expect(
+        await harness.rejectionOf(exhaustedAgain, await runtime.signOperation(exhaustedAgain)),
+      ).toMatchObject({ errorName: "FailedOp", args: [0n, "AA22 expired or not due"] });
+      expect(await harness.client.getBalance({ address: target })).toBe(4n);
+    },
+    30_000,
+  );
+
   it("uses one owner approval on two chains and keeps EntryPoint identities chain-specific", async () => {
     const owner = privateKeyToAccount(generatePrivateKey());
     const ownerSign = vi.fn(owner.sign.bind(owner));

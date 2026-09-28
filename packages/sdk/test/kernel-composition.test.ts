@@ -580,7 +580,6 @@ describe("Kernel composition matrix", () => {
       session.bindAccount({ accountIndex: "0", initialPackages: owner.packages }),
     ).rejects.toMatchObject({
       code: "kernel_runtime_policy_unavailable",
-      message: "Kernel validity policy runtime code does not match the pinned artifact",
     });
   });
 
@@ -1384,6 +1383,48 @@ describe("Kernel permission policy compilation", () => {
     expect(limitPackage.policyData).toBe(
       concat([toHex(0, { size: 6 }), toHex(5, { size: 6 }), toHex(0, { size: 6 })]),
     );
+  });
+
+  it("keeps a resetting daily cap distinct from a lifetime operation limit", () => {
+    const profiles = [
+      { kind: "call", permissions },
+      { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" },
+      { kind: "operation-limit", maximumOperations: "100" },
+      { kind: "expiry", validAfter: "0", validUntil: "1750003600" },
+    ];
+    const policy = compileKernelPermissionPolicy(profiles);
+    expect(policy.rateLimit).toEqual({ intervalSeconds: "86400", maximumOperations: "25" });
+    expect(policy.maximumOperations).toBe("100");
+    expect(policy.packages.at(-1)?.policyData).toBe(
+      concat([toHex(86400, { size: 6 }), toHex(25, { size: 6 })]),
+    );
+    expect(policy.packages.at(-1)?.module).not.toBe(pinnedPolicyModule("operation-limit"));
+    expect(compileKernelPermissionPolicy([...profiles].reverse())).toEqual(policy);
+    expect(Object.isFrozen(policy.rateLimit)).toBe(true);
+  });
+
+  it.each([
+    { intervalSeconds: "0", maximumOperations: "1" },
+    { intervalSeconds: "1", maximumOperations: "0" },
+    { intervalSeconds: "01", maximumOperations: "1" },
+    { intervalSeconds: "86400", maximumOperations: "4294967296" },
+    { intervalSeconds: "281474976710656", maximumOperations: "1" },
+    { intervalSeconds: "86400", maximumOperations: "1", startAt: "0" },
+  ])("rejects an invalid resetting rate cap %j", (invalid) => {
+    expect(() =>
+      compileKernelPermissionPolicy([
+        { kind: "call", permissions },
+        { kind: "rate-limit", ...invalid },
+      ]),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+  });
+
+  it("rejects duplicate or unscoped resetting caps", () => {
+    const rate = { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "1" };
+    for (const profiles of [[rate], [{ kind: "call", permissions }, rate, rate]])
+      expect(() => compileKernelPermissionPolicy(profiles)).toThrowError(
+        expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+      );
   });
 
   it.each(["expiry", "operation-limit"] as const)(

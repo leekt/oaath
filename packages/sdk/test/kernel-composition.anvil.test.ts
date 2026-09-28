@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { p256 } from "@noble/curves/nist.js";
 import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import {
@@ -49,6 +50,7 @@ import {
   createHarness as createChainHarness,
   deployKernelStack,
   lower,
+  type ModuleFixture,
   startAnvil,
 } from "./support/anvil.js";
 
@@ -1485,6 +1487,79 @@ async function createHarness() {
     expect(await send(limitRuntime, limited("0"))).toBe("success");
     expect(await send(limitRuntime, limited("1"))).toBe("success");
     expect(await client.getBalance({ address: limitTarget })).toBe(20n);
+    // The independent fixed-window module composes with the same v4 runtime.
+    const resetPolicy = JSON.parse(
+      await readFile(
+        new URL("./fixtures/kernel-rate-limit-deployment.json", import.meta.url),
+        "utf8",
+      ),
+    ) as ModuleFixture;
+    await harness.deployModule(resetPolicy);
+    const resetTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    const resetRuntime = createKernelRuntime({
+      deployment,
+      reads,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: resetTarget, selector: "0x00000000", valueLimit: "1" }],
+          },
+          { kind: "rate-limit", intervalSeconds: "60", maximumOperations: "1" },
+        ],
+      }),
+    });
+    const resetAccount = await resetRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "reset-install",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "3",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(resetRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    const resetStarts = (await client.getBlock()).timestamp;
+    const resetOperation = (sequence: string) =>
+      resetRuntime.prepareOperation({
+        kind: "execution",
+        grantId: `reset-${sequence}`,
+        account: resetAccount,
+        nonceKey: "0",
+        sequence,
+        calls: [{ target: resetTarget, value: "1", data: "0x" }],
+        gas,
+      });
+    expect(await send(resetRuntime, resetOperation("0"))).toBe("success");
+    expect(await harness.rejection(resetRuntime, resetOperation("1"))).toMatchObject({
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", toFunctionSelector("RateLimited()")],
+    });
+    await client.request({
+      method: "evm_setNextBlockTimestamp" as "eth_chainId",
+      params: [Number(resetStarts + 60n)] as never,
+    });
+    await client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
+    expect(await send(resetRuntime, resetOperation("1"))).toBe("success");
+    expect(await client.getBalance({ address: resetTarget })).toBe(2n);
     // RateLimitPolicy returns 1 once the count is spent, which is Kernel's
     // signature-failure sentinel, so EntryPoint refuses the operation as AA24.
     expect(await harness.rejection(limitRuntime, limited("2"))).toMatchObject({

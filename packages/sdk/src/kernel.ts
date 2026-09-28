@@ -54,6 +54,8 @@ export type {
 } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
 export {
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
@@ -120,6 +122,7 @@ export type {
   KernelOperationLimitPolicyProfile,
   KernelOperatorAuthority,
   KernelPolicyProfile,
+  KernelRateLimitPolicyProfile,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,

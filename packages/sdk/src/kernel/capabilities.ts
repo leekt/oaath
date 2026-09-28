@@ -59,7 +59,8 @@ export type KernelCapability =
   | "session_custom"
   | "hook_call"
   | "hook_expiry"
-  | "hook_operation_limit";
+  | "hook_operation_limit"
+  | "hook_rate_limit";
 
 export type KernelCapabilityStatus = "available" | "absent" | "unsupported" | "unreadable";
 
@@ -173,6 +174,12 @@ function capturedCapability(value: unknown): CapabilityAxis {
         capability: value,
         axis: "policy" as const,
         kind: "operation-limit" as const,
+      });
+    case "hook_rate_limit":
+      return Object.freeze({
+        capability: value,
+        axis: "policy" as const,
+        kind: "rate-limit" as const,
       });
     default:
       return inputInvalid("Kernel capability is unsupported");
