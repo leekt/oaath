@@ -180,38 +180,12 @@ const replacement = occurrence({
   blockHash: replacementBlockHash,
   success: false,
 });
-function finalityChain(
-  inclusion: Occurrence,
-  hashSeed: number,
-): {
-  finalized: OperationObserverBlockEvidence;
-  byHash: ReadonlyMap<string, OperationObserverBlockEvidence>;
-} {
-  const byHash = new Map<string, OperationObserverBlockEvidence>();
-  byHash.set(inclusion.block.hash, inclusion.block);
-  let previous = inclusion.block;
-  for (
-    let blockNumber = Number(BigInt(inclusion.block.number)) + 1;
-    blockNumber <= 30;
-    blockNumber += 1
-  ) {
-    const block: OperationObserverBlockEvidence = {
-      number: quantity(blockNumber),
-      hash:
-        blockNumber === 30
-          ? finalityBlockHash
-          : (`0x${(hashSeed + blockNumber).toString(16).padStart(64, "0")}` as const),
-      parentHash: previous.hash,
-      transactions: [],
-    };
-    byHash.set(block.hash, block);
-    previous = block;
-  }
-  return { finalized: previous, byHash };
-}
-
-const targetFinality = finalityChain(target, 1_000);
-const replacementFinality = finalityChain(replacement, 2_000);
+const finalizedBlock: OperationObserverBlockEvidence = {
+  number: "0x1e",
+  hash: finalityBlockHash,
+  parentHash,
+  transactions: [],
+};
 
 type FixtureOptions = {
   targetReceipt?: unknown;
@@ -233,8 +207,7 @@ function fixture(options: FixtureOptions = {}): {
   const replacementCandidate = options.replacementCandidate ?? null;
   const replacementReceipt =
     options.replacementReceipt === undefined ? replacement.receipt : options.replacementReceipt;
-  const selectedFinality = replacementCandidate === null ? targetFinality : replacementFinality;
-  const finality = options.finality === undefined ? selectedFinality.finalized : options.finality;
+  const finality = options.finality === undefined ? finalizedBlock : options.finality;
 
   function response(request: OperationObserverReadRequest): unknown {
     if (request.type === "chain_id") return identity.chainId;
@@ -251,9 +224,8 @@ function fixture(options: FixtureOptions = {}): {
     if (request.type === "transaction_receipt") return selected.transactionReceipt;
     if (request.type === "transaction") return selected.transaction;
     if (request.type === "finalized_block") return finality;
-    if (request.type === "block_by_hash") return selectedFinality.byHash.get(request.blockHash);
     if (request.type === "canonical_block") {
-      if (request.blockNumber === "30") return selectedFinality.finalized;
+      if (request.blockNumber === "30") return finalizedBlock;
       return request.blockNumber === "21" ? replacement.block : target.block;
     }
     throw new Error("unsupported request");
@@ -371,7 +343,6 @@ describe("OperationObserver", () => {
               "transaction_receipt",
               "transaction",
               "canonical_block",
-              "block_by_hash",
               "finalized_block",
             ].includes(type),
           ),
@@ -434,9 +405,6 @@ describe("OperationObserver", () => {
         hash: finalityBlockHash,
         parentHash,
         transactions: [],
-      },
-      mutate(request, value) {
-        return request.type === "block_by_hash" ? target.block : value;
       },
     });
     const result = await createOperationObserver(adapter.capabilities).observeOperation({
@@ -949,6 +917,95 @@ const reference = Object.freeze({
   userOperationHash: identity.userOperationHash,
 });
 const referenceInput = { reference, observedAt: 100, timeoutMs: 1000 };
+
+describe("bounded canonical finality", () => {
+  it.each(["journal", "reference"] as const)(
+    "recovers an old receipt through the %s reader within twelve reads",
+    async (kind) => {
+      const finalized = { ...finalizedBlock, number: "0xf4240" };
+      let reads = 0;
+      const adapter = fixture({
+        finality: finalized,
+        mutate(request, value) {
+          if (++reads > 12) throw new Error("observation request budget exhausted");
+          if (request.type === "canonical_block" && request.blockNumber === "1000000")
+            return finalized;
+          return value;
+        },
+      });
+      if (kind === "journal") {
+        const observer = createOperationObserver(adapter.capabilities);
+        try {
+          expect(
+            await observer.observeOperation({
+              operation: submitted(),
+              observedAt: 100,
+              timeoutMs: 1000,
+            }),
+          ).toMatchObject({
+            status: "finalized",
+            operation: { finality: { blockNumber: "1000000" } },
+          });
+        } finally {
+          await observer.close();
+        }
+      } else {
+        const observer = createUserOperationObserver(adapter.capabilities);
+        try {
+          expect(await observer.observeReference(referenceInput)).toMatchObject({
+            status: "finalized",
+            finality: { blockNumber: "1000000" },
+          });
+        } finally {
+          await observer.close();
+        }
+      }
+      expect(reads).toBeLessThanOrEqual(12);
+    },
+  );
+
+  it.each(["finalized-rebind", "inclusion-rebind", "finalized-behind", "wrong-chain"] as const)(
+    "leaves old receipt recovery unresolved after %s",
+    async (fault) => {
+      const finalized = { ...finalizedBlock, number: "0xf4240" };
+      let inclusionReads = 0,
+        chainReads = 0;
+      const adapter = fixture({
+        finality: fault === "finalized-behind" ? { ...finalized, number: "0x13" } : finalized,
+        mutate(request, value) {
+          if (request.type === "canonical_block" && request.blockNumber === "1000000")
+            return fault === "finalized-rebind"
+              ? { ...finalized, hash: replacementHash }
+              : finalized;
+          if (
+            request.type === "canonical_block" &&
+            request.blockNumber === "20" &&
+            ++inclusionReads > 1 &&
+            fault === "inclusion-rebind"
+          )
+            return { ...target.block, hash: replacementBlockHash };
+          if (request.type === "chain_id" && ++chainReads > 1 && fault === "wrong-chain")
+            return identity.chainId + 1;
+          return value;
+        },
+      });
+      const observer = createUserOperationObserver(adapter.capabilities);
+      try {
+        const result = await observer.observeReference(referenceInput);
+        expect(result.status).toBe("unreadable");
+        if (result.status === "unreadable")
+          expect(result.reason).toBe(
+            fault === "wrong-chain" ? "receipt_invalid" : "finality_unproven",
+          );
+        expect(adapter.requests.some((request) => request.type === "replacement_candidate")).toBe(
+          false,
+        );
+      } finally {
+        await observer.close();
+      }
+    },
+  );
+});
 
 describe("reference-only UserOperation observation", () => {
   it("verifies the exact receipt without manufacturing a Grant or journal transition", async () => {

@@ -291,6 +291,15 @@ transaction from the public RPC and locates the exact EntryPoint event. Recovery
 needs neither a wallet nor a bundler index. The observer still verifies the
 receipt, transaction, canonical blocks, and finality; a missing event or a failed
 outer transaction leaves the operation unresolved and never authorizes a send.
+Finality uses the configured RPC's `finalized` tag and canonical blocks by
+number. After verifying inclusion, the observer requires the finalized height
+to cover it, rereads the canonical inclusion hash, and rebinds the finalized
+anchor by number. This takes a fixed number of reads regardless of receipt age;
+it does not walk every intervening parent. These are RPC-attested chain facts,
+not local consensus verification. A missing finalized tag, changed hash, wrong
+chain or head behind inclusion remains unresolved. Custom capabilities must
+provide canonical-by-number evidence, never a block merely located by hash.
+See the [Ethereum RPC block semantics](https://ethereum.github.io/execution-apis/api/methods/eth_getBlockByNumber/).
 Custom observation adapters receive an optional
 `transaction: { hash, entryPoint }` hint on `user_operation_receipt`. Receipt and
 execution projection also pass the verified inclusion transaction as a hint.

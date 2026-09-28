@@ -259,10 +259,23 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           const endpoint = server.address();
           if (!endpoint || typeof endpoint === "string") throw new Error("local RPC unavailable");
           const url = `http://127.0.0.1:${endpoint.port}`;
+          let rpcRequests = 0;
+          const allowedEndpoints = new Set(
+            [url, `${url}/unavailable`, local.url].map((value) => new URL(value).href),
+          );
           const chainPorts = () =>
             createViemChainPorts(
               { [CHAIN_ID]: { publicRpcUrls: [`${url}/unavailable`, local.url], bundlerUrl: url } },
-              { retry: { attempts: 2, delayMs: 0 }, maxRequests: 300 },
+              {
+                retry: { attempts: 2, delayMs: 0 },
+                maxRequests: 300,
+                async fetch(request) {
+                  if (!allowedEndpoints.has(request.url))
+                    throw new Error("only owned RPC endpoints are allowed");
+                  rpcRequests++;
+                  return fetch(request);
+                },
+              },
             );
           let ports = chainPorts()[0];
           if (!ports) throw new Error("chain missing");
@@ -384,13 +397,19 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           expect(recovered.id).toBe(exactId);
           expect(await grant.account(CHAIN_ID)).toBe(address);
           expect(sends).toBe(1);
-          await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+          // Recover after the containing block is well outside one request budget.
+          await harness.client.request({
+            method: "anvil_mine" as never,
+            params: ["0x400", "0x0"] as never,
+          });
+          const beforeRecoveryReads = rpcRequests;
           const recoveryOutcome = await recovered.wait();
           expect({
             status: recoveryOutcome.status,
             state: recoveryOutcome.state,
             reason: "reason" in recoveryOutcome ? recoveryOutcome.reason : null,
           }).toMatchObject({ status: "finalized" });
+          expect(rpcRequests - beforeRecoveryReads).toBeLessThan(24);
           expect(sends).toBe(1);
           const reference = references.get(exactId);
           if (!reference) throw new Error("fixture did not retain operation reference");

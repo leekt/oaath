@@ -91,7 +91,12 @@ export type OperationObserverReadRequest =
       /** Decimal block height the read must be answered at. */
       blockNumber: string;
     }>
-  | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
+  | Readonly<{
+      /** Canonical block by decimal height, never an arbitrary block located by hash. */
+      type: "canonical_block";
+      chainId: number;
+      blockNumber: string;
+    }>
   | Readonly<{
       /** v3.3 validation/permission configuration and effective enable nonce at this block. */
       type: "kernel_v33_permission_state";
@@ -109,8 +114,11 @@ export type OperationObserverReadRequest =
       nonce: string;
       blockNumber: string;
     }>
-  | Readonly<{ type: "block_by_hash"; chainId: number; blockHash: `0x${string}` }>
-  | Readonly<{ type: "finalized_block"; chainId: number }>
+  | Readonly<{
+      /** The configured chain's finalized tag, never latest/safe or a confirmation count. */
+      type: "finalized_block";
+      chainId: number;
+    }>
   | Readonly<{
       type: "replacement_candidate";
       chainId: number;
@@ -857,43 +865,31 @@ async function readVerifiedFinality(
       throw new EvidenceFailure("finality_unproven");
     }
 
-    let descendant = finalized;
-    let descendantNumber = finalizedNumberValue;
-    while (descendantNumber > inclusionNumber) {
-      const parent = parseBlock(
-        await read({
-          type: "block_by_hash",
-          chainId: reference.chainId,
-          blockHash: descendant.parentHash,
-        }),
-        new WeakSet(),
-        "finality_unproven",
-      );
-      const parentNumber = parseQuantity(parent.number, "finality_unproven");
-      if (parent.hash !== descendant.parentHash || parentNumber + 1n !== descendantNumber) {
-        throw new EvidenceFailure("finality_unproven");
-      }
-      descendant = parent;
-      descendantNumber = parentNumber;
-    }
-    if (descendant.hash !== inclusion.blockHash) {
+    if (
+      finalizedNumberValue === inclusionNumber + 1n &&
+      finalized.parentHash !== inclusion.blockHash
+    ) {
       throw new EvidenceFailure("finality_unproven");
     }
 
-    const reboundFinalized = parseBlock(
-      await read({
-        type: "canonical_block",
-        chainId: reference.chainId,
-        blockNumber: finalizedNumber,
-      }),
-      new WeakSet(),
-      "finality_unproven",
-    );
+    // Canonical-by-number is the RPC trust boundary: a canonical inclusion at
+    // or below the finalized head is finalized. Bracket that canonical read
+    // with the finalized anchor and its by-number rebind. Walking every parent
+    // neither authenticates RPC responses nor permits bounded old-receipt recovery.
     const reboundInclusion = parseBlock(
       await read({
         type: "canonical_block",
         chainId: reference.chainId,
         blockNumber: inclusion.blockNumber,
+      }),
+      new WeakSet(),
+      "finality_unproven",
+    );
+    const reboundFinalized = parseBlock(
+      await read({
+        type: "canonical_block",
+        chainId: reference.chainId,
+        blockNumber: finalizedNumber,
       }),
       new WeakSet(),
       "finality_unproven",

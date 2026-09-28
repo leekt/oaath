@@ -368,9 +368,6 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           await harness.client.getBlock({ blockNumber: BigInt(request.blockNumber) }),
         );
       }
-      if (request.type === "block_by_hash") {
-        return blockEvidence(await harness.client.getBlock({ blockHash: request.blockHash }));
-      }
       if (request.type === "replacement_candidate") return null;
       if (request.type === "entry_point_nonce") {
         const nonce = await harness.client.readContract({
