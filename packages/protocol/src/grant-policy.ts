@@ -531,13 +531,11 @@ function parseCoverageCall(
     context,
     failFor(code),
   );
-  if (
-    typeof record.data !== "string" ||
-    !BYTES.test(record.data) ||
-    record.data.length < 10 ||
-    (record.data.length - 10) % 64 !== 0
-  ) {
-    return invalid(code, `grant policy coverage call ${index} data must be canonical ABI calldata`);
+  if (typeof record.data !== "string" || !BYTES.test(record.data) || record.data.length < 10) {
+    return invalid(
+      code,
+      `grant policy coverage call ${index} data must be canonical selector-prefixed bytes`,
+    );
   }
   return Object.freeze({
     target: address(record.target, `grant policy coverage call ${index} target`, code),

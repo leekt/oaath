@@ -359,6 +359,47 @@ describe("Grant policy attenuation", () => {
 });
 
 describe("Grant policy coverage", () => {
+  it("covers raw selector-prefixed bytes without inventing ABI alignment", () => {
+    const calls = [
+      { target: secondTarget, data: `${secondSelector}60006000` as const, value: "0" },
+    ];
+    expect(evaluateGrantPolicyCoverage(coverageInput({ calls }))).toMatchObject({
+      status: "covered",
+    });
+    expect(
+      evaluateGrantPolicyCoverage(
+        coverageInput({
+          calls: [
+            { ...calls[0], target: secondTarget, data: `${firstSelector}60006000`, value: "0" },
+          ],
+        }),
+      ),
+    ).toMatchObject({ status: "denied", reason: "call_not_permitted" });
+    expect(
+      evaluateGrantPolicyCoverage(
+        coverageInput({
+          calls: [{ target: secondTarget, data: `${secondSelector}60006000`, value: "1" }],
+        }),
+      ),
+    ).toMatchObject({ status: "denied", reason: "value_limit_exceeded" });
+  });
+
+  it("still requires every constrained word in raw calldata to be complete and exact", () => {
+    const exact = calldata(firstSelector, [firstWord, fillerWord, secondWord]);
+    expect(
+      evaluateGrantPolicyCoverage(
+        coverageInput({ calls: [{ target: firstTarget, data: `${exact}ff`, value: "100" }] }),
+      ),
+    ).toMatchObject({ status: "covered" });
+    expect(
+      evaluateGrantPolicyCoverage(
+        coverageInput({
+          calls: [{ target: firstTarget, data: exact.slice(0, -2) as `0x${string}`, value: "100" }],
+        }),
+      ),
+    ).toMatchObject({ status: "denied", reason: "argument_not_permitted" });
+  });
+
   it("covers inclusive endpoints and a complete batch as one chain-local use", () => {
     const calls = [
       ...coverageInput().calls,
