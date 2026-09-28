@@ -1,6 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "allowJs": true,
+    "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": ["src", "test", "tsdown.config.ts", "vitest.config.ts"]

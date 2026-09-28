@@ -134,12 +134,24 @@ importers:
 
   packages/testing:
     dependencies:
+      '@account-abstraction/contracts':
+        specifier: 0.7.0
+        version: 0.7.0
       '@oaath/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@oaath/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@oaath/server':
+        specifier: workspace:*
+        version: link:../server
+      fake-indexeddb:
+        specifier: 6.2.5
+        version: 6.2.5
+      viem:
+        specifier: 2.55.8
+        version: 2.55.8(typescript@7.0.2)
     devDependencies:
       '@types/node':
         specifier: 22.13.0

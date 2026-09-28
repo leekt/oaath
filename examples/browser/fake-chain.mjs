@@ -5,7 +5,7 @@
  * a submission transport, a fee quote, and observation evidence. The SDK never
  * reaches past it, so injecting these five is enough to run the whole journey on
  * a laptop with nothing installed. `OAATH_REQUIRE_ANVIL=1` swaps this file for
- * ./anvil-chain.mjs, which answers the identical ports from a real chain.
+ * the testing package's anvil-chain.mjs, which answers these ports from a real chain.
  *
  * What stays honest here: the submission transport records exactly the snapshot
  * it was handed and the observation evidence is derived from that snapshot, so

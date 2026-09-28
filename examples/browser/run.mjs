@@ -73,7 +73,7 @@ const now = () => clock;
 
 const chain =
   process.env.OAATH_REQUIRE_ANVIL === "1"
-    ? await (await import("./anvil-chain.mjs")).createAnvilChain(CHAIN_ID)
+    ? await (await import("../../packages/testing/src/anvil-chain.mjs")).createAnvilChain(CHAIN_ID)
     : (await import("./fake-chain.mjs")).createFakeChain(CHAIN_ID);
 
 // Two local credentials. In a browser these are non-extractable WebCrypto keys or
