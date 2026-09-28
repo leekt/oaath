@@ -44,10 +44,10 @@ export interface EcdsaKeyInput {
 
 /** The connected viem WalletClient surface; private-key custody remains with the wallet. */
 export interface EcdsaWalletClient {
-  readonly account?: Readonly<{ address: `0x${string}` }> | undefined;
+  readonly account?: Readonly<{ address: `0x${string}`; type?: string }> | undefined;
   readonly signMessage: (
     request: Readonly<{
-      account: `0x${string}`;
+      account?: `0x${string}`;
       message: Readonly<{ raw: `0x${string}` }>;
     }>,
   ) => Promise<unknown>;
@@ -59,7 +59,7 @@ export interface EcdsaWalletKeyInput {
   readonly validator: `0x${string}`;
 }
 
-/** One personal_sign prompt over the operation digest; no account request or signing retry. */
+/** One EIP-191 signature from the connected or local wallet; no signing retry. */
 export function ecdsaWalletKey(value: EcdsaWalletKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["wallet", "validator"], "ECDSA wallet key", context);
@@ -75,7 +75,13 @@ export function ecdsaWalletKey(value: EcdsaWalletKeyInput): Readonly<KeyProfile>
     owner,
     validator,
     ({ hash }) =>
-      signMessage(Object.freeze({ account: owner, message: Object.freeze({ raw: hash }) })),
+      signMessage(
+        Object.freeze({
+          // An address override makes viem treat a local account as an RPC account.
+          ...(account.type === "local" ? {} : { account: owner }),
+          message: Object.freeze({ raw: hash }),
+        }),
+      ),
     (hash) => hashMessage({ raw: hash }),
   );
 }

@@ -24,6 +24,23 @@ function fixture() {
 }
 
 describe("connected-wallet ECDSA key", () => {
+  it("uses the configured local account without requesting RPC signing", async () => {
+    const owner = privateKeyToAccount(generatePrivateKey());
+    let requests = 0;
+    const wallet = createWalletClient({
+      account: owner,
+      transport: custom({
+        request: async () => {
+          requests++;
+          throw new Error("RPC signing forbidden");
+        },
+      }),
+    });
+    const key = ecdsaWalletKey({ wallet, validator });
+    const signature = await key.sign(hash);
+    expect(await key.verify(hash, signature)).toBe(true);
+    expect(requests).toBe(0);
+  });
   it("uses one viem personal_sign request and verifies the captured owner", async () => {
     const { owner, wallet, requests } = fixture();
     const key = ecdsaWalletKey({ wallet, validator });
