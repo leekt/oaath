@@ -299,6 +299,12 @@ export interface OaathSubmissionCapability {
 }
 
 export interface OaathQuoteRequest {
+  /**
+   * `estimate`: read nonce/fees and estimate gas; `sponsorship`: read nonce/fees
+   * only (ERC-7677 estimates after obtaining its stub); `revalidate`: read nonce
+   * only and preserve the simulation's retained gas/fees and paymaster bytes.
+   */
+  readonly purpose: "estimate" | "sponsorship" | "revalidate";
   readonly chainId: number;
   readonly kind: OperationKind;
   readonly signer: OaathExecutionSigner;
@@ -309,6 +315,27 @@ export interface OaathQuoteRequest {
   readonly calls: readonly Readonly<KernelV4Call>[];
   /** Exact static sponsorship selected before quoting, or null. */
   readonly paymaster: Readonly<PreparedPaymaster> | null;
+  /**
+   * Runtime-owned estimation shape. Nonce namespace and sequence start at zero;
+   * gas and fees start at zero except the runtime's applicable enable floor,
+   * or retain their exact prepared values when purpose is `revalidate`.
+   * The quote port reads the actual nonce and fees before estimating. This
+   * snapshot is never journaled, signed, or submitted. The simulation signature
+   * includes any retained owner enable approval; never log or retain it.
+   */
+  readonly simulation: Readonly<{
+    prepared: Readonly<PreparedUserOperation>;
+    signature: `0x${string}`;
+  }>;
+}
+
+/** Exact runtime and policy identity needed to read finalized onchain usage. */
+export interface OaathUsageRequest {
+  readonly grantId: string;
+  readonly chainId: number;
+  readonly account: `0x${string}`;
+  readonly permissionId: `0x${string}`;
+  readonly maximumOperations: string;
 }
 
 /**
@@ -345,9 +372,7 @@ export interface OaathChainCapability {
    * Finalized per-chain usage evidence for policy coverage, or `null` when the
    * deployment provides none. Absent evidence is inconclusive, never "unused".
    */
-  readonly usage:
-    | ((request: Readonly<{ grantId: string; chainId: number }>) => Promise<unknown>)
-    | null;
+  readonly usage: ((request: Readonly<OaathUsageRequest>) => Promise<unknown>) | null;
   readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
   /** Null means this chain does not advertise ERC-7677. */
   readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
@@ -1148,12 +1173,20 @@ export function createGrantHandle(
     grant: Grant,
     chainId: number,
     calls: readonly Readonly<KernelV4Call>[],
+    identity: Readonly<{ account: `0x${string}`; permissionId: `0x${string}` }>,
   ): Promise<OaathSessionCoverage> {
     const chain = chainCapability(chainId);
     let usage: unknown = null;
     if (chain.usage) {
       try {
-        usage = await chain.usage({ grantId: grant.identity.grantId, chainId });
+        usage = await chain.usage(
+          Object.freeze({
+            grantId: grant.identity.grantId,
+            chainId,
+            ...identity,
+            maximumOperations: input.approvedPolicy.perChainOperationLimit.toString(10),
+          }),
+        );
       } catch {
         // An unavailable usage read is inconclusive, never "unused".
         return "unreadable";
@@ -1218,7 +1251,17 @@ export function createGrantHandle(
     })();
 
     requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
-    const coverage = await sessionCoverage(grant, chainId, calls);
+    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
+    requireKernelCapability(chainId, "hook_call");
+    const runtime = validityAdmission?.runtime ?? sessionRuntime(chainId);
+    const descriptor = validityAdmission?.descriptor ?? (await accountDescriptor(chainId, runtime));
+    if (runtime.validation.kind !== "permission") {
+      return unsupported("session_validation_not_permission");
+    }
+    const coverage = await sessionCoverage(grant, chainId, calls, {
+      account: descriptor.account,
+      permissionId: runtime.validation.permissionId,
+    });
     if (coverage !== "covered") {
       return clientFail(
         "oaath_client_scope_denied",
@@ -1243,13 +1286,6 @@ export function createGrantHandle(
         "no safe submission route is available",
         decision.reasons.join(","),
       );
-    }
-    requireKernelCapability(chainId, kernelKeyCapability("session", input.sessionKey.kind));
-    requireKernelCapability(chainId, "hook_call");
-    const runtime = validityAdmission?.runtime ?? sessionRuntime(chainId);
-    const descriptor = validityAdmission?.descriptor ?? (await accountDescriptor(chainId, runtime));
-    if (runtime.validation.kind !== "permission") {
-      return unsupported("session_validation_not_permission");
     }
     return Object.freeze({ grantSnapshot, chain, runtime, descriptor, decision });
   }
@@ -1366,6 +1402,58 @@ export function createGrantHandle(
     | Readonly<{ kind: "retained"; paymaster: Readonly<PreparedPaymaster> }>
     | null;
 
+  /** The runtime owns every simulated byte, including enable and validity envelopes. */
+  function quoteRequest(
+    spec: Readonly<{
+      chainId: number;
+      kind: OperationKind;
+      signer: OaathExecutionSigner;
+      grantId: string;
+      runtime: Readonly<KernelRuntime>;
+      materializer: ReturnType<typeof bindKernelPermissionApproval> | null;
+      descriptor: Readonly<KernelV4AccountDescriptor>;
+      mode: "standard" | "enable-replayable";
+      calls: readonly Readonly<KernelV4Call>[];
+      validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+    }>,
+    paymaster: Readonly<PreparedPaymaster> | null,
+    purpose: OaathQuoteRequest["purpose"],
+    retainedGas?: Readonly<KernelV4UserOperationGas>,
+  ): Readonly<OaathQuoteRequest> {
+    const execution = spec.materializer ?? spec.runtime;
+    const prepared = execution.prepareOperation({
+      kind: spec.kind,
+      grantId: spec.grantId,
+      account: spec.descriptor,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [...spec.calls],
+      gas: retainedGas ?? {
+        callGasLimit: "0",
+        verificationGasLimit: "0",
+        preVerificationGas: "0",
+        maxFeePerGas: "0",
+        maxPriorityFeePerGas: "0",
+      },
+      paymaster,
+      ...(spec.validityTimeRange === undefined
+        ? {}
+        : { validityTimeRange: spec.validityTimeRange }),
+    });
+    return Object.freeze({
+      purpose,
+      chainId: spec.chainId,
+      kind: spec.kind,
+      signer: spec.signer,
+      account: spec.descriptor.account,
+      mode: spec.mode,
+      validation: spec.runtime.validation,
+      calls: spec.calls,
+      paymaster,
+      simulation: Object.freeze({ prepared, signature: execution.dummySignature }),
+    });
+  }
+
   async function prepareExecutionShape(
     shape: Readonly<ExecutionShape>,
     options: Readonly<{
@@ -1379,17 +1467,20 @@ export function createGrantHandle(
       resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
     }>
   > {
+    const paymaster = options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null;
     const quote = quoteFields(
-      await shape.chain.quote({
-        chainId: shape.chainId,
-        kind: "execution",
-        signer: "session",
-        account: shape.descriptor.account,
-        mode: shape.mode,
-        validation: shape.runtime.validation,
-        calls: shape.calls,
-        paymaster: null,
-      }),
+      await shape.chain.quote(
+        quoteRequest(
+          { ...shape, kind: "execution", signer: "session" },
+          paymaster,
+          options.gas !== undefined
+            ? "revalidate"
+            : options.paymaster?.kind === "resolve-erc7677"
+              ? "sponsorship"
+              : "estimate",
+          options.gas,
+        ),
+      ),
     );
     const fields = {
       grantId: shape.grantId,
@@ -1398,7 +1489,7 @@ export function createGrantHandle(
       sequence: quote.sequence,
       calls: [...shape.calls],
       gas: options.gas ?? quote.gas,
-      paymaster: options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null,
+      paymaster,
       ...(shape.validityTimeRange === undefined
         ? {}
         : { validityTimeRange: shape.validityTimeRange }),
@@ -1499,16 +1590,13 @@ export function createGrantHandle(
           prepare: async () => {
             if (spec.prepared !== undefined) return spec.prepared;
             const quote = quoteFields(
-              await chain.quote({
-                chainId: spec.chainId,
-                kind: spec.kind,
-                signer: spec.signer,
-                account: spec.descriptor.account,
-                mode: spec.mode,
-                validation: spec.runtime.validation,
-                calls: spec.calls,
-                paymaster: spec.staticPaymaster ?? null,
-              }),
+              await chain.quote(
+                quoteRequest(
+                  spec,
+                  spec.staticPaymaster ?? null,
+                  spec.sponsorship === undefined ? "estimate" : "sponsorship",
+                ),
+              ),
             );
             const fields = {
               grantId: spec.grantId,

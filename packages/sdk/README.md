@@ -83,6 +83,22 @@ and read that key's sequence. The root, enable, and standard permission paths
 have separate nonce domains; the SDK supplies the authority and the deployment
 supplies its current chain sequence and gas.
 
+Quotes also receive `simulation.prepared` and `simulation.signature`, built by
+the same runtime as the final operation. They include the bound factory data,
+call encoding, paymaster selection, and complete enable envelope when needed.
+The simulation starts with nonce namespace and sequence zero, zero gas and fees,
+and any applicable enable gas floor. For `purpose: "estimate"`, read the actual
+nonce and fees before estimating. For `"sponsorship"`, read only the nonce and
+fees: ERC-7677 estimates after obtaining paymaster stub data. For `"revalidate"`,
+read only the nonce and keep the simulation's retained gas, fees, and paymaster
+bytes. Return the selected namespace, sequence, and gas. Never submit or persist
+this simulation. Its signature can contain the retained owner approval, so never
+log it.
+
+Usage ports receive `grantId`, `chainId`, `account`, `permissionId`, and
+`maximumOperations` before quoting. Read finalized usage for that exact account
+and permission; an unavailable read must remain unavailable, never a zero count.
+
 Configure an enable gas floor on each chain capability when needed:
 
 ```ts

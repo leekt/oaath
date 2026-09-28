@@ -44,6 +44,7 @@ export type {
   OaathRegisteredPaymasterService,
   OaathSubmissionCapability,
   OaathSubmissionRequest,
+  OaathUsageRequest,
 } from "./client/grant-handle.js";
 export type {
   OaathConfiguration,
