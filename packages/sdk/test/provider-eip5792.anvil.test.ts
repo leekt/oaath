@@ -676,6 +676,7 @@ function durableStores(database: OaathDatabase) {
         "success operation",
       );
       expect(await successOperation.execution()).toEqual({
+        route: null,
         id: successHash,
         grantId,
         chainId: CHAIN_ID,
