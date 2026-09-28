@@ -5,7 +5,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import { recoverAddress } from "viem";
+import { hashMessage, recoverAddress } from "viem";
 import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
@@ -42,6 +42,44 @@ export interface EcdsaKeyInput {
   readonly validator: `0x${string}`;
 }
 
+/** The connected viem WalletClient surface; private-key custody remains with the wallet. */
+export interface EcdsaWalletClient {
+  readonly account?: Readonly<{ address: `0x${string}` }> | undefined;
+  readonly signMessage: (
+    request: Readonly<{
+      account: `0x${string}`;
+      message: Readonly<{ raw: `0x${string}` }>;
+    }>,
+  ) => Promise<unknown>;
+}
+
+export interface EcdsaWalletKeyInput {
+  readonly wallet: EcdsaWalletClient;
+  /** The validator must accept EIP-191 signatures, as Kernel v3.3's ECDSA validator does. */
+  readonly validator: `0x${string}`;
+}
+
+/** One personal_sign prompt over the operation digest; no account request or signing retry. */
+export function ecdsaWalletKey(value: EcdsaWalletKeyInput): Readonly<KeyProfile> {
+  const context: CaptureContext = new WeakSet();
+  const record = exactInput(value, ["wallet", "validator"], "ECDSA wallet key", context);
+  const validator = inputAddress(record.validator, "ECDSA key validator");
+  const wallet = captureRecord(record.wallet, "ECDSA wallet", context, inputInvalid);
+  const account = captureRecord(wallet.account, "ECDSA wallet account", context, inputInvalid);
+  const owner = inputAddress(account.address, "ECDSA wallet address");
+  const signMessage = inputCapability<EcdsaWalletClient["signMessage"]>(
+    wallet.signMessage,
+    "ECDSA wallet signMessage capability",
+  );
+  return profile(
+    owner,
+    validator,
+    ({ hash }) =>
+      signMessage(Object.freeze({ account: owner, message: Object.freeze({ raw: hash }) })),
+    (hash) => hashMessage({ raw: hash }),
+  );
+}
+
 export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["account", "validator"], "ECDSA key", context);
@@ -52,10 +90,21 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
   const owner = inputAddress(account.address, "ECDSA key address");
   const sign = inputCapability<EcdsaKeyAccount["sign"]>(account.sign, "ECDSA key sign capability");
 
+  return profile(owner, validator, sign, (hash) => hash);
+}
+
+function profile(
+  owner: `0x${string}`,
+  validator: `0x${string}`,
+  sign: EcdsaKeyAccount["sign"],
+  signatureHash: (hash: `0x${string}`) => `0x${string}`,
+): Readonly<KeyProfile> {
   async function verify(hash: `0x${string}`, signature: `0x${string}`): Promise<boolean> {
     if (!isBytesOfLength(signature, 65)) return false;
     try {
-      return (await recoverAddress({ hash, signature })).toLowerCase() === owner;
+      return (
+        (await recoverAddress({ hash: signatureHash(hash), signature })).toLowerCase() === owner
+      );
     } catch {
       return false;
     }

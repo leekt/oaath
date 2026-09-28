@@ -47,6 +47,7 @@ describe("package boundary", () => {
       "deriveOperationId",
       "diagnoseKernelCapability",
       "ecdsaKey",
+      "ecdsaWalletKey",
       "encodeKernelV4EnableSignature",
       "encodeKernelV4Execution",
       "encodeKernelV4FactoryAddressRead",

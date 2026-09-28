@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import {
   concat,
+  createWalletClient,
+  custom,
   encodeFunctionData,
   getCreate2Address,
   type Hex,
@@ -13,7 +15,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
-import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
+import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
@@ -121,5 +123,47 @@ afterAll(() => chain?.stop());
     expect(await harness.client.getBalance({ address: target })).toBe(7n);
     // Observation and account recreation do not change ownership or deploy a new address.
     expect((await runtime.bindAccount({ address })).account).toBe(address.toLowerCase());
+
+    let prompts = 0;
+    const wallet = createWalletClient({
+      account: owner.address,
+      transport: custom({
+        async request({ method, params }) {
+          expect(method).toBe("personal_sign");
+          const [digest, signer] = params as [Hex, Hex];
+          expect(signer).toBe(owner.address.toLowerCase());
+          prompts++;
+          return owner.signMessage({ message: { raw: digest } });
+        },
+      }),
+    });
+    const connectedRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: ecdsaWalletKey({ wallet, validator: deployment.ecdsaValidator }),
+      }),
+      reads: createKernelV33Reads(harness.client),
+    });
+    const next = connectedRuntime.prepareOperation({
+      kind: "execution",
+      grantId: "connected-owner-operation",
+      account: await connectedRuntime.bindAccount({ address }),
+      nonceKey: "0",
+      sequence: "1",
+      calls: [{ target, value: "11", data: "0x" }],
+      gas: {
+        callGasLimit: "200000",
+        verificationGasLimit: "300000",
+        preVerificationGas: "50000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    });
+    expect(prompts).toBe(0);
+    const connectedSignature = await connectedRuntime.signOperation(next);
+    expect(prompts).toBe(1);
+    expect(connectedSignature.length).toBe(132);
+    expect(await harness.sendSigned(next, connectedSignature)).toBe("success");
+    expect(await harness.client.getBalance({ address: target })).toBe(18n);
   }, 30_000);
 });
