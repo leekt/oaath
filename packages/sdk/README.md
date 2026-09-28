@@ -161,6 +161,15 @@ resubmit. Custom submission sessions may return
 or `submission: { route: "entrypoint-handleops", transactionHash }`; omit
 `submission` when the route is unknown.
 
+For direct acknowledgements, default viem observation reads the retained
+transaction from the public RPC and locates the exact EntryPoint event. Recovery
+needs neither a wallet nor a bundler index. The observer still verifies the
+receipt, transaction, canonical blocks, and finality; a missing event or a failed
+outer transaction leaves the operation unresolved and never authorizes a send.
+Custom observation adapters receive an optional
+`transaction: { hash, entryPoint }` hint on `user_operation_receipt`. Receipt and
+execution projection also pass the verified inclusion transaction as a hint.
+
 Operation records now use `oaath.operation/v3`. Older records are rejected;
 IndexedDB schema 14 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must

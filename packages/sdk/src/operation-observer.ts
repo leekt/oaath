@@ -49,6 +49,8 @@ export type OperationObserverReadRequest =
       type: "user_operation_receipt";
       chainId: number;
       userOperationHash: `0x${string}`;
+      /** Locates a direct receipt; its event and canonical inclusion still require verification. */
+      transaction?: Readonly<{ hash: `0x${string}`; entryPoint: `0x${string}` }>;
     }>
   | Readonly<{ type: "transaction"; chainId: number; transactionHash: `0x${string}` }>
   | Readonly<{
@@ -756,6 +758,15 @@ export function createOperationObserver(capabilityValue: unknown): OperationObse
           type: "user_operation_receipt",
           chainId: reference.chainId,
           userOperationHash: reference.userOperationHash,
+          ...(reference.userOperationHash === operation.identity.userOperationHash &&
+          operation.submission?.route === "entrypoint-handleops"
+            ? {
+                transaction: {
+                  hash: operation.submission.transactionHash,
+                  entryPoint: reference.entryPoint,
+                },
+              }
+            : {}),
         });
         if (receiptValue === null) return null;
         const receipt = parseUserOperationReceipt(receiptValue, new WeakSet());

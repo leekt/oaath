@@ -279,6 +279,7 @@ export function createOperationHandle(
         type: "user_operation_receipt",
         chainId: identity.chainId,
         userOperationHash: identity.userOperationHash,
+        transaction: { hash: inclusion.transactionHash, entryPoint: identity.entryPoint },
       } satisfies OperationObserverReadRequest);
       rawTransactionReceipt = await input.observation({
         type: "transaction_receipt",
