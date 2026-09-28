@@ -21,6 +21,7 @@ import {
   isBytes,
   runtimeFail,
 } from "../internal.js";
+import { readKernelV33PermissionState } from "../permission/v33-revocation.js";
 
 // ZeroDev SDK constants at cd7c05b53b6ae6bede7dfefe9e59fbddfadf0c0a.
 // Contract ABI: zerodevapp/kernel v3.3, cd697c7e21715d015e0643af22310a99aa17433b.
@@ -74,7 +75,7 @@ export type KernelV33ReadRequest =
   | Readonly<{ type: "runtime_code_hash"; chainId: number; address: `0x${string}` }>
   | Readonly<{ type: "kernel_ecdsa_owner"; chainId: number; account: `0x${string}` }>
   | Readonly<{
-      type: "kernel_v33_permission_nonce";
+      type: "kernel_v33_permission_nonce" | "kernel_v33_permission_state";
       chainId: number;
       account: `0x${string}`;
       permissionId: `0x${string}`;
@@ -267,6 +268,11 @@ export function createKernelV33Reads(client: KernelV4ReadClient): KernelV33Reads
             return mismatch("Kernel ECDSA owner evidence is invalid");
           return `0x${response.data.slice(-40).toLowerCase()}`;
         }
+        case "kernel_v33_permission_state":
+          return readKernelV33PermissionState({
+            permissionId: request.permissionId,
+            call: async (data) => (await call({ to: request.account, data })).data,
+          });
         case "kernel_v33_permission_nonce": {
           if (!/^0x[0-9a-f]{8}$/u.test(request.permissionId))
             return inputInvalid("Kernel v3.3 permission ID is invalid");

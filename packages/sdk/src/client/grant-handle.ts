@@ -58,10 +58,18 @@ import type { KernelV33ReadRequest } from "../kernel/deployment/v33.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
-import type { KernelGrantApproval } from "../kernel/permission/approval.js";
+import {
+  type KernelGrantApproval,
+  kernelGrantApprovalNonce,
+} from "../kernel/permission/approval.js";
 import { observeKernelPermissionRevocation } from "../kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "../kernel/permission/v33.js";
+import {
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+} from "../kernel/permission/v33-revocation.js";
 import type { KernelRuntime, KernelRuntimeValidationMode, KeyProfile } from "../kernel/types.js";
 import {
   encodeKernelV4PermissionUninstallCalls,
@@ -2420,9 +2428,20 @@ export function createGrantHandle(
     );
     if (
       grant.state !== "revoking" ||
-      current?.state !== "revoking" ||
-      current.account !== binding.account ||
-      current.permissionId !== binding.permissionId
+      !(
+        (current?.state === "revoking" &&
+          current.account === binding.account &&
+          current.permissionId === binding.permissionId) ||
+        (input.installApproval?.version === OAATH_KERNEL_V33_APPROVAL_VERSION &&
+          (current === undefined || current.state === "unmaterialized") &&
+          grant.revocation?.targets.some(
+            (target) =>
+              target.chainId === binding.chainId &&
+              target.account === binding.account &&
+              target.permissionId === binding.permissionId,
+          ) &&
+          !grant.revocation.evidence.some((proof) => proof.permission.chainId === binding.chainId))
+      )
     ) {
       return clientFail(
         "oaath_client_state_conflict",
@@ -3441,8 +3460,8 @@ export function createGrantHandle(
   }
 
   /**
-   * Finalized-anchored observation of the chain's current permission state via
-   * Kernel's own `isModuleInstalled(6, signer, permissionId)` view. Absence can
+   * Finalized-anchored observation via the version's permission-state view.
+   * V4 uses isModuleInstalled; v3.3 uses validationConfig/permissionConfig. Absence can
    * complete out-of-band removal; presence can prove a superseded uninstall's
    * effect is still required.
    *
@@ -3505,14 +3524,24 @@ export function createGrantHandle(
         if (read < fence) return null;
         if (read === fence && block.hash !== floor.notBefore.blockHash) return null;
       }
-      const installed = await chain.observation.read({
-        type: "kernel_permission_installed",
-        chainId: binding.chainId,
-        account: binding.account,
-        signer,
-        permissionId: binding.permissionId,
-        blockNumber,
-      });
+      const installed =
+        input.installApproval.version === OAATH_KERNEL_V33_APPROVAL_VERSION
+          ? kernelV33PermissionStatus(
+              parseKernelV33PermissionState(
+                await chain.observation.read({
+                  type: "kernel_v33_permission_state",
+                  ...binding,
+                  blockNumber,
+                }),
+              ),
+              input.installApproval,
+            ) === "installed"
+          : await chain.observation.read({
+              type: "kernel_permission_installed",
+              ...binding,
+              signer,
+              blockNumber,
+            });
       if (installed !== true && installed !== false) return null;
       // The read was answered by number alone, so rebind: the block at that
       // number must still be the finalized block this evidence names.
@@ -3674,71 +3703,83 @@ export function createGrantHandle(
       let result: OperationRunResult | null = null;
       try {
         const chain = chainCapability(chainId);
-        const deployment = kernelV4Deployment(chainId);
+        const runtime = ownerRuntime(chainId);
+        const deployment = runtime.deployment;
         requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
-        const calls = encodeKernelV4PermissionUninstallCalls({
-          account: entry.account,
-          packages: input.installApproval.packages,
-        });
-        const bundler = await probeBundlerCapability({
-          capability: chain.bundler,
-          request: { chainId, entryPoint: deployment.entryPoint.address },
-          timeoutMs: SUBMISSION_TIMEOUT_MS,
-        });
-        const decision = decideExecution({
-          operationKind: "revocation",
-          sessionCoverage: "uncovered",
-          bundler,
-          feePayer: chain.feePayer,
-        });
-        const descriptor = decision.route === "none" ? null : await accountDescriptor(chainId);
-        if (descriptor !== null && descriptor.account === entry.account) {
-          // The retry fence was decided against an earlier journal read.
-          // Re-read the lane now that the async bundler probe and account
-          // composition completed: a submitted uninstall a concurrent observer
-          // just proved superseded must be fenced by the same post-supersession
-          // permission evidence as a superseded journal record. A stale boolean
-          // never authorizes replacement publication.
-          const lane = (await journal.get(laneKey).catch(() => undefined)) ?? prior;
-          if (
-            lane?.value.state === "finalized" &&
-            lane.value.inclusion.outcome === "success" &&
-            lane.value.identity.account === entry.account
-          ) {
-            value = lane.value;
-          }
-          if (value === null && lane?.value.state === "superseded") {
-            permissionObservation ??= await observeChainPermission(binding, {
-              installedAtBlock: entry.installation.blockNumber,
-              notBefore: {
-                blockNumber: lane.value.supersession.blockNumber,
-                blockHash: lane.value.supersession.blockHash,
-              },
-            });
-            retryPositivelySafe = permissionObservation?.status === "present";
-          }
-          if (value === null && retryPositivelySafe) {
-            const sender = runner({
-              chainId,
-              kind: "revocation",
-              runtime: ownerRuntime(chainId),
-              descriptor,
-              calls,
-              signer: "owner",
-              mode: "standard",
-              materializer: null,
-              decision,
-              terminalBehavior: "replace",
-              grantId: latest.value.identity.grantId,
-              requestHash: null,
-              authorizeOperation: (operation: OaathProviderOperationPointer) =>
-                authorizeRevocationOperation(binding, operation),
-            });
-            try {
-              result = await runOnce(sender, "revocation", laneKey);
-            } finally {
-              // A cleanup failure never replaces the outcome of the run.
-              await sender.close().catch(() => undefined);
+        const calls =
+          input.installApproval.version === OAATH_KERNEL_V33_APPROVAL_VERSION
+            ? kernelV33PermissionRevocationCalls({
+                approval: input.installApproval,
+                state: parseKernelV33PermissionState(
+                  await chain.reads.read({ type: "kernel_v33_permission_state", ...binding }),
+                ),
+              })
+            : encodeKernelV4PermissionUninstallCalls({
+                account: entry.account,
+                packages: input.installApproval.packages,
+              });
+        if (calls.length > 0) {
+          const bundler = await probeBundlerCapability({
+            capability: chain.bundler,
+            request: { chainId, entryPoint: deployment.entryPoint.address },
+            timeoutMs: SUBMISSION_TIMEOUT_MS,
+          });
+          const decision = decideExecution({
+            operationKind: "revocation",
+            sessionCoverage: "uncovered",
+            bundler,
+            feePayer: chain.feePayer,
+          });
+          const descriptor =
+            decision.route === "none" ? null : await accountDescriptor(chainId, runtime);
+          if (descriptor !== null && descriptor.account === entry.account) {
+            // The retry fence was decided against an earlier journal read.
+            // Re-read the lane now that the async bundler probe and account
+            // composition completed: a submitted uninstall a concurrent observer
+            // just proved superseded must be fenced by the same post-supersession
+            // permission evidence as a superseded journal record. A stale boolean
+            // never authorizes replacement publication.
+            const lane = (await journal.get(laneKey).catch(() => undefined)) ?? prior;
+            if (
+              lane?.value.state === "finalized" &&
+              lane.value.inclusion.outcome === "success" &&
+              lane.value.identity.account === entry.account
+            ) {
+              value = lane.value;
+            }
+            if (value === null && lane?.value.state === "superseded") {
+              permissionObservation ??= await observeChainPermission(binding, {
+                installedAtBlock: entry.installation.blockNumber,
+                notBefore: {
+                  blockNumber: lane.value.supersession.blockNumber,
+                  blockHash: lane.value.supersession.blockHash,
+                },
+              });
+              retryPositivelySafe = permissionObservation?.status === "present";
+            }
+            if (value === null && retryPositivelySafe) {
+              const sender = runner({
+                chainId,
+                kind: "revocation",
+                runtime,
+                descriptor,
+                calls,
+                signer: "owner",
+                mode: "standard",
+                materializer: null,
+                decision,
+                terminalBehavior: "replace",
+                grantId: latest.value.identity.grantId,
+                requestHash: null,
+                authorizeOperation: (operation: OaathProviderOperationPointer) =>
+                  authorizeRevocationOperation(binding, operation),
+              });
+              try {
+                result = await runOnce(sender, "revocation", laneKey);
+              } finally {
+                // A cleanup failure never replaces the outcome of the run.
+                await sender.close().catch(() => undefined);
+              }
             }
           }
         }
@@ -3792,9 +3833,90 @@ export function createGrantHandle(
     );
   }
 
+  /** Unused v3.3 approvals still need a journaled, owner-authorized nonce consumption. */
+  async function revokeUnusedV33Approval(binding: Readonly<ChainBinding>): Promise<void> {
+    const approval = input.installApproval;
+    if (approval?.version !== OAATH_KERNEL_V33_APPROVAL_VERSION || input.ownerRevocations !== null)
+      return;
+    const snapshot = await refresh();
+    const materialization = snapshot.value.materializations.find(
+      (entry) => entry.chainId === binding.chainId,
+    );
+    if (materialization !== undefined && materialization.state !== "unmaterialized") return;
+    const laneKey = {
+      grantId: snapshot.value.identity.grantId,
+      chainId: binding.chainId,
+      kind: "revocation" as const,
+    };
+    const journal = operationStore();
+    let prior: OperationStoreRecord | undefined;
+    try {
+      prior = await journal.get(laneKey);
+    } finally {
+      await journal.close();
+    }
+    if (
+      prior?.value.state === "submission_attempted" ||
+      prior?.value.state === "submitted" ||
+      prior?.value.state === "included"
+    ) {
+      const observing = observationOnlyRunner(binding.chainId);
+      try {
+        await runOnce(observing, "revocation", laneKey);
+      } finally {
+        await observing.close().catch(() => undefined);
+      }
+      return;
+    }
+    if (prior?.value.state === "finalized" && prior.value.inclusion.outcome === "success") return;
+    const chain = chainCapability(binding.chainId);
+    const runtime = ownerRuntime(binding.chainId);
+    const descriptor = await accountDescriptor(binding.chainId, runtime);
+    if (descriptor.account !== binding.account || binding.permissionId !== approval.permissionId)
+      return clientFail(
+        "oaath_client_state_conflict",
+        "revocation target contradicts its approval",
+      );
+    const state = parseKernelV33PermissionState(
+      await chain.reads.read({ type: "kernel_v33_permission_state", ...binding }),
+    );
+    const calls = kernelV33PermissionRevocationCalls({ approval, state });
+    if (calls.length === 0) return;
+    const bundler = await classifiedBundler(
+      binding.chainId,
+      chain,
+      runtime.deployment.entryPoint.address,
+    );
+    const decision = decideExecution({
+      operationKind: "revocation",
+      sessionCoverage: "uncovered",
+      bundler,
+      feePayer: chain.feePayer,
+    });
+    if (decision.route === "none") return;
+    const sender = runner({
+      chainId: binding.chainId,
+      kind: "revocation",
+      runtime,
+      descriptor,
+      calls,
+      signer: "owner",
+      mode: "standard",
+      materializer: null,
+      decision,
+      terminalBehavior: "replace",
+      grantId: snapshot.value.identity.grantId,
+      requestHash: null,
+      authorizeOperation: (operation) => authorizeRevocationOperation(binding, operation),
+    });
+    try {
+      await runOnce(sender, "revocation", laneKey);
+    } finally {
+      await sender.close().catch(() => undefined);
+    }
+  }
+
   async function revokeGrant(): Promise<void> {
-    if (input.installApproval?.version === OAATH_KERNEL_V33_APPROVAL_VERSION)
-      return unsupported("kernel_v33_revocation_unsupported");
     let snapshot = await refresh();
     let grant = snapshot.value;
     if (grant.state === "revoked") return;
@@ -3841,7 +3963,7 @@ export function createGrantHandle(
           identity: grant.identity,
           revocationStartedAt: input.now(),
           targets: [...targets.values()].sort((a, b) => a.chainId - b.chainId),
-          installNonce: approval.installNonce,
+          installNonce: kernelGrantApprovalNonce(approval),
         }),
       );
       grant = snapshot.value;
@@ -3882,7 +4004,7 @@ export function createGrantHandle(
     if (
       grant.revocation === null ||
       input.installApproval === null ||
-      grant.revocation.installNonce !== input.installApproval.installNonce
+      grant.revocation.installNonce !== kernelGrantApprovalNonce(input.installApproval)
     )
       return clientFail(
         "oaath_client_state_conflict",
@@ -3894,7 +4016,7 @@ export function createGrantHandle(
         continue;
       const chain = input.chains.get(binding.chainId);
       // A removed configuration entry cannot remove an already recorded obligation.
-      const evidence = chain
+      let evidence = chain
         ? await observeKernelPermissionRevocation({
             binding,
             approval: input.installApproval,
@@ -3902,6 +4024,23 @@ export function createGrantHandle(
             now: input.now,
           })
         : null;
+      if (
+        evidence === null &&
+        chain &&
+        input.installApproval.version === OAATH_KERNEL_V33_APPROVAL_VERSION
+      ) {
+        try {
+          await revokeUnusedV33Approval(binding);
+        } catch {
+          /* Unavailable state never authorizes another submission or completion. */
+        }
+        evidence = await observeKernelPermissionRevocation({
+          binding,
+          approval: input.installApproval,
+          observation: chain.observation,
+          now: input.now,
+        });
+      }
       if (evidence === null) {
         if (input.ownerRevocations) {
           try {
@@ -3951,8 +4090,6 @@ export function createGrantHandle(
 
   async function revoke(): Promise<void> {
     assertOpen();
-    if (input.binding.account.kernelVersion === "0.3.3")
-      return unsupported("kernel_v33_revocation_unsupported");
     revocationRequested = true;
     const active =
       revoking ??
