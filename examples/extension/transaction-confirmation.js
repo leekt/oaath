@@ -56,7 +56,7 @@ async function decide(decision) {
   } catch {
     button.removeAttribute("aria-busy");
     unavailable(
-      "This request is no longer waiting for a decision, so nothing was sent. Close this tab; the site can send the request again.",
+      "This decision couldn't be delivered, so this page can't confirm what happened. Close this tab and check the site; it can send the request again.",
     );
   }
 }

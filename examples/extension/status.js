@@ -23,11 +23,17 @@ try {
   if (!/^[0-9a-f-]{36}$/iu.test(token)) throw new Error("wallet call status is unavailable");
   const stored = await chrome.storage.session.get(key);
   output.textContent = formatWalletCallStatus(stored[key]);
-  const [label, tone, text] = HEADLINES[stored[key].status.status];
-  badge.textContent = label;
-  badge.dataset.tone = tone;
-  badge.hidden = false;
-  detail.textContent = `Requested by ${stored[key].origin}. ${text}`;
+  const headline = HEADLINES[stored[key].status.status];
+  if (headline) {
+    const [label, tone, text] = headline;
+    badge.textContent = label;
+    badge.dataset.tone = tone;
+    badge.hidden = false;
+    detail.textContent = `Requested by ${stored[key].origin}. ${text}`;
+  } else {
+    // Keep the exact formatted status visible for codes without a headline.
+    detail.textContent = `Requested by ${stored[key].origin}.`;
+  }
 } catch (error) {
   output.textContent = error instanceof Error ? error.message : "wallet call status is unavailable";
   detail.textContent =

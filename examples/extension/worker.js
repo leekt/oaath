@@ -171,13 +171,14 @@ async function handlePopup(message) {
     if (realm.pairing) {
       return rpcError(-32002, "a permission request is already waiting for the owner");
     }
-    const current = (await activeGrant(realm)) ?? realm.grant;
-    if (current?.state === "active" || current?.state === "revoking") {
-      return rpcError(-32000, "this origin already holds a permission; revoke it first");
-    }
+    // Claim the slot before the first await so a concurrent pair cannot pass.
     realm.pairing = true;
     let grant;
     try {
+      const current = (await activeGrant(realm)) ?? realm.grant;
+      if (current?.state === "active" || current?.state === "revoking") {
+        return rpcError(-32000, "this origin already holds a permission; revoke it first");
+      }
       // The owner still reviews and approves through the service's own flow;
       // this only submits the request and waits for the decision.
       grant = await realm.connection.requestPermission({
