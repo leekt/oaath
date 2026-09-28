@@ -60,6 +60,33 @@ function document(): Record<string, unknown> {
 }
 
 describe("service bootstrap", () => {
+  it("captures a configured gas floor as a canonical uint120 decimal", () => {
+    const base = document();
+    const chain = (base.chains as Record<string, unknown>[])[0];
+    for (const enableVerificationGasFloor of ["0", "2000000"]) {
+      const parsed = parseServiceBootstrap({
+        ...base,
+        chains: [{ ...chain, gas: { enableVerificationGasFloor } }],
+      });
+      expect(parsed.chains[0]?.gas).toEqual({ enableVerificationGasFloor });
+      expect(Object.isFrozen(parsed.chains[0]?.gas)).toBe(true);
+    }
+    for (const enableVerificationGasFloor of [
+      "01",
+      "-1",
+      "0x10",
+      2000000,
+      (1n << 120n).toString(),
+    ]) {
+      expect(() =>
+        parseServiceBootstrap({
+          ...base,
+          chains: [{ ...chain, gas: { enableVerificationGasFloor } }],
+        }),
+      ).toThrowError(expect.objectContaining({ code: "service_bootstrap_invalid" }));
+    }
+  });
+
   it("captures the exact versioned document", () => {
     const bootstrap = parseServiceBootstrap(document());
     expect(bootstrap.application.clientId).toBe("client-a");

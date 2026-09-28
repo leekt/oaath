@@ -84,6 +84,11 @@ operations for observation instead of repeating sends. Errors omit URLs,
 provider prose, and request bodies. An optional `fetch(Request)` can supply an
 application transport or local test fixture. Construction performs no I/O.
 
+The public paymaster service identity at `chain.paymasterService.url` omits the
+query and trailing slash. Use that identity in a requested `paymasterService`
+capability; transport still calls the exact configured endpoint, including its
+query parameters.
+
 `grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
 without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`
 with the application's job. An unresolved operation occupies that grant/chain
@@ -159,12 +164,22 @@ Owner operations and installed-session operations keep their quoted gas.
 `grant.reviewCalls()` reports `enableVerificationGasFloor` as a decimal string,
 or `null` when no floor applies, without quoting or reserving a nonce.
 The lower-level `createKernelRuntime` accepts the same `gas` option.
+Relay bootstrap preserves an explicitly configured floor.
 
 ERC-7677 sponsorship applies the floor before requesting final paymaster data.
 Custom sponsorship adapters receive `verificationGasFloor` with their prepared
 candidate and must honor it before authorizing the final gas. A reply below the
 floor is rejected before signing; its authorized fields are never changed after
 the paymaster response. This policy does not retry failed validation or submission.
+
+When a bundler supplies ABI-encoded EntryPoint `FailedOpWithRevert` data for
+`AA23 reverted` with an empty inner revert, preparation errors and uncertain
+submission outcomes expose `diagnostic.kind = "validation_gas_likely_insufficient"`
+and the attempted `verificationGasLimit` as a decimal string. The message says
+"likely validation out-of-gas"; it does not establish the cause. Provider RPC
+errors preserve the fixed numeric message and expose the hint in `data.diagnostic`.
+Message-only errors and nonempty reverts remain generic. The diagnostic is
+ephemeral, does not authorize a retry, and does not release an unresolved lane.
 
 `@oaath/sdk/kernel` exposes `prepareKernelPhonePermissionApproval` for the
 owner-phone service integration. It binds a canonical permission request's

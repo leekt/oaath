@@ -21,8 +21,11 @@
 import {
   type CaptureContext,
   captureRecord,
+  captureValidationGasDiagnostic,
   type ExactRecord,
   exactCapturedRecord,
+  type ValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 
 export type RoutingErrorCode =
@@ -35,11 +38,18 @@ export type RoutingErrorCode =
 
 export class OaathRoutingError extends Error {
   readonly code: RoutingErrorCode;
+  readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
-  constructor(code: RoutingErrorCode, message: string) {
-    super(message);
+  constructor(
+    code: RoutingErrorCode,
+    message: string,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  ) {
+    const captured = captureValidationGasDiagnostic(diagnostic);
+    super(captured === null ? message : validationGasDiagnosticMessage(captured));
     this.name = "OaathRoutingError";
     this.code = code;
+    this.diagnostic = captured;
   }
 }
 
@@ -110,8 +120,12 @@ export interface OaathExecutionDecision {
   readonly reasons: readonly OaathExecutionReason[];
 }
 
-export function routingFail(code: RoutingErrorCode, message: string): never {
-  throw new OaathRoutingError(code, message);
+export function routingFail(
+  code: RoutingErrorCode,
+  message: string,
+  diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+): never {
+  throw new OaathRoutingError(code, message, diagnostic);
 }
 
 export function inputInvalid(message: string): never {

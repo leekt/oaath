@@ -7,6 +7,8 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { captureValidationGasDiagnostic, type ValidationGasDiagnostic } from "@oaath/protocol";
+
 export type RelayErrorCode =
   /** Wire input is missing, malformed, oversized, or contains unknown fields. */
   | "relay_request_invalid"
@@ -95,16 +97,26 @@ export const RELAY_ERROR_STATUS: Readonly<Record<RelayErrorCode, number>> = Obje
 
 export class OaathRelayError extends Error {
   readonly code: RelayErrorCode;
+  readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
-  constructor(code: RelayErrorCode, message: string) {
+  constructor(
+    code: RelayErrorCode,
+    message: string,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  ) {
     super(message);
     this.name = "OaathRelayError";
     this.code = code;
+    this.diagnostic = captureValidationGasDiagnostic(diagnostic);
   }
 }
 
-export function relayFailure(code: RelayErrorCode, message: string): never {
-  throw new OaathRelayError(code, message);
+export function relayFailure(
+  code: RelayErrorCode,
+  message: string,
+  diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+): never {
+  throw new OaathRelayError(code, message, diagnostic);
 }
 
 /** Any non-relay throw is an unreadable internal failure, never caller-visible detail. */
@@ -117,8 +129,15 @@ const RESPONSE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   "cache-control": "no-store",
 });
 
-export function relayErrorResponse(code: RelayErrorCode): Response {
-  return jsonResponse(RELAY_ERROR_STATUS[code], { error: { code } });
+export function relayErrorResponse(
+  code: RelayErrorCode,
+  diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+): Response {
+  const captured =
+    code === "relay_chain_unavailable" ? captureValidationGasDiagnostic(diagnostic) : null;
+  return jsonResponse(RELAY_ERROR_STATUS[code], {
+    error: { code, ...(captured === null ? {} : { diagnostic: captured }) },
+  });
 }
 
 export function jsonResponse(status: number, body: unknown): Response {

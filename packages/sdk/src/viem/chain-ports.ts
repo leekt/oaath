@@ -517,7 +517,12 @@ export function createViemChainPorts(
           paymaster === null || paymasterUrl === null
             ? null
             : Object.freeze({
-                url: paymasterUrl,
+                // Service identity excludes endpoint credentials; requests still
+                // use the exact configured transport URL captured above.
+                url: `${new URL(paymasterUrl).origin}${new URL(paymasterUrl).pathname}`.replace(
+                  /\/$/u,
+                  "",
+                ),
                 request: (request: Parameters<OaathRegisteredPaymasterService["request"]>[0]) =>
                   paymaster(request.method, request.params, false),
                 estimate: (request: Parameters<OaathRegisteredPaymasterService["estimate"]>[0]) =>

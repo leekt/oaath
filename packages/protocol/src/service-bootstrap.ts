@@ -23,6 +23,8 @@ import {
   type CaptureContext,
   type CaptureFailure,
   captureDenseArray,
+  captureRecord,
+  exactCapturedRecord,
   exactRecord,
 } from "./internal/exact-record.js";
 
@@ -120,6 +122,7 @@ export function captureServiceAccount(
 }
 
 export interface ServiceBootstrapChain {
+  readonly gas?: Readonly<{ enableVerificationGasFloor: string }>;
   readonly chainId: number;
   /**
    * Whether the service serves finalized per-grant usage evidence for this
@@ -204,13 +207,38 @@ function captureChain(
   context: CaptureContext,
   fail: CaptureFailure,
 ): Readonly<ServiceBootstrapChain> {
-  const record = exactRecord(
-    value,
-    ["chainId", "usage", "feePayer", "paymasterService", "staticPaymasterConfigurationHash"],
+  const captured = captureRecord(value, "service bootstrap chain", context, fail);
+  const record = exactCapturedRecord(
+    captured,
+    [
+      "chainId",
+      "usage",
+      "feePayer",
+      "paymasterService",
+      "staticPaymasterConfigurationHash",
+      ...(Object.hasOwn(captured, "gas") ? ["gas"] : []),
+    ],
     "service bootstrap chain",
-    context,
     fail,
   );
+  let gas: ServiceBootstrapChain["gas"];
+  if (Object.hasOwn(record, "gas")) {
+    const policy = exactRecord(
+      record.gas,
+      ["enableVerificationGasFloor"],
+      "service gas policy",
+      context,
+      fail,
+    );
+    const floor = policy.enableVerificationGasFloor;
+    if (
+      typeof floor !== "string" ||
+      !/^(?:0|[1-9][0-9]{0,36})$/u.test(floor) ||
+      BigInt(floor) >= 1n << 120n
+    )
+      return fail("service enable gas floor is invalid");
+    gas = Object.freeze({ enableVerificationGasFloor: floor });
+  }
   const chainId = record.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return fail("service bootstrap chainId must be a positive integer");
@@ -264,6 +292,7 @@ function captureChain(
   return Object.freeze({
     chainId,
     usage: record.usage,
+    ...(gas === undefined ? {} : { gas }),
     feePayer,
     paymasterService,
     staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,

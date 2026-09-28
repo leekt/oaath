@@ -288,3 +288,9 @@ export {
   parseCanonicalEip712TypedData,
   parseOwnerSigningRequest,
 } from "./signing-request.js";
+export type { ValidationGasDiagnostic } from "./validation-diagnostic.js";
+export {
+  captureValidationGasDiagnostic,
+  readValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
+} from "./validation-diagnostic.js";

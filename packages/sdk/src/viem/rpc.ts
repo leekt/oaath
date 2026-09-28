@@ -1,4 +1,12 @@
-import { captureDenseArray, captureRecord } from "@oaath/protocol";
+import {
+  captureDenseArray,
+  captureRecord,
+  captureValidationGasDiagnostic,
+  type ValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
+} from "@oaath/protocol";
+import { decodeErrorResult } from "viem";
+import { entryPoint07Abi } from "viem/account-abstraction";
 
 export type OaathRpcErrorCode =
   | "oaath_rpc_config_invalid"
@@ -11,12 +19,41 @@ export type OaathRpcErrorCode =
 
 /** Contains no URL, provider prose, request body, signature, or raw error. */
 export class OaathRpcError extends Error {
+  readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
   constructor(
     readonly code: OaathRpcErrorCode,
     readonly rpcCode: number | null = null,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
   ) {
-    super(code);
+    const captured = captureValidationGasDiagnostic(diagnostic);
+    super(captured === null ? code : validationGasDiagnosticMessage(captured));
     this.name = "OaathRpcError";
+    this.diagnostic = captured;
+  }
+}
+
+function validationDiagnostic(
+  method: string,
+  params: readonly unknown[],
+  data: unknown,
+): Readonly<ValidationGasDiagnostic> | null {
+  if (method !== "eth_estimateUserOperationGas" && method !== "eth_sendUserOperation") return null;
+  try {
+    if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return null;
+    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
+    if (
+      decoded.errorName !== "FailedOpWithRevert" ||
+      decoded.args[0] !== 0n ||
+      decoded.args[1] !== "AA23 reverted" ||
+      decoded.args[2] !== "0x"
+    )
+      return null;
+    return captureValidationGasDiagnostic({
+      kind: "validation_gas_likely_insufficient",
+      verificationGasLimit: quantity(object(params[0]).verificationGasLimit).toString(),
+    });
+  } catch {
+    return null;
   }
 }
 
@@ -172,7 +209,11 @@ export function rpcOwner(input: ViemChainPortOptions) {
             const error = object(result.error);
             if (typeof error.code !== "number" || !Number.isSafeInteger(error.code))
               throw unavailable();
-            const failure = new OaathRpcError("oaath_rpc_rejected", error.code);
+            const failure = new OaathRpcError(
+              "oaath_rpc_rejected",
+              error.code,
+              error.code === -32500 ? validationDiagnostic(method, params, error.data) : null,
+            );
             if ([-32005, -32016, 429].includes(error.code)) transient.add(failure);
             throw failure;
           }

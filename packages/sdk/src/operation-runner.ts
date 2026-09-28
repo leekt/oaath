@@ -3,6 +3,7 @@ import {
   applyVerifiedOperationObservation,
   type CaptureContext,
   captureRecord,
+  captureValidationGasDiagnostic,
   createOperation,
   type ExactRecord,
   exactCapturedRecord,
@@ -11,6 +12,9 @@ import {
   type OperationKind,
   operationOccupiesLane,
   parseOperation,
+  readValidationGasDiagnostic,
+  type ValidationGasDiagnostic,
+  validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 import type { ObserveOperationResult, OperationObserver } from "./operation-observer.js";
 import {
@@ -42,11 +46,18 @@ export type OperationRunnerErrorCode =
 
 export class OaathOperationRunnerError extends Error {
   readonly code: OperationRunnerErrorCode;
+  readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
-  constructor(code: OperationRunnerErrorCode, message: string) {
-    super(message);
+  constructor(
+    code: OperationRunnerErrorCode,
+    message: string,
+    diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  ) {
+    const captured = captureValidationGasDiagnostic(diagnostic);
+    super(captured === null ? message : validationGasDiagnosticMessage(captured));
     this.name = "OaathOperationRunnerError";
     this.code = code;
+    this.diagnostic = captured;
   }
 }
 
@@ -122,6 +133,7 @@ type OperationStartedResult = Readonly<{
 
 type OperationSubmissionUncertainResult = Readonly<{
   status: "submission_uncertain";
+  readonly diagnostic?: Readonly<ValidationGasDiagnostic>;
   reason:
     | "session_unavailable"
     | "session_invalid"
@@ -934,8 +946,12 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
       raw = await configuration.preparation.prepare(
         Object.freeze({ kind: input.kind, key: input.key }),
       );
-    } catch {
-      return runnerError("operation_runner_preparation_failed", "Operation preparation failed");
+    } catch (error) {
+      throw new OaathOperationRunnerError(
+        "operation_runner_preparation_failed",
+        "Operation preparation failed",
+        readValidationGasDiagnostic(error),
+      );
     }
     let prepared: PreparedUserOperation;
     try {
@@ -1248,10 +1264,12 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
         () => configuration.submission.openSubmission(prepared),
         input.timeoutMs,
       );
-    } catch {
+    } catch (error) {
+      const diagnostic = readValidationGasDiagnostic(error);
       return frozenResult({
         status: "submission_uncertain",
         reason: "session_unavailable",
+        ...(diagnostic === null ? {} : { diagnostic }),
         record,
       });
     }
@@ -1271,10 +1289,12 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
     let submissionValue: unknown;
     try {
       submissionValue = await withTimeout(session.submit, input.timeoutMs);
-    } catch {
+    } catch (error) {
+      const diagnostic = readValidationGasDiagnostic(error);
       return frozenResult({
         status: "submission_uncertain",
         reason: "send_ambiguous",
+        ...(diagnostic === null ? {} : { diagnostic }),
         record,
       });
     }

@@ -243,6 +243,7 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
   const capability = fixture.capability;
   return {
     chainId: capability.chainId,
+    ...(capability.gas === undefined ? {} : { gas: capability.gas }),
     reads: (request: unknown) => capability.reads.read(request as never),
     observation: (request: unknown) => capability.observation.read(request as never),
     bundler: (request: unknown) => {
