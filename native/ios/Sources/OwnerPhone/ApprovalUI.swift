@@ -836,6 +836,7 @@ public final class ApprovalModel: ObservableObject {
             notice(.cannotSign, token: token)
             return
         }
+        let capturedForegroundGeneration = foregroundGeneration
         let signing: OwnerPhoneRequestProjection
         if let retained = retainedKernelArtifact,
            retained.reviewTokenId == token.id, retained.ambiguouslySubmitted
@@ -849,6 +850,14 @@ public final class ApprovalModel: ObservableObject {
                 return
             }
             signing = fetched
+        }
+        // Coming back to this review cannot revive an Approve tap that was
+        // interrupted while the relay was preparing its signing packet.
+        guard !Task.isCancelled, isForeground,
+              foregroundGeneration == capturedForegroundGeneration
+        else {
+            notice(.signingCancelled, token: token)
+            return
         }
         // The authenticated signing packet belongs to the exact consent still
         // displayed. The Kernel binding separately proves paired account/key.
@@ -1142,6 +1151,7 @@ public final class ApprovalModel: ObservableObject {
 
 public struct ApprovalView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
     @ObservedObject private var model: ApprovalModel
     private let onDone: (() -> Void)?
 
@@ -1188,9 +1198,16 @@ public struct ApprovalView: View {
                 EmptyView()
             }
         }
-        .onAppear { model.setForeground(scenePhase == .active) }
+        .onAppear {
+            isVisible = true
+            model.setForeground(scenePhase == .active)
+        }
+        .onDisappear {
+            isVisible = false
+            model.setForeground(false)
+        }
         .onChange(of: scenePhase) { phase in
-            model.setForeground(phase == .active)
+            model.setForeground(isVisible && phase == .active)
         }
     }
 

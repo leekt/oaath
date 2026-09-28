@@ -194,6 +194,8 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
 
     private let projectionValue: OwnerPhoneRequestProjection
     private let signingProjection: OwnerPhoneRequestProjection?
+    private var deferSigningProjection: Bool
+    private var signingContinuation: CheckedContinuation<Void, Never>?
     private var signingFetches = 0
     private var plannedResults: [PlannedResult]
     private var submissions = 0
@@ -203,10 +205,12 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
     init(
         projection: OwnerPhoneRequestProjection,
         signingProjection: OwnerPhoneRequestProjection? = nil,
+        deferSigningProjection: Bool = false,
         plannedResults: [PlannedResult]
     ) {
         projectionValue = projection
         self.signingProjection = signingProjection
+        self.deferSigningProjection = deferSigningProjection
         self.plannedResults = plannedResults
     }
 
@@ -222,7 +226,20 @@ private actor KernelDecisionRelay: OwnerPhoneRelayClient {
         // A committed request is no longer projectable. Ambiguous retry must
         // retain the first packet instead of fetching a second one.
         guard submissions == 0, let signingProjection else { throw DeferredFailure.endpoint }
+        if deferSigningProjection {
+            await withCheckedContinuation { signingContinuation = $0 }
+        }
         return signingProjection
+    }
+
+    func waitForSigningProjection() async {
+        while signingContinuation == nil { await Task.yield() }
+    }
+
+    func releaseSigningProjection() {
+        deferSigningProjection = false
+        signingContinuation?.resume()
+        signingContinuation = nil
     }
 
     func signingFetchCount() -> Int { signingFetches }
@@ -594,6 +611,45 @@ final class ApprovalModelRaceTests: XCTestCase {
         }
     }
 
+    func testInterruptedPermissionPacketNeedsAFreshTapEvenAfterReturningToReview() async throws {
+        for returnsBeforePacket in [false, true] {
+            let harness = try kernelApprovalHarness()
+            let consent = try permissionConsent(for: harness.projection)
+            let relay = KernelDecisionRelay(
+                projection: consent, signingProjection: harness.projection,
+                deferSigningProjection: true, plannedResults: [.decided])
+            let model = ApprovalModel(
+                relay: relay, kernelP256ApprovalBinding: harness.binding,
+                now: { harness.facts.now() })
+            model.setForeground(true)
+            await model.open(operationId: consent.operationId)
+
+            let approval = Task { await model.approve() }
+            await relay.waitForSigningProjection()
+            model.setForeground(false)
+            if returnsBeforePacket { model.setForeground(true) }
+            await relay.releaseSigningProjection()
+            await approval.value
+
+            let interruptedSubmissions = await relay.submissionCount()
+            XCTAssertEqual(interruptedSubmissions, 0)
+            XCTAssertEqual(harness.signer.callCount(), 0)
+            XCTAssertEqual(displayedReview(model)?.state, .pending)
+            XCTAssertEqual(model.actionNotice, .signingCancelled)
+
+            // Returning restores the ability to act, not the prior tap.
+            model.setForeground(true)
+            await model.approve()
+            let finalSubmissions = await relay.submissionCount()
+            XCTAssertEqual(finalSubmissions, 1)
+            XCTAssertEqual(harness.signer.callCount(), 1)
+            XCTAssertNil(model.actionNotice)
+            guard case .settled = displayedReview(model)?.state else {
+                return XCTFail("fresh explicit approval did not settle")
+            }
+        }
+    }
+
     func testExpiredDecisionTapsExplainThemselvesAndSendNothing() async throws {
         let request = OwnerPhoneRequestProjection.fixture(
             operationId: "expired-review",
@@ -837,6 +893,7 @@ final class ApprovalModelRaceTests: XCTestCase {
     func testKernelDuringSignInvalidationsInvokeAtMostOneSignerAndNeverPost() async throws {
         enum Invalidation {
             case background
+            case backgroundAndReturn
             case expiry
             case pairing
             case cancellation
@@ -844,6 +901,7 @@ final class ApprovalModelRaceTests: XCTestCase {
 
         for invalidation in [
             Invalidation.background,
+            .backgroundAndReturn,
             .expiry,
             .pairing,
             .cancellation,
@@ -863,6 +921,9 @@ final class ApprovalModelRaceTests: XCTestCase {
             switch invalidation {
             case .background:
                 model.setForeground(false)
+            case .backgroundAndReturn:
+                model.setForeground(false)
+                model.setForeground(true)
             case .expiry:
                 harness.facts.setNow(harness.projection.expiresAt)
             case .pairing:
