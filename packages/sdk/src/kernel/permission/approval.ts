@@ -31,3 +31,9 @@ export function kernelGrantCapabilityHash(approval: Readonly<KernelGrantApproval
     ? kernelV33CapabilityHash(approval)
     : kernelAllChainCapabilityHash(approval);
 }
+
+export function kernelGrantApprovalNonce(approval: Readonly<KernelGrantApproval>): string {
+  return approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION
+    ? approval.nonce
+    : approval.installNonce;
+}

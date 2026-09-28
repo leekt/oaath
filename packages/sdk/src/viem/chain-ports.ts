@@ -26,6 +26,7 @@ import {
 import { encodeKernelV33NonceKey } from "../kernel/deployment/v33-operation.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { resolvePolicyModule } from "../kernel/modules.js";
+import { readKernelV33PermissionState } from "../kernel/permission/v33-revocation.js";
 import {
   createKernelV4Reads,
   encodeKernelV4InstallNonceRead,
@@ -321,6 +322,15 @@ function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
             },
             toHex(BigInt(request.blockNumber)),
           ]);
+        case "kernel_v33_permission_state":
+          return readKernelV33PermissionState({
+            permissionId: request.permissionId,
+            call: (data) =>
+              publicRpc("eth_call", [
+                { to: request.account, data },
+                toHex(BigInt(request.blockNumber)),
+              ]),
+          });
         case "kernel_install_nonce":
           return publicRpc("eth_call", [
             {
@@ -465,6 +475,7 @@ export function createViemChainPorts(
             case "kernel_account_root_validator":
             case "kernel_ecdsa_owner":
             case "kernel_v33_permission_nonce":
+            case "kernel_v33_permission_state":
               return v33Reads.read(request);
             default:
               return v4Reads.read(request as KernelV4AccountReadRequest);

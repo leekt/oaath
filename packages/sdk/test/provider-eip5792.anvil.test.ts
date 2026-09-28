@@ -424,6 +424,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
             [
               "kernel_ecdsa_owner",
               "kernel_v33_permission_nonce",
+              "kernel_v33_permission_state",
               "kernel_account_version",
               "kernel_account_entrypoint",
               "kernel_account_root_validator",
