@@ -936,6 +936,54 @@ final class PairingClientTests: XCTestCase {
 
 @MainActor
 final class DemoPairingIdentityTests: XCTestCase {
+    func testPastedPairingLinkIsReadyWithoutASeparateRelayAndSendsOnlyOnPair() async {
+        let store = InMemoryPairingStore()
+        let recorder = FakeHTTP.Recorder()
+        let model = DemoModel(
+            pairings: store,
+            http: FakeHTTP(status: 200, body: pairingResponse(deviceCredentialA), recorder: recorder),
+            ownerKey: FakeOwnerSigning())
+
+        XCTAssertFalse(model.canPair)
+        model.pairingCodeText =
+            "oaath-demo://pair?relay=http%3A%2F%2Frelay.example%3A8787&code=AAAA-BBBB-CC"
+        XCTAssertTrue(model.canPair)
+        XCTAssertTrue(model.baseURLText.isEmpty)
+        XCTAssertFalse(model.paired)
+        XCTAssertEqual(store.load(), .absent)
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        await model.pair()
+
+        XCTAssertTrue(model.paired)
+        XCTAssertFalse(model.canPair)
+        XCTAssertEqual(model.baseURLText, "http://relay.example:8787")
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.requests.first?.url?.absoluteString,
+                       "http://relay.example:8787/native/pairings")
+    }
+
+    func testPairingReadinessRequiresUsableCandidatesAndAvailableCustody() {
+        let model = DemoModel(pairings: InMemoryPairingStore(), ownerKey: FakeOwnerSigning())
+        model.pairingCodeText = pairingCodeAInput
+        XCTAssertFalse(model.canPair)
+        model.baseURLText = "http://relay.example:8787"
+        XCTAssertTrue(model.canPair)
+        model.pairingCodeText = "short"
+        XCTAssertFalse(model.canPair)
+        model.pairingCodeText = "oaath-demo://pair?relay=invalid&code=AAAA-BBBB-CC"
+        XCTAssertFalse(model.canPair)
+
+        for model in [
+            DemoModel(pairings: InMemoryPairingStore(), ownerKey: nil),
+            DemoModel(pairings: InMemoryPairingStore(result: .unreadable), ownerKey: FakeOwnerSigning())
+        ] {
+            model.pairingCodeText =
+                "oaath-demo://pair?relay=http://relay.example:8787&code=AAAA-BBBB-CC"
+            XCTAssertFalse(model.canPair)
+        }
+    }
+
     func testDeviceTokenUpdatesCaptureOnlyTheExactNormalizedShape() {
         let model = DemoModel(pairings: InMemoryPairingStore(), ownerKey: FakeOwnerSigning())
         let original = model.deviceToken
@@ -1411,6 +1459,7 @@ final class DemoPairingIdentityTests: XCTestCase {
             "oaath-demo://pair?relay=HTTP%3A%2F%2FRELAY.EXAMPLE%3A8787%2F&code=abcd-efgh-jk"))
         XCTAssertEqual(model.baseURLText, "http://relay.example:8787")
         XCTAssertEqual(model.pairingCodeText, "ABCDEFGHJK")
+        XCTAssertTrue(model.canPair)
         XCTAssertFalse(model.paired)
         XCTAssertEqual(store.load(), .absent)
         XCTAssertTrue(recorder.requests.isEmpty)
