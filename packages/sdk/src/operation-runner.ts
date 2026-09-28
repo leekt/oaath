@@ -10,8 +10,10 @@ import {
   type Operation,
   type OperationIdentity,
   type OperationKind,
+  type OperationSubmissionEvidence,
   operationOccupiesLane,
   parseOperation,
+  parseOperationSubmissionEvidence,
   readValidationGasDiagnostic,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
@@ -673,18 +675,29 @@ function parseSubmissionSession(value: unknown): OperationSubmissionSession {
   }
 }
 
-function parseReturnedHash(value: unknown): `0x${string}` | null {
+function parseSubmissionResult(value: unknown): Readonly<{
+  userOperationHash: `0x${string}`;
+  submission: Readonly<OperationSubmissionEvidence> | null;
+}> | null {
   try {
     const context: CaptureContext = new WeakSet();
+    const captured = captureRecord(value, "Operation submission result", context, () =>
+      runnerError("operation_runner_capability_invalid", "submission result is invalid"),
+    );
     const record = exact(
-      value,
-      ["userOperationHash"],
+      captured,
+      ["userOperationHash", ...(Object.hasOwn(captured, "submission") ? ["submission"] : [])],
       "Operation submission result",
       "operation_runner_capability_invalid",
-      context,
+      new WeakSet(),
     );
     return typeof record.userOperationHash === "string" && HASH.test(record.userOperationHash)
-      ? (record.userOperationHash as `0x${string}`)
+      ? Object.freeze({
+          userOperationHash: record.userOperationHash as `0x${string}`,
+          submission: Object.hasOwn(record, "submission")
+            ? parseOperationSubmissionEvidence(record.submission)
+            : null,
+        })
       : null;
   } catch {
     return null;
@@ -1298,15 +1311,15 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
         record,
       });
     }
-    const returnedHash = parseReturnedHash(submissionValue);
-    if (!returnedHash) {
+    const acknowledged = parseSubmissionResult(submissionValue);
+    if (!acknowledged) {
       return frozenResult({
         status: "submission_uncertain",
         reason: "result_invalid",
         record,
       });
     }
-    if (returnedHash !== record.value.identity.userOperationHash) {
+    if (acknowledged.userOperationHash !== record.value.identity.userOperationHash) {
       return frozenResult({
         status: "submission_uncertain",
         reason: "identity_mismatch",
@@ -1319,8 +1332,9 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
       if (submittedRecord.value.state !== "submission_attempted") break;
       const submitted = advanceOperation(submittedRecord.value, {
         type: "mark_submitted",
+        submission: acknowledged.submission,
         identity: submittedRecord.value.identity,
-        returnedUserOperationHash: returnedHash,
+        returnedUserOperationHash: acknowledged.userOperationHash,
         submittedAt: Math.max(input.submittedAt, submittedRecord.value.updatedAt),
       });
       const submittedCommit = await commit(input.key, submittedRecord.storeRevision, submitted);

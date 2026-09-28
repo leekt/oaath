@@ -5,9 +5,17 @@ import {
   type Operation,
   type OperationIdentity,
   type OperationInclusion,
+  type OperationSubmissionEvidence,
 } from "@oaath/protocol";
+import { encodeFunctionData } from "viem";
+import {
+  entryPoint07Abi,
+  getUserOperationHash,
+  toPackedUserOperation,
+} from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { createOperationHandle } from "../src/client/operation-handle.js";
+import { encodeKernelV4Execution } from "../src/kernel-v4.js";
 import {
   type ObserveOperationResult,
   type OperationObserverCapabilities,
@@ -25,7 +33,24 @@ const TARGET = `0x${"33".repeat(20)}` as const;
 const NESTED_TARGET = `0x${"34".repeat(20)}` as const;
 const UPGRADE_TARGET = `0x${"35".repeat(20)}` as const;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}` as const;
-const USER_OPERATION_HASH = `0x${"44".repeat(32)}` as const;
+const EXECUTION_CALLS = [{ target: TARGET, value: "7", data: "0x" as const }];
+const EXECUTION_OPERATION = {
+  sender: ACCOUNT,
+  nonce: 7n,
+  callData: encodeKernelV4Execution({ calls: EXECUTION_CALLS }),
+  callGasLimit: 100_000n,
+  verificationGasLimit: 200_000n,
+  preVerificationGas: 50_000n,
+  maxFeePerGas: 2n,
+  maxPriorityFeePerGas: 1n,
+  signature: "0x" as const,
+};
+const USER_OPERATION_HASH = getUserOperationHash({
+  chainId: 31_337,
+  entryPointAddress: ENTRY_POINT,
+  entryPointVersion: "0.7",
+  userOperation: EXECUTION_OPERATION,
+});
 const PRIOR_USER_OPERATION_HASH = `0x${"45".repeat(32)}` as const;
 const FOLLOWING_USER_OPERATION_HASH = `0x${"46".repeat(32)}` as const;
 const TRANSACTION_HASH = `0x${"55".repeat(32)}` as const;
@@ -181,7 +206,7 @@ function expectInvalid(action: () => unknown): void {
   expect(action).toThrowError(expect.objectContaining({ message: "receipt_invalid" }));
 }
 
-function submittedOperation(): Operation {
+function submittedOperation(submission: OperationSubmissionEvidence | null = null): Operation {
   const prepared = createOperation({ identity, preparedAt: 10 });
   const attempted = advanceOperation(prepared, {
     type: "mark_submission_attempted",
@@ -190,14 +215,15 @@ function submittedOperation(): Operation {
   });
   return advanceOperation(attempted, {
     type: "mark_submitted",
+    submission,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: 12,
   });
 }
 
-function finalizedOperation(): Operation {
-  const included = applyVerifiedOperationObservation(submittedOperation(), {
+function finalizedOperation(submission: OperationSubmissionEvidence | null = null): Operation {
+  const included = applyVerifiedOperationObservation(submittedOperation(submission), {
     type: "record_included",
     identity,
     inclusion,
@@ -459,6 +485,40 @@ describe("exact UserOperation receipt evidence", () => {
 });
 
 describe("operation handle receipt binding", () => {
+  it.each([
+    [null, null],
+    [{ route: "bundler", transactionHash: null }, "bundler"],
+    [{ route: "entrypoint-handleops", transactionHash: TRANSACTION_HASH }, "entrypoint-handleops"],
+    [{ route: "entrypoint-handleops", transactionHash: BLOCK_HASH }, null],
+  ] as const)(
+    "reports only retained route evidence matching the finalized transaction",
+    async (submission, route) => {
+      const logs = [beforeExecution(0), log(1), userOperationEvent(2)];
+      const handle = operationHandle(finalizedOperation(submission), async (request) => {
+        if (request.type === "user_operation_receipt") return operationReceipt();
+        if (request.type === "transaction_receipt") return transactionReceipt(logs);
+        if (request.type !== "transaction_execution") throw new Error("unexpected read");
+        return {
+          hash: TRANSACTION_HASH,
+          to: ENTRY_POINT,
+          blockNumber: "0x14",
+          blockHash: BLOCK_HASH,
+          input: encodeFunctionData({
+            abi: entryPoint07Abi,
+            functionName: "handleOps",
+            args: [[toPackedUserOperation(EXECUTION_OPERATION)], TARGET],
+          }),
+        };
+      });
+      expect(await handle.execution()).toMatchObject({
+        route,
+        calls: EXECUTION_CALLS,
+        transactionHash: TRANSACTION_HASH,
+      });
+      await handle.close();
+    },
+  );
+
   it("never projects execution from a dropped operation or its replacement", async () => {
     let reads = 0;
     const handle = operationHandle(droppedOperation(), async () => {

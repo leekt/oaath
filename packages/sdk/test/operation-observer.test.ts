@@ -70,6 +70,7 @@ function submitted(): Operation {
   });
   return advanceOperation(attempted, {
     type: "mark_submitted",
+    submission: null,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: 12,

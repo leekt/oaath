@@ -46,6 +46,7 @@ function attempted(operation: Operation, at = 11): Operation {
 function submitted(operation: Operation, at = 12): Operation {
   return advanceOperation(operation, {
     type: "mark_submitted",
+    submission: null,
     identity,
     returnedUserOperationHash: identity.userOperationHash,
     submittedAt: at,
@@ -128,7 +129,8 @@ describe("Operation abandonment", () => {
     const operation = abandoned(prepared());
 
     expect(operation).toEqual({
-      version: "oaath.operation/v2",
+      version: "oaath.operation/v3",
+      submission: null,
       identity,
       revision: 1,
       state: "abandoned",
@@ -567,6 +569,7 @@ describe("Operation aggregate", () => {
       () =>
         advanceOperation(waiting, {
           type: "mark_submitted",
+          submission: null,
           identity,
           returnedUserOperationHash: `0x${"99".repeat(32)}`,
           submittedAt: 12,
@@ -661,6 +664,81 @@ describe("Operation aggregate", () => {
         const waiting = attempted(prepared(start), start + 1);
         expectOperationError(() => attempted(waiting, start + 2), "operation_transition_forbidden");
       }),
+    );
+  });
+});
+
+describe("acknowledged submission route", () => {
+  it("preserves acknowledgement when superseded evidence is strengthened to a finalized replacement", () => {
+    const submission = { route: "entrypoint-handleops" as const, transactionHash };
+    const sent = advanceOperation(attempted(prepared()), {
+      type: "mark_submitted",
+      identity,
+      returnedUserOperationHash: identity.userOperationHash,
+      submittedAt: 12,
+      submission,
+    });
+    const superseded = applyVerifiedOperationObservation(sent, {
+      type: "record_superseded",
+      identity,
+      supersession: supersession(),
+    });
+    const dropped = applyVerifiedOperationObservation(superseded, {
+      type: "record_dropped",
+      identity,
+      drop: replacementDrop(),
+    });
+    expect(parseOperation(JSON.parse(JSON.stringify(dropped)))).toMatchObject({
+      state: "dropped",
+      submittedAt: 12,
+      submission,
+    });
+  });
+
+  it("retains a direct transaction hint through observation without resolving the lane on acknowledgement", () => {
+    const submission = { route: "entrypoint-handleops" as const, transactionHash };
+    const sent = advanceOperation(attempted(prepared()), {
+      type: "mark_submitted",
+      identity,
+      returnedUserOperationHash: identity.userOperationHash,
+      submittedAt: 12,
+      submission,
+    });
+    expect(sent.submission).toEqual(submission);
+    expect(operationOccupiesLane(sent)).toBe(true);
+    const observed = included(sent);
+    expect(parseOperation(JSON.parse(JSON.stringify(observed))).submission).toEqual(submission);
+    expect(operationOccupiesLane(observed)).toBe(true);
+  });
+
+  it("refuses claimed submission before an attempt and retired records", () => {
+    expectOperationError(
+      () =>
+        parseOperation({ ...prepared(), submission: { route: "bundler", transactionHash: null } }),
+      "operation_record_invalid",
+    );
+    expectOperationError(
+      () => parseOperation({ ...prepared(), version: "oaath.operation/v2" }),
+      "operation_record_invalid",
+    );
+  });
+
+  it.each([
+    { route: "entrypoint-handleops", transactionHash: null },
+    { route: "bundler", transactionHash },
+    { route: "native", transactionHash },
+    { route: "bundler", transactionHash: null, providerMessage: "private" },
+  ])("refuses malformed submission evidence", (submission) => {
+    expectOperationError(
+      () =>
+        advanceOperation(attempted(prepared()), {
+          type: "mark_submitted",
+          identity,
+          returnedUserOperationHash: identity.userOperationHash,
+          submittedAt: 12,
+          submission,
+        }),
+      "operation_transition_invalid",
     );
   });
 });

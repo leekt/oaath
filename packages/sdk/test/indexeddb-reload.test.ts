@@ -316,8 +316,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(13);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(13);
+    expect(database.version).toBe(14);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(14);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -385,7 +385,7 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(13);
+    expect(database.version).toBe(14);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
@@ -408,35 +408,38 @@ describe("IndexedDB realm recreation", () => {
     ).resolves.toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
   });
 
-  it("wipes v3 operation lane keys instead of reading them through the v5 layout", async () => {
-    const factory = new IDBFactory();
-    await new Promise<void>((resolve, reject) => {
-      const request = factory.open(OAATH_INDEXEDDB_NAME, 3);
-      request.onupgradeneeded = () => {
-        for (const store of Object.values(OAATH_INDEXEDDB_STORES)) {
-          request.result.createObjectStore(store);
-        }
-        request.transaction
-          ?.objectStore(OAATH_INDEXEDDB_STORES.operations)
-          .put({ source: "v3" }, ["stale-grant", CHAIN_ID, "execution"]);
-      };
-      request.onsuccess = () => {
-        request.result.close();
-        resolve();
-      };
-      request.onerror = () => reject(request.error);
-    });
+  it.each([3, 13])(
+    "wipes retired v%s operation records before opening the current schema",
+    async (version) => {
+      const factory = new IDBFactory();
+      await new Promise<void>((resolve, reject) => {
+        const request = factory.open(OAATH_INDEXEDDB_NAME, version);
+        request.onupgradeneeded = () => {
+          for (const store of Object.values(OAATH_INDEXEDDB_STORES)) {
+            request.result.createObjectStore(store);
+          }
+          request.transaction
+            ?.objectStore(OAATH_INDEXEDDB_STORES.operations)
+            .put({ source: `v${version}` }, ["stale-grant", CHAIN_ID, "execution"]);
+        };
+        request.onsuccess = () => {
+          request.result.close();
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
 
-    const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(13);
-    await expect(
-      createIndexedDbOperationStoreAdapter(database).get({
-        grantId: "stale-grant",
-        chainId: CHAIN_ID,
-        kind: "execution",
-      }),
-    ).resolves.toBeUndefined();
-  });
+      const database = await openRealmDatabase(factory);
+      expect(database.version).toBe(14);
+      await expect(
+        createIndexedDbOperationStoreAdapter(database).get({
+          grantId: "stale-grant",
+          chainId: CHAIN_ID,
+          kind: "execution",
+        }),
+      ).resolves.toBeUndefined();
+    },
+  );
 
   it("wipes v6 Grant-scoped bundle keys instead of reading them through the sender scope", async () => {
     const factory = new IDBFactory();
@@ -460,7 +463,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(13);
+    expect(database.version).toBe(14);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -492,7 +495,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(13);
+    expect(database.version).toBe(14);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -531,7 +534,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(13);
+    expect(database.version).toBe(14);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",

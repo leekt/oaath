@@ -523,7 +523,10 @@ export function createViemChainPorts(
                   false,
                 ).then((hash) => {
                   if (hex(hash) !== prepared.userOperationHash) return evidence();
-                  return { userOperationHash: prepared.userOperationHash };
+                  return {
+                    userOperationHash: prepared.userOperationHash,
+                    submission: { route: "bundler", transactionHash: null },
+                  };
                 });
                 return sent;
               },

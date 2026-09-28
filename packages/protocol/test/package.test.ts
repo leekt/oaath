@@ -92,6 +92,7 @@ describe("package boundary", () => {
       "parseOaathGrantRef",
       "parseOperation",
       "parseOperationIdentity",
+      "parseOperationSubmissionEvidence",
       "parseOperatorCredentialProfile",
       "parseOwnerCredentialProfile",
       "parseOwnerSigningArtifact",

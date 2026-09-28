@@ -250,6 +250,7 @@ describe("Operation current codec", () => {
 
     const submitted = advanceOperation(attempted, {
       type: "mark_submitted",
+      submission: null,
       identity,
       returnedUserOperationHash: identity.userOperationHash,
       submittedAt: 12,
@@ -533,6 +534,7 @@ describe("Operation current codec", () => {
 
     const submitted = advanceOperation(attempted, {
       type: "mark_submitted",
+      submission: null,
       identity,
       returnedUserOperationHash: identity.userOperationHash,
       submittedAt: 12,

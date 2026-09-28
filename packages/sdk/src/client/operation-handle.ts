@@ -16,6 +16,7 @@ import type {
   OperationInclusion,
   OperationKind,
   OperationOutcome,
+  OperationSubmissionEvidence,
   ValidationGasDiagnostic,
 } from "@oaath/protocol";
 import { verifyOperationExecutionEvidence } from "../operation-execution.js";
@@ -88,6 +89,8 @@ export interface OaathOperationReceipt {
 
 /** Finalized calls decoded from the exact UserOperation's containing transaction. */
 export interface OaathOperationExecution {
+  /** Acknowledged transport route, or null when no matching evidence was retained. */
+  readonly route: OperationSubmissionEvidence["route"] | null;
   readonly id: `0x${string}`;
   readonly grantId: string;
   readonly chainId: number;
@@ -361,6 +364,12 @@ export function createOperationHandle(
         const facts = verifyOperationExecutionEvidence({ identity, inclusion, transaction });
         return Object.freeze({
           id: identity.userOperationHash,
+          route:
+            current.submission?.route === "entrypoint-handleops"
+              ? current.submission.transactionHash === inclusion.transactionHash
+                ? "entrypoint-handleops"
+                : null
+              : (current.submission?.route ?? null),
           grantId: identity.grantId,
           chainId: identity.chainId,
           sender: facts.sender,

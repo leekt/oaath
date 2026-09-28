@@ -588,6 +588,14 @@ export class OperationStore {
         validateNext: (current, next) => {
           if (
             current !== undefined &&
+            sameOperationIdentity(current, next) &&
+            current.submission !== null &&
+            !sameValue(current.submission, next.submission)
+          ) {
+            invalid("store_identity_mismatch", "acknowledged submission evidence cannot change");
+          }
+          if (
+            current !== undefined &&
             current.identity.userOperationHash === next.identity.userOperationHash &&
             !sameOperationIdentity(current, next)
           ) {
