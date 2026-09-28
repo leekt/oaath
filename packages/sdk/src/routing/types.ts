@@ -77,6 +77,9 @@ export type OaathExecutionRoute = "bundler" | "entrypoint-handleops" | "none";
 
 export type OaathExecutionSignerReason =
   | "owner_explicit"
+  | "owner_auto_single_operation"
+  | "session_auto_owner_unavailable"
+  | "session_auto_multiple_operations"
   | "root_operation_requires_owner"
   | "session_covers_calls"
   | "session_calls_uncovered"

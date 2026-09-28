@@ -222,7 +222,9 @@ recovery. See the [SDK example](packages/sdk/README.md), including the lower-lev
 `createKernelRuntime` path. Existing v3.3 accounts also support session Grants through
 `createOAAth({ mode: "local", owner: walletClient, account: address, chains })`,
 with one wallet typed-data approval, browser custody and reload recovery.
-Local mode needs no phone or relay. Grant signer auto selection is still pending.
+Local mode needs no phone or relay. Explicit Grant `signer: "auto"` prefers an
+available owner for the atomic call bundle; execution review identifies that
+choice and its wider authority before signing.
 
 The v4 runtime is open over chains: every address in the
 deployment profile is the same CREATE2 canonical address on every chain, so
