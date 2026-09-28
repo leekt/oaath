@@ -30,6 +30,11 @@ export type {
   OaathSendCallsInput,
 } from "./client/grant-handle.js";
 export type {
+  OaathLocalApprovalReview,
+  OaathLocalConfiguration,
+  OaathLocalWallet,
+} from "./client/local-realm.js";
+export type {
   OaathOperationExecution,
   OaathOperationHandle,
   OaathOperationLog,

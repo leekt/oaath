@@ -3,6 +3,56 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+For a browser app using an existing ECDSA-root Kernel `0.3.3` account, local
+mode approves a Grant through the connected wallet without a phone or relay:
+
+```ts
+import { createOAAth } from "@oaath/sdk";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const oaath = createOAAth({
+  mode: "local",
+  owner: walletClient, // connected viem WalletClient over the wallet's EIP-1193 provider
+  account: existingKernelAddress,
+  chains: createViemChainPorts({
+    143: { publicRpcUrls: [publicRpcUrl], bundlerUrl },
+  }),
+  onApproval: async ({ policy }) => { await showPolicy(policy); }, // optional application UI
+});
+const connection = await oaath.connect();
+const grant = (await connection.resume()) ?? await connection.requestPermission({
+  chainScope: "all",
+  permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
+  expiresIn: 3600,
+  perChainOperationLimit: 10,
+});
+const operation = await grant.sendCalls({ chain: 143, calls: [{ target, data, value: "0" }] });
+// Save { chain: operation.chainId, id: operation.id } with the application job.
+await operation.wait();
+await oaath.close();
+```
+
+The explicit account address identifies the existing smart account; a wallet
+address alone cannot identify it. Each configured chain must carry this account,
+the canonical ECDSA root owned by the connected wallet, and the permission
+modules. All configured chains must agree on the effective validation nonce.
+Approval uses one `eth_signTypedData_v4` prompt over Kernel's canonical all-chain
+Enable message. Its bytes bind the session key, calls, native-value limits,
+expiry and per-chain operation limit. Wallets may display those policy bytes as
+hex; `onApproval` receives the decoded policy for the application to display
+before the wallet prompt. Throwing from that callback cancels approval.
+No signing retry occurs after rejection or an invalid signature.
+
+The session key is encrypted under a non-extractable IndexedDB wrapping key.
+Subsequent calls use it without owner prompts. Recreate the same configuration,
+call `connect()` and `resume()`, then `getOperation({ chain, id })` to observe a
+saved operation without another submission or approval. Local state is separated
+by origin, smart account and owner. A failed custody write prevents approval;
+cleared custody requires a new approval and does not revoke an old permission.
+`grant.revoke()` uses owner prompts to remove permissions and consume approvals;
+it completes only after finalized onchain evidence. `disconnect(grant)` also
+forgets local custody. Local mode currently supports existing Kernel v3.3 accounts.
+
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
 
@@ -31,8 +81,7 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default. Grant `signer: "auto"` and the local permission issuer
-are still pending.
+bundler route by default. Grant `signer: "auto"` is still pending.
 
 The same owner operation is available through the lower-level runtime:
 
