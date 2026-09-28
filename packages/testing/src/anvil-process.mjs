@@ -59,7 +59,7 @@ async function reservePort() {
  * feature rather than a deployment: the pinned raw P-256 validator staticcalls
  * the RIP-7212 / EIP-7951 precompile at 0x100, which Prague does not carry and
  * Osaka does. The phone demo asks for `osaka`; everything else keeps Prague.
- * @returns {Promise<{ chainId: number, url: string, client: import("viem").PublicClient, rpc: (method: string, params?: unknown[]) => Promise<any>, stop: () => void }>}
+ * @returns {Promise<{ chainId: number, url: string, processId: number | undefined, client: import("viem").PublicClient, rpc: (method: string, params?: unknown[]) => Promise<any>, stop: () => void }>}
  */
 export async function startAnvil(chainId, hardfork = "prague") {
   const port = await reservePort();
@@ -105,6 +105,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
   return {
     chainId,
     url,
+    processId: child.pid,
     client,
     rpc: async (method, params) => {
       const response = await fetch(url, {

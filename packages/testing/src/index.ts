@@ -1,1 +1,7 @@
-export { createSqliteGrantStore, createSqliteOperationStore } from "./sqlite-store.js";
+export {
+  createSqliteContextStore,
+  createSqliteGrantStore,
+  createSqliteGrantStoreAdapter,
+  createSqliteOperationStore,
+  createSqliteOperationStoreAdapter,
+} from "./sqlite-store.js";

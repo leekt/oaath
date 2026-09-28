@@ -576,6 +576,19 @@ describe("test-only durable SQLite stores", () => {
     expectStoreConstructorError(() => createSqliteGrantStore(filePath), "store_record_invalid");
   });
 
+  it("rejects a stale schema version instead of upgrading durable state", async () => {
+    const filePath = await databasePath();
+    const store = createSqliteGrantStore(filePath);
+    await store.close();
+    const database = new DatabaseSync(filePath);
+    database
+      .prepare("UPDATE oaath_test_store_schema_v1 SET version = ?")
+      .run("oaath.sqlite-test-store/v1");
+    database.close();
+    expectStoreConstructorError(() => createSqliteGrantStore(filePath), "store_record_invalid");
+    expectStoreConstructorError(() => createSqliteOperationStore(filePath), "store_record_invalid");
+  });
+
   it("rejects added triggers before they can mutate another chain lane", async () => {
     const filePath = await databasePath();
     const store = createSqliteOperationStore(filePath);
