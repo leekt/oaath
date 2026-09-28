@@ -444,8 +444,11 @@
                   call, up to three jobs on each configured chain. Approve it on the phone.
                 </p>
                 <div class="actions">
-                  <button type="button" id="permission">Request permission</button>
+                  <button type="button" id="permission" aria-describedby="permission-recovery">
+                    Request permission
+                  </button>
                 </div>
+                <p id="permission-recovery" role="status" hidden></p>
               </div>
             </li>
 

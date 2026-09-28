@@ -36,7 +36,9 @@ recovers pairing, permission, and saved-job state after a reload.
    SDK reports `revoked` only after finalized permission absence and
    install-nonce consumption on both chains. An unused grant burns its install
    nonce; an installed permission is uninstalled. A revoked or expired
-   permission can be replaced by requesting a new one.
+   permission can be replaced by requesting a new one after any saved job has
+   been checked to a terminal result. This keeps its original permission
+   available for recovery across a reload.
 
 The page stores only a versioned operation ID and chain pointer in localStorage.
 The SDK owns the key, grant and operation records in IndexedDB. An observation

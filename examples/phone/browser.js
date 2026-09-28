@@ -340,6 +340,7 @@ function render() {
   const revoking = grant?.state === "revoking";
   const terminal = grantIsTerminal(grant);
   const paired = page.paired === true;
+  const needsObservation = saved !== null || unreadable;
   const enable = (id, on) => {
     const node = $(id);
     if (!node || buttonActivities.has(node)) return;
@@ -347,10 +348,17 @@ function render() {
   };
   enable("pair", page.paired === false);
   enable("unlock", paired && !page.connected);
-  enable("permission", paired && terminal);
+  enable("permission", paired && terminal && !needsObservation);
   enable("session", paired && active && !saved && !unreadable);
   enable("observe", paired && (saved !== null || unreadable));
   enable("revoke", paired && (active || revoking));
+  const recovery = $("permission-recovery");
+  if (recovery) {
+    recovery.hidden = !paired || !terminal || !needsObservation;
+    recovery.textContent = unreadable
+      ? "The saved job record can't be read. Its permission is kept so the job isn't lost."
+      : "Check the saved job before requesting another permission. Its current permission is still needed to find the result.";
+  }
   if (chainChoice) chainChoice.disabled = page.busy || !active || saved !== null;
   const chainField = $("chain-field");
   if (chainField) chainField.hidden = page.chains.length === 0;
@@ -367,7 +375,13 @@ function render() {
   );
   setStep(
     "step-permission",
-    active || revoking ? "done" : page.connected && terminal ? "next" : "locked",
+    active || revoking
+      ? "done"
+      : page.connected && terminal && !needsObservation
+        ? "next"
+        : paired && needsObservation
+          ? "available"
+          : "locked",
     grant ? grantText(grant).split(":")[0] : null,
   );
   setStep(
@@ -416,6 +430,14 @@ const actions = {
     "Waiting for approval on your phone",
     async (token) => {
       await connectAccount();
+      const { saved, unreadable } = readSaved();
+      if (unreadable) throw new DemoRouteError("saved_job_unreadable");
+      if (saved) {
+        say(
+          "Check the saved job before requesting another permission. Its permission is kept for recovery.",
+        );
+        return;
+      }
       if (!grantIsTerminal(grant)) {
         say(`A permission already exists: ${grantText(grant)}.`);
         return;

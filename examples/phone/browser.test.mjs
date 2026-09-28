@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
+import { build } from "esbuild";
 
 class MemoryStorage {
   #values = new Map();
@@ -202,4 +204,176 @@ test("overlapping Pair clicks are latest-wins and leave no stale timers or secre
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
   }
+});
+
+// Run the complete page controller in an isolated browser realm. Only its SDK
+// port is replaced: these tests prove UI orchestration, not chain execution.
+const controller = await build({
+  entryPoints: [new URL("./browser.js", import.meta.url).pathname],
+  bundle: true,
+  write: false,
+  format: "iife",
+  plugins: [
+    {
+      name: "page-sdk-port",
+      setup(builder) {
+        // esbuild uses Go regular expressions, which do not support JS's u flag.
+        builder.onResolve({ filter: /^@oaath\/sdk$/ }, () => ({
+          path: "sdk",
+          namespace: "page-sdk-port",
+        }));
+        builder.onLoad({ filter: /.*/, namespace: "page-sdk-port" }, () => ({
+          contents: "export const createOAAth = globalThis.createOAAth;",
+        }));
+      },
+    },
+  ],
+});
+
+async function pageRealm({ storage, createOAAth }) {
+  const nodes = new Map();
+  const element = (id = "") => ({
+    id,
+    textContent: "",
+    value: "",
+    disabled: true,
+    hidden: false,
+    attributes: new Map(),
+    setAttribute(name, value) {
+      this.attributes.set(name, value);
+    },
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    },
+    replaceChildren() {},
+    querySelector() {
+      return null;
+    },
+  });
+  const html = readFileSync(new URL("./page.html", import.meta.url), "utf8");
+  for (const [, id] of html.matchAll(/\bid="([^"]+)"/gu)) nodes.set(id, element(id));
+  runInNewContext(controller.outputFiles[0].text, {
+    createOAAth,
+    document: {
+      getElementById: (id) => nodes.get(id),
+      createElement: () => element(),
+      querySelector: () => null,
+    },
+    localStorage: storage,
+    location: { origin: "http://127.0.0.1:8787" },
+    fetch: async () =>
+      jsonResponse({ account: "phone-owned-account", chains: [{ chainId: 31337, name: "Local" }] }),
+    Headers,
+    Request,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  });
+  // Buffered responses resolve in microtasks; no network or timer is polled.
+  await new Promise(setImmediate);
+  return nodes;
+}
+
+const savedJobKey = "oaath.phone-demo-operation/v1";
+const savedJob = { version: savedJobKey, chain: 31337, id: `0x${"ab".repeat(32)}` };
+
+for (const state of ["revoked", "expired"])
+  test(`${state} permission keeps its saved job recoverable before replacement`, async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(savedJobKey, JSON.stringify(savedJob));
+    let current = "old";
+    let permissions = 0;
+    let sends = 0;
+    let outcome = "pending";
+    const observedBy = [];
+    const createOAAth = () => ({
+      async connect() {
+        return {
+          async resume() {
+            const owner = current;
+            return {
+              state: owner === "old" ? state : "active",
+              async sendCalls() {
+                sends += 1;
+                throw new Error("this scenario must only observe");
+              },
+              async getOperation({ chain, id }) {
+                observedBy.push(owner);
+                assert.equal(chain, savedJob.chain);
+                assert.equal(id, savedJob.id);
+                if (owner !== "old" || outcome === "missing") return null;
+                return {
+                  id,
+                  async observe() {
+                    if (outcome === "unavailable") throw new Error("observation unavailable");
+                    return {
+                      status: outcome,
+                      outcome: "success",
+                      transactionHash: `0x${"cd".repeat(32)}`,
+                    };
+                  },
+                };
+              },
+            };
+          },
+          async requestPermission() {
+            permissions += 1;
+            current = "new";
+            return { state: "active" };
+          },
+        };
+      },
+    });
+
+    let nodes = await pageRealm({ storage, createOAAth });
+    assert.equal(nodes.get("permission").disabled, true);
+    assert.equal(nodes.get("permission-recovery").hidden, false);
+    // The action guards its own state too, even if invoked from an old view.
+    await nodes.get("permission").onclick();
+    assert.equal(permissions, 0);
+
+    for (const next of ["pending", "unavailable", "missing"]) {
+      outcome = next;
+      nodes = await pageRealm({ storage, createOAAth });
+      await nodes.get("observe").onclick();
+      assert.equal(storage.getItem(savedJobKey), JSON.stringify(savedJob));
+      assert.equal(nodes.get("permission").disabled, true);
+      assert.equal(permissions, 0);
+    }
+
+    outcome = state === "revoked" ? "finalized" : "superseded";
+    nodes = await pageRealm({ storage, createOAAth });
+    await nodes.get("observe").onclick();
+    assert.equal(storage.getItem(savedJobKey), null);
+    assert.equal(nodes.get("permission").disabled, false);
+    assert.equal(nodes.get("permission-recovery").hidden, true);
+    await nodes.get("permission").onclick();
+    assert.equal(permissions, 1);
+    assert.deepEqual(observedBy, ["old", "old", "old", "old"]);
+    assert.equal(sends, 0);
+  });
+
+test("unreadable saved job cannot be orphaned by a new permission", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem(savedJobKey, "unreadable");
+  let permissions = 0;
+  const nodes = await pageRealm({
+    storage,
+    createOAAth: () => ({
+      async connect() {
+        return {
+          resume: async () => ({ state: "revoked" }),
+          async requestPermission() {
+            permissions += 1;
+            return { state: "active" };
+          },
+        };
+      },
+    }),
+  });
+  assert.equal(nodes.get("permission").disabled, true);
+  await nodes.get("permission").onclick();
+  assert.equal(permissions, 0);
+  assert.equal(storage.getItem(savedJobKey), "unreadable");
 });
