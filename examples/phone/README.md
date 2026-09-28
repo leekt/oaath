@@ -16,23 +16,27 @@ Kernel v4 stack and P-256 validator. IDs 84532 and 421614 identify the deploymen
 profiles; both endpoints are **local Anvil**, not public networks.
 
 Open the printed `http://127.0.0.1:<port>` address. Choose **Pair phone**, scan
-its transient QR code with [the iOS demo](../../native/ios/Demo/README.md), then:
+its transient QR code with [the iOS demo](../../native/ios/Demo/README.md), then
+follow the numbered steps. The page enables only the next valid action and
+recovers pairing, permission, and saved-job state after a reload.
 
 1. **Connect account** resolves the enrolled workspace/account through bootstrap.
-2. **Request permission** creates one canonical request. Review it in the phone
-   inbox and approve. The phone fetches the matching Kernel signing packet and
+2. **Request permission** creates one canonical request. Review it in the phone's
+   Requests tab and approve. The phone fetches the matching Kernel signing packet and
    returns its P-256 artifact through `/native/decisions/{id}`.
-3. Select a **Job chain**, then **Run a new job**. Each call is selector-bounded
+3. Choose a **Chain**, then **Run a new job**. Each call is selector-bounded
    with 5 wei of native value. The same permission permits three operations on
    each configured chain over 30 minutes; it does not pool their budgets.
-4. **Observe saved job** looks up the returned operation ID and observes it.
+4. **Check saved job** looks up the returned operation ID and observes it.
    Reload the page before this step to exercise SDK IndexedDB recovery. After
    finalization, run another job under the same permission.
-5. **Revoke / check** stops application admission and requests phone consent.
-   Approve each chain operation in the phone inbox, then check again. The service
-   submits each exact approved operation; the SDK reports `revoked` only after
-   finalized permission absence and install-nonce consumption on both chains. An unused grant
-   burns its install nonce; an installed permission is uninstalled.
+5. **Revoke permission** stops application admission and requests phone consent.
+   Approve each chain operation in the phone's Requests tab, then choose
+   **Check revocation**. The service submits each exact approved operation; the
+   SDK reports `revoked` only after finalized permission absence and
+   install-nonce consumption on both chains. An unused grant burns its install
+   nonce; an installed permission is uninstalled. A revoked or expired
+   permission can be replaced by requesting a new one.
 
 The page stores only a versioned operation ID and chain pointer in localStorage.
 The SDK owns the key, grant and operation records in IndexedDB. An observation

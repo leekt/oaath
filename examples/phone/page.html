@@ -3,153 +3,537 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>OAAth owner-phone demo</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230b6b62'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%23fff'/%3E%3C/svg%3E"
+    />
     <style>
       :root {
-        font: 16px system-ui;
-        color-scheme: dark;
-        background: #111;
-        color: #eee;
+        --paper: #f3f0e9;
+        --card: #fffdf7;
+        --ink: #16160f;
+        --muted: #605a4c;
+        --border: #e3ded0;
+        --hairline: #ede8dc;
+        --teal: #0b6b62;
+        --teal-wash: #e4efeb;
+        --on-teal: #ffffff;
+        --amber: #7f5405;
+        --amber-wash: #f6eedb;
+        --red: #b8321a;
+        --red-wash: #fbe9e3;
+        --chip: #efebe0;
+        --focus: #0b6b62;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #14130e;
+          --card: #1e1c16;
+          --ink: #f3f0e9;
+          --muted: #aaa496;
+          --border: #37342b;
+          --hairline: #2a2821;
+          --teal: #5cc2b3;
+          --teal-wash: #163029;
+          --on-teal: #0c1a17;
+          --amber: #e3ae45;
+          --amber-wash: #33280f;
+          --red: #f07a5e;
+          --red-wash: #3a1e17;
+          --chip: #29271f;
+          --focus: #5cc2b3;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: var(--paper);
       }
       body {
-        max-width: 760px;
-        margin: 3rem auto;
-        padding: 0 1rem;
+        margin: 0;
+        padding: 2.5rem 1.25rem 4rem;
+        background: var(--paper);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
       }
-      main {
-        display: grid;
-        gap: 1rem;
+      ::selection {
+        background: var(--teal);
+        color: var(--on-teal);
       }
-      button {
-        font: inherit;
-        padding: 0.9rem;
-        text-align: left;
-        border: 1px solid #666;
-        border-radius: 0.5rem;
-        background: #222;
-        color: inherit;
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
       }
-      button:disabled {
-        opacity: 0.5;
-        cursor: wait;
+      [hidden] {
+        display: none !important;
       }
       code,
       pre,
-      input {
-        font-family: ui-monospace, monospace;
-        overflow-wrap: anywhere;
+      input,
+      .mono {
+        font-family: var(--mono);
       }
-      pre {
-        white-space: pre-wrap;
-        background: #191919;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        min-height: 8rem;
+      .page {
+        max-width: 1080px;
+        margin: 0 auto;
       }
-      .account {
-        color: #8ee;
+      header {
+        display: grid;
+        gap: 0.6rem;
+        margin-bottom: 2rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.9rem;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        text-wrap: balance;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 62ch;
       }
       .network {
         width: fit-content;
-        margin: 0;
-        padding: 0.45rem 0.7rem;
-        border: 1px solid #315e70;
+        margin-top: 0.3rem;
+        padding: 0.3rem 0.75rem;
         border-radius: 999px;
-        background: #14252c;
-        color: #9de5ff;
+        background: var(--chip);
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+        gap: 1.5rem;
+        align-items: start;
+      }
+      @media (max-width: 860px) {
+        .layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      ol.steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 2rem minmax(0, 1fr);
+        gap: 0.4rem 0.9rem;
+        padding: 1.1rem 1.2rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--card);
+      }
+      .step[data-state="next"] {
+        border-color: var(--ink);
+      }
+      .step[data-state="locked"] .step-body {
+        opacity: 0.62;
+      }
+      .marker {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+        background: var(--chip);
+        color: var(--muted);
+      }
+      .step[data-state="next"] .marker {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      .step[data-state="done"] .marker {
+        background: var(--teal-wash);
+        color: var(--teal);
+      }
+      .step-body {
+        display: grid;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .step h2 {
+        margin: 0;
+        font-size: 1.05rem;
+        line-height: 1.3;
+        display: flex;
+        gap: 0.5rem;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.93rem;
+        max-width: 62ch;
+      }
+      .tag {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.1rem 0.5rem;
+        border-radius: 999px;
+        background: var(--chip);
+        color: var(--muted);
+      }
+      .tag.done {
+        background: var(--teal-wash);
+        color: var(--teal);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        align-items: center;
+        margin-top: 0.2rem;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        font-size: 0.95rem;
+        min-height: 2.6rem;
+        padding: 0.5rem 1.05rem;
+        border-radius: 10px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: var(--paper);
+        cursor: pointer;
+        transition: opacity 150ms ease-out;
+      }
+      button.secondary {
+        background: var(--card);
+        color: var(--ink);
+        border-color: var(--border);
+      }
+      button.danger {
+        background: var(--card);
+        color: var(--red);
+        border-color: var(--red);
+      }
+      button:hover:not(:disabled) {
+        opacity: 0.86;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        background: var(--chip);
+        border-color: var(--chip);
+        color: var(--muted);
+      }
+      button[aria-busy="true"] {
+        cursor: progress;
+      }
+      label.field {
+        display: grid;
+        gap: 0.3rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      select,
+      input {
+        font: inherit;
+        font-size: 0.93rem;
+        color: var(--ink);
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        min-height: 2.6rem;
+        padding: 0.4rem 0.7rem;
+      }
+      .pairing {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 12px;
+        background: var(--paper);
+        align-items: start;
+      }
+      @media (max-width: 560px) {
+        .pairing {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .pairing img {
+        width: 200px;
+        max-width: 100%;
+        border-radius: 8px;
+        background: #fff;
+        padding: 6px;
+      }
+      .pairing .field input {
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+      .pairing strong {
+        display: block;
+        margin-bottom: 0.4rem;
+      }
+      aside {
+        display: grid;
+        gap: 1rem;
+        position: sticky;
+        top: 1rem;
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--card);
+        padding: 1rem 1.1rem;
+      }
+      .panel h2 {
+        margin: 0 0 0.6rem;
+        font-size: 0.95rem;
+      }
+      dl.facts {
+        margin: 0;
+        display: grid;
+        gap: 0.6rem;
+      }
+      dl.facts div {
+        display: grid;
+        gap: 0.1rem;
+      }
+      dt {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        font-size: 0.9rem;
+        overflow-wrap: anywhere;
+      }
+      #account {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
       }
       .activity {
         display: flex;
-        align-items: center;
-        gap: 0.8rem;
-        padding: 0.9rem 1rem;
-        border: 1px solid #8c6d24;
-        border-radius: 0.5rem;
-        background: #2a2211;
-      }
-      .activity[hidden] {
-        display: none;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem;
+        border-radius: 12px;
+        background: var(--amber-wash);
+        color: var(--ink);
       }
       .activity small {
         display: block;
-        margin-top: 0.2rem;
-        color: #d4c59f;
+        margin-top: 0.15rem;
+        color: var(--muted);
+      }
+      @media (max-width: 860px) {
+        .activity {
+          position: fixed;
+          left: 1rem;
+          right: 1rem;
+          bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+          z-index: 2;
+          box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+        }
       }
       .spinner {
-        width: 1.1rem;
-        height: 1.1rem;
+        width: 1.05rem;
+        height: 1.05rem;
+        margin-top: 0.2rem;
         flex: 0 0 auto;
-        border: 3px solid #765f2b;
-        border-top-color: #ffd56c;
+        border: 2px solid color-mix(in srgb, var(--amber) 30%, transparent);
+        border-top-color: var(--amber);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation-duration: 2.4s;
+        }
       }
       @keyframes spin {
         to {
           transform: rotate(360deg);
         }
       }
-      .pairing {
-        display: grid;
-        gap: 0.75rem;
-        padding: 1rem;
-        border: 1px solid #666;
-        border-radius: 0.5rem;
+      details.log summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.95rem;
       }
-      .pairing[hidden] {
-        display: none;
-      }
-      .pairing img {
-        width: min(100%, 320px);
-        background: #fff;
-      }
-      .pairing input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 0.6rem;
+      pre#status {
+        margin: 0.75rem 0 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        color: var(--muted);
+        max-height: 22rem;
+        overflow: auto;
       }
     </style>
   </head>
   <body>
-    <main>
-      <h1>Owner-phone demo</h1>
-      <p>
-        Approve a bounded job on your phone, then run it from this application.
-        The owner key stays on the phone.
-      </p>
-      <p class="network">Local Anvil · Arbitrum Sepolia profile <code>chain 421614</code></p>
-      <section class="activity" id="activity" role="status" aria-live="polite" hidden>
-        <span class="spinner" aria-hidden="true"></span>
-        <div>
-          <strong id="activity-title">Working</strong>
-          <small id="activity-detail">Preparing the next step.</small>
-        </div>
-      </section>
-      <button type="button" id="pair">Pair phone</button>
-      <section class="pairing" id="pairing" aria-live="polite" hidden>
-        <strong
-          >Scan with the iPhone camera, then confirm pairing in the app.</strong
-        >
-        <img id="pairing-qr" alt="One-time phone pairing QR code" />
-        <label for="pairing-link">Copyable one-time pairing link</label>
-        <input
-          id="pairing-link"
-          type="text"
-          readonly
-          aria-label="Copyable one-time phone pairing link"
-        />
-      </section>
-      <p class="account" id="account">Account: not connected</p>
-      <button type="button" id="unlock">1. Connect account</button>
-      <button type="button" id="permission">2. Request permission</button>
-      <label for="chain">Job chain</label>
-      <select id="chain" aria-label="Configured job chain"></select>
-      <button type="button" id="session">3. Run a new job</button>
-      <button type="button" id="observe">4. Observe saved job</button>
-      <button type="button" id="revoke">5. Revoke / check</button>
-      <pre id="status" aria-live="polite">
-Ready. Open this page on loopback and choose Pair phone, then connect and request permission. A job permits 5 wei per call, up to three operations in 30 minutes. Reload and choose Observe saved job to recover its outcome.</pre>
-    </main>
+    <div class="page">
+      <header>
+        <h1>Owner-phone delegation demo</h1>
+        <p>
+          Approve a bounded job on your phone, then run it from this page. The owner key never leaves
+          the phone.
+        </p>
+        <p class="network" id="network">Local Anvil devnet</p>
+      </header>
+
+      <div class="layout">
+        <main>
+          <ol class="steps">
+            <li class="step" id="step-pair" data-state="next">
+              <span class="marker" aria-hidden="true">1</span>
+              <div class="step-body">
+                <h2>Pair your phone <span class="tag" data-tag hidden></span></h2>
+                <p>
+                  Shows a one-time QR code. Scan it with the OAAth iOS app on the same network, then
+                  tap Pair in the app.
+                </p>
+                <div class="actions">
+                  <button type="button" id="pair">Pair phone</button>
+                </div>
+                <section class="pairing" id="pairing" aria-live="polite" hidden>
+                  <img id="pairing-qr" alt="One-time phone pairing QR code" />
+                  <div>
+                    <strong>Scan with your iPhone camera, then confirm in the app.</strong>
+                    <label class="field"
+                      >One-time pairing link
+                      <input id="pairing-link" type="text" readonly />
+                    </label>
+                    <div class="actions">
+                      <button type="button" class="secondary" data-copy-link>Copy link</button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </li>
+
+            <li class="step" id="step-connect" data-state="locked">
+              <span class="marker" aria-hidden="true">2</span>
+              <div class="step-body">
+                <h2>Connect the account <span class="tag" data-tag hidden></span></h2>
+                <p>Loads the phone-owned account for this workspace.</p>
+                <div class="actions">
+                  <button type="button" id="unlock">Connect account</button>
+                </div>
+              </div>
+            </li>
+
+            <li class="step" id="step-permission" data-state="locked">
+              <span class="marker" aria-hidden="true">3</span>
+              <div class="step-body">
+                <h2>Request permission <span class="tag" data-tag hidden></span></h2>
+                <p>
+                  Asks your phone for 30 minutes of authority: one call selector, at most 5 wei per
+                  call, up to three jobs on each configured chain. Approve it on the phone.
+                </p>
+                <div class="actions">
+                  <button type="button" id="permission">Request permission</button>
+                </div>
+              </div>
+            </li>
+
+            <li class="step" id="step-job" data-state="locked">
+              <span class="marker" aria-hidden="true">4</span>
+              <div class="step-body">
+                <h2>Run a job <span class="tag" data-tag hidden></span></h2>
+                <p>Sends one bounded call on the chosen chain using the approved permission.</p>
+                <div class="actions">
+                  <label class="field" id="chain-field" hidden
+                    >Chain
+                    <select id="chain"></select>
+                  </label>
+                  <button type="button" id="session">Run a new job</button>
+                </div>
+              </div>
+            </li>
+
+            <li class="step" id="step-observe" data-state="locked">
+              <span class="marker" aria-hidden="true">5</span>
+              <div class="step-body">
+                <h2>Check the job <span class="tag" data-tag hidden></span></h2>
+                <p>
+                  Looks up the saved job and waits for its onchain outcome. Reload the page first to
+                  see it recover; checking never sends the job again.
+                </p>
+                <div class="actions">
+                  <button type="button" id="observe" class="secondary">Check saved job</button>
+                </div>
+              </div>
+            </li>
+
+            <li class="step" id="step-revoke" data-state="locked">
+              <span class="marker" aria-hidden="true">6</span>
+              <div class="step-body">
+                <h2>Revoke the permission <span class="tag" data-tag hidden></span></h2>
+                <p>
+                  Stops new jobs and asks your phone to remove the permission on each chain. Approve
+                  each request on the phone, then check again until it is revoked everywhere.
+                </p>
+                <div class="actions">
+                  <button type="button" id="revoke" class="danger">Revoke permission</button>
+                </div>
+              </div>
+            </li>
+          </ol>
+        </main>
+
+        <aside>
+          <section class="activity" id="activity" role="status" aria-live="polite" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+              <strong id="activity-title">Working</strong>
+              <small id="activity-detail">Preparing the next step.</small>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="state-heading">
+            <h2 id="state-heading">Current state</h2>
+            <dl class="facts">
+              <div>
+                <dt>Phone</dt>
+                <dd id="fact-phone">Checking…</dd>
+              </div>
+              <div>
+                <dt>Account</dt>
+                <dd><p id="account">Not connected</p></dd>
+              </div>
+              <div>
+                <dt>Permission</dt>
+                <dd id="fact-permission">None</dd>
+              </div>
+              <div>
+                <dt>Saved job</dt>
+                <dd id="fact-job">None</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="panel">
+            <details class="log" open>
+              <summary>Activity log</summary>
+              <pre id="status" aria-live="polite">Ready. Pair your phone to begin.</pre>
+            </details>
+          </section>
+        </aside>
+      </div>
+    </div>
     <script type="module" src="/demo.js"></script>
   </body>
 </html>

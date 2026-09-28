@@ -42,16 +42,35 @@ const finishActivity = (button, token) => {
   if (typeof button.removeAttribute === "function") button.removeAttribute("aria-busy");
   else button.ariaBusy = "false";
   if (token === activityGeneration && activity) activity.hidden = true;
+  render();
 };
+/** A failed demo route carries only its structured `error.code`. */
+class DemoRouteError extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
 const json = async (path, options) => {
   const response = await fetch(path, {
     ...options,
     headers: { "content-type": "application/json" },
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.code ?? `HTTP ${response.status}`);
+  if (!response.ok) throw new DemoRouteError(body.error?.code ?? `http_${response.status}`);
   return body;
 };
+
+// Page state. Every value is derived from a server read or an SDK handle;
+// the page renders it but never treats it as authority.
+const page = {
+  /** null until the first /demo/account read answers. */
+  paired: null,
+  chains: [],
+  connected: false,
+  busy: false,
+};
+
 let pairingExpiryTimer = null;
 let pairingStatusTimer = null;
 let pairingRequestGeneration = 0;
@@ -85,8 +104,8 @@ $("pair").onclick = async () => {
   const button = $("pair");
   const activityToken = beginActivity(
     button,
-    "Creating one-time pairing link",
-    "The secret is requested only from this Mac loopback page.",
+    "Creating a one-time pairing code",
+    "The code is available only on this Mac's loopback page.",
   );
   const generation = ++pairingRequestGeneration;
   clearPairingSecret();
@@ -103,17 +122,17 @@ $("pair").onclick = async () => {
     pairingPanel.hidden = false;
     updateActivity(
       activityToken,
-      "Waiting for iPhone pairing",
-      "Scan the QR code and confirm pairing in the app.",
+      "Waiting for your phone",
+      "Scan the QR code, then tap Pair in the app.",
     );
-    say("Pairing secret shown only in this loopback page. Scan or copy it before it expires.");
+    say("Pairing code shown on this page only. Scan or copy it before it expires.");
     pairingExpiryTimer = setTimeout(
       () => {
         if (generation !== pairingRequestGeneration) return;
         pairingRequestGeneration += 1;
         clearPairingSecret();
         finishActivity(button, activityToken);
-        say("The one-time pairing secret expired. Restart the example for a fresh code.");
+        say("The pairing code expired. Restart the example for a fresh code.");
       },
       Math.min(secret.expiresAt - Date.now(), 2_147_483_647),
     );
@@ -124,13 +143,15 @@ $("pair").onclick = async () => {
         if (!response.ok || generation !== pairingRequestGeneration) return;
         pairingRequestGeneration += 1;
         clearPairingSecret();
+        page.paired = true;
         finishActivity(button, activityToken);
-        say("Phone paired. The one-time pairing secret is now hidden.");
+        say("Phone paired. The pairing code is now hidden. Next: connect the account.");
+        refreshAccount().catch(() => {});
       } catch {
         // A bounded status check has no authority and reveals no diagnostics.
       }
     }, 1_000);
-  } catch {
+  } catch (error) {
     if (generation !== pairingRequestGeneration) {
       finishActivity(button, activityToken);
       return;
@@ -138,12 +159,33 @@ $("pair").onclick = async () => {
     pairingRequestGeneration += 1;
     clearPairingSecret();
     finishActivity(button, activityToken);
+    if (error?.code === "pairing_secret_unavailable" && page.paired) {
+      say("This service already has a paired phone. Continue with Connect account.");
+      return;
+    }
     const port = globalThis.location?.port ? `:${globalThis.location.port}` : "";
     say(
-      `Pairing secret unavailable. Open http://127.0.0.1${port}/ on this Mac; LAN pages cannot disclose it.`,
+      error?.code === "pairing_secret_unavailable"
+        ? "The pairing code was already used or has expired. Restart the example for a fresh code."
+        : `Pairing code unavailable. Open http://127.0.0.1${port}/ on this Mac; other addresses can't show it.`,
     );
   }
 };
+const copyLink = document.querySelector?.("[data-copy-link]");
+if (copyLink) {
+  copyLink.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(pairingLink.value);
+      copyLink.textContent = "Copied";
+    } catch {
+      pairingLink.select?.();
+      copyLink.textContent = "Press ⌘C to copy";
+    }
+    setTimeout(() => {
+      copyLink.textContent = "Copy link";
+    }, 2_000);
+  };
+}
 
 // The SDK owns session custody and operation state in IndexedDB. The page saves
 // only the exact returned handle identity, never a session key or signature.
@@ -153,37 +195,57 @@ const target = `0x${"71".repeat(20)}`;
 let client;
 let connection;
 let grant;
-let busy = false;
 const clientFetch = (request) => {
   const headers = new Headers(request.headers);
   headers.set("authorization", "Bearer demo-client-token");
   return fetch(new Request(request, { headers }));
 };
+/** Terminal grants authorize nothing; the owner may request a new permission. */
+const grantIsTerminal = (value) =>
+  value === undefined ||
+  value === null ||
+  value.state === "revoked" ||
+  value.state === "expired" ||
+  value.state === "rejected";
+
+async function refreshAccount() {
+  const paired = await json("/demo/account");
+  page.paired = true;
+  if (!Array.isArray(paired.chains) || paired.chains.length === 0) {
+    throw new DemoRouteError("account_chains_unavailable");
+  }
+  page.chains = paired.chains;
+  account.textContent = paired.account;
+  const selected = chainChoice.value;
+  if (typeof chainChoice.replaceChildren === "function") {
+    chainChoice.replaceChildren(
+      ...paired.chains.map(({ chainId, name }) => {
+        const option = document.createElement("option");
+        option.value = String(chainId);
+        option.textContent = name;
+        return option;
+      }),
+    );
+  }
+  chainChoice.value = paired.chains.some(({ chainId }) => String(chainId) === selected)
+    ? selected
+    : String(paired.chains[0].chainId);
+  render();
+  return paired;
+}
 async function connectAccount() {
   if (!connection) {
     client ??= createOAAth({ url: location.origin, fetch: clientFetch });
     connection = await client.connect();
     grant = await connection.resume();
   }
-  const paired = await json("/demo/account");
-  account.textContent = `Account: ${paired.account}`;
-  const selected = chainChoice.value;
-  chainChoice.replaceChildren(
-    ...paired.chains.map(({ chainId, name }) => {
-      const option = document.createElement("option");
-      option.value = String(chainId);
-      option.textContent = name;
-      return option;
-    }),
-  );
-  chainChoice.value = paired.chains.some(({ chainId }) => String(chainId) === selected)
-    ? selected
-    : String(paired.chains[0].chainId);
+  page.connected = true;
+  await refreshAccount();
   return connection;
 }
 async function currentGrant() {
   await connectAccount();
-  if (!grant) throw new Error("Request permission first.");
+  if (!grant) throw new DemoRouteError("grant_missing");
   return grant;
 }
 function saveOperation(id, chain) {
@@ -201,38 +263,176 @@ function savedOperation() {
     !/^0x[0-9a-f]{64}$/.test(value.id) ||
     Object.keys(value).sort().join(",") !== "chain,id,version"
   ) {
-    throw new Error("Saved operation cannot be read.");
+    throw new DemoRouteError("saved_job_unreadable");
   }
   return { chain: value.chain, id: value.id };
 }
+const readSaved = () => {
+  try {
+    return { saved: savedOperation(), unreadable: false };
+  } catch {
+    return { saved: null, unreadable: true };
+  }
+};
+
+const failureText = {
+  phone_not_paired: "Pair your phone first.",
+  grant_missing: "Request a permission first.",
+  saved_job_unreadable: "The saved job record can't be read. It was kept, not replaced.",
+  oaath_client_permission_rejected: "The phone rejected the permission request.",
+  oaath_client_decision_unavailable:
+    "No decision arrived from the phone. The request may have expired; request it again.",
+  oaath_client_grant_inactive: "The permission isn't active, so no job was sent.",
+  oaath_client_scope_denied: "That job is outside the approved permission, so it wasn't sent.",
+  oaath_client_issuer_unavailable: "The service can't be reached right now. Try again.",
+  oaath_client_issuer_rejected: "The service refused the request.",
+  oaath_client_observation_unavailable:
+    "The chain couldn't be read. The job is kept; check it again.",
+  oaath_client_route_unavailable: "No submission route is available for that chain right now.",
+  oaath_client_submission_uncertain:
+    "The job's submission couldn't be confirmed. It is kept and will not be sent again; check it.",
+  oaath_client_state_conflict: "That action conflicts with the current state of this permission.",
+  oaath_client_store_unavailable: "Browser storage is unavailable. Allow site data and reload.",
+};
+const describeFailure = (error) => {
+  const code = typeof error?.code === "string" ? error.code : "action_unavailable";
+  return `${failureText[code] ?? "The action couldn't finish."} (${code})`;
+};
+
+const grantText = (value) => {
+  if (!value) return "None";
+  switch (value.state) {
+    case "active":
+      return "Active: up to three jobs per chain, 5 wei per call";
+    case "revoking":
+      return "Revoking: approve each chain's removal on the phone, then check again";
+    case "revoked":
+      return "Revoked on every configured chain";
+    case "expired":
+      return "Expired";
+    case "rejected":
+      return "Rejected on the phone";
+    default:
+      return value.state;
+  }
+};
+const setText = (id, text) => {
+  const node = $(id);
+  if (node) node.textContent = text;
+};
+const setStep = (id, state, tag) => {
+  const node = $(id);
+  if (!node || typeof node.setAttribute !== "function") return;
+  node.setAttribute("data-state", state);
+  const label = node.querySelector?.("[data-tag]");
+  if (label) {
+    label.hidden = !tag;
+    label.textContent = tag ?? "";
+    label.className = state === "done" ? "tag done" : "tag";
+  }
+};
+const shortId = (id) => `${id.slice(0, 10)}…${id.slice(-6)}`;
+
+/** Enables only the next valid actions and describes the current state. */
+function render() {
+  const { saved, unreadable } = readSaved();
+  const active = grant?.state === "active";
+  const revoking = grant?.state === "revoking";
+  const terminal = grantIsTerminal(grant);
+  const paired = page.paired === true;
+  const enable = (id, on) => {
+    const node = $(id);
+    if (!node || buttonActivities.has(node)) return;
+    node.disabled = page.busy || !on;
+  };
+  enable("pair", page.paired === false);
+  enable("unlock", paired && !page.connected);
+  enable("permission", paired && terminal);
+  enable("session", paired && active && !saved && !unreadable);
+  enable("observe", paired && (saved !== null || unreadable));
+  enable("revoke", paired && (active || revoking));
+  if (chainChoice) chainChoice.disabled = page.busy || !active || saved !== null;
+  const chainField = $("chain-field");
+  if (chainField) chainField.hidden = page.chains.length === 0;
+  const revoke = $("revoke");
+  if (revoke && !buttonActivities.has(revoke)) {
+    revoke.textContent = revoking ? "Check revocation" : "Revoke permission";
+  }
+
+  setStep("step-pair", paired ? "done" : "next", paired ? "Paired" : null);
+  setStep(
+    "step-connect",
+    page.connected ? "done" : paired ? "next" : "locked",
+    page.connected ? "Connected" : null,
+  );
+  setStep(
+    "step-permission",
+    active || revoking ? "done" : page.connected && terminal ? "next" : "locked",
+    grant ? grantText(grant).split(":")[0] : null,
+  );
+  setStep(
+    "step-job",
+    active && !saved ? "next" : saved ? "available" : "locked",
+    saved ? "Saved job waiting" : null,
+  );
+  setStep("step-observe", saved || unreadable ? "next" : "locked", null);
+  setStep(
+    "step-revoke",
+    grant?.state === "revoked" ? "done" : revoking ? "next" : active ? "available" : "locked",
+    grant?.state === "revoked" ? "Revoked" : revoking ? "Pending" : null,
+  );
+
+  setText("fact-phone", page.paired === null ? "Checking…" : paired ? "Paired" : "Not paired yet");
+  setText("fact-permission", page.connected ? grantText(grant) : "Connect to see it");
+  setText(
+    "fact-job",
+    unreadable
+      ? "Saved job record unreadable"
+      : saved
+        ? `Chain ${saved.chain} · ${shortId(saved.id)}`
+        : "None",
+  );
+  if (page.chains.length > 0) {
+    setText(
+      "network",
+      `Local Anvil · chains ${page.chains.map(({ chainId }) => chainId).join(", ")}`,
+    );
+  }
+}
+
 const actions = {
   unlock: [
-    "Connecting account",
+    "Connecting the account",
     async () => {
       await connectAccount();
       say(
         grant
-          ? `Permission restored (${grant.state}).`
-          : "Connected. Request permission to run jobs.",
+          ? `Connected. Permission restored: ${grantText(grant)}.`
+          : "Connected. Next: request permission.",
       );
     },
   ],
   permission: [
-    "Waiting for phone approval",
-    async () => {
+    "Waiting for approval on your phone",
+    async (token) => {
       await connectAccount();
-      if (grant) {
-        say(`Permission already exists (${grant.state}).`);
+      if (!grantIsTerminal(grant)) {
+        say(`A permission already exists: ${grantText(grant)}.`);
         return;
       }
-      say("Review the request in the phone inbox and approve it.");
+      updateActivity(
+        token,
+        "Waiting for approval on your phone",
+        "Open Requests in the iOS app, review the request, and tap Approve.",
+      );
+      say("Review the request in the phone's Requests tab and approve it.");
       grant = await connection.requestPermission({
         chainScope: "all",
         permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "5" }] }],
         expiresIn: 1800,
         perChainOperationLimit: 3,
       });
-      say("Permission active: up to three jobs per configured chain, for 30 minutes.");
+      say("Permission active: up to three jobs per configured chain for 30 minutes.");
     },
   ],
   session: [
@@ -241,7 +441,7 @@ const actions = {
       const current = await currentGrant();
       // A saved unresolved job is an observation action, never another send.
       if (savedOperation()) {
-        say("Observe the saved job before starting another.");
+        say("Check the saved job before starting another.");
         return;
       }
       const operation = await current.sendCalls({
@@ -250,34 +450,39 @@ const actions = {
       });
       saveOperation(operation.id, operation.chainId);
       say(
-        `Job submitted. Choose Observe saved job to check its outcome.\nOperation: ${operation.id}`,
+        `Job submitted on chain ${operation.chainId}. Next: check it.\nOperation: ${operation.id}`,
       );
     },
   ],
   revoke: [
-    "Checking permission revocation",
-    async () => {
+    "Revoking the permission",
+    async (token) => {
       const current = await currentGrant();
+      updateActivity(
+        token,
+        "Revoking the permission",
+        "Approve each chain's removal in the iOS app. This check waits for chain evidence.",
+      );
       await current.revoke();
       say(
         current.state === "revoked"
-          ? "Permission revoked on both configured chains. Saved jobs can still be observed."
-          : "Revocation pending. Review any request in the phone inbox, then choose Revoke / check again.",
+          ? "Permission revoked on every configured chain. Saved jobs can still be checked."
+          : "Revocation pending. Approve each request in the phone's Requests tab, then choose Check revocation.",
       );
     },
   ],
   observe: [
-    "Observing saved job",
+    "Checking the saved job",
     async () => {
       const saved = savedOperation();
       if (!saved) {
-        say("No saved job to observe.");
+        say("There is no saved job to check.");
         return;
       }
       const current = await currentGrant();
       const operation = await current.getOperation(saved);
       if (!operation) {
-        say("The saved job is unavailable. Its identity is retained.");
+        say("The saved job isn't available yet. Its identity is kept; check again.");
         return;
       }
       const outcome = await operation.observe();
@@ -290,26 +495,52 @@ const actions = {
         localStorage.removeItem(operationKey);
         say(`Job superseded. Operation: ${operation.id}`);
       } else
-        say(
-          `Job remains ${outcome.status}. Observation can be retried.\nOperation: ${operation.id}`,
-        );
+        say(`Job is still ${outcome.status}. Check again shortly.\nOperation: ${operation.id}`);
     },
   ],
 };
 for (const [id, [title, action]] of Object.entries(actions)) {
   $(id).onclick = async () => {
-    if (busy) return;
-    busy = true;
-    const token = beginActivity($(id), title, "Waiting for the current action.");
-    for (const actionId of Object.keys(actions)) $(actionId).disabled = true;
+    if (page.busy) return;
+    page.busy = true;
+    render();
+    const token = beginActivity($(id), title, "Working on it.");
     try {
-      await action();
+      await action(token);
     } catch (error) {
-      say(`Action unavailable: ${error?.code ?? "check pairing, permission, or the saved job"}.`);
+      say(describeFailure(error));
     } finally {
-      busy = false;
+      page.busy = false;
       finishActivity($(id), token);
-      for (const actionId of Object.keys(actions)) $(actionId).disabled = false;
+      render();
     }
   };
 }
+
+// Recover what this page can prove after a reload: pairing from the service,
+// the Grant from the SDK, and the saved job pointer from localStorage.
+(async () => {
+  try {
+    await refreshAccount();
+  } catch {
+    page.paired = false;
+    render();
+    return;
+  }
+  if (typeof location?.origin !== "string" || page.busy) return;
+  page.busy = true;
+  render();
+  try {
+    await connectAccount();
+    say(
+      grant
+        ? `Recovered this session. Permission: ${grantText(grant)}.`
+        : "Phone paired. Account connected. Next: request permission.",
+    );
+  } catch (error) {
+    say(`Couldn't reconnect automatically. ${describeFailure(error)}`);
+  } finally {
+    page.busy = false;
+    render();
+  }
+})();
