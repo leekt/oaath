@@ -16,7 +16,7 @@ const oaath = createOAAth({ mode: "owner", chains: createViemChainPorts({
 const account = oaath.account(existingKernelAddress);
 const owner = account.owner(walletClient);
 const calls = { chain: 143, calls: [{ target, value: "0", data }] };
-const review = await owner.reviewCalls(calls); // owner signer and route; no prompt or quote
+const review = await owner.reviewCalls(calls); // estimates capacity; no prompt or submission
 const operation = await owner.sendCalls(calls); // one personal_sign prompt, one UserOperation
 await operation.wait();
 // Retain operation.id; after recreating the client, recovery requires no wallet:
@@ -31,8 +31,9 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default. Automatic owner fallback after session-validation
-failure is still pending.
+bundler route by default. Applications can explicitly estimate a session before
+selecting owner execution, as described below; OAAth never silently changes the
+signer of an operation.
 
 For scoped sessions without an issuer service or phone, use local mode with the
 same existing account and either a browser or local viem wallet:
@@ -247,6 +248,18 @@ Failures use `OaathClientError` codes. An unreadable bundler is reported in
 `reasons` and stays on the bundler route; it never authorizes fallback. Review
 is a snapshot, not a reservation or authorization: sending rechecks current
 state, and applications should review again after relevant facts change.
+
+`grant.reviewCalls({ chain, calls, estimate: true })` also estimates the exact
+session operation and returns `validation: "estimated" | "account-rejected"`.
+The default is `"not-estimated"`. Estimation writes no operation or permission
+installation state and performs no signing or submission. `"account-rejected"`
+requires a canonical EntryPoint account-validation rejection from the estimation
+RPC; arbitrary error text, signature rejection, malformed responses and timeouts
+cannot produce it. Other failures throw a structured client error. This option
+currently requires an unsponsored bundler route and no installation in progress.
+An application may offer owner execution after `"account-rejected"`, but must
+review that signer choice before sending. This result never permits resending an
+operation that was already submitted or whose acceptance is uncertain.
 
 After reconnecting and resuming the grant, `grant.getOperation({ chain, id })`
 recovers that exact execution from local history, including terminal records

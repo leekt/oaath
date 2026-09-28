@@ -14,6 +14,47 @@ const permission = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode", () => {
+  it.each(["rejected", "unavailable"] as const)(
+    "keeps %s session estimation separate from owner execution",
+    async (sessionValidation) => {
+      vi.stubGlobal("indexedDB", new IDBFactory());
+      const fixture = await createLocalOwnerAnvilFixture({ sessionValidation });
+      const client = createOAAth({
+        mode: "local",
+        owner: fixture.wallet,
+        account: fixture.address,
+        chains: fixture.createChainPorts(),
+        origin: "https://consumer.example",
+      });
+      try {
+        const grant = await (await client.connect()).requestPermission(permission);
+        const assessment = grant.reviewCalls({ chain: fixture.chainId, calls, estimate: true });
+        if (sessionValidation === "unavailable")
+          await expect(assessment).rejects.toMatchObject({
+            code: "oaath_client_preparation_failed",
+          });
+        else expect((await assessment).validation).toBe("account-rejected");
+        expect(fixture.sessionEstimationCount).toBeGreaterThan(0);
+        expect(fixture.signatureCount).toBe(1);
+        expect(fixture.bundlerSubmissionCount).toBe(0);
+        if (sessionValidation === "rejected") {
+          const owner = client.account(fixture.address).owner(fixture.wallet);
+          expect(await owner.reviewCalls({ chain: fixture.chainId, calls })).toMatchObject({
+            signer: "owner",
+          });
+          const operation = await owner.sendCalls({ chain: fixture.chainId, calls });
+          expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
+          expect(await operation.execution()).toMatchObject({ sender: fixture.address, calls });
+          expect(fixture.signatureCount).toBe(2);
+          expect(fixture.bundlerSubmissionCount).toBe(1);
+        }
+      } finally {
+        await client.close();
+        await fixture.close();
+      }
+    },
+  );
+
   it("rejects overlapping consent and discards approval after close starts", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const fixture = await createLocalOwnerAnvilFixture();

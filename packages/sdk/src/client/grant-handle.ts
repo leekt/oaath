@@ -133,6 +133,7 @@ import {
   type OperationStoreKey,
   type OperationStoreRecord,
 } from "../store.js";
+import { isAccountValidationRejection } from "../viem/rpc.js";
 import type { OaathBinding } from "./binding.js";
 import {
   type ConnectedEoa,
@@ -247,6 +248,11 @@ export interface OaathSendCallsInput {
   readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
+}
+
+export interface OaathReviewCallsInput extends OaathSendCallsInput {
+  /** Estimate the session operation without publishing, signing or submitting. */
+  readonly estimate?: boolean;
 }
 
 export interface OaathGetOperationInput {
@@ -444,6 +450,8 @@ export interface OaathGrantHandle {
 
 /** Current execution facts for exact calls, not a durable authorization or reservation. */
 export interface OaathCallsReview {
+  /** Optional estimation is read-only; only decoded account-validation rejection sets account-rejected. */
+  readonly validation: "not-estimated" | "estimated" | "account-rejected";
   readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
   /** Applicable first-operation floor; null once installed or when no floor is configured. */
@@ -2932,7 +2940,7 @@ export function createGrantHandle(
   function reviewCalls(value: unknown): Promise<Readonly<OaathCallsReview>> {
     return withActivity(async () => {
       const context: CaptureContext = new WeakSet();
-      const request = capturePlainCalls(value, context);
+      const request = capturePlainCalls(value, context, true);
       const connectedFeePayer = Object.hasOwn(request, "feePayer")
         ? captureConnectedEoa(request.feePayer, context)
         : null;
@@ -2990,8 +2998,54 @@ export function createGrantHandle(
       if (route === "none" || signer !== "session" || policy.validUntil === null) {
         return unsupported("execution_review_unavailable");
       }
+      let validation: OaathCallsReview["validation"] = "not-estimated";
+      if (request.estimate === true) {
+        if (
+          route !== "bundler" ||
+          selectedPaymaster !== null ||
+          materialization?.state === "installing"
+        )
+          return unsupported("session_estimation_unavailable");
+        const mode = materialization?.state === "installed" ? "standard" : "enable-replayable";
+        try {
+          quoteFields(
+            await resolved.chain.quote(
+              quoteRequest(
+                {
+                  chainId,
+                  kind: "execution",
+                  signer: "session",
+                  grantId: current.value.identity.grantId,
+                  runtime: resolved.runtime,
+                  descriptor: resolved.descriptor,
+                  calls,
+                  mode,
+                  materializer:
+                    mode === "standard"
+                      ? null
+                      : permissionMaterializer(resolved.runtime, resolved.descriptor.account),
+                },
+                null,
+                "estimate",
+              ),
+            ),
+          );
+          validation = "estimated";
+        } catch (error) {
+          if (!isAccountValidationRejection(error))
+            return mapClientFailure(error, "session execution estimation failed");
+          validation = "account-rejected";
+        }
+        if ((await requireActive()).storeRevision !== current.storeRevision)
+          return clientFail(
+            "oaath_client_state_conflict",
+            "the Grant changed during execution estimation",
+            "grant_store_conflict",
+          );
+      }
       requireExecutionPublication();
       return Object.freeze({
+        validation,
         grantId: current.value.identity.grantId,
         fallback: connectedEoaReview(connectedFeePayer),
         paymasterService:

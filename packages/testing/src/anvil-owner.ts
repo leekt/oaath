@@ -13,6 +13,7 @@ import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
   createWalletClient,
   custom,
+  encodeErrorResult,
   encodeFunctionData,
   type Hex,
   http,
@@ -40,6 +41,7 @@ export interface LocalOwnerAnvilFixture {
   readonly signatureCount: number;
   readonly bundlerSubmissionCount: number;
   readonly fallbackSubmissionCount: number;
+  readonly sessionEstimationCount: number;
   /** Reopens the SDK and SQLite journal; no prior operation handle survives. */
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
   /** Fresh bounded public SDK ports for testing local client composition. */
@@ -53,6 +55,8 @@ export async function createLocalOwnerAnvilFixture(
     chainId?: number;
     wallet?: "browser" | "local";
     bundler?: "accept" | "reject" | "uncertain";
+    /** Fault injection for session estimation; owner execution remains real EntryPoint execution. */
+    sessionValidation?: "rejected" | "unavailable";
   } = {},
 ): Promise<Readonly<LocalOwnerAnvilFixture>> {
   const chainId = input.chainId ?? 143;
@@ -81,6 +85,7 @@ export async function createLocalOwnerAnvilFixture(
     let signatures = 0,
       bundlerSends = 0,
       fallbackSends = 0;
+    let sessionEstimates = 0;
     let rejected: UserOperation<"0.7"> | undefined;
     const localWallet = createWalletClient({
       account: owner,
@@ -173,13 +178,33 @@ export async function createLocalOwnerAnvilFixture(
             else if (method === "eth_supportedEntryPoints")
               result = [deployment.entryPoint.address];
             // Fixed local estimate; real EntryPoint validation and execution prove fit.
-            else if (method === "eth_estimateUserOperationGas")
+            else if (method === "eth_estimateUserOperationGas") {
+              // Kernel's permission validation type is the byte below the mode byte.
+              if (((BigInt(params[0].nonce) >> 240n) & 0xffn) === 2n) {
+                sessionEstimates++;
+                if (input.sessionValidation === "unavailable")
+                  return new Response(null, { status: 503 });
+                if (input.sessionValidation === "rejected")
+                  return Response.json({
+                    jsonrpc: "2.0",
+                    id,
+                    error: {
+                      code: -32500,
+                      message: "fixture account validation rejection",
+                      data: encodeErrorResult({
+                        abi: entryPoint07Abi,
+                        errorName: "FailedOpWithRevert",
+                        args: [0n, "AA23 reverted", "0x"],
+                      }),
+                    },
+                  });
+              }
               result = {
                 callGasLimit: toHex(5_000_000),
                 verificationGasLimit: toHex(500_000),
                 preVerificationGas: toHex(100_000),
               };
-            else if (method === "eth_getUserOperationReceipt") {
+            } else if (method === "eth_getUserOperationReceipt") {
               const receipt = await readLocalOperationReceipt(chain, params[0]);
               result =
                 receipt === null
@@ -262,6 +287,9 @@ export async function createLocalOwnerAnvilFixture(
       },
       get fallbackSubmissionCount() {
         return fallbackSends;
+      },
+      get sessionEstimationCount() {
+        return sessionEstimates;
       },
       async openClient() {
         if (closed) throw new Error("local_fixture_closed");

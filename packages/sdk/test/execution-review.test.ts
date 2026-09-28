@@ -53,8 +53,15 @@ describe("public Grant execution review", () => {
     expect(Object.isFrozen(review.calls)).toBe(true);
     expect(Object.isFrozen(review.calls[0])).toBe(true);
     expect(Object.isFrozen(review.enforcement)).toBe(true);
+    expect(review.validation).toBe("not-estimated");
     expect(writes).toBe(before);
     expect(realm.chain.quotes).toBe(0);
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    const estimated = await grant.reviewCalls({ ...(sendCallsInput() as object), estimate: true });
+    expect(estimated.validation).toBe("estimated");
+    expect(writes).toBe(before);
+    expect(realm.chain.quotes).toBe(1);
     expect(realm.chain.signatures).toHaveLength(0);
     expect(realm.chain.sends).toHaveLength(0);
     // A review did not consume a lane or materialization: the same calls can run.
