@@ -18,6 +18,7 @@ export function capturePlainCalls(value: unknown, context: CaptureContext) {
       "chain",
       "calls",
       ...(Object.hasOwn(captured, "paymasterService") ? ["paymasterService"] : []),
+      ...(Object.hasOwn(captured, "feePayer") ? ["feePayer"] : []),
     ],
     "sendCalls input",
     fail,
@@ -25,9 +26,12 @@ export function capturePlainCalls(value: unknown, context: CaptureContext) {
   const chain = request.chain;
   if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1)
     return fail("sendCalls chain is invalid");
+  if (Object.hasOwn(request, "feePayer") && Object.hasOwn(request, "paymasterService"))
+    return fail("connected fee payer fallback cannot be combined with paymaster sponsorship");
   return Object.freeze({
     chain,
     calls: request.calls,
+    ...(Object.hasOwn(request, "feePayer") ? { feePayer: request.feePayer } : {}),
     ...(Object.hasOwn(request, "paymasterService")
       ? { paymasterService: request.paymasterService }
       : {}),

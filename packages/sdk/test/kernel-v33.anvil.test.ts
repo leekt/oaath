@@ -30,7 +30,6 @@ import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deploym
 import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { KERNEL_V4_CREATE2_DEPLOYER } from "../src/kernel-v4.js";
-import { encodeHandleOps } from "../src/routing/handle-ops.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
@@ -304,52 +303,108 @@ afterAll(() => chain?.stop());
       await client.close();
     }
 
-    // A real custom direct adapter acknowledges the transaction. Recreate every
-    // SDK/store instance before finalizing, then recover with no wallet or bundler.
+    // The default bundler port rejects once, then the connected owner EOA sends
+    // the same bytes. Recreate every SDK/store instance before finalizing.
     const directory = await mkdtemp(join(tmpdir(), "oaath-direct-receipt-"));
     const filePath = join(directory, "operations.db");
     let eoaSends = 0;
+    let rejectedSends = 0;
+    let rejectedOperation: UserOperation<"0.7"> | undefined;
+    await harness.fund(owner.address, parseEther("1"));
+    const feeWallet = createWalletClient({
+      account: owner.address,
+      transport: custom({
+        async request({ method, params }) {
+          if (method === "eth_chainId") return "0x8f";
+          if (method === "eth_accounts") return [owner.address];
+          expect(method).toBe("eth_sendTransaction");
+          const [transaction] = params as [
+            { from: Hex; to: Hex; data: Hex; chainId: Hex; value: Hex },
+          ];
+          expect(transaction.from).toBe(owner.address.toLowerCase());
+          expect(transaction.chainId).toBe("0x8f");
+          expect(transaction.value).toBe("0x0");
+          expect(rejectedOperation).toBeDefined();
+          // Compare every packed field, including the unchanged owner signature.
+          const expected = encodeFunctionData({
+            abi: entryPoint07Abi,
+            functionName: "handleOps",
+            args: [[toPackedUserOperation(rejectedOperation!)], owner.address],
+          });
+          expect(transaction.data === expected).toBe(true);
+          eoaSends++;
+          return harness.wallet.sendTransaction({
+            account: owner,
+            chain: null,
+            to: transaction.to,
+            data: transaction.data,
+            gas: 2_000_000n,
+          });
+        },
+      }),
+    });
     const direct = createOAAth({
       mode: "owner",
       operations: createSqliteOperationStoreAdapter(filePath),
-      chains: [
+      chains: createViemChainPorts(
+        { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://rejecting-bundler.test" } },
         {
-          ...ports[0]!,
-          submission: {
-            async open({ prepared, signature }) {
-              const encoded = encodeHandleOps({
-                prepared,
-                signature,
-                beneficiary: harness.submitter.address,
-              });
-              return {
-                async send() {
-                  eoaSends++;
-                  const transactionHash = await harness.wallet.sendTransaction({
-                    account: harness.submitter,
-                    chain: null,
-                    to: encoded.entryPoint,
-                    data: encoded.data,
-                    gas: 2_000_000n,
-                  });
-                  return {
-                    userOperationHash: encoded.userOperationHash,
-                    submission: { route: "entrypoint-handleops", transactionHash },
-                  };
-                },
-                async close() {},
+          fetch: async (request) => {
+            if (request.url.startsWith(rpcUrl)) return fetch(request);
+            const { id, method, params } = await request.json();
+            let result: unknown;
+            if (method === "eth_chainId") result = "0x8f";
+            else if (method === "eth_supportedEntryPoints")
+              result = [deployment.entryPoint.address];
+            else if (method === "eth_estimateUserOperationGas")
+              result = {
+                callGasLimit: toHex(200000),
+                verificationGasLimit: toHex(300000),
+                preVerificationGas: toHex(50000),
               };
-            },
+            else {
+              expect(method).toBe("eth_sendUserOperation");
+              rejectedSends++;
+              const wire = params[0] as Record<string, string>;
+              rejectedOperation = {
+                ...wire,
+                nonce: BigInt(wire.nonce!),
+                callGasLimit: BigInt(wire.callGasLimit!),
+                verificationGasLimit: BigInt(wire.verificationGasLimit!),
+                preVerificationGas: BigInt(wire.preVerificationGas!),
+                maxFeePerGas: BigInt(wire.maxFeePerGas!),
+                maxPriorityFeePerGas: BigInt(wire.maxPriorityFeePerGas!),
+              } as UserOperation<"0.7">;
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                error: { code: -32500, message: "local refusal" },
+              });
+            }
+            return Response.json({ jsonrpc: "2.0", id, result });
           },
         },
-      ],
+      ),
     });
     let saved: { chain: number; id: Hex };
     try {
-      const operation = await direct
-        .account(address)
-        .owner(wallet)
-        .sendCalls({ chain: 143, calls: [{ target, value: "17", data: "0x" }] });
+      const request = {
+        chain: 143,
+        calls: [{ target, value: "17", data: "0x" }],
+        feePayer: { kind: "connected-eoa", wallet: feeWallet },
+      };
+      const handle = direct.account(address).owner(wallet);
+      expect(await handle.reviewCalls(request)).toMatchObject({
+        route: "bundler",
+        fallback: {
+          route: "entrypoint-handleops",
+          feePayer: owner.address.toLowerCase(),
+          condition: "conclusive_bundler_rejection",
+        },
+      });
+      expect(eoaSends).toBe(0);
+      expect(prompts).toBe(2);
+      const operation = await handle.sendCalls(request);
       saved = { chain: operation.chainId, id: operation.id };
       expect(operation.outcome.status).toBe("pending");
     } finally {
@@ -380,6 +435,7 @@ afterAll(() => chain?.stop());
         calls: [{ target, value: "17", data: "0x" }],
       });
       expect(eoaSends).toBe(1);
+      expect(rejectedSends).toBe(1);
       expect(prompts).toBe(3);
       expect(await harness.client.getBalance({ address: target })).toBe(48n);
     } finally {

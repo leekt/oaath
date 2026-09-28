@@ -19,6 +19,12 @@ import { decideExecution } from "../routing/decide.js";
 import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
 import type { OaathExecutionDecision } from "../routing/types.js";
 import { OperationStore, type OperationStoreAdapter, type OperationStoreKey } from "../store.js";
+import {
+  captureConnectedEoa,
+  connectedEoaReview,
+  type OaathConnectedEoaFallbackReview,
+  withConnectedEoaFallback,
+} from "./connected-eoa.js";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
 import {
   captureCalls,
@@ -45,6 +51,7 @@ export interface OaathOwnerConfiguration {
   readonly operations?: OperationStoreAdapter;
 }
 export interface OaathOwnerCallsReview {
+  readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
   readonly chainId: number;
   readonly account: `0x${string}`;
@@ -236,6 +243,9 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
           assertOpen();
           const context = new WeakSet<object>();
           const request = capturePlainCalls(value, context);
+          const feePayer = Object.hasOwn(request, "feePayer")
+            ? captureConnectedEoa(request.feePayer, context)
+            : null;
           const chain = chainFor(request.chain);
           const calls = captureCalls(request.calls, context);
           const sponsorship = Object.hasOwn(request, "paymasterService")
@@ -275,7 +285,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
               "oaath_client_route_unavailable",
               "owner bundler route is unavailable",
             );
-          return { chain, calls, runtime, bound, simulation, decision, sponsorship };
+          return { chain, calls, runtime, bound, simulation, decision, sponsorship, feePayer };
         }
         return Object.freeze({
           reviewCalls: (value: unknown) =>
@@ -284,6 +294,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
               assertOpen();
               return Object.freeze({
                 chainId: resolved.chain.chainId,
+                fallback: connectedEoaReview(resolved.feePayer),
                 account: address,
                 kernelVersion: "0.3.3" as const,
                 calls: resolved.calls,
@@ -298,7 +309,8 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             }),
           sendCalls: (value: unknown) =>
             activity(async () => {
-              const { chain, calls, runtime, bound, simulation, sponsorship } = await shape(value);
+              const { chain, calls, runtime, bound, simulation, sponsorship, feePayer } =
+                await shape(value);
               const lane = keyFor(chain.chainId);
               const sender = await runner(
                 chain,
@@ -340,13 +352,16 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                   assertOpen();
                   const signature = await runtime.signOperation(prepared);
                   assertOpen();
-                  return captureSubmissionSession(
-                    await chain.submission.open({
-                      prepared,
-                      signature,
-                      route: "bundler",
-                      feePayer: null,
-                    }),
+                  const submission = {
+                    prepared,
+                    signature,
+                    route: "bundler" as const,
+                    feePayer: null,
+                  };
+                  return withConnectedEoaFallback(
+                    captureSubmissionSession(await chain.submission.open(submission)),
+                    submission,
+                    feePayer,
                   );
                 },
               );
