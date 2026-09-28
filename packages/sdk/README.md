@@ -25,7 +25,7 @@ sign, or submit, and work after grant expiry or revocation. `null` means no
 matching retained record, never permission to retry a send.
 
 `operation.execution()` reobserves that exact operation and returns immutable
-finalized sender, ordered calls, transaction/block identity, and success or
+finalized grant ID, sender, ordered calls, transaction/block identity, and success or
 revert outcome. It checks the receipt and derives calls from the containing
 EntryPoint v0.7 transaction by recomputing the operation hash, then decoding the
 supported atomic Kernel execution. These are top-level requested calls; a

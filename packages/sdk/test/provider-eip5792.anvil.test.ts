@@ -636,6 +636,10 @@ function durableStores(database: OaathDatabase) {
       );
       const provider = oaathProvider({ grant, chain: CHAIN_ID });
       const account = await grant.account(CHAIN_ID);
+      const { grantId } = await grant.reviewCalls({
+        chain: CHAIN_ID,
+        calls: [{ target: successA, value: "1", data: CALL_SELECTOR }],
+      });
 
       const successResult = (await provider.request({
         method: "wallet_sendCalls",
@@ -673,6 +677,7 @@ function durableStores(database: OaathDatabase) {
       );
       expect(await successOperation.execution()).toEqual({
         id: successHash,
+        grantId,
         chainId: CHAIN_ID,
         sender: account,
         calls: [
@@ -813,6 +818,7 @@ function durableStores(database: OaathDatabase) {
       );
       expect(await restoredOperation.execution()).toMatchObject({
         id: retained.id,
+        grantId,
         chainId: CHAIN_ID,
         sender: account,
         outcome: "success",

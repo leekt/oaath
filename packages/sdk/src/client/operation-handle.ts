@@ -86,6 +86,7 @@ export interface OaathOperationReceipt {
 /** Finalized calls decoded from the exact UserOperation's containing transaction. */
 export interface OaathOperationExecution {
   readonly id: `0x${string}`;
+  readonly grantId: string;
   readonly chainId: number;
   readonly sender: `0x${string}`;
   readonly calls: readonly Readonly<{
@@ -347,6 +348,7 @@ export function createOperationHandle(
         const facts = verifyOperationExecutionEvidence({ identity, inclusion, transaction });
         return Object.freeze({
           id: identity.userOperationHash,
+          grantId: identity.grantId,
           chainId: identity.chainId,
           sender: facts.sender,
           calls: facts.calls,
