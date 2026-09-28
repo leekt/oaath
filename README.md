@@ -241,6 +241,7 @@ Check the runtime before integrating a chain:
 ```sh
 npx oaath doctor --chain 143
 npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
+npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
 ```
 
 The `oaath` CLI joins the fixed package release group. Until it is published,
@@ -250,6 +251,10 @@ See [CLI usage](packages/cli/README.md) for bounds, exit codes and evidence limi
 `doctor` checks the ECDSA session module set; the owner validator remains
 application-selected. It sends no transactions and never treats an unreadable
 RPC response as a missing contract.
+`deploy-runtime` checks EntryPoint and the singleton deployer, deploys only the
+missing deterministic core set, and retains an attempt journal before broadcast.
+See the CLI instructions for the funded-wallet environment variable and recovery;
+an uncertain transaction is observed, never automatically resent.
 
 Production readiness snapshot: **2026-09-29 KST / 2026-09-28 16:04 UTC**.
 These are read-only observations at the listed blocks, not deployment writes.

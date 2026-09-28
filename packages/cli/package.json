@@ -28,7 +28,7 @@
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts"
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts test/deploy.anvil.test.ts"
   },
   "dependencies": {
     "@oaath/sdk": "workspace:*",
