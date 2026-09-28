@@ -49,6 +49,7 @@ import {
   exactCapturedRecord,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
   parseServiceBootstrap,
+  readRpcBundlerRejection,
   readValidationGasDiagnostic,
   type ServiceBootstrap,
 } from "@oaath/protocol";
@@ -98,7 +99,13 @@ import {
   RELAY_LIMITS,
   timestamp,
 } from "../store/records.js";
-import { jsonResponse, relayErrorCode, relayErrorResponse, relayFailure } from "./errors.js";
+import {
+  jsonResponse,
+  OaathRelayError,
+  relayErrorCode,
+  relayErrorResponse,
+  relayFailure,
+} from "./errors.js";
 
 const DEFAULT_REQUEST_TTL_MS = 300_000;
 const DEFAULT_CODE_TTL_MS = 60_000;
@@ -1092,6 +1099,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
           "relay_chain_unavailable",
           "chain port did not answer",
           readValidationGasDiagnostic(error),
+          name === "submission" ? readRpcBundlerRejection(error) : null,
         );
       }
       // JSON cannot carry `undefined`, and several ports mean it ("no such
@@ -1245,7 +1253,11 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
     try {
       return await route(request);
     } catch (error) {
-      return relayErrorResponse(relayErrorCode(error), readValidationGasDiagnostic(error));
+      return relayErrorResponse(
+        relayErrorCode(error),
+        readValidationGasDiagnostic(error),
+        error instanceof OaathRelayError ? error.bundlerRejection : null,
+      );
     }
   };
 }

@@ -195,14 +195,16 @@ connected to the requested chain and expose the captured EOA through
 and funds the outer transaction. No second operation signature is requested.
 Review reports the conditional fallback address without contacting the wallet.
 
-Acceptance, timeouts, HTTP errors (including 502), unknown RPC codes, and
-malformed results never trigger fallback. A late rejection after the submission
+Acceptance, timeouts, HTTP 502 responses, unknown RPC codes, and malformed
+results never trigger fallback. HTTP status alone never proves rejection.
+A late rejection after the submission
 session closes cannot start it either. Wallet rejection or a lost response never
 retries the transaction. Retain the operation ID and observe it. This option
 cannot be combined with paymaster sponsorship, which remains on the bundler
 route. Custom direct transports must preserve `OaathRpcError` conclusive
-rejections from `@oaath/sdk/viem`; the relay currently strips this evidence, so
-connected fallback through a relay is not yet supported.
+rejections from `@oaath/sdk/viem`. The relay forwards their closed rejection
+evidence only from submission failures; URL-only clients capture it before
+allowing the same local wallet fallback. Generic relay errors grant no fallback.
 
 Custom observation transports answer `transaction_execution` with exactly
 `{ hash, to, blockNumber, blockHash, input }` from the requested chain's

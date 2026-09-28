@@ -17,7 +17,11 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type CaptureContext, captureDenseArray } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  captureDenseArray,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+} from "@oaath/protocol";
 import { type OaathBundlerCapability, routingAddress, routingChainId } from "./capabilities.js";
 import { capabilityInvalid, exactRoutingRecord, inputInvalid } from "./types.js";
 
@@ -29,9 +33,7 @@ const MAX_SUPPORTED_ENTRY_POINTS = 32;
  * acceptance. Any other code, including generic JSON-RPC failures such as
  * -32603 and -32000, is inconclusive.
  */
-export const OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES: readonly number[] = Object.freeze([
-  -32500, -32501, -32502, -32503, -32504, -32505, -32506, -32507, -32521,
-]);
+export { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "@oaath/protocol";
 
 export interface OaathBundlerProbeRequest {
   readonly chainId: number;

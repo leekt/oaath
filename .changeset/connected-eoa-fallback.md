@@ -10,5 +10,4 @@ remains recoverable through public RPC after reload.
 
 Ambiguous failures, acceptance, late responses after close, and wallet failures
 never retry or trigger another submission. The option cannot be combined with
-sponsorship. The initial support uses direct/default RPC transports; relay
-rejection forwarding remains pending.
+sponsorship.

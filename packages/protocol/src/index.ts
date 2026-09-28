@@ -19,6 +19,12 @@ export {
   OAATH_SUBJECT_VERSION,
   parseSubjectBinding,
 } from "./actors/subject.js";
+export {
+  type BundlerRejection,
+  captureBundlerRejection,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+  readRpcBundlerRejection,
+} from "./bundler-rejection.js";
 export type { ProtocolContractErrorCode } from "./errors.js";
 export { OaathProtocolError } from "./errors.js";
 export type {

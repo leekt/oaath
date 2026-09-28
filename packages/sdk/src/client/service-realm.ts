@@ -23,6 +23,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import {
+  captureBundlerRejection,
   captureValidationGasDiagnostic,
   parseServiceBootstrap,
   type ServiceBootstrap,
@@ -48,6 +49,7 @@ import {
   createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
+import { OaathRpcError } from "../viem/rpc.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathRegisteredPaymasterService } from "./grant-handle.js";
 import {
@@ -125,6 +127,7 @@ async function fetchJson(
   transport: (request: Request) => Promise<Response>,
   request: Request,
   label: string,
+  allowBundlerRejection = false,
 ): Promise<unknown> {
   let response: Response;
   try {
@@ -134,13 +137,21 @@ async function fetchJson(
   }
   if (!response.ok) {
     let diagnostic = null;
+    let rejection = null;
     try {
-      const body = (await response.json()) as { error?: { code?: unknown; diagnostic?: unknown } };
-      if (body.error?.code === "relay_chain_unavailable")
+      const body = (await response.json()) as {
+        error?: { code?: unknown; diagnostic?: unknown; bundlerRejection?: unknown };
+      };
+      if (body.error?.code === "relay_chain_unavailable") {
         diagnostic = captureValidationGasDiagnostic(body.error.diagnostic);
+        if (allowBundlerRejection && response.status === 503)
+          rejection = captureBundlerRejection(body.error.bundlerRejection);
+      }
     } catch {
       /* Preserve the generic failure when the body is absent or unreadable. */
     }
+    if (rejection !== null)
+      throw new OaathRpcError("oaath_rpc_rejected", rejection.code, diagnostic);
     return clientFail(
       "oaath_client_issuer_rejected",
       `${label} answered ${response.status}`,
@@ -179,6 +190,7 @@ function chainPort(
         transport,
         jsonRequest(`${url}/chains/${chainId}/${port}`, { request }),
         `chain ${chainId} ${port}`,
+        port === "submissions",
       ),
       ["present", "result"],
       "chain port envelope",
