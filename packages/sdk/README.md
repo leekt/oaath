@@ -31,7 +31,7 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route. Grant `signer: "auto"`, v3.3 session permissions,
+bundler route by default. Grant `signer: "auto"`, v3.3 Grant integration,
 and the local permission issuer are still pending.
 
 The same owner operation is available through the lower-level runtime:
@@ -71,6 +71,48 @@ Preparation and signing do not submit. The caller must retain the prepared
 operation and submission evidence using its chosen transport. An unavailable
 read returns `kernel_runtime_read_unavailable`; it never creates an account or
 selects a different Kernel version.
+
+The lower-level runtime also supports ECDSA sessions on existing v3.3 accounts:
+
+```ts
+import {
+  approveKernelV33Permission, createKernelRuntime, createKernelV33Reads,
+  ecdsaKey, ecdsaWalletKey, kernelV33Deployment,
+  kernelV33PermissionInstallNonce, materializeKernelV33Permission, sessionOperator,
+} from "@oaath/sdk/kernel";
+
+const deployment = kernelV33Deployment(chainId);
+const reads = createKernelV33Reads(publicClient);
+const runtime = createKernelRuntime({
+  deployment, reads,
+  operator: sessionOperator({
+    key: ecdsaKey({ account: sessionKey, validator: deployment.ecdsaValidator }),
+    policies: [{ kind: "call", permissions: [{ target, selector, valueLimit: "0" }] }],
+  }),
+});
+const account = await runtime.bindAccount({ address: existingKernelAddress });
+const approval = await approveKernelV33Permission({
+  runtime, account,
+  owner: ecdsaWalletKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
+  nonce: await kernelV33PermissionInstallNonce({ runtime, account, reads }),
+});
+const { prepared, signature } = await materializeKernelV33Permission({
+  runtime, account, approval, grantId: operationContextId,
+  nonceKey: "0", sequence, calls, gas,
+});
+```
+
+This approval binds one chain, account, effective validation nonce and exact
+permission. Store it using its versioned representation and restore with
+`parseKernelV33PermissionApproval`. It is not a v4 all-chain approval. The first
+operation enables and executes together; after confirmed installation, use the
+same runtime's `prepareOperation` and `signOperation` in `standard` mode.
+`encodeKernelV33NonceKey` derives the EntryPoint key for each mode; read that
+key's sequence before preparing. Enable and standard mode have distinct keys.
+The Monad enable gas floor applies before hashing or signing. Missing signer or
+policy deployments prevent binding. These primitives prepare and sign only;
+submission journaling and observation remain the caller's responsibility until
+v3.3 Grant integration lands. A missing receipt never authorizes another send.
 
 For Kernel v4 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:

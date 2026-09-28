@@ -32,6 +32,8 @@ const ABI = parseAbi([
   "function entrypoint() view returns (address)",
   "function rootValidator() view returns (bytes21)",
   "function ecdsaValidatorStorage(address) view returns (address)",
+  "function currentNonce() view returns (uint32)",
+  "function validationConfig(bytes21) view returns (uint32 nonce, address hook)",
 ]);
 
 export interface KernelV33Deployment {
@@ -71,6 +73,12 @@ export type KernelV33ReadRequest =
   | Readonly<{ type: "code"; chainId: number; address: `0x${string}` }>
   | Readonly<{ type: "runtime_code_hash"; chainId: number; address: `0x${string}` }>
   | Readonly<{ type: "kernel_ecdsa_owner"; chainId: number; account: `0x${string}` }>
+  | Readonly<{
+      type: "kernel_v33_permission_nonce";
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+    }>
   | Readonly<{
       type:
         | "kernel_account_implementation"
@@ -258,6 +266,37 @@ export function createKernelV33Reads(client: KernelV4ReadClient): KernelV33Reads
           if (!response.data || !/^0x0{24}[0-9a-fA-F]{40}$/u.test(response.data))
             return mismatch("Kernel ECDSA owner evidence is invalid");
           return `0x${response.data.slice(-40).toLowerCase()}`;
+        }
+        case "kernel_v33_permission_nonce": {
+          if (!/^0x[0-9a-f]{8}$/u.test(request.permissionId))
+            return inputInvalid("Kernel v3.3 permission ID is invalid");
+          const current = await call({
+            to: request.account,
+            data: encodeFunctionData({ abi: ABI, functionName: "currentNonce" }),
+          });
+          const validation = await call({
+            to: request.account,
+            data: encodeFunctionData({
+              abi: ABI,
+              functionName: "validationConfig",
+              args: [`0x02${request.permissionId.slice(2)}${"00".repeat(16)}`],
+            }),
+          });
+          if (!current.data || !validation.data)
+            return mismatch("Kernel v3.3 validation nonce is unreadable");
+          const nonceTypes = [{ type: "uint32" }] as const;
+          const configTypes = [{ type: "uint32" }, { type: "address" }] as const;
+          const [nonce] = decodeAbiParameters(nonceTypes, current.data);
+          const config = decodeAbiParameters(configTypes, validation.data);
+          if (
+            encodeAbiParameters(nonceTypes, [nonce]) !== current.data.toLowerCase() ||
+            encodeAbiParameters(configTypes, config).toLowerCase() !== validation.data.toLowerCase()
+          )
+            return mismatch("Kernel v3.3 validation nonce is noncanonical");
+          const effective = config[0] === nonce ? nonce + 1 : nonce;
+          if (effective < 1 || effective > 0xffffffff || config[0] >= effective)
+            return mismatch("Kernel v3.3 validation nonce cannot enable this permission");
+          return effective.toString(10);
         }
         default: {
           const functionName =

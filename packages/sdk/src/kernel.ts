@@ -30,6 +30,7 @@ export {
   createKernelV33Reads,
   kernelV33Deployment,
 } from "./kernel/deployment/v33.js";
+export { encodeKernelV33NonceKey } from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
 export type {
   EcdsaKeyAccount,
@@ -88,6 +89,20 @@ export {
   prepareKernelPhoneRevocation,
   restoreKernelPhoneRevocation,
 } from "./kernel/permission/phone-revocation.js";
+export type {
+  ApproveKernelV33PermissionInput,
+  KernelV33PermissionApproval,
+  KernelV33PermissionScope,
+  MaterializeKernelV33PermissionInput,
+} from "./kernel/permission/v33.js";
+export {
+  approveKernelV33Permission,
+  kernelV33PermissionEnableTypedData,
+  kernelV33PermissionInstallNonce,
+  materializeKernelV33Permission,
+  OAATH_KERNEL_V33_APPROVAL_VERSION,
+  parseKernelV33PermissionApproval,
+} from "./kernel/permission/v33.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,

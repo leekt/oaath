@@ -181,7 +181,10 @@ export interface OperatorProfile {
    * envelope: identity for root, the permission signature envelope for a
    * session, whose policy slices precede the signer slice.
    */
-  readonly encodeSignature: (signature: `0x${string}`) => `0x${string}`;
+  readonly encodeSignature: (
+    signature: `0x${string}`,
+    deployment: Readonly<KernelDeployment>,
+  ) => `0x${string}`;
   /** Kernel validation binding used for nonce keys and validation type. */
   readonly resolveValidation: (
     deployment: Readonly<KernelDeployment>,
@@ -285,7 +288,7 @@ export interface KernelV33RuntimeBindAccountInput {
 export interface KernelV33RuntimePrepareInput
   extends Omit<KernelRuntimePrepareInput, "account" | "validityTimeRange" | "mode"> {
   readonly account: Readonly<KernelV33AccountDescriptor>;
-  readonly mode?: "standard";
+  readonly mode?: "standard" | "enable";
 }
 export interface KernelV33Runtime
   extends Omit<KernelRuntime, "deployment" | "bindAccount" | "prepareOperation"> {
