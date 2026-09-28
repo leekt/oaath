@@ -11,8 +11,17 @@ import type { OaathSubmissionRequest } from "./grant-handle.js";
 
 export interface OaathConnectedEoaFeePayer {
   readonly kind: "connected-eoa";
-  readonly wallet: Pick<WalletClient, "account" | "request"> &
-    Partial<Pick<WalletClient, "sendTransaction">>;
+  readonly wallet: Pick<WalletClient, "account" | "request"> & {
+    readonly sendTransaction?: (
+      input: Readonly<{
+        account: Account;
+        chain: null;
+        to: `0x${string}`;
+        data: `0x${string}`;
+        value: bigint;
+      }>,
+    ) => Promise<unknown>;
+  };
 }
 export interface OaathConnectedEoaFallbackReview {
   readonly route: "entrypoint-handleops";
@@ -42,7 +51,9 @@ export function captureConnectedEoa(
   const local = account.type === "local";
   if (local && typeof wallet.sendTransaction !== "function")
     return fail("local fee payer sendTransaction is missing");
-  const send = wallet.sendTransaction as WalletClient["sendTransaction"];
+  const send = wallet.sendTransaction as NonNullable<
+    OaathConnectedEoaFeePayer["wallet"]["sendTransaction"]
+  >;
   return Object.freeze({
     address,
     request: wallet.request as WalletClient["request"],
