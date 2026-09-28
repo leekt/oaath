@@ -43,6 +43,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
       async (version) => {
         const local = await startAnvil(CHAIN_ID, "prague", 1);
         const harness = await createHarness(local);
+        const clock = createClock(Math.floor(Date.now() / 1000));
         let realm: ReturnType<typeof createRealm> | undefined;
         const factory = new IDBFactory();
         let database = await openOaathDatabase({ factory });
@@ -87,7 +88,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             else if (rpc.method === "eth_estimateUserOperationGas") {
               estimates += 1;
               const op = rpc.params[0] as Record<string, string>;
-              expect(typeof op.signature === "string" && op.signature.length > 132).toBe(true);
+              expect(typeof op.signature === "string" && op.signature.length >= 132).toBe(true);
               expect(op.factory !== undefined).toBe(version === "0.4.0" && sends === 0);
               result = {
                 callGasLimit: "0xdbba0",
@@ -158,7 +159,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                   blockNumber: toHex(receipt.blockNumber),
                 },
               });
-              if (sends === 1) {
+              if (sends === 1 || (version === "0.3.3" && (sends === 3 || sends === 4))) {
                 // Acceptance happened, but the response is lost. Observation is
                 // the only recovery; the transport must not send again.
                 response.writeHead(502).end("lost reply");
@@ -229,7 +230,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               stores: stores(),
               ...(relay ? { relay } : {}),
               validator,
-              clock: createClock(Math.floor(Date.now() / 1000)),
+              clock,
               chain: {
                 capability: {
                   ...ports!,
@@ -249,6 +250,19 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               },
             });
           }
+          async function reopenGrant() {
+            if (!realm) throw new Error("realm unavailable");
+            const relay = realm.relay;
+            await realm.oaath.close();
+            database.close();
+            database = await openOaathDatabase({ factory });
+            ports = chainPorts()[0];
+            if (!ports) throw new Error("chain missing");
+            realm = newRealm(relay);
+            const restored = await (await realm.oaath.connect()).resume();
+            if (restored === null) throw new Error("Grant was not restored");
+            return restored;
+          }
           realm = newRealm();
           let grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
           const address = await grant.account(CHAIN_ID);
@@ -257,9 +271,6 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             const provider = grantProviderPort(grant);
             expect(await provider.probeValidityTimeRangeSupport(CHAIN_ID)).toEqual({
               status: "unsupported",
-            });
-            await expect(grant.revoke()).rejects.toMatchObject({
-              source: "kernel_v33_revocation_unsupported",
             });
             expect(grant.state).toBe("active");
             expect(sends).toBe(0);
@@ -282,23 +293,19 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           expect(sends).toBe(1);
           // Close every SDK/store/port instance before advancing chain finality.
           const exactId = first.id;
-          const relay = realm.relay;
-          await realm.oaath.close();
-          database.close();
-          database = await openOaathDatabase({ factory });
-          ports = chainPorts()[0];
-          if (!ports) throw new Error("chain missing");
-          realm = newRealm(relay);
-          const restored = await (await realm.oaath.connect()).resume();
-          if (restored === null) throw new Error("Grant was not restored");
-          grant = restored;
+          grant = await reopenGrant();
           const recovered = await grant.getOperation({ chain: CHAIN_ID, id: exactId });
           if (recovered === null) throw new Error("operation was not restored");
           expect(recovered.id).toBe(exactId);
           expect(await grant.account(CHAIN_ID)).toBe(address);
           expect(sends).toBe(1);
           await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
-          expect((await recovered.wait()).status).toBe("finalized");
+          const recoveryOutcome = await recovered.wait();
+          expect({
+            status: recoveryOutcome.status,
+            state: recoveryOutcome.state,
+            reason: "reason" in recoveryOutcome ? recoveryOutcome.reason : null,
+          }).toMatchObject({ status: "finalized" });
           expect(sends).toBe(1);
           const second = await grant.sendCalls(sendCallsInput());
           expect((await second.wait()).status).toBe("finalized");
@@ -308,6 +315,44 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           expect(sends).toBe(2);
           expect(modeBytes).toEqual([version === "0.3.3" ? 1n : 12n, 0n]);
           expect(estimates).toBe(2);
+          if (version === "0.3.3") {
+            await grant.revoke();
+            expect(sends).toBe(3);
+            expect(grant.state).toBe("revoking");
+            grant = await reopenGrant();
+            expect(grant.state).toBe("revoking");
+            await grant.revoke();
+            expect(sends).toBe(3);
+            await harness.client.request({
+              method: "anvil_mine" as never,
+              params: ["0x3"] as never,
+            });
+            await grant.revoke();
+            expect(grant.state).toBe("revoked");
+            await grant.revoke();
+            expect(sends).toBe(3);
+            await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
+              code: "oaath_client_grant_inactive",
+            });
+            // A distinct permission never used for an application operation must
+            // still consume its enable approval before revocation completes.
+            let unused = await (await realm.oaath.connect()).requestPermission(
+              permissionInput({ perChainOperationLimit: 3 }),
+            );
+            await unused.revoke();
+            expect(unused.state).toBe("revoking");
+            expect(sends).toBe(4);
+            unused = await reopenGrant();
+            await unused.revoke();
+            expect(sends).toBe(4);
+            await harness.client.request({
+              method: "anvil_mine" as never,
+              params: ["0x3"] as never,
+            });
+            await unused.revoke();
+            expect(unused.state).toBe("revoked");
+            expect(sends).toBe(4);
+          }
           expect(
             methods.every((method) =>
               [

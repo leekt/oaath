@@ -1,6 +1,12 @@
 import { type ChainBinding, type ChainRevocationEvidence, captureRecord } from "@oaath/protocol";
 import type { OperationObserverCapabilities } from "../../operation-observer.js";
-import type { KernelAllChainApproval } from "./materialize.js";
+import { type KernelGrantApproval, kernelGrantApprovalNonce } from "./approval.js";
+import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "./v33.js";
+import {
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+} from "./v33-revocation.js";
 
 function blockFields(value: unknown) {
   return captureRecord(value, "revocation block", new WeakSet(), () => {
@@ -15,7 +21,7 @@ function blockFields(value: unknown) {
  */
 export async function observeKernelPermissionRevocation(input: {
   readonly binding: Readonly<ChainBinding>;
-  readonly approval: Readonly<KernelAllChainApproval>;
+  readonly approval: Readonly<KernelGrantApproval>;
   readonly observation: Readonly<OperationObserverCapabilities>;
   readonly now: () => number;
 }): Promise<Readonly<ChainRevocationEvidence> | null> {
@@ -42,24 +48,34 @@ export async function observeKernelPermissionRevocation(input: {
     )
       return null;
     const blockNumber = BigInt(block.number).toString(10);
-    const installed = await observation.read({
-      type: "kernel_permission_installed",
-      ...binding,
-      signer,
-      blockNumber,
-    });
-    if (installed !== false) return null;
-    const nonce = await observation.read({
-      type: "kernel_install_nonce",
-      chainId: binding.chainId,
-      account: binding.account,
-      nonce: approval.installNonce,
-      blockNumber,
-    });
-    // eth_call may return a padded ABI word. Empty account code / empty result is not zero.
-    if (typeof nonce !== "string" || !/^0x[0-9a-f]{1,64}$/u.test(nonce)) return null;
-    const observed = BigInt(nonce);
-    const expected = BigInt(approval.installNonce);
+    let observed: bigint;
+    const expected = BigInt(kernelGrantApprovalNonce(approval));
+    if (approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION) {
+      if (binding.permissionId !== approval.permissionId) return null;
+      const state = parseKernelV33PermissionState(
+        await observation.read({ type: "kernel_v33_permission_state", ...binding, blockNumber }),
+      );
+      if (kernelV33PermissionStatus(state, approval) !== "absent") return null;
+      observed = BigInt(kernelV33EffectivePermissionNonce(state));
+    } else {
+      const installed = await observation.read({
+        type: "kernel_permission_installed",
+        ...binding,
+        signer,
+        blockNumber,
+      });
+      if (installed !== false) return null;
+      const nonce = await observation.read({
+        type: "kernel_install_nonce",
+        chainId: binding.chainId,
+        account: binding.account,
+        nonce: approval.installNonce,
+        blockNumber,
+      });
+      // Empty account code / empty result is not zero.
+      if (typeof nonce !== "string" || !/^0x[0-9a-f]{1,64}$/u.test(nonce)) return null;
+      observed = BigInt(nonce);
+    }
     if (observed >> 64n !== expected >> 64n || observed <= expected) return null;
     const rebound = blockFields(
       await observation.read({

@@ -76,10 +76,13 @@ export function createGrantKernelRuntime(
       ...(input.gas === undefined ? {} : { gas: input.gas }),
     };
     const runtime = createKernelRuntime({ ...options, operator: input.operator });
-    const owner = createKernelRuntime({
-      ...options,
-      operator: ownerOperator({ key: input.ownerKey }),
-    });
+    const owner =
+      runtime.authority === "owner"
+        ? runtime
+        : createKernelRuntime({
+            ...options,
+            operator: ownerOperator({ key: input.ownerKey }),
+          });
     function adapt(
       execution: Pick<KernelV33Runtime, "prepareOperation" | "dummySignature" | "gasPolicy"> &
         Pick<GrantKernelExecution, "signOperation" | "encodeVerifiedSignature">,

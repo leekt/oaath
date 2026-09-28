@@ -131,8 +131,14 @@ packages must be derived from the exact approved policy and session credential.
 `grant.sendCalls` then enables on first use and uses the installed session on
 later calls, at the same address. It journals before signing; `resume` and
 `getOperation` recover the original operation without resubmission after reload.
-V3.3 Grant revocation, external prepared-call signing, request-time validity
-attenuation, and phone approval are not supported yet.
+With the owner signer available, `grant.revoke()` removes installed permissions
+and consumes unused approvals on the configured chains. An unused approval is
+installed and removed atomically without application calls or global nonce
+invalidation. Completion requires finalized permission absence and a consumed
+enable nonce. An uncertain revocation remains `revoking` across reload and is
+observed again without resubmission. Other permissions remain usable.
+V3.3 external prepared-call signing, request-time validity attenuation, and phone
+approval are not supported yet.
 
 For Kernel v4 or v3.3 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:

@@ -92,6 +92,14 @@ export type OperationObserverReadRequest =
     }>
   | Readonly<{ type: "canonical_block"; chainId: number; blockNumber: string }>
   | Readonly<{
+      /** v3.3 validation/permission configuration and effective enable nonce at this block. */
+      type: "kernel_v33_permission_state";
+      chainId: number;
+      account: `0x${string}`;
+      permissionId: `0x${string}`;
+      blockNumber: string;
+    }>
+  | Readonly<{
       /** Kernel account nonce(uint192), including its global effective minimum. */
       type: "kernel_install_nonce";
       chainId: number;

@@ -36,6 +36,12 @@ import {
   materializeKernelV33Permission,
   parseKernelV33PermissionApproval,
 } from "../src/kernel/permission/v33.js";
+import {
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+} from "../src/kernel/permission/v33-revocation.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
@@ -161,6 +167,127 @@ async function setupV33(chainId: number, owner: ReturnType<typeof privateKeyToAc
     expect(ownerSign).toHaveBeenCalledTimes(1);
     expect(operationHashes[0]).not.toBe(operationHashes[1]);
     expect(signingHashes[0]).toBe(signingHashes[1]);
+  }, 30_000);
+
+  it("revokes installed and unused approvals without disabling another permission", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const { harness, address, deployment } = await setupV33(143, ownerAccount);
+    for (const module of [harness.fixture.ecdsaSigner, harness.fixture.callPolicy])
+      await harness.deployModule(module);
+    const reads = createKernelV33Reads(harness.client);
+    const ownerKey = ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator });
+    const owner = createKernelRuntime({
+      deployment,
+      reads,
+      operator: ownerOperator({ key: ownerKey }),
+    });
+    const account = await owner.bindAccount({ address });
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const gas = {
+      callGasLimit: "900000",
+      verificationGasLimit: "2000000",
+      preVerificationGas: "100000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    async function permission(grantId: string) {
+      const runtime = createKernelRuntime({
+        deployment,
+        reads,
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: privateKeyToAccount(generatePrivateKey()),
+            validator: deployment.ecdsaValidator,
+          }),
+          policies: [
+            { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+          ],
+        }),
+      });
+      const descriptor = await runtime.bindAccount({ address });
+      const approval = await approveKernelV33Permission({
+        runtime,
+        account: descriptor,
+        owner: ownerKey,
+        nonce: "1",
+      });
+      const input = {
+        runtime,
+        account: descriptor,
+        approval,
+        grantId,
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "1", data: "0x" as const }],
+        gas,
+      };
+      return { input, runtime, approval };
+    }
+    const survivor = await permission("survivor");
+    const installed = await permission("installed");
+    const unused = await permission("unused");
+    for (const permission of [survivor, installed]) {
+      const enabled = await materializeKernelV33Permission(permission.input);
+      expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+    }
+    for (const [sequence, permission] of [installed, unused].entries()) {
+      const state = parseKernelV33PermissionState(
+        await reads.read({
+          type: "kernel_v33_permission_state",
+          chainId: 143,
+          account: address,
+          permissionId: permission.approval.permissionId,
+        }),
+      );
+      const calls = kernelV33PermissionRevocationCalls({ approval: permission.approval, state });
+      expect(calls.length).toBe(sequence === 0 ? 1 : 2);
+      const prepared = owner.prepareOperation({
+        kind: "revocation",
+        grantId: permission.input.grantId,
+        account,
+        nonceKey: "0",
+        sequence: sequence.toString(),
+        calls,
+        gas,
+      });
+      expect(await harness.sendSigned(prepared, await owner.signOperation(prepared))).toBe(
+        "success",
+      );
+      const after = parseKernelV33PermissionState(
+        await reads.read({
+          type: "kernel_v33_permission_state",
+          chainId: 143,
+          account: address,
+          permissionId: permission.approval.permissionId,
+        }),
+      );
+      expect(kernelV33PermissionStatus(after, permission.approval)).toBe("absent");
+      expect(
+        BigInt(kernelV33EffectivePermissionNonce(after)) > BigInt(permission.approval.nonce),
+      ).toBe(true);
+      expect(
+        kernelV33PermissionRevocationCalls({ approval: permission.approval, state: after }),
+      ).toHaveLength(0);
+      const replay = await materializeKernelV33Permission({
+        ...permission.input,
+        sequence: sequence === 0 ? "1" : "0",
+      });
+      expect((await harness.rejectionOf(replay.prepared, replay.signature)).errorName).toBe(
+        "FailedOpWithRevert",
+      );
+      const { runtime: _runtime, approval: _approval, ...operation } = permission.input;
+      const standard = permission.runtime.prepareOperation({ ...operation, kind: "execution" });
+      expect(
+        (await harness.rejectionOf(standard, await permission.runtime.signOperation(standard)))
+          .errorName,
+      ).toBe("FailedOpWithRevert");
+    }
+    const { runtime: _runtime, approval: _approval, ...operation } = survivor.input;
+    const standard = survivor.runtime.prepareOperation({ ...operation, kind: "execution" });
+    expect(await harness.sendSigned(standard, await survivor.runtime.signOperation(standard))).toBe(
+      "success",
+    );
+    expect(await harness.client.getBalance({ address: target })).toBe(3n);
   }, 30_000);
 
   it.each(["browser", "local"])(
