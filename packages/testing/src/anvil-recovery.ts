@@ -105,9 +105,29 @@ export async function openLocalAnvilRecoveryClient(
       const reader = createPublicClient({
         transport: http(chain.rpcUrl, { retryCount: 0, timeout: 5000 }),
       });
+      const reads = createKernelV4Reads(reader);
       return {
         chainId: chain.chainId,
-        reads: createKernelV4Reads(reader),
+        reads: {
+          async read(request: Parameters<OaathChainCapability["reads"]["read"]>[0]) {
+            switch (request.type) {
+              case "chain_id":
+              case "code":
+              case "runtime_code_hash":
+              case "kernel_factory_implementation":
+              case "kernel_factory_account":
+                return reads.read(request);
+              case "kernel_account_implementation":
+                return reads.read({
+                  type: request.type,
+                  chainId: request.chainId,
+                  account: request.account,
+                });
+              default:
+                return unavailable();
+            }
+          },
+        },
         observation: createLocalAnvilObservation({
           chainId: chain.chainId,
           async rpc(method: string, params: unknown[]) {
