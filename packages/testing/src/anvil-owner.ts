@@ -205,7 +205,10 @@ export async function createLocalOwnerAnvilFixture(
               }
               result = {
                 callGasLimit: toHex(5_000_000),
-                verificationGasLimit: toHex(500_000),
+                // Cold installation includes call, time, and operation-limit policies.
+                // The fixture must fit this on ordinary EVM chains, without
+                // relying on a chain-specific gas multiplier.
+                verificationGasLimit: toHex(1_000_000),
                 preVerificationGas: toHex(100_000),
               };
             } else if (method === "eth_getUserOperationReceipt") {
