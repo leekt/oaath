@@ -32,7 +32,7 @@
     "smoke:browser": "node scripts/smoke-packed-browser.mjs",
     "smoke:extension": "node scripts/smoke-packed-extension.mjs",
     "smoke:server": "node scripts/smoke-packed-server.mjs",
-    "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs && pnpm smoke:local-consumer",
+    "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs && pnpm smoke:local-consumer && pnpm smoke:runtime",
     "smoke:local-consumer": "node scripts/smoke-packed-local.mjs && pnpm smoke:process-recovery",
     "smoke": "pnpm smoke:browser && pnpm smoke:server && pnpm smoke:all-chain",
     "examples:check": "node examples/check.mjs",
@@ -40,7 +40,8 @@
     "release:status": "changeset status",
     "release:version": "changeset version",
     "release:publish": "changeset publish",
-    "smoke:process-recovery": "node scripts/smoke-packed-process-recovery.mjs"
+    "smoke:process-recovery": "node scripts/smoke-packed-process-recovery.mjs",
+    "smoke:runtime": "node scripts/smoke-packed-runtime.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

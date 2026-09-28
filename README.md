@@ -236,6 +236,40 @@ runtime hash where one has been reviewed (Arbitrum Sepolia, Ethereum Sepolia,
 Robinhood Chain Testnet) or by nonempty code at the canonical CREATE2 address
 elsewhere; a chain missing the deployment fails closed at bind.
 
+Check the runtime before integrating a chain:
+
+```sh
+npx oaath doctor --chain 143
+npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
+```
+
+The `oaath` CLI joins the fixed package release group. Until it is published,
+run `pnpm --filter oaath build` then
+`node packages/cli/dist/cli.mjs doctor --chain 143` from this repository.
+See [CLI usage](packages/cli/README.md) for bounds, exit codes and evidence limits.
+`doctor` checks the ECDSA session module set; the owner validator remains
+application-selected. It sends no transactions and never treats an unreadable
+RPC response as a missing contract.
+
+Production readiness snapshot: **2026-09-29 KST / 2026-09-28 16:04 UTC**.
+These are read-only observations at the listed blocks, not deployment writes.
+`verified` means the pinned runtime hash matches; `missing` means empty code.
+
+| Chain / public RPC | Block | Kernel v4 | Factory | ValidityPolicy | CallPolicy | RateLimitPolicy | ECDSASigner |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Monad 143](https://rpc.monad.xyz) | 108794023 | missing | missing | missing | verified | missing | verified |
+| [World 480](https://worldchain-mainnet.g.alchemy.com/public) | 35637905 | missing | missing | missing | verified | verified | verified |
+| [MegaETH 4326](https://mainnet.megaeth.com/rpc) | 27814440 | missing | missing | missing | verified | verified | verified |
+| [Tempo 4217](https://rpc.mainnet.tempo.xyz) | 41666362 | missing | missing | missing | verified | missing | verified |
+| [Robinhood 4663](https://rpc.mainnet.chain.robinhood.com) | 74926543 | missing | missing | missing | verified | verified | verified |
+| [Arc 5042](https://rpc.mainnet.arc.io) | 23223959 | missing | missing | missing | verified | verified | verified |
+
+All six verified EntryPoint 0.7 and the canonical CREATE2 deployer. All six
+lack the factory's immutable ECDSA implementation as well as the UUPS
+implementation shown above. Optional P-256 validator and WebAuthn signer are
+missing on all six; the P-256 verifier is verified. **None is runtime-ready.**
+Re-run `doctor` for current evidence. Production deployment writes remain deferred.
+
 `@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
 KernelFactory at `0xE65C6a17bDB14070977b4AB70f1E7d9cDf441d53` is part of the

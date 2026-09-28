@@ -6,7 +6,7 @@
   "privatePackages": false,
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "fixed": [["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"]],
+  "fixed": [["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "oaath"]],
   "linked": [],
   "ignore": []
 }
