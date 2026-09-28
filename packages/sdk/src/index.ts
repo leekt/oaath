@@ -24,6 +24,7 @@ export type {
   OaathSendCallsInput,
 } from "./client/grant-handle.js";
 export type {
+  OaathOperationExecution,
   OaathOperationHandle,
   OaathOperationLog,
   OaathOperationOutcome,

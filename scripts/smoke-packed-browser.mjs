@@ -696,6 +696,11 @@ const jobOperation = await jobsGrant.sendCalls({
   calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
 });
 const savedOperation = { chain: jobOperation.chainId, id: jobOperation.id };
+const sendsBeforeEvidence = sends.length;
+let evidenceCode = null;
+try { await jobOperation.execution(); } catch (error) { evidenceCode = error?.code; }
+if (evidenceCode !== "oaath_client_observation_unavailable" || sends.length !== sendsBeforeEvidence)
+  fail("public execution evidence claimed pending execution or submitted again");
 if (!/^0x[0-9a-f]{64}$/.test(savedOperation.id)) fail("public operation ID is missing");
 const beforeRecovery = { sends: sends.length, quotes, owners: ownerRequests.length };
 let occupiedCode = null;
@@ -964,6 +969,7 @@ import {
   type OaathCallsReview,
   type OaathSendCallsInput,
   type OaathOperationHandle,
+  type OaathOperationExecution,
   createOAAth,
 } from "@oaath/sdk";
 import {
@@ -984,6 +990,9 @@ export const grants: GrantStoreAdapter = createMemoryGrantStoreAdapter();
 
 export function review(grant: OaathGrantHandle, calls: OaathSendCallsInput): Promise<Readonly<OaathCallsReview>> {
   return grant.reviewCalls(calls);
+}
+export function execution(operation: OaathOperationHandle): Promise<Readonly<OaathOperationExecution>> {
+  return operation.execution();
 }
 
 export async function recover(grant: OaathGrantHandle, previous: OaathOperationHandle): Promise<Readonly<OaathOperationHandle> | null> {

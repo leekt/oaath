@@ -24,6 +24,22 @@ after a later operation replaces the lane. Lookup and observation do not quote,
 sign, or submit, and work after grant expiry or revocation. `null` means no
 matching retained record, never permission to retry a send.
 
+`operation.execution()` reobserves that exact operation and returns immutable
+finalized grant ID, sender, ordered calls, transaction/block identity, and success or
+revert outcome. It checks the receipt and derives calls from the containing
+EntryPoint v0.7 transaction by recomputing the operation hash, then decoding the
+supported atomic Kernel execution. These are top-level requested calls; a
+`reverted` outcome means their effects did not persist. Pending, dropped,
+unreadable, mismatched, and unsupported evidence fails with a structured
+`oaath_client_observation_unavailable` error. It never signs or sends.
+
+Custom observation transports answer `transaction_execution` with exactly
+`{ hash, to, blockNumber, blockHash, input }` from the requested chain's
+transaction. Addresses, hashes, and input are lowercase hex; blockNumber is a
+canonical RPC hex quantity. The SDK reads input transiently and never returns
+or persists its signatures. Existing operation state owns identity and finality;
+this method adds no durable execution artifact.
+
 Custom deployment quotes receive the selected Kernel `mode` and `validation`.
 Choose a nonce namespace, encode its EntryPoint key with `encodeKernelV4NonceKey`,
 and read that key's sequence. The root, enable, and standard permission paths

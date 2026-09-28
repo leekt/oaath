@@ -52,6 +52,12 @@ export type OperationObserverReadRequest =
     }>
   | Readonly<{ type: "transaction"; chainId: number; transactionHash: `0x${string}` }>
   | Readonly<{
+      /** Exact { hash, to, blockNumber, blockHash, input }; input is read transiently. */
+      type: "transaction_execution";
+      chainId: number;
+      transactionHash: `0x${string}`;
+    }>
+  | Readonly<{
       type: "transaction_receipt";
       chainId: number;
       transactionHash: `0x${string}`;

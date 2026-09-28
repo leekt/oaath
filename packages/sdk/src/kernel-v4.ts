@@ -20,6 +20,7 @@ import {
 import {
   concat,
   decodeAbiParameters,
+  decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
@@ -1382,4 +1383,65 @@ export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
     functionName: "execute",
     args: [mode, executionData],
   });
+}
+
+/** Decodes only the exact execute forms this runtime produces. Internal evidence boundary. */
+export function decodeKernelV4Execution(value: unknown): readonly Readonly<KernelV4Call>[] {
+  const data = bytes(value, "Kernel execution calldata");
+  const decoded = decodeFunctionData({ abi: KERNEL_ABI, data });
+  if (decoded.functionName !== "execute") return fail("unsupported Kernel execution");
+  const [mode, executionData] = decoded.args;
+  const callType = mode.slice(2, 4);
+  let calls: readonly Readonly<KernelV4Call>[];
+  if (callType === "00") {
+    if (executionData.length < 106) return fail("truncated Kernel execution");
+    calls = captureCalls(
+      [
+        {
+          target: executionData.slice(0, 42),
+          value: BigInt(`0x${executionData.slice(42, 106)}`).toString(10),
+          data: `0x${executionData.slice(106)}`,
+        },
+      ],
+      new WeakSet(),
+    );
+  } else if (callType === "01") {
+    const [batch] = decodeAbiParameters(
+      [
+        {
+          type: "tuple[]",
+          components: [
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "data", type: "bytes" },
+          ],
+        },
+      ],
+      executionData,
+    );
+    calls = captureCalls(
+      batch.map((call) => ({
+        target: call.to,
+        value: call.value.toString(10),
+        data: call.data,
+      })),
+      new WeakSet(),
+    );
+  } else {
+    return fail("unsupported Kernel call type");
+  }
+  const validityTimeRange =
+    `0x${mode.slice(14, 22)}` === VALIDITY_TIME_RANGE_MODE_SELECTOR
+      ? {
+          validAfter: BigInt(`0x${mode.slice(22, 34)}`).toString(10),
+          validUntil: BigInt(`0x${mode.slice(34, 46)}`).toString(10),
+        }
+      : undefined;
+  const canonical = encodeKernelV4Execution(
+    validityTimeRange ? { calls, validityTimeRange } : { calls },
+  );
+  // Reject unsupported mode bits, non-atomic try execution, noncanonical ABI,
+  // and trailing bytes; their semantics are not represented by these calls.
+  if (canonical !== data) return fail("unsupported Kernel execution encoding");
+  return calls;
 }
