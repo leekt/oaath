@@ -25,7 +25,7 @@ import {
   type KernelAccountDescriptor,
   type KernelReads,
 } from "./deployment/account.js";
-import { ECDSA_VALIDATOR, } from "./deployment/v33.js";
+import { ECDSA_VALIDATOR } from "./deployment/v33.js";
 import {
   encodeKernelV33NonceKey,
   kernelV33OperationSigningHash,
