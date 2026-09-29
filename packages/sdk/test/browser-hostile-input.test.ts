@@ -193,10 +193,32 @@ describe("hostile input at the client boundary", () => {
         chains: [
           {
             ...createChainFixture().capability,
-            staticPaymasterConfigurationHash: "0x01",
+            sponsorship: { kind: "erc7902-static", configurationHash: "0x01" },
           },
         ],
       },
+      // One sponsorship setting: no unknown kind, no mixed fields, no retired field.
+      {
+        chains: [
+          {
+            ...createChainFixture().capability,
+            sponsorship: { kind: "erc4337-paymaster", configurationHash: `0x${"11".repeat(32)}` },
+          },
+        ],
+      },
+      {
+        chains: [
+          {
+            ...createChainFixture().capability,
+            sponsorship: {
+              kind: "erc7902-static",
+              configurationHash: `0x${"11".repeat(32)}`,
+              url: "https://paymaster.test",
+            },
+          },
+        ],
+      },
+      { chains: [{ ...createChainFixture().capability, staticPaymasterConfigurationHash: null }] },
       { signing: { owner: signingProfiles().owner } },
       { signing: { owner: { kind: "ecdsa" }, session: signingProfiles().session } },
       { localKeyIds: [""] },

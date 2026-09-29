@@ -266,7 +266,14 @@ function serviceChainCapability(
     quote: port("quote"),
     usage: chain.usage ? port("usage") : null,
     paymasterService,
-    staticPaymasterConfigurationHash: chain.staticPaymasterConfigurationHash,
+    ...(chain.staticPaymasterConfigurationHash === null
+      ? {}
+      : {
+          sponsorship: Object.freeze({
+            kind: "erc7902-static" as const,
+            configurationHash: chain.staticPaymasterConfigurationHash,
+          }),
+        }),
   }) as Readonly<OaathChainCapability>;
 }
 

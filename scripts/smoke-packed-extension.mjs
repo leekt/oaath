@@ -284,7 +284,10 @@ try {
     feePayer:
       chain.capability.routes.find((entry) => entry.kind === "erc4337-handleops")?.feePayer ??
       null,
-    staticPaymasterConfigurationHash: chain.capability.staticPaymasterConfigurationHash,
+    staticPaymasterConfigurationHash:
+      chain.capability.sponsorship?.kind === "erc7902-static"
+        ? chain.capability.sponsorship.configurationHash
+        : null,
   };
 
   relay = createRelayHandler({

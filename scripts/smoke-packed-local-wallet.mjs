@@ -25,7 +25,7 @@ const chains = [{
   submission: { open: async ({ prepared }) => ({ send: async () => { await window.sendOperation(prepared); throw new Error("lost reply"); }, close: async () => {} }) },
   quote: async () => ({ nonceKey: "0", sequence: "0", gas: { callGasLimit: "100000", verificationGasLimit: "2000000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } }),
   usage: async ({ grantId, chainId }) => ({ version: "oaath.grant-policy-usage/v1", status: "complete", grantId, chainId, finalizedOperationCount: "0", through: { blockNumber: "1", blockHash: "0x" + "11".repeat(32), observedAt: now() } }),
-  paymasterService: null, staticPaymasterConfigurationHash: null,
+  paymasterService: null,
 }];
 const realm = createOAAth({ mode: "local", owner: wallet, account: address, chains });
 const calls = { chain: 143, calls: [{ target, data: "0x12345678", value: "0" }], ...(window.signerAuto ? { signer: "auto" } : {}) };
