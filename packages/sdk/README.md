@@ -89,8 +89,11 @@ const saved = await account.getOperation({ chain: 143, id: operation.id });
 await oaath.close();
 ```
 
-The default operation journal uses IndexedDB. Custom deployments may inject
-`stores: { operations }`; the client owns its close. An unresolved operation occupies
+The operation journal defaults to `stores: { kind: "indexeddb" }`. Tests and
+non-browser development choose `stores: { kind: "memory" }`, and any backend
+accepts a durable journal adapter, e.g.
+`stores: { kind: "memory", operations: postgresJournal }`; the client owns its
+close. An unresolved operation occupies
 one account/chain slot. Concurrent sends and sends after reload fail with a state
 conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
@@ -163,9 +166,16 @@ The pinned WebAuthn signer verifies through the Daimo P-256 verifier contract, n
 the RIP-7212 precompile, so approval fails closed with
 `oaath_client_capability_unsupported` before any prompt on a chain without it.
 
-Outside a browser, supply an explicit `origin` and durable `stores` through
-`OaathWalletOptions`. Wallet approvals fail if default IndexedDB is unavailable;
-it does not silently create an ephemeral session. The same client also exposes
+Outside a browser, supply an explicit `origin` and a `stores` setting. The
+default `{ kind: "indexeddb" }` fails with `oaath_client_store_unavailable`
+where IndexedDB is missing; it never silently creates an ephemeral session.
+`{ kind: "memory" }` runs without per-store wiring for tests and development,
+but a restart forgets the session, Grant and operation IDs: a forgotten
+operation is never resubmitted, and its calls must not be replayed blindly.
+Individual stores can be overridden on either backend, e.g.
+`{ kind: "memory", operations: postgresJournal }`, and
+`{ kind: "indexeddb", factory, name }` selects the IndexedDB factory and
+database. The same client also exposes
 `oaath.account(existingKernelAddress).owner(walletClient)` and account-level
 operation recovery. `close()` releases resources without revocation;
 `disconnect(grant)` revokes installed or unused approval onchain, signs out

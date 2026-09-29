@@ -18,7 +18,7 @@ function configuration(stores?: OaathStoreConfiguration) {
     account: `0x${"33".repeat(20)}` as const,
     chains: [createChainFixture().capability],
     origin: "https://consumer.example",
-    ...(stores ? { stores } : {}),
+    ...(stores ? { stores: { kind: "memory" as const, ...stores } } : {}),
   };
 }
 

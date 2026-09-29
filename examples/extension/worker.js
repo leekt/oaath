@@ -84,6 +84,7 @@ async function initializeRealm(origin, configured, previous) {
       approvals: { kind: "service", url: configured.url },
       origin,
       stores: {
+        kind: "indexeddb",
         grants: createIndexedDbGrantStoreAdapter(database),
         operations: createIndexedDbOperationStoreAdapter(database),
         walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),

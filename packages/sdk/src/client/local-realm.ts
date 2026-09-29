@@ -24,7 +24,6 @@ import type { KeyProfile } from "../kernel/types.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { GrantStore, type OperationStoreAdapter } from "../store.js";
 import { captureOaathBinding } from "./binding.js";
-import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import type { OaathChains } from "./chain-descriptors.js";
 import type { LocalPermissionAuthorization } from "./connection.js";
 import {
@@ -54,7 +53,8 @@ import {
   type OaathSession,
   unsupportedSessionCustody,
 } from "./session-credential.js";
-import { captureStoreConfiguration } from "./store-configuration.js";
+import { STORE_NAMES } from "./store-configuration.js";
+import { captureStores, type OaathStores, type OwnedStores, openStores } from "./stores.js";
 
 export type OaathApprovalWallet = EcdsaWalletClient & {
   readonly signTypedData: LocalPermissionSign;
@@ -80,8 +80,11 @@ export interface OaathWalletOptions {
   readonly account: Address;
   readonly approvals: Readonly<OaathWalletApprovals>;
   readonly session?: Readonly<OaathSession>;
-  /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
-  readonly stores?: Readonly<OaathStoreConfiguration>;
+  /**
+   * Defaults to `{ kind: "indexeddb" }`, which fails closed outside a browser.
+   * `{ kind: "memory" }` is for tests and non-browser development.
+   */
+  readonly stores?: OaathStores;
   /** Defaults to the actual browser origin; required outside a browser. */
   readonly origin?: string;
   readonly now?: () => number;
@@ -203,21 +206,23 @@ export function createLocalRealm(
       accountId: address,
     } as const,
   };
-  let stores = config.stores === undefined ? undefined : captureStoreConfiguration(config.stores);
-  let storeOwner: Readonly<OwnedDefaultStores> | undefined;
+  const storeSetting = captureStores(config.stores, STORE_NAMES, context);
+  let stores: Readonly<OaathStoreConfiguration> | undefined;
+  let storeOwner: Readonly<OwnedStores<(typeof STORE_NAMES)[number]>> | undefined;
   let openingStores: Promise<Readonly<OaathStoreConfiguration>> | undefined;
   async function storage() {
     if (stores) return stores;
-    if (typeof indexedDB === "undefined")
-      return clientFail(
-        "oaath_client_store_unavailable",
-        "local mode requires IndexedDB or explicit stores",
-      );
-    openingStores ??= defaultStores().then((owner) => {
-      storeOwner = owner;
-      stores = owner.stores;
-      return stores;
-    });
+    openingStores ??= openStores(storeSetting, STORE_NAMES).then(
+      (owner) => {
+        storeOwner = owner;
+        stores = owner.stores;
+        return stores;
+      },
+      (error) => {
+        openingStores = undefined;
+        throw error;
+      },
+    );
     return openingStores;
   }
   const operations: OperationStoreAdapter = {
@@ -227,7 +232,12 @@ export function createLocalRealm(
     compareAndSwap: async (input) => (await storage()).operations.compareAndSwap(input),
     close: async () => undefined,
   };
-  const ownerClient = createOwnerRealm({ chains, account: address, stores: { operations } });
+  // The shared journal is an override, so the owner realm opens no backend.
+  const ownerClient = createOwnerRealm({
+    chains,
+    account: address,
+    stores: { kind: "memory", operations },
+  });
   let inner: Readonly<Oaath> | undefined;
   let authority: ReturnType<typeof createLocalPermissionAuthority> | undefined;
   let composing: Promise<Readonly<Oaath>> | undefined;
@@ -341,7 +351,7 @@ export function createLocalRealm(
       const failures: unknown[] = [];
       for (const child of [ownerClient, inner])
         if (child) await child.close().catch((error) => failures.push(error));
-      for (const port of Object.values(stores ?? {})) {
+      for (const port of Object.values(stores ?? storeSetting.overrides)) {
         if (closedStores.has(port)) continue;
         await Promise.resolve()
           .then(() => port.close())

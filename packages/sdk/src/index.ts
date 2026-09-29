@@ -57,9 +57,11 @@ export type {
   OaathOwnerHandle,
   OaathOwnerKey,
   OaathOwnerOptions,
+  OaathOwnerStores,
 } from "./client/owner-realm.js";
 export type { OaathServiceApprovals, OaathServiceOptions } from "./client/service-realm.js";
 export type { OaathSession, OaathSessionCustody } from "./client/session-credential.js";
 export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";
+export type { OaathStoreBackend, OaathStores } from "./client/stores.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";

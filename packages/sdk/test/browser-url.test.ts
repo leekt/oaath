@@ -265,7 +265,7 @@ describe("URL-only golden path", () => {
       const oaath = createOAAth({
         origin: ORIGIN,
         now: clock.now,
-        stores: createMemoryStores(),
+        stores: { kind: "memory" },
         approvals: {
           kind: "service",
           url: ISSUER_URL,
@@ -651,6 +651,46 @@ describe("URL-only golden path", () => {
     expect(oaath.account).toBeUndefined();
     await expect(oaath.connect()).rejects.toMatchObject({ name: "OaathClientError" });
     expect(seen).toEqual(["http://localhost:8787/bootstrap"]);
+  });
+
+  it("fails closed without IndexedDB instead of falling back to memory", async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    Reflect.deleteProperty(globalThis, "indexedDB");
+    const clock = createClock();
+    const chain = createChainFixture();
+    const relay = createRelay(clock, {
+      bootstrap: {
+        resolve: async () => ({
+          application: { applicationId: "app-a", applicationName: "OAAth Example" },
+          context: workspaceContext,
+          account: accountProfile,
+          ownerValidator: VALIDATOR,
+          chainIds: [chain.capability.chainId],
+        }),
+      },
+      chains: [relayChainPort(chain)],
+    });
+    const oaath = createOAAth({
+      approvals: {
+        kind: "service",
+        url: ISSUER_URL,
+        fetch: (request: Request) => {
+          const headers = new Headers(request.headers);
+          headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+          return relay(new Request(request, { headers }));
+        },
+      },
+      origin: ORIGIN,
+      now: clock.now,
+    });
+    try {
+      await expect(oaath.connect()).rejects.toMatchObject({
+        code: "oaath_client_store_unavailable",
+      });
+    } finally {
+      await oaath.close();
+      if (previous !== undefined) Object.defineProperty(globalThis, "indexedDB", previous);
+    }
   });
 
   it("closes the default IndexedDB connection after URL disconnect", async () => {

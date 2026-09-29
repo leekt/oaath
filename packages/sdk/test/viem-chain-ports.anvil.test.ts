@@ -321,7 +321,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                       },
                     },
                   ],
-                  stores: stores(),
+                  stores: { kind: "indexeddb", factory },
                   origin: "https://local.example",
                   now: clock.now,
                 }),

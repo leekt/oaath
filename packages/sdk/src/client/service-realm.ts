@@ -32,12 +32,10 @@ import {
   type ServiceBootstrap,
 } from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import type { OaathStoreConfiguration } from "../create-oaath.js";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
 import { OaathRpcError } from "../viem/rpc.js";
-import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import type { OaathAuthorizationCapability } from "./connection.js";
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathChainSponsorship } from "./grant-handle.js";
@@ -58,6 +56,14 @@ import {
   type SuppliedSession,
   unsupportedSessionCustody,
 } from "./session-credential.js";
+import { type OaathStoreName, STORE_NAMES } from "./store-configuration.js";
+import {
+  type CapturedStores,
+  captureStores,
+  type OaathStores,
+  type OwnedStores,
+  openStores,
+} from "./stores.js";
 
 export const OAATH_DEFAULT_SERVICE_URL = "http://localhost:8787" as const;
 const POLL_INTERVAL_MS = 1_000;
@@ -85,8 +91,11 @@ export interface OaathServiceApprovals {
 export interface OaathServiceOptions {
   readonly approvals: Readonly<OaathServiceApprovals>;
   readonly session?: Readonly<OaathSession>;
-  /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
-  readonly stores?: Readonly<OaathStoreConfiguration>;
+  /**
+   * Defaults to `{ kind: "indexeddb" }`, which fails closed outside a browser.
+   * `{ kind: "memory" }` is for tests and non-browser development.
+   */
+  readonly stores?: OaathStores;
   /** Defaults to the actual browser origin; required outside a browser. */
   readonly origin?: string;
   readonly now?: () => number;
@@ -97,7 +106,7 @@ interface ServiceRealmInput {
   readonly fetch: ((request: Request) => Promise<Response>) | null;
   readonly origin: string | null;
   readonly authorization: unknown;
-  readonly stores: unknown;
+  readonly stores: Readonly<CapturedStores>;
   readonly now: (() => number) | null;
   readonly session: Readonly<SuppliedSession> | null;
   readonly custody: OaathSessionCustody | null;
@@ -175,7 +184,7 @@ function captureServiceRealmInput(value: unknown): Readonly<ServiceRealmInput> {
         : clientCapability<(request: Request) => Promise<Response>>(record.fetch, "service fetch"),
     origin: record.origin === undefined ? null : record.origin,
     authorization: record.authorization === undefined ? null : record.authorization,
-    stores: record.stores === undefined ? null : record.stores,
+    stores: captureStores(record.stores, STORE_NAMES),
     now: record.now === undefined ? null : clientCapability<() => number>(record.now, "clock"),
     ...(() => {
       const session = captureSession(record.session, new WeakSet());
@@ -621,7 +630,7 @@ export function createServiceRealm<Realm extends object>(
   const transport = serviceTransport(input);
   let inner: Realm | null = null;
   let composing: Promise<Realm> | null = null;
-  let defaultStoreOwner: Readonly<OwnedDefaultStores> | null = null;
+  let defaultStoreOwner: Readonly<OwnedStores<OaathStoreName>> | null = null;
   let closing: Promise<void> | null = null;
   let closeRequested = false;
   let closed = false;
@@ -691,11 +700,8 @@ export function createServiceRealm<Realm extends object>(
       });
       const selectedBootstrap = await bootstrap;
       requireDeclaredCustody(input, selectedBootstrap);
-      if (input.stores === null) defaultStoreOwner = await defaultStores();
-      const stores = (input.stores ?? defaultStoreOwner?.stores) as {
-        readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
-        readonly keys: Parameters<typeof loadServiceSession>[0]["stores"]["keys"];
-      };
+      defaultStoreOwner = await openStores(input.stores, STORE_NAMES);
+      const { stores } = defaultStoreOwner;
       // Continuity, never authority: a persisted session keeps the device
       // identity and the operator key stable across reloads so `resume()`
       // finds a Grant this realm can still sign for. Anything unreadable
