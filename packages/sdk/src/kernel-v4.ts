@@ -244,6 +244,13 @@ export type KernelV4AccountReadRequest =
       type: "kernel_account_implementation" | "kernel_v4_account_root";
       chainId: number;
       account: `0x${string}`;
+    }>
+  | Readonly<{
+      /** The raw P-256 root validator's stored public key for one account. */
+      type: "kernel_p256_owner";
+      chainId: number;
+      validator: `0x${string}`;
+      account: `0x${string}`;
     }>;
 
 export interface KernelV4AccountReadCapability {
@@ -399,6 +406,20 @@ const FACTORY_ABI = [
     stateMutability: "payable",
     inputs: [INSTALL_ARRAY_PARAMETER, { name: "nonce", type: "uint256" }],
     outputs: [{ name: "", type: "address" }],
+  },
+] as const;
+
+/** The pinned raw P-256 validator's public-key getter (leekt/P256Validator). */
+const P256_VALIDATOR_ABI = [
+  {
+    type: "function",
+    name: "publicKey",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [
+      { name: "x", type: "uint256" },
+      { name: "y", type: "uint256" },
+    ],
   },
 ] as const;
 
@@ -733,6 +754,23 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
         const result = await client.call({ to: request.factory, data: request.calldata });
         if (!result.data) return undefined;
         return decodeAbiParameters([{ type: "address" }] as const, result.data)[0].toLowerCase();
+      }
+      if (request.type === "kernel_p256_owner") {
+        const result = await client.call({
+          to: request.validator,
+          data: encodeFunctionData({
+            abi: P256_VALIDATOR_ABI,
+            functionName: "publicKey",
+            args: [request.account],
+          }),
+        });
+        if (!result.data) return undefined;
+        const parameters = [{ type: "uint256" }, { type: "uint256" }] as const;
+        const [x, y] = decodeAbiParameters(parameters, result.data);
+        // The key profile's public material is this exact encoding; noncanonical
+        // return data is contradictory evidence, not a key.
+        const encoded = encodeAbiParameters(parameters, [x, y]);
+        return encoded === result.data.toLowerCase() ? encoded : undefined;
       }
       if (request.type === "kernel_v4_account_root") {
         const result = await client.call({

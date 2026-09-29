@@ -55,6 +55,7 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedSignerModule,
+  pinnedValidatorModule,
 } from "./modules.js";
 import type {
   CreateKernelRuntimeInput,
@@ -325,7 +326,8 @@ export function createKernelRuntime(
    * Binds an existing account at its address. The account's own deployment is
    * detected and must be this runtime's, so a mismatch fails before any key is
    * asked to sign. Root authority is proven from the account's current root
-   * validation; only the reviewed ECDSA validator exposes its owner onchain.
+   * validation; only the reviewed ECDSA validator and the pinned raw P-256
+   * validator expose their owner onchain.
    */
   async function bindExistingAccount(address: unknown): Promise<Readonly<KernelAccountDescriptor>> {
     const descriptor = await bindKernelAccount({
@@ -360,8 +362,12 @@ export function createKernelRuntime(
       }
     } else {
       const rootValidator = (descriptor as { readonly rootValidator: `0x${string}` }).rootValidator;
+      // Only validators whose owner is readable onchain can prove root
+      // authority: the reviewed ECDSA validator and, on Kernel 0.4.0, the pinned
+      // raw P-256 validator. Any other root validator fails closed.
+      const p256 = !isV33 && authorityModule === pinnedValidatorModule("p256");
       if (
-        authorityModule !== ECDSA_VALIDATOR ||
+        (authorityModule !== ECDSA_VALIDATOR && !p256) ||
         rootValidator !== `0x01${authorityModule.slice(2)}`
       ) {
         return runtimeFail(
@@ -371,11 +377,20 @@ export function createKernelRuntime(
       }
       let owner: unknown;
       try {
-        owner = await (read as KernelReads["read"])({
-          type: "kernel_ecdsa_owner",
-          chainId: deployment.chainId,
-          account: descriptor.account,
-        });
+        owner = await (read as KernelReads["read"])(
+          p256
+            ? {
+                type: "kernel_p256_owner",
+                chainId: deployment.chainId,
+                validator: authorityModule,
+                account: descriptor.account,
+              }
+            : {
+                type: "kernel_ecdsa_owner",
+                chainId: deployment.chainId,
+                account: descriptor.account,
+              },
+        );
       } catch {
         return runtimeFail(
           "kernel_runtime_read_unavailable",
