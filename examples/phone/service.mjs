@@ -16,8 +16,8 @@ import {
 import {
   createKernelRuntime,
   KERNEL_V4_ENTRY_POINT_V07,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   ownerOperator,
   parseKernelAllChainApproval,
   prepareKernelPhonePermissionApproval,
@@ -165,7 +165,7 @@ export async function startPhoneService({
       );
     async function bindPhoneAccount(account) {
       const runtime = createKernelRuntime({
-        deployment: kernelV4Deployment(primary.capability.chainId),
+        deployment: kernelDeployment({ chainId: primary.capability.chainId }),
         operator: ownerOperator({
           key: kernelKey({
             credential: account.ownerCredential,

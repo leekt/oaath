@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { encodeHandleOps } from "@oaath/sdk/advanced";
-import { createKernelV4Reads, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
+import { createKernelReads, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
 import {
   concat,
   createPublicClient,
@@ -138,7 +138,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
  *   submitter: import("viem/accounts").PrivateKeyAccount,
  *   wallet: import("viem").WalletClient,
  *   validator: import("viem").Address,
- *   reads: import("@oaath/sdk/kernel").KernelV4AccountReadCapability,
+ *   reads: import("@oaath/sdk/kernel").KernelReads,
  *   fund: (address: import("viem").Address, value: bigint) => Promise<void>,
  *   sendSigned: (prepared: import("@oaath/sdk/kernel").PreparedUserOperation, signature: import("viem").Hex, onTransactionHash?: (hash: import("viem").Hex) => void) => Promise<{ status: string, transactionHash: import("viem").Hex, userOperationHash: import("viem").Hex, evidence: object }>
  * }>}
@@ -199,7 +199,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
     submitter,
     wallet,
     validator,
-    reads: createKernelV4Reads(chain.client),
+    reads: createKernelReads(chain.client),
     fund: async (address, value) => setBalance(address, value),
     /**
      * Submits one prepared operation and the signature produced for it through

@@ -12,11 +12,10 @@ import {
   approveKernelV33Permission,
   createKernelRuntime,
   kernelAllChainCapabilityHash,
+  kernelDeployment,
   kernelKey,
   kernelPermissionInstallNonce,
-  kernelV4Deployment,
   kernelV33CapabilityHash,
-  kernelV33Deployment,
   kernelV33PermissionInstallNonce,
   ownerOperator,
   sessionOperator,
@@ -231,7 +230,7 @@ export async function createLocalAnvilFixture(
       const requestHash = hashPermissionRequest({ ...scope, requestId });
       const installApproval = await (async () => {
         if (first.existingAccount !== null) {
-          const deployment = kernelV33Deployment(firstChainId);
+          const deployment = kernelDeployment({ chainId: firstChainId, kernelVersion: "0.3.3" });
           const runtime = createKernelRuntime({
             deployment,
             operator: sessionOperator({
@@ -253,7 +252,7 @@ export async function createLocalAnvilFixture(
             nonce,
           });
         }
-        const deployment = kernelV4Deployment(firstChainId);
+        const deployment = kernelDeployment({ chainId: firstChainId });
         const ownerRuntime = createKernelRuntime({
           deployment,
           operator: ownerOperator({ key: ownerKey }),

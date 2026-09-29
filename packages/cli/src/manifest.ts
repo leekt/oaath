@@ -5,7 +5,7 @@ import {
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  kernelV4Deployment,
+  kernelDeployment,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
@@ -59,7 +59,8 @@ function deployable(
 }
 
 export function components(chainId: number): readonly Component[] {
-  const implementationHash = kernelV4Deployment(chainId).implementationDeployment?.runtimeCodeHash;
+  const implementationHash = kernelDeployment({ chainId }).implementationDeployment
+    ?.runtimeCodeHash;
   return [
     {
       id: "entryPoint",

@@ -1,5 +1,5 @@
 /** Deploy the real v3.3 account at the same address for each local fixture chain. */
-import { KERNEL_V4_CREATE2_DEPLOYER, kernelV33Deployment } from "@oaath/sdk/kernel";
+import { KERNEL_V4_CREATE2_DEPLOYER, kernelDeployment } from "@oaath/sdk/kernel";
 import { encodeFunctionData, type Hex, parseAbi, zeroAddress, zeroHash } from "viem";
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import type { deployKernelStack, startAnvil } from "./anvil-process.mjs";
@@ -9,7 +9,7 @@ export async function deployLocalV33Account(
   stack: Awaited<ReturnType<typeof deployKernelStack>>,
   owner: Hex,
 ): Promise<Hex> {
-  const deployment = kernelV33Deployment(chain.chainId);
+  const deployment = kernelDeployment({ chainId: chain.chainId, kernelVersion: "0.3.3" });
   for (const module of [v33.kernel, v33.factory, v33.ecdsaValidator]) {
     const hash = await stack.wallet.sendTransaction({
       account: stack.submitter,

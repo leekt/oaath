@@ -39,7 +39,7 @@ available through the Kernel API; the default permission-request schema still
 exposes its existing lifetime operation bound.
 
 Existing Kernel `0.3.3` accounts also support custom passkey sessions through
-`createKernelRuntime({ deployment: kernelV33Deployment(chainId), reads,
+`createKernelRuntime({ deployment: kernelAccountDeployment(account), reads,
 operator: sessionOperator({ key: kernelKey(passkey), policies }) })` from
 `@oaath/sdk/kernel`. The caller supplies the selected credential and authenticator
 callback; the WebAuthn key checks its challenge, credential public key, RP ID, exact
@@ -228,13 +228,13 @@ The lower-level runtime also supports ECDSA sessions on existing v3.3 accounts:
 
 ```ts
 import {
-  approveKernelV33Permission, createKernelRuntime, createKernelV33Reads,
-  kernelKey, kernelV33Deployment,
+  approveKernelV33Permission, createKernelReads, createKernelRuntime,
+  kernelDeployment, kernelKey,
   kernelV33PermissionInstallNonce, materializeKernelV33Permission, sessionOperator,
 } from "@oaath/sdk/kernel";
 
-const deployment = kernelV33Deployment(chainId);
-const reads = createKernelV33Reads(publicClient);
+const deployment = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
+const reads = createKernelReads(publicClient);
 const runtime = createKernelRuntime({
   deployment, reads,
   operator: sessionOperator({

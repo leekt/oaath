@@ -19,7 +19,7 @@ import {
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  kernelV4Deployment,
+  kernelDeployment,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "@oaath/sdk/kernel";
@@ -40,7 +40,7 @@ const word = (value) => value.toString(16).padStart(64, "0");
 const VALIDATOR = `0x${"22".repeat(20)}`;
 
 export function createFakeChain(chainId) {
-  const deployment = kernelV4Deployment(chainId);
+  const deployment = kernelDeployment({ chainId });
   /** Every snapshot the transport was handed, newest last. */
   const sends = [];
   // One block per submission, so removal evidence always names a later block

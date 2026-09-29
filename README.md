@@ -251,7 +251,7 @@ choice and its wider authority before signing.
 The v4 runtime is open over chains: every address in the
 deployment profile is the same CREATE2 canonical address on every chain, so
 any EVM chain carrying the canonical Kernel v4 deployment resolves, and
-`bindKernelV4Account` proves the actual capability from read evidence before
+`bindKernelAccount` proves the actual capability from read evidence before
 any account depends on it — EntryPoint and factory runtime code hashes are
 pinned globally, and the implementation is proven by its per-chain pinned
 runtime hash where one has been reviewed (Arbitrum Sepolia, Ethereum Sepolia,
@@ -365,7 +365,7 @@ delivery and an execution worker, while the client observes the resulting effect
 Chains outside this snapshot are not covered by its revocation status.
 
 Account descriptors are process-local evidence handles. After a process reload,
-call `bindKernelV4Account` again before preparing another operation; serialized
+call `bindKernelAccount` again before preparing another operation; serialized
 or copied descriptors are deliberately rejected. A descriptor also freezes the
 account state observed at bind time: after a counterfactual account's first
 operation deploys it, rebind before preparing the next operation, or EntryPoint
@@ -374,8 +374,8 @@ rejects the stale factory evidence (`AA10 sender already constructed`).
 Gas values in the low-level Kernel helpers are caller-supplied decimal strings;
 bring them from your own estimation source. The experimental URL-mode ERC-7677
 path makes one post-stub estimate through the deployment's registered bundler
-port. `createKernelV4Reads` adapts any viem-style public client into the account
-read capability, and `asViemUserOperation` maps a prepared operation into viem's
+port. `createKernelReads` adapts any viem-style public client into the account
+read capability for every supported deployment, and `asViemUserOperation` maps a prepared operation into viem's
 shape for signing and submission.
 
 ## Examples

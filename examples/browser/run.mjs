@@ -30,8 +30,8 @@ import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
   kernelAllChainCapabilityHash,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
@@ -141,7 +141,7 @@ const authorization = {
     // decision's capabilityHash binds exactly this capability, and the first
     // covered execution on any chain spends it.
     const ownerKey = kernelKey({ account: ownerAccount, validator: chain.validator });
-    const deployment = kernelV4Deployment(CHAIN_ID);
+    const deployment = kernelDeployment({ chainId: CHAIN_ID });
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({ key: ownerKey }),
