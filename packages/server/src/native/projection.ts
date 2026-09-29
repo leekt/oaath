@@ -216,6 +216,10 @@ export async function projectPermissionConsent(
 ): Promise<OwnerPhonePermissionScopeProjection> {
   if (request.logicalAccount.kernelVersion !== "0.4.0")
     return relayFailure("relay_request_invalid", "phone consent requires a Kernel v4 account");
+  // The native projection has no window field yet; showing the count alone
+  // would present a refilling limit as a lifetime cap.
+  if (request.policy.perChainOperationLimit.intervalSeconds !== null)
+    return relayFailure("relay_request_invalid", "phone consent cannot show a windowed limit");
   return Object.freeze({
     kind: "permission-request",
     decision: "approve-or-reject",
@@ -262,7 +266,7 @@ export async function projectPermissionConsent(
     expiresAt: request.expiresAt,
     policyValidAfter: request.policy.validAfter,
     policyValidUntil: request.policy.validUntil,
-    perChainOperationLimit: request.policy.perChainOperationLimit,
+    perChainOperationLimit: request.policy.perChainOperationLimit.count,
   });
 }
 

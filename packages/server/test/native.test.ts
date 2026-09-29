@@ -281,6 +281,17 @@ describe("experimental owner-phone projection", () => {
     expect((await project(fixed)).scope).toMatchObject({ kind: "permission-request", context });
   });
 
+  it("refuses to project a windowed limit the phone cannot yet display", async () => {
+    const scope = JSON.parse(PERMISSION_SCOPE) as { policy: Record<string, unknown> };
+    const fixed = await fixture(
+      JSON.stringify({
+        ...scope,
+        policy: { ...scope.policy, perChainOperationLimit: { count: 10, intervalSeconds: 60 } },
+      }),
+    );
+    await expect(project(fixed)).rejects.toMatchObject({ code: "relay_request_invalid" });
+  });
+
   it("projects remote session custody as an approvable consent fact", async () => {
     // The custody model rides the same request hash the decision commits to,
     // so displaying it here is what makes approving it meaningful.

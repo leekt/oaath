@@ -112,6 +112,11 @@ await operation.wait();
 await oaath.close();
 ```
 
+`perChainOperationLimit: 10` is a lifetime cap on each chain. Pass
+`{ count: 10, intervalSeconds: 86_400 }` for at most ten operations per chain per
+day; the pinned rate-limit policy refills the quota once per fixed window, and a
+validated operation uses a slot even when its execution reverts.
+
 The session key is encrypted in IndexedDB before consent. One wallet EIP-712
 approval covers the exact permission on all configured chains. The optional
 `onApproval` callback displays the decoded policy before the wallet prompt and

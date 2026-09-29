@@ -33,7 +33,7 @@ const operatorAddress = `0x${"44".repeat(20)}` as const;
 const capabilityHash = `0x${"55".repeat(32)}` as const;
 
 const policy: GrantPolicy = {
-  version: "oaath.grant-policy/v1",
+  version: "oaath.grant-policy/v2",
   calls: [
     {
       target,
@@ -44,7 +44,7 @@ const policy: GrantPolicy = {
   ],
   validAfter: 100,
   validUntil: 190,
-  perChainOperationLimit: 10,
+  perChainOperationLimit: { count: 10, intervalSeconds: null },
 };
 
 const basePolicyCall = policy.calls[0];
@@ -203,7 +203,10 @@ function substituteRequest(kind: RequestSubstitution, seed: number): PermissionR
   if (kind === "policy") {
     return {
       ...clone(request),
-      policy: { ...clone(policy), perChainOperationLimit: seed + 11 },
+      policy: {
+        ...clone(policy),
+        perChainOperationLimit: { count: seed + 11, intervalSeconds: null },
+      },
     };
   }
   if (kind === "request_id") return { ...clone(request), requestId: identifier };
@@ -336,7 +339,7 @@ describe("PermissionRequest current codec", () => {
     expect(hashPermissionRequest(clone(request))).toBe(hashPermissionRequest(request));
     expect(encodePermissionRequest(request)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashPermissionRequest(request)).toBe(
-      "0xcbe30e7120e91375f6095a775f7d1d3a82d6adc9adaff71223cf9dbca5decb13",
+      "0x080f565ce3e31a112be05ce03f36c5ef8979ff6036d62d7a7ff62ccb95c68655",
     );
     expect(
       hashPermissionRequest({ ...clone(request), requestId: "permission-request-2" }),
@@ -377,7 +380,10 @@ describe("PermissionRequest current codec", () => {
           address: `0x${"77".repeat(20)}`,
         },
       },
-      { ...clone(request), policy: { ...clone(policy), perChainOperationLimit: 9 } },
+      {
+        ...clone(request),
+        policy: { ...clone(policy), perChainOperationLimit: { count: 9, intervalSeconds: null } },
+      },
       { ...clone(request), requestedAt: 101 },
       { ...clone(request), expiresAt: 201 },
     ];
@@ -538,17 +544,22 @@ describe("PermissionDecision current codec", () => {
       expect(hashPermissionDecision(clone(parsed))).toBe(hashPermissionDecision(parsed));
     }
     expect(hashPermissionDecision(approve())).toBe(
-      "0x8dda86704747d99adb52d066871feb0f5be2ac6a69c2d341d272ff7008518dd8",
+      "0x538e0b265403442eb091cbcd3cac2377b9bf11491a3c3bbbe13747db5ad93fd8",
     );
     expect(hashPermissionDecision(reject())).toBe(
-      "0x2662f67eb42c8433b88b78d6cf12ab5c59aa38770f26bdd763e061c8796869c1",
+      "0x8dc19bd5cf3973ed8a0e1847b20726fcd3eaf2a2c84023ca374a545e1a3b819e",
     );
     expect(hashPermissionDecision(approve({ capabilityHash: `0x${"66".repeat(32)}` }))).not.toBe(
       hashPermissionDecision(approve()),
     );
     expect(
       hashPermissionDecision(
-        approve({ approvedPolicy: { ...clone(policy), perChainOperationLimit: 9 } }),
+        approve({
+          approvedPolicy: {
+            ...clone(policy),
+            perChainOperationLimit: { count: 9, intervalSeconds: null },
+          },
+        }),
       ),
     ).not.toBe(hashPermissionDecision(approve()));
   });
@@ -611,7 +622,7 @@ describe("permission request/decision binding", () => {
       ],
       validAfter: 110,
       validUntil: 180,
-      perChainOperationLimit: 5,
+      perChainOperationLimit: { count: 5, intervalSeconds: null },
     };
     const decision = approve({ approvedPolicy });
     const result = applyPermissionDecision(applyInput(decision));
@@ -676,7 +687,12 @@ describe("permission request/decision binding", () => {
     const approvalConflicts: PermissionDecision[] = [
       approve({ decidedAt: 121 }),
       approve({ capabilityHash: `0x${"66".repeat(32)}` }),
-      approve({ approvedPolicy: { ...clone(policy), perChainOperationLimit: 9 } }),
+      approve({
+        approvedPolicy: {
+          ...clone(policy),
+          perChainOperationLimit: { count: 9, intervalSeconds: null },
+        },
+      }),
       reject(),
     ];
     for (const decision of approvalConflicts) {
@@ -751,7 +767,10 @@ describe("permission request/decision binding", () => {
           address: ownerAddress,
         },
       },
-      { ...clone(request), policy: { ...clone(policy), perChainOperationLimit: 9 } },
+      {
+        ...clone(request),
+        policy: { ...clone(policy), perChainOperationLimit: { count: 9, intervalSeconds: null } },
+      },
       { ...clone(request), requestedAt: 101 },
       { ...clone(request), expiresAt: 201 },
     ];
@@ -765,7 +784,7 @@ describe("permission request/decision binding", () => {
 
   it("rejects widening, stale, expired, and future first decisions", () => {
     const widenings: GrantPolicy[] = [
-      { ...clone(policy), perChainOperationLimit: 11 },
+      { ...clone(policy), perChainOperationLimit: { count: 11, intervalSeconds: null } },
       { ...clone(policy), validAfter: 99 },
       { ...clone(policy), validUntil: 191 },
       { ...clone(policy), calls: [{ ...clone(basePolicyCall), valueLimit: "101" }] },
@@ -833,7 +852,7 @@ describe("permission protocol properties", () => {
               ...clone(policy),
               validAfter: requestedAt,
               validUntil: requestedAt + lifetime - 1,
-              perChainOperationLimit: limit,
+              perChainOperationLimit: { count: limit, intervalSeconds: null },
             },
           };
           const decision: ApprovePermissionDecision = {
@@ -939,7 +958,7 @@ describe("permission protocol properties", () => {
                 ? approve({
                     approvedPolicy: {
                       ...clone(policy),
-                      perChainOperationLimit: (seed % 9) + 1,
+                      perChainOperationLimit: { count: (seed % 9) + 1, intervalSeconds: null },
                     },
                   })
                 : kind === "time"

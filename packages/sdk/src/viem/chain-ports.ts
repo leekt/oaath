@@ -95,6 +95,11 @@ const RATE_ABI = parseAbi([
   "function status(bytes32 id, address account) view returns (uint8)",
   "function rateLimitConfigs(bytes32 id, address account) view returns (uint48 interval, uint48 count, uint48 startAt)",
 ]);
+const WINDOW_RATE_ABI = parseAbi([
+  "function status(bytes32 id, address account) view returns (uint8)",
+  "function rateLimitConfigs(bytes32 id, address account) view returns (uint48 interval, uint48 initialCount)",
+  "function rateLimitState(bytes32 id, address account) view returns (uint48 storedCount, uint48 resetDate)",
+]);
 const MODULE_ABI = parseAbi([
   "function isModuleInstalled(uint256 moduleType, address module, bytes context) view returns (bool)",
 ]);
@@ -365,44 +370,56 @@ async function usage(publicRpc: RpcRequest, request: Readonly<OaathUsageRequest>
   const blockHash = hex(finalized.hash);
   if (blockHash.length !== 66) return evidence();
   const blockNumber = quantity(finalized.number);
+  const finalizedAt = quantity(finalized.timestamp);
   // EIP-1898 binds all reads to this exact canonical finalized block, even on failover.
   const at = { blockHash, requireCanonical: true };
-  const module = resolvePolicyModule("operation-limit");
+  const windowed = request.intervalSeconds !== null;
+  const module = resolvePolicyModule(windowed ? "rate-limit" : "operation-limit");
   if (hex(await publicRpc("eth_getCode", [module, at])) === "0x") return evidence();
   const id = pad(hex(request.permissionId), { size: 32, dir: "right" });
   const account = address(request.account);
   const maximum = BigInt(request.maximumOperations);
   if (maximum < 1n || maximum >= 1n << 48n) return evidence();
-  const status = word(
-    await publicRpc("eth_call", [
-      {
-        to: module,
-        data: encodeFunctionData({ abi: RATE_ABI, functionName: "status", args: [id, account] }),
-      },
-      at,
-    ]),
-  );
-  let used = 0n;
-  if (status === 1n) {
-    const data = hex(
+  const interval = windowed ? BigInt(request.intervalSeconds) : 0n;
+  if (windowed && (interval < 1n || interval >= 1n << 48n)) return evidence();
+  const read = async (functionName: "status" | "rateLimitConfigs" | "rateLimitState") =>
+    hex(
       await publicRpc("eth_call", [
         {
           to: module,
           data: encodeFunctionData({
-            abi: RATE_ABI,
-            functionName: "rateLimitConfigs",
+            abi: windowed ? WINDOW_RATE_ABI : RATE_ABI,
+            functionName,
             args: [id, account],
-          }),
+          } as Parameters<typeof encodeFunctionData>[0]),
         },
         at,
       ]),
     );
-    const [interval, remaining, startAt] = decodeAbiParameters(
+  const status = word(await read("status"));
+  let used = 0n;
+  if (status === 1n && !windowed) {
+    const [configured, remaining, startAt] = decodeAbiParameters(
       [{ type: "uint48" }, { type: "uint48" }, { type: "uint48" }],
-      data,
+      await read("rateLimitConfigs"),
     );
-    if (interval !== 0 || startAt !== 0 || BigInt(remaining) > maximum) return evidence();
+    if (configured !== 0 || startAt !== 0 || BigInt(remaining) > maximum) return evidence();
     used = maximum - BigInt(remaining);
+  } else if (status === 1n) {
+    const [configured, initialCount] = decodeAbiParameters(
+      [{ type: "uint48" }, { type: "uint48" }],
+      await read("rateLimitConfigs"),
+    );
+    const [remaining, resetDate] = decodeAbiParameters(
+      [{ type: "uint48" }, { type: "uint48" }],
+      await read("rateLimitState"),
+    );
+    if (BigInt(configured) !== interval || BigInt(initialCount) !== maximum) return evidence();
+    if (BigInt(remaining) > maximum) return evidence();
+    // The next validation refills the quota only once chain time reaches the
+    // window end. Finalized time never runs ahead of the head, so reporting a
+    // reset from it is never more permissive than the contract.
+    used = finalizedAt >= BigInt(resetDate) ? 0n : maximum - BigInt(remaining);
   } else if (status !== 0n) return evidence();
   return Object.freeze({
     version: "oaath.grant-policy-usage/v1",

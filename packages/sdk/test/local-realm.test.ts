@@ -232,7 +232,7 @@ describe("local wallet realm", () => {
     expect(onApproval).toHaveBeenCalledOnce();
     const review = onApproval.mock.calls[0];
     if (!review) throw new Error("missing review");
-    expect(review[0].policy.perChainOperationLimit).toBe(10);
+    expect(review[0].policy.perChainOperationLimit).toEqual({ count: 10, intervalSeconds: null });
     expect(hashTypedData(review[0].typedData)).toBe(
       hashTypedData(owner.signTypedData.mock.calls[0]![0]),
     );

@@ -23,7 +23,7 @@ const secondWord = `0x${"44".repeat(32)}` as const;
 const fillerWord = `0x${"55".repeat(32)}` as const;
 
 const policy: GrantPolicy = {
-  version: "oaath.grant-policy/v1",
+  version: "oaath.grant-policy/v2",
   calls: [
     {
       target: firstTarget,
@@ -43,7 +43,7 @@ const policy: GrantPolicy = {
   ],
   validAfter: 100,
   validUntil: 200,
-  perChainOperationLimit: 2,
+  perChainOperationLimit: { count: 2, intervalSeconds: null },
 };
 
 function callAt(value: GrantPolicy, index: number) {
@@ -111,7 +111,7 @@ function expectPolicyError(action: () => unknown, code: OaathGrantPolicyError["c
 
 describe("canonical Grant policy", () => {
   it("round-trips one immutable current policy with a stable domain-separated encoding", () => {
-    expect(OAATH_GRANT_POLICY_VERSION).toBe("oaath.grant-policy/v1");
+    expect(OAATH_GRANT_POLICY_VERSION).toBe("oaath.grant-policy/v2");
     expect(OAATH_GRANT_POLICY_HASH_DOMAIN).toBe("@oaath/protocol:grant-policy");
     const mutable = clone(policy);
     const parsed = parseGrantPolicy(mutable);
@@ -127,7 +127,7 @@ describe("canonical Grant policy", () => {
     expect(hashGrantPolicy(clone(parsed))).toBe(hashGrantPolicy(parsed));
     expect(encodeGrantPolicy(parsed)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashGrantPolicy(parsed)).toBe(
-      "0xd6cb7a93913679feb6451b65a20d18b1e9a9c0c16acbc466e6a04dc29b6459ce",
+      "0x5aaba009970b9697efc0c96051c259637c9820bab581821eb1f9b581b05ed2f7",
     );
 
     const indefinite = { ...clone(policy), validUntil: null };
@@ -177,8 +177,14 @@ describe("canonical Grant policy", () => {
       { ...clone(policy), validUntil: 0 },
       { ...clone(policy), validUntil: 99 },
       { ...clone(policy), validUntil: undefined },
-      { ...clone(policy), perChainOperationLimit: 0 },
-      { ...clone(policy), perChainOperationLimit: 2 ** 48 },
+      { ...clone(policy), perChainOperationLimit: { count: 0, intervalSeconds: null } },
+      { ...clone(policy), perChainOperationLimit: { count: 2 ** 48, intervalSeconds: null } },
+      { ...clone(policy), perChainOperationLimit: 2 },
+      { ...clone(policy), perChainOperationLimit: { count: 2 } },
+      { ...clone(policy), perChainOperationLimit: { count: 2, intervalSeconds: 0 } },
+      { ...clone(policy), perChainOperationLimit: { count: 2, intervalSeconds: 2 ** 48 } },
+      { ...clone(policy), perChainOperationLimit: { count: 2, intervalSeconds: 1.5 } },
+      { ...clone(policy), perChainOperationLimit: { count: 2, intervalSeconds: null, extra: 1 } },
       {
         ...clone(policy),
         calls: [{ ...clone(firstPolicyCall), target: firstTarget.toUpperCase() }],
@@ -300,7 +306,7 @@ describe("Grant policy attenuation", () => {
       ],
       validAfter: 110,
       validUntil: 190,
-      perChainOperationLimit: 1,
+      perChainOperationLimit: { count: 1, intervalSeconds: null },
     };
     expect(isGrantPolicyAttenuation(policy, policy)).toBe(true);
     expect(isGrantPolicyAttenuation(policy, approved)).toBe(true);
@@ -312,7 +318,8 @@ describe("Grant policy attenuation", () => {
       { ...clone(policy), validAfter: 99 },
       { ...clone(policy), validUntil: 201 },
       { ...clone(policy), validUntil: null },
-      { ...clone(policy), perChainOperationLimit: 3 },
+      { ...clone(policy), perChainOperationLimit: { count: 3, intervalSeconds: null } },
+      { ...clone(policy), perChainOperationLimit: { count: 2, intervalSeconds: 60 } },
       {
         ...clone(policy),
         calls: [{ ...first, valueLimit: "101" }, clone(secondPolicyCall)],
@@ -348,6 +355,29 @@ describe("Grant policy attenuation", () => {
     for (const approved of widenings) {
       expect(isGrantPolicyAttenuation(policy, approved)).toBe(false);
     }
+  });
+
+  it("binds a windowed operation limit and narrows only its count", () => {
+    const windowed = (count: number, intervalSeconds: number | null): GrantPolicy => ({
+      ...clone(policy),
+      perChainOperationLimit: { count, intervalSeconds },
+    });
+    const requested = windowed(2, 60);
+    const parsed = parseGrantPolicy(clone(requested));
+    expect(parsed).toEqual(requested);
+    expect(Object.isFrozen(parsed.perChainOperationLimit)).toBe(true);
+    // The window is part of the hashed policy; a lifetime cap never collides with it.
+    expect(hashGrantPolicy(requested)).not.toBe(hashGrantPolicy(windowed(2, null)));
+    expect(hashGrantPolicy(requested)).not.toBe(hashGrantPolicy(windowed(2, 61)));
+
+    expect(isGrantPolicyAttenuation(requested, requested)).toBe(true);
+    expect(isGrantPolicyAttenuation(requested, windowed(1, 60))).toBe(true);
+    expect(isGrantPolicyAttenuation(requested, windowed(3, 60))).toBe(false);
+    // A longer window is rejected as the issue requires, and a shorter one refills sooner.
+    expect(isGrantPolicyAttenuation(requested, windowed(2, 120))).toBe(false);
+    expect(isGrantPolicyAttenuation(requested, windowed(2, 30))).toBe(false);
+    expect(isGrantPolicyAttenuation(requested, windowed(2, null))).toBe(false);
+    expect(isGrantPolicyAttenuation(windowed(2, null), requested)).toBe(false);
   });
 
   it("rejects hostile attenuation inputs under the attenuation boundary code", () => {
@@ -576,7 +606,7 @@ describe("Grant policy properties", () => {
             ],
             validAfter: start,
             validUntil: start + duration,
-            perChainOperationLimit: limit,
+            perChainOperationLimit: { count: limit, intervalSeconds: null },
           };
           const restored = parseGrantPolicy(clone(generated));
           expect(restored).toEqual(generated);
@@ -608,7 +638,7 @@ describe("Grant policy properties", () => {
             ],
             validAfter: start,
             validUntil: start + duration,
-            perChainOperationLimit: requestedLimit,
+            perChainOperationLimit: { count: requestedLimit, intervalSeconds: null },
           };
           const approved: GrantPolicy = {
             ...clone(requested),
@@ -624,13 +654,16 @@ describe("Grant policy properties", () => {
             ],
             validAfter: start + Math.floor(duration / 2),
             validUntil: start + duration,
-            perChainOperationLimit: Math.max(1, Math.floor(requestedLimit / 2)),
+            perChainOperationLimit: {
+              count: Math.max(1, Math.floor(requestedLimit / 2)),
+              intervalSeconds: null,
+            },
           };
           expect(isGrantPolicyAttenuation(requested, approved)).toBe(true);
           expect(
             isGrantPolicyAttenuation(approved, {
               ...clone(approved),
-              perChainOperationLimit: requestedLimit + 1,
+              perChainOperationLimit: { count: requestedLimit + 1, intervalSeconds: null },
             }),
           ).toBe(false);
         },

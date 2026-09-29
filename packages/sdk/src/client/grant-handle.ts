@@ -367,6 +367,12 @@ export interface OaathUsageRequest {
   readonly account: `0x${string}`;
   readonly permissionId: `0x${string}`;
   readonly maximumOperations: string;
+  /**
+   * Positive decimal window length for a limit that refills per interval, or
+   * null for a lifetime cap. A windowed count covers only the window the next
+   * validation uses; report a reset only once finalized chain time reaches its end.
+   */
+  readonly intervalSeconds: string | null;
 }
 
 /**
@@ -478,7 +484,7 @@ export type OaathCallsReview = OaathCallsReviewBase &
         enforcement: Readonly<{ calls: "onchain"; expiry: "onchain"; operationCount: "onchain" }>;
         validAfter: number;
         validUntil: number;
-        perChainOperationLimit: number;
+        perChainOperationLimit: GrantPolicy["perChainOperationLimit"];
       }>
     | Readonly<{
         signer: "owner";
@@ -1230,7 +1236,9 @@ export function createGrantHandle(
             grantId: grant.identity.grantId,
             chainId,
             ...identity,
-            maximumOperations: input.approvedPolicy.perChainOperationLimit.toString(10),
+            maximumOperations: input.approvedPolicy.perChainOperationLimit.count.toString(10),
+            intervalSeconds:
+              input.approvedPolicy.perChainOperationLimit.intervalSeconds?.toString(10) ?? null,
           }),
         );
       } catch {

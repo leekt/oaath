@@ -78,6 +78,7 @@ export type {
   GrantPolicyCoverageInput,
   GrantPolicyCoverageResult,
   GrantPolicyErrorCode,
+  GrantPolicyOperationLimit,
   GrantPolicyUsageCheckpoint,
   GrantPolicyUsageEvidence,
   UnavailableGrantPolicyUsageEvidence,

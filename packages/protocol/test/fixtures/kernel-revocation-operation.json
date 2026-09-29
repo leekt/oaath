@@ -151,7 +151,7 @@
     },
     "sessionSigner": null,
     "policy": {
-      "version": "oaath.grant-policy/v1",
+      "version": "oaath.grant-policy/v2",
       "calls": [
         {
           "target": "0x4444444444444444444444444444444444444444",
@@ -162,7 +162,7 @@
       ],
       "validAfter": 100,
       "validUntil": 190,
-      "perChainOperationLimit": 10
+      "perChainOperationLimit": { "count": 10, "intervalSeconds": null }
     },
     "requestedAt": 100,
     "expiresAt": 200

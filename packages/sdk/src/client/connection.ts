@@ -82,6 +82,8 @@ import {
 
 const MAX_PERMISSIONS = 16;
 const MAX_EXPIRES_IN = 86_400;
+const MAX_OPERATION_COUNT = 2 ** 32 - 1;
+const MAX_UINT48 = 2 ** 48 - 1;
 const VERIFIER_BYTES = 32;
 
 function sameSessionSigner(
@@ -149,7 +151,16 @@ export interface OaathRequestPermissionInput {
   readonly permissions: readonly Readonly<OaathPermissionInput>[];
   /** Seconds of Grant lifetime from now. */
   readonly expiresIn: number;
-  readonly perChainOperationLimit: number;
+  /**
+   * Operations each chain may validate: a bare count is a lifetime cap, and
+   * `{ count, intervalSeconds }` refills `count` once per fixed window.
+   */
+  readonly perChainOperationLimit:
+    | number
+    | Readonly<{
+        count: number;
+        intervalSeconds: number;
+      }>;
 }
 
 export interface OaathConnection {
@@ -221,6 +232,32 @@ function safeCount(value: unknown, label: string, maximum: number): number {
   return value;
 }
 
+function operationLimitFromInput(
+  value: unknown,
+  context: CaptureContext,
+): GrantPolicy["perChainOperationLimit"] {
+  if (typeof value === "number") {
+    return Object.freeze({
+      count: safeCount(value, "perChainOperationLimit", MAX_OPERATION_COUNT),
+      intervalSeconds: null,
+    });
+  }
+  const record = exactClientRecord(
+    value,
+    ["count", "intervalSeconds"],
+    "perChainOperationLimit",
+    context,
+  );
+  return Object.freeze({
+    count: safeCount(record.count, "perChainOperationLimit count", MAX_OPERATION_COUNT),
+    intervalSeconds: safeCount(
+      record.intervalSeconds,
+      "perChainOperationLimit intervalSeconds",
+      MAX_UINT48,
+    ),
+  });
+}
+
 /**
  * Expands the application's permissions into the canonical Grant policy. The
  * policy vocabulary is `@oaath/protocol`'s; this only flattens the per-target
@@ -230,7 +267,7 @@ function policyFromInput(
   value: unknown,
   requestedAt: number,
   expiresAt: number,
-  perChainOperationLimit: number,
+  perChainOperationLimit: GrantPolicy["perChainOperationLimit"],
   context: CaptureContext,
 ): Readonly<GrantPolicy> {
   const permissions = captureDenseArray(value, "permissions", context, (message) =>
@@ -594,7 +631,7 @@ export function createConnection(
       record.permissions,
       requestedAt,
       expiresAt,
-      safeCount(record.perChainOperationLimit, "perChainOperationLimit", 2 ** 32 - 1),
+      operationLimitFromInput(record.perChainOperationLimit, context),
       context,
     );
     const scope: PermissionScope = Object.freeze({

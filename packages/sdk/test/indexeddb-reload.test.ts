@@ -586,13 +586,16 @@ describe("IndexedDB realm recreation", () => {
 
     const bindingId = realm.oaath.binding.bindingId;
     const persisted = (await createIndexedDbContextStore(database).read(bindingId)) as {
-      readonly approvedPolicy: { readonly perChainOperationLimit: number };
+      readonly approvedPolicy: { readonly perChainOperationLimit: unknown };
     };
     await database.transact(["context"], "readwrite", async ([store]) => {
       store?.put(
         {
           ...persisted,
-          approvedPolicy: { ...persisted.approvedPolicy, perChainOperationLimit: 1_000 },
+          approvedPolicy: {
+            ...persisted.approvedPolicy,
+            perChainOperationLimit: { count: 1_000, intervalSeconds: null },
+          },
         },
         bindingId,
       );

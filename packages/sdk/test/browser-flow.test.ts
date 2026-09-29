@@ -513,7 +513,7 @@ describe("browser golden path", () => {
         ...decision,
         approvedPolicy: {
           ...(decision.approvedPolicy as Record<string, unknown>),
-          perChainOperationLimit: 1_000,
+          perChainOperationLimit: { count: 1_000, intervalSeconds: null },
         },
       }),
     });

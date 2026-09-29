@@ -46,7 +46,7 @@ describe("public Grant execution review", () => {
       route: "bundler",
       enforcement: { calls: "onchain", expiry: "onchain", operationCount: "onchain" },
       expiresAt: grant.expiresAt,
-      perChainOperationLimit: 10,
+      perChainOperationLimit: { count: 10, intervalSeconds: null },
     });
     expect(typeof review.grantId).toBe("string");
     expect(Object.isFrozen(review)).toBe(true);
