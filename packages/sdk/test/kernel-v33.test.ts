@@ -10,7 +10,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import {
-  bindKernelAccount,
+  bindKernelV33Account,
   createKernelV33Reads,
   kernelV33Deployment,
 } from "../src/kernel/deployment/v33.js";
@@ -92,7 +92,6 @@ function fixture() {
     replies,
     read,
     input: {
-      version: "0.3.3" as const,
       chainId: 143,
       address: account as `0x${string}`,
       reads: { read },
@@ -103,7 +102,7 @@ function fixture() {
 describe("existing Kernel v3.3 account binding", () => {
   it("preserves the deployed address without deriving or deploying a v4 account", async () => {
     const { read, input } = fixture();
-    const bound = await bindKernelAccount(input);
+    const bound = await bindKernelV33Account(input);
     expect(bound).toEqual({
       profile: "kernel-v3.3-entrypoint-v0.7",
       version: "0.3.3",
@@ -135,7 +134,7 @@ describe("existing Kernel v3.3 account binding", () => {
     read.mockImplementation(async (request) =>
       request.type === type ? result : original(request),
     );
-    await expect(bindKernelAccount(input)).rejects.toMatchObject({
+    await expect(bindKernelV33Account(input)).rejects.toMatchObject({
       code: "kernel_runtime_binding_mismatch",
     });
   });
@@ -143,16 +142,18 @@ describe("existing Kernel v3.3 account binding", () => {
   it("keeps unavailable reads distinct from absent accounts and never retries them itself", async () => {
     const { read, input } = fixture();
     read.mockRejectedValueOnce(new Error("private provider diagnostic"));
-    await expect(bindKernelAccount(input)).rejects.toMatchObject({
+    await expect(bindKernelV33Account(input)).rejects.toMatchObject({
       code: "kernel_runtime_read_unavailable",
       message: "Kernel v3.3 account evidence could not be read",
     });
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a different requested version before reading", async () => {
+  it("refuses an unexpected binding field before reading", async () => {
     const { read, input } = fixture();
-    await expect(bindKernelAccount({ ...input, version: "0.3.2" } as never)).rejects.toMatchObject({
+    await expect(
+      bindKernelV33Account({ ...input, version: "0.3.3" } as never),
+    ).rejects.toMatchObject({
       code: "kernel_runtime_input_invalid",
     });
     expect(read).not.toHaveBeenCalled();

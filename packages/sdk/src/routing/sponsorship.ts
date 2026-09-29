@@ -6,14 +6,14 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import type { KernelV33AccountDescriptor } from "../kernel/deployment/v33.js";
+import type { KernelAccountDescriptor } from "../kernel/deployment/account.js";
 import {
   captureKernelGasPolicy,
   enableVerificationFloorForNonce,
   type KernelGasPolicy,
 } from "../kernel/gas-policy.js";
 import type { KernelRuntimePrepareInput, KernelV33RuntimePrepareInput } from "../kernel/types.js";
-import type { KernelV4AccountDescriptor, KernelV4UserOperationGas } from "../kernel-v4.js";
+import type { KernelV4UserOperationGas } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "./types.js";
 
@@ -22,7 +22,7 @@ const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
 type SponsorableOperation =
-  | KernelRuntimePrepareInput<KernelV4AccountDescriptor | KernelV33AccountDescriptor>
+  | KernelRuntimePrepareInput<KernelAccountDescriptor>
   | KernelV33RuntimePrepareInput;
 
 export interface OaathKernelSponsorshipRuntime<

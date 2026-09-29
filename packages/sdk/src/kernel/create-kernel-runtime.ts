@@ -11,6 +11,7 @@ import {
   encodeKernelV4NonceKey,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
+  type KernelV4Deployment,
   type KernelV4Install,
   type KernelV4Validation,
   prepareKernelV4UserOperation,
@@ -21,9 +22,10 @@ import {
 } from "../prepared-user-operation.js";
 import {
   bindKernelAccount,
-  type KernelV33AccountDescriptor,
-  type KernelV33Reads,
-} from "./deployment/v33.js";
+  type KernelAccountDescriptor,
+  type KernelReads,
+} from "./deployment/account.js";
+import { ECDSA_VALIDATOR, } from "./deployment/v33.js";
 import {
   encodeKernelV33NonceKey,
   kernelV33OperationSigningHash,
@@ -33,6 +35,7 @@ import {
   applyKernelGasPolicy,
   captureKernelGasPolicy,
   enableVerificationFloorForNonce,
+  type KernelGasPolicy,
 } from "./gas-policy.js";
 import {
   captureKeyProfile,
@@ -58,10 +61,10 @@ import type {
   CreateKernelV33RuntimeInput,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
+  KernelRuntimeExistingAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
   KernelV33Runtime,
-  KernelV33RuntimeBindAccountInput,
   KernelV33RuntimePrepareInput,
   KeyProfile,
   OperatorProfile,
@@ -142,8 +145,14 @@ function captureOperator(value: unknown, context: CaptureContext): CapturedOpera
  * Validator and policy resolution happen once, here, so an unavailable module
  * fails closed before any account address or operation identity exists.
  */
-export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<KernelRuntime>;
 export function createKernelRuntime(value: CreateKernelV33RuntimeInput): Readonly<KernelV33Runtime>;
+export function createKernelRuntime(value: {
+  readonly gas?: Readonly<KernelGasPolicy>;
+  readonly deployment: Readonly<KernelV4Deployment>;
+  readonly operator: Readonly<OperatorProfile>;
+  readonly reads: KernelV4AccountReadCapability;
+}): Readonly<KernelRuntime>;
+export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<KernelRuntime>;
 export function createKernelRuntime(
   value: unknown,
 ): Readonly<KernelRuntime> | Readonly<KernelV33Runtime> {
@@ -271,83 +280,28 @@ export function createKernelRuntime(
   }
 
   async function bindAccount(
-    input: KernelRuntimeBindAccountInput | KernelV33RuntimeBindAccountInput,
-  ): Promise<Readonly<KernelV4AccountDescriptor> | Readonly<KernelV33AccountDescriptor>> {
-    if (deployment.kernelVersion === "0.3.3") {
-      const binding = exactInput(input, ["address"], "Kernel v3.3 runtime account", new WeakSet());
-      const readV33 = read as KernelV33Reads["read"];
-      const descriptor = await bindKernelAccount({
-        version: "0.3.3",
-        chainId: deployment.chainId,
-        address: binding.address as `0x${string}`,
-        reads: { read: readV33 },
-      });
-      if (operator.authority === "session") {
-        await proveAuthorityModule();
-        await provePinnedPolicies();
-        for (const install of packages) {
-          if (install.moduleType !== 5) continue;
-          let code: unknown;
-          try {
-            code = await read({
-              type: "code",
-              chainId: deployment.chainId,
-              address: install.module,
-            });
-          } catch {
-            return runtimeFail(
-              "kernel_runtime_policy_unavailable",
-              "Kernel policy code could not be read",
-            );
-          }
-          if (!isBytes(code) || code === "0x")
-            return runtimeFail(
-              "kernel_runtime_policy_unavailable",
-              "Kernel policy carries no code on this chain",
-            );
-        }
-        boundV33Accounts.add(descriptor.account);
-        return descriptor;
-      }
-      if (
-        authorityModule !== deployment.ecdsaValidator ||
-        descriptor.rootValidator !== `0x01${authorityModule.slice(2)}`
-      ) {
-        return runtimeFail(
-          "kernel_runtime_binding_mismatch",
-          "Kernel v3.3 account does not use this root validator",
-        );
-      }
-      let owner: unknown;
-      try {
-        owner = await readV33({
-          type: "kernel_ecdsa_owner",
-          chainId: deployment.chainId,
-          account: descriptor.account,
-        });
-      } catch {
-        return runtimeFail(
-          "kernel_runtime_read_unavailable",
-          "Kernel v3.3 root owner could not be read",
-        );
-      }
-      if (owner !== operator.key.publicMaterial) {
-        return runtimeFail(
-          "kernel_runtime_binding_mismatch",
-          "Kernel v3.3 account does not belong to this owner key",
-        );
-      }
-      boundV33Accounts.add(descriptor.account);
-      return descriptor;
-    }
+    input: KernelRuntimeBindAccountInput | KernelRuntimeExistingAccountInput,
+  ): Promise<Readonly<KernelAccountDescriptor>> {
+    const existing = exactInput(
+      input,
+      Object.hasOwn(input ?? {}, "address") ? ["address"] : ["accountIndex", "initialPackages"],
+      "Kernel runtime account",
+      new WeakSet(),
+    );
+    if (Object.hasOwn(existing, "address")) return bindExistingAccount(existing.address);
+    if (isV33)
+      return runtimeFail(
+        "kernel_runtime_deployment_mismatch",
+        "Kernel 0.3.3 accounts are bound by their existing address",
+      );
     await proveAuthorityModule();
     await provePinnedPolicies();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
     // field below; each caller field is read exactly once into its argument.
     const descriptor = await bindKernelV4Account({
       chainId: deployment.chainId,
-      initialPackages: (input as KernelRuntimeBindAccountInput).initialPackages,
-      accountIndex: (input as KernelRuntimeBindAccountInput).accountIndex,
+      initialPackages: existing.initialPackages as KernelRuntimeBindAccountInput["initialPackages"],
+      accountIndex: existing.accountIndex as string,
       reads: Object.freeze({ read }),
     });
     // An owner runtime holds root authority only over an account whose initial
@@ -364,6 +318,79 @@ export function createKernelRuntime(
       );
     }
     if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
+    return descriptor;
+  }
+
+  /**
+   * Binds an existing account at its address. The account's own deployment is
+   * detected and must be this runtime's, so a mismatch fails before any key is
+   * asked to sign. Root authority is proven from the account's current root
+   * validation; only the reviewed ECDSA validator exposes its owner onchain.
+   */
+  async function bindExistingAccount(address: unknown): Promise<Readonly<KernelAccountDescriptor>> {
+    const descriptor = await bindKernelAccount({
+      chainId: deployment.chainId,
+      address: address as `0x${string}`,
+      reads: Object.freeze({ read: read as KernelReads["read"] }),
+      deployment,
+    });
+    if (operator.authority === "session") {
+      await proveAuthorityModule();
+      await provePinnedPolicies();
+      for (const install of packages) {
+        if (install.moduleType !== 5) continue;
+        let code: unknown;
+        try {
+          code = await read({
+            type: "code",
+            chainId: deployment.chainId,
+            address: install.module,
+          });
+        } catch {
+          return runtimeFail(
+            "kernel_runtime_policy_unavailable",
+            "Kernel policy code could not be read",
+          );
+        }
+        if (!isBytes(code) || code === "0x")
+          return runtimeFail(
+            "kernel_runtime_policy_unavailable",
+            "Kernel policy carries no code on this chain",
+          );
+      }
+    } else {
+      const rootValidator = (descriptor as { readonly rootValidator: `0x${string}` }).rootValidator;
+      if (
+        authorityModule !== ECDSA_VALIDATOR ||
+        rootValidator !== `0x01${authorityModule.slice(2)}`
+      ) {
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel account does not use this root validator",
+        );
+      }
+      let owner: unknown;
+      try {
+        owner = await (read as KernelReads["read"])({
+          type: "kernel_ecdsa_owner",
+          chainId: deployment.chainId,
+          account: descriptor.account,
+        });
+      } catch {
+        return runtimeFail(
+          "kernel_runtime_read_unavailable",
+          "Kernel root owner could not be read",
+        );
+      }
+      if (owner !== operator.key.publicMaterial) {
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "Kernel account does not belong to this owner key",
+        );
+      }
+    }
+    if (isV33) boundV33Accounts.add(descriptor.account);
+    else if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
     return descriptor;
   }
 
