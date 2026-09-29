@@ -1,6 +1,6 @@
 {
   "name": "oaath",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OAAth runtime deployment and readiness commands.",
   "type": "module",
   "license": "Apache-2.0",
