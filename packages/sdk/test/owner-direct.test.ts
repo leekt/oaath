@@ -43,9 +43,8 @@ function fixture(pending = false, lostReply = false) {
   };
   const create = () =>
     createOAAth({
-      mode: "owner",
       chains: [chain],
-      operations: createMemoryOperationStoreAdapter(),
+      stores: { operations: createMemoryOperationStoreAdapter() },
     });
   return {
     base,
@@ -64,8 +63,7 @@ describe("owner-direct account calls", () => {
     const { chain, wallet, base, prompts } = fixture();
     let estimates = 0;
     const client = createOAAth({
-      mode: "owner",
-      operations: createMemoryOperationStoreAdapter(),
+      stores: { operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -109,8 +107,7 @@ describe("owner-direct account calls", () => {
     const stages: string[] = [];
     const paymaster = `0x${"33".repeat(20)}` as const;
     const client = createOAAth({
-      mode: "owner",
-      operations: createMemoryOperationStoreAdapter(),
+      stores: { operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -198,8 +195,7 @@ describe("owner-direct account calls", () => {
       entered = resolve;
     });
     const client = createOAAth({
-      mode: "owner",
-      operations: createMemoryOperationStoreAdapter(),
+      stores: { operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -285,10 +281,10 @@ describe("owner-direct account calls", () => {
   it("recreates IndexedDB state and observes without another wallet signature or send", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { chain, wallet, prompts, base } = fixture(true);
-    const first = createOAAth({ mode: "owner", chains: [chain] });
+    const first = createOAAth({ chains: [chain] });
     const operation = await first.account(ACCOUNT).owner(wallet).sendCalls(sendCallsInput());
     await first.close();
-    const second = createOAAth({ mode: "owner", chains: [chain] });
+    const second = createOAAth({ chains: [chain] });
     try {
       const restored = await second
         .account(ACCOUNT)
@@ -319,6 +315,38 @@ describe("owner-direct account calls", () => {
       expect(base.sends).toHaveLength(0);
     } finally {
       await client.close();
+    }
+  });
+
+  it("takes owner-only execution from the shape with approvals omitted", async () => {
+    const { chain, wallet, prompts } = fixture();
+    const other = `0x${"44".repeat(20)}` as const;
+    const client = createOAAth({
+      chains: [chain],
+      account: ACCOUNT,
+      stores: { operations: createMemoryOperationStoreAdapter() },
+    });
+    try {
+      // @ts-expect-error owner-only execution has no Grant connection
+      expect(client.connect).toBeUndefined();
+      expect(() => client.account(other)).toThrowError(
+        expect.objectContaining({ code: "oaath_client_state_conflict" }),
+      );
+      const operation = await client.account(ACCOUNT).owner(wallet).sendCalls(sendCallsInput());
+      expect((await operation.wait()).status).toBe("finalized");
+      expect(prompts()).toBe(1);
+    } finally {
+      await client.close();
+    }
+    for (const configuration of [
+      { mode: "owner", chains: [chain] },
+      { chains: [chain], approvals: { kind: "phone" } },
+      { chains: [chain], session: { kind: "ecdsa" } },
+      { chains: [chain], stores: { operations: createMemoryOperationStoreAdapter(), keys: {} } },
+    ]) {
+      expect(() => createOAAth(configuration as never)).toThrowError(
+        expect.objectContaining({ code: "oaath_client_input_invalid" }),
+      );
     }
   });
 });

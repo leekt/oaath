@@ -34,10 +34,11 @@ export type {
   OaathSendCallsInput,
 } from "./client/grant-handle.js";
 export type {
-  OaathLocalApprovalReview,
-  OaathLocalClient,
-  OaathLocalConfiguration,
-  OaathLocalWallet,
+  OaathApprovalWallet,
+  OaathWalletApprovalClient,
+  OaathWalletApprovalReview,
+  OaathWalletApprovals,
+  OaathWalletOptions,
 } from "./client/local-realm.js";
 export type {
   OaathOperationExecution,
@@ -51,8 +52,8 @@ export type {
   OaathOwnerAccount,
   OaathOwnerCallsReview,
   OaathOwnerClient,
-  OaathOwnerConfiguration,
   OaathOwnerHandle,
+  OaathOwnerOptions,
 } from "./client/owner-realm.js";
 export type { OaathSession } from "./client/session-credential.js";
 export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";

@@ -36,7 +36,7 @@ export type LocalPermissionSign = (
   },
 ) => Promise<unknown>;
 
-export interface OaathLocalApprovalReview {
+export interface OaathWalletApprovalReview {
   readonly account: `0x${string}`;
   readonly chainScope: "all";
   readonly policy: Readonly<PermissionRequest["policy"]>;
@@ -52,7 +52,7 @@ export function createLocalPermissionAuthority(input: {
   readonly chains: readonly Readonly<OaathChainCapability>[];
   readonly signTypedData: LocalPermissionSign;
   readonly localWallet: boolean;
-  readonly onApproval: ((review: Readonly<OaathLocalApprovalReview>) => Promise<void>) | null;
+  readonly onApproval: ((review: Readonly<OaathWalletApprovalReview>) => Promise<void>) | null;
   readonly now: () => number;
 }) {
   let pending = false;

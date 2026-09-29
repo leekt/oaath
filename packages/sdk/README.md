@@ -7,10 +7,10 @@ In service URL mode, `requestPermission` accepts an optional
 `onPending({ requestId, matchCode, expiresAt })` callback before waiting for the
 owner. Display the eight-character code for comparison with the phone and clear
 it when the request settles. `expiresAt` is in Unix milliseconds; the code is
-non-secret display metadata and grants no authority. Local wallet mode does not
+non-secret display metadata and grants no authority. Wallet approvals do not
 call this callback.
 
-URL mode and local mode share one optional `session` setting (`OaathSession`).
+URL mode and wallet approvals share one optional `session` setting (`OaathSession`).
 `createOAAth({ url, session: { kind: "webauthn", ...webauthnKeyInput } })` makes
 the owner review and install the caller's passkey as the operator credential; no
 session key is generated or stored. A deployment that declares backend or hosted
@@ -62,15 +62,15 @@ removal.
 For an existing ECDSA-root Kernel account, execute calls directly with a
 connected viem wallet. The account's Kernel version (`0.3.3` or `0.4.0`) is
 detected onchain on each send and reported as `review.kernelVersion`; no
-version is configured. This mode needs no issuer, relay, Grant, or enable approval:
+version is configured. Omitting `approvals` gives owner-only execution, which
+needs no issuer, relay, Grant, or enable approval:
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 
-const oaath = createOAAth({ mode: "owner", chains: createViemChainPorts({
-  143: { publicRpcUrls: [publicRpcUrl], bundlerUrl },
-}) });
+const chains = createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } });
+const oaath = createOAAth({ chains, account: existingKernelAddress });
 const account = oaath.account(existingKernelAddress);
 const owner = account.owner(walletClient);
 const calls = { chain: 143, calls: [{ target, value: "0", data }] };
@@ -82,32 +82,35 @@ const saved = await account.getOperation({ chain: 143, id: operation.id });
 await oaath.close();
 ```
 
-The default operation journal uses IndexedDB. Custom deployments may inject an
-`operations` adapter; the client owns its close. An unresolved operation occupies
+The default operation journal uses IndexedDB. Custom deployments may inject
+`stores: { operations }`; the client owns its close. An unresolved operation occupies
 one account/chain slot. Concurrent sends and sends after reload fail with a state
 conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. The root validator must be
-the reviewed ECDSA validator, whose owner is readable onchain. Owner mode currently uses the
+the reviewed ECDSA validator, whose owner is readable onchain. Owner-only execution uses the
 bundler route by default. Applications can explicitly estimate a session before
 selecting owner execution, as described below; OAAth never silently changes the
 signer of an operation.
 
-## Local wallet mode
+## Wallet-approved Grants
 
-For scoped sessions without an issuer service or phone, use local mode with the
-same existing account and either a browser or local viem wallet. The account's
+For scoped sessions without an issuer service or phone, add
+`approvals: { kind: "wallet", owner }` to the same options, with either a
+browser or local viem wallet. The account's
 Kernel deployment is detected on every configured chain; chains that disagree
 fail with `local_account_deployment_mismatch`:
 
 ```ts
 const oaath = createOAAth({
-  mode: "local",
+  chains,
   account: existingKernelAddress,
-  owner: walletClient,
-  chains: createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } }),
-  onApproval: async (review) => { await showPermissionPolicy(review.policy); },
+  approvals: {
+    kind: "wallet",
+    owner: walletClient,
+    onApproval: async (review) => { await showPermissionPolicy(review.policy); },
+  },
 });
 const connection = await oaath.connect();
 const grant = await connection.resume() ?? await connection.requestPermission({
@@ -128,7 +131,7 @@ validated operation uses a slot even when its execution reverts.
 
 The session key is encrypted in IndexedDB before consent. One wallet EIP-712
 approval covers the exact permission on all configured chains. The optional
-`onApproval` callback displays the decoded policy before the wallet prompt and
+`approvals.onApproval` callback displays the decoded policy before the wallet prompt and
 may throw to cancel. The SDK verifies
 their root owner and matching permission nonce before prompting. The first send
 enables the permission and executes its calls together. Reopening the same
@@ -138,7 +141,7 @@ revoking Grant for observation or cleanup; only an active covering Grant may sen
 Another permission request requires explicit wallet consent. No issuer network
 request is made. Chain RPC and bundler calls still use the configured ports.
 
-To sign local sessions with a passkey instead of the generated key, pass
+To sign wallet-approved sessions with a passkey instead of the generated key, pass
 `session: { kind: "webauthn", credential, credentialId, rpId, origin, authenticate }`
 (the WebAuthn `kernelKey` input). The passkey stays in its authenticator; only its public
 credential is recorded in the Grant, and reopening with the same passkey resumes it.
@@ -147,7 +150,7 @@ the RIP-7212 precompile, so approval fails closed with
 `oaath_client_capability_unsupported` before any prompt on a chain without it.
 
 Outside a browser, supply an explicit `origin` and durable `stores` through
-`OaathLocalConfiguration`. Local mode fails if default IndexedDB is unavailable;
+`OaathWalletOptions`. Wallet approvals fail if default IndexedDB is unavailable;
 it does not silently create an ephemeral session. The same client also exposes
 `oaath.account(existingKernelAddress).owner(walletClient)` and account-level
 operation recovery. `close()` releases resources without revocation;

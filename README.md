@@ -8,11 +8,11 @@ matches the application:
 
 | Workflow | Constructor | Approval |
 | --- | --- | --- |
-| [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ mode: "owner", chains })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
-| [Local browser Grant](packages/sdk/README.md#local-wallet-mode) | `createOAAth({ mode: "local", owner, account, chains })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
+| [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ chains, account })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
+| [Wallet-approved Grant](packages/sdk/README.md#wallet-approved-grants) | `createOAAth({ chains, account, approvals: { kind: "wallet", owner } })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
 | [Phone service](#service-url-mode) | `createOAAth({ url })` | The service selects the account and chains; its owner phone approves the Grant. |
 
-Owner and local modes use an existing ECDSA-owned Kernel v3.3 or v4 account;
+Owner-only execution and wallet approvals use an existing ECDSA-owned Kernel v3.3 or v4 account;
 the SDK detects its deployment. The phone
 service uses Kernel v4 with a P-256 owner. All paths retain exact operation
 identity for observation after reload. Before adopting a chain, check its
@@ -239,14 +239,14 @@ const hash = await wallet.sendTransaction({ account, to, value, data, chain: nul
 
 The Grant workflow uses Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.7`.
 Existing ECDSA-root Kernel `0.3.3` accounts support
-`createOAAth({ mode: "owner", chains }).account(address).owner(walletClient).sendCalls(...)`.
+`createOAAth({ chains, account }).account(address).owner(walletClient).sendCalls(...)`.
 It prompts once, creates no Grant, and uses the existing address with no enable
 approval. IndexedDB retains exact operations for wallet-free `getOperation`
 recovery. See the [SDK example](packages/sdk/README.md), including the lower-level
 `createKernelRuntime` path. Existing v3.3 accounts also support session Grants through
-`createOAAth({ mode: "local", owner: walletClient, account: address, chains })`,
+`createOAAth({ chains, account, approvals: { kind: "wallet", owner: walletClient } })`,
 with one wallet typed-data approval, browser custody and reload recovery.
-Local mode needs no phone or relay. Explicit Grant `signer: "auto"` prefers an
+Wallet approvals need no phone or relay. Explicit Grant `signer: "auto"` prefers an
 available owner for the atomic call bundle; execution review identifies that
 choice and its wider authority before signing.
 

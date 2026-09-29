@@ -1,11 +1,11 @@
 import { createWalletClient, http } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOAAth, type OaathLocalConfiguration } from "../src/index.js";
+import type { OaathStoreConfiguration } from "../src/advanced.js";
+import { createOAAth } from "../src/index.js";
 import { createChainFixture, createMemoryStores } from "./support/browser.js";
 
 afterEach(() => vi.unstubAllGlobals());
-type OaathStoreConfiguration = NonNullable<OaathLocalConfiguration["stores"]>;
 
 function configuration(stores?: OaathStoreConfiguration) {
   const owner = createWalletClient({
@@ -14,8 +14,7 @@ function configuration(stores?: OaathStoreConfiguration) {
   });
   const signTypedData = vi.fn(owner.signTypedData);
   return {
-    mode: "local" as const,
-    owner: { ...owner, signTypedData },
+    approvals: { kind: "wallet" as const, owner: { ...owner, signTypedData } },
     account: `0x${"33".repeat(20)}` as const,
     chains: [createChainFixture().capability],
     origin: "https://consumer.example",
@@ -48,7 +47,7 @@ describe("local realm resources", () => {
     await expect(client.connect()).rejects.toMatchObject({
       code: "oaath_client_store_unavailable",
     });
-    expect(config.owner.signTypedData).not.toHaveBeenCalled();
+    expect(config.approvals.owner.signTypedData).not.toHaveBeenCalled();
     await client.close();
   });
 
@@ -70,7 +69,7 @@ describe("local realm resources", () => {
         await expect(client.connect()).rejects.toMatchObject({
           message: "local realm could not be opened",
         });
-        expect(config.owner.signTypedData).not.toHaveBeenCalled();
+        expect(config.approvals.owner.signTypedData).not.toHaveBeenCalled();
         expect(await (await client.connect()).resume()).toBeNull();
       } finally {
         await client.close();

@@ -50,11 +50,18 @@ import { capturePaymasterService, capturePlainCalls } from "./sponsorship.js";
 interface OwnerChain extends OaathChainCapability {
   readonly reads: KernelReads;
 }
-export interface OaathOwnerConfiguration {
-  readonly mode: "owner";
+/**
+ * Owner-only execution: `createOAAth` options without `approvals`. No Grant
+ * exists; the connected wallet signs each operation.
+ */
+export interface OaathOwnerOptions {
   readonly chains: readonly Readonly<OwnerChain>[];
+  /** When set, `account(address)` refuses every other address. */
+  readonly account?: `0x${string}`;
+  /** Omitted: owner-only execution. */
+  readonly approvals?: undefined;
   /** Defaults to the shared browser IndexedDB operation store; this realm owns close. */
-  readonly operations?: OperationStoreAdapter;
+  readonly stores?: Readonly<{ operations: OperationStoreAdapter }>;
 }
 /** The versioned call-review contract plus owner-realm facts outside it. */
 export interface OaathOwnerCallsReview extends OaathCallsReviewContract {
@@ -109,11 +116,13 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
   const captured = captureRecord(value, "owner configuration", new WeakSet(), fail);
   const config = exactClientRecord(
     captured,
-    ["mode", "chains", ...(Object.hasOwn(captured, "operations") ? ["operations"] : [])],
+    ["chains", ...["account", "approvals", "stores"].filter((key) => Object.hasOwn(captured, key))],
     "owner configuration",
     new WeakSet(),
   );
-  if (config.mode !== "owner") return fail("owner mode is required");
+  if (config.approvals !== undefined) return fail("owner-only execution takes no approvals");
+  const configuredAccount =
+    config.account === undefined ? null : routingAddress(config.account, "owner account", fail);
   const entries = captureDenseArray(config.chains, "owner chains", new WeakSet(), fail);
   if (entries.length < 1 || entries.length > 32)
     return fail("owner chains must hold 1 to 32 entries");
@@ -124,9 +133,10 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
     chains.set(chain.chainId, chain);
   }
   let adapter: OperationStoreAdapter | undefined;
-  if (Object.hasOwn(config, "operations")) {
+  if (config.stores !== undefined) {
+    const stores = exactClientRecord(config.stores, ["operations"], "owner stores", new WeakSet());
     const fields = exactClientRecord(
-      config.operations,
+      stores.operations,
       ["get", "getArchived", "list", "compareAndSwap", "close"],
       "owner operation store",
       new WeakSet(),
@@ -240,6 +250,8 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
   function account(addressValue: `0x${string}`): Readonly<OaathOwnerAccount> {
     assertOpen();
     const address = routingAddress(addressValue, "owner account", fail);
+    if (configuredAccount !== null && address !== configuredAccount)
+      return clientFail("oaath_client_state_conflict", "owner client belongs to another account");
     // This is an operation lane label only. No Grant or permission is created.
     const contextId = `owner:kernel:${address}`;
     const keyFor = (chainId: number) =>

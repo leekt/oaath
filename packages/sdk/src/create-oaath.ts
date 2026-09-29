@@ -69,13 +69,13 @@ import {
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
 import {
   createLocalRealm,
-  type OaathLocalClient,
-  type OaathLocalConfiguration,
+  type OaathWalletApprovalClient,
+  type OaathWalletOptions,
 } from "./client/local-realm.js";
 import {
   createOwnerRealm,
   type OaathOwnerClient,
-  type OaathOwnerConfiguration,
+  type OaathOwnerOptions,
 } from "./client/owner-realm.js";
 import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
 import { captureStoreConfiguration } from "./client/store-configuration.js";
@@ -252,22 +252,22 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
 }
 
 /**
- * The URL-only golden path, and the fully injected composition on the same
- * constructor.
+ * One constructor. The approval source is an optional setting:
  *
  * ```ts
- * const oaath = createOAAth({ url: "https://oaath.example" });
- * const oaath = createOAAth(); // local development: http://localhost:8787
+ * createOAAth({ chains, account });                                          // owner-only execution
+ * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });    // wallet-approved Grants
+ * createOAAth({ url: "https://oaath.example" });                             // service-approved Grants
  * ```
  *
- * `mode: "owner"` executes directly from an existing Kernel v3.3 account with
- * a connected wallet. `mode: "local"` adds wallet-approved durable sessions
- * for that existing account, without a service or phone. A configuration carrying `binding` is the injected
- * composition for deterministic tests and custom deployments; other inputs
- * select URL mode, whose only normal production input is `url`.
+ * Omitting `approvals` gives owner-only execution from an existing Kernel
+ * account with a connected wallet; no Grant exists. Wallet approvals add
+ * durable wallet-approved sessions for that account without a service or
+ * phone. A configuration carrying `binding` is the injected composition for
+ * deterministic tests and custom deployments.
  */
-export function createOAAth(configuration: OaathOwnerConfiguration): Readonly<OaathOwnerClient>;
-export function createOAAth(configuration: OaathLocalConfiguration): Readonly<OaathLocalClient>;
+export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
+export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
 export function createOAAth(configuration?: unknown): Readonly<Oaath>;
 export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
@@ -276,9 +276,18 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
-  if (record.mode === "owner") return createOwnerRealm(configuration);
-  if (record.mode === "local") return createLocalRealm(configuration, composeInjectedRealm);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
+  if (record.approvals !== undefined) {
+    const approvals = captureRecord(
+      record.approvals,
+      "OAAth approvals",
+      new WeakSet(),
+      clientFailure("oaath_client_input_invalid"),
+    );
+    if (approvals.kind === "wallet") return createLocalRealm(configuration, composeInjectedRealm);
+    return clientFail("oaath_client_input_invalid", "OAAth approvals kind is unsupported");
+  }
+  if (Object.hasOwn(record, "chains")) return createOwnerRealm(configuration);
   // Every URL-mode key is optional, so exactness here is only the closed key
   // set: an unknown key fails instead of being silently ignored.
   for (const key of Object.keys(record)) {
