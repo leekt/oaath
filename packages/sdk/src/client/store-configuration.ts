@@ -1,32 +1,40 @@
 /** Capture caller-owned store capabilities before any local persistence access. */
 import type { CaptureContext } from "@oaath/protocol";
 import type { OaathStoreConfiguration } from "../create-oaath.js";
-import type {
-  OaathCleanupCheckpointStore,
-  OaathContextStore,
-  OaathKeyStore,
-  WalletCallBundleStoreAdapter,
-} from "../persistence/interfaces.js";
-import type { PreparedCallStoreAdapter } from "../provider/prepared-call-store.js";
-import type { GrantStoreAdapter, OperationStoreAdapter } from "../store.js";
 import { clientCapability, exactClientRecord } from "./errors.js";
 
-const STORE_KEYS: readonly string[] = Object.freeze([
-  "grants",
-  "operations",
-  "walletCallBundles",
-  "preparedCallContexts",
-  "keys",
-  "cleanup",
-  "context",
-]);
+export type OaathStoreName = keyof OaathStoreConfiguration;
 
-function storePort<Port>(
+/** The one method set each store port carries, and its diagnostic label. */
+const STORE_PORTS: Readonly<
+  Record<OaathStoreName, Readonly<{ label: string; methods: readonly string[] }>>
+> = Object.freeze({
+  grants: { label: "Grant store", methods: ["get", "compareAndSwap", "close"] },
+  operations: {
+    label: "Operation store",
+    methods: ["get", "getArchived", "list", "compareAndSwap", "close"],
+  },
+  walletCallBundles: {
+    label: "wallet call bundle store",
+    methods: ["get", "compareAndSwap", "close"],
+  },
+  preparedCallContexts: {
+    label: "prepared call context store",
+    methods: ["get", "compareAndSwap", "close"],
+  },
+  keys: { label: "key store", methods: ["store", "get", "delete", "close"] },
+  cleanup: { label: "cleanup store", methods: ["read", "write", "clear", "close"] },
+  context: { label: "context store", methods: ["read", "write", "clear", "close"] },
+});
+
+export const STORE_NAMES = Object.freeze(Object.keys(STORE_PORTS)) as readonly OaathStoreName[];
+
+export function captureStorePort<Name extends OaathStoreName>(
+  name: Name,
   value: unknown,
-  methods: readonly string[],
-  label: string,
   context: CaptureContext,
-): Port {
+): OaathStoreConfiguration[Name] {
+  const { label, methods } = STORE_PORTS[name];
   const record = exactClientRecord(
     value,
     methods,
@@ -35,7 +43,7 @@ function storePort<Port>(
     "oaath_client_capability_invalid",
   );
   for (const method of methods) clientCapability(record[method], `${label} ${method}`);
-  return value as Port;
+  return value as OaathStoreConfiguration[Name];
 }
 
 export function captureStoreConfiguration(
@@ -44,53 +52,14 @@ export function captureStoreConfiguration(
 ): Readonly<OaathStoreConfiguration> {
   const storeRecord = exactClientRecord(
     value,
-    STORE_KEYS,
+    STORE_NAMES,
     "OAAth stores",
     context,
     "oaath_client_capability_invalid",
   );
-  return Object.freeze({
-    grants: storePort<GrantStoreAdapter>(
-      storeRecord.grants,
-      ["get", "compareAndSwap", "close"],
-      "Grant store",
-      context,
-    ),
-    operations: storePort<OperationStoreAdapter>(
-      storeRecord.operations,
-      ["get", "getArchived", "list", "compareAndSwap", "close"],
-      "Operation store",
-      context,
-    ),
-    walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
-      storeRecord.walletCallBundles,
-      ["get", "compareAndSwap", "close"],
-      "wallet call bundle store",
-      context,
-    ),
-    preparedCallContexts: storePort<PreparedCallStoreAdapter>(
-      storeRecord.preparedCallContexts,
-      ["get", "compareAndSwap", "close"],
-      "prepared call context store",
-      context,
-    ),
-    keys: storePort<OaathKeyStore>(
-      storeRecord.keys,
-      ["store", "get", "delete", "close"],
-      "key store",
-      context,
-    ),
-    cleanup: storePort<OaathCleanupCheckpointStore>(
-      storeRecord.cleanup,
-      ["read", "write", "clear", "close"],
-      "cleanup store",
-      context,
-    ),
-    context: storePort<OaathContextStore>(
-      storeRecord.context,
-      ["read", "write", "clear", "close"],
-      "context store",
-      context,
-    ),
-  });
+  return Object.freeze(
+    Object.fromEntries(
+      STORE_NAMES.map((name) => [name, captureStorePort(name, storeRecord[name], context)]),
+    ) as unknown as OaathStoreConfiguration,
+  );
 }

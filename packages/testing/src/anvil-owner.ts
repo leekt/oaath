@@ -389,6 +389,7 @@ export async function createLocalOwnerAnvilFixture(
         client = createOAAth({
           chains: ports(),
           stores: {
+            kind: "memory",
             operations: createSqliteOperationStoreAdapter(join(directory, "operations.db")),
           },
         });

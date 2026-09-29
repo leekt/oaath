@@ -1,6 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultStores } from "../src/client/browser-stores.js";
+import { STORE_NAMES } from "../src/client/store-configuration.js";
+import { captureStores, openStores } from "../src/client/stores.js";
 import { credentialKey } from "../src/kernel/key/credential.js";
 import { selectAutoSigner } from "../src/routing/auto.js";
 import {
@@ -150,14 +151,14 @@ describe("explicit Grant signer auto", () => {
     let pending = true;
     const chain = createChainFixture({ crashOnSend: () => true, withholdReceipt: () => pending });
     vi.stubGlobal("indexedDB", new IDBFactory());
-    let owned = await defaultStores();
+    let owned = await openStores(captureStores(undefined, STORE_NAMES), STORE_NAMES);
     let realm = createRealm({ chain, stores: owned.stores as unknown as RealmStores });
     let grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
     const operation = await grant.sendCalls(autoCalls());
     const { relay, clock } = realm;
     await realm.oaath.close();
     await owned.close();
-    owned = await defaultStores();
+    owned = await openStores(captureStores(undefined, STORE_NAMES), STORE_NAMES);
     realm = createRealm({ stores: owned.stores as unknown as RealmStores, relay, clock, chain });
     grant = (await (await realm.oaath.connect()).resume())!;
     await expect(grant.sendCalls(autoCalls())).rejects.toMatchObject({

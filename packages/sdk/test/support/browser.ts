@@ -999,7 +999,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   const oaath = createOAAth({
     approvals: { kind: "service", url: options.url ?? ISSUER_URL, fetch: service },
     origin: ORIGIN,
-    stores,
+    stores: { kind: "memory", ...stores },
     now: clock.now,
     ...(options.session === undefined ? {} : { session: options.session }),
   } as OaathServiceOptions);

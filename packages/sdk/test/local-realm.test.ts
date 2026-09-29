@@ -14,7 +14,8 @@ import {
 } from "../src/kernel/modules.js";
 
 import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
-import { createChainFixture, permissionInput } from "./support/browser.js";
+import { createMemoryOperationStoreAdapter } from "../src/testing.js";
+import { CALL_DATA, createChainFixture, permissionInput, TARGET } from "./support/browser.js";
 
 const address = "0xc3a56de6dfc1dcef5113927ec09513918e8c44aa";
 function fixture(verifier = false) {
@@ -263,5 +264,78 @@ describe("local wallet realm", () => {
     expect(owner.signTypedData).toHaveBeenCalledTimes(1);
     expect(fetch).not.toHaveBeenCalled();
     await realm.close();
+  });
+
+  it('runs wallet approvals and a sent operation outside a browser on stores: { kind: "memory" }', async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const { input, chain } = fixture();
+    const realm = createOAAth({ ...input, stores: { kind: "memory" } });
+    const grant = await (await realm.connect()).requestPermission(permissionInput());
+    expect(grant.state).toBe("active");
+    const operation = await grant.sendCalls({
+      chain: 143,
+      calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+    });
+    expect((await operation.wait()).status).toBe("finalized");
+    expect(chain.sends).toHaveLength(1);
+    await realm.close();
+  });
+
+  it("journals operations in an override adapter and closes it with the realm", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const { input } = fixture();
+    const journal = createMemoryOperationStoreAdapter();
+    const operations = {
+      ...journal,
+      compareAndSwap: vi.fn(journal.compareAndSwap),
+      close: vi.fn(journal.close),
+    };
+    const realm = createOAAth({ ...input, stores: { kind: "memory", operations } });
+    const grant = await (await realm.connect()).requestPermission(permissionInput());
+    const operation = await grant.sendCalls({
+      chain: 143,
+      calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
+    });
+    const journaled = operations.compareAndSwap.mock.calls.map(([write]) =>
+      JSON.stringify(write, (_key, value) => (typeof value === "bigint" ? `${value}` : value)),
+    );
+    expect(journaled.some((write) => write.includes(operation.id))).toBe(true);
+    await realm.close();
+    expect(operations.close).toHaveBeenCalledOnce();
+  });
+
+  it("restores a Grant from a named IndexedDB backend after recreating every instance", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const factory = new IDBFactory();
+    const { input } = fixture();
+    const open = (name: string) =>
+      createOAAth({ ...input, stores: { kind: "indexeddb", factory, name } });
+    let realm = open("oaath-a");
+    expect((await (await realm.connect()).requestPermission(permissionInput())).state).toBe(
+      "active",
+    );
+    const identity = realm.binding;
+    await realm.close();
+    realm = open("oaath-a");
+    expect((await (await realm.connect()).resume())?.state).toBe("active");
+    expect(realm.binding).toEqual(identity);
+    await realm.close();
+    realm = open("oaath-b");
+    expect(await (await realm.connect()).resume()).toBeNull();
+    await realm.close();
+  });
+
+  it("refuses an unknown stores backend or a store it does not own", () => {
+    const { input } = fixture();
+    for (const stores of [
+      {},
+      { kind: "sqlite" },
+      { kind: "memory", name: "x" },
+      { kind: "memory", relay: {} },
+      { kind: "memory", operations: {} },
+    ])
+      expect(() => createOAAth({ ...input, stores } as never)).toThrowError(
+        expect.objectContaining({ name: "OaathClientError" }),
+      );
   });
 });

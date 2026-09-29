@@ -229,8 +229,10 @@ and remain available after grant expiry or revocation. A missing local record
 returns `null`; it is not evidence that the operation was never submitted.
 
 Applications never handle permission ids, enable envelopes, operation journals,
-store revisions, or nonce recovery. Persistence defaults to IndexedDB where it
-exists and memory elsewhere; both stay overridable. IndexedDB keeps exactly
+store revisions, or nonce recovery. Persistence is one `stores` setting:
+`{ kind: "indexeddb" }` by default, which fails closed where IndexedDB is
+missing, or an explicit `{ kind: "memory" }`, with optional per-store adapter
+overrides. IndexedDB keeps exactly
 one current schema; a database that does not carry it is deleted and recreated
 rather than migrated, and key custody stores only non-extractable `CryptoKey`
 handles and exposes no export path.

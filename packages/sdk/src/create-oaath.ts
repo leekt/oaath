@@ -248,8 +248,12 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * account with a connected wallet; no Grant exists. Wallet approvals add
  * durable wallet-approved sessions for that account without a service or
  * phone. Service approvals take the account and chains from the service,
- * whose owner phone approves. A configuration carrying `binding` is the
- * injected composition for deterministic tests and custom deployments.
+ * whose owner phone approves. `stores` names a backend, `{ kind: "indexeddb" }`
+ * by default or `{ kind: "memory" }` for tests and non-browser development,
+ * plus optional per-store adapters such as a PostgreSQL Operation journal.
+ * IndexedDB never silently falls back to memory. A configuration carrying
+ * `binding` is the injected composition for deterministic tests and custom
+ * deployments.
  */
 export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
 export function createOAAth(options: OaathServiceOptions): Readonly<Oaath>;

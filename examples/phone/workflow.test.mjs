@@ -232,6 +232,7 @@ for (const { workspaceKind, restart = false } of scenarios)
       oaath = createOAAth({
         approvals: { kind: "service", url: service.url, fetch: clientFetch },
         origin: service.url,
+        stores: { kind: "memory" },
       });
       connection = await oaath.connect();
       assert.equal(await connection.resume(), null);
@@ -289,6 +290,7 @@ for (const { workspaceKind, restart = false } of scenarios)
             fetch: clientFetchFor("demo-teammate-token"),
           },
           origin: service.url,
+          stores: { kind: "memory" },
         });
         const teammateConnection = await teammate.connect();
         assert.equal(teammate.binding.context.workspaceKind, "team");

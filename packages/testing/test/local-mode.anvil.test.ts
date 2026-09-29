@@ -57,13 +57,15 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
   }, 60_000);
 
   it("approves once and executes an allowed call on an existing Kernel v4 account", async () => {
-    vi.stubGlobal("indexedDB", new IDBFactory());
+    // Non-browser development: memory is named explicitly, with no per-store wiring.
+    vi.stubGlobal("indexedDB", undefined);
     const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });
     const client = createOAAth({
       approvals: { kind: "wallet", owner: fixture.wallet },
       account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",
+      stores: { kind: "memory" },
     });
     try {
       const grant = await (await client.connect()).requestPermission(permission);

@@ -44,7 +44,7 @@ function fixture(pending = false, lostReply = false) {
   const create = () =>
     createOAAth({
       chains: [chain],
-      stores: { operations: createMemoryOperationStoreAdapter() },
+      stores: { kind: "memory", operations: createMemoryOperationStoreAdapter() },
     });
   return {
     base,
@@ -63,7 +63,7 @@ describe("owner-direct account calls", () => {
     const { chain, wallet, base, prompts } = fixture();
     let estimates = 0;
     const client = createOAAth({
-      stores: { operations: createMemoryOperationStoreAdapter() },
+      stores: { kind: "memory", operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -107,7 +107,7 @@ describe("owner-direct account calls", () => {
     const stages: string[] = [];
     const paymaster = `0x${"33".repeat(20)}` as const;
     const client = createOAAth({
-      stores: { operations: createMemoryOperationStoreAdapter() },
+      stores: { kind: "memory", operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -195,7 +195,7 @@ describe("owner-direct account calls", () => {
       entered = resolve;
     });
     const client = createOAAth({
-      stores: { operations: createMemoryOperationStoreAdapter() },
+      stores: { kind: "memory", operations: createMemoryOperationStoreAdapter() },
       chains: [
         {
           ...chain,
@@ -324,7 +324,7 @@ describe("owner-direct account calls", () => {
     const client = createOAAth({
       chains: [chain],
       account: ACCOUNT,
-      stores: { operations: createMemoryOperationStoreAdapter() },
+      stores: { kind: "memory", operations: createMemoryOperationStoreAdapter() },
     });
     try {
       // @ts-expect-error owner-only execution has no Grant connection
@@ -342,7 +342,10 @@ describe("owner-direct account calls", () => {
       { mode: "owner", chains: [chain] },
       { chains: [chain], approvals: { kind: "phone" } },
       { chains: [chain], session: { kind: "ecdsa" } },
-      { chains: [chain], stores: { operations: createMemoryOperationStoreAdapter(), keys: {} } },
+      {
+        chains: [chain],
+        stores: { kind: "memory", operations: createMemoryOperationStoreAdapter(), keys: {} },
+      },
     ]) {
       expect(() => createOAAth(configuration as never)).toThrowError(
         expect.objectContaining({ code: "oaath_client_input_invalid" }),

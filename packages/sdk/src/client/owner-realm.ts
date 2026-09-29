@@ -14,8 +14,6 @@ import {
   type OperationStartResult,
   type OperationSubmissionCapability,
 } from "../operation-runner.js";
-import { type OaathDatabase, openOaathDatabase } from "../persistence/indexeddb/database.js";
-import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/operation-store.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
 import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
@@ -49,10 +47,13 @@ import {
   operationOutcome,
 } from "./operation-handle.js";
 import { capturePaymasterService, capturePlainCalls } from "./sponsorship.js";
+import { captureStores, type OaathStoreBackend, type OwnedStores, openStores } from "./stores.js";
 
 interface OwnerChain extends OaathChainCapability {
   readonly reads: KernelReads;
 }
+/** A backend plus an optional Operation journal adapter. */
+export type OaathOwnerStores = OaathStoreBackend & Readonly<{ operations?: OperationStoreAdapter }>;
 /**
  * Owner-only execution: `createOAAth` options without `approvals`. No Grant
  * exists; the connected wallet signs each operation.
@@ -64,8 +65,11 @@ export interface OaathOwnerOptions {
   readonly account?: `0x${string}`;
   /** Omitted: owner-only execution. */
   readonly approvals?: undefined;
-  /** Defaults to the shared browser IndexedDB operation store; this realm owns close. */
-  readonly stores?: Readonly<{ operations: OperationStoreAdapter }>;
+  /**
+   * Only the Operation journal is used. Defaults to `{ kind: "indexeddb" }`,
+   * which fails closed outside a browser; this realm owns close.
+   */
+  readonly stores?: OaathOwnerStores;
 }
 /** The versioned call-review contract plus owner-realm facts outside it. */
 export interface OaathOwnerCallsReview extends OaathCallsReviewContract {
@@ -135,6 +139,7 @@ export interface OaathOwnerClient {
   readonly close: () => Promise<void>;
 }
 
+const OWNER_STORES = Object.freeze(["operations"] as const);
 const TIMEOUT = 10_000;
 const ZERO_GAS = Object.freeze({
   callGasLimit: "0",
@@ -168,20 +173,9 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
     if (chains.has(chain.chainId)) return fail("owner chains repeat a chain");
     chains.set(chain.chainId, chain);
   }
-  let adapter: OperationStoreAdapter | undefined;
-  if (config.stores !== undefined) {
-    const stores = exactClientRecord(config.stores, ["operations"], "owner stores", new WeakSet());
-    const fields = exactClientRecord(
-      stores.operations,
-      ["get", "getArchived", "list", "compareAndSwap", "close"],
-      "owner operation store",
-      new WeakSet(),
-    );
-    if (Object.values(fields).some((field) => typeof field !== "function"))
-      return fail("owner operation store is invalid");
-    adapter = fields as unknown as OperationStoreAdapter;
-  }
-  let database: OaathDatabase | undefined;
+  const storeSetting = captureStores(config.stores, OWNER_STORES);
+  let adapter: OperationStoreAdapter | undefined = storeSetting.overrides.operations;
+  let storeOwner: Readonly<OwnedStores<"operations">> | undefined;
   let opening: Promise<OperationStoreAdapter> | undefined;
   let closed = false;
   let closing: Promise<void> | null = null;
@@ -203,11 +197,17 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
   }
   async function storage(): Promise<OperationStoreAdapter> {
     if (adapter) return adapter;
-    opening ??= openOaathDatabase().then((opened) => {
-      database = opened;
-      adapter = createIndexedDbOperationStoreAdapter(opened);
-      return adapter;
-    });
+    opening ??= openStores(storeSetting, OWNER_STORES).then(
+      (owner) => {
+        storeOwner = owner;
+        adapter = owner.stores.operations;
+        return adapter;
+      },
+      (error) => {
+        opening = undefined;
+        throw error;
+      },
+    );
     return opening;
   }
   async function store(): Promise<OperationStore> {
@@ -527,8 +527,8 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
         failed = true;
       }
     }
-    database?.close();
-    database = undefined;
+    await storeOwner?.close();
+    storeOwner = undefined;
     if (failed) clientFail("oaath_client_internal", "owner resources could not all be closed");
   }
   return Object.freeze({

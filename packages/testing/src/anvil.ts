@@ -405,7 +405,8 @@ export async function createLocalAnvilFixture(
           authorization,
         },
         origin: new URL(redirectUri).origin,
-        stores: storage.stores,
+        // Every store is the fixture's own, so the named backend opens nothing.
+        stores: { kind: "indexeddb", ...storage.stores },
         now,
         ...(options.session === undefined ? {} : { session: options.session }),
       });
