@@ -15,23 +15,25 @@ import {
 } from "../src/kernel/permission/materialize.js";
 import {
   createKernelRuntime,
+  kernelDeployment,
+  kernelKey,
+  materializeKernelPermission,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+  ownerOperator,
+  sessionOperator,
+} from "../src/kernel.js";
+import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
+import {
   encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelV4Install,
-  kernelDeployment,
-  kernelKey,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
-  materializeKernelPermission,
-  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   OaathKernelV4Error,
-  ownerOperator,
-  sessionOperator,
-} from "../src/kernel.js";
-import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
+} from "../src/kernel-v4.js";
 
 const chainId = 421_614;
 // Base mainnet: an open production chain with no pinned per-chain evidence,

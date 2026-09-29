@@ -3,10 +3,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { decodeAbiParameters, getAddress, recoverAddress } from "viem";
 import { describe, expect, it } from "vitest";
 import { type OaathQuoteRequest, OperationStore } from "../src/advanced.js";
-import { encodeKernelV4NonceKey } from "../src/kernel.js";
+import { encodeKernelV4NonceKey } from "../src/kernel-v4.js";
+
 import { parseClientContext } from "../src/persistence.js";
 import {
   CALL_DATA,

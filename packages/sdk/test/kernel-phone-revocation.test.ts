@@ -14,14 +14,16 @@ import {
 import { describe, expect, it } from "vitest";
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import {
-  encodeKernelV4Execution,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4PermissionUninstallCalls,
   prepareKernelPermissionRevocation,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
   restoreKernelPhoneRevocation,
 } from "../src/kernel.js";
+import {
+  encodeKernelV4Execution,
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4PermissionUninstallCalls,
+} from "../src/kernel-v4.js";
 import {
   accountProfile,
   CHAIN_ID,

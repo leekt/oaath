@@ -30,11 +30,6 @@ import {
 import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   createKernelRuntime,
-  encodeKernelV4InstallModules,
-  encodeKernelV4PermissionUninstallCalls,
-  KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
   kernelDeployment,
   kernelKey,
@@ -43,6 +38,13 @@ import {
   pinnedSignerModule,
   sessionOperator,
 } from "../src/kernel.js";
+import {
+  encodeKernelV4InstallModules,
+  encodeKernelV4PermissionUninstallCalls,
+  KERNEL_V4_CREATE2_DEPLOYER,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
+} from "../src/kernel-v4.js";
 import {
   type AnvilChain,
   createHarness as createChainHarness,

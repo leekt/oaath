@@ -3,6 +3,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type {
@@ -13,7 +14,8 @@ import type {
   OaathRegisteredPaymasterService,
 } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
-import { encodeKernelV4Execution } from "../src/kernel.js";
+import { encodeKernelV4Execution } from "../src/kernel-v4.js";
+
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,

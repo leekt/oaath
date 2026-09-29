@@ -28,16 +28,6 @@ import {
 import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
-  encodeKernelV4PermissionSignature,
-  encodeKernelV4PolicyData,
-  encodeKernelV4SignerData,
-  encodeKernelV4ValidatorData,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_EXECUTE_SELECTOR,
-  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelBuiltInKeyKind,
   type KernelKeyKind,
   type KernelOperatorAuthority,
@@ -51,6 +41,18 @@ import {
   sessionOperator,
 } from "../src/kernel.js";
 import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
+import {
+  encodeKernelV4PermissionSignature,
+  encodeKernelV4PolicyData,
+  encodeKernelV4SignerData,
+  encodeKernelV4ValidatorData,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_EXECUTE_SELECTOR,
+  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+} from "../src/kernel-v4.js";
 
 const chainId = 421_614;
 const deployment = kernelDeployment({ chainId });

@@ -29,14 +29,10 @@ import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.j
 import {
   createKernelRuntime,
   type EcdsaSignRequest,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4InstallNonceRead,
-  encodeKernelV4PermissionUninstallCalls,
   type KernelRuntime,
   type KeyProfile,
   kernelDeployment,
   kernelKey,
-  kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
   prepareKernelPhonePermissionApproval,
@@ -46,6 +42,12 @@ import {
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 import type { KernelV4AccountDescriptor } from "../src/kernel-v4.js";
+import {
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
+  encodeKernelV4PermissionUninstallCalls,
+  kernelV4ReplayableInstallDigest,
+} from "../src/kernel-v4.js";
 import type { OperationObserverCapabilities } from "../src/operation-observer.js";
 import {
   type AnvilChain,

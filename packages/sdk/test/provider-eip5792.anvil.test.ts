@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { IDBFactory } from "fake-indexeddb";
 import { decodeEventLog, encodeFunctionData, parseEther, toEventSelector } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
@@ -27,14 +28,16 @@ import type {
 } from "../src/advanced.js";
 import {
   createKernelRuntime,
-  encodeKernelV4NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelDeployment,
   kernelKey,
   ownerOperator,
   type PreparedUserOperation,
 } from "../src/kernel.js";
+import {
+  encodeKernelV4NonceKey,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+} from "../src/kernel-v4.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,

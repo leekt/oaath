@@ -18,11 +18,8 @@ import {
   type OaathSessionCoverage,
   probeBundlerCapability,
 } from "../src/advanced.js";
-import {
-  asViemUserOperation,
-  KERNEL_V4_ENTRY_POINT_V07,
-  prepareUserOperation,
-} from "../src/kernel.js";
+import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
 import { supportsBundlerSponsorship } from "../src/routing/decide.js";
 
 const chainId = 421_614;
