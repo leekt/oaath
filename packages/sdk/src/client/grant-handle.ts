@@ -63,7 +63,10 @@ import {
   type KernelGrantApproval,
   kernelGrantApprovalNonce,
 } from "../kernel/permission/approval.js";
-import { observeKernelPermissionRevocation } from "../kernel/permission/observe-revocation.js";
+import {
+  type KernelPermissionRevocationVerification,
+  observeKernelPermissionRevocation,
+} from "../kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "../kernel/permission/v33.js";
 import {
@@ -171,6 +174,9 @@ import {
 } from "./sponsorship.js";
 
 const SUBMISSION_TIMEOUT_MS = 30_000;
+/** Only `revoked` completes a target; every other answer leaves it pending. */
+const revokedEvidence = (result: KernelPermissionRevocationVerification) =>
+  result.status === "revoked" ? result.evidence : null;
 const MAX_CALLS = 64;
 const USER_OPERATION_HASH = /^0x[0-9a-f]{64}$/u;
 const PROVIDER_ACCOUNT = /^0x[0-9a-f]{40}$/u;
@@ -4257,12 +4263,14 @@ export function createGrantHandle(
       const chain = input.chains.get(binding.chainId);
       // A removed configuration entry cannot remove an already recorded obligation.
       let evidence = chain
-        ? await observeKernelPermissionRevocation({
-            binding,
-            approval: input.installApproval,
-            observation: chain.observation,
-            now: input.now,
-          })
+        ? revokedEvidence(
+            await observeKernelPermissionRevocation({
+              binding,
+              approval: input.installApproval,
+              observation: chain.observation,
+              now: input.now,
+            }),
+          )
         : null;
       if (
         evidence === null &&
@@ -4279,12 +4287,14 @@ export function createGrantHandle(
         // observed revocation against that current revision.
         snapshot = await refresh();
         grant = snapshot.value;
-        evidence = await observeKernelPermissionRevocation({
-          binding,
-          approval: input.installApproval,
-          observation: chain.observation,
-          now: input.now,
-        });
+        evidence = revokedEvidence(
+          await observeKernelPermissionRevocation({
+            binding,
+            approval: input.installApproval,
+            observation: chain.observation,
+            now: input.now,
+          }),
+        );
       }
       if (evidence === null) {
         if (input.ownerRevocations) {

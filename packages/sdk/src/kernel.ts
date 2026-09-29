@@ -85,6 +85,11 @@ export {
   parseKernelAllChainApproval,
 } from "./kernel/permission/materialize.js";
 export type {
+  KernelPermissionRevocationVerification,
+  VerifyKernelPermissionRevocationInput,
+} from "./kernel/permission/observe-revocation.js";
+export { verifyKernelPermissionRevocation } from "./kernel/permission/observe-revocation.js";
+export type {
   KernelPhonePermissionArtifact,
   PreparedKernelPhonePermissionApproval,
   PrepareKernelPhonePermissionApprovalInput,

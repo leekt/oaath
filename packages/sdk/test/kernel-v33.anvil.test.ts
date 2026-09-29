@@ -51,6 +51,7 @@ import {
   kernelV33PermissionStatus,
   parseKernelV33PermissionState,
 } from "../src/kernel/permission/v33-revocation.js";
+import { verifyKernelPermissionRevocation } from "../src/kernel.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
@@ -427,10 +428,33 @@ function passkeySession() {
 
   it("revokes installed and unused approvals without disabling another permission", async () => {
     const ownerAccount = privateKeyToAccount(generatePrivateKey());
-    const { harness, address, deployment } = await setupV33(143, ownerAccount);
+    const { chain, harness, address, deployment } = await setupV33(143, ownerAccount);
     for (const module of [harness.fixture.ecdsaSigner, harness.fixture.callPolicy])
       await harness.deployModule(module);
     const reads = createKernelV33Reads(harness.client);
+    // The public server verifier reads through the default port's finalized observation.
+    const [port] = createViemChainPorts(
+      { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
+      {
+        maxRequests: 200,
+        fetch: async (request) => {
+          if (!request.url.startsWith(chain.url)) throw new Error("bundler must not be used");
+          return fetch(request);
+        },
+      },
+    );
+    const verify = async (approval: Awaited<ReturnType<typeof approveKernelV33Permission>>) => {
+      // Slots-in-epoch 1: mined blocks move the finalized tag past the last effect.
+      await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+      return (
+        await verifyKernelPermissionRevocation({
+          approval,
+          chainId: 143,
+          reads: port!.observation,
+          now: () => 1,
+        })
+      ).status;
+    };
     const ownerKey = ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator });
     const owner = createKernelRuntime({
       deployment,
@@ -482,10 +506,13 @@ function passkeySession() {
     const survivor = await permission("survivor");
     const installed = await permission("installed");
     const unused = await permission("unused");
+    expect(await verify(installed.approval)).toBe("approval-replayable");
     for (const permission of [survivor, installed]) {
       const enabled = await materializeKernelV33Permission(permission.input);
       expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
     }
+    expect(await verify(installed.approval)).toBe("active");
+    expect(await verify(unused.approval)).toBe("approval-replayable");
     for (const [sequence, permission] of [installed, unused].entries()) {
       const state = parseKernelV33PermissionState(
         await reads.read({
@@ -518,6 +545,7 @@ function passkeySession() {
         }),
       );
       expect(kernelV33PermissionStatus(after, permission.approval)).toBe("absent");
+      expect(await verify(permission.approval)).toBe("revoked");
       expect(
         BigInt(kernelV33EffectivePermissionNonce(after)) > BigInt(permission.approval.nonce),
       ).toBe(true);
@@ -544,6 +572,7 @@ function passkeySession() {
       "success",
     );
     expect(await harness.client.getBalance({ address: target })).toBe(3n);
+    expect(await verify(survivor.approval)).toBe("active");
   }, 30_000);
 
   it.each(["browser", "local"])(

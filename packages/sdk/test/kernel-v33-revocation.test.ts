@@ -1,6 +1,5 @@
 import { hashTypedData } from "viem";
 import { describe, expect, it } from "vitest";
-import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import { parseKernelV33PermissionState } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
@@ -9,6 +8,7 @@ import {
   kernelV33PermissionEnableTypedData,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   sessionOperator,
+  verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 
 const empty = {
@@ -34,7 +34,7 @@ describe("v3.3 revocation state", () => {
     expect(parseKernelV33PermissionState(empty).currentNonce).toBe("1");
   });
 
-  it("requires finalized absence and consumed nonce, not v3.3's false generic module query", async () => {
+  it("reports replayable, active, revoked and unreadable from one finalized block", async () => {
     const account = "0x1111111111111111111111111111111111111111";
     const runtime = createKernelRuntime({
       deployment: kernelV33Deployment(143),
@@ -70,43 +70,95 @@ describe("v3.3 revocation state", () => {
       digest: hashTypedData(kernelV33PermissionEnableTypedData(scope)),
       enableSignature: "0x01",
     } as const;
-    const binding = { chainId: 143, account, permissionId: scope.permissionId } as const;
+    const installed = {
+      currentNonce: "2",
+      validationNonce: "1",
+      hook: "0x0000000000000000000000000000000000000001",
+      signer: runtime.packages[runtime.packages.length - 1]!.module,
+      permissionFlag: "0x0002",
+      policies: runtime.packages.slice(0, -1).map((entry) => `0x0002${entry.module.slice(2)}`),
+    };
     const hash = `0x${"11".repeat(32)}` as const;
     let state: unknown = empty;
     let canonical = hash;
-    let genericReads = 0;
-    const input = {
-      binding,
-      approval,
-      now: () => 100,
-      observation: {
-        async read(request: { type: string }) {
-          if (request.type === "chain_id") return 143;
-          if (request.type === "finalized_block") return { number: "0x2", hash };
-          if (request.type === "canonical_block") return { number: "0x2", hash: canonical };
-          if (request.type === "kernel_v33_permission_state") return state;
-          if (request.type === "kernel_permission_installed") {
-            genericReads++;
-            return false;
-          }
-          throw new Error("unexpected read");
+    let finality = true;
+    const seen: string[] = [];
+    const verify = () =>
+      verifyKernelPermissionRevocation({
+        approval,
+        chainId: 143,
+        now: () => 100,
+        reads: {
+          async read(request) {
+            seen.push(request.type);
+            if (request.type === "chain_id") return 143;
+            if (request.type === "finalized_block") {
+              if (!finality) throw new Error("finalized tag unsupported");
+              return { number: "0x2", hash };
+            }
+            if (request.type === "canonical_block") return { number: "0x2", hash: canonical };
+            if (request.type === "kernel_v33_permission_state") {
+              expect(request).toMatchObject({
+                account,
+                permissionId: scope.permissionId,
+                blockNumber: "2",
+              });
+              return state;
+            }
+            throw new Error("unexpected read");
+          },
         },
-        async close() {},
+      });
+    // Absent before first use: the enable signature can still install it.
+    expect(await verify()).toEqual({ status: "approval-replayable" });
+    state = installed;
+    expect(await verify()).toEqual({ status: "active" });
+    state = { ...empty, currentNonce: "2", validationNonce: "1" };
+    expect(await verify()).toEqual({
+      status: "revoked",
+      evidence: {
+        permission: {
+          chainId: 143,
+          account,
+          permissionId: scope.permissionId,
+          kind: "permission_absent",
+          blockNumber: "2",
+          blockHash: hash,
+          observedAt: 100,
+        },
+        installNonce: "2",
       },
-    };
-    expect(await observeKernelPermissionRevocation(input)).toBeNull();
-    state = { ...empty, validationNonce: "1" };
-    expect(await observeKernelPermissionRevocation(input)).toMatchObject({
-      installNonce: "2",
-      permission: { kind: "permission_absent", blockNumber: "2" },
     });
-    canonical = `0x${"22".repeat(32)}`;
-    expect(await observeKernelPermissionRevocation(input)).toBeNull();
-    canonical = hash;
-    state = { ...empty, validationNonce: "1", signer: runtime.authorityModule };
-    expect(await observeKernelPermissionRevocation(input)).toBeNull();
-    state = undefined;
-    expect(await observeKernelPermissionRevocation(input)).toBeNull();
-    expect(genericReads).toBe(0);
+    for (const failure of [
+      () => {
+        canonical = `0x${"22".repeat(32)}`;
+      },
+      () => {
+        finality = false;
+      },
+      () => {
+        state = { ...installed, signer: `0x${"22".repeat(20)}` };
+      },
+      () => {
+        state = undefined;
+      },
+    ]) {
+      canonical = hash;
+      finality = true;
+      state = { ...empty, currentNonce: "2", validationNonce: "1" };
+      failure();
+      expect(await verify()).toEqual({ status: "unreadable" });
+    }
+    // Never a generic module query, an EntryPoint nonce, or any write.
+    expect(new Set(seen)).toEqual(
+      new Set(["chain_id", "finalized_block", "canonical_block", "kernel_v33_permission_state"]),
+    );
+    await expect(
+      verifyKernelPermissionRevocation({
+        approval: { ...approval, version: "oaath.unknown/v1" } as never,
+        chainId: 143,
+        reads: { read: async () => 143 },
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
   });
 });

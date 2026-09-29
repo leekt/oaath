@@ -102,6 +102,7 @@ describe("package boundary", () => {
       "restoreKernelPhoneRevocation",
       "sessionOperator",
       "verifyKernelPermissionApproval",
+      "verifyKernelPermissionRevocation",
       "webauthnKey",
     ]);
   });
