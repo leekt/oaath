@@ -168,6 +168,7 @@ export function createLocalRealm(
   const operations: OperationStoreAdapter = {
     get: async (key) => (await storage()).operations.get(key),
     getArchived: async (key) => (await storage()).operations.getArchived(key),
+    list: async (scope) => (await storage()).operations.list(scope),
     compareAndSwap: async (input) => (await storage()).operations.compareAndSwap(input),
     close: async () => undefined,
   };

@@ -631,6 +631,8 @@ function trackedStores() {
         get: (key: Parameters<typeof stores.operations.get>[0]) => stores.operations.get(key),
         getArchived: (input: Parameters<typeof stores.operations.getArchived>[0]) =>
           stores.operations.getArchived(input),
+        list: (scope: Parameters<typeof stores.operations.list>[0]) =>
+          stores.operations.list(scope),
         compareAndSwap: (input: Parameters<typeof stores.operations.compareAndSwap>[0]) =>
           stores.operations.compareAndSwap(input),
         close: async () => {

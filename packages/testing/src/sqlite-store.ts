@@ -274,6 +274,12 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
     FROM oaath_test_operation_store_v2
     WHERE grant_id = ? AND chain_id = ? AND kind = ? AND lane = ?
   `);
+    const list = database.prepare(`
+    SELECT record_version, store_revision, updated_at, payload
+    FROM oaath_test_operation_store_v2
+    WHERE grant_id = ? AND chain_id = ? AND kind = ?
+    ORDER BY lane
+  `);
     const insert = database.prepare(`
     INSERT INTO oaath_test_operation_store_v2 (
       grant_id, chain_id, kind, lane, record_version, store_revision, updated_at, payload
@@ -292,6 +298,11 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
             | StoredRow
             | undefined,
         );
+      },
+      async list(scope) {
+        return (
+          list.all(operationLaneId(scope.grantId), scope.chainId, scope.kind) as StoredRow[]
+        ).map(envelope);
       },
       async getArchived({ key, userOperationHash }) {
         return envelope(

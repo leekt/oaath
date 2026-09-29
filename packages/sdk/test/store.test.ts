@@ -372,6 +372,13 @@ async function expectIndependentLanes(adapter: OperationStoreAdapter): Promise<v
     expect((await store.get(lane17))?.value).toEqual(first);
     expect(await store.get({ ...scope, lane: 19 })).toBeUndefined();
 
+    const listed = await store.list(scope);
+    expect(listed.map((record) => record.value.lane?.key ?? 0).sort((a, b) => a - b)).toEqual([
+      0, 17, 18,
+    ]);
+    await expect(store.list({ ...scope, chainId: 1 })).resolves.toEqual([]);
+    await expect(store.list({ ...scope, kind: "revocation" })).resolves.toEqual([]);
+
     // A terminal lane is replaceable; its archive belongs to that lane only.
     const finalized = finalizedLaneOperation("2", 17);
     await store.compareAndSwap({ key: lane17, expectedStoreRevision: 0, next: finalized });
@@ -399,6 +406,7 @@ describe("caller-reserved Operation lanes", () => {
     };
     const store = new OperationStore({
       get: counted,
+      list: counted,
       getArchived: counted,
       compareAndSwap: counted,
       async close() {},
@@ -411,7 +419,32 @@ describe("caller-reserved Operation lanes", () => {
       () => store.get({ ...scope, kind: "revocation", lane: 17 }),
       "store_input_invalid",
     );
+    await expectStoreError(() => store.list({ ...scope, lane: 17 }), "store_input_invalid");
     expect(calls).toBe(0);
+  });
+
+  it("fails closed on listed records outside their scope or repeating a lane", async () => {
+    let listed: unknown = [];
+    const store = new OperationStore({
+      async get() {},
+      async list() {
+        return listed;
+      },
+      async getArchived() {},
+      async compareAndSwap() {
+        return false;
+      },
+      async close() {},
+    });
+    const scope = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+    listed = [operationEnvelope(laneOperation("1", 17, 1))];
+    await expectStoreError(() => store.list(scope), "store_key_mismatch");
+    listed = [operationEnvelope(laneOperation("1", 17)), operationEnvelope(laneOperation("2", 17))];
+    await expectStoreError(() => store.list(scope), "store_record_invalid");
+    listed = [{}];
+    await expectStoreError(() => store.list(scope), "store_record_invalid");
+    listed = {};
+    await expectStoreError(() => store.list(scope), "store_record_invalid");
   });
 
   it("keys the memory Operation store per lane", async () => {
@@ -982,6 +1015,9 @@ describe("aggregate store boundary", () => {
       async get() {
         calls += 1;
       },
+      async list() {
+        return [];
+      },
       async getArchived() {
         calls += 1;
       },
@@ -1038,6 +1074,9 @@ describe("aggregate store boundary", () => {
     const store = new OperationStore({
       async get() {
         return raw;
+      },
+      async list() {
+        return [];
       },
       async getArchived() {},
       async compareAndSwap() {
@@ -1218,6 +1257,9 @@ describe("aggregate store boundary", () => {
       async get() {
         return current;
       },
+      async list() {
+        return [];
+      },
       async getArchived() {
         archiveReads += 1;
         return archived;
@@ -1264,6 +1306,9 @@ describe("aggregate store boundary", () => {
     const store = new OperationStore({
       async get() {
         return current;
+      },
+      async list() {
+        return [];
       },
       async getArchived() {
         return archived;

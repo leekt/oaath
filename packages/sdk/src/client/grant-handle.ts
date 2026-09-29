@@ -1209,6 +1209,7 @@ export function createGrantHandle(
       get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
       getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
         input.operations.getArchived(value),
+      list: (scope: Parameters<OperationStoreAdapter["list"]>[0]) => input.operations.list(scope),
       compareAndSwap: (value: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
         input.operations.compareAndSwap(value),
       close: async () => undefined,
@@ -3871,6 +3872,7 @@ export function createGrantHandle(
       get: (key: Readonly<OperationStoreKey>) => input.operations.get(key),
       getArchived: (value: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
         input.operations.getArchived(value),
+      list: (scope: Parameters<OperationStoreAdapter["list"]>[0]) => input.operations.list(scope),
       compareAndSwap: (record: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
         input.operations.compareAndSwap(record),
       close: async () => undefined,

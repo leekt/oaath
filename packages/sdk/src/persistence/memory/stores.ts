@@ -154,6 +154,13 @@ export function createMemoryOperationStoreAdapter(): OperationStoreAdapter {
       assertOpen(closed);
       return records.get(operationKey(key));
     },
+    async list(scope) {
+      assertOpen(closed);
+      const prefix = JSON.stringify(["lane", ...operationScopeParts(scope)]).slice(0, -1);
+      return [...records]
+        .filter(([key]) => key.startsWith(`${prefix},`))
+        .map(([, record]) => record);
+    },
     async getArchived(input) {
       assertOpen(closed);
       return archives.get(operationArchiveKey(input.key, input.userOperationHash));

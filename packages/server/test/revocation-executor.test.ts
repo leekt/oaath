@@ -352,5 +352,9 @@ function observation(request: KernelV4RevocationSigningRequest, finalized = fals
       id: "run_17",
       key: 17,
     });
+    expect((await fresh.list(scope)).map((record) => record.value.lane?.key ?? 0)).toEqual([
+      0, 17, 18,
+    ]);
+    await expect(fresh.list({ ...scope, chainId: 2 })).resolves.toEqual([]);
   });
 });

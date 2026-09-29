@@ -42,6 +42,13 @@ function keyParts(value: Readonly<OperationStoreKey>): readonly [string, number,
   return [...scopeParts(value), lane];
 }
 
+function requestResult<Value>(request: IDBRequest<Value>): Promise<Value> {
+  return new Promise<Value>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
 function laneKey(value: Readonly<OperationStoreKey>): IDBValidKey {
   return ["lane", ...keyParts(value)];
 }
@@ -66,6 +73,26 @@ export function createIndexedDbOperationStoreAdapter(
       return database.transact(operations, "readonly", ([store]) =>
         store === undefined ? undefined : readRecord(store, lane),
       );
+    },
+    async list(scope: Readonly<OperationStoreScope>): Promise<unknown> {
+      const [grantId, chainId, kind] = scopeParts(scope);
+      return database.transact(operations, "readonly", async ([store]) => {
+        if (store === undefined) return [];
+        const records: unknown[] = [];
+        for (const key of await requestResult(store.getAllKeys())) {
+          if (
+            Array.isArray(key) &&
+            key.length === 5 &&
+            key[0] === "lane" &&
+            key[1] === grantId &&
+            key[2] === chainId &&
+            key[3] === kind
+          ) {
+            records.push(await readRecord(store, key));
+          }
+        }
+        return records;
+      });
     },
     async getArchived(
       input: Parameters<OperationStoreAdapter["getArchived"]>[0],
