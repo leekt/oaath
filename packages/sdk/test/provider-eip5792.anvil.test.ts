@@ -30,8 +30,8 @@ import {
   encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   ownerOperator,
   type PreparedUserOperation,
 } from "../src/kernel.js";
@@ -206,7 +206,7 @@ async function unrelatedOperation(
 ): Promise<Readonly<SignedOperation>> {
   const account = privateKeyToAccount(generatePrivateKey());
   const runtime = createKernelRuntime({
-    deployment: kernelV4Deployment(CHAIN_ID),
+    deployment: kernelDeployment({ chainId: CHAIN_ID }),
     operator: ownerOperator({ key: kernelKey({ account, validator }) }),
     reads: harness.reads,
   });

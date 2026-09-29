@@ -8,6 +8,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { type ChildProcess, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -35,13 +36,13 @@ import { expect } from "vitest";
 // is the other consumer. Importing it keeps one list rather than a stale copy.
 import { scrubLiveProviderEnvironment } from "../../../../scripts/live-provider-environment.mjs";
 import {
-  createKernelV4Reads,
+  createKernelReads,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   type KernelRuntime,
-  type KernelV4AccountReadCapability,
   type PreparedUserOperation,
 } from "../../src/kernel.js";
+import type { KernelV4AccountReadCapability } from "../../src/kernel-v4.js";
 
 export interface ModuleFixture {
   repository: string;
@@ -396,7 +397,7 @@ export async function createHarness(chain: AnvilChain): Promise<KernelHarness> {
     client,
     wallet,
     submitter,
-    reads: createKernelV4Reads(client),
+    reads: createKernelReads(client),
     deployCreate2,
     deployModule,
     deployValidator,

@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { p256 } from "@noble/curves/nist.js";
 import {
   hashKernelV4RevocationSigningRequest,
@@ -29,11 +30,10 @@ import {
   encodeKernelV4PermissionUninstallCalls,
   type KernelAllChainApproval,
   type KernelRuntime,
-  type KernelV4AccountDescriptor,
   type KeyProfile,
+  kernelDeployment,
   kernelKey,
   kernelPermissionInstallNonce,
-  kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
@@ -43,6 +43,7 @@ import {
   sessionOperator,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
+import type { KernelV4AccountDescriptor } from "../src/kernel-v4.js";
 import type { OperationObserverCapabilities } from "../src/operation-observer.js";
 import {
   type AnvilChain,
@@ -149,7 +150,7 @@ async function bringUp(
   await harness.deployModule(harness.fixture.ecdsaSigner);
   const validator = await harness.deployValidatorCreate2();
 
-  const deployment = kernelV4Deployment(chainId);
+  const deployment = kernelDeployment({ chainId });
   const ownerKey = kernelKey({ account: owner.account, validator });
   const ownerRuntime = createKernelRuntime({
     deployment,
@@ -306,7 +307,7 @@ async function bringUp(
         now,
       );
       await harness.fund(installApproval.account, parseEther("1"));
-      const deployment = kernelV4Deployment(CHAIN_A);
+      const deployment = kernelDeployment({ chainId: CHAIN_A });
       const owner = createKernelRuntime({
         deployment,
         operator: ownerOperator({
@@ -557,7 +558,7 @@ async function bringUp(
     expect(await readNonce(otherNonce)).toBe(BigInt(otherNonce));
     const otherTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     const otherRuntime = createKernelRuntime({
-      deployment: kernelV4Deployment(CHAIN_B),
+      deployment: kernelDeployment({ chainId: CHAIN_B }),
       operator: sessionOperator({
         key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
@@ -609,7 +610,7 @@ async function bringUp(
     const a = await bringUp(CHAIN_A, owner, firstKey, firstTarget);
     const secondRuntime = async (stack: ChainStack) =>
       createKernelRuntime({
-        deployment: kernelV4Deployment(stack.chain.chainId),
+        deployment: kernelDeployment({ chainId: stack.chain.chainId }),
         operator: sessionOperator({
           key: kernelKey({
             account: secondKey,
@@ -718,7 +719,7 @@ async function bringUp(
     }
     const revertingTarget = lower(deploymentReceipt.contractAddress);
     const sessionRuntime = createKernelRuntime({
-      deployment: kernelV4Deployment(CHAIN_A),
+      deployment: kernelDeployment({ chainId: CHAIN_A }),
       operator: sessionOperator({
         key: kernelKey({
           account: sessionKeyAccount,

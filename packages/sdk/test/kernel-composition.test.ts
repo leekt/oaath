@@ -41,19 +41,19 @@ import {
   type KernelBuiltInKeyKind,
   type KernelKeyKind,
   type KernelOperatorAuthority,
-  type KernelV4AccountReadRequest,
   type KeyProfile,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   type OperatorProfile,
   ownerOperator,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
 } from "../src/kernel.js";
+import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
 
 const chainId = 421_614;
-const deployment = kernelV4Deployment(chainId);
+const deployment = kernelDeployment({ chainId });
 const validator = `0x${"22".repeat(20)}` as const;
 const account = `0x${"66".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
@@ -644,7 +644,7 @@ describe("Kernel composition matrix", () => {
 
   it("refuses to sign an operation prepared for another chain", async () => {
     const runtime = createKernelRuntime({
-      deployment: kernelV4Deployment(11_155_111),
+      deployment: kernelDeployment({ chainId: 11_155_111 }),
       operator: operatorProfiles.owner(keyProfiles.ecdsa()),
       reads: reads(),
     });
@@ -731,7 +731,7 @@ describe("Kernel composition matrix", () => {
       }),
     ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
     const runtime = createKernelRuntime({
-      deployment: kernelV4Deployment(1),
+      deployment: kernelDeployment({ chainId: 1 }),
       operator: operatorProfiles.owner(keyProfiles.ecdsa()),
       reads: reads(),
     });

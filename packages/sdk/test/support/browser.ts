@@ -60,9 +60,8 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KeyProfile,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
-  kernelV33Deployment,
   kernelV33PermissionInstallNonce,
   ownerOperator,
   type PreparedUserOperation,
@@ -86,7 +85,7 @@ export const CLIENT_TOKEN = "client-token";
 export const OWNER_TOKEN = "owner-token";
 export const SUBJECT = "subject-1";
 
-export const deployment = kernelV4Deployment(CHAIN_ID);
+export const deployment = kernelDeployment({ chainId: CHAIN_ID });
 export const VALIDATOR = `0x${"22".repeat(20)}` as const;
 export const ACCOUNT = `0x${"66".repeat(20)}` as const;
 export const TARGET = `0x${"44".repeat(20)}` as const;
@@ -372,7 +371,7 @@ async function ownerInstallApproval(
   const owner = kernelKey({ account: ownerAccount, validator });
   if (account.kernelVersion === "0.3.3") {
     const runtime = createKernelRuntime({
-      deployment: kernelV33Deployment(CHAIN_ID),
+      deployment: kernelDeployment({ chainId: CHAIN_ID, kernelVersion: "0.3.3" }),
       operator: sessionOperator({
         key: ownerApprovedOperatorKey(operatorCredential, operatorKey),
         policies: deriveSessionPolicyProfiles(parseGrantPolicy(approvedPolicy)),
@@ -565,7 +564,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   const sends: Readonly<PreparedUserOperation>[] = [];
   const signatures: string[] = [];
   const chainId = options.chainId ?? CHAIN_ID;
-  const selectedDeployment = kernelV4Deployment(chainId);
+  const selectedDeployment = kernelDeployment({ chainId });
   const account = options.account ?? ACCOUNT;
   const fixture = {
     sends,
