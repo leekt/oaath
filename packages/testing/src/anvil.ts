@@ -56,6 +56,15 @@ export interface LocalAnvilFixture {
   readonly close: () => Promise<void>;
 }
 
+/** The local chain's handleOps fee payer, retained for recovery. */
+function handleOpsFeePayer(
+  capability: Readonly<{ routes: readonly Readonly<{ kind: string; feePayer?: unknown }>[] }>,
+): unknown {
+  const route = capability.routes.find((entry) => entry.kind === "erc4337-handleops");
+  if (route === undefined) throw new Error("local_fixture_fee_payer_missing");
+  return route.feePayer;
+}
+
 /**
  * Starts one or two owned Anvil chains with the real pinned Kernel runtime.
  * Requests are approved by a local test owner; this is never a production
@@ -161,7 +170,11 @@ export async function createLocalAnvilFixture(
       chainId: capability.chainId,
       reads: (request: unknown) => capability.reads.read(request as never),
       observation: (request: unknown) => capability.observation.read(request as never),
-      bundler: (request: unknown) => capability.bundler.probe(request as never),
+      bundler: (request: unknown) => {
+        const route = capability.routes.find((entry) => entry.kind === "erc4337-bundler");
+        if (route?.kind !== "erc4337-bundler") throw new Error("local_fixture_bundler_missing");
+        return route.bundler.probe(request as never);
+      },
       quote: (request: unknown) => capability.quote(request as never),
       // One submission settles per call: open, send once, close.
       async submission(request: unknown) {
@@ -173,7 +186,7 @@ export async function createLocalAnvilFixture(
         }
       },
       usage: (request: unknown) => capability.usage(request as never),
-      feePayer: capability.feePayer as { address: `0x${string}`; balance: string },
+      feePayer: handleOpsFeePayer(capability) as { address: `0x${string}`; balance: string },
       staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
     })),
     authentication: {
@@ -337,7 +350,7 @@ export async function createLocalAnvilFixture(
               chainId: chain.capability.chainId,
               rpcUrl: chain.url,
               validator: chain.validator,
-              feePayer: chain.capability.feePayer,
+              feePayer: handleOpsFeePayer(chain.capability),
             })),
           }),
     rpcUrl(chainId: number): string {

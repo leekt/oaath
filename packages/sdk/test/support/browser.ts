@@ -33,8 +33,10 @@ import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type {
   Erc7677GasEstimationRequest,
+  OaathBundlerProbeCapability,
   OaathChainCapability,
   OaathRegisteredPaymasterService,
+  OaathSubmissionRoute,
 } from "../../src/advanced.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
@@ -247,6 +249,31 @@ export function createRelay(
 }
 
 /** Adapts one synthetic chain fixture into the relay's chain execution ports. */
+/** The chain's configured bundler-route probe. */
+export function bundlerProbe(
+  capability: Readonly<OaathChainCapability>,
+): OaathBundlerProbeCapability["probe"] {
+  const route = capability.routes?.find((entry) => entry.kind === "erc4337-bundler");
+  if (route?.kind !== "erc4337-bundler") throw new Error("chain has no bundler route");
+  return route.bundler.probe;
+}
+
+/** The chain's routes with its bundler probe replaced; order and handleOps stay. */
+export function withBundler(
+  capability: Readonly<OaathChainCapability>,
+  bundler: OaathBundlerProbeCapability,
+): readonly OaathSubmissionRoute[] {
+  return (capability.routes ?? []).map((route) =>
+    route.kind === "erc4337-bundler" ? { kind: route.kind, bundler } : route,
+  );
+}
+
+/** The handleOps route's fee payer, or null when the chain offers no such route. */
+export function routeFeePayer(capability: Readonly<OaathChainCapability>) {
+  const route = capability.routes?.find((entry) => entry.kind === "erc4337-handleops");
+  return route?.kind === "erc4337-handleops" ? route.feePayer : null;
+}
+
 export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
   const capability = fixture.capability;
   return {
@@ -273,7 +300,7 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
           }),
         );
       }
-      return capability.bundler.probe(request as never);
+      return bundlerProbe(capability)(request as never);
     },
     quote: (request: unknown) => capability.quote(request as never),
     // One submission settles per call: open, send once, close.
@@ -290,7 +317,7 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     },
     usage:
       capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
-    feePayer: capability.feePayer,
+    feePayer: routeFeePayer(capability),
     staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
   };
 }
@@ -718,17 +745,27 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       },
       async close() {},
     }),
-    bundler: Object.freeze({
-      async probe(request: { readonly chainId: number; readonly entryPoint: `0x${string}` }) {
-        const state = options.bundler ?? "available";
-        if (state === "unreadable") throw new Error("bundler unreachable");
-        return {
-          accepting: state !== "absent",
-          chainId: state === "unsupported" ? request.chainId + 1 : request.chainId,
-          supportedEntryPoints: [request.entryPoint],
-        };
-      },
-    }),
+    // The bundler + handleOps-fallback configuration: the bundler first, then
+    // the handleOps route exactly when a fee payer is configured.
+    routes: Object.freeze([
+      Object.freeze({
+        kind: "erc4337-bundler" as const,
+        bundler: Object.freeze({
+          async probe(request: { readonly chainId: number; readonly entryPoint: `0x${string}` }) {
+            const state = options.bundler ?? "available";
+            if (state === "unreadable") throw new Error("bundler unreachable");
+            return {
+              accepting: state !== "absent",
+              chainId: state === "unsupported" ? request.chainId + 1 : request.chainId,
+              supportedEntryPoints: [request.entryPoint],
+            };
+          },
+        }),
+      }),
+      ...(options.feePayer === undefined || options.feePayer === null
+        ? []
+        : [Object.freeze({ kind: "erc4337-handleops" as const, feePayer: options.feePayer })]),
+    ]),
     submission: Object.freeze({
       async open(request: {
         readonly prepared: Readonly<PreparedUserOperation>;
@@ -780,7 +817,6 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             },
           })
         : null,
-    feePayer: options.feePayer ?? null,
     paymasterService: options.paymasterService ?? null,
     staticPaymasterConfigurationHash: options.staticPaymasterConfigurationHash ?? null,
   });

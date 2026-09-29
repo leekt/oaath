@@ -125,6 +125,7 @@ import {
   feePayerDescriptor,
   type OaathRouteFact,
   type OaathSessionCoverage,
+  routeKind,
 } from "../routing/capabilities.js";
 import { decideExecution, supportsBundlerSponsorship } from "../routing/decide.js";
 import {
@@ -441,6 +442,15 @@ export interface OaathRegisteredPaymasterService {
   readonly estimate: Erc7677GasEstimator["estimate"];
 }
 
+/**
+ * One submission route a chain offers. Only the ERC-4337 kinds ship: a bundler
+ * route carries its pre-submission probe, and a handleOps route carries the EOA
+ * fee payer that pays for `EntryPoint.handleOps`.
+ */
+export type OaathSubmissionRoute =
+  | Readonly<{ kind: "erc4337-bundler"; bundler: OaathBundlerProbeCapability }>
+  | Readonly<{ kind: "erc4337-handleops"; feePayer: Readonly<OaathFeePayerDescriptor> }>;
+
 export interface OaathChainCapability {
   readonly gas?: Readonly<KernelGasPolicy>;
   readonly chainId: number;
@@ -448,7 +458,13 @@ export interface OaathChainCapability {
     readonly read: (request: KernelV4AccountReadRequest | KernelV33ReadRequest) => Promise<unknown>;
   };
   readonly observation: OperationObserverCapabilities;
-  readonly bundler: OaathBundlerProbeCapability;
+  /**
+   * Ordered preference, each kind at most once; routing picks the first route
+   * that is conclusively usable. Omitted or empty means the chain offers no
+   * route, so sends fail with `oaath_client_route_unavailable`.
+   */
+  readonly routes?: readonly OaathSubmissionRoute[];
+  /** Sends the signed operation on whichever route the decision selected. */
   readonly submission: OaathSubmissionCapability;
   readonly quote: OaathQuoteCapability["quote"];
   /**
@@ -456,7 +472,6 @@ export interface OaathChainCapability {
    * deployment provides none. Absent evidence is inconclusive, never "unused".
    */
   readonly usage: ((request: Readonly<OaathUsageRequest>) => Promise<unknown>) | null;
-  readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
   /** Null means this chain does not advertise ERC-7677. */
   readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
   /** Authenticated commitment to one exact ERC-7902 static paymaster, or null. */
@@ -646,11 +661,9 @@ const CHAIN_KEYS: readonly string[] = Object.freeze([
   "chainId",
   "reads",
   "observation",
-  "bundler",
   "submission",
   "quote",
   "usage",
-  "feePayer",
   "paymasterService",
   "staticPaymasterConfigurationHash",
 ]);
@@ -686,6 +699,40 @@ function capabilityObject<Capability>(
   return value as Capability;
 }
 
+/** Captures ordered submission routes; routing owns the kind and fee-payer rules. */
+function submissionRoutes(
+  value: unknown,
+  context: CaptureContext,
+): readonly Readonly<OaathSubmissionRoute>[] {
+  const fail = (message: string) => clientFail("oaath_client_capability_invalid", message);
+  const seen = new Set<string>();
+  const routes = captureDenseArray(value, "chain routes", context, fail).map(
+    (entry): Readonly<OaathSubmissionRoute> => {
+      const captured = captureRecord(entry, "chain route", context, fail);
+      const kind = routeKind(captured.kind, fail);
+      if (seen.has(kind)) return fail("chain routes repeat a route kind");
+      seen.add(kind);
+      if (kind === "erc4337-bundler") {
+        const route = exactCapturedRecord(captured, ["kind", "bundler"], "chain route", fail);
+        return Object.freeze({
+          kind,
+          bundler: capabilityObject<OaathBundlerProbeCapability>(
+            route.bundler,
+            ["probe"],
+            "chain bundler",
+            context,
+          ),
+        });
+      }
+      const route = exactCapturedRecord(captured, ["kind", "feePayer"], "chain route", fail);
+      const feePayer = feePayerDescriptor(route.feePayer, context, fail);
+      if (feePayer === null) return fail("chain handleOps route requires a fee payer");
+      return Object.freeze({ kind, feePayer });
+    },
+  );
+  return Object.freeze(routes);
+}
+
 /** Captures one chain capability set exactly; sub-capabilities keep their owners. */
 export function captureChainCapability(value: unknown): Readonly<OaathChainCapability> {
   const context: CaptureContext = new WeakSet();
@@ -694,7 +741,11 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
   );
   const record = exactCapturedRecord(
     captured,
-    [...CHAIN_KEYS, ...(Object.hasOwn(captured, "gas") ? ["gas"] : [])],
+    [
+      ...CHAIN_KEYS,
+      ...(Object.hasOwn(captured, "gas") ? ["gas"] : []),
+      ...(Object.hasOwn(captured, "routes") ? ["routes"] : []),
+    ],
     "OAAth chain capability",
     (message) => clientFail("oaath_client_capability_invalid", message),
   );
@@ -764,12 +815,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       "chain observation",
       context,
     ),
-    bundler: capabilityObject<OaathBundlerProbeCapability>(
-      record.bundler,
-      ["probe"],
-      "chain bundler",
-      context,
-    ),
+    routes: Object.hasOwn(record, "routes") ? submissionRoutes(record.routes, context) : [],
     submission: capabilityObject<OaathSubmissionCapability>(
       record.submission,
       ["open"],
@@ -781,13 +827,36 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       record.usage === null
         ? null
         : clientCapability<NonNullable<OaathChainCapability["usage"]>>(record.usage, "chain usage"),
-    // routing owns the exact fee-payer rules.
-    feePayer: feePayerDescriptor(record.feePayer, context, (message) =>
-      clientFail("oaath_client_capability_invalid", message),
-    ),
     paymasterService,
     staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,
   });
+}
+
+/**
+ * Classifies a captured chain's routes in preference order. Only a bundler route
+ * is probed, so a chain without one never needs a bundler transport.
+ */
+export async function classifyChainRoutes(
+  chainId: number,
+  chain: Readonly<OaathChainCapability>,
+  entryPoint: `0x${string}`,
+  timeoutMs: number,
+): Promise<readonly OaathRouteFact[]> {
+  const facts: OaathRouteFact[] = [];
+  for (const route of chain.routes ?? []) {
+    if (route.kind === "erc4337-handleops") {
+      facts.push(Object.freeze({ kind: route.kind, feePayer: route.feePayer }));
+      // A configured handleOps route is always usable; later routes are never reached.
+      break;
+    }
+    const bundler = await probeBundlerCapability({
+      capability: route.bundler,
+      request: { chainId, entryPoint },
+      timeoutMs,
+    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
+    facts.push(Object.freeze({ kind: route.kind, bundler }));
+  }
+  return Object.freeze(facts);
 }
 
 export function captureCalls(
@@ -1110,22 +1179,12 @@ export function createGrantHandle(
   }
 
   /** Classifies the chain's routes in preference order; only a bundler route is probed. */
-  async function classifiedRoutes(
+  function classifiedRoutes(
     chainId: number,
     chain: Readonly<OaathChainCapability>,
     entryPoint: `0x${string}`,
   ): Promise<readonly OaathRouteFact[]> {
-    const bundler = await probeBundlerCapability({
-      capability: chain.bundler,
-      request: { chainId, entryPoint },
-      timeoutMs: SUBMISSION_TIMEOUT_MS,
-    }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
-    return Object.freeze([
-      Object.freeze({ kind: "erc4337-bundler" as const, bundler }),
-      ...(chain.feePayer === null
-        ? []
-        : [Object.freeze({ kind: "erc4337-handleops" as const, feePayer: chain.feePayer })]),
-    ]);
+    return classifyChainRoutes(chainId, chain, entryPoint, SUBMISSION_TIMEOUT_MS);
   }
 
   async function refresh(): Promise<GrantStoreRecord> {

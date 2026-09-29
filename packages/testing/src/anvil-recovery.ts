@@ -153,11 +153,13 @@ export async function openLocalAnvilRecoveryClient(
             }
           },
         }),
-        bundler: { probe: unavailable },
+        routes: [
+          { kind: "erc4337-bundler", bundler: { probe: unavailable } },
+          { kind: "erc4337-handleops", feePayer: chain.feePayer },
+        ],
         submission: { open: unavailable },
         quote: unavailable,
         usage: unavailable,
-        feePayer: chain.feePayer,
         paymasterService: null,
         staticPaymasterConfigurationHash: null,
       };

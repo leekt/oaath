@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type {
   Erc7677GasEstimationRequest,
   Erc7677PaymasterServiceRequest,
+  OaathBundlerProbeRequest,
   OaathChainCapability,
   OaathRegisteredPaymasterService,
 } from "../src/advanced.js";
@@ -17,6 +18,7 @@ import {
 } from "../src/provider/errors.js";
 import { oaathProvider } from "../src/viem.js";
 import {
+  bundlerProbe,
   CALL_DATA,
   CHAIN_ID,
   type ChainFixture,
@@ -26,6 +28,7 @@ import {
   ISSUER_URL,
   permissionInput,
   TARGET,
+  withBundler,
 } from "./support/browser.js";
 
 const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}`;
@@ -281,12 +284,15 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     });
     const registered = registeredService();
     const chain = replaceChain(base, {
-      bundler: Object.freeze({
-        async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-          probes += 1;
-          return base.capability.bundler.probe(request);
-        },
-      }),
+      routes: withBundler(
+        base.capability,
+        Object.freeze({
+          async probe(request: OaathBundlerProbeRequest) {
+            probes += 1;
+            return bundlerProbe(base.capability)(request);
+          },
+        }),
+      ),
       paymasterService: registered.service,
     });
     const { connection, grant, provider, account } = await activeProvider(chain);

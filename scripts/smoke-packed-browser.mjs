@@ -404,16 +404,21 @@ const chain = {
     },
     close: async () => {},
   },
-  bundler: {
-    async probe(request) {
-      requireChain("bundler");
-      return {
-        accepting: true,
-        chainId: request.chainId,
-        supportedEntryPoints: [request.entryPoint],
-      };
+  routes: [
+    {
+      kind: "erc4337-bundler",
+      bundler: {
+        async probe(request) {
+          requireChain("bundler");
+          return {
+            accepting: true,
+            chainId: request.chainId,
+            supportedEntryPoints: [request.entryPoint],
+          };
+        },
+      },
     },
-  },
+  ],
   submission: {
     async open(request) {
       requireChain("submission");
@@ -456,7 +461,6 @@ const chain = {
       through: { blockNumber: "1", blockHash: "0x" + "77".repeat(32), observedAt: now() },
     };
   },
-  feePayer: null,
   staticPaymasterConfigurationHash: null,
   paymasterService: {
     url: ISSUER_URL + "/chains/" + CHAIN_ID + "/paymaster",

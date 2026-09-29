@@ -4,7 +4,11 @@
  * @author taek <leekt216@gmail.com>
  */
 import { describe, expect, it } from "vitest";
-import type { OaathChainCapability, OaathQuoteRequest } from "../src/advanced.js";
+import type {
+  OaathBundlerProbeRequest,
+  OaathChainCapability,
+  OaathQuoteRequest,
+} from "../src/advanced.js";
 import { hashErc7902StaticPaymasterConfiguration } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
@@ -13,6 +17,7 @@ import {
 } from "../src/provider/errors.js";
 import { oaathProvider } from "../src/viem.js";
 import {
+  bundlerProbe,
   CALL_DATA,
   CHAIN_ID,
   type ChainFixture,
@@ -20,6 +25,7 @@ import {
   createUrlRealm,
   permissionInput,
   TARGET,
+  withBundler,
 } from "./support/browser.js";
 
 const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}`;
@@ -283,12 +289,15 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
     const chain = staticChain({ base, approved });
     const realm = createUrlRealm({
       chain: replaceChain(chain, {
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            probes += 1;
-            return base.capability.bundler.probe(request);
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            async probe(request: OaathBundlerProbeRequest) {
+              probes += 1;
+              return bundlerProbe(base.capability)(request);
+            },
+          }),
+        ),
       }),
     });
     const connection = await realm.oaath.connect();

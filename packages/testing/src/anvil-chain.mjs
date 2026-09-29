@@ -133,17 +133,30 @@ export async function createAnvilChain(chainId, options = {}) {
         chainId,
         reads,
         observation: createLocalAnvilObservation(chain),
-        bundler: {
-          async probe(request) {
-            // A devnet runs no bundler. `absent` is a fact, not a failure, and it
-            // is what authorizes the handleOps route below.
-            return {
-              accepting: false,
-              chainId: request.chainId,
-              supportedEntryPoints: [request.entryPoint],
-            };
+        // The bundler + handleOps-fallback configuration. A devnet runs no
+        // bundler: its probe reports `absent`, a fact rather than a failure,
+        // and that is what authorizes the handleOps route after it.
+        routes: [
+          {
+            kind: /** @type {const} */ ("erc4337-bundler"),
+            bundler: {
+              async probe(request) {
+                return {
+                  accepting: false,
+                  chainId: request.chainId,
+                  supportedEntryPoints: [request.entryPoint],
+                };
+              },
+            },
           },
-        },
+          {
+            kind: /** @type {const} */ ("erc4337-handleops"),
+            feePayer: {
+              address: stack.submitter.address.toLowerCase(),
+              balance: feePayerBalance.toString(10),
+            },
+          },
+        ],
         submission: {
           async open(request) {
             sends.push(request.prepared);
@@ -195,10 +208,6 @@ export async function createAnvilChain(chainId, options = {}) {
               observedAt: Math.floor(Date.now() / 1000),
             },
           };
-        },
-        feePayer: {
-          address: stack.submitter.address.toLowerCase(),
-          balance: feePayerBalance.toString(10),
         },
         paymasterService: null,
         staticPaymasterConfigurationHash: null,
