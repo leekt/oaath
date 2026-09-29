@@ -96,7 +96,6 @@ describe("package boundary", () => {
       "OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH",
       "OAATH_OPERATION_STORE_RECORD_VERSION",
       "OaathCleanupError",
-      "OaathKernelV4Error",
       "OaathOperationObserverError",
       "OaathOperationRunnerError",
       "OaathRoutingError",

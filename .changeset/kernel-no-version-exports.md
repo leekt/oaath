@@ -14,7 +14,6 @@ enforces this for values and types.
   - the Kernel v4 deployment constants (`KERNEL_V4_*`)
   - `OAATH_KERNEL_V4_VALIDITY_POLICY` and its code hash
   - `OAATH_KERNEL_V33_APPROVAL_VERSION`
-  - `OaathKernelV4Error`
   - the nonce and install-nonce encoders
   - `encodeKernelV4FactoryImplementationRead`
   - `kernelV4ReplayableInstallDigest`

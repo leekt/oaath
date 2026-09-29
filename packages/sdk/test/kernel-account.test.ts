@@ -171,7 +171,7 @@ describe("version-agnostic Kernel account binding", () => {
     );
     await expect(
       bindKernelAccount({ chainId, address: account, reads: evidence.reads }),
-    ).rejects.toMatchObject({ code: "kernel_v4_evidence_invalid" });
+    ).rejects.toMatchObject({ code: "kernel_runtime_evidence_invalid" });
   });
 
   it("routes union reads to the owning version adapter", async () => {

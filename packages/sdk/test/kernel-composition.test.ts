@@ -719,7 +719,7 @@ describe("Kernel composition matrix", () => {
         operator: operatorProfiles.owner(keyProfiles.ecdsa()),
         reads: reads(),
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_chain_unsupported" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_chain_unsupported" }));
   });
 
   it("composes an open production chain but refuses a forged profile for it", () => {

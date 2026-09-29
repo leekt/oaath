@@ -216,8 +216,8 @@ describe("Kernel v4 deployment profile", () => {
     (chainId) => {
       expect(() => kernelV4Deployment(chainId)).toThrowError(
         expect.objectContaining({
-          name: "OaathKernelV4Error",
-          code: "kernel_v4_chain_unsupported",
+          name: "OaathKernelRuntimeError",
+          code: "kernel_runtime_chain_unsupported",
         }),
       );
     },
@@ -281,7 +281,7 @@ describe("Kernel v4 module and account codecs", () => {
     [{ ...installs[0], internalData: "0x0" }],
   ])("rejects malformed, legacy, or ambiguous install packages", (packages) => {
     expect(() => asHostile(encodeKernelV4Initialize)(packages)).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
   });
 
@@ -292,7 +292,7 @@ describe("Kernel v4 module and account codecs", () => {
       get: () => "0x",
     });
     expect(() => asHostile(encodeKernelV4Initialize)([hostile])).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
     const reflectionFailure = new Proxy([], {
       getPrototypeOf() {
@@ -301,7 +301,7 @@ describe("Kernel v4 module and account codecs", () => {
     });
     expect(() => encodeKernelV4Initialize(reflectionFailure)).toThrowError(
       expect.objectContaining({
-        code: "kernel_v4_input_invalid",
+        code: "kernel_runtime_input_invalid",
         message: "Kernel initial packages is invalid",
       }),
     );
@@ -350,10 +350,10 @@ describe("Kernel v4 module and account codecs", () => {
     ],
   ])("rejects incomplete or contradictory permission package sequences", (packages) => {
     expect(() => asHostile(encodeKernelV4InstallModules)(packages)).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
     expect(() => asHostile(encodeKernelV4Initialize)(packages)).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
   });
 
@@ -542,7 +542,7 @@ describe("Kernel v4 account binding", () => {
   it("fails closed on an open chain that carries no implementation code", async () => {
     const { input } = binding({ code: "0x" });
     await expect(bindKernelV4Account({ ...input, chainId: 8_453 })).rejects.toMatchObject({
-      code: "kernel_v4_evidence_invalid",
+      code: "kernel_runtime_evidence_invalid",
     });
   });
 
@@ -551,7 +551,7 @@ describe("Kernel v4 account binding", () => {
     await expect(
       asHostile(bindKernelV4Account)({ ...input, factory: target }),
     ).rejects.toMatchObject({
-      code: "kernel_v4_input_invalid",
+      code: "kernel_runtime_input_invalid",
     });
   });
 
@@ -564,7 +564,7 @@ describe("Kernel v4 account binding", () => {
   ] as const)("fails closed on %s evidence", async (_label, overrides) => {
     const { input } = binding(overrides);
     await expect(bindKernelV4Account(input)).rejects.toMatchObject({
-      code: "kernel_v4_evidence_invalid",
+      code: "kernel_runtime_evidence_invalid",
     });
   });
 
@@ -579,7 +579,7 @@ describe("Kernel v4 account binding", () => {
       },
     };
     await expect(bindKernelV4Account(unavailable)).rejects.toMatchObject({
-      code: "kernel_v4_read_unavailable",
+      code: "kernel_runtime_read_unavailable",
       message: "Kernel v4 account evidence is unavailable",
     });
   });
@@ -817,12 +817,12 @@ describe("Kernel v4 prepared UserOperation", () => {
       expect(() =>
         asHostile(prepareKernelV4UserOperation)({ ...base, paymaster: hostile }),
       ).toThrowError(
-        expect.objectContaining({ code: "kernel_v4_input_invalid" }) as unknown as Error,
+        expect.objectContaining({ code: "kernel_runtime_input_invalid" }) as unknown as Error,
       );
     }
     // An unknown sibling key stays refused even while paymaster is optional.
     expect(() => asHostile(prepareKernelV4UserOperation)({ ...base, sponsor: paymaster })).toThrow(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }) as unknown as Error,
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }) as unknown as Error,
     );
   });
 
@@ -837,7 +837,7 @@ describe("Kernel v4 prepared UserOperation", () => {
         calls: [{ target, value: "0", data: "0x" }],
         gas,
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
   });
 
   it("rejects a fabricated descriptor even when every public field is self-consistent", async () => {
@@ -853,7 +853,7 @@ describe("Kernel v4 prepared UserOperation", () => {
       }),
     ).toThrowError(
       expect.objectContaining({
-        code: "kernel_v4_input_invalid",
+        code: "kernel_runtime_input_invalid",
         message: "Kernel account descriptor has not been proven by this SDK instance",
       }),
     );
@@ -899,14 +899,14 @@ describe("Kernel v4 nonce and signature codecs", () => {
         validation: { kind: "root" },
         nonceKey: "0",
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
     expect(() =>
       asHostile(encodeKernelV4NonceKey)({
         mode: "toString",
         validation: { kind: "root" },
         nonceKey: "0",
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
   });
 
   it("encodes permission and enable envelopes in the contract-native order", () => {
@@ -1020,7 +1020,7 @@ describe("Kernel v4 ERC-7579 execution codec", () => {
         calls: [{ target, value: "0", data: "0x" }],
         validityTimeRange,
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
   });
 
   it.each([
@@ -1029,7 +1029,7 @@ describe("Kernel v4 ERC-7579 execution codec", () => {
     [[{ target, value: "01", data: "0x" }]],
   ])("rejects empty or non-canonical call input", (calls) => {
     expect(() => asHostile(encodeKernelV4Execution)({ calls })).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
   });
 });
@@ -1112,7 +1112,7 @@ describe("Kernel v4 read and submission adapters", () => {
     expect(decoded.functionName).toBe("getNonce");
     expect(decoded.args).toEqual([getAddress(account), BigInt(key)]);
     expect(() => asHostile(encodeKernelV4NonceRead)({ account, key: "-1" })).toThrowError(
-      expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
     );
   });
 
