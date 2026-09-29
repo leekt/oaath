@@ -297,14 +297,14 @@ elsewhere; a chain missing the deployment fails closed at bind.
 Check the runtime before integrating a chain:
 
 ```sh
-npx oaath doctor --chain 143
-npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
-npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
+npx @oaath/cli doctor --chain 143
+npx @oaath/cli doctor --chain 143 --rpc https://rpc.monad.xyz --json
+npx @oaath/cli deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
 ```
 
-The `oaath` CLI joins the fixed package release group. Until it is published,
-run `bun run --filter oaath build` then
-`node packages/cli/dist/cli.mjs doctor --chain 143` from this repository.
+`@oaath/cli` installs the `oaath` command and is part of the fixed package
+release group. From a repository checkout, run `bun run --filter @oaath/cli build`
+then `node packages/cli/dist/cli.mjs doctor --chain 143`.
 See [CLI usage](packages/cli/README.md) for bounds, exit codes and evidence limits.
 `doctor` checks the ECDSA session module set; the owner validator remains
 application-selected. It sends no transactions and never treats an unreadable

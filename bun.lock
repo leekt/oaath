@@ -29,8 +29,8 @@
       },
     },
     "packages/cli": {
-      "name": "oaath",
-      "version": "0.2.0",
+      "name": "@oaath/cli",
+      "version": "0.3.0",
       "bin": {
         "oaath": "./dist/cli.mjs",
       },
@@ -53,7 +53,7 @@
     },
     "packages/protocol": {
       "name": "@oaath/protocol",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "viem": "2.55.8",
@@ -65,7 +65,7 @@
     },
     "packages/sdk": {
       "name": "@oaath/sdk",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@oaath/protocol": "workspace:*",
@@ -81,7 +81,7 @@
     },
     "packages/server": {
       "name": "@oaath/server",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@noble/hashes": "2.2.0",
@@ -96,7 +96,7 @@
     },
     "packages/testing": {
       "name": "@oaath/testing",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@account-abstraction/contracts": "0.7.0",
         "@noble/curves": "1.9.1",
@@ -252,6 +252,8 @@
     "@nodelib/fs.stat": ["@nodelib/fs.stat@2.0.5", "", {}, "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A=="],
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "1.20.1" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
+
+    "@oaath/cli": ["@oaath/cli@workspace:packages/cli"],
 
     "@oaath/contracts": ["@oaath/contracts@workspace:packages/contracts"],
 
@@ -600,8 +602,6 @@
     "mri": ["mri@1.2.0", "", {}, "sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA=="],
 
     "nanoid": ["nanoid@3.3.16", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q=="],
-
-    "oaath": ["oaath@workspace:packages/cli"],
 
     "obug": ["obug@2.1.4", "", {}, "sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA=="],
 
