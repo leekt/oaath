@@ -26,7 +26,7 @@ const chains = [{
   quote: async () => ({ nonceKey: "0", sequence: "0", gas: { callGasLimit: "100000", verificationGasLimit: "2000000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } }),
   usage: async ({ grantId, chainId }) => ({ version: "oaath.grant-policy-usage/v1", status: "complete", grantId, chainId, finalizedOperationCount: "0", through: { blockNumber: "1", blockHash: "0x" + "11".repeat(32), observedAt: now() } }),
 }];
-const realm = createOAAth({ mode: "local", owner: wallet, account: address, chains });
+const realm = createOAAth({ approvals: { kind: "wallet", owner: wallet }, account: address, chains });
 const calls = { chain: 143, calls: [{ target, data: "0x12345678", value: "0" }], ...(window.signerAuto ? { signer: "auto" } : {}) };
 window.app = {
   async start() {
@@ -115,7 +115,7 @@ const consumer = await createConsumer({
     "app.js": APP,
     "run.mjs": RUN,
     "surface.ts": `
-import { createOAAth, type OaathLocalConfiguration, type OaathLocalApprovalReview, type OaathGrantHandle, type OaathSendCallsInput } from "@oaath/sdk";
+import { createOAAth, type OaathWalletOptions, type OaathWalletApprovalReview, type OaathGrantHandle, type OaathSendCallsInput } from "@oaath/sdk";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import { createWalletClient, custom, type EIP1193Provider, type Address } from "viem";
 export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSendCallsInput) {
@@ -126,7 +126,7 @@ export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSend
 }
 export function connect(provider: EIP1193Provider, owner: Address, account: Address) {
   const wallet = createWalletClient({ account: owner, transport: custom(provider) });
-  const config: OaathLocalConfiguration = { mode: "local", owner: wallet, account, chains: createViemChainPorts({ 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } }), onApproval: async (review: Readonly<OaathLocalApprovalReview>) => { void review.policy; } };
+  const config: OaathWalletOptions = { approvals: { kind: "wallet", owner: wallet, onApproval: async (review: Readonly<OaathWalletApprovalReview>) => { void review.policy; } }, account, chains: createViemChainPorts({ 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } }) };
   return createOAAth(config);
 }
 `,

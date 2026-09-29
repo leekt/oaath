@@ -1,4 +1,4 @@
-import { createOAAth, type OaathLocalClient } from "@oaath/sdk";
+import { createOAAth, type OaathWalletApprovalClient } from "@oaath/sdk";
 import type { OaathUsageRequest } from "@oaath/sdk/advanced";
 import { OAATH_KERNEL_RATE_LIMIT_POLICY } from "@oaath/sdk/kernel";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
@@ -22,8 +22,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     vi.stubGlobal("indexedDB", new IDBFactory());
     const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });
     const client = createOAAth({
-      mode: "local",
-      owner: fixture.wallet,
+      approvals: { kind: "wallet", owner: fixture.wallet },
       account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",
@@ -59,8 +58,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       vi.stubGlobal("indexedDB", new IDBFactory());
       const fixture = await createLocalOwnerAnvilFixture({ sessionValidation });
       const client = createOAAth({
-        mode: "local",
-        owner: fixture.wallet,
+        approvals: { kind: "wallet", owner: fixture.wallet },
         account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
@@ -117,8 +115,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     };
     const open = () =>
       createOAAth({
-        mode: "local",
-        owner,
+        approvals: { kind: "wallet", owner },
         account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
@@ -156,8 +153,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const fixture = await createLocalOwnerAnvilFixture();
     const open = () =>
       createOAAth({
-        mode: "local",
-        owner: fixture.wallet,
+        approvals: { kind: "wallet", owner: fixture.wallet },
         account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
@@ -188,14 +184,13 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     async (walletKind) => {
       vi.stubGlobal("indexedDB", new IDBFactory());
       const fixture = await createLocalOwnerAnvilFixture({ wallet: walletKind });
-      let client: Readonly<OaathLocalClient> | undefined;
+      let client: Readonly<OaathWalletApprovalClient> | undefined;
       try {
         const signTypedData = vi.fn(fixture.wallet.signTypedData);
         const owner = { ...fixture.wallet, signTypedData };
         const open = () =>
           createOAAth({
-            mode: "local",
-            owner,
+            approvals: { kind: "wallet", owner },
             account: fixture.address,
             chains: fixture.createChainPorts(),
             origin: "https://consumer.example",
@@ -260,8 +255,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const passkey = await softwarePasskey(origin);
     const open = () =>
       createOAAth({
-        mode: "local",
-        owner: fixture.wallet,
+        approvals: { kind: "wallet", owner: fixture.wallet },
         account: fixture.address,
         chains: fixture.createChainPorts(),
         origin,
@@ -320,8 +314,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     ] as const;
     const open = () =>
       createOAAth({
-        mode: "local",
-        owner: fixture.wallet,
+        approvals: { kind: "wallet", owner: fixture.wallet },
         account: fixture.address,
         chains: fixture.createChainPorts(),
         origin: "https://consumer.example",
@@ -371,8 +364,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const fixture = await createLocalOwnerAnvilFixture();
     let usage: Readonly<OaathUsageRequest> | undefined;
     const client = createOAAth({
-      mode: "local",
-      owner: fixture.wallet,
+      approvals: { kind: "wallet", owner: fixture.wallet },
       account: fixture.address,
       chains: fixture.createChainPorts().map((port) => ({
         ...port,
@@ -491,8 +483,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       throw new Error("private wallet rejection");
     });
     const client = createOAAth({
-      mode: "local",
-      owner: { ...fixture.wallet, signTypedData: rejected },
+      approvals: { kind: "wallet", owner: { ...fixture.wallet, signTypedData: rejected } },
       account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",
@@ -517,8 +508,10 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const fixture = await createLocalOwnerAnvilFixture();
     const consent = vi.fn(fixture.wallet.signTypedData);
     const client = createOAAth({
-      mode: "local",
-      owner: { ...fixture.wallet, account: { address: target }, signTypedData: consent },
+      approvals: {
+        kind: "wallet",
+        owner: { ...fixture.wallet, account: { address: target }, signTypedData: consent },
+      },
       account: fixture.address,
       chains: fixture.createChainPorts(),
       origin: "https://consumer.example",

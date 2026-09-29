@@ -4,7 +4,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { bytesToHex, hashTypedData, keccak256 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOAAth, type OaathLocalApprovalReview } from "../src/index.js";
+import { createOAAth, type OaathWalletApprovalReview } from "../src/index.js";
 import { kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import {
   KERNEL_P256_VERIFIER,
@@ -54,8 +54,7 @@ function fixture(verifier = false) {
     }
   });
   const input = {
-    mode: "local" as const,
-    owner,
+    approvals: { kind: "wallet" as const, owner },
     account: address as `0x${string}`,
     chains: [{ ...chain.capability, reads: { read } }],
     origin: "https://app.example",
@@ -159,8 +158,11 @@ describe("local wallet realm", () => {
     const { input, owner } = fixture();
     const realm = createOAAth({
       ...input,
-      onApproval: async () => {
-        throw new Error("cancelled");
+      approvals: {
+        ...input.approvals,
+        onApproval: async () => {
+          throw new Error("cancelled");
+        },
       },
     });
     const connection = await realm.connect();
@@ -185,7 +187,12 @@ describe("local wallet realm", () => {
       vi.stubGlobal("indexedDB", new IDBFactory());
       const { input, owner } = fixture(verifier);
       const onApproval = vi.fn(async () => undefined);
-      const open = () => createOAAth({ ...input, session: passkeySession, onApproval });
+      const open = () =>
+        createOAAth({
+          ...input,
+          session: passkeySession,
+          approvals: { ...input.approvals, onApproval },
+        });
       let realm = open();
       const request = (await realm.connect()).requestPermission(permissionInput());
       if (!verifier) {
@@ -220,8 +227,8 @@ describe("local wallet realm", () => {
     });
     vi.stubGlobal("fetch", fetch);
     const { input, owner } = fixture();
-    const onApproval = vi.fn(async (_review: Readonly<OaathLocalApprovalReview>) => undefined);
-    let realm = createOAAth({ ...input, onApproval });
+    const onApproval = vi.fn(async (_review: Readonly<OaathWalletApprovalReview>) => undefined);
+    let realm = createOAAth({ ...input, approvals: { ...input.approvals, onApproval } });
     let connection = await realm.connect();
     const grant = await connection.requestPermission(permissionInput());
     const identity = realm.binding;

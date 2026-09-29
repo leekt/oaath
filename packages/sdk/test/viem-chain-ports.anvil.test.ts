@@ -305,8 +305,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               return {
                 relay: null,
                 oaath: createOAAth({
-                  mode: "local",
-                  owner: wallet,
+                  approvals: { kind: "wallet", owner: wallet },
                   account: existing.address,
                   chains: [
                     {

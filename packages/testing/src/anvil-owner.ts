@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createOAAth,
+  type OaathApprovalWallet,
   type OaathConnectedEoaPayer,
-  type OaathLocalWallet,
   type OaathOwnerClient,
 } from "@oaath/sdk";
 import { kernelDeployment } from "@oaath/sdk/kernel";
@@ -33,7 +33,7 @@ import { deployLocalV4OwnerAccount } from "./anvil-v4-owner.js";
 import { deployLocalV33Account } from "./anvil-v33.js";
 import { createSqliteOperationStoreAdapter } from "./sqlite-store.js";
 
-type OwnerWallet = OaathLocalWallet & OaathConnectedEoaPayer["wallet"];
+type OwnerWallet = OaathApprovalWallet & OaathConnectedEoaPayer["wallet"];
 export interface LocalOwnerAnvilFixture {
   readonly chainId: number;
   readonly rpcUrl: string;
@@ -164,7 +164,7 @@ export async function createLocalOwnerAnvilFixture(
               signatures++;
               return localWallet.signMessage(request);
             },
-            async signTypedData(request: Parameters<OaathLocalWallet["signTypedData"]>[0]) {
+            async signTypedData(request: Parameters<OaathApprovalWallet["signTypedData"]>[0]) {
               signatures++;
               return localWallet.signTypedData(request);
             },
@@ -312,9 +312,10 @@ export async function createLocalOwnerAnvilFixture(
         if (closed) throw new Error("local_fixture_closed");
         await client?.close();
         client = createOAAth({
-          mode: "owner",
           chains: ports(),
-          operations: createSqliteOperationStoreAdapter(join(directory, "operations.db")),
+          stores: {
+            operations: createSqliteOperationStoreAdapter(join(directory, "operations.db")),
+          },
         });
         return client;
       },

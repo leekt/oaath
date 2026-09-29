@@ -905,9 +905,8 @@ function passkeySession() {
         },
       );
       const client = createOAAth({
-        mode: "owner",
         chains: ports,
-        operations: createMemoryOperationStoreAdapter(),
+        stores: { operations: createMemoryOperationStoreAdapter() },
       });
       try {
         const ownerHandle = client.account(address).owner(wallet);
@@ -989,8 +988,7 @@ function passkeySession() {
               },
             };
       const direct = createOAAth({
-        mode: "owner",
-        operations: createSqliteOperationStoreAdapter(filePath),
+        stores: { operations: createSqliteOperationStoreAdapter(filePath) },
         chains: createViemChainPorts(
           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://rejecting-bundler.test" } },
           {
@@ -1059,8 +1057,7 @@ function passkeySession() {
       }
       await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
       const recreated = createOAAth({
-        mode: "owner",
-        operations: createSqliteOperationStoreAdapter(filePath),
+        stores: { operations: createSqliteOperationStoreAdapter(filePath) },
         chains: createViemChainPorts(
           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "http://unused.test" } },
           {
