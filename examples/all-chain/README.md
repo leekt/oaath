@@ -3,7 +3,7 @@
 One owner signature, two chains, no second approval.
 
 ```sh
-pnpm --filter @oaath/examples example:all-chain
+bun run --filter @oaath/examples example:all-chain
 ```
 
 Requires Anvil ([Foundry](https://getfoundry.sh), or set `ANVIL_PATH`). The
@@ -52,7 +52,7 @@ itself stays a walkthrough.
 ## Relationship to the SDK's own proof
 
 This example is the narrated version of `packages/sdk/test/all-chain.anvil.test.ts`,
-which is the authoritative proof and also runs as `pnpm smoke:all-chain`. The Anvil
+which is the authoritative proof and also runs as `bun run smoke:all-chain`. The Anvil
 harness now lives in [@oaath/testing](../../packages/testing/README.md), which
 also exposes the packed `@oaath/testing/anvil` client fixture for external
 consumers. The example and packed fixture share one deployment implementation

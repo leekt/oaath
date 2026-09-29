@@ -2,7 +2,7 @@
  * Runs every example and fails if any of them does.
  *
  * This is a documentation gate, not release evidence: it proves the examples in
- * this repository still run against the current workspace. `pnpm smoke` owns the
+ * this repository still run against the current workspace. `bun run smoke` owns the
  * public-surface claim, because it consumes packed tarballs instead of the
  * workspace. This is deliberately not wired into CI — see ./README.md.
  *

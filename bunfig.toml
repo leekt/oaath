@@ -1,0 +1,5 @@
+# Repository scripts receive only the environment explicitly supplied by callers.
+env = false
+
+[install]
+linker = "isolated"

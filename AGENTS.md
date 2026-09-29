@@ -33,7 +33,7 @@ point here but must not redefine them.
   budgets.
 - Do not add a docs application. Keep only a minimal README, package API
   comments, security notes, and release notes.
-- Use `pnpm` and repository-owned scripts.
+- Use the Bun version pinned in `package.json` and repository-owned scripts.
 - Choose the simplest implementation that fully meets current requirements, and
   prefer established, well-maintained libraries over custom implementations.
 - Keep default APIs focused on the adopter workflow, not speculative failures.

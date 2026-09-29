@@ -18,56 +18,49 @@
   "engines": {
     "node": ">=22.13"
   },
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "oaath-source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./postgres": {
-      "types": "./src/postgres.ts",
-      "node": "./src/postgres.ts"
+      "oaath-source": {
+        "types": "./src/postgres.ts",
+        "node": "./src/postgres.ts"
+      },
+      "types": "./dist/postgres.d.ts",
+      "node": "./dist/postgres.js"
     },
     "./native": {
-      "types": "./src/native.ts",
-      "default": "./src/native.ts"
+      "oaath-source": {
+        "types": "./src/native.ts",
+        "default": "./src/native.ts"
+      },
+      "types": "./dist/native.d.ts",
+      "default": "./dist/native.js"
     },
     "./apns": {
-      "types": "./src/apns.ts",
-      "node": "./src/apns.ts"
+      "oaath-source": {
+        "types": "./src/apns.ts",
+        "node": "./src/apns.ts"
+      },
+      "types": "./dist/apns.d.ts",
+      "node": "./dist/apns.js"
     },
     "./kernel": {
-      "types": "./src/kernel.ts",
-      "default": "./src/kernel.ts"
-    }
-  },
-  "publishConfig": {
-    "main": "./dist/index.js",
-    "module": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
+      "oaath-source": {
+        "types": "./src/kernel.ts",
+        "default": "./src/kernel.ts"
       },
-      "./postgres": {
-        "types": "./dist/postgres.d.ts",
-        "node": "./dist/postgres.js"
-      },
-      "./native": {
-        "types": "./dist/native.d.ts",
-        "default": "./dist/native.js"
-      },
-      "./apns": {
-        "types": "./dist/apns.d.ts",
-        "node": "./dist/apns.js"
-      },
-      "./kernel": {
-        "types": "./dist/kernel.d.ts",
-        "default": "./dist/kernel.js"
-      }
+      "types": "./dist/kernel.d.ts",
+      "default": "./dist/kernel.js"
     }
   },
   "files": [
@@ -76,10 +69,11 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "prepack": "pnpm build",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts test/revocation-executor.test.ts test/native-inbox.test.ts test/owner-device-authentication-postgres.test.ts"
+    "test:postgres": "OAATH_REQUIRE_POSTGRES=1 vitest run test/postgres.test.ts test/restart.test.ts test/service-directory-postgres.test.ts test/revocation-service.test.ts test/revocation-executor.test.ts test/native-inbox.test.ts test/owner-device-authentication-postgres.test.ts",
+    "release:publish": "bun publish --access public --tolerate-republish"
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
@@ -91,5 +85,8 @@
   "devDependencies": {
     "@types/node": "22.13.0",
     "@types/pg": "8.20.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

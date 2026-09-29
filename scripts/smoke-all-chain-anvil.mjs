@@ -16,10 +16,11 @@
  * @author taek <leekt216@gmail.com>
  */
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const result = spawnSync(
-  "pnpm",
-  ["--filter", "@oaath/sdk", "exec", "vitest", "run", "test/all-chain.anvil.test.ts"],
-  { stdio: "inherit", env: { ...process.env, OAATH_REQUIRE_ANVIL: "1" } },
-);
+const result = spawnSync("bun", ["run", "vitest", "run", "test/all-chain.anvil.test.ts"], {
+  cwd: fileURLToPath(new URL("../packages/sdk/", import.meta.url)),
+  stdio: "inherit",
+  env: { ...process.env, OAATH_REQUIRE_ANVIL: "1" },
+});
 process.exit(result.status ?? 1);

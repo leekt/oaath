@@ -25,10 +25,11 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "prepack": "pnpm build",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts test/deploy.anvil.test.ts"
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts test/deploy.anvil.test.ts",
+    "release:publish": "bun publish --access public --tolerate-republish"
   },
   "dependencies": {
     "@oaath/sdk": "workspace:*",
