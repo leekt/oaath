@@ -6,7 +6,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v3" as const;
+export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v4" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -14,6 +14,7 @@ const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_GRANT_ID_LENGTH = 256;
+const LANE_ID = /^[A-Za-z0-9._:-]{1,128}$/u;
 
 export type OperationErrorCode =
   | "operation_input_invalid"
@@ -43,6 +44,17 @@ export interface UserOperationReference {
   /** Canonical decimal uint256 string. */
   readonly nonce: string;
   readonly userOperationHash: `0x${string}`;
+}
+
+/**
+ * An explicit, caller-reserved execution lane. `key` is the runtime-neutral
+ * sequence key the runtime maps to its own nonce namespace; `id` is the
+ * caller's label for the run using it. A null lane is the one default lane
+ * per Grant, chain and kind.
+ */
+export interface OperationLane {
+  readonly id: string;
+  readonly key: number;
 }
 
 export interface OperationIdentity extends UserOperationReference {
@@ -117,6 +129,7 @@ export type OperationSubmissionEvidence =
   | Readonly<{ route: "entrypoint-handleops"; transactionHash: `0x${string}` }>;
 
 interface OperationCommon {
+  readonly lane: Readonly<OperationLane> | null;
   readonly submission: Readonly<OperationSubmissionEvidence> | null;
   readonly version: typeof OAATH_OPERATION_RECORD_VERSION;
   readonly identity: Readonly<OperationIdentity>;
@@ -369,6 +382,24 @@ function parseIdentity(
   });
 }
 
+function parseLane(
+  value: unknown,
+  kind: OperationKind,
+  code: OperationErrorCode,
+  context: CaptureContext,
+): Readonly<OperationLane> | null {
+  if (value === null) return null;
+  if (kind !== "execution") return invalid(code, "operation lane is execution-only");
+  const record = exactRecord(value, ["id", "key"], "operation lane", code, context);
+  if (typeof record.id !== "string" || !LANE_ID.test(record.id)) {
+    return invalid(code, "operation lane id must be a bounded canonical label");
+  }
+  return Object.freeze({
+    id: record.id,
+    key: safeInteger(record.key, "operation lane key", code, 1),
+  });
+}
+
 /** Capture the exact public identity required to verify one UserOperation. */
 export function parseUserOperationReference(value: unknown): Readonly<UserOperationReference> {
   return captureUserOperationReference(value, "operation_input_invalid", new WeakSet());
@@ -599,11 +630,13 @@ function baseRecord(record: PlainRecord, code: OperationErrorCode, context: Capt
   if (record.version !== OAATH_OPERATION_RECORD_VERSION) {
     return invalid(code, "operation record version is unsupported");
   }
+  const identity = parseIdentity(record.identity, code, context);
   return {
+    lane: parseLane(record.lane, identity.kind, code, context),
     submission:
       record.submission === null ? null : parseSubmission(record.submission, code, context),
     version: OAATH_OPERATION_RECORD_VERSION,
-    identity: parseIdentity(record.identity, code, context),
+    identity,
     revision: safeInteger(record.revision, "operation revision", code),
     preparedAt: safeInteger(record.preparedAt, "operation preparedAt", code),
     updatedAt: safeInteger(record.updatedAt, "operation updatedAt", code),
@@ -616,6 +649,7 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
   const captured = captureRecord(value, "operation record", code, context);
   const state = captured.state;
   const commonKeys = [
+    "lane",
     "submission",
     "version",
     "identity",
@@ -952,23 +986,25 @@ export function parseOperationSubmissionEvidence(
 
 export function createOperation(value: unknown): PreparedOperation {
   try {
+    const code = "operation_input_invalid" as const;
     const context: CaptureContext = new WeakSet();
-    const record = exactRecord(
-      value,
-      ["identity", "preparedAt"],
+    const captured = captureRecord(value, "operation preparation", code, context);
+    // An omitted lane is the default lane.
+    const record = exactCapturedRecord(
+      captured,
+      Object.hasOwn(captured, "lane")
+        ? ["identity", "preparedAt", "lane"]
+        : ["identity", "preparedAt"],
       "operation preparation",
-      "operation_input_invalid",
-      context,
+      code,
     );
-    const preparedAt = safeInteger(
-      record.preparedAt,
-      "operation preparation preparedAt",
-      "operation_input_invalid",
-    );
+    const preparedAt = safeInteger(record.preparedAt, "operation preparation preparedAt", code);
+    const identity = parseIdentity(record.identity, code, context);
     return Object.freeze({
       version: OAATH_OPERATION_RECORD_VERSION,
+      lane: parseLane(record.lane ?? null, identity.kind, code, context),
       submission: null,
-      identity: parseIdentity(record.identity, "operation_input_invalid", context),
+      identity,
       revision: 0,
       state: "prepared",
       preparedAt,
@@ -1379,6 +1415,7 @@ function advanceParsedOperation(
     const priorInclusion = operation.state === "included" ? operation.inclusion : null;
     return Object.freeze({
       version: operation.version,
+      lane: operation.lane,
       identity: operation.identity,
       revision: nextRevision(operation),
       state: "dropped",
@@ -1403,6 +1440,7 @@ function advanceParsedOperation(
     requireTime(operation, transition.supersession.observedAt);
     return Object.freeze({
       version: operation.version,
+      lane: operation.lane,
       identity: operation.identity,
       revision: nextRevision(operation),
       state: "superseded",

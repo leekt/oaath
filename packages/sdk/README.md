@@ -441,8 +441,8 @@ Recreate it after reload using the saved reference; `close()` drains active
 bounded observations and closes the supplied capability. A missing or unreadable
 receipt leaves the saved identity unresolved.
 
-Operation records now use `oaath.operation/v3`. Older records are rejected;
-IndexedDB schema 14 recreates older local state without migration. This pre-1.0
+Operation records now use `oaath.operation/v4`. Older records are rejected;
+IndexedDB schema 15 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.
 

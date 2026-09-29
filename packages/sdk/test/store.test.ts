@@ -279,6 +279,155 @@ async function expectArchivedHashReuseRejected(adapter: OperationStoreAdapter): 
   }
 }
 
+function laneOperation(seed: string, key: number | null, chainId = 31_337): Operation {
+  return createOperation({
+    identity: operationIdentity(chainId, seed),
+    preparedAt: 10,
+    ...(key === null ? {} : { lane: { id: `run_${key}`, key } }),
+  });
+}
+
+function finalizedLaneOperation(seed: string, key: number): Operation {
+  const identity = operationIdentity(31_337, seed);
+  const operation = advanceOperation(laneOperation(seed, key), {
+    type: "mark_submission_attempted",
+    identity,
+    attemptedAt: 11,
+  });
+  const included = applyVerifiedOperationObservation(operation, {
+    type: "record_included",
+    identity,
+    inclusion: {
+      transactionHash: `0x${"77".repeat(32)}`,
+      blockNumber: "20",
+      blockHash: `0x${"88".repeat(32)}`,
+      outcome: "success",
+      observedAt: 13,
+    },
+  });
+  return applyVerifiedOperationObservation(included, {
+    type: "record_finalized",
+    identity,
+    finality: { blockNumber: "21", blockHash: `0x${"99".repeat(32)}`, observedAt: 14 },
+  });
+}
+
+/** Shared by every adapter: each lane is its own journal slot and archive. */
+async function expectIndependentLanes(adapter: OperationStoreAdapter): Promise<void> {
+  const store = new OperationStore(adapter);
+  const scope = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+  const lane17 = { ...scope, lane: 17 };
+  const lane18 = { ...scope, lane: 18 };
+  try {
+    const defaultLane = laneOperation("1", null);
+    const first = laneOperation("2", 17);
+    for (const [key, next] of [
+      [scope, defaultLane],
+      [lane17, first],
+      [lane18, laneOperation("3", 18)],
+    ] as const) {
+      expect((await store.compareAndSwap({ key, expectedStoreRevision: null, next })).status).toBe(
+        "committed",
+      );
+    }
+    // An unresolved lane still rejects a second Operation on the same lane.
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: lane17,
+          expectedStoreRevision: 0,
+          next: laneOperation("4", 17),
+        }),
+      "store_lane_occupied",
+    );
+    // A record never lands under another lane's key, the default lane included.
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: scope,
+          expectedStoreRevision: 0,
+          next: laneOperation("5", 17),
+        }),
+      "store_key_mismatch",
+    );
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: lane18,
+          expectedStoreRevision: 0,
+          next: laneOperation("5", 17),
+        }),
+      "store_key_mismatch",
+    );
+    await expectStoreError(
+      () =>
+        store.compareAndSwap({
+          key: lane17,
+          expectedStoreRevision: 0,
+          next: laneOperation("5", null),
+        }),
+      "store_key_mismatch",
+    );
+    expect((await store.get(scope))?.value.identity.nonce).toBe("1");
+    expect((await store.get(lane17))?.value).toEqual(first);
+    expect(await store.get({ ...scope, lane: 19 })).toBeUndefined();
+
+    // A terminal lane is replaceable; its archive belongs to that lane only.
+    const finalized = finalizedLaneOperation("2", 17);
+    await store.compareAndSwap({ key: lane17, expectedStoreRevision: 0, next: finalized });
+    const replacement = laneOperation("6", 17);
+    expect(
+      (await store.compareAndSwap({ key: lane17, expectedStoreRevision: 1, next: replacement }))
+        .status,
+    ).toBe("committed");
+    expect((await store.getExact(lane17, first.identity.userOperationHash))?.value).toEqual(
+      finalized,
+    );
+    await expect(store.getExact(scope, first.identity.userOperationHash)).resolves.toBeUndefined();
+    await expect(store.getExact(lane18, first.identity.userOperationHash)).resolves.toBeUndefined();
+  } finally {
+    await store.close();
+  }
+}
+
+describe("caller-reserved Operation lanes", () => {
+  it("rejects lanes outside positive execution keys before any adapter call", async () => {
+    let calls = 0;
+    const counted = async () => {
+      calls += 1;
+      return undefined;
+    };
+    const store = new OperationStore({
+      get: counted,
+      getArchived: counted,
+      compareAndSwap: counted,
+      async close() {},
+    });
+    const scope = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
+    for (const lane of [0, -1, 1.5, "17", null]) {
+      await expectStoreError(() => store.get({ ...scope, lane }), "store_input_invalid");
+    }
+    await expectStoreError(
+      () => store.get({ ...scope, kind: "revocation", lane: 17 }),
+      "store_input_invalid",
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("keys the memory Operation store per lane", async () => {
+    await expectIndependentLanes(createMemoryOperationStoreAdapter());
+  });
+
+  it("keys the IndexedDB Operation store per lane", async () => {
+    const database = await openOaathDatabase({ factory: new IDBFactory() });
+    try {
+      await expectIndependentLanes(createIndexedDbOperationStoreAdapter(database));
+    } finally {
+      database.close();
+    }
+  });
+});
+
 describe("aggregate store boundary", () => {
   it("uses a store revision independent from the aggregate revision", async () => {
     const memory = memoryGrantAdapter();
