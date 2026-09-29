@@ -1,6 +1,7 @@
 /**
- * `@oaath/sdk/advanced` — custom-deployment ports and the fully overridden
- * composition: binding capture, chain capabilities, routing, the operation
+ * `@oaath/sdk/advanced` — custom-deployment ports, the version-named Kernel
+ * encoders and deployment constants custom deployments and fixtures need, and
+ * the fully overridden composition: binding capture, chain capabilities, routing, the operation
  * runner/observer pair, stores, and cleanup. Injecting these bypasses the
  * service-owned execution path; they exist for deterministic tests and
  * deployments that deliberately own it.
@@ -52,8 +53,48 @@ export type {
   OaathSigningConfiguration,
   OaathStoreConfiguration,
 } from "./create-oaath.js";
+export {
+  encodeKernelV33NonceKey,
+  kernelV33OperationSigningHash,
+} from "./kernel/deployment/v33-operation.js";
+export {
+  OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+} from "./kernel/modules.js";
 export { deriveSessionPolicyProfiles } from "./kernel/permission/profiles.js";
-export { kernelV33PermissionEnableTypedData } from "./kernel/permission/v33.js";
+export {
+  kernelV33PermissionEnableTypedData,
+  OAATH_KERNEL_V33_APPROVAL_VERSION,
+} from "./kernel/permission/v33.js";
+export type { KernelV33PermissionState } from "./kernel/permission/v33-revocation.js";
+export {
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+  readKernelV33PermissionState,
+} from "./kernel/permission/v33-revocation.js";
+export type {
+  KernelV4ErrorCode,
+  KernelV4NonceKeyInput,
+  KernelV4NonceReadInput,
+  KernelV4ReplayableInstallDigestInput,
+} from "./kernel-v4.js";
+export {
+  encodeKernelV4FactoryImplementationRead,
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
+  encodeKernelV4NonceKey,
+  encodeKernelV4NonceRead,
+  KERNEL_V4_CREATE2_DEPLOYER,
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_FACTORY_V07,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  kernelV4ReplayableInstallDigest,
+  OaathKernelV4Error,
+} from "./kernel-v4.js";
 export type {
   ObserveOperationResult,
   ObserveUserOperationInput,

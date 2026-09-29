@@ -7,7 +7,8 @@ import {
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
 import { createOAAth } from "@oaath/sdk";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
+
 import {
   createPostgresOperationSchema,
   createPostgresOwnerDeviceCredentialSchema,

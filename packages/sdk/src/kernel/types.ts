@@ -24,6 +24,16 @@ import type {
 } from "./deployment/v33.js";
 import type { KernelGasPolicy } from "./gas-policy.js";
 
+/**
+ * Shapes every supported Kernel deployment shares. Each version's codec owns
+ * its encoding; these are the version-agnostic names the public entry uses.
+ */
+export type KernelCall = KernelV4Call;
+export type KernelInstall = KernelV4Install;
+export type KernelUserOperationGas = KernelV4UserOperationGas;
+export type KernelValidation = KernelV4Validation;
+export type KernelValidityTimeRange = KernelV4ValidityTimeRange;
+
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
   | "kernel_runtime_read_unavailable"

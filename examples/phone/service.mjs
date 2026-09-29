@@ -3,6 +3,7 @@
  * The SDK owns every application key, operation, observation and recovery.
  * @author taek <leekt216@gmail.com>
  */
+
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -13,9 +14,9 @@ import {
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
 import {
   createKernelRuntime,
-  KERNEL_V4_ENTRY_POINT_V07,
   kernelDeployment,
   kernelKey,
   ownerOperator,

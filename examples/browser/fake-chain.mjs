@@ -19,10 +19,10 @@ import {
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  kernelDeployment,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
-} from "@oaath/sdk/kernel";
+} from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 
 const ACCOUNT = `0x${"66".repeat(20)}`;
 const TRANSACTION_HASH = `0x${"44".repeat(32)}`;

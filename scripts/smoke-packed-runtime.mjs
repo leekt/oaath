@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
-import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
+import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
 import { concat, createWalletClient, http, parseEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const exec = promisify(execFile);

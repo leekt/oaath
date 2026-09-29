@@ -1,5 +1,6 @@
 /** Deploy the real v3.3 account at the same address for each local fixture chain. */
-import { KERNEL_V4_CREATE2_DEPLOYER, kernelDeployment } from "@oaath/sdk/kernel";
+import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { encodeFunctionData, type Hex, parseAbi, zeroAddress, zeroHash } from "viem";
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import type { deployKernelStack, startAnvil } from "./anvil-process.mjs";

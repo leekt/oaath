@@ -1,7 +1,7 @@
 import {
   encodeKernelV4FactoryImplementationRead,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-} from "@oaath/sdk/kernel";
+} from "@oaath/sdk/advanced";
 import { decodeAbiParameters, type Hex, keccak256 } from "viem";
 import { type Component, components } from "./manifest.js";
 import type { RpcReader } from "./rpc.js";
