@@ -15,7 +15,12 @@ import * as viem from "../src/viem.js";
 
 describe("package boundary", () => {
   it("exposes only the adopter workflow on the root entry", () => {
-    expect(Object.keys(root).sort()).toEqual(["OaathClientError", "createOAAth"]);
+    expect(Object.keys(root).sort()).toEqual([
+      "OAATH_CALLS_REVIEW_VERSION",
+      "OaathClientError",
+      "createOAAth",
+      "parseOaathCallsReview",
+    ]);
   });
 
   it("exposes the reviewed Kernel primitives on /kernel", () => {

@@ -913,7 +913,7 @@ function passkeySession() {
         const ownerHandle = client.account(address).owner(wallet);
         const calls = { chain: 143, calls: [{ target, value: "13", data: "0x" }] };
         expect(await ownerHandle.reviewCalls(calls)).toMatchObject({
-          account: address.toLowerCase(),
+          account: { address: address.toLowerCase(), implementation: "kernel:0.3.3" },
           signer: "owner",
         });
         expect(prompts).toBe(1);

@@ -10,6 +10,8 @@
  */
 
 export type { ValidationGasDiagnostic } from "@oaath/protocol";
+export type { OaathCallsReviewContract } from "./client/calls-review.js";
+export { OAATH_CALLS_REVIEW_VERSION, parseOaathCallsReview } from "./client/calls-review.js";
 export type {
   OaathConnectedEoaFallbackReview,
   OaathConnectedEoaFeePayer,

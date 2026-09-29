@@ -24,7 +24,8 @@ export interface OaathConnectedEoaFeePayer {
   };
 }
 export interface OaathConnectedEoaFallbackReview {
-  readonly route: "erc4337-handleops";
+  /** Opaque route identity of the fallback transaction. */
+  readonly route: string;
   readonly feePayer: `0x${string}`;
   readonly condition: "conclusive_bundler_rejection";
 }

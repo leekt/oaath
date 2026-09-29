@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { OAATH_CALLS_REVIEW_VERSION, parseOaathCallsReview } from "../src/index.js";
 import {
   ACCOUNT,
   CALL_DATA,
@@ -40,8 +41,9 @@ describe("public Grant execution review", () => {
     const before = writes;
     const review = await grant.reviewCalls(sendCallsInput());
     expect(review).toMatchObject({
+      version: OAATH_CALLS_REVIEW_VERSION,
       chainId: CHAIN_ID,
-      account: ACCOUNT,
+      account: { address: ACCOUNT, implementation: "kernel:0.4.0" },
       accountId: "account-1",
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
       signer: "session",
@@ -69,6 +71,45 @@ describe("public Grant execution review", () => {
     // A review did not consume a lane or materialization: the same calls can run.
     expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
     expect(realm.chain.sends).toHaveLength(1);
+    await realm.oaath.close();
+  });
+
+  it("parses the versioned contract and rejects any other version with one code", async () => {
+    const realm = createRealm();
+    const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+    const review = await grant.reviewCalls(sendCallsInput());
+    const parsed = parseOaathCallsReview(review);
+    expect(parsed).toEqual({
+      version: OAATH_CALLS_REVIEW_VERSION,
+      signer: review.signer,
+      enforcement: review.enforcement,
+      validation: review.validation,
+      fallback: null,
+      chainId: review.chainId,
+      account: review.account,
+      route: review.route,
+      calls: review.calls,
+    });
+    expect(Object.isFrozen(parsed)).toBe(true);
+    for (const version of ["oaath-calls-review-v2", "oaath-calls-review-v0", undefined]) {
+      expect(() => parseOaathCallsReview({ ...review, version })).toThrow(
+        expect.objectContaining({ code: "oaath_client_review_version_unsupported" }),
+      );
+    }
+    // Identity is opaque but well-formed; semantic fields stay closed.
+    const other = { ...review, account: { ...review.account, implementation: "kernel:9.9.9" } };
+    expect(parseOaathCallsReview({ ...other, route: "eip8141" }).route).toBe("eip8141");
+    for (const invalid of [
+      { ...review, route: "Bundler Route" },
+      { ...review, route: "x".repeat(65) },
+      { ...review, signer: "delegate" },
+      { ...review, enforcement: { ...review.enforcement, calls: "none" } },
+      { ...review, validation: "skipped" },
+    ]) {
+      expect(() => parseOaathCallsReview(invalid)).toThrow(
+        expect.objectContaining({ code: "oaath_client_input_invalid" }),
+      );
+    }
     await realm.oaath.close();
   });
 

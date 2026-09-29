@@ -89,8 +89,11 @@ export interface OaathOperationReceipt {
 
 /** Finalized calls decoded from the exact UserOperation's containing transaction. */
 export interface OaathOperationExecution {
-  /** Acknowledged transport route, or null when no matching evidence was retained. */
-  readonly route: OperationSubmissionEvidence["route"] | null;
+  /**
+   * Opaque identity of the acknowledged submission route, or null when no
+   * matching evidence was retained. Fingerprint it; never enumerate it.
+   */
+  readonly route: string | null;
   readonly id: `0x${string}`;
   readonly grantId: string;
   readonly chainId: number;

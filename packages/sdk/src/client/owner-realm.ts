@@ -1,11 +1,7 @@
 /** Owner-only existing-account execution. The Operation journal remains the lifecycle owner. */
 import { captureDenseArray, captureRecord } from "@oaath/protocol";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import {
-  detectKernelAccountDeployment,
-  type KernelReads,
-  type KernelVersion,
-} from "../kernel/deployment/account.js";
+import { detectKernelAccountDeployment, type KernelReads } from "../kernel/deployment/account.js";
 import { ECDSA_VALIDATOR } from "../kernel/deployment/v33.js";
 import { type EcdsaWalletClient, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
@@ -23,6 +19,11 @@ import { decideExecution } from "../routing/decide.js";
 import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
 import type { OaathExecutionDecision } from "../routing/types.js";
 import { OperationStore, type OperationStoreAdapter, type OperationStoreKey } from "../store.js";
+import {
+  kernelImplementation,
+  OAATH_CALLS_REVIEW_VERSION,
+  type OaathCallsReviewContract,
+} from "./calls-review.js";
 import {
   captureConnectedEoa,
   connectedEoaReview,
@@ -55,25 +56,21 @@ export interface OaathOwnerConfiguration {
   /** Defaults to the shared browser IndexedDB operation store; this realm owns close. */
   readonly operations?: OperationStoreAdapter;
 }
-export interface OaathOwnerCallsReview {
-  /** The full call list was estimated as one operation without signing or reserving its lane. */
-  readonly capacity: Readonly<{
-    kind: "single-operation";
-    gas: Readonly<{
-      callGasLimit: string;
-      verificationGasLimit: string;
-      preVerificationGas: string;
-    }>;
-  }>;
+/** The versioned call-review contract plus owner-realm facts outside it. */
+export interface OaathOwnerCallsReview extends OaathCallsReviewContract {
+  readonly signer: "owner";
+  /** No Grant exists, so nothing limits calls, expiry or operation count. */
+  readonly enforcement: Readonly<{ calls: "none"; expiry: "none"; operationCount: "none" }>;
+  /** The full call list was estimated as one operation before this review returned. */
+  readonly validation: "estimated";
+  /**
+   * The full call list fits one operation without signing or reserving its lane.
+   * `detail` is transport-specific and outside the review contract.
+   */
+  readonly capacity: Readonly<{ kind: "single-operation"; detail: unknown }>;
   readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
-  readonly chainId: number;
-  readonly account: `0x${string}`;
-  /** Detected from the account onchain; never a caller setting. */
-  readonly kernelVersion: KernelVersion;
   readonly calls: readonly Readonly<OaathCallInput>[];
-  readonly signer: "owner";
-  readonly route: "erc4337-bundler";
   readonly reasons: OaathExecutionDecision["reasons"];
 }
 export interface OaathOwnerHandle {
@@ -359,9 +356,16 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
               const estimated = await estimate(resolved);
               assertOpen();
               return Object.freeze({
+                version: OAATH_CALLS_REVIEW_VERSION,
+                enforcement: Object.freeze({
+                  calls: "none" as const,
+                  expiry: "none" as const,
+                  operationCount: "none" as const,
+                }),
+                validation: "estimated" as const,
                 capacity: Object.freeze({
                   kind: "single-operation" as const,
-                  gas: Object.freeze({
+                  detail: Object.freeze({
                     callGasLimit: estimated.userOperation.callGasLimit,
                     verificationGasLimit: estimated.userOperation.verificationGasLimit,
                     preVerificationGas: estimated.userOperation.preVerificationGas,
@@ -369,11 +373,13 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 }),
                 chainId: resolved.chain.chainId,
                 fallback: connectedEoaReview(resolved.feePayer),
-                account: address,
-                kernelVersion: resolved.runtime.deployment.kernelVersion,
+                account: Object.freeze({
+                  address,
+                  implementation: kernelImplementation(resolved.runtime.deployment.kernelVersion),
+                }),
                 calls: resolved.calls,
                 signer: "owner" as const,
-                route: "erc4337-bundler" as const,
+                route: resolved.decision.route,
                 reasons: resolved.decision.reasons,
                 paymasterService:
                   resolved.sponsorship === null

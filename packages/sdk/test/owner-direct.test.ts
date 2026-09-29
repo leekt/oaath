@@ -88,14 +88,14 @@ describe("owner-direct account calls", () => {
       expect(review).toMatchObject({
         capacity: {
           kind: "single-operation",
-          gas: {
+          detail: {
             callGasLimit: "100000",
             verificationGasLimit: "200000",
             preVerificationGas: "50000",
           },
         },
       });
-      expect(Object.isFrozen(review.capacity.gas)).toBe(true);
+      expect(Object.isFrozen(review.capacity.detail)).toBe(true);
       const operation = await owner.sendCalls(sendCallsInput());
       expect(prompts()).toBe(1);
       expect((await operation.wait()).status).toBe("finalized");
@@ -231,9 +231,12 @@ describe("owner-direct account calls", () => {
       const owner = client.account(ACCOUNT).owner(wallet);
       const review = await owner.reviewCalls(sendCallsInput());
       expect(review).toMatchObject({
-        account: ACCOUNT,
+        version: "oaath-calls-review-v1",
+        account: { address: ACCOUNT, implementation: "kernel:0.3.3" },
         chainId: CHAIN_ID,
         signer: "owner",
+        enforcement: { calls: "none", expiry: "none", operationCount: "none" },
+        validation: "estimated",
         route: "erc4337-bundler",
         reasons: ["owner_explicit", "route_available:erc4337-bundler"],
       });

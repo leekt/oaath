@@ -67,7 +67,7 @@ async function sendOwnerCalls(
           expect(account.account).toBe(fixture.address);
           expect(kernelAccountDeployment(account).kernelVersion).toBe(kernelVersion);
           expect(review).toMatchObject({
-            kernelVersion,
+            account: { address: fixture.address, implementation: `kernel:${kernelVersion}` },
             signer: "owner",
             route: "erc4337-bundler",
           });
