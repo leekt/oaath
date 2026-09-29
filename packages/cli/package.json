@@ -1,5 +1,5 @@
 {
-  "name": "oaath",
+  "name": "@oaath/cli",
   "version": "0.3.0",
   "description": "OAAth runtime deployment and readiness commands.",
   "type": "module",

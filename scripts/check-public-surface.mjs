@@ -63,7 +63,7 @@ const DIRECTION = {
   "@oaath/server": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/testing": ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
   "@oaath/contracts": [],
-  oaath: ["@oaath/sdk"],
+  "@oaath/cli": ["@oaath/sdk"],
 };
 
 /** Production groups only: a devDependency never reaches a consumer. */

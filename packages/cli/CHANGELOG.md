@@ -1,9 +1,10 @@
-# oaath
+# @oaath/cli
 
 ## 0.3.0
 
 ### Minor Changes
 
+- First npm release, published as `@oaath/cli` (npm rejects the unscoped `oaath` name). The installed command is still `oaath`: `npx @oaath/cli doctor --chain 143`.
 - 0f6afe4: Add `oaath deploy-runtime` with deterministic missing-contract deployment, prerequisite checks, dry-run planning and durable observation-only recovery after an uncertain broadcast.
 - 257390f: Service approvals accept the same optional `session` setting as wallet approvals:
   `createOAAth({ approvals: { kind: "service", url }, session: { kind: "webauthn", ...webauthnKeyInput } })`. The

@@ -1,16 +1,16 @@
-# oaath
+# @oaath/cli
 
-Node CLI for the canonical Kernel v4 / EntryPoint 0.7 runtime. The `oaath`
-package belongs to the same fixed release group as `@oaath/sdk`.
+Node CLI for the canonical Kernel v4 / EntryPoint 0.7 runtime. The package
+installs the `oaath` command and belongs to the same fixed release group as
+`@oaath/sdk`.
 
 ```sh
-npx oaath doctor --chain 143
-npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
+npx @oaath/cli doctor --chain 143
+npx @oaath/cli doctor --chain 143 --rpc https://rpc.monad.xyz --json
 ```
 
-Until the package is published, run `bun run --filter oaath build` and
-`node packages/cli/dist/cli.mjs doctor --chain 143` from the repository, or install
-the exact packed `oaath`, `@oaath/sdk` and `@oaath/protocol` tarballs together.
+From a repository checkout, run `bun run --filter @oaath/cli build` and
+`node packages/cli/dist/cli.mjs doctor --chain 143`.
 
 `doctor` reads one explicit RPC endpoint. Defaults cover Monad 143, World 480,
 MegaETH 4326, Tempo 4217, Robinhood 4663 and Arc 5042. Other chains need `--rpc`.
@@ -40,9 +40,9 @@ the pinned P-256 validator requires the chain's native P-256 precompile. No test
 ## Deploy the missing runtime
 
 ```sh
-npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
+npx @oaath/cli deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
 # Supply OAATH_DEPLOYER_PRIVATE_KEY through your secret manager or environment.
-npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz
+npx @oaath/cli deploy-runtime --chain 143 --rpc https://rpc.monad.xyz
 ```
 
 The command requires an explicit RPC URL. The endpoint must report the requested

@@ -5,7 +5,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
   label: "runtime-cli",
-  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "oaath"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "@oaath/cli"],
   dependencies: { "@account-abstraction/contracts": "0.7.0", viem: "2.55.8" },
   files: {
     "run.mjs": `
