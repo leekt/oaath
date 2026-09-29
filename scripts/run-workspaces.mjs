@@ -1,15 +1,16 @@
 /**
- * Owns: building workspace packages in runtime-dependency order.
+ * Owns: running one package script across workspaces in runtime-dependency
+ * order (build, and the pack/publish scripts whose prepack builds).
  *
- * `bun run --workspaces` and `bun run --filter` start builds concurrently once
+ * `bun run --workspaces` and `bun run --filter` start scripts concurrently once
  * the dev graph has a cycle (the SDK's tests depend on `@oaath/server` and
  * `@oaath/testing`, which depend on the SDK), so a dependent can bundle a
  * `dist` that is still being replaced. Only runtime `dependencies` and
- * `peerDependencies` order builds here; each build runs after its dependencies
+ * `peerDependencies` order scripts here; each runs after its dependencies
  * finish.
  *
- * Usage: `node scripts/build-workspaces.mjs [package-name...]`; no names builds
- * every workspace package that has a build script.
+ * Usage: `node scripts/run-workspaces.mjs <script> [package-name...]`; no names
+ * runs every workspace package that defines the script.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -44,12 +45,12 @@ function workspaces() {
   return packages;
 }
 
-/** Topological order of the named packages (default: all with a build script). */
-export function buildOrder(names) {
+/** Topological order of the named packages (default: all defining the script). */
+export function scriptOrder(script, names) {
   const packages = workspaces();
   const selected = names?.length
     ? names
-    : [...packages.keys()].filter((name) => packages.get(name).manifest.scripts?.build);
+    : [...packages.keys()].filter((name) => packages.get(name).manifest.scripts?.[script]);
   const order = [];
   const state = new Map();
   function visit(name, path) {
@@ -68,13 +69,13 @@ export function buildOrder(names) {
     order.push(name);
   }
   for (const name of selected) visit(name, []);
-  return order.filter((name) => packages.get(name).manifest.scripts?.build);
+  return order.filter((name) => packages.get(name).manifest.scripts?.[script]);
 }
 
-/** Builds the named packages sequentially in dependency order, failing on the first error. */
-export function buildWorkspacePackages(names, options = {}) {
-  for (const name of buildOrder(names)) {
-    const result = spawnSync("bun", ["run", "--filter", name, "build"], {
+/** Runs the script in the named packages sequentially in dependency order, failing on the first error. */
+export function runWorkspaceScript(script, names, options = {}) {
+  for (const name of scriptOrder(script, names)) {
+    const result = spawnSync("bun", ["run", "--filter", name, script], {
       cwd: ROOT,
       encoding: "utf8",
       stdio: options.stdio ?? "inherit",
@@ -82,12 +83,14 @@ export function buildWorkspacePackages(names, options = {}) {
     if (result.error) throw result.error;
     if (result.status !== 0) {
       throw new Error(
-        `${name} build exited ${result.status}\n${result.stdout ?? ""}${result.stderr ?? ""}`,
+        `${name} ${script} exited ${result.status}\n${result.stdout ?? ""}${result.stderr ?? ""}`,
       );
     }
   }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  buildWorkspacePackages(process.argv.slice(2));
+  const [script, ...names] = process.argv.slice(2);
+  if (!script) throw new Error("Usage: run-workspaces.mjs <script> [package-name...]");
+  runWorkspaceScript(script, names);
 }

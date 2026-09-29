@@ -17,7 +17,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildWorkspacePackages } from "./build-workspaces.mjs";
+import { runWorkspaceScript } from "./run-workspaces.mjs";
 
 export const WORKSPACE_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -42,7 +42,7 @@ export function run(command, args, options = {}) {
  * The build runs here so a smoke can never pass against a stale `dist`.
  */
 export async function packWorkspacePackages(names, destination) {
-  buildWorkspacePackages(names, { stdio: ["ignore", "pipe", "pipe"] });
+  runWorkspaceScript("build", names, { stdio: ["ignore", "pipe", "pipe"] });
   const packages = new Map();
   for (const entry of await readdir(join(WORKSPACE_ROOT, "packages"), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
