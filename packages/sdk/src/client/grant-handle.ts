@@ -443,6 +443,16 @@ export interface OaathRegisteredPaymasterService {
 }
 
 /**
+ * How one chain can sponsor gas. `erc7902-static` is the authenticated
+ * commitment (`hashErc7902StaticPaymasterConfiguration`) to one exact
+ * ERC-7902 static paymaster.
+ */
+export type OaathChainSponsorship = Readonly<{
+  kind: "erc7902-static";
+  configurationHash: `0x${string}`;
+}>;
+
+/**
  * One submission route a chain offers. Only the ERC-4337 kinds ship: a bundler
  * route carries its pre-submission probe, and a handleOps route carries the EOA
  * fee payer that pays for `EntryPoint.handleOps`.
@@ -474,8 +484,8 @@ export interface OaathChainCapability {
   readonly usage: ((request: Readonly<OaathUsageRequest>) => Promise<unknown>) | null;
   /** Null means this chain does not advertise ERC-7677. */
   readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
-  /** Authenticated commitment to one exact ERC-7902 static paymaster, or null. */
-  readonly staticPaymasterConfigurationHash: `0x${string}` | null;
+  /** Omitted means this chain offers no sponsorship setting. */
+  readonly sponsorship?: OaathChainSponsorship;
 }
 
 /** Records service admission invalidation; it does not invalidate an onchain signature. */
@@ -666,7 +676,6 @@ const CHAIN_KEYS: readonly string[] = Object.freeze([
   "quote",
   "usage",
   "paymasterService",
-  "staticPaymasterConfigurationHash",
 ]);
 
 function unsupported(source: string): never {
@@ -734,6 +743,29 @@ function submissionRoutes(
   return Object.freeze(routes);
 }
 
+/** Captures the one optional chain sponsorship setting exactly. */
+function chainSponsorship(
+  value: unknown,
+  context: CaptureContext,
+): Readonly<OaathChainSponsorship> {
+  const fail = (message: string) => clientFail("oaath_client_capability_invalid", message);
+  const captured = captureRecord(value, "chain sponsorship", context, fail);
+  if (captured.kind !== "erc7902-static") return fail("chain sponsorship kind is unsupported");
+  const { configurationHash } = exactCapturedRecord(
+    captured,
+    ["kind", "configurationHash"],
+    "chain sponsorship",
+    fail,
+  );
+  if (typeof configurationHash !== "string" || !USER_OPERATION_HASH.test(configurationHash)) {
+    return fail("static paymaster configuration commitment is invalid");
+  }
+  return Object.freeze({
+    kind: "erc7902-static",
+    configurationHash: configurationHash as `0x${string}`,
+  });
+}
+
 /** Captures one chain capability set exactly; sub-capabilities keep their owners. */
 export function captureChainCapability(value: unknown): Readonly<OaathChainCapability> {
   const context: CaptureContext = new WeakSet();
@@ -746,6 +778,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       ...CHAIN_KEYS,
       ...(Object.hasOwn(captured, "gas") ? ["gas"] : []),
       ...(Object.hasOwn(captured, "routes") ? ["routes"] : []),
+      ...(Object.hasOwn(captured, "sponsorship") ? ["sponsorship"] : []),
     ],
     "OAAth chain capability",
     (message) => clientFail("oaath_client_capability_invalid", message),
@@ -790,17 +823,9 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       ),
     });
   }
-  const staticPaymasterConfigurationHash = record.staticPaymasterConfigurationHash;
-  if (
-    staticPaymasterConfigurationHash !== null &&
-    (typeof staticPaymasterConfigurationHash !== "string" ||
-      !USER_OPERATION_HASH.test(staticPaymasterConfigurationHash))
-  ) {
-    return clientFail(
-      "oaath_client_capability_invalid",
-      "static paymaster configuration commitment is invalid",
-    );
-  }
+  const sponsorship = Object.hasOwn(record, "sponsorship")
+    ? chainSponsorship(record.sponsorship, context)
+    : null;
   return Object.freeze({
     chainId,
     gas,
@@ -829,7 +854,7 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
         ? null
         : clientCapability<NonNullable<OaathChainCapability["usage"]>>(record.usage, "chain usage"),
     paymasterService,
-    staticPaymasterConfigurationHash: staticPaymasterConfigurationHash as `0x${string}` | null,
+    ...(sponsorship === null ? {} : { sponsorship }),
   });
 }
 
@@ -3496,7 +3521,7 @@ export function createGrantHandle(
   }
 
   function staticPaymasterConfigurationHash(chainId: number): `0x${string}` | null {
-    return chainCapability(chainId).staticPaymasterConfigurationHash;
+    return chainCapability(chainId).sponsorship?.configurationHash ?? null;
   }
 
   function admitExecutionRoute(
@@ -3740,7 +3765,7 @@ export function createGrantHandle(
         const configuration = captureErc7902StaticPaymasterConfiguration(selection.configuration);
         if (
           hashCapturedErc7902PreparedPaymaster(configuration.paymaster) !==
-          chainCapability(chainId).staticPaymasterConfigurationHash
+          staticPaymasterConfigurationHash(chainId)
         ) {
           return clientFail(
             "oaath_client_capability_invalid",

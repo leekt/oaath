@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createErc7677SponsorshipCapability,
   type Erc7677GasEstimationRequest,
   type Erc7677PaymasterServiceRequest,
   type OaathKernelSponsorshipRuntime,
@@ -14,7 +13,10 @@ import {
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
 } from "../src/kernel-v4.js";
-import { readCompletedErc7677ResultCapabilities } from "../src/provider/erc7677.js";
+import {
+  createErc7677SponsorshipCapability,
+  readCompletedErc7677ResultCapabilities,
+} from "../src/provider/erc7677.js";
 
 const SERVICE_URL = "https://service.example/chains/421614/paymaster";
 const OTHER_URL = "https://attacker.example/paymaster";

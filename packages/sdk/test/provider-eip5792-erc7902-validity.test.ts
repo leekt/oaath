@@ -641,7 +641,10 @@ describe("wallet_sendCalls ERC-7902 validity admission", () => {
     const staticBase = createChainFixture();
     const configuration = staticConfiguration();
     const staticChain = replaceChain(staticBase, {
-      staticPaymasterConfigurationHash: hashErc7902StaticPaymasterConfiguration(configuration),
+      sponsorship: {
+        kind: "erc7902-static",
+        configurationHash: hashErc7902StaticPaymasterConfiguration(configuration),
+      },
     });
     const staticActive = await activeProvider({
       chain: staticChain,

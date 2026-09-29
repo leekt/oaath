@@ -642,7 +642,6 @@ export function createViemChainPorts(
                 estimate: (request: Parameters<OaathRegisteredPaymasterService["estimate"]>[0]) =>
                   estimate(parsePreparedUserOperation(request.prepared), request.userOperation),
               }),
-        staticPaymasterConfigurationHash: null,
       } satisfies OaathChainCapability);
     }),
   );

@@ -39,6 +39,7 @@ export type {
 export type {
   OaathCapabilityInvalidationCapability,
   OaathChainCapability,
+  OaathChainSponsorship,
   OaathOwnerRevocationCapability,
   OaathQuoteCapability,
   OaathQuoteRequest,
@@ -132,7 +133,6 @@ export {
   OaathOperationRunnerError,
 } from "./operation-runner.js";
 export type {
-  CreateErc7677SponsorshipCapabilityInput,
   Erc7677EstimationUserOperationV07,
   Erc7677GasEstimationRequest,
   Erc7677GasEstimator,
@@ -143,10 +143,7 @@ export type {
   Erc7677RegisteredPaymasterService,
   Erc7677UnsignedUserOperationV07,
 } from "./provider/erc7677.js";
-export { createErc7677SponsorshipCapability } from "./provider/erc7677.js";
-export type { Erc7902StaticPaymasterConfiguration } from "./provider/erc7902.js";
 export {
-  captureErc7902StaticPaymasterConfiguration,
   ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN,
   ERC7902_STATIC_PAYMASTER_LIMITS,
   hashErc7902StaticPaymasterConfiguration,

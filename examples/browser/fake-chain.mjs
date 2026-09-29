@@ -245,7 +245,6 @@ export function createFakeChain(chainId) {
         };
       },
       paymasterService: null,
-      staticPaymasterConfigurationHash: null,
     },
   };
 }

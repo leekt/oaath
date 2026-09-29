@@ -81,7 +81,10 @@ function staticChain(
   const base = input.base ?? createChainFixture();
   const quoteRequests = input.quoteRequests as OaathQuoteRequest[] | undefined;
   return replaceChain(base, {
-    staticPaymasterConfigurationHash: hashErc7902StaticPaymasterConfiguration(input.approved),
+    sponsorship: {
+      kind: "erc7902-static",
+      configurationHash: hashErc7902StaticPaymasterConfiguration(input.approved),
+    },
     async quote(request) {
       quoteRequests?.push(request);
       return base.capability.quote(request);

@@ -1,14 +1,16 @@
 /** Draft ERC-7902 static-paymaster capture and exact identity binding. */
 import { describe, expect, it } from "vitest";
 import {
-  captureErc7902StaticPaymasterConfiguration,
   ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN,
   ERC7902_STATIC_PAYMASTER_LIMITS,
   hashErc7902StaticPaymasterConfiguration,
   OaathRoutingError,
 } from "../src/advanced.js";
 import { prepareUserOperation } from "../src/kernel.js";
-import { captureErc7902ValidityTimeRange } from "../src/provider/erc7902.js";
+import {
+  captureErc7902StaticPaymasterConfiguration,
+  captureErc7902ValidityTimeRange,
+} from "../src/provider/erc7902.js";
 
 const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 const SENDER = `0x${"11".repeat(20)}`;

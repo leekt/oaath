@@ -36,6 +36,7 @@ import type {
   Erc7677GasEstimationRequest,
   OaathBundlerProbeCapability,
   OaathChainCapability,
+  OaathChainSponsorship,
   OaathRegisteredPaymasterService,
   OaathSubmissionRoute,
 } from "../../src/advanced.js";
@@ -322,7 +323,7 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     usage:
       capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
     feePayer: routeFeePayer(capability),
-    staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
+    staticPaymasterConfigurationHash: capability.sponsorship?.configurationHash ?? null,
   };
 }
 
@@ -523,7 +524,7 @@ export interface ChainFixtureOptions {
   readonly bundler?: "available" | "absent" | "unsupported" | "unreadable";
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
   readonly paymasterService?: Readonly<OaathRegisteredPaymasterService> | null;
-  readonly staticPaymasterConfigurationHash?: `0x${string}` | null;
+  readonly sponsorship?: OaathChainSponsorship;
   /** Injected crash inside the send boundary, after the transport accepted it. */
   readonly crashOnSend?: () => boolean;
   /**
@@ -822,7 +823,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
           })
         : null,
     paymasterService: options.paymasterService ?? null,
-    staticPaymasterConfigurationHash: options.staticPaymasterConfigurationHash ?? null,
+    ...(options.sponsorship === undefined ? {} : { sponsorship: options.sponsorship }),
   });
 
   return Object.freeze({

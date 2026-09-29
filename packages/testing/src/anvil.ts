@@ -185,7 +185,8 @@ export async function createLocalAnvilFixture(
       },
       usage: (request: unknown) => capability.usage(request as never),
       feePayer: handleOpsFeePayer(capability) as { address: `0x${string}`; balance: string },
-      staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
+      // The Anvil chain offers no sponsorship setting.
+      staticPaymasterConfigurationHash: null,
     })),
     authentication: {
       async authenticate(request) {
