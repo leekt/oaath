@@ -161,7 +161,7 @@ prepare, sign, submit, or open an approval artifact; fetching consent checks
 current state again. The example phone uses this endpoint for its pull inbox.
 
 Canonical phone permission approval requires `RelayHandlerOptions.permissionApprovals`.
-Wire its `prepare(request)` to `prepareKernelPhonePermissionApproval` from
+Wire its `prepare(request)` to `prepareKernelPermissionApproval` from
 `@oaath/sdk/kernel`, supplying the deployment's account reads, chain ID, and
 stable install nonce for that request. Return the helper's `signingRequest`
 and a `complete(artifact, decidedAt)` that JSON-serializes its completion result.
@@ -180,8 +180,9 @@ route for each target without complete chain evidence. Configure
 and durable custody. It checks the original application/member, resolves the
 configured account and phone, and opens the retained approval even after claim
 or execution-policy expiry. The deployment selects the effect, root nonce and
-gas from chain state and passes them to `prepareKernelPhoneRevocation` from
-`@oaath/sdk/kernel`, returning its `signingRequest`. Preparation must not reserve
+gas from chain state and passes them, with the request, to
+`prepareKernelPermissionRevocation` from `@oaath/sdk/kernel`, returning its
+`signingRequest`. Preparation must not reserve
 a lane or nonce, sign, or submit; concurrent preparations may lose admission.
 
 POST returns `201` for new custody or `200` for recovered custody. GET creates

@@ -344,7 +344,7 @@ configured when the owner approved. The session's first operation on a chain
 carries the enable envelope; every later one is an ordinary standard-mode
 operation against the installed permission.
 
-Phone approval preparation selects a request-specific install nonce namespace,
+Approval preparation selects a request-specific install nonce namespace,
 so different grants can install in different orders on different chains. The
 SDK starts each namespace at sequence zero: its key must be unused and Kernel's
 global `validNonceFrom()` must still be zero on the destination chain. Advancing

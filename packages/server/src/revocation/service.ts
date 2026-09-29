@@ -55,7 +55,7 @@ export interface RequestOwnerPhoneRevocationInput {
   readonly chainId: number;
   readonly requestTtlMs: number;
   /**
-   * Deployment uses prepareKernelPhoneRevocation to verify the retained Kernel
+   * Deployment uses prepareKernelPermissionRevocation to verify the retained Kernel
    * capability, read target-chain state, and choose effect/root nonce/gas.
    * Receives the retained approval plaintext; never log or expose it to clients.
    * Preparation must not reserve a nonce or execution lane; concurrent

@@ -600,17 +600,20 @@ errors preserve the fixed numeric message and expose the hint in `data.diagnosti
 Message-only errors and nonempty reverts remain generic. The diagnostic is
 ephemeral, does not authorize a retry, and does not release an unresolved lane.
 
-`@oaath/sdk/kernel` exposes `prepareKernelPhonePermissionApproval` for the
-owner-phone service integration. It binds a canonical permission request's
-account using public credentials and configured reads, derives its policy
-packages through `createKernelRuntime`, and returns the existing Kernel signing
-request. `complete(phoneArtifact, decidedAt)` verifies the P-256 signature and
-returns the permission decision plus install approval consumed by the browser
-client. The caller owns phone transport; the helper does not submit or persist
-anything. It supports the P-256 owner phone and the
-current ECDSA/WebAuthn operator profiles, using the Kernel factory route.
+`@oaath/sdk/kernel` exposes `prepareKernelPermissionApproval` for an owner
+approval of a canonical permission request. It binds the request's account
+using public credentials and configured reads, derives its policy packages
+through `createKernelRuntime`, and returns the Kernel signing request. Where
+the owner key lives is expressed only by who signs: `sign(ownerKey, decidedAt)`
+takes one signature from a key profile, and `complete(artifact, decidedAt)`
+verifies an owner device's P-256 signing artifact. Both return the permission
+decision plus install approval consumed by the browser client. The caller owns
+any device transport; the helper does not submit or persist anything. It
+supports a P-256 owner of a factory-derived Kernel `0.4.0` account and the
+current ECDSA/WebAuthn operator profiles. Any other request fails with
+`kernel_runtime_unsupported` before signing.
 
-Phone preparation derives its install nonce from
+Approval preparation derives its install nonce from
 `hashPermissionRequest(request)`, as `kernelPermissionNonce` does: the first 192
 hash bits select a request-specific Kernel install key at sequence zero. The
 same request recreates the same signing packet, while different requests can
@@ -629,16 +632,20 @@ revert because Kernel requires an increase. Installed permissions still need
 uninstall calls. These codecs do not submit, establish finality, or complete
 configured-chain revocation.
 
-`prepareKernelPhoneRevocation` prepares one self-funded P-256 owner operation
-from a canonical permission request and its retained install approval. Supply
-the chain, root operation nonce, gas and the effect supported by chain evidence:
-`invalidate-install` or `uninstall-permission`. Retain its `prepared` operation
-and `signingRequest` before requesting owner consent. The phone request binds
-the workspace, application, install scope, chain, EntryPoint and exact removal
-calls; it contains no enable signature. `complete(phoneArtifact)` verifies and
-returns the signature for that operation. Preparation and completion never
-submit or prove revocation finished. Phone UI and configured-chain orchestration
-are separate integrations.
+`prepareKernelPermissionRevocation` prepares one owner revocation for any
+supported Kernel version; the approval's `version` selects the semantics. For a
+Kernel `0.4.0` approval it prepares one self-funded P-256 owner operation from
+the canonical permission `request` and its retained install approval. Supply
+the chain, root operation nonce, gas and the `effect` supported by chain
+evidence: `invalidate-install` or `uninstall-permission`. Retain its `prepared`
+operation and `signingRequest` before requesting owner consent, and recreate it
+with `restoreKernelPermissionRevocation({ preparation: signingRequest })`. The
+signing request binds the workspace, application, install scope, chain,
+EntryPoint and exact removal calls; it contains no enable signature.
+`sign(ownerKey)` signs with a key profile, and `complete(artifact)` verifies an
+owner device's artifact; both return the signature for that operation.
+Preparation and signing never submit or prove revocation finished. Owner device
+UI and configured-chain orchestration are separate integrations.
 
 The shared revocation call codecs are owned by `@oaath/protocol` and re-exported
 through `@oaath/sdk/kernel`; invalid input reports `signing_request_invalid`.

@@ -35,9 +35,9 @@ import {
   kernelKey,
   materializeKernelPermission,
   ownerOperator,
-  prepareKernelPhonePermissionApproval,
-  prepareKernelPhoneRevocation,
-  restoreKernelPhoneRevocation,
+  prepareKernelPermissionApproval,
+  prepareKernelPermissionRevocation,
+  restoreKernelPermissionRevocation,
   sessionOperator,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
@@ -298,7 +298,7 @@ async function bringUp(
           ),
         };
       };
-      const permission = await prepareKernelPhonePermissionApproval({
+      const permission = await prepareKernelPermissionApproval({
         request,
         chainId: CHAIN_A,
         reads: harness.reads,
@@ -365,7 +365,7 @@ async function bringUp(
         });
         expect(await harness.sendSigned(installed.prepared, installed.signature)).toBe("success");
       }
-      const revocation = await prepareKernelPhoneRevocation({
+      const revocation = await prepareKernelPermissionRevocation({
         request,
         approval: installApproval,
         chainId: CHAIN_A,
@@ -378,9 +378,9 @@ async function bringUp(
       expect(revocation.prepared.userOperation.factory !== null).toBe(
         effect === "invalidate-install",
       );
-      const restored = restoreKernelPhoneRevocation(
-        JSON.parse(JSON.stringify(revocation.signingRequest)),
-      );
+      const restored = await restoreKernelPermissionRevocation({
+        preparation: JSON.parse(JSON.stringify(revocation.signingRequest)),
+      });
       expect(restored.prepared).toEqual(revocation.prepared);
       const signature = await restored.complete(
         sign(

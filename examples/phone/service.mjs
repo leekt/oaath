@@ -21,8 +21,8 @@ import {
   kernelKey,
   ownerOperator,
   parseKernelPermissionApproval,
-  prepareKernelPhonePermissionApproval,
-  prepareKernelPhoneRevocation,
+  prepareKernelPermissionApproval,
+  prepareKernelPermissionRevocation,
 } from "@oaath/sdk/kernel";
 import { createMemoryOperationStoreAdapter } from "@oaath/sdk/testing";
 import {
@@ -286,7 +286,7 @@ export async function startPhoneService({
           const approval = parseKernelPermissionApproval(JSON.parse(artifact).installApproval);
           const quote = await chain.quoteRevocation(approval);
           return (
-            await prepareKernelPhoneRevocation({
+            await prepareKernelPermissionRevocation({
               request,
               approval,
               chainId,
@@ -298,7 +298,7 @@ export async function startPhoneService({
       },
       permissionApprovals: {
         async prepare(request) {
-          const prepared = await prepareKernelPhonePermissionApproval({
+          const prepared = await prepareKernelPermissionApproval({
             request,
             chainId: primary.capability.chainId,
             reads: primary.capability.reads,

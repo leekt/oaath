@@ -11,7 +11,7 @@ import { bytesToHex, hexToBytes } from "viem";
 import { describe, expect, it } from "vitest";
 import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
 import { kernelAllChainCapabilityHash } from "../src/kernel/permission/materialize.js";
-import { prepareKernelPhonePermissionApproval } from "../src/kernel.js";
+import { kernelKey, prepareKernelPermissionApproval } from "../src/kernel.js";
 import {
   accountProfile,
   CHAIN_ID,
@@ -59,7 +59,7 @@ function fixture() {
   });
   const reads = createChainFixture().capability.reads;
   const prepare = (value: Readonly<PermissionRequest> = request) =>
-    prepareKernelPhonePermissionApproval({
+    prepareKernelPermissionApproval({
       request: value,
       chainId: CHAIN_ID,
       reads,
@@ -77,10 +77,22 @@ function fixture() {
         .toCompactRawBytes(),
     ),
   });
-  return { request, prepare, sign, publicKey };
+  const ownerKey = (secret = privateKey) =>
+    kernelKey({
+      credential: {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "p256",
+        publicKey: bytesToHex(p256.getPublicKey(secret, false)),
+      },
+      sign: async ({ hash }) =>
+        bytesToHex(
+          p256.sign(hexToBytes(hash), secret, { prehash: false, lowS: true }).toCompactRawBytes(),
+        ),
+    });
+  return { request, prepare, sign, publicKey, ownerKey };
 }
 
-describe("canonical permission approval for the owner phone", () => {
+describe("canonical permission approval by the owner", () => {
   it("completes a phone signature into the existing applicable grant artifact", async () => {
     const fixed = fixture();
     const prepared = await fixed.prepare();
@@ -113,6 +125,22 @@ describe("canonical permission approval for the owner phone", () => {
       evaluatedAt: 110,
     });
     expect(applied.status === "applied" && applied.grant.state === "approved").toBe(true);
+  });
+
+  it("signs through an owner key profile into the same decision as a device artifact", async () => {
+    const fixed = fixture();
+    const prepared = await fixed.prepare();
+    const signed = await prepared.sign(fixed.ownerKey(), 110);
+    const completed = await prepared.complete(fixed.sign(prepared), 110);
+    expect(signed.installApproval.digest).toBe(prepared.signingRequest.expectedDigest);
+    expect(signed.requestHash).toBe(completed.requestHash);
+    expect(signed.installApproval.packages).toEqual(completed.installApproval.packages);
+    await expect(
+      prepared.sign(fixed.ownerKey(p256.utils.randomPrivateKey()), 110),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    await expect(prepared.sign(fixed.ownerKey(), 191)).rejects.toMatchObject({
+      code: "kernel_runtime_input_invalid",
+    });
   });
 
   it("recreates the same signing request without retained runtime state", async () => {
@@ -167,11 +195,25 @@ describe("canonical permission approval for the owner phone", () => {
     },
   );
 
-  it("refuses unsupported owner or policy before preparing phone approval", async () => {
+  it("refuses an unsupported owner or policy before preparing an approval", async () => {
     const fixed = fixture();
     await expect(
       fixed.prepare({ ...fixed.request, logicalAccount: accountProfile }),
-    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
+    for (const kernelVersion of ["0.3.3", "0.4.0"] as const)
+      await expect(
+        fixed.prepare({
+          ...fixed.request,
+          logicalAccount: {
+            version: "oaath.kernel-existing-account-profile/v2",
+            kind: "kernel",
+            kernelVersion,
+            address: `0x${"55".repeat(20)}`,
+            entryPoint: { version: "0.7" },
+            ownerCredential: accountProfile.ownerCredential,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
     await expect(
       fixed.prepare({
         ...fixed.request,

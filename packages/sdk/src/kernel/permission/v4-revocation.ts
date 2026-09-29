@@ -1,6 +1,6 @@
 /**
- * Public credentials and a retained approval -> exact owner-phone revocation.
- * Preparation and completion never submit or claim that revocation finished.
+ * Kernel 0.4.0 owner revocation: public credentials and a retained approval ->
+ * one exact root operation. Preparation and signing never submit or claim finality.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -38,17 +38,23 @@ import {
   parsePreparedUserOperation,
 } from "../../prepared-user-operation.js";
 import { createKernelRuntime } from "../create-kernel-runtime.js";
-import { exactInput, inputInvalid, runtimeFail, sameInstall } from "../internal.js";
+import {
+  captureKeyProfile,
+  exactInput,
+  inputInvalid,
+  runtimeFail,
+  sameInstall,
+} from "../internal.js";
 import { credentialKey } from "../key/credential.js";
 import { p256Key } from "../key/p256.js";
 import { ownerOperator } from "../operator/owner.js";
 import { sessionOperator } from "../operator/session.js";
-import type { KernelRuntime } from "../types.js";
+import type { KernelRuntime, KeyProfile } from "../types.js";
 import { kernelPermissionInstallNonce } from "./install-nonce.js";
 import { type KernelAllChainApproval, parseKernelAllChainApproval } from "./materialize.js";
 import { deriveSessionPolicyProfiles } from "./profiles.js";
 
-export interface PrepareKernelPhoneRevocationInput {
+export interface PrepareKernelV4RevocationInput {
   readonly request: Readonly<PermissionRequest>;
   readonly approval: Readonly<KernelAllChainApproval>;
   readonly chainId: number;
@@ -60,26 +66,28 @@ export interface PrepareKernelPhoneRevocationInput {
   readonly gas: Readonly<KernelUserOperationGas>;
 }
 
-export interface PreparedKernelPhoneRevocation {
+export interface KernelSigningRequestRevocation {
   readonly signingRequest: Readonly<KernelV4RevocationSigningRequest>;
   readonly prepared: Readonly<PreparedUserOperation>;
-  /** Verifies and returns the exact root signature; no submission or finality effect. */
+  /** One owner key-profile signature over exactly `prepared`, encoded for the account; never submits. */
+  sign(owner: Readonly<KeyProfile>): Promise<`0x${string}`>;
+  /** Verifies an owner device's signing artifact and returns the exact root signature. */
   complete(artifact: Readonly<OwnerSigningArtifact>): Promise<`0x${string}`>;
 }
 
 /**
- * Prepares one self-funded P-256 owner operation from the canonical phone grant.
+ * Prepares one self-funded P-256 owner operation from the canonical grant.
  * The orchestrator supplies the chain evidence, root operation nonce and gas,
- * and retains this exact request before asking the phone. Expired application
+ * and retains this exact request before asking the owner. Expired application
  * permissions may still be revoked; current owner consent has its own lifetime.
  */
-export async function prepareKernelPhoneRevocation(
-  value: PrepareKernelPhoneRevocationInput,
-): Promise<Readonly<PreparedKernelPhoneRevocation>> {
+export async function prepareKernelV4Revocation(
+  value: PrepareKernelV4RevocationInput,
+): Promise<Readonly<KernelSigningRequestRevocation>> {
   const input = exactInput(
     value,
     ["request", "approval", "chainId", "reads", "effect", "nonceKey", "sequence", "gas"],
-    "phone revocation",
+    "Kernel revocation preparation",
     new WeakSet(),
   );
   const request = parsePermissionRequest(input.request);
@@ -90,14 +98,14 @@ export async function prepareKernelPhoneRevocation(
     isKernelExistingAccountProfile(request.logicalAccount) ||
     request.logicalAccount.factoryRoute !== "kernel_factory"
   )
-    return inputInvalid("phone revocation requires the P-256 Kernel owner");
+    return inputInvalid("Kernel v4 revocation requires the P-256 Kernel owner");
   if (
     typeof input.chainId !== "number" ||
     (input.effect !== "invalidate-install" && input.effect !== "uninstall-permission")
   )
-    return inputInvalid("phone revocation chain or effect is invalid");
+    return inputInvalid("Kernel v4 revocation chain or effect is invalid");
   if (approval.installNonce !== kernelPermissionInstallNonce(hashPermissionRequest(request)))
-    return inputInvalid("phone revocation approval belongs to another request");
+    return inputInvalid("Kernel v4 revocation approval belongs to another request");
   const deployment = kernelV4Deployment(input.chainId);
   const reads = input.reads as KernelV4AccountReadCapability;
   const key = p256Key({
@@ -105,7 +113,7 @@ export async function prepareKernelPhoneRevocation(
     sign: async () =>
       runtimeFail(
         "kernel_runtime_signing_failed",
-        "phone revocation preparation has no owner signer",
+        "Kernel v4 revocation preparation has no owner signer",
       ),
   });
   const owner = createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads });
@@ -124,18 +132,18 @@ export async function prepareKernelPhoneRevocation(
       return expected !== undefined && sameInstall(entry, expected);
     })
   )
-    return inputInvalid("phone revocation approval does not bind the requested permission");
+    return inputInvalid("Kernel v4 revocation approval does not bind the requested permission");
   if (!(await key.verify(approval.digest, approval.enableSignature)))
     return runtimeFail(
       "kernel_runtime_signature_invalid",
-      "phone revocation approval has no valid owner signature",
+      "Kernel v4 revocation approval has no valid owner signature",
     );
   const account = await owner.bindAccount({
     accountIndex: request.logicalAccount.accountIndex,
     initialPackages: owner.packages,
   });
   if (account.account !== approval.account)
-    return inputInvalid("phone revocation account contradicts its approval");
+    return inputInvalid("Kernel v4 revocation account contradicts its approval");
   const calls =
     input.effect === "invalidate-install"
       ? [
@@ -194,24 +202,24 @@ export async function prepareKernelPhoneRevocation(
 }
 
 /**
- * Reconstructs a previously admitted immutable phone request without chain
+ * Reconstructs a previously admitted immutable revocation request without chain
  * reads, gas quotes, nonce allocation or account preparation. In particular,
  * factory bytes remain present even if the account deployed after consent.
  * This does not admit a grant or prove that a submission happened.
  */
-export function restoreKernelPhoneRevocation(
+export function restoreKernelV4Revocation(
   value: unknown,
-): Readonly<PreparedKernelPhoneRevocation> {
+): Readonly<KernelSigningRequestRevocation> {
   const signingRequest = parseKernelV4RevocationSigningRequest(value);
   const credential = signingRequest.install.signer.ownerCredential;
-  if (credential.kind !== "p256") return inputInvalid("phone revocation requires P-256");
+  if (credential.kind !== "p256") return inputInvalid("Kernel v4 revocation requires P-256");
   const owner = createKernelRuntime({
     deployment: kernelV4Deployment(signingRequest.chainId),
     operator: ownerOperator({
       key: p256Key({
         credential,
         sign: async () =>
-          runtimeFail("kernel_runtime_signing_failed", "restored phone request has no signer"),
+          runtimeFail("kernel_runtime_signing_failed", "restored revocation request has no signer"),
       }),
     }),
     reads: {
@@ -255,17 +263,42 @@ function restoredRevocation(
   signingRequest: Readonly<KernelV4RevocationSigningRequest>,
   prepared: Readonly<PreparedUserOperation>,
   owner: Readonly<KernelRuntime>,
-): Readonly<PreparedKernelPhoneRevocation> {
+): Readonly<KernelSigningRequestRevocation> {
   const requestHash = hashKernelV4RevocationSigningRequest(signingRequest);
+  const credential = signingRequest.install.signer.ownerCredential;
+  if (credential.kind !== "p256") return inputInvalid("Kernel v4 revocation requires P-256");
+  const ownerKey = p256Key({
+    credential,
+    sign: async () =>
+      runtimeFail("kernel_runtime_signing_failed", "revocation request has no signer"),
+  });
   return Object.freeze({
     signingRequest,
     prepared,
+    async sign(value: Readonly<KeyProfile>) {
+      const key = captureKeyProfile(value);
+      // Refuse another credential before it is prompted.
+      if (key.kind !== ownerKey.kind || key.publicMaterial !== ownerKey.publicMaterial)
+        return runtimeFail(
+          "kernel_runtime_binding_mismatch",
+          "revocation owner key does not match the prepared owner",
+        );
+      const signer = createKernelRuntime({
+        deployment: owner.deployment,
+        operator: ownerOperator({ key }),
+        reads: {
+          read: async () =>
+            runtimeFail("kernel_runtime_binding_mismatch", "revocation signing must not read"),
+        },
+      });
+      return signer.signOperation(prepared);
+    },
     async complete(value: Readonly<OwnerSigningArtifact>) {
       const artifact = parseOwnerSigningArtifact(value);
       if (artifact.requestHash !== requestHash)
         return runtimeFail(
           "kernel_runtime_signature_invalid",
-          "phone artifact belongs to another revocation request",
+          "owner artifact belongs to another revocation request",
         );
       return owner.encodeVerifiedSignature(prepared, artifact.signature);
     },
