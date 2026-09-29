@@ -51,7 +51,8 @@ suite("runtime deployment and recovery", () => {
       );
       const plan = await deployRuntime({ chainId: 143, rpc, journal, account, dryRun: true });
       expect(plan.status).toBe("planned");
-      expect(plan.missing).toHaveLength(8);
+      expect(plan.missing).toHaveLength(10);
+      expect(plan.missing).toEqual(expect.arrayContaining(["webAuthnSigner", "p256Verifier"]));
       expect(keys).toBe(0);
       expect(sends).toBe(0);
       const deployed = await deployRuntime({
@@ -63,8 +64,9 @@ suite("runtime deployment and recovery", () => {
       });
       expect(deployed.status).toBe("ready");
       expect(deployed.readiness.factoryBinding).toBe("verified");
-      expect(sends).toBe(8);
-      expect(keys).toBe(8);
+      expect(deployed.readiness.passkeySessionsReady).toBe(true);
+      expect(sends).toBe(10);
+      expect(keys).toBe(10);
       const again = await deployRuntime({
         chainId: 143,
         rpc: new Rpc(chain.url, { maxRequests: 256 }),
@@ -74,7 +76,7 @@ suite("runtime deployment and recovery", () => {
         },
       });
       expect(again.status).toBe("ready");
-      expect(sends).toBe(8);
+      expect(sends).toBe(10);
     } finally {
       journal.close();
       chain.stop();
@@ -92,7 +94,7 @@ suite("runtime deployment and recovery", () => {
       await deployKernelStack(harness);
       for (const component of components(143))
         if (
-          component.required &&
+          (component.required || component.passkeySession) &&
           component.deploymentInput &&
           component.id !== "validityPolicy" &&
           !(await harness.client.getCode({ address: component.address }))

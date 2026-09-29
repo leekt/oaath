@@ -65,15 +65,15 @@ try {
   const args = ["deploy-runtime", "--chain", "143", "--rpc", url, "--journal", "./deployment.sqlite", "--json"];
   const cleanEnv = { ...process.env }; delete cleanEnv.OAATH_DEPLOYER_PRIVATE_KEY;
   const plan = JSON.parse((await exec(bin, [...args, "--dry-run"], { env: cleanEnv })).stdout);
-  if (plan.status !== "planned" || plan.missing.length !== 8) throw new Error("packed deployment plan incomplete");
+  if (plan.status !== "planned" || plan.missing.length !== 10) throw new Error("packed deployment plan incomplete");
   timer = setInterval(() => { if (miningPromise) return; miningPromise = rpc("anvil_mine", ["0x40"]).catch(() => { miningError = true; }).finally(() => { miningPromise = undefined; }); }, 200);
   const deployed = JSON.parse((await exec(bin, args, { env: { ...cleanEnv, OAATH_DEPLOYER_PRIVATE_KEY: key }, timeout: 60000 })).stdout);
-  if (deployed.status !== "ready" || !deployed.readiness.ready) throw new Error("packed deployment failed");
+  if (deployed.status !== "ready" || !deployed.readiness.ready || !deployed.readiness.passkeySessionsReady) throw new Error("packed deployment failed");
   const count = await rpc("eth_getTransactionCount", [account.address, "latest"]);
   const again = JSON.parse((await exec(bin, args, { env: cleanEnv })).stdout);
   if (again.status !== "ready" || count !== await rpc("eth_getTransactionCount", [account.address, "latest"])) throw new Error("packed rerun sent another transaction");
   if (miningError) throw new Error("local mining failed");
-  console.log("packed deploy-runtime: eight missing contracts deployed and verified; repeat invocation needs no key and sends nothing");
+  console.log("packed deploy-runtime: ten missing contracts (including passkey-session modules) deployed and verified; repeat invocation needs no key and sends nothing");
 } finally { clearInterval(timer); await miningPromise; child.kill("SIGTERM"); }
 `,
   },

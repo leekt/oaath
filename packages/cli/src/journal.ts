@@ -24,7 +24,7 @@ function capture(row: unknown): DeploymentRecord | null {
     !Number.isSafeInteger(value.nonce) ||
     Number(value.nonce) < 0 ||
     typeof value.component !== "string" ||
-    !/^[a-zA-Z]{1,40}$/u.test(value.component) ||
+    !/^[a-zA-Z][a-zA-Z0-9]{0,39}$/u.test(value.component) ||
     !["attempted", "confirmed", "reverted"].includes(String(value.state))
   )
     throw new Error("deployment_journal_invalid");

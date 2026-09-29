@@ -28,13 +28,14 @@ An unreadable endpoint is never reported as an absent contract.
 
 Exit 0 means the ECDSA session module set and its prerequisites are ready;
 exit 1 means not ready or unreadable; exit 2 means invalid arguments. JSON uses
-the `oaath.runtime-readiness/v1` schema. Readiness is a snapshot, not a guarantee
+the `oaath.runtime-readiness/v2` schema. Readiness is a snapshot, not a guarantee
 of later RPC availability, account ownership, bundler/paymaster service or finality.
 
-The owner validator remains application-selected. P-256 validator, WebAuthn
-signer and P-256 verifier rows are optional capabilities, separate from the core
-ECDSA session set. The pinned P-256 validator requires the chain's native
-P-256 precompile. No test ECDSA validator is distributed by this CLI.
+The owner validator remains application-selected. `passkeySessionsReady` reports
+whether WebAuthn (passkey) sessions can bind: the WebAuthn signer and Daimo's
+P-256 verifier must both carry their pinned runtime hashes. It never affects
+`ready` or the exit code. The P-256 validator row is an optional owner capability;
+the pinned P-256 validator requires the chain's native P-256 precompile. No test ECDSA validator is distributed by this CLI.
 
 ## Deploy the missing runtime
 
@@ -49,10 +50,10 @@ chain and carry the exact EntryPoint 0.7 and singleton CREATE2 deployer runtimes
 It deploys only missing core components: Kernel UUPS, the factory's immutable
 ECDSA implementation, factory, OAAth ValidityPolicy, CallPolicy, RateLimitPolicy,
 the fixed-window RateLimitPolicy for windowed operation limits
-and ECDSASigner. Every payload uses the canonical `0x4e59…956C` deployer and zero
+and ECDSASigner, plus the passkey-session WebAuthnSigner and P-256 verifier. Every payload uses the canonical `0x4e59…956C` deployer and zero
 salt; addresses are derived from the retained creation code and checked against
 SDK bindings. Existing code with a wrong hash or unreadable evidence stops the
-command. EntryPoint, the singleton deployer and optional modules are not deployed.
+command. EntryPoint, the singleton deployer and the P-256 validator are not deployed.
 
 New transactions use the funded account named by `OAATH_DEPLOYER_PRIVATE_KEY`.
 Keys are never accepted as command-line arguments or saved to the journal.

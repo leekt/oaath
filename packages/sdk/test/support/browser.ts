@@ -848,6 +848,8 @@ export interface UrlRealmOptions {
   readonly relay?: (request: Request) => Promise<Response>;
   /** Tampers with the served bootstrap document before the SDK parses it. */
   readonly bootstrap?: (document: Record<string, unknown>) => unknown;
+  /** The optional caller-supplied session setting, passed through verbatim. */
+  readonly session?: unknown;
   /** Remote session-key custody the relay declares and serves. */
   readonly sessionSigner?: Readonly<{
     mode: "application_backend" | "oaath_hosted";
@@ -957,6 +959,7 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
     origin: ORIGIN,
     stores,
     now: clock.now,
+    ...(options.session === undefined ? {} : { session: options.session }),
   });
 
   return { oaath, clock, chain, stores, relay, invalidations: () => invalidations, fetched };

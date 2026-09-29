@@ -38,6 +38,26 @@ import { Rpc } from "../src/rpc.js";
           expect(ready.components.find((row) => row.id === "p256Validator")?.status).toBe(
             "missing",
           );
+          // Passkey sessions are reported separately and never gate ECDSA readiness.
+          expect(ready.passkeySessionsReady).toBe(false);
+          const passkeyRows = components(chainId).filter((row) => row.passkeySession);
+          expect(passkeyRows.map((row) => row.id).sort()).toEqual([
+            "p256Verifier",
+            "webAuthnSigner",
+          ]);
+          const [first, second] = passkeyRows;
+          if (!first?.deploymentInput || !second?.deploymentInput) throw new Error("no input");
+          await harness.deployCreate2(first.deploymentInput);
+          const partial = await doctor(chainId, new Rpc(chain.url));
+          expect(partial.ready).toBe(true);
+          expect(partial.passkeySessionsReady).toBe(false);
+          await harness.deployCreate2(second.deploymentInput);
+          const passkey = await doctor(chainId, new Rpc(chain.url));
+          expect(passkey.ready).toBe(true);
+          expect(passkey.passkeySessionsReady).toBe(true);
+          expect(
+            passkey.components.filter((row) => row.passkeySession).map((row) => row.status),
+          ).toEqual(["verified", "verified"]);
 
           const rpc = new Rpc(chain.url);
           const wrongBinding = await doctor(chainId, {

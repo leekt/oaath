@@ -11,16 +11,23 @@ export interface ComponentReport {
   readonly id: string;
   readonly address: Hex;
   readonly required: boolean;
+  readonly passkeySession: boolean;
   readonly status: Status;
   readonly runtimeCodeHash: Hex | null;
 }
 export interface DoctorReport {
-  readonly version: "oaath.runtime-readiness/v1";
+  readonly version: "oaath.runtime-readiness/v2";
   readonly chainId: number;
   readonly observedChainId: number | null;
   readonly checkedAt: string;
   readonly blockNumber: string | null;
+  /** The ECDSA session set and its prerequisites. */
   readonly ready: boolean;
+  /**
+   * WebAuthn (passkey) sessions additionally need the WebAuthn signer and the
+   * P-256 verifier with their pinned runtime hashes. Never part of `ready`.
+   */
+  readonly passkeySessionsReady: boolean;
   readonly error: "chain_mismatch" | "rpc_unavailable" | null;
   readonly factoryBinding: "verified" | "mismatch" | "unreadable";
   readonly components: readonly ComponentReport[];
@@ -33,7 +40,12 @@ function quantity(value: unknown): bigint {
 }
 
 async function inspect(component: Component, rpc: RpcReader, block: Hex): Promise<ComponentReport> {
-  const base = { id: component.id, address: component.address, required: component.required };
+  const base = {
+    id: component.id,
+    address: component.address,
+    required: component.required,
+    passkeySession: component.passkeySession,
+  };
   try {
     const code = await rpc.request("eth_getCode", [component.address, block]);
     if (typeof code !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/u.test(code) || code.length > 131_074)
@@ -56,7 +68,7 @@ async function inspect(component: Component, rpc: RpcReader, block: Hex): Promis
 export async function doctor(chainId: number, rpc: RpcReader): Promise<DoctorReport> {
   const manifest = components(chainId);
   const base = {
-    version: "oaath.runtime-readiness/v1" as const,
+    version: "oaath.runtime-readiness/v2" as const,
     chainId,
     checkedAt: new Date().toISOString(),
   };
@@ -67,12 +79,14 @@ export async function doctor(chainId: number, rpc: RpcReader): Promise<DoctorRep
     observedChainId,
     blockNumber: null,
     ready: false,
+    passkeySessionsReady: false,
     error,
     factoryBinding: "unreadable",
-    components: manifest.map(({ id, address, required }) => ({
+    components: manifest.map(({ id, address, required, passkeySession }) => ({
       id,
       address,
       required,
+      passkeySession,
       status: "unreadable",
       runtimeCodeHash: null,
     })),
@@ -109,15 +123,19 @@ export async function doctor(chainId: number, rpc: RpcReader): Promise<DoctorRep
         address.toLowerCase() === KERNEL_V4_UUPS_IMPLEMENTATION_V07 ? "verified" : "mismatch";
     } catch {}
   }
+  const ready =
+    factoryBinding === "verified" &&
+    reports
+      .filter((row) => row.required)
+      .every((row) => row.status === "verified" || row.status === "present");
   return {
     ...base,
     observedChainId,
     blockNumber: BigInt(block).toString(),
-    ready:
-      factoryBinding === "verified" &&
-      reports
-        .filter((row) => row.required)
-        .every((row) => row.status === "verified" || row.status === "present"),
+    ready,
+    passkeySessionsReady:
+      ready &&
+      reports.filter((row) => row.passkeySession).every((row) => row.status === "verified"),
     error: null,
     factoryBinding,
     components: reports,
