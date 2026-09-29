@@ -17,12 +17,9 @@ const { outputFiles } = await build({
           namespace: "test",
         }));
         builder.onLoad({ filter: /.*/, namespace: "test" }, ({ path }) => ({
-          contents: path.endsWith("/persistence")
-            ? `export const openOaathDatabase = globalThis.openDatabase;
-             ${["CleanupStore", "ContextStore", "GrantStoreAdapter", "KeyStore", "OperationStoreAdapter", "PreparedCallStoreAdapter", "WalletCallBundleStoreAdapter"].map((name) => `export const createIndexedDb${name} = (database) => database;`).join("\n")}`
-            : path.endsWith("/viem")
-              ? "export const oaathProvider = () => { throw new Error('unexpected provider'); };"
-              : "export const createOAAth = globalThis.createOAAth;",
+          contents: path.endsWith("/viem")
+            ? "export const oaathProvider = () => { throw new Error('unexpected provider'); };"
+            : "export const createOAAth = globalThis.createOAAth;",
         }));
       },
     },
@@ -45,7 +42,6 @@ function worker() {
   const connected = [];
   const configured = { url: "https://relay-a.test", chain: 1 };
   const context = {
-    indexedDB: {},
     chrome: {
       storage: { local: { get: async () => ({ ...configured }) } },
       tabs: { onRemoved: { addListener() {} } },
@@ -58,42 +54,42 @@ function worker() {
         },
       },
     },
-    openDatabase: async ({ name }) => {
-      const database = {
-        name,
-        closed: 0,
-        close() {
-          this.closed++;
+    // Each realm owns one named database, released by its close.
+    createOAAth: ({ origin, url, stores }) => {
+      const database = { name: stores.name, closed: 0 };
+      opened.push(database);
+      const own = [];
+      return {
+        close: async () => {
+          for (const connection of own) await connection.close();
+          database.closed++;
+        },
+        connect: async () => {
+          const ready = deferred();
+          const permission = deferred();
+          const connection = {
+            origin,
+            url,
+            ready,
+            permission,
+            closed: 0,
+            requests: 0,
+            resume: async () => null,
+            close: async () => {
+              connection.closed++;
+            },
+            requestPermission: async () => {
+              connection.requests++;
+              return permission.promise;
+            },
+          };
+          connected.push(connection);
+          await ready.promise;
+          own.push(connection);
+          return connection;
         },
       };
-      opened.push(database);
-      return database;
     },
-    createOAAth: ({ origin, url }) => ({
-      connect: async () => {
-        const ready = deferred();
-        const permission = deferred();
-        const connection = {
-          origin,
-          url,
-          ready,
-          permission,
-          closed: 0,
-          requests: 0,
-          resume: async () => null,
-          close: async () => {
-            connection.closed++;
-          },
-          requestPermission: async () => {
-            connection.requests++;
-            return permission.promise;
-          },
-        };
-        connected.push(connection);
-        await ready.promise;
-        return connection;
-      },
-    }),
   };
   runInNewContext(outputFiles[0].text, context);
   const message = (command, origin = "https://app.test") =>

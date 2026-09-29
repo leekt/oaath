@@ -35,15 +35,7 @@ import {
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import {
-  createMemoryCleanupStore,
-  createMemoryContextStore,
-  createMemoryGrantStoreAdapter,
-  createMemoryKeyStore,
-  createMemoryOperationStoreAdapter,
-  createMemoryPreparedCallStoreAdapter,
-  createMemoryWalletCallBundleStoreAdapter,
-} from "@oaath/sdk/testing";
+import { createMemoryStores } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -192,17 +184,9 @@ const authorization = {
   },
 };
 
-// Durable state. A browser swaps these for the `createIndexedDb*` adapters
-// from the same entry; nothing else in this file changes.
-const stores = {
-  grants: createMemoryGrantStoreAdapter(),
-  operations: createMemoryOperationStoreAdapter(),
-  walletCallBundles: createMemoryWalletCallBundleStoreAdapter(),
-  preparedCallContexts: createMemoryPreparedCallStoreAdapter(),
-  keys: createMemoryKeyStore(),
-  cleanup: createMemoryCleanupStore(),
-  context: createMemoryContextStore(),
-};
+// Durable state. A browser swaps this for `(await openIndexedDbStores()).stores`
+// from `@oaath/sdk/persistence`; nothing else in this file changes.
+const stores = createMemoryStores();
 
 let signOuts = 0;
 let invalidations = 0;

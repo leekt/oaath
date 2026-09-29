@@ -23,7 +23,7 @@ import {
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
 } from "@oaath/sdk/kernel";
-import { createMemoryOperationStoreAdapter } from "@oaath/sdk/testing";
+import { createMemoryStores } from "@oaath/sdk/testing";
 import {
   createMemoryRelayStore,
   createMemoryServiceDirectoryStore,
@@ -115,7 +115,7 @@ export async function startPhoneService({
   const store = pool ? createPostgresRelayStore({ pool }) : createMemoryRelayStore();
   const operations = pool
     ? createPostgresOperationStoreAdapter({ pool })
-    : createMemoryOperationStoreAdapter();
+    : createMemoryStores().operations;
   const closeStores = async () => {
     const results = await Promise.allSettled([operations.close(), store.close()]);
     const errors = results

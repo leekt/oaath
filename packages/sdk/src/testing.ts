@@ -1,15 +1,8 @@
 /**
- * `@oaath/sdk/testing` — deterministic in-memory stores. Never a production
- * dependency: nothing here survives a reload, which is the point.
+ * `@oaath/sdk/testing` — the deterministic in-memory store set. Never a
+ * production dependency: nothing here survives a reload, which is the point.
+ * `createOAAth` options take `stores: { kind: "memory" }` instead.
  *
  * @author taek <leekt216@gmail.com>
  */
-export {
-  createMemoryCleanupStore,
-  createMemoryContextStore,
-  createMemoryGrantStoreAdapter,
-  createMemoryKeyStore,
-  createMemoryOperationStoreAdapter,
-  createMemoryPreparedCallStoreAdapter,
-  createMemoryWalletCallBundleStoreAdapter,
-} from "./persistence/memory/stores.js";
+export { createMemoryStores } from "./client/stores.js";

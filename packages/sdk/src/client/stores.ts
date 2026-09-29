@@ -35,7 +35,7 @@ import {
   createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
 import { clientFail, clientFailure, exactClientRecord } from "./errors.js";
-import { captureStorePort, type OaathStoreName } from "./store-configuration.js";
+import { captureStorePort, type OaathStoreName, STORE_NAMES } from "./store-configuration.js";
 
 /** Where the realm's durable state lives. */
 export type OaathStoreBackend =
@@ -175,4 +175,27 @@ export async function openStores<Name extends OaathStoreName>(
     stores: Object.freeze(stores),
     close: async () => opened?.close(),
   });
+}
+
+/**
+ * The full IndexedDB store set, for the injected `binding` composition. The
+ * realm closes the store ports; `close` releases the database afterwards.
+ */
+export async function openIndexedDbStores(
+  input: Readonly<{ factory?: IDBFactory; name?: string }> = {},
+): Promise<Readonly<OwnedStores<OaathStoreName>>> {
+  const setting = captureRecord(
+    input,
+    "IndexedDB stores",
+    new WeakSet(),
+    clientFailure("oaath_client_input_invalid"),
+  );
+  return openStores(captureStores({ ...setting, kind: "indexeddb" }, []), STORE_NAMES);
+}
+
+/** The full memory store set: nothing survives the process. */
+export function createMemoryStores(): Readonly<OaathStoreConfiguration> {
+  return Object.freeze(
+    Object.fromEntries(STORE_NAMES.map((name) => [name, MEMORY[name]()])),
+  ) as unknown as Readonly<OaathStoreConfiguration>;
 }
