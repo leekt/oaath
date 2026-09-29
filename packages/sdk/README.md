@@ -627,9 +627,12 @@ takes one signature from a key profile, and `complete(artifact, decidedAt)`
 verifies an owner device's P-256 signing artifact. Both return the permission
 decision plus install approval consumed by the browser client. The caller owns
 any device transport; the helper does not submit or persist anything. It
-supports a P-256 owner of a factory-derived Kernel `0.4.0` account and the
-current ECDSA/WebAuthn operator profiles. Any other request fails with
-`kernel_runtime_unsupported` before signing.
+supports an existing Kernel `0.3.3` or `0.4.0` account whose ECDSA or raw P-256
+root owner is proven onchain, a P-256 owner of a factory-derived Kernel `0.4.0`
+account, and the current ECDSA/WebAuthn operator profiles. `reads` must serve
+every supported deployment (`createKernelReads`). Any other request fails with
+`kernel_runtime_unsupported` before signing, as does `complete` for a non-P-256
+owner. Wallet-approved mode prepares its approval through the same owner.
 
 Approval preparation derives its install nonce from
 `hashPermissionRequest(request)`, as `kernelPermissionNonce` does: the first 192
