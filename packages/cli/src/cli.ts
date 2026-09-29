@@ -16,8 +16,9 @@ const HELP = `Usage: oaath doctor --chain <id> [--rpc <url>] [--json]
        oaath deploy-runtime --chain <id> --rpc <url> [--dry-run] [--journal <path>] [--json]
 
 Checks the Kernel v4 / EntryPoint 0.7 ECDSA session module set.
-Owner validators remain application-selected; optional P-256/WebAuthn rows
-report their deployment separately. No wallet or transaction is used.
+Owner validators remain application-selected. Passkey (WebAuthn) session
+readiness, the WebAuthn signer and P-256 verifier with pinned hashes, is reported
+separately and never gates the exit code. No wallet or transaction is used.
 Defaults exist for chains 143, 480, 4326, 4217, 4663 and 5042.
 RPC bounds: 32 requests, four in flight, 5 seconds per request, 60 seconds total,
 no retries or fallback. --rpc explicitly selects one endpoint.
@@ -156,8 +157,9 @@ async function main(): Promise<void> {
     if (report.error) console.log(`Error: ${report.error}`);
     for (const row of report.components)
       console.log(
-        `${row.id.padEnd(22)} ${row.address}  ${row.status}${row.required ? "" : " (optional)"}`,
+        `${row.id.padEnd(22)} ${row.address}  ${row.status}${row.required ? "" : row.passkeySession ? " (passkey sessions)" : " (optional)"}`,
       );
+    console.log(`Passkey sessions: ${report.passkeySessionsReady ? "ready" : "not ready"}`);
     console.log(
       "present = code at the canonical CREATE2 address; verified = pinned runtime hash matches.",
     );

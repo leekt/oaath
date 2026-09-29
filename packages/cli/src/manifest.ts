@@ -24,6 +24,8 @@ export interface Component {
   readonly id: string;
   readonly address: Hex;
   readonly required: boolean;
+  /** Needed only by WebAuthn (passkey) sessions; deploy-runtime deploys it too. */
+  readonly passkeySession: boolean;
   readonly runtimeCodeHash: Hex | null;
   readonly deploymentInput: Hex | null;
 }
@@ -34,6 +36,7 @@ function deployable(
   artifact: { deploymentInput: string; runtimeCodeHash?: string },
   expectedAddress: string | null,
   required = true,
+  passkeySession = false,
 ): Component {
   const input = artifact.deploymentInput as Hex;
   const salt = sliceHex(input, 0, 32);
@@ -49,6 +52,7 @@ function deployable(
     id,
     address,
     required,
+    passkeySession,
     runtimeCodeHash: (artifact.runtimeCodeHash as Hex | undefined) ?? null,
     deploymentInput: input,
   };
@@ -61,6 +65,7 @@ export function components(chainId: number): readonly Component[] {
       id: "entryPoint",
       address: KERNEL_V4_ENTRY_POINT_V07,
       required: true,
+      passkeySession: false,
       runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
       deploymentInput: null,
     },
@@ -68,6 +73,7 @@ export function components(chainId: number): readonly Component[] {
       id: "create2Deployer",
       address: KERNEL_V4_CREATE2_DEPLOYER,
       required: true,
+      passkeySession: false,
       runtimeCodeHash: validity.deployment.deployerRuntimeCodeHash as Hex,
       deploymentInput: null,
     },
@@ -100,7 +106,20 @@ export function components(chainId: number): readonly Component[] {
       runtime.p256Validator.expectedAddress,
       false,
     ),
-    deployable("webAuthnSigner", runtime.webAuthnSigner, pinnedSignerModule("webauthn"), false),
-    deployable("p256Verifier", runtime.p256Verifier, runtime.p256Verifier.expectedAddress, false),
+    deployable(
+      "webAuthnSigner",
+      runtime.webAuthnSigner,
+      pinnedSignerModule("webauthn"),
+      false,
+      true,
+    ),
+    // The pinned WebAuthn signer always verifies through this singleton.
+    deployable(
+      "p256Verifier",
+      runtime.p256Verifier,
+      runtime.p256Verifier.expectedAddress,
+      false,
+      true,
+    ),
   ];
 }

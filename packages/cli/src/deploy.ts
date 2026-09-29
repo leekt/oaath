@@ -29,11 +29,16 @@ export interface DeploymentResult {
   readonly readiness: DoctorReport;
 }
 
+/** The core ECDSA set plus the passkey-session modules; never other optional rows. */
+function deploys(row: Readonly<{ required: boolean; passkeySession: boolean }>): boolean {
+  return row.required || row.passkeySession;
+}
+
 function validateReadiness(report: DoctorReport): void {
   if (
     report.error ||
     report.components.some(
-      (row) => row.required && (row.status === "mismatch" || row.status === "unreadable"),
+      (row) => deploys(row) && (row.status === "mismatch" || row.status === "unreadable"),
     )
   )
     throw new DeploymentError("deployment_evidence_invalid");
@@ -174,7 +179,7 @@ export async function deployRuntime(input: {
     chainId,
     status,
     missing: report.components
-      .filter((row) => row.required && row.status === "missing")
+      .filter((row) => deploys(row) && row.status === "missing")
       .map((row) => row.id),
     transactionHash,
     readiness: report,
@@ -194,7 +199,7 @@ export async function deployRuntime(input: {
         { retryCount: 0 },
       ),
     });
-  for (const component of manifest.filter((row) => row.required && row.deploymentInput)) {
+  for (const component of manifest.filter((row) => deploys(row) && row.deploymentInput)) {
     // Capture current code again after recovering another process's transaction.
     const code = await rpc.request("eth_getCode", [component.address, "latest"]);
     if (code !== "0x") {
@@ -282,11 +287,12 @@ export async function deployRuntime(input: {
       // A concurrent command owns the chain lane. Start a fresh invocation after
       // observing it; never broadcast the now-stale signed transaction above.
       report = await doctor(chainId, rpc);
-      return result(report.ready ? "ready" : "planned");
+      return result(report.ready && report.passkeySessionsReady ? "ready" : "planned");
     }
   }
   report = await doctor(chainId, rpc);
   validateReadiness(report);
-  if (!report.ready) throw new DeploymentError("deployment_evidence_invalid");
+  if (!report.ready || !report.passkeySessionsReady)
+    throw new DeploymentError("deployment_evidence_invalid");
   return result("ready");
 }

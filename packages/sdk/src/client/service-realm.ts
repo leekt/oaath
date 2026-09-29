@@ -8,7 +8,8 @@
  *                               -> exact parse; hostile context fails closed
  *                               -> owner identity from the approved credential
  *                                  (no owner signer ever enters the page)
- *                               -> fresh local session key + device identity
+ *                               -> fresh local session key + device identity,
+ *                                  or the caller's optional passkey `session`
  *                               -> chain ports relayed through the service
  *                               -> the ordinary injected realm, composed
  *                                  internally from exactly these facts
@@ -36,12 +37,14 @@ import { OaathRpcError } from "../viem/rpc.js";
 import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathRegisteredPaymasterService } from "./grant-handle.js";
+import { deriveOperatorCredentialProfile } from "./key-credential.js";
 import {
   loadServiceSession,
   type PersistedServiceSession,
   saveServiceSession,
   serviceSessionKeyId,
 } from "./service-session.js";
+import { captureSession, type SuppliedSession } from "./session-credential.js";
 
 export const OAATH_DEFAULT_SERVICE_URL = "http://localhost:8787" as const;
 const POLL_INTERVAL_MS = 1_000;
@@ -60,6 +63,7 @@ export const SERVICE_REALM_KEYS: readonly string[] = Object.freeze([
   "authorization",
   "stores",
   "now",
+  "session",
 ]);
 
 interface ServiceRealmInput {
@@ -69,6 +73,7 @@ interface ServiceRealmInput {
   readonly authorization: unknown;
   readonly stores: unknown;
   readonly now: (() => number) | null;
+  readonly session: Readonly<SuppliedSession> | null;
 }
 
 function captureServiceRealmInput(
@@ -91,6 +96,7 @@ function captureServiceRealmInput(
     authorization: record.authorization === undefined ? null : record.authorization,
     stores: record.stores === undefined ? null : record.stores,
     now: record.now === undefined ? null : clientCapability<() => number>(record.now, "clock"),
+    session: captureSession(record.session, new WeakSet()),
   });
 }
 
@@ -414,7 +420,7 @@ async function composeConfiguration(
   transport: (request: Request) => Promise<Response>,
   bootstrap: Readonly<ServiceBootstrap>,
   stores: unknown,
-  session: Readonly<PersistedServiceSession>,
+  session: Readonly<PersistedServiceSession | SuppliedSession>,
 ): Promise<Record<string, unknown>> {
   const origin = localOrigin(input);
   const redirectUri = bootstrap.application.redirectUris.find((registered) =>
@@ -431,24 +437,30 @@ async function composeConfiguration(
   // substituted. Frontend custody is the local non-extractable session key;
   // backend and hosted custody bind the credential the deployment's registered
   // provider serves and route every signature through it. The vocabulary is
-  // closed at the bootstrap parser, so no other mode can reach here.
-  const sessionAccount = privateKeyToAccount(session.privateKey);
+  // closed at the bootstrap parser, so no other mode can reach here. A
+  // caller-supplied session is frontend custody the caller holds, so a
+  // remote-custody deployment refuses it instead of choosing one silently.
+  const supplied = "sessionKey" in session;
+  if (supplied && bootstrap.sessionSigner.mode !== "frontend") {
+    return clientFail(
+      "oaath_client_capability_unsupported",
+      "a caller-supplied session requires frontend session custody",
+    );
+  }
+  const deviceId = session.deviceId;
   const remote =
     bootstrap.sessionSigner.mode === "frontend"
       ? null
-      : await remoteSessionKey(input, transport, session.deviceId);
+      : await remoteSessionKey(input, transport, deviceId);
   const sessionKey =
-    remote === null
-      ? ecdsaKey({ account: sessionAccount, validator: SESSION_VALIDATOR_PLACEHOLDER })
-      : remote.key;
-  const operatorCredential =
-    remote === null
-      ? {
-          version: "oaath.operator-credential-profile/v1",
-          kind: "ecdsa",
-          address: sessionAccount.address.toLowerCase(),
-        }
-      : remote.credential;
+    remote?.key ??
+    ("sessionKey" in session
+      ? session.sessionKey
+      : ecdsaKey({
+          account: privateKeyToAccount(session.privateKey),
+          validator: SESSION_VALIDATOR_PLACEHOLDER,
+        }));
+  const operatorCredential = remote?.credential ?? deriveOperatorCredentialProfile(sessionKey);
   return {
     binding: {
       issuer: input.url,
@@ -457,7 +469,7 @@ async function composeConfiguration(
       clientId: bootstrap.application.clientId,
       origin,
       redirectUri,
-      deviceId: session.deviceId,
+      deviceId,
       userHandle: bootstrap.userHandle,
       context: bootstrap.context,
       account: bootstrap.account,
@@ -505,8 +517,9 @@ async function composeConfiguration(
           },
         }),
     // Deleting the wrapping key on disconnect durably orphans the persisted
-    // session ciphertext, so `forgetLocal` forgets the session too.
-    localKeyIds: [serviceSessionKeyId(input.url, origin, bootstrap)],
+    // session ciphertext, so `forgetLocal` forgets the session too. A
+    // caller-held session has no local custody to forget.
+    localKeyIds: supplied ? [] : [serviceSessionKeyId(input.url, origin, bootstrap)],
     now,
   };
 }
@@ -560,6 +573,20 @@ export function createServiceRealm<Realm extends object>(
     if (defaultStoreOwner === owner) defaultStoreOwner = null;
   }
 
+  async function ownSession(
+    stores: Parameters<typeof loadServiceSession>[0]["stores"],
+    origin: string,
+    bootstrap: Readonly<ServiceBootstrap>,
+  ): Promise<Readonly<PersistedServiceSession>> {
+    const continuity = { stores, url: input.url, origin, bootstrap };
+    const loaded = await loadServiceSession(continuity);
+    if (loaded !== null) return loaded;
+    const session = Object.freeze({ deviceId: deviceIdentity(), privateKey: generatePrivateKey() });
+    const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
+    await saveServiceSession({ ...continuity, session, now }).catch(() => undefined);
+    return session;
+  }
+
   async function realm(): Promise<Realm> {
     if (inner) return inner;
     composing ??= (async () => {
@@ -591,24 +618,7 @@ export function createServiceRealm<Realm extends object>(
       // than refusing it — the approval flow re-establishes authority either
       // way.
       const origin = localOrigin(input);
-      let session = await loadServiceSession({
-        stores,
-        url: input.url,
-        origin,
-        bootstrap: selectedBootstrap,
-      });
-      if (session === null) {
-        session = Object.freeze({ deviceId: deviceIdentity(), privateKey: generatePrivateKey() });
-        const now = input.now ?? (() => Math.floor(Date.now() / 1_000));
-        await saveServiceSession({
-          stores,
-          url: input.url,
-          origin,
-          bootstrap: selectedBootstrap,
-          session,
-          now,
-        }).catch(() => undefined);
-      }
+      const session = input.session ?? (await ownSession(stores, origin, selectedBootstrap));
       inner = compose(
         await composeConfiguration(input, transport, selectedBootstrap, stores, session),
       );

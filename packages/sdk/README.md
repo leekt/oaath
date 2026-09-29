@@ -10,6 +10,12 @@ it when the request settles. `expiresAt` is in Unix milliseconds; the code is
 non-secret display metadata and grants no authority. Local wallet mode does not
 call this callback.
 
+URL mode and local mode share one optional `session` setting (`OaathSession`).
+`createOAAth({ url, session: { kind: "webauthn", ...webauthnKeyInput } })` makes
+the owner review and install the caller's passkey as the operator credential; no
+session key is generated or stored. A deployment that declares backend or hosted
+session custody refuses it with `oaath_client_capability_unsupported`.
+
 
 Custom Kernel sessions can set a fixed-window quota with
 `{ kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" }`
@@ -129,7 +135,7 @@ revoking Grant for observation or cleanup; only an active covering Grant may sen
 Another permission request requires explicit wallet consent. No issuer network
 request is made. Chain RPC and bundler calls still use the configured ports.
 
-To sign sessions with a passkey instead of the generated key, pass
+To sign local sessions with a passkey instead of the generated key, pass
 `session: { kind: "webauthn", credential, credentialId, rpId, origin, authenticate }`
 (the `webauthnKey` input). The passkey stays in its authenticator; only its public
 credential is recorded in the Grant, and reopening with the same passkey resumes it.

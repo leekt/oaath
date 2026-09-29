@@ -35,7 +35,6 @@ export type {
   OaathLocalApprovalReview,
   OaathLocalClient,
   OaathLocalConfiguration,
-  OaathLocalSession,
   OaathLocalWallet,
 } from "./client/local-realm.js";
 export type {
@@ -53,6 +52,7 @@ export type {
   OaathOwnerConfiguration,
   OaathOwnerHandle,
 } from "./client/owner-realm.js";
+export type { OaathSession } from "./client/session-credential.js";
 export type { OaathPaymasterServiceInput } from "./client/sponsorship.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";

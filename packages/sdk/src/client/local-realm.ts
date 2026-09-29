@@ -9,20 +9,17 @@
 import {
   captureDenseArray,
   captureRecord,
-  exactCapturedRecord,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   parseKernelAccountProfile,
 } from "@oaath/protocol";
-import { type Address, keccak256 } from "viem";
+import type { Address } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { OaathCleanupError } from "../cleanup/coordinator.js";
 import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
 import { kernelV33Deployment } from "../kernel/deployment/v33.js";
 import { type EcdsaWalletClient, ecdsaKey, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
-import { type WebAuthnKeyInput, webauthnKey } from "../kernel/key/webauthn.js";
-import type { KeyProfile } from "../kernel/types.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { GrantStore, type OperationStoreAdapter } from "../store.js";
 import { captureOaathBinding } from "./binding.js";
@@ -45,24 +42,17 @@ import {
 } from "./local-permission.js";
 import { createOwnerRealm, type OaathOwnerClient } from "./owner-realm.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
+import { captureSession, type OaathSession } from "./session-credential.js";
 import { captureStoreConfiguration } from "./store-configuration.js";
 
 export type OaathLocalWallet = EcdsaWalletClient & { readonly signTypedData: LocalPermissionSign };
 export type { OaathLocalApprovalReview } from "./local-permission.js";
-/**
- * The session credential the owner approves. Omitted or `{ kind: "ecdsa" }`:
- * the realm generates and wraps its own ECDSA key. `{ kind: "webauthn", ... }`:
- * the caller's passkey signs; only its public credential is ever persisted.
- */
-export type OaathLocalSession =
-  | { readonly kind?: "ecdsa" }
-  | ({ readonly kind: "webauthn" } & WebAuthnKeyInput);
 export interface OaathLocalConfiguration {
   readonly mode: "local";
   readonly account: Address;
   readonly owner: OaathLocalWallet;
   readonly chains: readonly Readonly<OaathChainCapability>[];
-  readonly session?: Readonly<OaathLocalSession>;
+  readonly session?: Readonly<OaathSession>;
   /** Display the decoded policy before wallet consent. Throw to cancel. */
   readonly onApproval?: (review: Readonly<OaathLocalApprovalReview>) => Promise<void>;
   /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
@@ -113,7 +103,7 @@ export function createLocalRealm(
   const chains = Object.freeze(entries.map(captureChainCapability));
   if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length)
     return fail("local chains repeat an ID");
-  const suppliedSession = captureLocalSession(config.session, context);
+  const suppliedSession = captureSession(config.session, context);
   const ownerKey = ecdsaWalletKey({
     wallet: config.owner as OaathLocalWallet,
     validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,
@@ -216,7 +206,9 @@ export function createLocalRealm(
         bootstrap,
       };
       const { deviceId, sessionKey, localKeyIds } =
-        suppliedSession ?? (await generatedSession(continuity));
+        suppliedSession === null
+          ? await generatedSession(continuity)
+          : { ...suppliedSession, localKeyIds: [] };
       const binding = {
         ...bindingInput,
         deviceId,
@@ -357,40 +349,4 @@ export function createLocalRealm(
     },
     close,
   } satisfies OaathLocalClient);
-}
-
-/**
- * A caller-held session credential needs no local custody: the device identity
- * derives from its public material, so reload recreates the same binding and
- * the Grant record's operator credential is the only persisted session fact.
- */
-function captureLocalSession(
-  value: unknown,
-  context: WeakSet<object>,
-): { deviceId: string; sessionKey: Readonly<KeyProfile>; localKeyIds: readonly string[] } | null {
-  if (value === undefined) return null;
-  const fail = clientFailure("oaath_client_input_invalid");
-  const record = captureRecord(value, "local session", context, fail);
-  if (record.kind === undefined || record.kind === "ecdsa") {
-    exactCapturedRecord(
-      record,
-      Object.hasOwn(record, "kind") ? ["kind"] : [],
-      "local session",
-      fail,
-    );
-    return null;
-  }
-  if (record.kind !== "webauthn") return fail("local session kind is unsupported");
-  const { kind: _kind, ...material } = record;
-  let sessionKey: Readonly<KeyProfile>;
-  try {
-    sessionKey = webauthnKey(material as unknown as WebAuthnKeyInput);
-  } catch {
-    return fail("local WebAuthn session credential is invalid");
-  }
-  return {
-    deviceId: `passkey-${keccak256(sessionKey.publicMaterial).slice(2, 34)}`,
-    sessionKey,
-    localKeyIds: [],
-  };
 }

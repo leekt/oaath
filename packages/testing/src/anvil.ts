@@ -4,13 +4,14 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   parseGrantPolicy,
 } from "@oaath/protocol";
-import { createOAAth, type Oaath } from "@oaath/sdk";
+import { createOAAth, type Oaath, type OaathSession } from "@oaath/sdk";
 import type { OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
   approveKernelV33Permission,
   createKernelRuntime,
+  credentialKey,
   ecdsaKey,
   kernelAllChainCapabilityHash,
   kernelPermissionInstallNonce,
@@ -42,6 +43,13 @@ export interface LocalAnvilFixture {
   readonly rpcUrl: (chainId: number) => string;
   /** Closes prior SDK/database instances and opens a new client over retained state. */
   readonly openClient: () => Promise<Readonly<Oaath>>;
+  /**
+   * The same, composed from the issuer URL alone (`GET /bootstrap`), with the
+   * optional caller-supplied session setting.
+   */
+  readonly openServiceClient: (
+    input?: Readonly<{ session?: Readonly<OaathSession> }>,
+  ) => Promise<Readonly<Oaath>>;
   readonly closeClient: () => Promise<void>;
   readonly approvalCount: number;
   readonly submissionCount: number;
@@ -135,6 +143,40 @@ export async function createLocalAnvilFixture(
       },
     },
     store: createMemoryRelayStore(),
+    bootstrap: {
+      async resolve() {
+        const binding = localClientBinding(owner.address, session.address, first.existingAccount);
+        return {
+          application: {
+            applicationId: binding.applicationId,
+            applicationName: binding.applicationName,
+          },
+          context: binding.context,
+          account: binding.account,
+          ownerValidator: first.validator,
+          chainIds,
+        } as never;
+      },
+    },
+    chains: [...chains.values()].map(({ capability }) => ({
+      chainId: capability.chainId,
+      reads: (request: unknown) => capability.reads.read(request as never),
+      observation: (request: unknown) => capability.observation.read(request as never),
+      bundler: (request: unknown) => capability.bundler.probe(request as never),
+      quote: (request: unknown) => capability.quote(request as never),
+      // One submission settles per call: open, send once, close.
+      async submission(request: unknown) {
+        const opened = await capability.submission.open(request as never);
+        try {
+          return await opened.send();
+        } finally {
+          await opened.close();
+        }
+      },
+      usage: (request: unknown) => capability.usage(request as never),
+      feePayer: capability.feePayer as { address: `0x${string}`; balance: string },
+      staticPaymasterConfigurationHash: capability.staticPaymasterConfigurationHash,
+    })),
     authentication: {
       async authenticate(request) {
         const header = request.headers.get("authorization") ?? "";
@@ -171,6 +213,9 @@ export async function createLocalAnvilFixture(
       const state = await stateResponse.json();
       const scope = JSON.parse(state.requestedScope);
       const ownerKey = ecdsaKey({ account: owner, validator: first.validator });
+      // Like an owner device: the packages bind the operator credential the
+      // owner reviewed, never a key the application holds.
+      const sessionKey = credentialKey({ credential: scope.operatorCredential, validator: null });
       const requestHash = hashPermissionRequest({ ...scope, requestId });
       const installApproval = await (async () => {
         if (first.existingAccount !== null) {
@@ -178,7 +223,7 @@ export async function createLocalAnvilFixture(
           const runtime = createKernelRuntime({
             deployment,
             operator: sessionOperator({
-              key: ecdsaKey({ account: session, validator: first.validator }),
+              key: sessionKey,
               policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
             }),
             reads: first.capability.reads,
@@ -209,7 +254,7 @@ export async function createLocalAnvilFixture(
         const sessionRuntime = createKernelRuntime({
           deployment,
           operator: sessionOperator({
-            key: ecdsaKey({ account: session, validator: first.validator }),
+            key: sessionKey,
             policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
           }),
           reads: first.capability.reads,
@@ -340,6 +385,23 @@ export async function createLocalAnvilFixture(
         },
         localKeyIds: [],
         now,
+      });
+      return client;
+    },
+    async openServiceClient(
+      options: Readonly<{ session?: Readonly<OaathSession> }> = {},
+    ): Promise<Readonly<Oaath>> {
+      if (closed) throw new Error("local_fixture_closed");
+      await closeClient();
+      storage = await openLocalClientStores(factory, stateDirectory);
+      client = createOAAth({
+        url: issuerUrl,
+        fetch: (request: Request) => relay(authorized(request, clientToken)),
+        origin: new URL(redirectUri).origin,
+        authorization,
+        stores: storage.stores,
+        now,
+        ...(options.session === undefined ? {} : { session: options.session }),
       });
       return client;
     },

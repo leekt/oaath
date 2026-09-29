@@ -1,22 +1,11 @@
-import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
-import { createOAAth, type OaathLocalClient, type OaathLocalSession } from "@oaath/sdk";
+import { createOAAth, type OaathLocalClient } from "@oaath/sdk";
 import type { OaathUsageRequest } from "@oaath/sdk/advanced";
 import { OAATH_KERNEL_RATE_LIMIT_POLICY } from "@oaath/sdk/kernel";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import { IDBFactory } from "fake-indexeddb";
-import {
-  bytesToHex,
-  concat,
-  encodeFunctionData,
-  hexToBytes,
-  keccak256,
-  pad,
-  parseAbi,
-  sha256,
-  stringToBytes,
-  toFunctionSelector,
-} from "viem";
+import { encodeFunctionData, pad, parseAbi, toFunctionSelector } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { softwarePasskey } from "./support-passkey.js";
 
 const target = `0x${"44".repeat(20)}` as const;
 const calls = [{ target, data: "0x12345678", value: "1" }] as const;
@@ -27,57 +16,6 @@ const permission = {
   perChainOperationLimit: 3,
 };
 afterEach(() => vi.unstubAllGlobals());
-
-/** A software passkey: WebCrypto P-256 signs exactly what an authenticator signs. */
-async function softwarePasskey(origin: string) {
-  const rpId = new URL(origin).hostname;
-  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, [
-    "sign",
-  ]);
-  const rawId = crypto.getRandomValues(new Uint8Array(16));
-  let assertions = 0;
-  const session: OaathLocalSession = {
-    kind: "webauthn",
-    credential: {
-      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-      kind: "webauthn",
-      publicKey: bytesToHex(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))),
-      authenticatorIdHash: keccak256(rawId),
-    },
-    credentialId: Buffer.from(rawId).toString("base64url"),
-    rpId,
-    origin,
-    async authenticate(request) {
-      assertions++;
-      const clientDataJSON = JSON.stringify({
-        type: "webauthn.get",
-        challenge: request.challenge,
-        origin,
-        crossOrigin: false,
-      });
-      const authenticatorData = concat([sha256(stringToBytes(rpId)), "0x0500000001"]);
-      const signed = new Uint8Array(
-        hexToBytes(concat([authenticatorData, sha256(stringToBytes(clientDataJSON))])),
-      );
-      const signature = new Uint8Array(
-        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, signed),
-      );
-      return {
-        authenticatorData,
-        clientDataJSON,
-        responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
-        r: bytesToHex(signature.slice(0, 32)),
-        s: bytesToHex(signature.slice(32)),
-      };
-    },
-  };
-  return {
-    session,
-    get assertions() {
-      return assertions;
-    },
-  };
-}
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode", () => {
   it.each(["rejected", "unavailable"] as const)(

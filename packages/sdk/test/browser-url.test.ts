@@ -5,10 +5,14 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { p256 } from "@noble/curves/nist.js";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { createKmsSessionSignerProvider } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
+import { bytesToHex, keccak256 } from "viem";
 import { describe, expect, it } from "vitest";
 import { createOAAth, type OaathRequestPermissionInput } from "../src/index.js";
+import { webauthnKey } from "../src/kernel/key/webauthn.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -52,7 +56,78 @@ import {
   workspaceContext,
 } from "./support/browser.js";
 
+/** Public passkey material only; approval must never ask it to sign. */
+function passkeySession() {
+  const { kind: _kind, ...material } = {
+    kind: "webauthn" as const,
+    credential: {
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "webauthn" as const,
+      publicKey: bytesToHex(p256.getPublicKey(p256.utils.randomPrivateKey(), false)),
+      authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f"),
+    },
+    credentialId: "AAECAwQFBgcICQoLDA0ODw",
+    rpId: "app.example",
+    origin: ORIGIN,
+    authenticate: async (): Promise<never> => {
+      throw new Error("approval must not use the passkey");
+    },
+  };
+  return { session: { kind: "webauthn" as const, ...material }, key: webauthnKey(material) };
+}
+
 describe("URL-only golden path", () => {
+  it("binds a caller-supplied passkey session and resumes it after reload", async () => {
+    const passkey = passkeySession();
+    const factory = new IDBFactory();
+    const life = async () => idbStores(await openOaathDatabase({ factory }));
+    const first = createUrlRealm({
+      session: passkey.session,
+      owner: { operatorKey: passkey.key },
+      stores: await life(),
+    });
+    const connection = await first.oaath.connect();
+    expect(first.oaath.binding.operatorCredential).toMatchObject({
+      kind: "webauthn",
+      publicKey: passkey.session.credential.publicKey,
+    });
+    expect(first.oaath.binding.subject.deviceId).toMatch(/^passkey-[0-9a-f]{32}$/u);
+    expect((await connection.requestPermission(permissionInput())).state).toBe("active");
+    const identity = first.oaath.binding;
+    await connection.close();
+    // Reload with the same passkey: the same binding resumes the same Grant.
+    const second = createUrlRealm({
+      session: passkey.session,
+      owner: { operatorKey: passkey.key },
+      stores: await life(),
+      relay: first.relay,
+      clock: first.clock,
+      chain: first.chain,
+    });
+    const reconnected = await second.oaath.connect();
+    expect((await reconnected.resume())?.state).toBe("active");
+    expect(second.oaath.binding).toEqual(identity);
+    await reconnected.close();
+  });
+
+  it("refuses a caller-supplied session under remote custody before any signer route", async () => {
+    const realm = createUrlRealm({
+      session: passkeySession().session,
+      sessionSigner: {
+        mode: "oaath_hosted",
+        providerId: "kms-primary",
+        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+      },
+    });
+    await expect(realm.oaath.connect()).rejects.toMatchObject({
+      code: "oaath_client_capability_unsupported",
+    });
+    expect(realm.fetched).not.toContain("POST /session-signers");
+    expect(() => createOAAth({ url: ISSUER_URL, session: { kind: "p256" } } as never)).toThrow(
+      expect.objectContaining({ code: "oaath_client_input_invalid" }),
+    );
+  });
+
   it("exposes the issued match code once before polling for the owner decision", async () => {
     const upstream = createUrlRealm();
     let issued: unknown;
