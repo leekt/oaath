@@ -309,6 +309,20 @@ proven. They are separate deliverables, not prerequisites for the initial gate.
 | Explicit cross-chain routes | Add ordered steps with source finality, destination evidence, chain-local budget allocation, and approved recovery actions. A partially completed route retains intermediate assets and unresolved operations; no generic cross-chain DAG or atomic global budget claim. |
 | Managed operation | Expand status UI, delivery controls, usage accounting, retention, and then billing. Validate first-customer value and operating cost before pricing commitments. Deployment admission must still enforce project limits independently of billing. |
 
+### Deferred API consolidation decisions
+
+Public functions should not depend on Kernel version, EntryPoint version, key
+kind, or transport. Where entry points do the same job and differ only in
+implementation, they become one entry point with optional settings. Two pairs
+were deliberately kept separate during the 2026-09-29 DevEx review. Revisit
+both when the consolidation stack lands, and again at the release-candidate
+boundary:
+
+| Kept separate | Why | Revisit when |
+| --- | --- | --- |
+| `ownerOperator` vs `sessionOperator` (`packages/sdk/src/kernel/operator/`) | They change who holds authority (root validation vs a scoped permission), so the difference is semantic, not an implementation detail. AGENTS.md treats operator role as its own composition axis. | A consumer needs to choose authority at runtime from data, or a third authority kind appears. Then consider `operator({ authority?: "session" })` with the same two owners behind it. |
+| EIP-5792 vs ERC-7836 handling in `oaathProvider` (`packages/sdk/src/provider/`) | These are the wallet RPC standards callers speak, and both already sit behind one provider entry. | Either standard is superseded, or adopters need to enable only one. Then consider an optional `standards` setting on `oaathProvider`. |
+
 The native specifications are evolving inputs, not a launch promise. References:
 [EIP-8130](https://eips.ethereum.org/EIPS/eip-8130) and
 [EIP-8141](https://eips.ethereum.org/EIPS/eip-8141).
