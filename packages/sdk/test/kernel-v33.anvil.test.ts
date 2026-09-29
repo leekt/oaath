@@ -51,11 +51,16 @@ import {
   kernelV33PermissionStatus,
   parseKernelV33PermissionState,
 } from "../src/kernel/permission/v33-revocation.js";
-import { verifyKernelPermissionRevocation } from "../src/kernel.js";
+import {
+  prepareKernelPermissionRevocation,
+  restoreKernelPermissionRevocation,
+  verifyKernelPermissionRevocation,
+} from "../src/kernel.js";
+import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
-import { deployKernelV33Account } from "./support/kernel-v33.js";
+import { createKernelV33Account, deployKernelV33Account } from "./support/kernel-v33.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 const chains: AnvilChain[] = [];
@@ -573,6 +578,148 @@ function passkeySession() {
     );
     expect(await harness.client.getBalance({ address: target })).toBe(3n);
     expect(await verify(survivor.approval)).toBe("active");
+  }, 30_000);
+
+  it("prepares, signs once and observes a recorded revocation at a nonzero account index", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const { chain, harness, deployment, address: indexZero } = await setupV33(143, ownerAccount);
+    const address = (
+      await createKernelV33Account(harness, 143, ownerAccount.address, 1n)
+    ).toLowerCase() as Hex;
+    expect(address).not.toBe(indexZero.toLowerCase());
+    for (const module of [harness.fixture.ecdsaSigner, harness.fixture.callPolicy])
+      await harness.deployModule(module);
+    const reads = createKernelV33Reads(harness.client);
+    const ownerSign = vi.fn(ownerAccount.sign.bind(ownerAccount));
+    const ownerKey = ecdsaKey({
+      account: { address: ownerAccount.address, sign: ownerSign },
+      validator: deployment.ecdsaValidator,
+    });
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const gas = {
+      callGasLimit: "900000",
+      verificationGasLimit: "2000000",
+      preVerificationGas: "100000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    const session = createKernelRuntime({
+      deployment,
+      reads,
+      operator: sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: deployment.ecdsaValidator,
+        }),
+        policies: [
+          { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+        ],
+      }),
+    });
+    const descriptor = await session.bindAccount({ address });
+    const approval = await approveKernelV33Permission({
+      runtime: session,
+      account: descriptor,
+      owner: ownerKey,
+      nonce: "1",
+    });
+    const enabled = await materializeKernelV33Permission({
+      runtime: session,
+      account: descriptor,
+      approval,
+      grantId: "indexed-grant",
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" }],
+      gas,
+    });
+    expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+    ownerSign.mockClear();
+
+    const input = { approval, chainId: 143, reads, nonceKey: "7", sequence: "0", gas };
+    const preparation = await prepareKernelPermissionRevocation(input);
+    expect(ownerSign).not.toHaveBeenCalled();
+    expect(preparation.prepared.userOperation.sender).toBe(address);
+    expect(preparation.calls).toHaveLength(1);
+    // Another account of the same owner is a different authority.
+    await expect(
+      prepareKernelPermissionRevocation({ ...input, account: indexZero }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    const saved = JSON.parse(JSON.stringify(preparation));
+    const other = await approveKernelV33Permission({
+      runtime: createKernelRuntime({
+        deployment,
+        reads,
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: privateKeyToAccount(generatePrivateKey()),
+            validator: deployment.ecdsaValidator,
+          }),
+          policies: [
+            { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+          ],
+        }),
+      }),
+      account: descriptor,
+      owner: ownerKey,
+      nonce: "2",
+    });
+    ownerSign.mockClear();
+    for (const [changed, code] of [
+      [
+        { ...saved, prepared: { ...saved.prepared, userOperationHash: `0x${"22".repeat(32)}` } },
+        "prepared_user_operation_record_invalid",
+      ],
+      [{ ...saved, sequence: "1" }, "kernel_runtime_binding_mismatch"],
+      [{ ...saved, approval: other }, "kernel_runtime_binding_mismatch"],
+    ] as const)
+      await expect(
+        restoreKernelPermissionRevocation({ preparation: changed, reads }),
+      ).rejects.toMatchObject({ code });
+    const restored = await restoreKernelPermissionRevocation({ preparation: saved, reads });
+    expect(restored.prepared).toEqual(preparation.prepared);
+    await expect(
+      restored.sign(
+        ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: deployment.ecdsaValidator,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    const signature = await restored.sign(ownerKey);
+    expect(ownerSign).toHaveBeenCalledTimes(1);
+
+    const rpc = (failing: boolean) =>
+      createViemChainPorts(
+        { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
+        {
+          maxRequests: 50,
+          fetch: async (request) => {
+            if (failing || !request.url.startsWith(chain.url)) throw new Error("rpc unavailable");
+            return fetch(request);
+          },
+        },
+      )[0]!.observation;
+    const verify = async (failing = false) =>
+      (
+        await verifyKernelPermissionRevocation({
+          approval,
+          chainId: 143,
+          reads: rpc(failing),
+        })
+      ).status;
+    await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+    expect(await verify()).toBe("active");
+    // The consumer submits exactly the recorded operation with the one signature.
+    expect(await harness.sendSigned(parsePreparedUserOperation(saved.prepared), signature)).toBe(
+      "success",
+    );
+    // Included but not yet under the finalized tag.
+    expect(await verify()).toBe("active");
+    await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+    expect(await verify(true)).toBe("unreadable");
+    expect(await verify()).toBe("revoked");
+    expect(ownerSign).toHaveBeenCalledTimes(1);
   }, 30_000);
 
   it.each(["browser", "local"])(

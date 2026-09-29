@@ -104,6 +104,17 @@ export {
   restoreKernelPhoneRevocation,
 } from "./kernel/permission/phone-revocation.js";
 export type {
+  KernelPermissionRevocationPreparation,
+  PreparedKernelPermissionRevocation,
+  PrepareKernelPermissionRevocationInput,
+  RestoreKernelPermissionRevocationInput,
+} from "./kernel/permission/revocation.js";
+export {
+  OAATH_KERNEL_PERMISSION_REVOCATION_VERSION,
+  prepareKernelPermissionRevocation,
+  restoreKernelPermissionRevocation,
+} from "./kernel/permission/revocation.js";
+export type {
   ApproveKernelV33PermissionInput,
   KernelV33ApprovalMismatchField,
   KernelV33ApprovalMismatchReason,
