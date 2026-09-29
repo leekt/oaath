@@ -61,7 +61,13 @@ try {
   const artifact = JSON.parse(await readFile(createRequire(import.meta.url).resolve("@account-abstraction/contracts/artifacts/EntryPoint.json"), "utf8"));
   const wallet = createWalletClient({ account, transport: http(url, { retryCount: 0 }) });
   const epHash = await wallet.sendTransaction({ chain: null, to: KERNEL_V4_CREATE2_DEPLOYER, data: concat([${JSON.stringify(runtime.entryPoint.deploymentSalt)}, artifact.bytecode]), gas: 10000000n });
-  if ((await rpc("eth_getTransactionReceipt", [epHash])).status !== "0x1") throw new Error("local EntryPoint prerequisite failed");
+  // Anvil can answer sendTransaction before its automined block lands; poll the receipt, bounded.
+  let epReceipt = null;
+  for (let attempt = 0; attempt < 50 && epReceipt === null; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 100));
+    epReceipt = await rpc("eth_getTransactionReceipt", [epHash]);
+  }
+  if (epReceipt?.status !== "0x1") throw new Error("local EntryPoint prerequisite failed");
   const args = ["deploy-runtime", "--chain", "143", "--rpc", url, "--journal", "./deployment.sqlite", "--json"];
   const cleanEnv = { ...process.env }; delete cleanEnv.OAATH_DEPLOYER_PRIVATE_KEY;
   const plan = JSON.parse((await exec(bin, [...args, "--dry-run"], { env: cleanEnv })).stdout);

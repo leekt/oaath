@@ -92,6 +92,13 @@ export async function startAnvil(chainId, hardfork = "prague") {
       // instead of from an assumption this example made up.
       "--slots-in-an-epoch",
       "1",
+      // Anvil derives its clock offset from a genesis timestamp it reads before
+      // its clock starts; a second boundary between the two reads leaves every
+      // block a second behind wall time, so a wall-clock validAfter (AA22) is
+      // not yet due. An explicit genesis one second ahead keeps chain time at or
+      // ahead of wall time unless startup itself takes over a second.
+      "--timestamp",
+      String(Math.floor(Date.now() / 1000) + 1),
       "--silent",
     ],
     { stdio: "ignore" },
