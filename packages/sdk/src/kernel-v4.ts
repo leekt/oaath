@@ -32,6 +32,7 @@ import {
   type TypedData,
   toHex,
 } from "viem";
+import { type KernelRuntimeErrorCode, OaathKernelRuntimeError } from "./kernel/types.js";
 import {
   type PreparedPaymaster,
   type PreparedUserOperation,
@@ -85,22 +86,6 @@ export type KernelV4ValidationMode =
   | "replayable"
   | "enable-user-operation-replayable"
   | "enable-all-replayable";
-
-export type KernelV4ErrorCode =
-  | "kernel_v4_input_invalid"
-  | "kernel_v4_chain_unsupported"
-  | "kernel_v4_read_unavailable"
-  | "kernel_v4_evidence_invalid";
-
-export class OaathKernelV4Error extends Error {
-  readonly code: KernelV4ErrorCode;
-
-  constructor(code: KernelV4ErrorCode, message: string) {
-    super(message);
-    this.name = "OaathKernelV4Error";
-    this.code = code;
-  }
-}
 
 export interface KernelV4Deployment {
   readonly profile: "kernel-v4-uups-entrypoint-v0.7";
@@ -458,12 +443,12 @@ const KERNEL_ABI = [
   },
 ] as const;
 
-function kernelError(code: KernelV4ErrorCode, message: string): never {
-  throw new OaathKernelV4Error(code, message);
+function kernelError(code: KernelRuntimeErrorCode, message: string): never {
+  throw new OaathKernelRuntimeError(code, message);
 }
 
 function fail(message: string): never {
-  return kernelError("kernel_v4_input_invalid", message);
+  return kernelError("kernel_runtime_input_invalid", message);
 }
 
 function exact(
@@ -509,7 +494,7 @@ function callable(value: unknown, label: string): KernelV4AccountReadCapability[
 }
 
 function evidenceInvalid(message: string): never {
-  return kernelError("kernel_v4_evidence_invalid", message);
+  return kernelError("kernel_runtime_evidence_invalid", message);
 }
 
 function evidenceAddress(value: unknown, label: string): `0x${string}` {
@@ -543,7 +528,10 @@ async function readEvidence(
   try {
     return await read(request);
   } catch {
-    return kernelError("kernel_v4_read_unavailable", "Kernel v4 account evidence is unavailable");
+    return kernelError(
+      "kernel_runtime_read_unavailable",
+      "Kernel v4 account evidence is unavailable",
+    );
   }
 }
 
@@ -632,7 +620,7 @@ const OPEN_DEPLOYMENTS = new Map<number, Readonly<KernelV4Deployment>>();
  */
 export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deployment> {
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
-    return kernelError("kernel_v4_chain_unsupported", "Kernel v4 chain is unsupported");
+    return kernelError("kernel_runtime_chain_unsupported", "Kernel v4 chain is unsupported");
   }
   const pinned = PINNED_DEPLOYMENTS[chainId];
   if (pinned) return pinned;

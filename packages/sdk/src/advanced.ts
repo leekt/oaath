@@ -75,7 +75,6 @@ export {
   readKernelV33PermissionState,
 } from "./kernel/permission/v33-revocation.js";
 export type {
-  KernelV4ErrorCode,
   KernelV4NonceKeyInput,
   KernelV4NonceReadInput,
   KernelV4ReplayableInstallDigestInput,
@@ -93,7 +92,6 @@ export {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4ReplayableInstallDigest,
-  OaathKernelV4Error,
 } from "./kernel-v4.js";
 export type {
   ObserveOperationResult,

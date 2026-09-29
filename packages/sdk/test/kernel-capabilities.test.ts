@@ -411,8 +411,8 @@ describe("Kernel capability diagnosis", () => {
       diagnoseKernelCapability({ chainId, capability: "owner_ecdsa" } as never),
     ).toThrowError(
       expect.objectContaining({
-        name: "OaathKernelV4Error",
-        code: "kernel_v4_chain_unsupported",
+        name: "OaathKernelRuntimeError",
+        code: "kernel_runtime_chain_unsupported",
       }),
     );
   });

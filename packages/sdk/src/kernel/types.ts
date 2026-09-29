@@ -36,6 +36,10 @@ export type {
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
   | "kernel_runtime_read_unavailable"
+  /** Onchain evidence contradicts the reviewed deployment it claims. */
+  | "kernel_runtime_evidence_invalid"
+  /** No reviewed deployment exists on the requested chain. */
+  | "kernel_runtime_chain_unsupported"
   | "kernel_runtime_validator_unavailable"
   | "kernel_runtime_signer_unavailable"
   | "kernel_runtime_policy_unavailable"

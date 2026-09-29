@@ -13,6 +13,7 @@ import {
   bindKernelPermissionApproval,
   type KernelAllChainApproval,
 } from "../src/kernel/permission/materialize.js";
+import { OaathKernelRuntimeError } from "../src/kernel/types.js";
 import {
   createKernelRuntime,
   kernelDeployment,
@@ -32,7 +33,6 @@ import {
   type KernelInstall,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
-  OaathKernelV4Error,
 } from "../src/kernel-v4.js";
 
 const chainId = 421_614;
@@ -331,7 +331,7 @@ describe("Kernel v4 replayable install digest", () => {
         },
       ]) {
         expect(() => asHostile(derive)(input as never)).toThrowError(
-          expect.objectContaining({ code: "kernel_v4_input_invalid" }),
+          expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
         );
       }
       expect(() =>
@@ -341,11 +341,11 @@ describe("Kernel v4 replayable install digest", () => {
           packages,
           extra: 1,
         } as never),
-      ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+      ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
     }
     expect(() =>
       kernelV4ReplayableInstallTypedData({ account, nonce: "0", packages: scalarBoundPackages }),
-    ).toThrowError(OaathKernelV4Error);
+    ).toThrowError(OaathKernelRuntimeError);
   });
 });
 
@@ -709,7 +709,7 @@ describe("Kernel runtime validation modes", () => {
         calls: [{ target, value: "0", data: "0x" }],
         gas,
       }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_v4_input_invalid" }));
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
 
     // And an owner runtime refuses to sign an enable-mode operation prepared by
     // the session, mode byte and all.
