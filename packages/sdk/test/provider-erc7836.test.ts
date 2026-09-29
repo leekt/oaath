@@ -14,7 +14,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
-import { ecdsaKey, type WebAuthnAssertionRequest, webauthnKey } from "../src/kernel.js";
+import { kernelKey, type WebAuthnAssertionRequest } from "../src/kernel.js";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -156,7 +156,7 @@ function createWebAuthnCredentialFixture() {
     publicKey,
     operatorCredential,
     verificationKey() {
-      return webauthnKey({
+      return kernelKey({
         ...keyInput,
         async authenticate() {
           injectedAuthenticatorCalls += 1;
@@ -165,7 +165,7 @@ function createWebAuthnCredentialFixture() {
       });
     },
     externalKey() {
-      return webauthnKey({
+      return kernelKey({
         ...keyInput,
         async authenticate(request: WebAuthnAssertionRequest) {
           externalAuthenticatorCalls += 1;
@@ -605,7 +605,7 @@ describe("experimental wallet prepared calls", () => {
   it("refuses a wrong secp256k1 key before effects and still prepares with the approved key", async () => {
     const approved = privateKeyToAccount(generatePrivateKey());
     const wrong = privateKeyToAccount(generatePrivateKey());
-    const approvedBaseKey = ecdsaKey({ account: approved, validator: VALIDATOR });
+    const approvedBaseKey = kernelKey({ account: approved, validator: VALIDATOR });
     let injectedSignCalls = 0;
     const approvedKey = Object.freeze({
       ...approvedBaseKey,

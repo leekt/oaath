@@ -12,7 +12,6 @@ import { bindKernelPermissionApproval } from "../src/kernel/permission/materiali
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
-  ecdsaKey,
   encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -21,6 +20,7 @@ import {
   type KernelAllChainApproval,
   type KernelV4AccountReadRequest,
   type KernelV4Install,
+  kernelKey,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
@@ -98,7 +98,7 @@ function reads(state: "counterfactual" | "deployed" = "counterfactual") {
   };
 }
 
-const ownerKey = ecdsaKey({ account: ownerAccount, validator });
+const ownerKey = kernelKey({ account: ownerAccount, validator });
 
 function runtimes(chain: typeof chainId | typeof otherChainId) {
   const profile = kernelV4Deployment(chain);
@@ -111,7 +111,7 @@ function runtimes(chain: typeof chainId | typeof otherChainId) {
     session: createKernelRuntime({
       deployment: profile,
       operator: sessionOperator({
-        key: ecdsaKey({ account: sessionAccount, validator }),
+        key: kernelKey({ account: sessionAccount, validator }),
         policies: [
           { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "500" }] },
         ],
@@ -348,7 +348,7 @@ describe("Kernel v4 replayable install digest", () => {
 describe("all-chain permission approval", () => {
   it("takes one chain-agnostic owner signature over the install digest", async () => {
     let signatures = 0;
-    const countingKey = ecdsaKey({
+    const countingKey = kernelKey({
       account: {
         address: ownerAccount.address,
         sign: async (request: { readonly hash: `0x${string}` }) => {
@@ -543,7 +543,7 @@ describe("all-chain permission materialization", () => {
     const runtime = createKernelRuntime({
       deployment: kernelV4Deployment(chainId),
       operator: sessionOperator({
-        key: ecdsaKey({ account: sessionAccount, validator }),
+        key: kernelKey({ account: sessionAccount, validator }),
         policies: [
           { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "500" }] },
           { kind: "expiry", validAfter: "0", validUntil: "2000" },

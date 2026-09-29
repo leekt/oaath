@@ -75,8 +75,8 @@ import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
-  ecdsaKey,
   kernelAllChainCapabilityHash,
+  kernelKey,
   kernelV4Deployment,
   ownerOperator,
   sessionOperator,
@@ -363,7 +363,7 @@ try {
     const state = await ownerFetch("/authorization/requests/" + requestId);
     if (typeof state.requestedScope !== "string") fail("owner review scope is unavailable");
     const scope = JSON.parse(state.requestedScope);
-    const ownerKey = ecdsaKey({ account: OWNER_ACCOUNT, validator: chain.validator });
+    const ownerKey = kernelKey({ account: OWNER_ACCOUNT, validator: chain.validator });
     const deployment = kernelV4Deployment(CHAIN_ID);
     const ownerRuntime = createKernelRuntime({
       deployment,
@@ -377,7 +377,7 @@ try {
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: { address: scope.operatorCredential.address, sign: async () => "0x" },
           validator: chain.validator,
         }),

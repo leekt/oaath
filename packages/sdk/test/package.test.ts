@@ -49,11 +49,8 @@ describe("package boundary", () => {
       "createKernelRuntime",
       "createKernelV33Reads",
       "createKernelV4Reads",
-      "credentialKey",
       "deriveOperationId",
       "diagnoseKernelCapability",
-      "ecdsaKey",
-      "ecdsaWalletKey",
       "encodeKernelV33NonceKey",
       "encodeKernelV4EnableSignature",
       "encodeKernelV4Execution",
@@ -73,6 +70,7 @@ describe("package boundary", () => {
       "encodeKernelV4SignerData",
       "encodeKernelV4ValidatorData",
       "kernelAllChainCapabilityHash",
+      "kernelKey",
       "kernelPermissionInstallNonce",
       "kernelV33CapabilityHash",
       "kernelV33Deployment",
@@ -88,7 +86,6 @@ describe("package boundary", () => {
       "materializeKernelPermission",
       "materializeKernelV33Permission",
       "ownerOperator",
-      "p256Key",
       "parseKernelAllChainApproval",
       "parseKernelV33PermissionApproval",
       "parseKernelV33PermissionState",
@@ -106,7 +103,6 @@ describe("package boundary", () => {
       "sessionOperator",
       "verifyKernelPermissionApproval",
       "verifyKernelPermissionRevocation",
-      "webauthnKey",
     ]);
   });
 

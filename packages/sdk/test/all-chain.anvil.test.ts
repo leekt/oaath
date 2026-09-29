@@ -24,7 +24,6 @@ import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
   type EcdsaSignRequest,
-  ecdsaKey,
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
   encodeKernelV4PermissionUninstallCalls,
@@ -32,12 +31,12 @@ import {
   type KernelRuntime,
   type KernelV4AccountDescriptor,
   type KeyProfile,
+  kernelKey,
   kernelPermissionInstallNonce,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
-  p256Key,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
   restoreKernelPhoneRevocation,
@@ -151,7 +150,7 @@ async function bringUp(
   const validator = await harness.deployValidatorCreate2();
 
   const deployment = kernelV4Deployment(chainId);
-  const ownerKey = ecdsaKey({ account: owner.account, validator });
+  const ownerKey = kernelKey({ account: owner.account, validator });
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({ key: ownerKey }),
@@ -160,7 +159,7 @@ async function bringUp(
   const sessionRuntime = createKernelRuntime({
     deployment,
     operator: sessionOperator({
-      key: ecdsaKey({ account: sessionKeyAccount, validator }),
+      key: kernelKey({ account: sessionKeyAccount, validator }),
       policies: [
         {
           kind: "call",
@@ -311,7 +310,7 @@ async function bringUp(
       const owner = createKernelRuntime({
         deployment,
         operator: ownerOperator({
-          key: p256Key({
+          key: kernelKey({
             credential: request.logicalAccount.ownerCredential,
             sign: async () => {
               throw new Error("owner secret stays with phone fixture");
@@ -323,7 +322,7 @@ async function bringUp(
       const session = createKernelRuntime({
         deployment,
         operator: sessionOperator({
-          key: ecdsaKey({
+          key: kernelKey({
             account: sessionAccount,
             validator: await harness.deployValidatorCreate2(),
           }),
@@ -560,7 +559,7 @@ async function bringUp(
     const otherRuntime = createKernelRuntime({
       deployment: kernelV4Deployment(CHAIN_B),
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await b.harness.deployValidatorCreate2(),
         }),
@@ -612,7 +611,7 @@ async function bringUp(
       createKernelRuntime({
         deployment: kernelV4Deployment(stack.chain.chainId),
         operator: sessionOperator({
-          key: ecdsaKey({
+          key: kernelKey({
             account: secondKey,
             validator: await stack.harness.deployValidatorCreate2(),
           }),
@@ -721,7 +720,7 @@ async function bringUp(
     const sessionRuntime = createKernelRuntime({
       deployment: kernelV4Deployment(CHAIN_A),
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: sessionKeyAccount,
           validator: await stack.harness.deployValidatorCreate2(),
         }),

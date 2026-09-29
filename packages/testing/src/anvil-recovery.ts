@@ -1,6 +1,6 @@
 import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability } from "@oaath/sdk/advanced";
-import { createKernelV4Reads, ecdsaKey } from "@oaath/sdk/kernel";
+import { createKernelV4Reads, kernelKey } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { createPublicClient, http } from "viem";
@@ -207,8 +207,11 @@ export async function openLocalAnvilRecoveryClient(
       stores: storage.stores,
       chains,
       signing: {
-        owner: ecdsaKey({ account: { address: recovery.owner, sign: unavailable }, validator }),
-        session: ecdsaKey({ account: { address: recovery.session, sign: unavailable }, validator }),
+        owner: kernelKey({ account: { address: recovery.owner, sign: unavailable }, validator }),
+        session: kernelKey({
+          account: { address: recovery.session, sign: unavailable },
+          validator,
+        }),
       },
       localKeyIds: [],
       now: () => Math.floor(Date.now() / 1000),

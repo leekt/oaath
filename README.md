@@ -304,9 +304,10 @@ deployment profile and is accepted only after its `UUPS()` binding and the
 EntryPoint, implementation, and factory runtime code hashes, plus the resulting
 account implementation, match that profile.
 
-Credential kinds are pluggable through one interface. `ecdsaKey`, `p256Key`, and
-`webauthnKey` are `KeyProfile` implementations, and a consumer implements the same
-interface to add a kind: `{ kind: "custom:<slug>", publicMaterial,
+Credential kinds are pluggable through one interface. `kernelKey({ kind?, ... })`
+returns the reviewed ECDSA, P-256 or WebAuthn `KeyProfile`, choosing the signing
+source from the input it is given, and a consumer implements the same interface
+to add a kind: `{ kind: "custom:<slug>", publicMaterial,
 resolveValidator, signerModule, dummySignature, sign, verify }` composes through
 `ownerOperator` and `sessionOperator` into the one `createKernelRuntime`, with no
 credential-specific runtime. A custom kind resolves no pinned module, so it binds

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseKernelV33PermissionState } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
-  ecdsaKey,
+  kernelKey,
   kernelV33Deployment,
   kernelV33PermissionEnableTypedData,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
@@ -44,7 +44,7 @@ describe("v3.3 revocation state", () => {
         },
       },
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: { address: account, sign: async () => "0x" },
           validator: kernelV33Deployment(143).ecdsaValidator,
         }),

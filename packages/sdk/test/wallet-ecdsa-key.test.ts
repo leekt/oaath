@@ -1,7 +1,7 @@
 import { createWalletClient, custom, hashMessage } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { ecdsaWalletKey, kernelV33Deployment } from "../src/kernel.js";
+import { kernelKey, kernelV33Deployment } from "../src/kernel.js";
 
 const validator = kernelV33Deployment(143).ecdsaValidator;
 const hash = `0x${"12".repeat(32)}` as const;
@@ -36,14 +36,14 @@ describe("connected-wallet ECDSA key", () => {
         },
       }),
     });
-    const key = ecdsaWalletKey({ wallet, validator });
+    const key = kernelKey({ wallet, validator });
     const signature = await key.sign(hash);
     expect(await key.verify(hash, signature)).toBe(true);
     expect(requests).toBe(0);
   });
   it("uses one viem personal_sign request and verifies the captured owner", async () => {
     const { owner, wallet, requests } = fixture();
-    const key = ecdsaWalletKey({ wallet, validator });
+    const key = kernelKey({ wallet, validator });
     expect(requests).toEqual([]);
     expect(key.kind).toBe("ecdsa");
     expect(key.publicMaterial).toBe(owner.address.toLowerCase());
@@ -54,9 +54,9 @@ describe("connected-wallet ECDSA key", () => {
   });
 
   it("rejects a disconnected wallet before any signing request", () => {
-    expect(() =>
-      ecdsaWalletKey({ wallet: { signMessage: async () => "0x" }, validator }),
-    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+    expect(() => kernelKey({ wallet: { signMessage: async () => "0x" }, validator })).toThrowError(
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+    );
   });
 
   it.each(["other-owner", "raw-digest", "malformed"])(
@@ -64,7 +64,7 @@ describe("connected-wallet ECDSA key", () => {
     async (kind) => {
       const { owner } = fixture();
       const other = privateKeyToAccount(generatePrivateKey());
-      const key = ecdsaWalletKey({
+      const key = kernelKey({
         wallet: {
           account: { address: owner.address },
           signMessage: async () =>
@@ -85,7 +85,7 @@ describe("connected-wallet ECDSA key", () => {
   it("does not retry or retain wallet rejection text", async () => {
     const { owner } = fixture();
     let requests = 0;
-    const key = ecdsaWalletKey({
+    const key = kernelKey({
       wallet: {
         account: { address: owner.address },
         signMessage: async () => {

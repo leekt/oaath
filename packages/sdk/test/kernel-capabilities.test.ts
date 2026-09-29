@@ -10,7 +10,6 @@ import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   createKernelRuntime,
   diagnoseKernelCapability,
-  ecdsaKey,
   type KernelBuiltInKeyKind,
   type KernelCapability,
   type KernelCapabilityEvidence,
@@ -18,13 +17,12 @@ import {
   type KernelRuntime,
   type KernelRuntimeErrorCode,
   type KeyProfile,
+  kernelKey,
   kernelV4Deployment,
   type OperatorProfile,
   ownerOperator,
-  p256Key,
   pinnedSignerModule,
   sessionOperator,
-  webauthnKey,
 } from "../src/kernel.js";
 
 const chainIds: readonly number[] = [46_630, 421_614, 11_155_111, 1, 8_453, 42_161];
@@ -60,10 +58,10 @@ const customSigner = `0x${"33".repeat(20)}` as const;
 /** Diagnosis and composition never sign here, so the signing capabilities are unused. */
 const keyProfiles: Readonly<Record<KernelBuiltInKeyKind, () => Readonly<KeyProfile>>> =
   Object.freeze({
-    ecdsa: () => ecdsaKey({ account: ecdsaAccount, validator }),
-    p256: () => p256Key({ credential: p256Credential, sign: () => Promise.resolve("0x") }),
+    ecdsa: () => kernelKey({ account: ecdsaAccount, validator }),
+    p256: () => kernelKey({ credential: p256Credential, sign: () => Promise.resolve("0x") }),
     webauthn: () =>
-      webauthnKey({
+      kernelKey({
         credential: webauthnCredential,
         credentialId,
         rpId: "app.example",

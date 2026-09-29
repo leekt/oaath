@@ -30,20 +30,18 @@ import {
 import { pinnedValidatorModule } from "../src/kernel/modules.js";
 import {
   createKernelRuntime,
-  ecdsaKey,
   encodeKernelV4InstallModules,
   encodeKernelV4PermissionUninstallCalls,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
+  kernelKey,
   kernelV4Deployment,
   ownerOperator,
-  p256Key,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
-  webauthnKey,
 } from "../src/kernel.js";
 import {
   type AnvilChain,
@@ -98,7 +96,7 @@ function customKey(
     signerModule: `0x${string}` | null;
   }>,
 ): Readonly<KeyProfile> {
-  const inner = ecdsaKey({ account: input.account, validator: input.validator });
+  const inner = kernelKey({ account: input.account, validator: input.validator });
   return Object.freeze({
     kind: customKind,
     publicMaterial: inner.publicMaterial,
@@ -117,7 +115,7 @@ function customKey(
  */
 function p256Owner(secret: `0x${string}`) {
   const secretKey = hexToBytes(secret);
-  return p256Key({
+  return kernelKey({
     credential: Object.freeze({
       version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
       kind: "p256" as const,
@@ -305,7 +303,7 @@ async function createHarness() {
       const sessionRuntime = createKernelRuntime({
         deployment,
         operator: sessionOperator({
-          key: ecdsaKey({
+          key: kernelKey({
             account: privateKeyToAccount(generatePrivateKey()),
             validator: await deployValidator(),
           }),
@@ -395,7 +393,7 @@ async function createHarness() {
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({
-        key: ecdsaKey({ account: ownerAccount, validator: await deployValidator() }),
+        key: kernelKey({ account: ownerAccount, validator: await deployValidator() }),
       }),
       reads,
     });
@@ -408,7 +406,7 @@ async function createHarness() {
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({ account: sessionAccount, validator: await deployValidator() }),
+        key: kernelKey({ account: sessionAccount, validator: await deployValidator() }),
         policies: [
           {
             kind: "call",
@@ -917,7 +915,7 @@ async function createHarness() {
         });
       };
     const sessionKeyFor = (secret: Uint8Array) =>
-      webauthnKey({
+      kernelKey({
         credential: credentialFor(secret),
         credentialId,
         rpId,
@@ -928,7 +926,7 @@ async function createHarness() {
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
@@ -1008,7 +1006,7 @@ async function createHarness() {
     const foreignRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: webauthnKey({
+        key: kernelKey({
           // The approved credential's public key with a foreign authenticator
           // behind it: the assertion cannot verify against the bound key.
           credential: credentialFor(passkeySecret),
@@ -1083,7 +1081,7 @@ async function createHarness() {
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
@@ -1101,7 +1099,7 @@ async function createHarness() {
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
@@ -1250,7 +1248,7 @@ async function createHarness() {
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({
-        key: ecdsaKey({ account: ownerAccount, validator: await deployValidator() }),
+        key: kernelKey({ account: ownerAccount, validator: await deployValidator() }),
       }),
       reads,
     });
@@ -1294,7 +1292,7 @@ async function createHarness() {
     const expiryRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
@@ -1434,7 +1432,7 @@ async function createHarness() {
     const limitRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
@@ -1500,7 +1498,7 @@ async function createHarness() {
       deployment,
       reads,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),

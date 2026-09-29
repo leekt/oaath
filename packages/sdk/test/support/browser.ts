@@ -53,12 +53,12 @@ import {
   approveKernelPermissionAllChain,
   approveKernelV33Permission,
   createKernelRuntime,
-  ecdsaKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KeyProfile,
+  kernelKey,
   kernelV4Deployment,
   kernelV33Deployment,
   kernelV33PermissionInstallNonce,
@@ -320,7 +320,7 @@ function ownerApprovedOperatorKey(
   if (approved.kind !== "ecdsa") {
     throw new Error("owner fixture requires the reviewed non-ECDSA operator key");
   }
-  return ecdsaKey({
+  return kernelKey({
     account: { address: approved.address, sign: async () => "0x" },
     // Session composition resolves the pinned signer module and never consults
     // this syntactic validator member.
@@ -342,7 +342,7 @@ async function ownerInstallApproval(
   validator: `0x${string}`,
   account: Readonly<KernelAccountProfile>,
 ): Promise<Readonly<KernelGrantApproval>> {
-  const owner = ecdsaKey({ account: ownerAccount, validator });
+  const owner = kernelKey({ account: ownerAccount, validator });
   if (account.kernelVersion === "0.3.3") {
     const runtime = createKernelRuntime({
       deployment: kernelV33Deployment(CHAIN_ID),
@@ -831,8 +831,8 @@ function completeRealmStores(stores: RealmStores): CompleteRealmStores {
 
 export function signingProfiles(validator: `0x${string}` = VALIDATOR) {
   return {
-    owner: ecdsaKey({ account: ownerAccount, validator }),
-    session: ecdsaKey({ account: sessionAccount, validator }),
+    owner: kernelKey({ account: ownerAccount, validator }),
+    session: kernelKey({ account: sessionAccount, validator }),
   };
 }
 

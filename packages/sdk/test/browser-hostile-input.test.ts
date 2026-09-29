@@ -12,7 +12,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
 import { createOAAth } from "../src/index.js";
-import { ecdsaKey } from "../src/kernel.js";
+import { kernelKey } from "../src/kernel.js";
 import {
   createIndexedDbGrantStoreAdapter,
   createIndexedDbOperationStoreAdapter,
@@ -210,7 +210,7 @@ describe("hostile input at the client boundary", () => {
     // The binding carries the credential profiles the owner reviews; a realm
     // whose executable keys are not exactly those credentials never composes,
     // so approval and execution cannot name different authorities.
-    const stranger = ecdsaKey({
+    const stranger = kernelKey({
       account: privateKeyToAccount(`0x${"77".repeat(32)}`),
       validator: VALIDATOR,
     });
