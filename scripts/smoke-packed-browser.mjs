@@ -729,7 +729,7 @@ const beforeReview = { sends: sends.length, quotes, owners: ownerRequests.length
 const callsReview = await jobsGrant.reviewCalls({
   chain: CHAIN_ID, calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
 });
-if (callsReview.account !== ACCOUNT || callsReview.accountId !== "account-1" ||
+if (callsReview.account.address !== ACCOUNT || callsReview.accountId !== "account-1" ||
     callsReview.signer !== "session" || callsReview.route !== "erc4337-bundler" ||
     callsReview.calls[0]?.data !== "0xa9059cbb" ||
     callsReview.enforcement.calls !== "onchain" || callsReview.enforcement.expiry !== "onchain" ||

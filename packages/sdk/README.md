@@ -358,6 +358,19 @@ Failures use `OaathClientError` codes. An unreadable bundler is reported in
 is a snapshot, not a reservation or authorization: sending rechecks current
 state, and applications should review again after relevant facts change.
 
+Grant and owner reviews share one versioned contract,
+`version: OAATH_CALLS_REVIEW_VERSION` (`oaath-calls-review-v1`). Its semantic
+fields are closed enums: `signer`, `enforcement`, `validation`, and
+`fallback.condition` / `fallback.feePayer`. A new value there is a new version.
+Its identity fields are opaque, bounded strings: `account.implementation` (for
+example `kernel:0.3.3`), `route` and `fallback.route`. A new Kernel version or
+transport adds a value without changing `version`. Validate a review at your
+trust boundary with `parseOaathCallsReview(review)`. It returns only the
+contract fields. Any other version fails with
+`oaath_client_review_version_unsupported`, and malformed or contradictory
+fields fail with `oaath_client_input_invalid`. Check the semantic fields and
+fingerprint the identity fields; do not enumerate them.
+
 `grant.reviewCalls({ chain, calls, estimate: true })` also estimates the exact
 session operation and returns `validation: "estimated" | "account-rejected"`.
 The default is `"not-estimated"`. Estimation writes no operation or permission
@@ -628,7 +641,8 @@ operation.
 
 
 Owner `reviewCalls` estimates the complete call list as one UserOperation and
-returns `capacity: { kind: "single-operation", gas }`. Estimation includes any
+returns `capacity: { kind: "single-operation", detail }`. `detail` is
+transport-specific and outside the review contract. Estimation includes any
 explicitly selected sponsorship. It prompts and submits nothing, does not
 reserve an operation slot, and fails when capacity cannot be established.
 `sendCalls` obtains a fresh quote through the existing operation journal; a

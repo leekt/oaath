@@ -153,6 +153,11 @@ import {
 import { isAccountValidationRejection } from "../viem/rpc.js";
 import type { OaathBinding } from "./binding.js";
 import {
+  kernelImplementation,
+  OAATH_CALLS_REVIEW_VERSION,
+  type OaathCallsReviewContract,
+} from "./calls-review.js";
+import {
   type ConnectedEoa,
   captureConnectedEoa,
   connectedEoaReview,
@@ -517,8 +522,11 @@ export interface OaathGrantHandle {
   readonly close: () => Promise<void>;
 }
 
-/** Current execution facts for exact calls, not a durable authorization or reservation. */
-interface OaathCallsReviewBase {
+/**
+ * Current execution facts for exact calls, not a durable authorization or
+ * reservation. The `OaathCallsReviewContract` fields are the versioned contract.
+ */
+interface OaathCallsReviewBase extends OaathCallsReviewContract {
   /** Optional session estimation is read-only; only decoded account-validation rejection sets account-rejected. */
   readonly validation: "not-estimated" | "estimated" | "account-rejected";
   readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
@@ -528,9 +536,7 @@ interface OaathCallsReviewBase {
   readonly grantId: string;
   readonly chainId: number;
   readonly accountId: string;
-  readonly account: `0x${string}`;
   readonly calls: readonly Readonly<OaathCallInput>[];
-  readonly route: "erc4337-bundler" | "erc4337-handleops";
   /** Structured route facts, including an unreadable bundler that forbids fallback. */
   readonly reasons: OaathExecutionDecision["reasons"];
   /** The Grant lifetime is always checked by this client. */
@@ -3268,6 +3274,13 @@ export function createGrantHandle(
     });
   }
 
+  function reviewAccount(address: `0x${string}`) {
+    return Object.freeze({
+      address,
+      implementation: kernelImplementation(input.binding.account.kernelVersion),
+    });
+  }
+
   function reviewCalls(value: unknown): Promise<Readonly<OaathCallsReview>> {
     return withActivity(async () => {
       const context: CaptureContext = new WeakSet();
@@ -3302,14 +3315,15 @@ export function createGrantHandle(
           );
         requireExecutionPublication();
         return Object.freeze({
+          version: OAATH_CALLS_REVIEW_VERSION,
           validation: "not-estimated" as const,
           grantId: resolved.grantId,
           chainId,
           accountId: input.binding.context.accountId,
-          account: resolved.descriptor.account,
+          account: reviewAccount(resolved.descriptor.account),
           calls,
           signer: "owner" as const,
-          route: resolved.decision.route as "erc4337-bundler" | "erc4337-handleops",
+          route: resolved.decision.route,
           reasons: resolved.decision.reasons,
           fallback: connectedEoaReview(connectedFeePayer),
           paymasterService:
@@ -3416,6 +3430,7 @@ export function createGrantHandle(
       }
       requireExecutionPublication();
       return Object.freeze({
+        version: OAATH_CALLS_REVIEW_VERSION,
         validation,
         grantId: current.value.identity.grantId,
         fallback: connectedEoaReview(connectedFeePayer),
@@ -3425,7 +3440,7 @@ export function createGrantHandle(
             : Object.freeze({ url: chainCapability(chainId).paymasterService!.url }),
         chainId,
         accountId: input.binding.context.accountId,
-        account: resolved.descriptor.account,
+        account: reviewAccount(resolved.descriptor.account),
         calls,
         signer,
         route,

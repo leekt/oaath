@@ -208,7 +208,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
             .account(fixture.address)
             .owner(owner)
             .reviewCalls({ chain: fixture.chainId, calls }),
-        ).toMatchObject({ signer: "owner", account: fixture.address });
+        ).toMatchObject({ signer: "owner", account: { address: fixture.address } });
         expect(fixture.signatureCount).toBe(1);
       } finally {
         await client?.close();

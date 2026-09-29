@@ -26,6 +26,8 @@ import {
 export type OaathClientErrorCode =
   /** Application input is not a usable request. */
   | "oaath_client_input_invalid"
+  /** A call review names a contract version this client does not implement. */
+  | "oaath_client_review_version_unsupported"
   /** An injected capability is missing, malformed, or returned unusable evidence. */
   | "oaath_client_capability_invalid"
   /** The realm or handle is closed. */
