@@ -1,6 +1,6 @@
 import { createOAAth, type OaathWalletApprovalClient } from "@oaath/sdk";
 import type { OaathUsageRequest } from "@oaath/sdk/advanced";
-import { OAATH_KERNEL_RATE_LIMIT_POLICY } from "@oaath/sdk/kernel";
+import { kernelKey, OAATH_KERNEL_RATE_LIMIT_POLICY } from "@oaath/sdk/kernel";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import { IDBFactory } from "fake-indexeddb";
 import { encodeFunctionData, pad, parseAbi, toFunctionSelector } from "viem";
@@ -564,6 +564,78 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
       expect(fixture.bundlerSubmissionCount).toBe(0);
     } finally {
       await client.close();
+      await fixture.close();
+    }
+  });
+
+  it("sends as owner and approves a Grant with a raw P-256 root owner on an existing v4 account", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0", owner: "p256" });
+    const ownerKey = fixture.ownerKey!;
+    const owned = createOAAth({ chains: fixture.createChainPorts(), account: fixture.address });
+    const client = createOAAth({
+      approvals: { kind: "wallet", owner: ownerKey },
+      account: fixture.address,
+      chains: fixture.createChainPorts(),
+      origin: "https://consumer.example",
+    });
+    try {
+      // Owner mode: the P-256 key is proven as the account's onchain root owner.
+      const direct = await owned
+        .account(fixture.address)
+        .owner(ownerKey)
+        .sendCalls({ chain: fixture.chainId, calls });
+      expect((await direct.wait({ attempts: 3 })).status).toBe("finalized");
+      expect(await direct.execution()).toMatchObject({ sender: fixture.address, calls });
+      expect(fixture.signatureCount).toBe(1);
+
+      // Wallet-approved mode: the same key signs the one Grant approval.
+      const grant = await (await client.connect()).requestPermission(permission);
+      expect(client.binding.account).toMatchObject({
+        kernelVersion: "0.4.0",
+        address: fixture.address,
+        ownerCredential: { kind: "p256" },
+      });
+      expect(fixture.signatureCount).toBe(2);
+      const first = await grant.sendCalls({ chain: fixture.chainId, calls });
+      expect((await first.wait({ attempts: 3 })).status).toBe("finalized");
+      expect(await first.execution()).toMatchObject({ sender: fixture.address, calls });
+      expect(fixture.signatureCount).toBe(2);
+      expect(fixture.bundlerSubmissionCount).toBe(2);
+    } finally {
+      await owned.close();
+      await client.close();
+      await fixture.close();
+    }
+  }, 60_000);
+
+  it("refuses a WebAuthn root owner before it signs", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });
+    const passkey = await softwarePasskey("https://consumer.example");
+    const { kind: _kind, ...input } = passkey.session;
+    const owner = kernelKey({ kind: "webauthn", ...input });
+    const owned = createOAAth({ chains: fixture.createChainPorts(), account: fixture.address });
+    try {
+      const unsupported = {
+        code: "oaath_client_capability_unsupported",
+        source: "owner_key_kind_unsupported",
+      };
+      expect(() => owned.account(fixture.address).owner(owner)).toThrow(
+        expect.objectContaining(unsupported),
+      );
+      expect(() =>
+        createOAAth({
+          approvals: { kind: "wallet", owner },
+          account: fixture.address,
+          chains: fixture.createChainPorts(),
+          origin: "https://consumer.example",
+        }),
+      ).toThrow(expect.objectContaining(unsupported));
+      expect(passkey.assertions).toBe(0);
+      expect(fixture.bundlerSubmissionCount).toBe(0);
+    } finally {
+      await owned.close();
       await fixture.close();
     }
   });

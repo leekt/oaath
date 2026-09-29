@@ -86,7 +86,7 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
 describe("identity profile codecs", () => {
   it("captures an existing v3.3 address without factory derivation and keeps its owner bound", () => {
     const existing = {
-      version: "oaath.kernel-existing-account-profile/v2",
+      version: "oaath.kernel-existing-account-profile/v3",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: `0x${"55".repeat(20)}`,
@@ -125,7 +125,7 @@ describe("identity profile codecs", () => {
 
   it("captures an existing v4 address as a distinct identity from the same v3.3 address", () => {
     const existing = {
-      version: "oaath.kernel-existing-account-profile/v2",
+      version: "oaath.kernel-existing-account-profile/v3",
       kind: "kernel",
       kernelVersion: "0.4.0",
       address: `0x${"55".repeat(20)}`,
@@ -148,6 +148,38 @@ describe("identity profile codecs", () => {
     expect(() =>
       parseKernelAccountProfile({ ...existing, version: "oaath.kernel-account-profile/v1" }),
     ).toThrow();
+  });
+
+  it("admits a raw P-256 root owner only on an existing v4 account", () => {
+    const existing = {
+      version: "oaath.kernel-existing-account-profile/v3",
+      kind: "kernel",
+      kernelVersion: "0.4.0",
+      address: `0x${"55".repeat(20)}`,
+      entryPoint: { version: "0.7" },
+      ownerCredential: ownerP256,
+    };
+    const parsed = parseKernelAccountProfile(existing);
+    expect(parsed).toEqual(existing);
+    expect(createKernelAccountActionInput(parsed, 143)).toMatchObject({
+      ownerCredential: ownerP256,
+    });
+    expect(
+      sameKernelAccountProfile(
+        parsed,
+        parseKernelAccountProfile({ ...existing, ownerCredential: ownerEcdsa }),
+      ),
+    ).toBe(false);
+    // No P-256 root validator is provable on Kernel 0.3.3, no WebAuthn root
+    // validator is pinned, and the previous profile version has no reader.
+    for (const altered of [
+      { ...existing, kernelVersion: "0.3.3" },
+      { ...existing, ownerCredential: ownerWebAuthn },
+      { ...existing, version: "oaath.kernel-existing-account-profile/v2" },
+    ])
+      expect(() => parseKernelAccountProfile(altered)).toThrow(
+        expect.objectContaining({ code: "kernel_account_profile_invalid" }),
+      );
   });
 
   it("round-trips the three exact owner public-identity shapes immutably", () => {

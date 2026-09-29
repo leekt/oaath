@@ -35,6 +35,7 @@ export type {
   OaathSendCallsInput,
 } from "./client/grant-handle.js";
 export type {
+  OaathApprovalOwner,
   OaathApprovalWallet,
   OaathWalletApprovalClient,
   OaathWalletApprovalReview,
@@ -54,6 +55,7 @@ export type {
   OaathOwnerCallsReview,
   OaathOwnerClient,
   OaathOwnerHandle,
+  OaathOwnerKey,
   OaathOwnerOptions,
 } from "./client/owner-realm.js";
 export type { OaathServiceApprovals, OaathServiceOptions } from "./client/service-realm.js";

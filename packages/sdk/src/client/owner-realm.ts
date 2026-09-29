@@ -3,8 +3,10 @@ import { captureDenseArray, captureRecord } from "@oaath/protocol";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
 import { detectKernelAccountDeployment, type KernelReads } from "../kernel/deployment/account.js";
 import { ECDSA_VALIDATOR } from "../kernel/deployment/v33.js";
+import { captureKeyProfile } from "../kernel/internal.js";
 import { type EcdsaWalletClient, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
+import type { KeyProfile } from "../kernel/types.js";
 import { createOperationObserver, type OperationObserver } from "../operation-observer.js";
 import {
   createOperationRunner,
@@ -82,20 +84,52 @@ export interface OaathOwnerCallsReview extends OaathCallsReviewContract {
   readonly calls: readonly Readonly<OaathCallInput>[];
   readonly reasons: OaathExecutionDecision["reasons"];
 }
+/**
+ * The account's root owner key: a connected ECDSA wallet (the default), or any
+ * `kernelKey(...)` signing profile such as a raw P-256 key. Each send proves it
+ * is the account's onchain root owner before it is asked to sign; a key whose
+ * root validator exposes no owner onchain (WebAuthn) fails closed.
+ */
+export type OaathOwnerKey = EcdsaWalletClient | Readonly<KeyProfile>;
+
+/** A key profile carries its public material; a wallet client never does. */
+export function captureOwnerKey(value: unknown): Readonly<KeyProfile> {
+  let key: Readonly<KeyProfile>;
+  try {
+    key =
+      typeof value === "object" && value !== null && Object.hasOwn(value, "publicMaterial")
+        ? captureKeyProfile(value)
+        : ecdsaWalletKey({ wallet: value as EcdsaWalletClient, validator: ECDSA_VALIDATOR });
+  } catch (error) {
+    return mapClientFailure(error, "owner key could not be captured");
+  }
+  // No WebAuthn root validator is pinned, so no account can prove that owner.
+  if (key.kind === "webauthn") return ownerKeyUnsupported();
+  return key;
+}
+
+export function ownerKeyUnsupported(): never {
+  return clientFail(
+    "oaath_client_capability_unsupported",
+    "the owner key kind cannot prove an existing account's root owner",
+    "owner_key_kind_unsupported",
+  );
+}
+
 export interface OaathOwnerHandle {
   readonly reviewCalls: (input: unknown) => Promise<Readonly<OaathOwnerCallsReview>>;
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
 }
 export interface OaathOwnerAccount {
   readonly address: `0x${string}`;
-  readonly owner: (wallet: EcdsaWalletClient) => Readonly<OaathOwnerHandle>;
+  readonly owner: (owner: OaathOwnerKey) => Readonly<OaathOwnerHandle>;
   /** Exact saved-operation recovery requires no connected wallet. */
   readonly getOperation: (input: unknown) => Promise<Readonly<OaathOperationHandle> | null>;
 }
 export interface OaathOwnerClient {
   /**
-   * An existing ECDSA-root Kernel account of any supported version. Each send
-   * detects and proves the account's deployment and root owner onchain.
+   * An existing Kernel account of any supported version. Each send detects and
+   * proves the account's deployment and root owner onchain.
    */
   readonly account: (address: `0x${string}`) => Readonly<OaathOwnerAccount>;
   readonly close: () => Promise<void>;
@@ -260,15 +294,9 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
       Object.freeze({ grantId: contextId, chainId, kind: "execution" as const });
     return Object.freeze({
       address,
-      owner(wallet: EcdsaWalletClient): Readonly<OaathOwnerHandle> {
+      owner(owner: OaathOwnerKey): Readonly<OaathOwnerHandle> {
         assertOpen();
-        const key = (() => {
-          try {
-            return ecdsaWalletKey({ wallet, validator: ECDSA_VALIDATOR });
-          } catch (error) {
-            return mapClientFailure(error, "owner wallet could not be captured");
-          }
-        })();
+        const key = captureOwnerKey(owner);
         async function shape(value: unknown) {
           assertOpen();
           const context = new WeakSet<object>();
