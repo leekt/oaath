@@ -38,16 +38,6 @@ export {
   prepareKernelUserOperation,
 } from "./kernel/deployment/account.js";
 export type { KernelDeployment } from "./kernel/deployment/profile.js";
-export type {
-  KernelV33AccountDescriptor,
-  KernelV33Deployment,
-  KernelV33ReadRequest,
-  KernelV33Reads,
-} from "./kernel/deployment/v33.js";
-export {
-  createKernelV33Reads,
-  kernelV33Deployment,
-} from "./kernel/deployment/v33.js";
 export {
   encodeKernelV33NonceKey,
   kernelV33OperationSigningHash,
@@ -152,7 +142,6 @@ export {
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
-  CreateKernelV33RuntimeInput,
   KernelBuiltInKeyKind,
   KernelCallPolicyPermission,
   KernelCallPolicyProfile,
@@ -169,21 +158,13 @@ export type {
   KernelRuntimeExistingAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
-  KernelV33Runtime,
-  KernelV33RuntimeBindAccountInput,
-  KernelV33RuntimePrepareInput,
   KeyProfile,
   OperatorProfile,
 } from "./kernel/types.js";
 export { OaathKernelRuntimeError } from "./kernel/types.js";
 export type {
-  KernelV4AccountDescriptor,
   KernelV4AccountInput,
-  KernelV4AccountReadCapability,
-  KernelV4AccountReadRequest,
-  KernelV4BindAccountInput,
   KernelV4Call,
-  KernelV4Deployment,
   KernelV4EnableSignatureInput,
   KernelV4ErrorCode,
   KernelV4ExecutionInput,
@@ -193,19 +174,15 @@ export type {
   KernelV4NonceInput,
   KernelV4NonceKeyInput,
   KernelV4NonceReadInput,
-  KernelV4ReadClient,
   KernelV4ReplayableInstallDigestInput,
   KernelV4SignerDataInput,
   KernelV4UserOperationGas,
-  KernelV4UserOperationInput,
   KernelV4UserOperationNonceInput,
   KernelV4Validation,
   KernelV4ValidationMode,
   KernelV4ValidityTimeRange,
 } from "./kernel-v4.js";
 export {
-  bindKernelV4Account,
-  createKernelV4Reads,
   encodeKernelV4EnableSignature,
   encodeKernelV4Execution,
   encodeKernelV4FactoryAddressRead,
@@ -232,11 +209,9 @@ export {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
   OaathKernelV4Error,
-  prepareKernelV4UserOperation,
 } from "./kernel-v4.js";
 export type {
   PreparedEntryPoint,

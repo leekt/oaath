@@ -72,15 +72,7 @@ import {
   parseGrantPolicy,
 } from "@oaath/protocol";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
-import {
-  approveKernelPermissionAllChain,
-  createKernelRuntime,
-  kernelAllChainCapabilityHash,
-  kernelKey,
-  kernelV4Deployment,
-  ownerOperator,
-  sessionOperator,
-} from "@oaath/sdk/kernel";
+import { approveKernelPermissionAllChain, createKernelRuntime, kernelAllChainCapabilityHash, kernelDeployment, kernelKey, ownerOperator, sessionOperator } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import puppeteer from "puppeteer-core";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -369,7 +361,7 @@ try {
     if (typeof state.requestedScope !== "string") fail("owner review scope is unavailable");
     const scope = JSON.parse(state.requestedScope);
     const ownerKey = kernelKey({ account: OWNER_ACCOUNT, validator: chain.validator });
-    const deployment = kernelV4Deployment(CHAIN_ID);
+    const deployment = kernelDeployment({ chainId: CHAIN_ID });
     const ownerRuntime = createKernelRuntime({
       deployment,
       operator: ownerOperator({ key: ownerKey }),

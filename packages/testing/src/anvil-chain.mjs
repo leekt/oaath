@@ -21,7 +21,7 @@ import {
   encodeKernelV4NonceRead,
   encodeKernelV33NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
-  kernelV33Deployment,
+  kernelDeployment,
 } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import { parseEther } from "viem";
@@ -96,7 +96,9 @@ export async function createAnvilChain(chainId, options = {}) {
       processId: chain.processId,
       label: `local Anvil at ${chain.url} with Kernel ${existingAccount === null ? "v4" : "v3.3"}`,
       validator:
-        existingAccount === null ? stack.validator : kernelV33Deployment(chainId).ecdsaValidator,
+        existingAccount === null
+          ? stack.validator
+          : kernelDeployment({ chainId, kernelVersion: "0.3.3" }).ecdsaValidator,
       existingAccount,
       sends,
       fund: (account) => stack.fund(account, parseEther("1")),

@@ -20,8 +20,8 @@
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
@@ -87,7 +87,7 @@ async function bringUp(chainId) {
   const chain = await startAnvil(chainId);
   chains.push(chain);
   const stack = await deployKernelStack(chain);
-  const deployment = kernelV4Deployment(chainId);
+  const deployment = kernelDeployment({ chainId });
   const ownerRuntime = createKernelRuntime({
     deployment,
     operator: ownerOperator({ key: kernelKey({ account: owner, validator: stack.validator }) }),

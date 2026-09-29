@@ -46,35 +46,7 @@ import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import {
   createOAAth,
 } from "@oaath/sdk";
-import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  OAATH_KERNEL_RATE_LIMIT_POLICY,
-  OAATH_KERNEL_V33_APPROVAL_VERSION,
-  OAATH_KERNEL_V4_VALIDITY_POLICY,
-  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
-  compileKernelPermissionPolicy,
-  createKernelRuntime,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4InstallNonceRead,
-  encodeKernelV4NonceKey,
-  kernelKey,
-  kernelPermissionInstallNonce,
-  kernelV33Deployment,
-  kernelV33EffectivePermissionNonce,
-  kernelV33PermissionEnableTypedData,
-  kernelV33PermissionRevocationCalls,
-  kernelV33PermissionStatus,
-  kernelV4Deployment,
-  parseKernelV33PermissionApproval,
-  parseKernelV33PermissionState,
-  prepareKernelPhonePermissionApproval,
-  prepareKernelPhoneRevocation,
-  sessionOperator,
-} from "@oaath/sdk/kernel";
+import { KERNEL_V4_ENTRY_POINT_V07, KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, KERNEL_V4_FACTORY_V07, KERNEL_V4_FACTORY_V07_CODE_HASH, KERNEL_V4_UUPS_IMPLEMENTATION_V07, OAATH_KERNEL_RATE_LIMIT_POLICY, OAATH_KERNEL_V33_APPROVAL_VERSION, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH, compileKernelPermissionPolicy, createKernelRuntime, encodeKernelV4InstallNonceInvalidationCall, encodeKernelV4InstallNonceRead, encodeKernelV4NonceKey, kernelDeployment, kernelKey, kernelPermissionInstallNonce, kernelV33EffectivePermissionNonce, kernelV33PermissionEnableTypedData, kernelV33PermissionRevocationCalls, kernelV33PermissionStatus, parseKernelV33PermissionApproval, parseKernelV33PermissionState, prepareKernelPhonePermissionApproval, prepareKernelPhoneRevocation, sessionOperator } from "@oaath/sdk/kernel";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -135,7 +107,7 @@ if (!encodeKernelV4InstallNonceRead({ key: (BigInt(unusedInstallNonce) >> 64n).t
 }
 const PAYMASTER = "0x" + "33".repeat(20);
 const KMS_PREFIX = "oaath-smoke-kms:v1:";
-const deployment = kernelV4Deployment(CHAIN_ID);
+const deployment = kernelDeployment({ chainId: CHAIN_ID });
 
 // Every root specifier must resolve to a built artifact inside the consumer.
 const resolutions = {};
@@ -164,7 +136,7 @@ const ownerCredential = {
   publicKey: bytesToHex(p256.getPublicKey(phoneKey, false)),
 };
 const passkeySession = createKernelRuntime({
-  deployment: kernelV33Deployment(CHAIN_ID),
+  deployment: kernelDeployment({ chainId: CHAIN_ID, kernelVersion: "0.3.3" }),
   reads: { read: async () => fail("composition must not read the chain") },
   operator: sessionOperator({
     key: kernelKey({
@@ -186,7 +158,7 @@ const publicSession = sessionOperator({
   }),
   policies: [{ kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] }],
 });
-if (JSON.stringify(publicSession.resolvePackages(kernelV33Deployment(CHAIN_ID))) !== JSON.stringify(passkeySession.packages)) {
+if (JSON.stringify(publicSession.resolvePackages(kernelDeployment({ chainId: CHAIN_ID, kernelVersion: "0.3.3" }))) !== JSON.stringify(passkeySession.packages)) {
   fail("public credential changed the approved passkey permission");
 }
 const v33Scope = { chainScope: "all", account: ACCOUNT, nonce: "1",
@@ -1014,11 +986,11 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 
 /** The published types must resolve and compose under `nodenext` strict. */
 const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest, type OwnerSigningArtifact } from "@oaath/protocol";
-import { compileKernelPermissionPolicy, type KernelRateLimitPolicyProfile } from "@oaath/sdk/kernel";
+import { type KernelRateLimitPolicyProfile, compileKernelPermissionPolicy } from "@oaath/sdk/kernel";
 export const dailyCap: KernelRateLimitPolicyProfile = { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" };
 export const dailyPolicy = compileKernelPermissionPolicy([{ kind: "call", permissions: [{ target: "0x1111111111111111111111111111111111111111", selector: "0x00000000", valueLimit: "0" }] }, dailyCap]);
-import { prepareKernelPhonePermissionApproval, type PrepareKernelPhonePermissionApprovalInput, type KernelPhonePermissionArtifact } from "@oaath/sdk/kernel";
-import { prepareKernelPhoneRevocation, type PrepareKernelPhoneRevocationInput } from "@oaath/sdk/kernel";
+import { type KernelPhonePermissionArtifact, type PrepareKernelPhonePermissionApprovalInput, prepareKernelPhonePermissionApproval } from "@oaath/sdk/kernel";
+import { type PrepareKernelPhoneRevocationInput, prepareKernelPhoneRevocation } from "@oaath/sdk/kernel";
 
 export async function completePhoneRevocation(input: PrepareKernelPhoneRevocationInput, artifact: OwnerSigningArtifact): Promise<\`0x\${string}\`> {
   return (await prepareKernelPhoneRevocation(input)).complete(artifact);

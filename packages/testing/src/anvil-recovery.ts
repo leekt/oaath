@@ -1,6 +1,6 @@
 import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability } from "@oaath/sdk/advanced";
-import { createKernelV4Reads, kernelKey } from "@oaath/sdk/kernel";
+import { createKernelReads, kernelKey } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { createPublicClient, http } from "viem";
@@ -112,7 +112,7 @@ export async function openLocalAnvilRecoveryClient(
       const reader = createPublicClient({
         transport: http(chain.rpcUrl, { retryCount: 0, timeout: 5000 }),
       });
-      const reads = createKernelV4Reads(reader);
+      const reads = createKernelReads(reader);
       return {
         chainId: chain.chainId,
         reads: {
