@@ -233,7 +233,7 @@ export async function startPhoneService({
               const session = await chain.capability.submission.open({
                 prepared,
                 signature,
-                route: "entrypoint-handleops",
+                route: "erc4337-handleops",
                 feePayer: route(chain.capability, "erc4337-handleops").feePayer,
               });
               return { submit: () => session.send(), close: () => session.close() };

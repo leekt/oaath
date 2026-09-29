@@ -31,7 +31,7 @@ try {
   });
   const calls = [{ target: "0x4444444444444444444444444444444444444444", data: "0x12345678", value: "1" }];
   const review = await grant.reviewCalls({ chain: 421614, calls: deploymentCalls });
-  assert.equal(review.route, "entrypoint-handleops");
+  assert.equal(review.route, "erc4337-handleops");
   assert.equal(review.signer, "session");
   const first = await grant.sendCalls({ chain: 421614, calls: deploymentCalls });
   const deployed = await first.execution();

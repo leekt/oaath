@@ -758,7 +758,7 @@ const callsReview = await jobsGrant.reviewCalls({
   chain: CHAIN_ID, calls: [{ target: TARGET, value: "0", data: "0xa9059cbb" }],
 });
 if (callsReview.account !== ACCOUNT || callsReview.accountId !== "account-1" ||
-    callsReview.signer !== "session" || callsReview.route !== "bundler" ||
+    callsReview.signer !== "session" || callsReview.route !== "erc4337-bundler" ||
     callsReview.calls[0]?.data !== "0xa9059cbb" ||
     callsReview.enforcement.calls !== "onchain" || callsReview.enforcement.expiry !== "onchain" ||
     callsReview.enforcement.operationCount !== "onchain" || !Object.isFrozen(callsReview) ||

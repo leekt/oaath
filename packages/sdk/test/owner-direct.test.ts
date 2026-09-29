@@ -234,7 +234,7 @@ describe("owner-direct account calls", () => {
         account: ACCOUNT,
         chainId: CHAIN_ID,
         signer: "owner",
-        route: "bundler",
+        route: "erc4337-bundler",
         reasons: ["owner_explicit", "route_available:erc4337-bundler"],
       });
       expect(prompts()).toBe(0);

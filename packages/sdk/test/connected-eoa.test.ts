@@ -33,7 +33,7 @@ const prepared = prepareUserOperation({
 const request = {
   prepared,
   signature: "0x1234" as const,
-  route: "bundler" as const,
+  route: "erc4337-bundler" as const,
   feePayer: null,
 };
 

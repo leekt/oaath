@@ -590,7 +590,7 @@ async function createHarness() {
     });
     expect(decision).toMatchObject({
       signer: "owner",
-      route: "entrypoint-handleops",
+      route: "erc4337-handleops",
       reasons: [
         "root_operation_requires_owner",
         "route_unsupported:erc4337-bundler",

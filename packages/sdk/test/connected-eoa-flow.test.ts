@@ -138,9 +138,9 @@ describe("Grant connected EOA fallback", () => {
       const review = await grant.reviewCalls(input);
       expect(review).toMatchObject({
         signer: "session",
-        route: "bundler",
+        route: "erc4337-bundler",
         fallback: {
-          route: "entrypoint-handleops",
+          route: "erc4337-handleops",
           feePayer: address,
           condition: "conclusive_bundler_rejection",
         },

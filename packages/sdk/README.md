@@ -470,7 +470,7 @@ const review = await grant.reviewCalls(request); // initial route plus condition
 const operation = await grant.sendCalls(request);
 ```
 
-The initial route stays `bundler`. A closed pre-acceptance rejection from the
+The initial route stays `erc4337-bundler`. A closed pre-acceptance rejection from the
 default RPC transport allows one wallet `eth_sendTransaction` carrying the exact
 same signed operation through EntryPoint `handleOps`. The wallet must already be
 connected to the requested chain and expose the captured EOA through

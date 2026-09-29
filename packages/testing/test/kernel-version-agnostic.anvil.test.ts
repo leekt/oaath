@@ -66,7 +66,11 @@ async function sendOwnerCalls(
           });
           expect(account.account).toBe(fixture.address);
           expect(kernelAccountDeployment(account).kernelVersion).toBe(kernelVersion);
-          expect(review).toMatchObject({ kernelVersion, signer: "owner", route: "bundler" });
+          expect(review).toMatchObject({
+            kernelVersion,
+            signer: "owner",
+            route: "erc4337-bundler",
+          });
           expect(outcome.status).toBe("finalized");
           expect(await publicClient.getBalance({ address: target })).toBe(before + 1n);
           expect(fixture.signatureCount).toBe(1);

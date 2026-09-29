@@ -73,7 +73,7 @@ export interface OaathOwnerCallsReview {
   readonly kernelVersion: KernelVersion;
   readonly calls: readonly Readonly<OaathCallInput>[];
   readonly signer: "owner";
-  readonly route: "bundler";
+  readonly route: "erc4337-bundler";
   readonly reasons: OaathExecutionDecision["reasons"];
 }
 export interface OaathOwnerHandle {
@@ -309,7 +309,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             sessionCoverage: "uncovered",
             routes,
           });
-          if (decision.route !== "bundler")
+          if (decision.route !== "erc4337-bundler")
             return clientFail(
               "oaath_client_route_unavailable",
               "owner bundler route is unavailable",
@@ -373,7 +373,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 kernelVersion: resolved.runtime.deployment.kernelVersion,
                 calls: resolved.calls,
                 signer: "owner" as const,
-                route: "bundler" as const,
+                route: "erc4337-bundler" as const,
                 reasons: resolved.decision.reasons,
                 paymasterService:
                   resolved.sponsorship === null
@@ -399,7 +399,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                   const submission = {
                     prepared,
                     signature,
-                    route: "bundler" as const,
+                    route: "erc4337-bundler" as const,
                     feePayer: null,
                   };
                   return withConnectedEoaFallback(

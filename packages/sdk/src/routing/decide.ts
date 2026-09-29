@@ -4,7 +4,7 @@
  *
  * It never receives a prepared operation, a key, a signer, a store, or a
  * transport, so a decision cannot change an operation hash, nonce, calls,
- * values, gas, paymaster, or account binding. Choosing `entrypoint-handleops`
+ * values, gas, paymaster, or account binding. Choosing `erc4337-handleops`
  * therefore submits the byte-identical prepared and signed operation the bundler
  * route would have submitted.
  *
@@ -23,14 +23,14 @@
  * session requests select no authority, no route, and no fee payer. Root
  * execution requires an explicit owner request; it is never inferred from denial.
  *
- * route: the first conclusively usable route, in the configured order
- *   erc4337-bundler   available   -> bundler              (route_available:erc4337-bundler)
- *   erc4337-bundler   unreadable  -> bundler, stop        (route_unreadable:erc4337-bundler)
- *   erc4337-bundler   absent      -> try the next route   (route_absent:erc4337-bundler)
- *   erc4337-bundler   unsupported -> try the next route   (route_unsupported:erc4337-bundler)
- *   erc4337-handleops             -> entrypoint-handleops (route_available:erc4337-handleops)
+ * route: the first conclusively usable route kind, in the configured order
+ *   erc4337-bundler   available   -> erc4337-bundler       (route_available:erc4337-bundler)
+ *   erc4337-bundler   unreadable  -> erc4337-bundler, stop (route_unreadable:erc4337-bundler)
+ *   erc4337-bundler   absent      -> try the next route    (route_absent:erc4337-bundler)
+ *   erc4337-bundler   unsupported -> try the next route    (route_unsupported:erc4337-bundler)
+ *   erc4337-handleops             -> erc4337-handleops     (route_available:erc4337-handleops)
  *   no route left                 -> none
- *   no route configured           -> none                 (route_none_configured)
+ *   no route configured           -> none                  (route_none_configured)
  * ```
  *
  * An `unreadable` bundler stays on the bundler route and never consults a later
@@ -98,12 +98,12 @@ function decideRoute(routes: readonly OaathRouteFact[]): Readonly<{
   for (const fact of routes) {
     if (fact.kind === "erc4337-handleops") {
       reasons.push("route_available:erc4337-handleops");
-      return { route: "entrypoint-handleops", feePayer: fact.feePayer, reasons };
+      return { route: fact.kind, feePayer: fact.feePayer, reasons };
     }
     reasons.push(`route_${fact.bundler}:erc4337-bundler`);
     // An unreadable bundler is not unavailability: it forbids every later route.
     if (fact.bundler === "available" || fact.bundler === "unreadable") {
-      return { route: "bundler", feePayer: null, reasons };
+      return { route: fact.kind, feePayer: null, reasons };
     }
   }
   return { route: "none", feePayer: null, reasons };
@@ -111,7 +111,7 @@ function decideRoute(routes: readonly OaathRouteFact[]): Readonly<{
 
 /** Whether these exact classified routes select the sponsorship-capable bundler route. */
 export function supportsBundlerSponsorship(routes: readonly OaathRouteFact[]): boolean {
-  return decideRoute(routes).route === "bundler";
+  return decideRoute(routes).route === "erc4337-bundler";
 }
 
 /**

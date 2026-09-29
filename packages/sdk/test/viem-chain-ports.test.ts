@@ -161,7 +161,7 @@ describe("default viem chain ports", () => {
       const session = (await chain!.submission.open({
         prepared,
         signature: "0x01",
-        route: "bundler",
+        route: "erc4337-bundler",
         feePayer: null,
       })) as { send(): Promise<unknown>; close(): Promise<void> };
       const failed = session.send().then(

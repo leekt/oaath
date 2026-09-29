@@ -24,7 +24,7 @@ export interface OaathConnectedEoaFeePayer {
   };
 }
 export interface OaathConnectedEoaFallbackReview {
-  readonly route: "entrypoint-handleops";
+  readonly route: "erc4337-handleops";
   readonly feePayer: `0x${string}`;
   readonly condition: "conclusive_bundler_rejection";
 }
@@ -70,7 +70,7 @@ export function connectedEoaReview(
   return payer === null
     ? null
     : Object.freeze({
-        route: "entrypoint-handleops",
+        route: "erc4337-handleops",
         feePayer: payer.address,
         condition: "conclusive_bundler_rejection",
       });
@@ -91,7 +91,7 @@ export function withConnectedEoaFallback(
     } catch (error) {
       if (
         closed ||
-        input.route !== "bundler" ||
+        input.route !== "erc4337-bundler" ||
         !(error instanceof OaathRpcError) ||
         error.code !== "oaath_rpc_rejected" ||
         classifyBundlerAcceptance({ outcome: "rejected", code: error.rpcCode }) !== "unsupported"

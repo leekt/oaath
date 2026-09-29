@@ -448,7 +448,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
       ]),
       submission: Object.freeze({
         async open(request: Readonly<OaathSubmissionRequest>) {
-          if (request.route !== "bundler" || request.feePayer !== null) {
+          if (request.route !== "erc4337-bundler" || request.feePayer !== null) {
             throw new Error("the local batching port was not selected as the bundler route");
           }
           opened += 1;
