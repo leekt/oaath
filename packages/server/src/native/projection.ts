@@ -55,7 +55,7 @@ import {
 import type { OwnerPhoneRevocationScopeProjection } from "./revocation.js";
 
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
-export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v6" as const;
+export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v7" as const;
 
 /**
  * Whether the phone may offer approval for one projected scope. Permission
@@ -125,6 +125,8 @@ export type OwnerPhonePermissionScopeProjection = Readonly<{
   policyValidAfter: number;
   policyValidUntil: number | null;
   perChainOperationLimit: number;
+  /** Window after which the count refills, or null for a lifetime cap. */
+  perChainOperationIntervalSeconds: number | null;
 }>;
 
 export type OwnerPhoneScopeProjection =
@@ -216,10 +218,6 @@ export async function projectPermissionConsent(
 ): Promise<OwnerPhonePermissionScopeProjection> {
   if (request.logicalAccount.kernelVersion !== "0.4.0")
     return relayFailure("relay_request_invalid", "phone consent requires a Kernel v4 account");
-  // The native projection has no window field yet; showing the count alone
-  // would present a refilling limit as a lifetime cap.
-  if (request.policy.perChainOperationLimit.intervalSeconds !== null)
-    return relayFailure("relay_request_invalid", "phone consent cannot show a windowed limit");
   return Object.freeze({
     kind: "permission-request",
     decision: "approve-or-reject",
@@ -267,6 +265,7 @@ export async function projectPermissionConsent(
     policyValidAfter: request.policy.validAfter,
     policyValidUntil: request.policy.validUntil,
     perChainOperationLimit: request.policy.perChainOperationLimit.count,
+    perChainOperationIntervalSeconds: request.policy.perChainOperationLimit.intervalSeconds,
   });
 }
 

@@ -51,6 +51,7 @@ final class GoldenFixtureTests: XCTestCase {
         XCTAssertEqual(scope.chainScope, "all")
         XCTAssertEqual(scope.calls.count, 1)
         XCTAssertEqual(scope.perChainOperationLimit, 10)
+        XCTAssertNil(scope.perChainOperationIntervalSeconds)
 
         guard let exactText = fixture["exactOwnerSigningProjectionBytes"] as? String else {
             return XCTFail("golden exact owner-signing projection bytes are missing")

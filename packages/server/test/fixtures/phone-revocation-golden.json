@@ -1,6 +1,6 @@
 [
   {
-    "version": "oaath.native-projection/v6",
+    "version": "oaath.native-projection/v7",
     "operationId": "revoke-0",
     "displayPayload": "bMMJ9qSH",
     "expiresAt": 1800000060000,
@@ -55,7 +55,8 @@
         "expiresAt": 200,
         "policyValidAfter": 100,
         "policyValidUntil": 190,
-        "perChainOperationLimit": 10
+        "perChainOperationLimit": 10,
+        "perChainOperationIntervalSeconds": null
       },
       "install": {
         "kind": "owner-signing-request",
@@ -178,7 +179,7 @@
     }
   },
   {
-    "version": "oaath.native-projection/v6",
+    "version": "oaath.native-projection/v7",
     "operationId": "revoke-1",
     "displayPayload": "7VjF5fQd",
     "expiresAt": 1800000060000,
@@ -233,7 +234,8 @@
         "expiresAt": 200,
         "policyValidAfter": 100,
         "policyValidUntil": 190,
-        "perChainOperationLimit": 10
+        "perChainOperationLimit": 10,
+        "perChainOperationIntervalSeconds": null
       },
       "install": {
         "kind": "owner-signing-request",
@@ -356,7 +358,7 @@
     }
   },
   {
-    "version": "oaath.native-projection/v6",
+    "version": "oaath.native-projection/v7",
     "operationId": "revoke-2",
     "displayPayload": "MRnZ2Hfw",
     "expiresAt": 1800000060000,
@@ -411,7 +413,8 @@
         "expiresAt": 200,
         "policyValidAfter": 100,
         "policyValidUntil": 190,
-        "perChainOperationLimit": 10
+        "perChainOperationLimit": 10,
+        "perChainOperationIntervalSeconds": null
       },
       "install": {
         "kind": "owner-signing-request",

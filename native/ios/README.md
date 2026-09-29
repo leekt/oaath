@@ -39,8 +39,9 @@ release work.
   fails closed. The push payload itself stays opaque; the consent detail
   travels only the authenticated channel.
 
-  Native projection `oaath.native-projection/v6` carries workspace/account
-  context and a closed `kernel-revocation` scope. Revocations require a null
+  Native projection `oaath.native-projection/v7` carries workspace/account
+  context, the per-chain operation window (`perChainOperationIntervalSeconds`,
+  null for a lifetime cap) and a closed `kernel-revocation` scope. Revocations require a null
   redirect target; grant authorization requires code delivery. The phone rejects earlier projections;
   update the relay and phone together and refetch consent. On approval, the phone
   fetches `/native/permission-signing/{operationId}` and binds its operation,

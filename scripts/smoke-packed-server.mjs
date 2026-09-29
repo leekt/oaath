@@ -275,7 +275,7 @@ if (personalInbox.version !== "oaath.native-inbox/v1" || personalInbox.requests.
     personalInbox.requests[0].displayPayload !== personalProjection.displayPayload ||
     Object.keys(personalInbox.requests[0]).sort().join(",") !== "displayPayload,expiresAt,operationId") fail("packed inbox lost the pending consent summary");
 if ((await handler(request("GET", "/native/inbox", CLIENT_TOKEN))).status !== 403) fail("client read an owner inbox");
-if (personalProjection.version !== "oaath.native-projection/v6" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
+if (personalProjection.version !== "oaath.native-projection/v7" || JSON.stringify(personalProjection.scope.context) !== JSON.stringify(permission.context)) fail("personal phone lost requested account context");
 
 const ARTIFACT = permissionArtifact(created.requestId, permission);
 const approved = await ok(

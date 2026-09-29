@@ -22,6 +22,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
         operatorCredential: OwnerPhoneCredential,
         sessionSigner: OwnerPhoneSessionSigner?,
         policyValidUntil: Int? = 1_753_003_600,
+        perChainOperationIntervalSeconds: Int? = 86_400,
         workspaceKind: OwnerPhoneWorkspaceKind = .team
     ) -> OwnerPhonePermissionScope {
         OwnerPhonePermissionScope(
@@ -60,7 +61,8 @@ final class PermissionConsentPresentationTests: XCTestCase {
             expiresAt: 1_753_000_600,
             policyValidAfter: 1_753_000_100,
             policyValidUntil: policyValidUntil,
-            perChainOperationLimit: 10)
+            perChainOperationLimit: 10,
+            perChainOperationIntervalSeconds: perChainOperationIntervalSeconds)
     }
 
     private func facts(
@@ -94,7 +96,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.highlights[0].detail, .text("Up to 100 wei per call · 2 argument constraints"))
         XCTAssertEqual(presentation.highlights[1].title, "Call 0x90abcdef on \(secondTarget)")
         XCTAssertEqual(presentation.highlights[1].detail, .text("No native value"))
-        XCTAssertEqual(presentation.highlights[2].title, "Up to 10 operations per chain")
+        XCTAssertEqual(presentation.highlights[2].title, "Up to 10 operations per chain per day")
         XCTAssertEqual(presentation.highlights[2].detail, .text("Chain scope: all"))
         XCTAssertEqual(presentation.highlights[4].detail, .window(from: 1_753_000_100, until: 1_753_003_600))
         XCTAssertEqual(
@@ -108,7 +110,13 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 owner: .p256(publicKey: ownerPublicKey),
                 operatorCredential: .p256(publicKey: operatorPublicKey),
                 sessionSigner: nil,
-                policyValidUntil: nil))
+                policyValidUntil: nil,
+                perChainOperationIntervalSeconds: nil))
+        XCTAssertEqual(unbounded.highlights[2].title, "Up to 10 operations per chain")
+        XCTAssertEqual(facts(unbounded)["validity.perChainOperationInterval"], .text("never"))
+        XCTAssertEqual(PermissionConsentPresentation.interval(60), "minute")
+        XCTAssertEqual(PermissionConsentPresentation.interval(7_200), "2 hours")
+        XCTAssertEqual(PermissionConsentPresentation.interval(90), "90 seconds")
         XCTAssertEqual(unbounded.highlights.last?.title, "No end date")
         XCTAssertEqual(unbounded.highlights.last?.detail, .startingAt(1_753_000_100))
         XCTAssertEqual(unbounded.highlights.first { $0.id == "recipient" }?.detail,
@@ -162,7 +170,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.sections.flatMap(\.facts).allSatisfy { !$0.label.isEmpty })
         let values = facts(presentation)
         let evidenceByFact = evidence(presentation)
-        XCTAssertEqual(values.count, 36)
+        XCTAssertEqual(values.count, 37)
         XCTAssertEqual(evidenceByFact.count, values.count)
 
         XCTAssertEqual(values["application.applicationId"], .text("app-a"))
@@ -210,6 +218,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertEqual(values["validity.policyValidAfter"], .unixSeconds(1_753_000_100))
         XCTAssertEqual(values["validity.policyValidUntil"], .unixSeconds(1_753_003_600))
         XCTAssertEqual(values["validity.perChainOperationLimit"], .text("10"))
+        XCTAssertEqual(values["validity.perChainOperationInterval"], .text("every day"))
 
         XCTAssertEqual(
             Set(evidenceByFact.compactMap { $0.value == .relayBound ? $0.key : nil }),
@@ -234,10 +243,11 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 "validity.policyValidAfter",
                 "validity.policyValidUntil",
                 "validity.perChainOperationLimit",
+                "validity.perChainOperationInterval",
             ]))
         XCTAssertEqual(
             evidenceByFact.values.filter { $0 == .requestedScope }.count,
-            values.count - 16)
+            values.count - 17)
         XCTAssertEqual(PermissionConsentEvidence.relayBound.display, "Relay-bound")
         XCTAssertEqual(PermissionConsentEvidence.requestedScope.display, "Requested scope")
         XCTAssertEqual(
