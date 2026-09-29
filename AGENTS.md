@@ -153,9 +153,9 @@ Grant authority and individual Operation state are separate domains. An
 installed permission does not prove that a particular operation was included.
 
 Preserve exact operation IDs and submission evidence when observation fails.
-Retry observation without resubmitting. One unresolved lane is allowed per
-`(grantId, chainId)` in `0.1.0`; distinct chains may proceed independently and
-may never borrow one another's evidence. A fallback route may not change
+Retry observation without resubmitting. One unresolved operation is allowed per
+`(grantId, chainId, lane)` in `0.1.0`; distinct chains and lanes may proceed
+independently and may never borrow one another's evidence. A fallback route may not change
 operation hash, signer, nonce, calls, values, gas, paymaster, or account
 binding.
 

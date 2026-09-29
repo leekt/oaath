@@ -521,7 +521,8 @@ export function createViemChainPorts(
           !["estimate", "sponsorship", "revalidate"].includes(request.purpose)
         )
           return invalid();
-        const nonceKey = "0";
+        // The caller selected the lane; this port quotes exactly its namespace.
+        const nonceKey = request.nonceKey;
         const v4Key = encodeKernelV4NonceKey({
           mode: request.mode,
           validation: request.validation,

@@ -224,6 +224,7 @@ export {
   operationOccupiesLane,
   parseOperation,
   parseOperationIdentity,
+  parseOperationLane,
   parseOperationSubmissionEvidence,
   parseUserOperationReference,
 } from "./operation.js";

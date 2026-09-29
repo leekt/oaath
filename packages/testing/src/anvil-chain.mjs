@@ -63,7 +63,8 @@ export async function createAnvilChain(chainId, options = {}) {
     const permissionInstalled = (request) => readLocalPermissionInstalled(chain, request);
 
     async function nonceQuote(request) {
-      const nonceKey = "0";
+      // The SDK names the lane; revocation quotes use the default namespace.
+      const nonceKey = request.nonceKey ?? "0";
       const key =
         existingAccount === null
           ? encodeKernelV4NonceKey({
