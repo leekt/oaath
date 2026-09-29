@@ -54,13 +54,23 @@ export type {
   OaathSigningConfiguration,
   OaathStoreConfiguration,
 } from "./create-oaath.js";
+export type {
+  KernelNonceKeyInput,
+  KernelOperationSigningHashInput,
+} from "./kernel/deployment/account.js";
+export {
+  encodeKernelNonceKey,
+  kernelOperationSigningHash,
+} from "./kernel/deployment/account.js";
 export {
   encodeKernelV33NonceKey,
   kernelV33OperationSigningHash,
 } from "./kernel/deployment/v33-operation.js";
 export {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
+  OAATH_KERNEL_V4_VALIDITY_POLICY as OAATH_KERNEL_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH as OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "./kernel/modules.js";
 export { deriveSessionPolicyProfiles } from "./kernel/permission/profiles.js";
 export {
@@ -78,14 +88,20 @@ export {
 export type {
   KernelV4NonceKeyInput,
   KernelV4NonceReadInput,
+  KernelV4NonceReadInput as KernelNonceReadInput,
   KernelV4ReplayableInstallDigestInput,
+  KernelV4ReplayableInstallDigestInput as KernelReplayableInstallDigestInput,
 } from "./kernel-v4.js";
 export {
   encodeKernelV4FactoryImplementationRead,
+  encodeKernelV4FactoryImplementationRead as encodeKernelFactoryImplementationRead,
   encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceInvalidationCall as encodeKernelInstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
+  encodeKernelV4InstallNonceRead as encodeKernelInstallNonceRead,
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
+  encodeKernelV4NonceRead as encodeKernelNonceRead,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -93,6 +109,7 @@ export {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4ReplayableInstallDigest,
+  kernelV4ReplayableInstallDigest as kernelReplayableInstallDigest,
 } from "./kernel-v4.js";
 export type {
   ObserveOperationResult,

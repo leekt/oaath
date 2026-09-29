@@ -176,9 +176,15 @@ describe("Kernel v4 deployment profile", () => {
         kernelVersion: "0.4.0",
         accountType: "uups",
         chainId,
-        entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+        entryPoint: {
+          version: "0.7",
+          address: KERNEL_V4_ENTRY_POINT_V07,
+          runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+        },
         implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
         factory: KERNEL_V4_FACTORY_V07,
+        factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+        create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
         implementationDeployment: {
           deployer: KERNEL_V4_CREATE2_DEPLOYER,
           transactionHash,
@@ -200,9 +206,15 @@ describe("Kernel v4 deployment profile", () => {
         kernelVersion: "0.4.0",
         accountType: "uups",
         chainId,
-        entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+        entryPoint: {
+          version: "0.7",
+          address: KERNEL_V4_ENTRY_POINT_V07,
+          runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+        },
         implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
         factory: KERNEL_V4_FACTORY_V07,
+        factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+        create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
         implementationDeployment: null,
       });
       expect(Object.isFrozen(deployment)).toBe(true);

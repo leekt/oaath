@@ -6,6 +6,8 @@
 
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
+import { encodeKernelNonceKey } from "../src/advanced.js";
+import { encodeKernelV33NonceKey } from "../src/kernel/deployment/v33-operation.js";
 import {
   approveKernelPermission,
   bindKernelAccount,
@@ -20,6 +22,7 @@ import {
   sessionOperator,
 } from "../src/kernel.js";
 import {
+  encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07,
@@ -78,6 +81,42 @@ describe("version-agnostic Kernel deployment selection", () => {
       { chainId, version: "0.4.0" },
     ]) {
       expect(() => kernelDeployment(input as never)).toThrow(
+        expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+      );
+    }
+  });
+});
+
+describe("version-agnostic Kernel nonce key", () => {
+  const validation = { kind: "permission", permissionId: "0x12345678" } as const;
+
+  it("encodes the key the deployment's Kernel version validates", () => {
+    const v4 = kernelDeployment({ chainId });
+    const v33 = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
+    const key = { validation, nonceKey: "7" };
+    expect(encodeKernelNonceKey({ deployment: v4, mode: "enable-replayable", ...key })).toBe(
+      encodeKernelV4NonceKey({ mode: "enable-replayable", ...key }),
+    );
+    expect(encodeKernelNonceKey({ deployment: v33, mode: "enable", ...key })).toBe(
+      encodeKernelV33NonceKey({ mode: "enable", ...key }),
+    );
+    expect(encodeKernelNonceKey({ deployment: v33, mode: "enable", ...key })).not.toBe(
+      encodeKernelNonceKey({ deployment: v4, mode: "enable", ...key }),
+    );
+  });
+
+  it("rejects a mode the Kernel version lacks and a copied deployment", () => {
+    const v33 = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
+    for (const input of [
+      { deployment: v33, mode: "enable-replayable", validation, nonceKey: "0" },
+      {
+        deployment: { ...kernelDeployment({ chainId }) },
+        mode: "standard",
+        validation,
+        nonceKey: "0",
+      },
+    ]) {
+      expect(() => encodeKernelNonceKey(input as never)).toThrow(
         expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
       );
     }

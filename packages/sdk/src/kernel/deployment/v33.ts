@@ -8,7 +8,9 @@ import {
   parseAbi,
 } from "viem";
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_ENTRY_POINT_V07,
+  KERNEL_V4_CREATE2_DEPLOYER,
+  type KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
   type KernelV4ReadClient,
@@ -41,10 +43,12 @@ export interface KernelV33Deployment {
   readonly profile: "kernel-v3.3-entrypoint-v0.7";
   readonly kernelVersion: "0.3.3";
   readonly chainId: number;
-  readonly entryPoint: Readonly<{ version: "0.7"; address: typeof KERNEL_V4_ENTRY_POINT_V07 }>;
+  readonly entryPoint: typeof KERNEL_ENTRY_POINT_V07;
   readonly implementation: typeof IMPLEMENTATION;
   readonly factory: typeof FACTORY;
   readonly ecdsaValidator: typeof ECDSA_VALIDATOR;
+  /** The canonical CREATE2 deployer the reviewed contracts are derived through. */
+  readonly create2Deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
 }
 
 const deployments = new Map<number, Readonly<KernelV33Deployment>>();
@@ -59,10 +63,11 @@ export function kernelV33Deployment(chainId: unknown): Readonly<KernelV33Deploym
       profile: "kernel-v3.3-entrypoint-v0.7",
       kernelVersion: "0.3.3",
       chainId,
-      entryPoint: Object.freeze({ version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 }),
+      entryPoint: KERNEL_ENTRY_POINT_V07,
       implementation: IMPLEMENTATION,
       factory: FACTORY,
       ecdsaValidator: ECDSA_VALIDATOR,
+      create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
     });
     deployments.set(chainId, deployment);
   }

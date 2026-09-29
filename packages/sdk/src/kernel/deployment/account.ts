@@ -13,6 +13,7 @@ import {
   bindKernelV4Account,
   bindKernelV4ExistingAccount,
   createKernelV4Reads,
+  encodeKernelV4NonceKey,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelInstall,
   type KernelV4AccountDescriptor,
@@ -26,8 +27,11 @@ import {
   kernelV4Deployment,
   prepareKernelV4UserOperation,
 } from "../../kernel-v4.js";
-import type { PreparedUserOperation } from "../../prepared-user-operation.js";
-import { captureInput, exactCaptured, inputInvalid, runtimeFail } from "../internal.js";
+import {
+  type PreparedUserOperation,
+  parsePreparedUserOperation,
+} from "../../prepared-user-operation.js";
+import { captureInput, exactCaptured, exactInput, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment } from "../modules.js";
 import type { KernelDeployment } from "./profile.js";
 import {
@@ -38,7 +42,11 @@ import {
   type KernelV33ReadRequest,
   kernelV33Deployment,
 } from "./v33.js";
-import { prepareKernelV33UserOperation } from "./v33-operation.js";
+import {
+  encodeKernelV33NonceKey,
+  kernelV33OperationSigningHash,
+  prepareKernelV33UserOperation,
+} from "./v33-operation.js";
 
 export type KernelVersion = KernelDeployment["kernelVersion"];
 export type KernelEntryPointVersion = KernelDeployment["entryPoint"]["version"];
@@ -78,6 +86,53 @@ export function kernelDeployment(value: KernelDeploymentInput): Readonly<KernelD
   if (record.entryPoint !== undefined && record.entryPoint !== deployment.entryPoint.version)
     return inputInvalid("Kernel EntryPoint version is unsupported");
   return deployment;
+}
+
+export interface KernelNonceKeyInput {
+  readonly deployment: Readonly<KernelDeployment>;
+  /** Kernel `0.3.3` supports only `"standard"` and `"enable"`. */
+  readonly mode: KernelV4ValidationMode;
+  readonly validation: KernelValidation;
+  readonly nonceKey: string;
+}
+
+/** The canonical decimal uint192 EntryPoint nonce key for the deployment's Kernel version. */
+export function encodeKernelNonceKey(value: KernelNonceKeyInput): string {
+  const record = exactInput(
+    value,
+    ["deployment", "mode", "validation", "nonceKey"],
+    "Kernel nonce key",
+    new WeakSet(),
+  );
+  const deployment = exactKernelDeployment(record.deployment);
+  const key = { mode: record.mode, validation: record.validation, nonceKey: record.nonceKey };
+  return deployment.kernelVersion === "0.3.3"
+    ? encodeKernelV33NonceKey(key as Parameters<typeof encodeKernelV33NonceKey>[0])
+    : encodeKernelV4NonceKey(key as Parameters<typeof encodeKernelV4NonceKey>[0]);
+}
+
+export interface KernelOperationSigningHashInput {
+  readonly deployment: Readonly<KernelDeployment>;
+  readonly operation: PreparedUserOperation;
+}
+
+/**
+ * The digest the deployment's Kernel version verifies for one prepared
+ * operation, for an external signer before `encodeVerifiedSignature`. Kernel
+ * `0.4.0` verifies the operation's own hash; a Kernel `0.3.3` enable verifies
+ * its chain-zero hash. The prepared operation's identity is unchanged.
+ */
+export function kernelOperationSigningHash(value: KernelOperationSigningHashInput): `0x${string}` {
+  const record = exactInput(
+    value,
+    ["deployment", "operation"],
+    "Kernel operation signing hash",
+    new WeakSet(),
+  );
+  const deployment = exactKernelDeployment(record.deployment);
+  return deployment.kernelVersion === "0.3.3"
+    ? kernelV33OperationSigningHash(record.operation)
+    : parsePreparedUserOperation(record.operation).userOperationHash;
 }
 
 export type KernelReadRequest = KernelV4AccountReadRequest | KernelV33ReadRequest;

@@ -95,9 +95,13 @@ export interface KernelV4Deployment {
   readonly entryPoint: Readonly<{
     version: "0.7";
     address: typeof KERNEL_V4_ENTRY_POINT_V07;
+    runtimeCodeHash: typeof KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   }>;
   readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
   readonly factory: typeof KERNEL_V4_FACTORY_V07;
+  readonly factoryRuntimeCodeHash: typeof KERNEL_V4_FACTORY_V07_CODE_HASH;
+  /** The canonical CREATE2 deployer every address above is derived through. */
+  readonly create2Deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
   /**
    * Per-chain reviewed deployment evidence, or null on an open chain. Every
    * address above is the same CREATE2 canonical address on every chain, but
@@ -310,10 +314,12 @@ export interface KernelV4ExistingAccountDescriptor {
   readonly rootValidator: `0x${string}`;
 }
 
-const ENTRY_POINT = Object.freeze({
+export const KERNEL_ENTRY_POINT_V07 = Object.freeze({
   version: "0.7" as const,
   address: KERNEL_V4_ENTRY_POINT_V07,
+  runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
 });
+const ENTRY_POINT = KERNEL_ENTRY_POINT_V07;
 
 const implementationDeployment = (transactionHash: `0x${string}`, runtimeCodeHash: `0x${string}`) =>
   Object.freeze({ deployer: KERNEL_V4_CREATE2_DEPLOYER, transactionHash, runtimeCodeHash });
@@ -333,6 +339,8 @@ const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
+    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
     implementationDeployment: implementationDeployment(
       "0xf662be20e4e8d3b0fcfb7bd08845ea89b45977d82aa315cb78530f013f4f2782",
       "0xaef18d8059fa2474272125891050e2e755f45db00c2668b45b7062b2a9579be0",
@@ -346,6 +354,8 @@ const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
+    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
     implementationDeployment: implementationDeployment(
       "0xa63c36c76b536b1c11d75c68ac5ca15d4ce2c09a40e90ab29ff6601b4bdb0d33",
       "0xd0c42b1ed1738560c1b243fd9e5fc04b2eb5aa1be9962ac7f1f61696f9e6902b",
@@ -359,6 +369,8 @@ const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
+    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
     implementationDeployment: implementationDeployment(
       "0x54528619ceafbcc656a7d0f7b637213f38d2fbe013a0e2909cfa3fef6dca7cc0",
       "0xb1f85627093213ec87a1484b6af7192651f4dbd6c5f9e9c0aff22e332c5ddb01",
@@ -655,6 +667,8 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
     factory: KERNEL_V4_FACTORY_V07,
+    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
     implementationDeployment: null,
   });
   OPEN_DEPLOYMENTS.set(chainId, created);

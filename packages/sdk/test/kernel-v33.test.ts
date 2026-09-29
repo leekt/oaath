@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
+import { kernelOperationSigningHash } from "../src/advanced.js";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import {
   bindKernelV33Account,
@@ -304,7 +305,10 @@ describe("Kernel v3.3 session composition", () => {
       chainScope: "all",
     });
     expect(Object.hasOwn(approval, "chainId")).toBe(false);
-    const signingHash = kernelV33OperationSigningHash(enabled.prepared);
+    const signingHash = kernelOperationSigningHash({
+      deployment: kernelV33Deployment(143),
+      operation: enabled.prepared,
+    });
     expect(signingHash).not.toBe(enabled.prepared.userOperationHash);
     expect(sign).toHaveBeenNthCalledWith(1, { hash: signingHash });
     const anotherChain = prepareUserOperation({
@@ -318,14 +322,18 @@ describe("Kernel v3.3 session composition", () => {
     expect(deriveOperationId(anotherChain, null)).not.toEqual(
       deriveOperationId(enabled.prepared, null),
     );
-    expect(kernelV33OperationSigningHash(anotherChain)).toBe(signingHash);
+    expect(
+      kernelOperationSigningHash({ deployment: kernelV33Deployment(143), operation: anotherChain }),
+    ).toBe(signingHash);
     const standard = runtime.prepareOperation(input);
     expect(BigInt(standard.userOperation.nonce) >> 248n).toBe(0n);
     expect(standard.userOperation.verificationGasLimit).toBe("300000");
     const signature = await runtime.signOperation(standard);
     expect(signature.startsWith("0xff")).toBe(true);
     expect(signature.length).toBe(134);
-    expect(kernelV33OperationSigningHash(standard)).toBe(standard.userOperationHash);
+    expect(
+      kernelOperationSigningHash({ deployment: kernelV33Deployment(143), operation: standard }),
+    ).toBe(standard.userOperationHash);
     expect(sign).toHaveBeenCalledTimes(2);
     expect(parseKernelV33PermissionApproval(JSON.parse(JSON.stringify(approval)))).toEqual(
       approval,
