@@ -42,6 +42,7 @@ import {
   prepareKernelPhoneRevocation,
   restoreKernelPhoneRevocation,
   sessionOperator,
+  verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 import type { OperationObserverCapabilities } from "../src/operation-observer.js";
 import {
@@ -482,7 +483,8 @@ async function bringUp(
         observation,
         now: () => 100,
       });
-    expect(await observeRevocation()).toBeNull();
+    // The account is not deployed on B yet: missing code is unreadable, not absent.
+    expect(await observeRevocation()).toEqual({ status: "unreadable" });
     const invalidation = b.ownerRuntime.prepareOperation({
       kind: "revocation",
       grantId: "invalidate-unused-on-b",
@@ -508,7 +510,17 @@ async function bringUp(
       method: "anvil_mine" as "eth_chainId",
       params: ["0x40"] as never,
     });
-    const effectProof = await observeRevocation();
+    const verified = await observeRevocation();
+    // The public verifier derives the same binding from the approval alone.
+    expect(
+      await verifyKernelPermissionRevocation({
+        approval,
+        chainId: CHAIN_B,
+        reads: observation,
+        now: () => 100,
+      }),
+    ).toEqual(verified);
+    const effectProof = verified.status === "revoked" ? verified.evidence : null;
     expect(effectProof?.installNonce).toBe((BigInt(installNonce) + 1n).toString(10));
     expect(effectProof?.permission).toMatchObject({
       chainId: CHAIN_B,

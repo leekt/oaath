@@ -135,9 +135,6 @@ describe("phone revocation preparation", () => {
         approval: input.approval,
         now: () => 120,
         observation: {
-          close: async () => {
-            throw new Error("borrowed observation must not close");
-          },
           async read(request) {
             seen.push(request.type);
             expect(request.chainId).toBe(CHAIN_ID);
@@ -167,11 +164,27 @@ describe("phone revocation preparation", () => {
       });
       if (mode === "valid") {
         expect(proof).toMatchObject({
-          permission: { ...binding, kind: "permission_absent", blockNumber: "16", observedAt: 120 },
-          installNonce: (BigInt(input.approval.installNonce) + 1n).toString(10),
+          status: "revoked",
+          evidence: {
+            permission: {
+              ...binding,
+              kind: "permission_absent",
+              blockNumber: "16",
+              observedAt: 120,
+            },
+            installNonce: (BigInt(input.approval.installNonce) + 1n).toString(10),
+          },
         });
         expect(seen).toHaveLength(5);
-      } else expect(proof).toBeNull();
+      } else
+        expect(proof).toEqual({
+          status:
+            mode === "unused-nonce"
+              ? "approval-replayable"
+              : mode === "present"
+                ? "active"
+                : "unreadable",
+        });
     }
   });
 
