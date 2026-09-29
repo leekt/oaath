@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import {
   kernelKey,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
   restoreKernelPermissionRevocation,
@@ -101,9 +102,12 @@ async function fixture() {
     ),
     110,
   );
+  const approval = approved.installApproval;
+  if (approval.version !== OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION)
+    throw new Error("expected an all-chain approval");
   const input = {
     request,
-    approval: approved.installApproval,
+    approval,
     chainId: CHAIN_ID,
     reads,
     effect: "invalidate-install" as const,

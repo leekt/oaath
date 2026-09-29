@@ -11,7 +11,11 @@ import { bytesToHex, hexToBytes } from "viem";
 import { describe, expect, it } from "vitest";
 import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
 import { kernelAllChainCapabilityHash } from "../src/kernel/permission/materialize.js";
-import { kernelKey, prepareKernelPermissionApproval } from "../src/kernel.js";
+import {
+  kernelKey,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+  prepareKernelPermissionApproval,
+} from "../src/kernel.js";
 import {
   accountProfile,
   CHAIN_ID,
@@ -100,6 +104,8 @@ describe("canonical permission approval by the owner", () => {
     expect(prepared.signingRequest.purpose).toBe("kernel-enable");
     const artifact = await prepared.complete(fixed.sign(prepared), 110);
     const { installApproval, ...decision } = artifact;
+    if (installApproval.version !== OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION)
+      throw new Error("expected an all-chain approval");
     expect(decision.requestHash).toBe(hashPermissionRequest(fixed.request));
     expect(decision.approvedPolicy).toEqual(fixed.request.policy);
     expect(decision.capabilityHash).toBe(kernelAllChainCapabilityHash(installApproval));
@@ -200,20 +206,6 @@ describe("canonical permission approval by the owner", () => {
     await expect(
       fixed.prepare({ ...fixed.request, logicalAccount: accountProfile }),
     ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
-    for (const kernelVersion of ["0.3.3", "0.4.0"] as const)
-      await expect(
-        fixed.prepare({
-          ...fixed.request,
-          logicalAccount: {
-            version: "oaath.kernel-existing-account-profile/v3",
-            kind: "kernel",
-            kernelVersion,
-            address: `0x${"55".repeat(20)}`,
-            entryPoint: { version: "0.7" },
-            ownerCredential: accountProfile.ownerCredential,
-          },
-        }),
-      ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
     await expect(
       fixed.prepare({
         ...fixed.request,

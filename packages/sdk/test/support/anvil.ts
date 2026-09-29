@@ -37,10 +37,10 @@ import { expect } from "vitest";
 import { scrubLiveProviderEnvironment } from "../../../../scripts/live-provider-environment.mjs";
 import {
   createKernelReads,
+  type KernelReads,
   type KernelRuntime,
   type PreparedUserOperation,
 } from "../../src/kernel.js";
-import type { KernelV4AccountReadCapability } from "../../src/kernel-v4.js";
 import { KERNEL_V4_CREATE2_DEPLOYER, KERNEL_V4_ENTRY_POINT_V07 } from "../../src/kernel-v4.js";
 
 export interface ModuleFixture {
@@ -106,7 +106,7 @@ export interface KernelHarness {
   readonly client: PublicClient<HttpTransport>;
   readonly wallet: WalletClient<HttpTransport, undefined, PrivateKeyAccount>;
   readonly submitter: PrivateKeyAccount;
-  readonly reads: KernelV4AccountReadCapability;
+  readonly reads: KernelReads;
   readonly deployCreate2: (deploymentInput: Hex) => Promise<void>;
   readonly deployModule: (module: ModuleFixture) => Promise<void>;
   readonly deployValidator: () => Promise<`0x${string}`>;

@@ -2,7 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { p256 } from "@noble/curves/nist.js";
-import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  hashOwnerSigningRequest,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+  parsePermissionRequest,
+} from "@oaath/protocol";
 import { createSqliteOperationStoreAdapter } from "@oaath/testing";
 import {
   bytesToHex,
@@ -39,6 +43,7 @@ import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { webauthnKey } from "../src/kernel/key/webauthn.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
+import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
   approveKernelV33Permission,
   kernelV33PermissionInstallNonce,
@@ -52,6 +57,7 @@ import {
   parseKernelV33PermissionState,
 } from "../src/kernel/permission/v33-revocation.js";
 import {
+  prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
   restoreKernelPermissionRevocation,
   verifyKernelPermissionRevocation,
@@ -1194,4 +1200,144 @@ function passkeySession() {
     },
     30_000,
   );
+
+  it("prepares and signs a canonical request for an existing v3.3 account", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const sessionAccount = privateKeyToAccount(generatePrivateKey());
+    const setup = await setupV33(143, ownerAccount);
+    const { harness, deployment } = setup;
+    const address = setup.address.toLowerCase() as Hex;
+    for (const module of [
+      harness.fixture.ecdsaSigner,
+      harness.fixture.callPolicy,
+      harness.fixture.validityPolicy,
+      harness.fixture.rateLimitPolicy,
+    ])
+      await harness.deployModule(module);
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const now = Number((await harness.client.getBlock()).timestamp);
+    const request = parsePermissionRequest({
+      version: "oaath.permission-request/v2",
+      requestId: "existing-v33-permission",
+      context: {
+        version: "oaath.workspace-account-context/v1",
+        workspaceId: "personal-1",
+        workspaceKind: "personal",
+        accountId: "account-1",
+      },
+      application: {
+        applicationId: "app-1",
+        clientId: "client-a",
+        origin: "https://app.example",
+        deviceId: "device-1",
+      },
+      chainScope: "all",
+      logicalAccount: {
+        version: "oaath.kernel-existing-account-profile/v3",
+        kind: "kernel",
+        kernelVersion: "0.3.3",
+        address,
+        entryPoint: { version: "0.7" },
+        ownerCredential: {
+          version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa",
+          address: ownerAccount.address.toLowerCase(),
+        },
+      },
+      operatorCredential: {
+        version: "oaath.operator-credential-profile/v1",
+        kind: "ecdsa",
+        address: sessionAccount.address.toLowerCase(),
+      },
+      sessionSigner: null,
+      policy: {
+        version: "oaath.grant-policy/v2",
+        calls: [{ target, selector: "0x12345678", valueLimit: "1", argumentEquals: [] }],
+        validAfter: now,
+        validUntil: now + 1800,
+        perChainOperationLimit: { count: 3, intervalSeconds: null },
+      },
+      requestedAt: now,
+      expiresAt: now + 3600,
+    });
+    const prepared = await prepareKernelPermissionApproval({
+      request,
+      chainId: 143,
+      reads: harness.reads,
+    });
+    expect(prepared.signingRequest).toMatchObject({
+      purpose: "kernel-enable",
+      signer: { account: address },
+      typedData: { domain: { name: "Kernel", version: "0.3.3", chainId: "0" } },
+    });
+    // Another owner is refused before it is asked to sign; a P-256 artifact
+    // cannot complete an ECDSA owner's approval.
+    const otherSign = vi.fn();
+    await expect(
+      prepared.sign(
+        ecdsaKey({
+          account: { address: sessionAccount.address, sign: otherSign },
+          validator: deployment.ecdsaValidator,
+        }),
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    expect(otherSign).not.toHaveBeenCalled();
+    await expect(
+      prepared.complete(
+        {
+          version: "oaath.owner-signing-artifact/v1",
+          kind: "p256",
+          requestHash: hashOwnerSigningRequest(prepared.signingRequest),
+          signature: `0x${"11".repeat(64)}`,
+        },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
+
+    const ownerSign = vi.fn(ownerAccount.sign.bind(ownerAccount));
+    const decision = await prepared.sign(
+      ecdsaKey({
+        account: { address: ownerAccount.address, sign: ownerSign },
+        validator: deployment.ecdsaValidator,
+      }),
+      now,
+    );
+    expect(ownerSign).toHaveBeenCalledTimes(1);
+    expect(decision.installApproval).toMatchObject({
+      version: "oaath.kernel.v33-permission-approval/v2",
+      account: address,
+      digest: prepared.signingRequest.expectedDigest,
+    });
+    // The signed approval installs the permission with the session's first operation.
+    const runtime = createKernelRuntime({
+      deployment,
+      reads: harness.reads,
+      operator: sessionOperator({
+        key: ecdsaKey({ account: sessionAccount, validator: deployment.ecdsaValidator }),
+        policies: deriveSessionPolicyProfiles(request.policy),
+      }),
+    });
+    const approval = decision.installApproval;
+    if (approval.version !== "oaath.kernel.v33-permission-approval/v2")
+      throw new Error("expected a v3.3 approval");
+    const enabled = await materializeKernelV33Permission({
+      runtime,
+      approval,
+      account: await runtime.bindAccount({ address }),
+      grantId: request.requestId,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x12345678" }],
+      gas: {
+        callGasLimit: "200000",
+        verificationGasLimit: "3000000",
+        preVerificationGas: "100000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    });
+    expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+    expect(await harness.client.getBalance({ address: target })).toBe(1n);
+  }, 30_000);
 });

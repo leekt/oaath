@@ -5,26 +5,15 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   type PermissionRequest,
 } from "@oaath/protocol";
-import { hashTypedData, keccak256, recoverAddress, stringToHex } from "viem";
-import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import {
-  type KernelAccountDescriptor,
-  type KernelReads,
-  kernelDeployment,
-} from "../kernel/deployment/account.js";
-import type { KernelDeployment } from "../kernel/deployment/profile.js";
-import { ownerOperator } from "../kernel/operator/owner.js";
-import { sessionOperator } from "../kernel/operator/session.js";
+import { keccak256, recoverAddress, stringToHex } from "viem";
 import {
   approveKernelPermission,
   type KernelPermissionEnableTypedData,
   kernelGrantCapabilityHash,
-  kernelPermissionEnableTypedData,
-  kernelPermissionNonce,
   signedKernelPermissionApproval,
 } from "../kernel/permission/approval.js";
-import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
-import type { KernelRuntime, KeyProfile } from "../kernel/types.js";
+import { prepareExistingAccountApproval } from "../kernel/permission/prepare-approval.js";
+import type { KeyProfile } from "../kernel/types.js";
 import type { GrantStore } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import { clientFail, mapClientFailure } from "./errors.js";
@@ -69,68 +58,15 @@ export function createLocalPermissionAuthority(input: {
   async function signApproval(request: Readonly<PermissionRequest>) {
     // Local mode binds an existing account on its detected deployment.
     if (!isKernelExistingAccountProfile(request.logicalAccount)) return fail();
-    const { address, kernelVersion } = request.logicalAccount;
-    const requestHash = hashPermissionRequest(request);
-    let scope: Readonly<Record<string, unknown>> | undefined;
-    let approvalInput:
-      | Readonly<{
-          runtime: Readonly<KernelRuntime>;
-          account: Readonly<KernelAccountDescriptor>;
-          nonce: string;
-          typedData: KernelPermissionEnableTypedData;
-        }>
-      | undefined;
-    for (const chain of input.chains) {
-      // The selected deployment stays typed as any supported one: approval
-      // typed data and nonce come from it, never from a version literal.
-      const options: Readonly<{ deployment: Readonly<KernelDeployment>; reads: KernelReads }> = {
-        deployment: kernelDeployment({ chainId: chain.chainId, kernelVersion }),
-        reads: chain.reads,
-      };
-      // Verify the connected root owner on every configured chain before consent.
-      await createKernelRuntime({
-        ...options,
-        operator: ownerOperator({ key: input.owner }),
-      }).bindAccount({ address });
-      const runtime = createKernelRuntime({
-        ...options,
-        operator: sessionOperator({
-          key: input.session,
-          policies: deriveSessionPolicyProfiles(request.policy),
-        }),
-      });
-      const account = await runtime.bindAccount({ address });
-      const nonce = await kernelPermissionNonce({
-        runtime,
-        account,
-        reads: chain.reads,
-        requestHash,
-      });
-      if (runtime.validation.kind !== "permission") return fail();
-      const next = Object.freeze({
-        account: address,
-        nonce,
-        permissionId: runtime.validation.permissionId,
-        packages: runtime.packages,
-      });
-      if (scope && JSON.stringify(scope) !== JSON.stringify(next)) {
-        return clientFail(
-          "oaath_client_state_conflict",
-          "configured chains require different permission approvals",
-          "local_permission_scope_mismatch",
-        );
-      }
-      scope = next;
-      approvalInput ??= Object.freeze({
-        runtime,
-        account,
-        nonce,
-        typedData: kernelPermissionEnableTypedData({ runtime, account, nonce }),
-      });
-    }
-    if (!scope || !approvalInput) return fail();
-    const { typedData } = approvalInput;
-    const digest = hashTypedData(typedData as Parameters<typeof hashTypedData>[0]);
+    const address = request.logicalAccount.address;
+    // Verifies the root owner on every configured chain before consent.
+    const approvalInput = await prepareExistingAccountApproval({
+      request,
+      owner: input.owner,
+      session: input.session,
+      chains: input.chains,
+    });
+    const { typedData, digest } = approvalInput;
     await input
       .onApproval?.(
         structuredClone({ account: address, chainScope: "all", policy: request.policy, typedData }),
