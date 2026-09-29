@@ -51,7 +51,7 @@ suite("runtime deployment and recovery", () => {
       );
       const plan = await deployRuntime({ chainId: 143, rpc, journal, account, dryRun: true });
       expect(plan.status).toBe("planned");
-      expect(plan.missing).toHaveLength(7);
+      expect(plan.missing).toHaveLength(8);
       expect(keys).toBe(0);
       expect(sends).toBe(0);
       const deployed = await deployRuntime({
@@ -63,8 +63,8 @@ suite("runtime deployment and recovery", () => {
       });
       expect(deployed.status).toBe("ready");
       expect(deployed.readiness.factoryBinding).toBe("verified");
-      expect(sends).toBe(7);
-      expect(keys).toBe(7);
+      expect(sends).toBe(8);
+      expect(keys).toBe(8);
       const again = await deployRuntime({
         chainId: 143,
         rpc: new Rpc(chain.url, { maxRequests: 256 }),
@@ -74,7 +74,7 @@ suite("runtime deployment and recovery", () => {
         },
       });
       expect(again.status).toBe("ready");
-      expect(sends).toBe(7);
+      expect(sends).toBe(8);
     } finally {
       journal.close();
       chain.stop();
