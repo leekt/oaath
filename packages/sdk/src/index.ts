@@ -34,6 +34,7 @@ export type {
   OaathLocalApprovalReview,
   OaathLocalClient,
   OaathLocalConfiguration,
+  OaathLocalSession,
   OaathLocalWallet,
 } from "./client/local-realm.js";
 export type {

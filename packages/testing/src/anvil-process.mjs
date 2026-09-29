@@ -175,6 +175,8 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   for (const module of [
     fixture.ecdsaSigner,
     fixture.webAuthnSigner,
+    // The WebAuthn signer's software P-256 verifier; passkey sessions require it.
+    fixture.p256Verifier,
     fixture.callPolicy,
     fixture.validityPolicy,
     fixture.rateLimitPolicy,

@@ -19,6 +19,8 @@ import { describe, expect, it } from "vitest";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
 import {
+  KERNEL_P256_VERIFIER,
+  KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedValidatorModule,
@@ -102,6 +104,7 @@ function base64Url(value: Uint8Array): string {
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
@@ -909,6 +912,35 @@ describe("Consumer-authored key profiles", () => {
             : "kernel_runtime_signer_unavailable",
         message: "Kernel authority module carries no code on this chain",
       });
+    },
+  );
+
+  it.each([true, false])(
+    "binds a WebAuthn session only where the P-256 verifier is deployed (%s)",
+    async (deployed) => {
+      const deployedReads = reads();
+      const runtime = createKernelRuntime({
+        deployment,
+        operator: operatorProfiles.session(keyProfiles.webauthn()),
+        reads: {
+          read: (request: KernelV4AccountReadRequest) =>
+            !deployed &&
+            request.type === "runtime_code_hash" &&
+            request.address === KERNEL_P256_VERIFIER
+              ? Promise.resolve(KERNEL_V4_FACTORY_V07_CODE_HASH)
+              : deployedReads.read(request),
+        },
+      });
+      const bound = runtime.bindAccount({
+        accountIndex: "0",
+        initialPackages: customRuntime("owner").packages,
+      });
+      if (deployed) await expect(bound).resolves.toMatchObject({ account });
+      else
+        await expect(bound).rejects.toMatchObject({
+          code: "kernel_runtime_signer_unavailable",
+          message: "P-256 verifier is not deployed on this chain",
+        });
     },
   );
 
