@@ -45,7 +45,7 @@ describe("public Grant execution review", () => {
       accountId: "account-1",
       calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
       signer: "session",
-      route: "bundler",
+      route: "erc4337-bundler",
       enforcement: { calls: "onchain", expiry: "onchain", operationCount: "onchain" },
       expiresAt: grant.expiresAt,
       perChainOperationLimit: { count: 10, intervalSeconds: null },
@@ -82,7 +82,7 @@ describe("public Grant execution review", () => {
     const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
     expect(await grant.reviewCalls(sendCallsInput())).toMatchObject({
       signer: "session",
-      route: "entrypoint-handleops",
+      route: "erc4337-handleops",
     });
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.sends).toHaveLength(0);
@@ -111,7 +111,7 @@ describe("public Grant execution review", () => {
     });
     const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
     const review = await grant.reviewCalls(sendCallsInput());
-    expect(review.route).toBe("bundler");
+    expect(review.route).toBe("erc4337-bundler");
     expect(review.reasons).toContain("route_unreadable:erc4337-bundler");
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.sends).toHaveLength(0);
@@ -135,7 +135,7 @@ describe("public Grant execution review", () => {
     });
     const grant = await (await pinned.oaath.connect()).requestPermission(permissionInput());
     await expect(grant.reviewCalls(sendCallsInput())).resolves.toMatchObject({
-      route: "entrypoint-handleops",
+      route: "erc4337-handleops",
       reasons: ["session_covers_calls", "route_available:erc4337-handleops"],
     });
     await pinned.oaath.close();

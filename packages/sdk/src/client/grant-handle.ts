@@ -530,7 +530,7 @@ interface OaathCallsReviewBase {
   readonly accountId: string;
   readonly account: `0x${string}`;
   readonly calls: readonly Readonly<OaathCallInput>[];
-  readonly route: "bundler" | "entrypoint-handleops";
+  readonly route: "erc4337-bundler" | "erc4337-handleops";
   /** Structured route facts, including an unreadable bundler that forbids fallback. */
   readonly reasons: OaathExecutionDecision["reasons"];
   /** The Grant lifetime is always checked by this client. */
@@ -2690,14 +2690,14 @@ export function createGrantHandle(
       executionRouteAdmission,
       lane !== null,
     );
-    if (paymaster !== null && resolved.decision.route !== "bundler") {
+    if (paymaster !== null && resolved.decision.route !== "erc4337-bundler") {
       return clientFail(
         "oaath_client_capability_unsupported",
         "paymaster sponsorship requires the bundler route",
         `${paymaster.kind}_bundler_unavailable`,
       );
     }
-    if (connectedFeePayer !== null && resolved.decision.route !== "bundler")
+    if (connectedFeePayer !== null && resolved.decision.route !== "erc4337-bundler")
       return clientFail(
         "oaath_client_capability_unsupported",
         "connected fee payer requires the initial bundler route",
@@ -2872,7 +2872,8 @@ export function createGrantHandle(
       }),
       quote: result.quote,
       decision: Object.freeze({
-        route: shape.decision.route === "bundler" ? ("bundler" as const) : ("direct" as const),
+        route:
+          shape.decision.route === "erc4337-bundler" ? ("bundler" as const) : ("direct" as const),
         feePayer: shape.decision.feePayer,
       }),
       resultCapabilities: result.resultCapabilities,
@@ -2939,7 +2940,7 @@ export function createGrantHandle(
       validityAdmission,
       executionRouteAdmission,
     );
-    if (paymaster !== null && shape.decision.route !== "bundler") {
+    if (paymaster !== null && shape.decision.route !== "erc4337-bundler") {
       return unsupported("erc7677_bundler_unavailable");
     }
     return externalPlan(
@@ -3008,7 +3009,7 @@ export function createGrantHandle(
           ? null
           : Object.freeze({ kind: "retained" as const, paymaster: retainedPaymaster }),
     });
-    const expectedRoute = shape.decision.route === "bundler" ? "bundler" : "direct";
+    const expectedRoute = shape.decision.route === "erc4337-bundler" ? "bundler" : "direct";
     if (
       plan.account !== shape.descriptor.account ||
       plan.expiresAt > shape.grantExpiresAt ||
@@ -3161,7 +3162,7 @@ export function createGrantHandle(
     sponsored: boolean,
     connectedFeePayer: Readonly<ConnectedEoa> | null,
   ) {
-    if (route !== "bundler" && (sponsored || connectedFeePayer !== null))
+    if (route !== "erc4337-bundler" && (sponsored || connectedFeePayer !== null))
       return clientFail(
         "oaath_client_capability_unsupported",
         "plain sponsorship and connected fee payer require the initial bundler route",
@@ -3308,7 +3309,7 @@ export function createGrantHandle(
           account: resolved.descriptor.account,
           calls,
           signer: "owner" as const,
-          route: resolved.decision.route as "bundler" | "entrypoint-handleops",
+          route: resolved.decision.route as "erc4337-bundler" | "erc4337-handleops",
           reasons: resolved.decision.reasons,
           fallback: connectedEoaReview(connectedFeePayer),
           paymasterService:
@@ -3352,12 +3353,12 @@ export function createGrantHandle(
         permissionMaterializer(resolved.runtime, resolved.descriptor.account);
       }
       const { route, signer } = resolved.decision;
-      if (connectedFeePayer !== null && route !== "bundler")
+      if (connectedFeePayer !== null && route !== "erc4337-bundler")
         return clientFail(
           "oaath_client_capability_unsupported",
           "connected fee payer requires the initial bundler route",
         );
-      if (selectedPaymaster !== null && route !== "bundler") {
+      if (selectedPaymaster !== null && route !== "erc4337-bundler") {
         return clientFail(
           "oaath_client_capability_unsupported",
           "paymaster sponsorship requires the bundler route",
@@ -3371,7 +3372,7 @@ export function createGrantHandle(
       let validation: OaathCallsReview["validation"] = "not-estimated";
       if (request.estimate === true) {
         if (
-          route !== "bundler" ||
+          route !== "erc4337-bundler" ||
           selectedPaymaster !== null ||
           materialization?.state === "installing"
         )

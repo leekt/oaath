@@ -1042,9 +1042,9 @@ function passkeySession() {
           .account(address)
           .owner(walletKind === "browser" ? wallet : localWallet);
         expect(await handle.reviewCalls(request)).toMatchObject({
-          route: "bundler",
+          route: "erc4337-bundler",
           fallback: {
-            route: "entrypoint-handleops",
+            route: "erc4337-handleops",
             feePayer: owner.address.toLowerCase(),
             condition: "conclusive_bundler_rejection",
           },

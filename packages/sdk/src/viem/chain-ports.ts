@@ -596,7 +596,8 @@ export function createViemChainPorts(
           async open(request: Parameters<OaathChainCapability["submission"]["open"]>[0]) {
             const prepared = parsePreparedUserOperation(request.prepared);
             const signature = hex(request.signature);
-            if (prepared.chainId !== chainId || request.route !== "bundler") return invalid();
+            if (prepared.chainId !== chainId || request.route !== "erc4337-bundler")
+              return invalid();
             const operation = wire(prepared.userOperation, signature);
             let sent: Promise<unknown> | undefined;
             let closed = false;

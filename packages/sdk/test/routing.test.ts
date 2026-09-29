@@ -90,14 +90,14 @@ function fallbackRoutes(
  * space, written out instead of recomputed so a decision change fails here.
  */
 const DECISION_TABLE: readonly string[] = [
-  "execution/covered/available/payer -> session/bundler",
-  "execution/covered/available/none -> session/bundler",
-  "execution/covered/absent/payer -> session/entrypoint-handleops",
+  "execution/covered/available/payer -> session/erc4337-bundler",
+  "execution/covered/available/none -> session/erc4337-bundler",
+  "execution/covered/absent/payer -> session/erc4337-handleops",
   "execution/covered/absent/none -> session/none",
-  "execution/covered/unsupported/payer -> session/entrypoint-handleops",
+  "execution/covered/unsupported/payer -> session/erc4337-handleops",
   "execution/covered/unsupported/none -> session/none",
-  "execution/covered/unreadable/payer -> session/bundler",
-  "execution/covered/unreadable/none -> session/bundler",
+  "execution/covered/unreadable/payer -> session/erc4337-bundler",
+  "execution/covered/unreadable/none -> session/erc4337-bundler",
   // Owner authority is wider than the approved session scope, so uncovered or
   // inconclusively covered execution selects no authority and no route at all.
   "execution/uncovered/available/payer -> none/none",
@@ -116,30 +116,30 @@ const DECISION_TABLE: readonly string[] = [
   "execution/unreadable/unsupported/none -> none/none",
   "execution/unreadable/unreadable/payer -> none/none",
   "execution/unreadable/unreadable/none -> none/none",
-  "revocation/covered/available/payer -> owner/bundler",
-  "revocation/covered/available/none -> owner/bundler",
-  "revocation/covered/absent/payer -> owner/entrypoint-handleops",
+  "revocation/covered/available/payer -> owner/erc4337-bundler",
+  "revocation/covered/available/none -> owner/erc4337-bundler",
+  "revocation/covered/absent/payer -> owner/erc4337-handleops",
   "revocation/covered/absent/none -> owner/none",
-  "revocation/covered/unsupported/payer -> owner/entrypoint-handleops",
+  "revocation/covered/unsupported/payer -> owner/erc4337-handleops",
   "revocation/covered/unsupported/none -> owner/none",
-  "revocation/covered/unreadable/payer -> owner/bundler",
-  "revocation/covered/unreadable/none -> owner/bundler",
-  "revocation/uncovered/available/payer -> owner/bundler",
-  "revocation/uncovered/available/none -> owner/bundler",
-  "revocation/uncovered/absent/payer -> owner/entrypoint-handleops",
+  "revocation/covered/unreadable/payer -> owner/erc4337-bundler",
+  "revocation/covered/unreadable/none -> owner/erc4337-bundler",
+  "revocation/uncovered/available/payer -> owner/erc4337-bundler",
+  "revocation/uncovered/available/none -> owner/erc4337-bundler",
+  "revocation/uncovered/absent/payer -> owner/erc4337-handleops",
   "revocation/uncovered/absent/none -> owner/none",
-  "revocation/uncovered/unsupported/payer -> owner/entrypoint-handleops",
+  "revocation/uncovered/unsupported/payer -> owner/erc4337-handleops",
   "revocation/uncovered/unsupported/none -> owner/none",
-  "revocation/uncovered/unreadable/payer -> owner/bundler",
-  "revocation/uncovered/unreadable/none -> owner/bundler",
-  "revocation/unreadable/available/payer -> owner/bundler",
-  "revocation/unreadable/available/none -> owner/bundler",
-  "revocation/unreadable/absent/payer -> owner/entrypoint-handleops",
+  "revocation/uncovered/unreadable/payer -> owner/erc4337-bundler",
+  "revocation/uncovered/unreadable/none -> owner/erc4337-bundler",
+  "revocation/unreadable/available/payer -> owner/erc4337-bundler",
+  "revocation/unreadable/available/none -> owner/erc4337-bundler",
+  "revocation/unreadable/absent/payer -> owner/erc4337-handleops",
   "revocation/unreadable/absent/none -> owner/none",
-  "revocation/unreadable/unsupported/payer -> owner/entrypoint-handleops",
+  "revocation/unreadable/unsupported/payer -> owner/erc4337-handleops",
   "revocation/unreadable/unsupported/none -> owner/none",
-  "revocation/unreadable/unreadable/payer -> owner/bundler",
-  "revocation/unreadable/unreadable/none -> owner/bundler",
+  "revocation/unreadable/unreadable/payer -> owner/erc4337-bundler",
+  "revocation/unreadable/unreadable/none -> owner/erc4337-bundler",
 ];
 
 function everyFactCombination() {
@@ -166,7 +166,7 @@ describe("routing decision", () => {
     expect(decideExecution({ ...facts, signer: "session" }).signer).toBe("none");
     expect(decideExecution({ ...facts, signer: "owner" })).toMatchObject({
       signer: "owner",
-      route: "bundler",
+      route: "erc4337-bundler",
       reasons: ["owner_explicit", "route_available:erc4337-bundler"],
     });
     expect(() => decideExecution({ ...facts, signer: "auto" } as never)).toThrowError(
@@ -256,7 +256,9 @@ describe("routing decision", () => {
         // A denied signer denies the route; otherwise an unreadable bundler
         // stays on the bundler route. Neither authorizes the fallback.
         expect(decision.route).toBe(
-          operationKind === "execution" && sessionCoverage !== "covered" ? "none" : "bundler",
+          operationKind === "execution" && sessionCoverage !== "covered"
+            ? "none"
+            : "erc4337-bundler",
         );
         expect(decision.feePayer).toBeNull();
         expect(decision.reasons).not.toContain("route_available:erc4337-handleops");
@@ -267,7 +269,7 @@ describe("routing decision", () => {
   it("returns a fee payer exactly when the route is the handleOps fallback", () => {
     for (const { input } of everyFactCombination()) {
       const decision = decideExecution(input);
-      expect(decision.feePayer !== null).toBe(decision.route === "entrypoint-handleops");
+      expect(decision.feePayer !== null).toBe(decision.route === "erc4337-handleops");
     }
   });
 
@@ -293,7 +295,7 @@ describe("routing decision", () => {
     const covered = { operationKind: "execution" as const, sessionCoverage: "covered" as const };
     // A pinned handleOps route selects it without any bundler fact.
     expect(decideExecution({ ...covered, routes: [handleOps] })).toMatchObject({
-      route: "entrypoint-handleops",
+      route: "erc4337-handleops",
       reasons: ["session_covers_calls", "route_available:erc4337-handleops"],
     });
     expect(
@@ -301,7 +303,7 @@ describe("routing decision", () => {
         ...covered,
         routes: [handleOps, { kind: "erc4337-bundler", bundler: "available" }],
       }).route,
-    ).toBe("entrypoint-handleops");
+    ).toBe("erc4337-handleops");
     expect(
       decideExecution({ ...covered, routes: [{ kind: "erc4337-bundler", bundler: "absent" }] }),
     ).toMatchObject({

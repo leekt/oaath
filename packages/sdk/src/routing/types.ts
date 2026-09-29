@@ -76,11 +76,11 @@ export type OaathExecutionSignerDecision = OaathExecutionSigner | "none";
 export type OaathSubmissionRouteKind = OperationSubmissionRoute;
 
 /**
- * The submission route a decision selected, as recorded in review and execution
- * evidence. `none` means no authorized route exists; the caller must fail
+ * The submission route a decision selected: the selected route's kind, recorded
+ * unchanged in review and execution evidence. `none` means no authorized route exists; the caller must fail
  * closed. Routing never invents a route from unreadable or unfunded evidence.
  */
-export type OaathExecutionRoute = "bundler" | "entrypoint-handleops" | "none";
+export type OaathExecutionRoute = OaathSubmissionRouteKind | "none";
 
 export type OaathExecutionSignerReason =
   | "owner_explicit"
@@ -125,7 +125,7 @@ export interface OaathFeePayerDescriptor {
  * no operation, no capability handle, and no callable member, so a decision can
  * neither mutate nor re-derive an operation identity.
  *
- * `feePayer` is non-null exactly when `route` is `entrypoint-handleops`.
+ * `feePayer` is non-null exactly when `route` is `erc4337-handleops`.
  * `signer` is `none` exactly when the decision denies execution; a denied
  * decision carries `route: "none"`, no fee payer, and only the signer reason,
  * so it exposes no usable submission surface.
