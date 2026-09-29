@@ -76,6 +76,45 @@ function fixture(data: unknown = revert(), onSend = false) {
 }
 
 describe("AA23 empty validation revert diagnostic", () => {
+  it("reports conclusive account-validation rejection during explicit review estimation", async () => {
+    const { chain, base, sent } = fixture();
+    const realm = createRealm({ chain });
+    try {
+      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+      const review = await grant.reviewCalls({ ...(sendCallsInput() as object), estimate: true });
+      expect(review).toMatchObject({ signer: "session", validation: "account-rejected" });
+      expect(base.signatures).toHaveLength(0);
+      expect(base.sends).toHaveLength(0);
+      expect(sent()).toBe(0);
+      expect((await grant.reviewCalls(sendCallsInput())).validation).toBe("not-estimated");
+    } finally {
+      await realm.oaath.close();
+    }
+  });
+
+  it.each([
+    revert("AA24 signature error"),
+    revert("AA23 reverted", "0x", 1n),
+    "0x",
+    { reason: "AA23 reverted", data: "0x" },
+  ])(
+    "does not claim a session validation failure from unrelated or malformed evidence",
+    async (data) => {
+      const { chain, base } = fixture(data);
+      const realm = createRealm({ chain });
+      try {
+        const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+        await expect(
+          grant.reviewCalls({ ...(sendCallsInput() as object), estimate: true }),
+        ).rejects.toMatchObject({ code: "oaath_client_preparation_failed" });
+        expect(base.signatures).toHaveLength(0);
+        expect(base.sends).toHaveLength(0);
+      } finally {
+        await realm.oaath.close();
+      }
+    },
+  );
+
   it.each([
     { name: "direct", create: createRealm },
     { name: "relay", create: createUrlRealm },

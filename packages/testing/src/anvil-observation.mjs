@@ -143,9 +143,6 @@ export function createLocalAnvilObservation(chain) {
           await chain.rpc("eth_getBlockByNumber", [toHex(BigInt(request.blockNumber)), false]),
         );
       }
-      if (request.type === "block_by_hash") {
-        return blockEvidence(await chain.rpc("eth_getBlockByHash", [request.blockHash, false]));
-      }
       // A replacement search needs an indexer; this example submits one
       // operation per lane and never claims to have looked.
       if (request.type === "replacement_candidate") return null;

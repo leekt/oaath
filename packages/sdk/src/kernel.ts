@@ -35,6 +35,8 @@ export {
   kernelV33OperationSigningHash,
 } from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
+export type { CredentialKeyInput } from "./kernel/key/credential.js";
+export { credentialKey } from "./kernel/key/credential.js";
 export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,
@@ -54,6 +56,8 @@ export type {
 } from "./kernel/key/webauthn.js";
 export { webauthnKey } from "./kernel/key/webauthn.js";
 export {
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
@@ -107,6 +111,14 @@ export {
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   parseKernelV33PermissionApproval,
 } from "./kernel/permission/v33.js";
+export type { KernelV33PermissionState } from "./kernel/permission/v33-revocation.js";
+export {
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+  readKernelV33PermissionState,
+} from "./kernel/permission/v33-revocation.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
@@ -120,6 +132,7 @@ export type {
   KernelOperationLimitPolicyProfile,
   KernelOperatorAuthority,
   KernelPolicyProfile,
+  KernelRateLimitPolicyProfile,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,

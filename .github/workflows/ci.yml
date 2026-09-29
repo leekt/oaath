@@ -67,7 +67,9 @@ jobs:
       - run: bun run --workspaces --if-present lint
       - run: bun run lint
       - run: bun run format:check
+      - run: bun run --filter @oaath/sdk check:rate-limit-artifact
       - run: bun run --filter @oaath/sdk test:anvil
+      - run: bun run --filter @oaath/testing test:anvil
       - name: Phone-owned service workflow
         run: bun run --filter @oaath/examples example:phone
         timeout-minutes: 3

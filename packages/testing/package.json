@@ -49,7 +49,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "release:publish": "bun publish --access public --tolerate-republish",
-    "release:check": "bun pm pack --dry-run"
+    "release:check": "bun pm pack --dry-run",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/anvil-owner.test.ts test/anvil-session.test.ts test/anvil-recovery.test.ts test/local-mode.anvil.test.ts"
   },
   "dependencies": {
     "@account-abstraction/contracts": "0.7.0",

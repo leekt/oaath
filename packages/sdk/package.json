@@ -76,6 +76,7 @@
     "README.md"
   ],
   "scripts": {
+    "check:rate-limit-artifact": "node scripts/check-rate-limit-artifact.mjs",
     "build": "tsdown",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",

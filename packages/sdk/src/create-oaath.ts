@@ -51,7 +51,13 @@ import {
   type OaathConnection,
   type OaathIssuerCapability,
 } from "./client/connection.js";
-import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
+import {
+  clientCapability,
+  clientFail,
+  clientFailure,
+  exactClientRecord,
+  mapClientFailure,
+} from "./client/errors.js";
 import {
   captureChainCapability,
   grantProviderPort,
@@ -61,13 +67,18 @@ import {
   type OaathOwnerRevocationCapability,
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
-import { createLocalRealm, type OaathLocalConfiguration } from "./client/local-realm.js";
+import {
+  createLocalRealm,
+  type OaathLocalClient,
+  type OaathLocalConfiguration,
+} from "./client/local-realm.js";
 import {
   createOwnerRealm,
   type OaathOwnerClient,
   type OaathOwnerConfiguration,
 } from "./client/owner-realm.js";
 import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
+import { captureStoreConfiguration } from "./client/store-configuration.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
 import type {
@@ -168,16 +179,6 @@ function captureSessionSigner(
   return Object.freeze({ mode: record.mode, providerId: record.providerId });
 }
 
-const STORE_KEYS: readonly string[] = Object.freeze([
-  "grants",
-  "operations",
-  "walletCallBundles",
-  "preparedCallContexts",
-  "keys",
-  "cleanup",
-  "context",
-]);
-
 function storePort<Port>(
   value: unknown,
   methods: readonly string[],
@@ -260,13 +261,13 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * ```
  *
  * `mode: "owner"` executes directly from an existing Kernel v3.3 account with
- * a connected wallet. `mode: "local"` uses that wallet to approve a session Grant
- * in the browser, with no issuer transport. A configuration carrying `binding` is the injected
+ * a connected wallet. `mode: "local"` adds wallet-approved durable sessions
+ * for that existing account, without a service or phone. A configuration carrying `binding` is the injected
  * composition for deterministic tests and custom deployments; other inputs
  * select URL mode, whose only normal production input is `url`.
  */
 export function createOAAth(configuration: OaathOwnerConfiguration): Readonly<OaathOwnerClient>;
-export function createOAAth(configuration: OaathLocalConfiguration): Readonly<Oaath>;
+export function createOAAth(configuration: OaathLocalConfiguration): Readonly<OaathLocalClient>;
 export function createOAAth(configuration?: unknown): Readonly<Oaath>;
 export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
@@ -276,7 +277,7 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
     clientFailure("oaath_client_input_invalid"),
   );
   if (record.mode === "owner") return createOwnerRealm(configuration);
-  if (record.mode === "local") return createLocalRealm(record, composeInjectedRealm);
+  if (record.mode === "local") return createLocalRealm(configuration, composeInjectedRealm);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
   // Every URL-mode key is optional, so exactness here is only the closed key
   // set: an unknown key fails instead of being silently ignored.
@@ -339,57 +340,7 @@ function composeInjectedRealm(
     "capability invalidation",
     context,
   );
-  const storeRecord = exactClientRecord(
-    record.stores,
-    STORE_KEYS,
-    "OAAth stores",
-    context,
-    "oaath_client_capability_invalid",
-  );
-  const stores = Object.freeze({
-    grants: storePort<GrantStoreAdapter>(
-      storeRecord.grants,
-      ["get", "compareAndSwap", "close"],
-      "Grant store",
-      context,
-    ),
-    operations: storePort<OperationStoreAdapter>(
-      storeRecord.operations,
-      ["get", "getArchived", "compareAndSwap", "close"],
-      "Operation store",
-      context,
-    ),
-    walletCallBundles: storePort<WalletCallBundleStoreAdapter>(
-      storeRecord.walletCallBundles,
-      ["get", "compareAndSwap", "close"],
-      "wallet call bundle store",
-      context,
-    ),
-    preparedCallContexts: storePort<PreparedCallStoreAdapter>(
-      storeRecord.preparedCallContexts,
-      ["get", "compareAndSwap", "close"],
-      "prepared call context store",
-      context,
-    ),
-    keys: storePort<OaathKeyStore>(
-      storeRecord.keys,
-      ["store", "get", "delete", "close"],
-      "key store",
-      context,
-    ),
-    cleanup: storePort<OaathCleanupCheckpointStore>(
-      storeRecord.cleanup,
-      ["read", "write", "clear", "close"],
-      "cleanup store",
-      context,
-    ),
-    context: storePort<OaathContextStore>(
-      storeRecord.context,
-      ["read", "write", "clear", "close"],
-      "context store",
-      context,
-    ),
-  });
+  const stores = captureStoreConfiguration(record.stores, context);
   const chains = chainMap(record.chains, context);
   const signing = exactClientRecord(
     record.signing,
@@ -467,7 +418,7 @@ function composeInjectedRealm(
 
   function open(): Readonly<OaathConnection> {
     if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
-    const connection = createConnection({
+    const inner = createConnection({
       binding,
       authority,
       grants: new GrantStore(connectionStores.grants),
@@ -484,6 +435,14 @@ function composeInjectedRealm(
       sessionSigner,
       now,
     });
+    const connection = Object.freeze({
+      ...inner,
+      async close() {
+        await inner.close();
+        const index = connections.indexOf(connection);
+        if (index >= 0) connections.splice(index, 1);
+      },
+    });
     connections.push(connection);
     return connection;
   }
@@ -495,13 +454,7 @@ function composeInjectedRealm(
     const attempt = (async () => {
       const childFailures: unknown[] = [];
       for (const connection of [...connections]) {
-        await connection
-          .close()
-          .then(() => {
-            const index = connections.indexOf(connection);
-            if (index >= 0) connections.splice(index, 1);
-          })
-          .catch((error: unknown) => childFailures.push(error));
+        await connection.close().catch((error: unknown) => childFailures.push(error));
       }
       if (childFailures[0] !== undefined) throw childFailures[0];
 
@@ -570,7 +523,6 @@ function composeInjectedRealm(
       if (grant !== null && typeof grant.revoke !== "function") {
         clientFail("oaath_client_input_invalid", "disconnect grant is invalid");
       }
-      const open_ = [...connections];
       const revocationUnneeded = grant === null ? true : await revocationIsUnneeded(grant);
       const revokeRequired = grant !== null && !revocationUnneeded;
       // Order: authority first, then authentication, then local state, then
@@ -578,7 +530,17 @@ function composeInjectedRealm(
       const effects: OaathCleanupEffect[] = [
         ...(revokeRequired ? [revokeEffect(grant)] : []),
         signOutEffect(async () => {
-          for (const connection of open_) await connection.signOut();
+          const open = [...connections];
+          if (open.length > 0) {
+            for (const connection of open) await connection.signOut();
+          } else {
+            // Closing connections releases resources, not issuer authentication.
+            try {
+              await issuer?.signOut?.();
+            } catch (error) {
+              return mapClientFailure(error, "issuer sign-out failed");
+            }
+          }
         }),
         forgetLocalEffect({
           keys: stores.keys,

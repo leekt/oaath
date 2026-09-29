@@ -13,6 +13,7 @@ import { createSqliteOperationStore } from "@oaath/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createOperationObserver,
+  createUserOperationObserver,
   OaathOperationObserverError,
   type OperationObserverBlockEvidence,
   type OperationObserverCapabilities,
@@ -179,38 +180,12 @@ const replacement = occurrence({
   blockHash: replacementBlockHash,
   success: false,
 });
-function finalityChain(
-  inclusion: Occurrence,
-  hashSeed: number,
-): {
-  finalized: OperationObserverBlockEvidence;
-  byHash: ReadonlyMap<string, OperationObserverBlockEvidence>;
-} {
-  const byHash = new Map<string, OperationObserverBlockEvidence>();
-  byHash.set(inclusion.block.hash, inclusion.block);
-  let previous = inclusion.block;
-  for (
-    let blockNumber = Number(BigInt(inclusion.block.number)) + 1;
-    blockNumber <= 30;
-    blockNumber += 1
-  ) {
-    const block: OperationObserverBlockEvidence = {
-      number: quantity(blockNumber),
-      hash:
-        blockNumber === 30
-          ? finalityBlockHash
-          : (`0x${(hashSeed + blockNumber).toString(16).padStart(64, "0")}` as const),
-      parentHash: previous.hash,
-      transactions: [],
-    };
-    byHash.set(block.hash, block);
-    previous = block;
-  }
-  return { finalized: previous, byHash };
-}
-
-const targetFinality = finalityChain(target, 1_000);
-const replacementFinality = finalityChain(replacement, 2_000);
+const finalizedBlock: OperationObserverBlockEvidence = {
+  number: "0x1e",
+  hash: finalityBlockHash,
+  parentHash,
+  transactions: [],
+};
 
 type FixtureOptions = {
   targetReceipt?: unknown;
@@ -232,8 +207,7 @@ function fixture(options: FixtureOptions = {}): {
   const replacementCandidate = options.replacementCandidate ?? null;
   const replacementReceipt =
     options.replacementReceipt === undefined ? replacement.receipt : options.replacementReceipt;
-  const selectedFinality = replacementCandidate === null ? targetFinality : replacementFinality;
-  const finality = options.finality === undefined ? selectedFinality.finalized : options.finality;
+  const finality = options.finality === undefined ? finalizedBlock : options.finality;
 
   function response(request: OperationObserverReadRequest): unknown {
     if (request.type === "chain_id") return identity.chainId;
@@ -250,9 +224,8 @@ function fixture(options: FixtureOptions = {}): {
     if (request.type === "transaction_receipt") return selected.transactionReceipt;
     if (request.type === "transaction") return selected.transaction;
     if (request.type === "finalized_block") return finality;
-    if (request.type === "block_by_hash") return selectedFinality.byHash.get(request.blockHash);
     if (request.type === "canonical_block") {
-      if (request.blockNumber === "30") return selectedFinality.finalized;
+      if (request.blockNumber === "30") return finalizedBlock;
       return request.blockNumber === "21" ? replacement.block : target.block;
     }
     throw new Error("unsupported request");
@@ -370,7 +343,6 @@ describe("OperationObserver", () => {
               "transaction_receipt",
               "transaction",
               "canonical_block",
-              "block_by_hash",
               "finalized_block",
             ].includes(type),
           ),
@@ -433,9 +405,6 @@ describe("OperationObserver", () => {
         hash: finalityBlockHash,
         parentHash,
         transactions: [],
-      },
-      mutate(request, value) {
-        return request.type === "block_by_hash" ? target.block : value;
       },
     });
     const result = await createOperationObserver(adapter.capabilities).observeOperation({
@@ -937,5 +906,281 @@ describe("OperationObserver", () => {
     await expect(
       observer.observeOperation({ operation: submitted(), observedAt: 13, timeoutMs: 1_000 }),
     ).rejects.toMatchObject({ code: "operation_observer_closed" });
+  });
+});
+
+const reference = Object.freeze({
+  chainId: identity.chainId,
+  entryPoint: identity.entryPoint,
+  account: identity.account,
+  nonce: identity.nonce,
+  userOperationHash: identity.userOperationHash,
+});
+const referenceInput = { reference, observedAt: 100, timeoutMs: 1000 };
+
+describe("bounded canonical finality", () => {
+  it.each(["journal", "reference"] as const)(
+    "recovers an old receipt through the %s reader within twelve reads",
+    async (kind) => {
+      const finalized = { ...finalizedBlock, number: "0xf4240" };
+      let reads = 0;
+      const adapter = fixture({
+        finality: finalized,
+        mutate(request, value) {
+          if (++reads > 12) throw new Error("observation request budget exhausted");
+          if (request.type === "canonical_block" && request.blockNumber === "1000000")
+            return finalized;
+          return value;
+        },
+      });
+      if (kind === "journal") {
+        const observer = createOperationObserver(adapter.capabilities);
+        try {
+          expect(
+            await observer.observeOperation({
+              operation: submitted(),
+              observedAt: 100,
+              timeoutMs: 1000,
+            }),
+          ).toMatchObject({
+            status: "finalized",
+            operation: { finality: { blockNumber: "1000000" } },
+          });
+        } finally {
+          await observer.close();
+        }
+      } else {
+        const observer = createUserOperationObserver(adapter.capabilities);
+        try {
+          expect(await observer.observeReference(referenceInput)).toMatchObject({
+            status: "finalized",
+            finality: { blockNumber: "1000000" },
+          });
+        } finally {
+          await observer.close();
+        }
+      }
+      expect(reads).toBeLessThanOrEqual(12);
+    },
+  );
+
+  it.each(["finalized-rebind", "inclusion-rebind", "finalized-behind", "wrong-chain"] as const)(
+    "leaves old receipt recovery unresolved after %s",
+    async (fault) => {
+      const finalized = { ...finalizedBlock, number: "0xf4240" };
+      let inclusionReads = 0,
+        chainReads = 0;
+      const adapter = fixture({
+        finality: fault === "finalized-behind" ? { ...finalized, number: "0x13" } : finalized,
+        mutate(request, value) {
+          if (request.type === "canonical_block" && request.blockNumber === "1000000")
+            return fault === "finalized-rebind"
+              ? { ...finalized, hash: replacementHash }
+              : finalized;
+          if (
+            request.type === "canonical_block" &&
+            request.blockNumber === "20" &&
+            ++inclusionReads > 1 &&
+            fault === "inclusion-rebind"
+          )
+            return { ...target.block, hash: replacementBlockHash };
+          if (request.type === "chain_id" && ++chainReads > 1 && fault === "wrong-chain")
+            return identity.chainId + 1;
+          return value;
+        },
+      });
+      const observer = createUserOperationObserver(adapter.capabilities);
+      try {
+        const result = await observer.observeReference(referenceInput);
+        expect(result.status).toBe("unreadable");
+        if (result.status === "unreadable")
+          expect(result.reason).toBe(
+            fault === "wrong-chain" ? "receipt_invalid" : "finality_unproven",
+          );
+        expect(adapter.requests.some((request) => request.type === "replacement_candidate")).toBe(
+          false,
+        );
+      } finally {
+        await observer.close();
+      }
+    },
+  );
+});
+
+describe("reference-only UserOperation observation", () => {
+  it("verifies the exact receipt without manufacturing a Grant or journal transition", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const captured = { ...reference };
+    const pending = observer.observeReference({ ...referenceInput, reference: captured });
+    captured.nonce = "8";
+    const result = await pending;
+    expect(result.status).toBe("finalized");
+    expect(result.reference).toEqual(reference);
+    expect(Object.isFrozen(result.reference)).toBe(true);
+    if (result.status === "finalized") {
+      expect(result.receipt).toMatchObject({
+        transactionHash: targetTransactionHash,
+        blockHash: targetBlockHash,
+        outcome: "success",
+      });
+      expect(result.receipt.logs).toEqual([target.event]);
+      expect(result.finality.blockHash).toBe(finalityBlockHash);
+    }
+    expect(result).not.toHaveProperty("operation");
+    expect(
+      adapter.requests.some(
+        (request) =>
+          request.type === "replacement_candidate" || request.type === "entry_point_nonce",
+      ),
+    ).toBe(false);
+    await observer.close();
+    expect(adapter.closeCalls()).toBe(1);
+    await expect(observer.observeReference(referenceInput)).rejects.toMatchObject({
+      code: "operation_observer_closed",
+    });
+  });
+
+  it("missing evidence never seeks a replacement or releases another owner's lane", async () => {
+    const adapter = fixture({ targetReceipt: null });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({
+      status: "pending",
+      reason: "receipt_missing",
+      reference,
+    });
+    expect(adapter.requests.map((request) => request.type)).toEqual([
+      "chain_id",
+      "user_operation_receipt",
+      "chain_id",
+    ]);
+    await observer.close();
+  });
+
+  it("rejects another sender, nonce, operation, containing transaction or changed chain", async () => {
+    for (const change of [
+      { sender: zeroAddress },
+      { nonce: "0x8" },
+      { userOperationHash: replacementHash },
+    ]) {
+      const adapter = fixture({ targetReceipt: { ...target.receipt, ...change } });
+      const observer = createUserOperationObserver(adapter.capabilities);
+      expect(await observer.observeReference(referenceInput)).toMatchObject({
+        status: "unreadable",
+        reason: "receipt_invalid",
+        receipt: null,
+      });
+      await observer.close();
+    }
+    let chainReads = 0;
+    const adapter = fixture({
+      mutate: (request, value) => (request.type === "chain_id" && ++chainReads > 1 ? 1 : value),
+    });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({
+      status: "unreadable",
+      reason: "receipt_invalid",
+      receipt: null,
+    });
+    await observer.close();
+  });
+
+  it("retains verified inclusion when finality is unavailable, but not when the event is invalid", async () => {
+    const adapter = fixture({ finality: null });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const result = await observer.observeReference(referenceInput);
+    expect(result).toMatchObject({
+      status: "unreadable",
+      reason: "finality_unproven",
+      receipt: { transactionHash: targetTransactionHash, outcome: "success" },
+    });
+    await observer.close();
+    const invalid = fixture({
+      mutate: (request, value) =>
+        request.type === "transaction_receipt"
+          ? { ...target.transactionReceipt, logs: [target.boundary] }
+          : value,
+    });
+    const invalidObserver = createUserOperationObserver(invalid.capabilities);
+    expect(await invalidObserver.observeReference(referenceInput)).toMatchObject({
+      status: "unreadable",
+      receipt: null,
+    });
+    await invalidObserver.close();
+  });
+
+  it("binds a direct transaction hint to the same operation and exact containing transaction", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(
+      (
+        await observer.observeReference({
+          ...referenceInput,
+          transactionHash: targetTransactionHash,
+        })
+      ).status,
+    ).toBe("finalized");
+    expect(
+      adapter.requests.find((request) => request.type === "user_operation_receipt"),
+    ).toMatchObject({
+      transaction: { hash: targetTransactionHash, entryPoint: reference.entryPoint },
+    });
+    expect(
+      await observer.observeReference({
+        ...referenceInput,
+        transactionHash: replacementTransactionHash,
+      }),
+    ).toMatchObject({ status: "unreadable", receipt: null });
+    await observer.close();
+  });
+
+  it("captures exact bounded input before any RPC and drops raw provider failures", async () => {
+    const adapter = fixture();
+    const observer = createUserOperationObserver(adapter.capabilities);
+    for (const input of [
+      { ...referenceInput, reference: identity },
+      { ...referenceInput, reference: { ...reference, nonce: "07" } },
+      { ...referenceInput, timeoutMs: 0 },
+      { ...referenceInput, timeoutMs: 60001 },
+      { ...referenceInput, observedAt: -1 },
+      { ...referenceInput, transactionHash: "0x01" },
+      { ...referenceInput, extra: true },
+    ]) {
+      await expect(observer.observeReference(input)).rejects.toMatchObject({
+        code: "operation_observer_input_invalid",
+      });
+    }
+    expect(adapter.requests).toEqual([]);
+    await observer.close();
+    const unavailable = createUserOperationObserver({
+      read: async () => {
+        throw Error("secret-provider-cause");
+      },
+      close: async () => {},
+    });
+    const result = await unavailable.observeReference(referenceInput);
+    expect(result).toMatchObject({
+      status: "unreadable",
+      reason: "provider_unavailable",
+      receipt: null,
+    });
+    expect(JSON.stringify(result)).not.toContain("secret-provider-cause");
+    await unavailable.close();
+  });
+
+  it("bounds stalled reads and lets close drain the outstanding observation", async () => {
+    const requests: OperationObserverReadRequest[] = [];
+    const observer = createUserOperationObserver({
+      read: async (request: OperationObserverReadRequest) => {
+        requests.push(request);
+        return new Promise(() => {});
+      },
+      close: async () => {},
+    });
+    const pending = observer.observeReference({ ...referenceInput, timeoutMs: 5 });
+    const closing = observer.close();
+    expect(await pending).toMatchObject({ status: "pending", reason: "timeout" });
+    await closing;
+    expect(requests).toHaveLength(1);
   });
 });

@@ -45,6 +45,8 @@ import {
 } from "./internal.js";
 import {
   exactKernelDeployment,
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "./modules.js";
@@ -154,8 +156,11 @@ export function createKernelRuntime(
   const gasPolicy = captureKernelGasPolicy(deployment.chainId, record.gas);
   const operator = captureOperator(record.operator, context);
   const isV33 = deployment.kernelVersion === "0.3.3";
-  if (isV33 && operator.key.kind !== "ecdsa") {
-    return inputInvalid("Kernel v3.3 composition currently requires an ECDSA key");
+  // Existing-account root binding below proves the ECDSA validator's owner.
+  // A session instead resolves its own signer module and public material; its
+  // key kind is independent of the account's root validator.
+  if (isV33 && operator.authority === "owner" && operator.key.kind !== "ecdsa") {
+    return inputInvalid("Kernel v3.3 root composition currently requires an ECDSA key");
   }
   const read = inputCapability<KernelV4AccountReadCapability["read"]>(
     exactInput(record.reads, ["read"], "Kernel runtime reads", context).read,
@@ -218,26 +223,29 @@ export function createKernelRuntime(
     }
   }
 
-  async function proveValidityPolicy(): Promise<void> {
-    if (!hasValidityPolicy) return;
-    let observed: unknown;
-    try {
-      observed = await read({
-        type: "runtime_code_hash",
-        chainId: deployment.chainId,
-        address: OAATH_KERNEL_V4_VALIDITY_POLICY,
-      });
-    } catch {
-      return runtimeFail(
-        "kernel_runtime_policy_unavailable",
-        "Kernel validity policy runtime code could not be read",
-      );
-    }
-    if (observed !== OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH) {
-      return runtimeFail(
-        "kernel_runtime_policy_unavailable",
-        "Kernel validity policy runtime code does not match the pinned artifact",
-      );
+  async function provePinnedPolicies(): Promise<void> {
+    if (operator.authority !== "session") return;
+    for (const [address, expected] of [
+      [OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH],
+      [OAATH_KERNEL_RATE_LIMIT_POLICY, OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH],
+    ] as const) {
+      if (!packages.some((install) => install.moduleType === 5 && install.module === address))
+        continue;
+      let observed: unknown;
+      try {
+        observed = await read({ type: "runtime_code_hash", chainId: deployment.chainId, address });
+      } catch {
+        return runtimeFail(
+          "kernel_runtime_policy_unavailable",
+          "Kernel policy runtime code could not be read",
+        );
+      }
+      if (observed !== expected) {
+        return runtimeFail(
+          "kernel_runtime_policy_unavailable",
+          "Kernel policy runtime code does not match the pinned artifact",
+        );
+      }
     }
   }
 
@@ -255,7 +263,7 @@ export function createKernelRuntime(
       });
       if (operator.authority === "session") {
         await proveAuthorityModule();
-        await proveValidityPolicy();
+        await provePinnedPolicies();
         for (const install of packages) {
           if (install.moduleType !== 5) continue;
           let code: unknown;
@@ -312,7 +320,7 @@ export function createKernelRuntime(
       return descriptor;
     }
     await proveAuthorityModule();
-    await proveValidityPolicy();
+    await provePinnedPolicies();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
     // field below; each caller field is read exactly once into its argument.
     const descriptor = await bindKernelV4Account({

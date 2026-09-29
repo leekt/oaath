@@ -5,7 +5,7 @@ import {
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
-import { decodeErrorResult } from "viem";
+import { decodeErrorResult, encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 
 export type OaathRpcErrorCode =
@@ -58,6 +58,34 @@ function validationDiagnostic(
     });
   } catch {
     return null;
+  }
+}
+
+// This marker belongs to one captured estimation response. Diagnostic text and
+// publicly constructed errors cannot manufacture pre-submission evidence.
+const accountValidationRejections = new WeakSet<OaathRpcError>();
+export function isAccountValidationRejection(error: unknown): boolean {
+  return error instanceof OaathRpcError && accountValidationRejections.has(error);
+}
+
+function accountValidationReverted(data: unknown): boolean {
+  try {
+    if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return false;
+    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
+    // The ABI-encoded EntryPoint error identifies account validation. Arbitrary
+    // RPC prose, other operation indices and signature placeholders do not.
+    return (
+      decoded.errorName === "FailedOpWithRevert" &&
+      decoded.args[0] === 0n &&
+      decoded.args[1] === "AA23 reverted" &&
+      encodeErrorResult({
+        abi: entryPoint07Abi,
+        errorName: decoded.errorName,
+        args: decoded.args,
+      }).toLowerCase() === data.toLowerCase()
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -218,6 +246,12 @@ export function rpcOwner(input: ViemChainPortOptions) {
               error.code,
               error.code === -32500 ? validationDiagnostic(method, params, error.data) : null,
             );
+            if (
+              method === "eth_estimateUserOperationGas" &&
+              error.code === -32500 &&
+              accountValidationReverted(error.data)
+            )
+              accountValidationRejections.add(failure);
             if ([-32005, -32016, 429].includes(error.code)) transient.add(failure);
             throw failure;
           }

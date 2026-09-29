@@ -10,7 +10,8 @@ import { openLocalClientStores } from "./anvil-stores.js";
 
 /** Public test-environment metadata, never credentials or a copy of SDK records. */
 export interface LocalAnvilRecovery {
-  readonly version: "oaath.local-anvil-recovery/v1";
+  readonly version: "oaath.local-anvil-recovery/v2";
+  readonly existingAccount: `0x${string}` | null;
   readonly owner: `0x${string}`;
   readonly session: `0x${string}`;
   readonly chains: readonly Readonly<{
@@ -39,8 +40,13 @@ function address(value: unknown): `0x${string}` {
 /** Capture once before any disk or network access; only loopback RPCs are accepted. */
 export function captureLocalAnvilRecovery(value: unknown): Readonly<LocalAnvilRecovery> {
   try {
-    const input = record(value, ["version", "owner", "session", "chains"]);
-    if (input.version !== "oaath.local-anvil-recovery/v1") throw new Error();
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      Reflect.get(value, "version") !== "oaath.local-anvil-recovery/v2"
+    )
+      throw new Error();
+    const input = record(value, ["version", "owner", "session", "chains", "existingAccount"]);
     if (!Array.isArray(input.chains) || input.chains.length < 1 || input.chains.length > 2)
       throw new Error();
     const chains = input.chains.map((value) => {
@@ -70,7 +76,8 @@ export function captureLocalAnvilRecovery(value: unknown): Readonly<LocalAnvilRe
     });
     if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length) throw new Error();
     return Object.freeze({
-      version: "oaath.local-anvil-recovery/v1",
+      version: "oaath.local-anvil-recovery/v2",
+      existingAccount: input.existingAccount === null ? null : address(input.existingAccount),
       owner: address(input.owner),
       session: address(input.session),
       chains: Object.freeze(chains),
@@ -180,7 +187,7 @@ export async function openLocalAnvilRecoveryClient(
     const validator = recovery.chains[0]?.validator;
     if (!validator) throw new Error("local_fixture_recovery_invalid");
     const client = createOAAth({
-      binding: localClientBinding(recovery.owner, recovery.session),
+      binding: localClientBinding(recovery.owner, recovery.session, recovery.existingAccount),
       issuer: {
         url: LOCAL_ISSUER,
         async fetch(request: Request) {

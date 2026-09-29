@@ -27,10 +27,12 @@ export type {
   OaathCallsReview,
   OaathGetOperationInput,
   OaathGrantHandle,
+  OaathReviewCallsInput,
   OaathSendCallsInput,
 } from "./client/grant-handle.js";
 export type {
   OaathLocalApprovalReview,
+  OaathLocalClient,
   OaathLocalConfiguration,
   OaathLocalWallet,
 } from "./client/local-realm.js";

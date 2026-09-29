@@ -76,7 +76,6 @@ const PUBLIC_METHODS = [
   "eth_maxPriorityFeePerGas",
   "eth_feeHistory",
   "eth_getBlockByNumber",
-  "eth_getBlockByHash",
   "eth_getTransactionByHash",
   "eth_getTransactionReceipt",
 ];
@@ -306,8 +305,6 @@ function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
           return block(
             await publicRpc("eth_getBlockByNumber", [toHex(BigInt(request.blockNumber)), false]),
           );
-        case "block_by_hash":
-          return block(await publicRpc("eth_getBlockByHash", [request.blockHash, false]));
         case "replacement_candidate":
           return null; // No indexer: never claim to have found a replacement.
         case "entry_point_nonce":

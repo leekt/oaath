@@ -1,5 +1,8 @@
 import { createServer } from "node:http";
-import { OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+  type UserOperationReference,
+} from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
 import {
   createWalletClient,
@@ -17,7 +20,7 @@ import {
 } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import type { OaathUsageRequest } from "../src/advanced.js";
+import { createUserOperationObserver, type OaathUsageRequest } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../src/index.js";
 import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel.js";
@@ -99,6 +102,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
         }
         const modeBytes: bigint[] = [];
         const receipts = new Map<string, unknown>();
+        const references = new Map<string, Readonly<UserOperationReference>>();
         const methods: string[] = [];
         let sends = 0;
         let estimates = 0;
@@ -153,6 +157,16 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                 entryPointVersion: "0.7",
                 chainId: CHAIN_ID,
               });
+              references.set(
+                hash,
+                Object.freeze({
+                  chainId: CHAIN_ID,
+                  entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+                  account: operation.sender.toLowerCase() as `0x${string}`,
+                  nonce: String(operation.nonce),
+                  userOperationHash: hash,
+                }),
+              );
               const transactionHash = await harness.wallet.sendTransaction({
                 account: harness.submitter,
                 chain: null,
@@ -250,10 +264,23 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           const endpoint = server.address();
           if (!endpoint || typeof endpoint === "string") throw new Error("local RPC unavailable");
           const url = `http://127.0.0.1:${endpoint.port}`;
+          let rpcRequests = 0;
+          const allowedEndpoints = new Set(
+            [url, `${url}/unavailable`, local.url].map((value) => new URL(value).href),
+          );
           const chainPorts = () =>
             createViemChainPorts(
               { [CHAIN_ID]: { publicRpcUrls: [`${url}/unavailable`, local.url], bundlerUrl: url } },
-              { retry: { attempts: 2, delayMs: 0 }, maxRequests: 300 },
+              {
+                retry: { attempts: 2, delayMs: 0 },
+                maxRequests: 300,
+                async fetch(request) {
+                  if (!allowedEndpoints.has(request.url))
+                    throw new Error("only owned RPC endpoints are allowed");
+                  rpcRequests++;
+                  return fetch(request);
+                },
+              },
             );
           let ports = chainPorts()[0];
           if (!ports) throw new Error("chain missing");
@@ -409,14 +436,47 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           expect(recovered.id).toBe(exactId);
           expect(await grant.account(CHAIN_ID)).toBe(address);
           expect(sends).toBe(1 + ownerOffset);
-          await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+          // Recover after the containing block is well outside one request budget.
+          await harness.client.request({
+            method: "anvil_mine" as never,
+            params: ["0x400", "0x0"] as never,
+          });
+          const beforeRecoveryReads = rpcRequests;
           const recoveryOutcome = await recovered.wait();
           expect({
             status: recoveryOutcome.status,
             state: recoveryOutcome.state,
             reason: "reason" in recoveryOutcome ? recoveryOutcome.reason : null,
           }).toMatchObject({ status: "finalized" });
+          expect(rpcRequests - beforeRecoveryReads).toBeLessThan(24);
           expect(sends).toBe(1 + ownerOffset);
+          const reference = references.get(exactId);
+          if (!reference) throw new Error("fixture did not retain operation reference");
+          const referencePort = chainPorts()[0];
+          if (!referencePort) throw new Error("fixture did not configure observation");
+          const referenceObserver = createUserOperationObserver(referencePort.observation);
+          try {
+            const result = await referenceObserver.observeReference({
+              reference,
+              observedAt: clock.now(),
+              timeoutMs: 10_000,
+            });
+            expect(result.status).toBe("finalized");
+            if (result.status === "finalized")
+              expect(result.receipt.transactionHash).toBe(recoveryOutcome.transactionHash);
+            expect(
+              await referenceObserver.observeReference({
+                reference: { ...reference, nonce: String(BigInt(reference.nonce) + 1n) },
+                observedAt: clock.now(),
+                timeoutMs: 10_000,
+              }),
+            ).toMatchObject({ status: "unreadable", reason: "receipt_invalid", receipt: null });
+            expect(sends).toBe(1 + ownerOffset);
+            expect(estimates).toBe(1 + ownerOffset);
+            expect(ownerOperationPrompts).toBe(ownerOffset);
+          } finally {
+            await referenceObserver.close();
+          }
           const second = await grant.sendCalls(sendCallsInput());
           expect((await second.wait()).status).toBe("finalized");
           if (!usageRequest) throw new Error("missing usage request");

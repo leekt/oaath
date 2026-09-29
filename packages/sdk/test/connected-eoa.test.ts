@@ -1,6 +1,6 @@
 import { createWalletClient, custom, decodeFunctionData } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/connected-eoa.js";
 import {
   asViemUserOperation,
@@ -104,6 +104,47 @@ function fixture(
 }
 
 describe("connected EOA fallback", () => {
+  it.each([true, false])(
+    "uses the local wallet only after a conclusive rejection: %s",
+    async (conclusive) => {
+      const rpc = vi.fn(async ({ method }: { method: string }) => {
+        expect(method).toBe("eth_chainId");
+        return "0x8f";
+      });
+      const localSend = vi.fn(async () => transactionHash);
+      const payer = captureConnectedEoa(
+        {
+          kind: "connected-eoa",
+          wallet: { account: { address, type: "local" }, request: rpc, sendTransaction: localSend },
+        },
+        new WeakSet(),
+      );
+      const rejection = new OaathRpcError("oaath_rpc_rejected", conclusive ? -32500 : -32603);
+      const session = withConnectedEoaFallback(
+        {
+          submit: async () => {
+            throw rejection;
+          },
+          close: async () => {},
+        },
+        request,
+        payer,
+      );
+      if (conclusive) {
+        await session.submit();
+        await session.submit();
+        expect(localSend).toHaveBeenCalledTimes(1);
+        expect(localSend).toHaveBeenCalledWith(
+          expect.objectContaining({ to: KERNEL_V4_ENTRY_POINT_V07, value: 0n }),
+        );
+        expect(rpc).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(session.submit()).rejects.toBe(rejection);
+        expect(localSend).not.toHaveBeenCalled();
+        expect(rpc).not.toHaveBeenCalled();
+      }
+    },
+  );
   it.each(OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES)(
     "submits the same signed bytes once after conclusive rejection %s",
     async (code) => {

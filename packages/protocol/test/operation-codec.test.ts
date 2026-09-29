@@ -5,6 +5,7 @@ import {
   OaathOperationError,
   type OperationIdentity,
   parseOperation,
+  parseUserOperationReference,
 } from "../src/index.js";
 import { applyVerifiedOperationObservation } from "../src/operation.js";
 
@@ -608,4 +609,27 @@ describe("Operation current codec", () => {
       "operation_revision_exhausted",
     );
   });
+});
+
+it("captures a public UserOperation reference without journal or authority fields", () => {
+  const input = {
+    chainId: identity.chainId,
+    entryPoint: identity.entryPoint,
+    account: identity.account,
+    nonce: identity.nonce,
+    userOperationHash: identity.userOperationHash,
+  };
+  const parsed = parseUserOperationReference(input);
+  input.nonce = "8";
+  expect(parsed.nonce).toBe("0");
+  expect(Object.isFrozen(parsed)).toBe(true);
+  for (const value of [
+    identity,
+    { ...input, nonce: "01" },
+    { ...input, chainId: 0 },
+    { ...input, account: "0x01" },
+    { ...input, userOperationHash: "0x01" },
+  ]) {
+    expectOperationError(() => parseUserOperationReference(value), "operation_input_invalid");
+  }
 });

@@ -83,7 +83,7 @@ describe("local wallet realm", () => {
     const realm = createOAAth(input);
     const connection = await realm.connect();
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_decision_unavailable",
+      code: "oaath_client_signing_failed",
     });
     expect(owner.signTypedData).toHaveBeenCalledTimes(1);
     expect(await connection.resume()).toBeNull();

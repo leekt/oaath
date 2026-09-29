@@ -1,119 +1,106 @@
-/** Connected ECDSA owner approval and browser custody without a relay. */
+/**
+ * Wallet-owned sessions and owner execution share one durable operation store.
+ * The wrapping key and session record must persist before consent. Pending
+ * consent occupies this realm until accepted or rejected; close invalidates it.
+ * Reload reconstructs the session, Grant and exact operation IDs from stores.
+ * It never retries submission. The outer realm owns all raw stores, including
+ * cleanup after partial composition; failed closes remain retryable.
+ */
 import {
   captureDenseArray,
   captureRecord,
-  type GrantPolicy,
-  hashPermissionRequest,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
-  OAATH_PERMISSION_DECISION_VERSION,
-  type PermissionRequest,
-  parseClientBinding,
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   parseKernelAccountProfile,
 } from "@oaath/protocol";
-import { hashTypedData, keccak256, stringToHex } from "viem";
+import type { Address } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { OaathCleanupError } from "../cleanup/coordinator.js";
 import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
-import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
 import { kernelV33Deployment } from "../kernel/deployment/v33.js";
 import { type EcdsaWalletClient, ecdsaKey, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
-import { ownerOperator } from "../kernel/operator/owner.js";
-import { sessionOperator } from "../kernel/operator/session.js";
-import { kernelGrantCapabilityHash } from "../kernel/permission/approval.js";
-import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
-import {
-  approveKernelV33Permission,
-  kernelV33PermissionEnableTypedData,
-  kernelV33PermissionInstallNonce,
-} from "../kernel/permission/v33.js";
-import type { KernelV33Runtime } from "../kernel/types.js";
 import { routingAddress } from "../routing/capabilities.js";
-import { GrantStore } from "../store.js";
+import { GrantStore, type OperationStoreAdapter } from "../store.js";
+import { captureOaathBinding } from "./binding.js";
 import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import type { LocalPermissionAuthorization } from "./connection.js";
-import { clientCapability, clientFail, clientFailure, mapClientFailure } from "./errors.js";
+import {
+  clientCapability,
+  clientFail,
+  clientFailure,
+  exactClientRecord,
+  mapClientFailure,
+  OaathClientError,
+} from "./errors.js";
 import { captureChainCapability, type OaathChainCapability } from "./grant-handle.js";
+import {
+  createLocalPermissionAuthority,
+  type LocalPermissionSign,
+  type OaathLocalApprovalReview,
+} from "./local-permission.js";
+import { createOwnerRealm, type OaathOwnerClient } from "./owner-realm.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
+import { captureStoreConfiguration } from "./store-configuration.js";
 
-type EnableTypedData = ReturnType<typeof kernelV33PermissionEnableTypedData>;
-export interface OaathLocalWallet extends EcdsaWalletClient {
-  readonly signTypedData: (
-    request: EnableTypedData & Readonly<{ account: `0x${string}` }>,
-  ) => Promise<unknown>;
-}
-export interface OaathLocalApprovalReview {
-  readonly account: `0x${string}`;
-  readonly chainScope: "all";
-  readonly policy: Readonly<GrantPolicy>;
-  readonly typedData: EnableTypedData;
-}
+export type OaathLocalWallet = EcdsaWalletClient & { readonly signTypedData: LocalPermissionSign };
+export type { OaathLocalApprovalReview } from "./local-permission.js";
 export interface OaathLocalConfiguration {
   readonly mode: "local";
+  readonly account: Address;
   readonly owner: OaathLocalWallet;
-  /** Existing Kernel v3.3 account with this wallet's ECDSA root. */
-  readonly account: `0x${string}`;
   readonly chains: readonly Readonly<OaathChainCapability>[];
-  /** Display the decoded policy before the wallet's canonical Kernel prompt. Throw to cancel. */
+  /** Display the decoded policy before wallet consent. Throw to cancel. */
   readonly onApproval?: (review: Readonly<OaathLocalApprovalReview>) => Promise<void>;
-  /** Defaults to the current browser origin. */
-  readonly origin?: string;
-  /** Defaults to the shared browser IndexedDB stores. */
+  /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
   readonly stores?: Readonly<OaathStoreConfiguration>;
+  /** Defaults to the actual browser origin; required outside a browser. */
+  readonly origin?: string;
   readonly now?: () => number;
 }
+export interface OaathLocalClient extends Oaath, OaathOwnerClient {}
 
 export function createLocalRealm(
-  record: Readonly<Record<string, unknown>>,
+  value: unknown,
   compose: (configuration: unknown, authorization: LocalPermissionAuthorization) => Readonly<Oaath>,
-): Readonly<Oaath> {
+): Readonly<OaathLocalClient> {
   const fail = clientFailure("oaath_client_input_invalid");
-  for (const key of Object.keys(record))
-    if (
-      !["mode", "owner", "account", "chains", "onApproval", "origin", "stores", "now"].includes(key)
-    )
-      return fail("local configuration contains an unknown field");
-  const address = routingAddress(record.account, "local Kernel account", fail);
-  const entries = captureDenseArray(record.chains, "local chains", new WeakSet(), fail);
-  if (entries.length < 1 || entries.length > 32)
-    return fail("local chains must hold 1 to 32 entries");
-  const chains = entries.map(captureChainCapability);
-  if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length)
-    return fail("local chains repeat a chain");
-  const first = chains[0];
-  if (!first) return fail("local chain is missing");
-  const deployment = kernelV33Deployment(first.chainId);
-  const ownerKey = ecdsaWalletKey({
-    wallet: record.owner as OaathLocalWallet,
-    validator: deployment.ecdsaValidator,
-  });
-  const wallet = captureRecord(record.owner, "local wallet", new WeakSet(), fail);
-  const signTypedData = clientCapability<OaathLocalWallet["signTypedData"]>(
-    wallet.signTypedData,
-    "wallet signTypedData",
+  const context = new WeakSet();
+  const initial = captureRecord(value, "local configuration", context, fail);
+  const config = exactClientRecord(
+    initial,
+    [
+      "mode",
+      "account",
+      "owner",
+      "chains",
+      ...["stores", "origin", "now", "onApproval"].filter((key) => Object.hasOwn(initial, key)),
+    ],
+    "local configuration",
+    new WeakSet(),
   );
+  const address = routingAddress(config.account, "local account", fail);
   const onApproval =
-    record.onApproval === undefined
+    config.onApproval === undefined
       ? null
       : clientCapability<NonNullable<OaathLocalConfiguration["onApproval"]>>(
-          record.onApproval,
-          "local approval review",
+          config.onApproval,
+          "local approval display",
         );
-  const now =
-    record.now === undefined
-      ? () => Math.floor(Date.now() / 1_000)
-      : clientCapability<() => number>(record.now, "clock");
-  const originValue =
-    record.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
-  const origin =
-    typeof originValue === "string"
-      ? originValue
-      : fail("local mode requires a browser origin or origin override");
-  // Capture the same protocol origin/redirect rules before opening custody.
-  parseClientBinding({
-    version: "oaath.client-binding/v1",
-    clientId: "local",
-    applicationName: "Local OAAth",
-    origin,
-    redirectUris: [`${origin}/oaath/local`],
+  const wallet = captureRecord(config.owner, "local wallet", context, fail);
+  const walletAccount = captureRecord(wallet.account, "local wallet account", context, fail);
+  const signTypedData = clientCapability<LocalPermissionSign>(
+    wallet.signTypedData,
+    "wallet typed-data signing",
+  );
+  const entries = captureDenseArray(config.chains, "local chains", context, fail);
+  if (entries.length < 1 || entries.length > 32) return fail("local mode requires 1 to 32 chains");
+  const chains = Object.freeze(entries.map(captureChainCapability));
+  if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length)
+    return fail("local chains repeat an ID");
+  const ownerKey = ecdsaWalletKey({
+    wallet: config.owner as OaathLocalWallet,
+    validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,
   });
   const account = parseKernelAccountProfile({
     version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
@@ -122,233 +109,232 @@ export function createLocalRealm(
     address,
     entryPoint: { version: "0.7" },
     ownerCredential: {
-      version: "oaath.owner-credential-profile/v1",
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
       kind: "ecdsa",
       address: ownerKey.publicMaterial,
     },
   });
-  // Origin/account/owner separate both custody and durable Grant contexts. This URL
-  // is only a protocol identity; no transport is created or invoked for it.
-  const identity = {
-    application: {
-      applicationId: "local",
-      applicationName: "Local OAAth",
-      clientId: "local",
-      redirectUris: [`${origin}/oaath/local`],
-    },
+  const origin =
+    config.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
+  if (typeof origin !== "string")
+    return fail("local mode requires a browser origin or an explicit origin");
+  const now =
+    config.now === undefined
+      ? () => Math.floor(Date.now() / 1000)
+      : clientCapability<() => number>(config.now, "local clock");
+  const bindingInput = {
+    issuer: origin,
+    applicationId: "local",
+    applicationName: "Local OAAth",
+    clientId: "local",
+    origin,
+    redirectUri: `${origin}/oaath/local`,
     userHandle: ownerKey.publicMaterial,
     context: {
-      version: "oaath.workspace-account-context/v1" as const,
+      version: "oaath.workspace-account-context/v1",
       workspaceId: "local",
-      workspaceKind: "personal" as const,
+      workspaceKind: "personal",
       accountId: address,
-    },
+    } as const,
     account,
   };
-  let inner: Readonly<Oaath> | null = null;
-  let composing: Promise<Readonly<Oaath>> | null = null;
-  let owned: Readonly<OwnedDefaultStores> | null = null;
+  // Capture public identity before opening storage or invoking a wallet.
+  const baseBinding = captureOaathBinding({
+    ...bindingInput,
+    deviceId: "local",
+    operatorCredential: {
+      version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+      kind: "ecdsa",
+      address: ownerKey.publicMaterial,
+    },
+  });
+  let stores = config.stores === undefined ? undefined : captureStoreConfiguration(config.stores);
+  let storeOwner: Readonly<OwnedDefaultStores> | undefined;
+  let openingStores: Promise<Readonly<OaathStoreConfiguration>> | undefined;
+  async function storage() {
+    if (stores) return stores;
+    if (typeof indexedDB === "undefined")
+      return clientFail(
+        "oaath_client_store_unavailable",
+        "local mode requires IndexedDB or explicit stores",
+      );
+    openingStores ??= defaultStores().then((owner) => {
+      storeOwner = owner;
+      stores = owner.stores;
+      return stores;
+    });
+    return openingStores;
+  }
+  const operations: OperationStoreAdapter = {
+    get: async (key) => (await storage()).operations.get(key),
+    getArchived: async (key) => (await storage()).operations.getArchived(key),
+    compareAndSwap: async (input) => (await storage()).operations.compareAndSwap(input),
+    close: async () => undefined,
+  };
+  const ownerClient = createOwnerRealm({ mode: "owner", chains, operations });
+  let inner: Readonly<Oaath> | undefined;
+  let authority: ReturnType<typeof createLocalPermissionAuthority> | undefined;
+  let composing: Promise<Readonly<Oaath>> | undefined;
+  let closeRequested = false;
   let closed = false;
-  let closing: Promise<void> | null = null;
-  const active = new Set<Promise<unknown>>();
-
-  async function realm(): Promise<Readonly<Oaath>> {
+  let closing: Promise<void> | undefined;
+  const closedStores = new Set<object>();
+  function assertOpen() {
+    if (closeRequested) clientFail("oaath_client_closed", "local client is closed");
+  }
+  async function realm() {
     if (inner) return inner;
     composing ??= (async () => {
-      if (record.stores === undefined) owned = await defaultStores();
-      const stores = (record.stores ?? owned?.stores) as OaathStoreConfiguration;
-      const custody = { stores, url: origin, origin, bootstrap: identity };
-      let session = await loadServiceSession(custody);
+      const owned = await storage();
+      const bootstrap = {
+        application: bindingInput,
+        userHandle: bindingInput.userHandle,
+        context: baseBinding.context,
+        account: baseBinding.account,
+      };
+      const continuity = {
+        stores: owned,
+        url: baseBinding.issuer.url,
+        origin: baseBinding.client.origin,
+        bootstrap,
+      };
+      let session = await loadServiceSession(continuity);
       if (session === null) {
-        session = { deviceId: crypto.randomUUID(), privateKey: generatePrivateKey() };
-        // Local mode promises browser recovery: fail before approval when custody
-        // cannot be saved, instead of silently creating an ephemeral Grant.
-        await saveServiceSession({ ...custody, session, now });
+        session = Object.freeze({
+          deviceId: crypto.randomUUID(),
+          privateKey: generatePrivateKey(),
+        });
+        // A local session must survive before asking the owner for authority.
+        await saveServiceSession({ ...continuity, session, now });
       }
       const sessionAccount = privateKeyToAccount(session.privateKey);
       const sessionKey = ecdsaKey({
         account: sessionAccount,
-        validator: deployment.ecdsaValidator,
+        validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,
       });
-      async function approve(request: Readonly<PermissionRequest>): Promise<unknown> {
-        const policies = deriveSessionPolicyProfiles(request.policy);
-        let scope: Parameters<typeof kernelV33PermissionEnableTypedData>[0] | undefined;
-        let approvalRuntime: Readonly<KernelV33Runtime> | undefined;
-        // Every configured destination must prove the same account, owner and
-        // effective validation nonce before a single all-chain signature exists.
-        for (const chain of chains) {
-          const options = { deployment: kernelV33Deployment(chain.chainId), reads: chain.reads };
-          const ownerRuntime = createKernelRuntime({
-            ...options,
-            operator: ownerOperator({ key: ownerKey }),
-          });
-          await ownerRuntime.bindAccount({ address });
-          const runtime = createKernelRuntime({
-            ...options,
-            operator: sessionOperator({ key: sessionKey, policies }),
-          });
-          const bound = await runtime.bindAccount({ address });
-          const nonce = await kernelV33PermissionInstallNonce({
-            runtime,
-            account: bound,
-            reads: chain.reads,
-          });
-          if (scope && scope.nonce !== nonce)
-            return clientFail(
-              "oaath_client_state_conflict",
-              "configured chains have different Kernel validation nonces",
-            );
-          if (runtime.validation.kind !== "permission")
-            return fail("local runtime is not a permission");
-          scope = {
-            chainScope: "all",
-            account: address,
-            nonce,
-            permissionId: runtime.validation.permissionId as `0x${string}`,
-            packages: runtime.packages,
-          };
-          approvalRuntime = runtime;
-        }
-        if (!scope || !approvalRuntime) return fail("no local approval chain exists");
-        const typedData = kernelV33PermissionEnableTypedData(scope);
-        const digest = hashTypedData(typedData);
-        // Copy the display value so a caller cannot mutate the wallet's signed
-        // message. The exact policy and typed-data digest remain independently bound.
-        await onApproval?.(
-          structuredClone({
-            account: address,
-            chainScope: "all",
-            policy: request.policy,
-            typedData,
-          }),
-        );
-        const approvalKey = ecdsaKey({
-          validator: deployment.ecdsaValidator,
-          account: {
-            address: ownerKey.publicMaterial,
-            async sign({ hash }) {
-              if (hash !== digest)
-                return clientFail("oaath_client_internal", "local approval digest changed");
-              return signTypedData({ ...typedData, account: ownerKey.publicMaterial });
-            },
-          },
-        });
-        const bound = await approvalRuntime.bindAccount({ address });
-        const installApproval = await approveKernelV33Permission({
-          owner: approvalKey,
-          runtime: approvalRuntime,
-          account: bound,
-          nonce: scope.nonce,
-        });
-        return {
-          version: OAATH_PERMISSION_DECISION_VERSION,
-          kind: "approve",
-          requestId: request.requestId,
-          requestHash: hashPermissionRequest(request),
-          decidedAt: now(),
-          approvedPolicy: request.policy,
-          capabilityHash: kernelGrantCapabilityHash(installApproval),
-          installApproval,
-        };
-      }
+      const binding = {
+        ...bindingInput,
+        deviceId: session.deviceId,
+        operatorCredential: {
+          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa",
+          address: sessionAccount.address.toLowerCase(),
+        },
+      };
+      authority = createLocalPermissionAuthority({
+        binding: captureOaathBinding(binding),
+        owner: ownerKey,
+        session: sessionKey,
+        grants: new GrantStore({ ...owned.grants, close: async () => undefined }),
+        chains,
+        signTypedData: signTypedData.bind(config.owner),
+        localWallet: walletAccount.type === "local",
+        onApproval,
+        now,
+      });
+      // This realm owns raw stores. Child realms close only their own handles.
+      const borrowed = Object.fromEntries(
+        Object.entries(owned).map(([name, port]) => [
+          name,
+          Object.freeze({ ...port, close: async () => undefined }),
+        ]),
+      );
       inner = compose(
         {
-          binding: {
-            issuer: origin,
-            applicationId: identity.application.applicationId,
-            applicationName: identity.application.applicationName,
-            clientId: identity.application.clientId,
-            origin,
-            redirectUri: `${origin}/oaath/local`,
-            deviceId: session.deviceId,
-            userHandle: identity.userHandle,
-            context: identity.context,
-            account,
-            operatorCredential: {
-              version: "oaath.operator-credential-profile/v1",
-              kind: "ecdsa",
-              address: sessionAccount.address.toLowerCase(),
-            },
-          },
-          stores,
+          binding,
+          stores: borrowed,
           chains,
+          invalidation: authority.invalidation,
           signing: { owner: ownerKey, session: sessionKey },
-          localKeyIds: [serviceSessionKeyId(origin, origin, identity)],
+          localKeyIds: [serviceSessionKeyId(continuity.url, continuity.origin, bootstrap)],
           now,
-          invalidation: {
-            async invalidateCapability(value: { grantId: string; capabilityHash: `0x${string}` }) {
-              const saved = await new GrantStore(stores.grants).get(value.grantId);
-              if (
-                saved?.value.state !== "revoking" ||
-                saved.value.approval?.capabilityHash !== value.capabilityHash
-              )
-                return clientFail(
-                  "oaath_client_state_conflict",
-                  "local revocation intent is not durable",
-                );
-              return {
-                evidenceHash: keccak256(
-                  stringToHex(
-                    JSON.stringify(["oaath.local-invalidation/v1", value, saved.storeRevision]),
-                  ),
-                ),
-                invalidatedAt: now(),
-              };
-            },
-          },
         },
-        approve,
+        authority.approve,
       );
       return inner;
-    })().catch(async (error) => {
-      composing = null;
-      await owned?.close().catch(() => undefined);
-      owned = null;
+    })().catch((error) => {
+      composing = undefined;
       return mapClientFailure(error, "local realm could not be opened");
     });
     return composing;
   }
-  function activity<T>(work: () => Promise<T>): Promise<T> {
-    if (closed) return clientFail("oaath_client_closed", "local realm is closed");
-    const task = work().finally(() => active.delete(task));
-    active.add(task);
-    return task;
+  async function close() {
+    if (closed) return;
+    closeRequested = true;
+    authority?.close();
+    closing ??= (async () => {
+      await composing?.catch(() => undefined);
+      authority?.close();
+      const failures: unknown[] = [];
+      for (const child of [ownerClient, inner])
+        if (child) await child.close().catch((error) => failures.push(error));
+      for (const port of Object.values(stores ?? {})) {
+        if (closedStores.has(port)) continue;
+        await Promise.resolve()
+          .then(() => port.close())
+          .then(() => closedStores.add(port))
+          .catch((error) => failures.push(error));
+      }
+      if (failures.length)
+        return clientFail("oaath_client_internal", "local resources could not all be closed");
+      await storeOwner?.close();
+      closed = true;
+    })().finally(() => {
+      closing = undefined;
+    });
+    return closing;
   }
   return Object.freeze({
     get binding() {
-      if (!inner) return fail("the local binding exists after connect()");
+      if (!inner)
+        return clientFail(
+          "oaath_client_input_invalid",
+          "connect before reading the local session binding",
+        );
       return inner.binding;
     },
-    connect: () => activity(async () => (await realm()).connect()),
-    disconnect: (grant: Parameters<Oaath["disconnect"]>[0]) =>
-      activity(async () => {
-        const result = await (await realm()).disconnect(grant);
-        await owned?.close();
-        owned = null;
-        return result;
-      }),
-    async close() {
-      closed = true;
-      closing ??= (async () => {
-        await Promise.allSettled([...active]);
-        let failure: unknown;
-        await inner?.close().catch((error: unknown) => {
-          failure = error;
-        });
-        await owned
-          ?.close()
-          .then(() => {
-            owned = null;
-          })
-          .catch((error: unknown) => {
-            failure ??= error;
-          });
-        if (failure !== undefined) throw failure;
-      })().catch((error) => {
-        closing = null;
-        throw error;
-      });
-      await closing;
+    async connect() {
+      assertOpen();
+      const client = await realm();
+      assertOpen();
+      return client.connect();
     },
-  });
+    account(value: Address) {
+      assertOpen();
+      if (routingAddress(value, "local account", fail) !== address)
+        return clientFail("oaath_client_state_conflict", "local realm belongs to another account");
+      return ownerClient.account(address);
+    },
+    async disconnect(grant) {
+      const client = await realm();
+      let result: Awaited<ReturnType<Oaath["disconnect"]>>;
+      try {
+        result = await client.disconnect(grant);
+      } catch (error) {
+        await close().catch(() => undefined);
+        throw error;
+      }
+      try {
+        await close();
+        return result;
+      } catch {
+        throw new OaathCleanupError(
+          "cleanup_incomplete",
+          "local cleanup left resources open",
+          ["close"],
+          [
+            ...result.failures,
+            Object.freeze({
+              effect: "close" as const,
+              error: new OaathClientError(
+                "oaath_client_internal",
+                "local resources could not all be closed",
+              ),
+            }),
+          ],
+        );
+      }
+    },
+    close,
+  } satisfies OaathLocalClient);
 }

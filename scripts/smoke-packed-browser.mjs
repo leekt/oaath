@@ -47,6 +47,20 @@ import {
   createOAAth,
 } from "@oaath/sdk";
 import {
+  compileKernelPermissionPolicy,
+  createKernelRuntime,
+  credentialKey,
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  kernelV33PermissionEnableTypedData,
+  parseKernelV33PermissionState,
+  parseKernelV33PermissionApproval,
+  OAATH_KERNEL_V33_APPROVAL_VERSION,
+  kernelV33Deployment,
+  sessionOperator,
+  webauthnKey,
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
   p256Key,
   kernelPermissionInstallNonce,
   prepareKernelPhonePermissionApproval,
@@ -86,7 +100,7 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
-import { bytesToHex, hexToBytes, keccak256, stringToBytes } from "viem";
+import { bytesToHex, hashTypedData, hexToBytes, keccak256, stringToBytes } from "viem";
 import { p256 } from "@noble/curves/nist.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { IDBFactory } from "fake-indexeddb";
@@ -106,6 +120,14 @@ const START = 1800000000;
 const EXPIRES_IN = 1800;
 const VALIDATOR = "0x" + "22".repeat(20);
 const TARGET = "0x" + "44".repeat(20);
+const resetting = compileKernelPermissionPolicy([
+  { kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] },
+  { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" },
+]);
+if (resetting.rateLimit?.intervalSeconds !== "86400" || resetting.rateLimit.maximumOperations !== "25" ||
+    resetting.maximumOperations !== null || resetting.packages.at(-1)?.module !== OAATH_KERNEL_RATE_LIMIT_POLICY) {
+  fail("resetting quota did not preserve its independent policy boundary");
+}
 const ACCOUNT = "0x" + "66".repeat(20);
 const unusedInstallNonce = kernelPermissionInstallNonce("0x" + "aa".repeat(32));
 const invalidationCall = encodeKernelV4InstallNonceInvalidationCall({ account: ACCOUNT, installNonce: unusedInstallNonce });
@@ -144,6 +166,47 @@ const ownerCredential = {
   kind: "p256",
   publicKey: bytesToHex(p256.getPublicKey(phoneKey, false)),
 };
+const passkeySession = createKernelRuntime({
+  deployment: kernelV33Deployment(CHAIN_ID),
+  reads: { read: async () => fail("composition must not read the chain") },
+  operator: sessionOperator({
+    key: webauthnKey({
+      credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
+      credentialId: "AAECAwQFBgcICQoLDA0ODw",
+      rpId: "app.example",
+      origin: "https://app.example",
+      authenticate: async () => fail("composition must not request a passkey assertion"),
+    }),
+    policies: [{ kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] }],
+  }),
+});
+if (passkeySession.keyKind !== "webauthn" || passkeySession.authority !== "session" ||
+    passkeySession.packages.at(-1)?.moduleType !== 6) fail("v3.3 passkey composition failed");
+const publicSession = sessionOperator({
+  key: credentialKey({
+    credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
+    validator: null,
+  }),
+  policies: [{ kind: "call", permissions: [{ target: TARGET, selector: "0x00000000", valueLimit: "0" }] }],
+});
+if (JSON.stringify(publicSession.resolvePackages(kernelV33Deployment(CHAIN_ID))) !== JSON.stringify(passkeySession.packages)) {
+  fail("public credential changed the approved passkey permission");
+}
+const v33Scope = { chainScope: "all", account: ACCOUNT, nonce: "1",
+  permissionId: passkeySession.validation.permissionId, packages: passkeySession.packages };
+const v33Approval = parseKernelV33PermissionApproval({ version: OAATH_KERNEL_V33_APPROVAL_VERSION,
+  ...v33Scope, digest: hashTypedData(kernelV33PermissionEnableTypedData(v33Scope)), enableSignature: "0x11" });
+const absent = parseKernelV33PermissionState({ currentNonce: "1", validationNonce: "0",
+  hook: "0x" + "00".repeat(20), signer: "0x" + "00".repeat(20), permissionFlag: "0x0000", policies: [] });
+if (kernelV33PermissionStatus(absent, v33Approval) !== "absent" ||
+    kernelV33EffectivePermissionNonce(absent) !== "1" ||
+    kernelV33PermissionRevocationCalls({ approval: v33Approval, state: absent }).length !== 2) {
+  fail("unused approval was not revoked through its permission nonce");
+}
+const revoked = parseKernelV33PermissionState({ ...absent, validationNonce: "1" });
+if (kernelV33PermissionRevocationCalls({ approval: v33Approval, state: revoked }).length !== 0) {
+  fail("invalidated approval requested another operation");
+}
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   kind: "ecdsa",
@@ -950,6 +1013,9 @@ process.stdout.write(JSON.stringify({ resolutions, exported, surface }));
 
 /** The published types must resolve and compose under `nodenext` strict. */
 const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest, type OwnerSigningArtifact } from "@oaath/protocol";
+import { compileKernelPermissionPolicy, type KernelRateLimitPolicyProfile } from "@oaath/sdk/kernel";
+export const dailyCap: KernelRateLimitPolicyProfile = { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" };
+export const dailyPolicy = compileKernelPermissionPolicy([{ kind: "call", permissions: [{ target: "0x1111111111111111111111111111111111111111", selector: "0x00000000", valueLimit: "0" }] }, dailyCap]);
 import { prepareKernelPhonePermissionApproval, type PrepareKernelPhonePermissionApprovalInput, type KernelPhonePermissionArtifact } from "@oaath/sdk/kernel";
 import { prepareKernelPhoneRevocation, type PrepareKernelPhoneRevocationInput } from "@oaath/sdk/kernel";
 

@@ -51,6 +51,15 @@ export interface OaathOwnerConfiguration {
   readonly operations?: OperationStoreAdapter;
 }
 export interface OaathOwnerCallsReview {
+  /** The full call list was estimated as one operation without signing or reserving its lane. */
+  readonly capacity: Readonly<{
+    kind: "single-operation";
+    gas: Readonly<{
+      callGasLimit: string;
+      verificationGasLimit: string;
+      preVerificationGas: string;
+    }>;
+  }>;
   readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
   readonly chainId: number;
@@ -287,12 +296,56 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             );
           return { chain, calls, runtime, bound, simulation, decision, sponsorship, feePayer };
         }
+        async function estimate(resolved: Awaited<ReturnType<typeof shape>>) {
+          const { chain, calls, runtime, bound, simulation, sponsorship } = resolved;
+          assertOpen();
+          const quote = quoteFields(
+            await chain.quote({
+              purpose: sponsorship === null ? "estimate" : "sponsorship",
+              chainId: chain.chainId,
+              kind: "execution",
+              signer: "owner",
+              account: address,
+              mode: "standard",
+              validation: runtime.validation,
+              calls,
+              paymaster: null,
+              simulation: { prepared: simulation, signature: runtime.dummySignature },
+            }),
+          );
+          const operation = {
+            kind: "execution" as const,
+            grantId: contextId,
+            account: bound,
+            nonceKey: quote.nonceKey,
+            sequence: quote.sequence,
+            calls,
+            gas: quote.gas,
+          };
+          return sponsorship === null
+            ? runtime.prepareOperation(operation)
+            : prepareSponsoredKernelOperation({
+                runtime,
+                operation,
+                simulationSignature: runtime.dummySignature,
+                sponsorship,
+              });
+        }
         return Object.freeze({
           reviewCalls: (value: unknown) =>
             activity(async () => {
               const resolved = await shape(value);
+              const estimated = await estimate(resolved);
               assertOpen();
               return Object.freeze({
+                capacity: Object.freeze({
+                  kind: "single-operation" as const,
+                  gas: Object.freeze({
+                    callGasLimit: estimated.userOperation.callGasLimit,
+                    verificationGasLimit: estimated.userOperation.verificationGasLimit,
+                    preVerificationGas: estimated.userOperation.preVerificationGas,
+                  }),
+                }),
                 chainId: resolved.chain.chainId,
                 fallback: connectedEoaReview(resolved.feePayer),
                 account: address,
@@ -309,44 +362,14 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             }),
           sendCalls: (value: unknown) =>
             activity(async () => {
-              const { chain, calls, runtime, bound, simulation, sponsorship, feePayer } =
-                await shape(value);
+              const resolved = await shape(value);
+              const { chain, runtime, feePayer } = resolved;
               const lane = keyFor(chain.chainId);
               const sender = await runner(
                 chain,
                 async () => {
                   assertOpen();
-                  const quote = quoteFields(
-                    await chain.quote({
-                      purpose: sponsorship === null ? "estimate" : "sponsorship",
-                      chainId: chain.chainId,
-                      kind: "execution",
-                      signer: "owner",
-                      account: address,
-                      mode: "standard",
-                      validation: runtime.validation,
-                      calls,
-                      paymaster: null,
-                      simulation: { prepared: simulation, signature: runtime.dummySignature },
-                    }),
-                  );
-                  const operation = {
-                    kind: "execution" as const,
-                    grantId: contextId,
-                    account: bound,
-                    nonceKey: quote.nonceKey,
-                    sequence: quote.sequence,
-                    calls,
-                    gas: quote.gas,
-                  };
-                  return sponsorship === null
-                    ? runtime.prepareOperation(operation)
-                    : prepareSponsoredKernelOperation({
-                        runtime,
-                        operation,
-                        simulationSignature: runtime.dummySignature,
-                        sponsorship,
-                      });
+                  return estimate(resolved);
                 },
                 async (prepared) => {
                   assertOpen();

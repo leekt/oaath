@@ -1,4 +1,5 @@
-/** Browser persistence shared by the service and local compositions. */
+/** Store ownership shared by service and local realms. */
+import type { OaathStoreConfiguration } from "../create-oaath.js";
 import { createIndexedDbCleanupStore } from "../persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../persistence/indexeddb/context-store.js";
 import { openOaathDatabase } from "../persistence/indexeddb/database.js";
@@ -16,9 +17,8 @@ import {
   createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
 } from "../persistence/memory/stores.js";
-
 export interface OwnedDefaultStores {
-  readonly stores: Readonly<Record<string, unknown>>;
+  readonly stores: Readonly<OaathStoreConfiguration>;
   readonly close: () => Promise<void>;
 }
 

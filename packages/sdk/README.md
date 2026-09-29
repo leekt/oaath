@@ -10,57 +10,48 @@ it when the request settles. `expiresAt` is in Unix milliseconds; the code is
 non-secret display metadata and grants no authority. Local wallet mode does not
 call this callback.
 
-## Local wallet mode
 
-For a browser app using an existing ECDSA-root Kernel `0.3.3` account, local
-mode approves a Grant through the connected wallet without a phone or relay:
+Custom Kernel sessions can set a fixed-window quota with
+`{ kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" }`
+in `sessionOperator({ key, policies })`. Include a `call` profile; expiry and an
+independent lifetime `operation-limit` can be included too. The quota belongs
+to the onchain permission/account pair. Installation starts the first window;
+the first validation after it ends replenishes the count and starts the next
+interval. A validated operation consumes a slot even if execution reverts.
+Reopening a runtime does not reset quota, and missing receipts still cannot
+authorize resubmission.
 
-```ts
-import { createOAAth } from "@oaath/sdk";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+The reset policy is pinned by `OAATH_KERNEL_RATE_LIMIT_POLICY` and
+`OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH` from `@oaath/sdk/kernel`.
+The matching module must already be deployed on the action chain; binding
+fails with `kernel_runtime_policy_unavailable` for missing or different code.
+The repository's `packages/sdk/test/fixtures/kernel-rate-limit-deployment.json`
+contains the deterministic deployment input. Its complete Solidity input is
+reproduced by `bun run --filter @oaath/sdk check:rate-limit-artifact`; bundled source
+licenses are in that fixture directory's `licenses/` folder. This primitive is
+available through the Kernel API; the default permission-request schema still
+exposes its existing lifetime operation bound.
 
-const oaath = createOAAth({
-  mode: "local",
-  owner: walletClient, // connected viem WalletClient over the wallet's EIP-1193 provider
-  account: existingKernelAddress,
-  chains: createViemChainPorts({
-    143: { publicRpcUrls: [publicRpcUrl], bundlerUrl },
-  }),
-  onApproval: async ({ policy }) => { await showPolicy(policy); }, // optional application UI
-});
-const connection = await oaath.connect();
-const grant = (await connection.resume()) ?? await connection.requestPermission({
-  chainScope: "all",
-  permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
-  expiresIn: 3600,
-  perChainOperationLimit: 10,
-});
-const operation = await grant.sendCalls({ chain: 143, calls: [{ target, data, value: "0" }] });
-// Save { chain: operation.chainId, id: operation.id } with the application job.
-await operation.wait();
-await oaath.close();
-```
-
-The explicit account address identifies the existing smart account; a wallet
-address alone cannot identify it. Each configured chain must carry this account,
-the canonical ECDSA root owned by the connected wallet, and the permission
-modules. All configured chains must agree on the effective validation nonce.
-Approval uses one `eth_signTypedData_v4` prompt over Kernel's canonical all-chain
-Enable message. Its bytes bind the session key, calls, native-value limits,
-expiry and per-chain operation limit. Wallets may display those policy bytes as
-hex; `onApproval` receives the decoded policy for the application to display
-before the wallet prompt. Throwing from that callback cancels approval.
-No signing retry occurs after rejection or an invalid signature.
-
-The session key is encrypted under a non-extractable IndexedDB wrapping key.
-Subsequent calls use it without owner prompts. Recreate the same configuration,
-call `connect()` and `resume()`, then `getOperation({ chain, id })` to observe a
-saved operation without another submission or approval. Local state is separated
-by origin, smart account and owner. A failed custody write prevents approval;
-cleared custody requires a new approval and does not revoke an old permission.
-`grant.revoke()` uses owner prompts to remove permissions and consume approvals;
-it completes only after finalized onchain evidence. `disconnect(grant)` also
-forgets local custody. Local mode currently supports existing Kernel v3.3 accounts.
+Existing Kernel `0.3.3` accounts also support custom passkey sessions through
+`createKernelRuntime({ deployment: kernelV33Deployment(chainId), reads,
+operator: sessionOperator({ key: webauthnKey(passkey), policies }) })` from
+`@oaath/sdk/kernel`. The caller supplies the selected credential and authenticator
+callback; `webauthnKey` checks its challenge, credential public key, RP ID, exact
+HTTPS origin, user presence and verification before returning a signature.
+Use the same `approveKernelV33Permission` / `materializeKernelV33Permission`
+flow as ECDSA sessions. Root-owner binding remains ECDSA-only; the permission's
+signer is independent of that root. This custom Kernel API does not replace
+the application's durable operation journal or implement browser credential UI.
+For approval and preparation with only public identity, use
+`credentialKey({ credential, validator: null })` in the session operator. It
+derives the same permission as the matching signing profile and cannot sign.
+For custom revocation, `readKernelV33PermissionState` reads through the caller's
+block-pinned `call` capability and `kernelV33PermissionRevocationCalls` prepares
+the exact owner calls. Send all returned calls atomically. An unused approval
+requires installation and removal to consume its permission nonce; an already
+absent, invalidated approval returns no calls. Verify both permission absence
+and `kernelV33EffectivePermissionNonce(state) > approval.nonce` at a finalized
+canonical block. A successful operation receipt alone does not prove removal.
 
 ## Owner operations
 
@@ -77,7 +68,7 @@ const oaath = createOAAth({ mode: "owner", chains: createViemChainPorts({
 const account = oaath.account(existingKernelAddress);
 const owner = account.owner(walletClient);
 const calls = { chain: 143, calls: [{ target, value: "0", data }] };
-const review = await owner.reviewCalls(calls); // owner signer and route; no prompt or quote
+const review = await owner.reviewCalls(calls); // estimates capacity; no prompt or submission
 const operation = await owner.sendCalls(calls); // one personal_sign prompt, one UserOperation
 await operation.wait();
 // Retain operation.id; after recreating the client, recovery requires no wallet:
@@ -92,7 +83,55 @@ conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
 EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
-bundler route by default.
+bundler route by default. Applications can explicitly estimate a session before
+selecting owner execution, as described below; OAAth never silently changes the
+signer of an operation.
+
+## Local wallet mode
+
+For scoped sessions without an issuer service or phone, use local mode with the
+same existing account and either a browser or local viem wallet:
+
+```ts
+const oaath = createOAAth({
+  mode: "local",
+  account: existingKernelAddress,
+  owner: walletClient,
+  chains: createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } }),
+  onApproval: async (review) => { await showPermissionPolicy(review.policy); },
+});
+const connection = await oaath.connect();
+const grant = await connection.resume() ?? await connection.requestPermission({
+  chainScope: "all",
+  permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
+  expiresIn: 3600,
+  perChainOperationLimit: 10,
+});
+const operation = await grant.sendCalls({ chain: 143, calls: [{ target, data, value: "0" }] });
+await operation.wait();
+await oaath.close();
+```
+
+The session key is encrypted in IndexedDB before consent. One wallet EIP-712
+approval covers the exact permission on all configured chains. The optional
+`onApproval` callback displays the decoded policy before the wallet prompt and
+may throw to cancel. The SDK verifies
+their root owner and matching permission nonce before prompting. The first send
+enables the permission and executes its calls together. Reopening the same
+origin/account/owner restores the session and operation journal; covered calls
+then need no owner prompt. `resume()` can also return a revoked, expired, or
+revoking Grant for observation or cleanup; only an active covering Grant may send.
+Another permission request requires explicit wallet consent. No issuer network
+request is made. Chain RPC and bundler calls still use the configured ports.
+
+Outside a browser, supply an explicit `origin` and durable `stores` through
+`OaathLocalConfiguration`. Local mode fails if default IndexedDB is unavailable;
+it does not silently create an ephemeral session. The same client also exposes
+`oaath.account(existingKernelAddress).owner(walletClient)` and account-level
+operation recovery. `close()` releases resources without revocation;
+`disconnect(grant)` revokes installed or unused approval onchain, signs out
+locally, and deletes local key custody only after revocation completes. Failed
+cleanup remains retryable. Missing receipts never authorize another submission.
 
 ## Choosing a Grant signer
 
@@ -294,6 +333,20 @@ Failures use `OaathClientError` codes. An unreadable bundler is reported in
 is a snapshot, not a reservation or authorization: sending rechecks current
 state, and applications should review again after relevant facts change.
 
+`grant.reviewCalls({ chain, calls, estimate: true })` also estimates the exact
+session operation and returns `validation: "estimated" | "account-rejected"`.
+The default is `"not-estimated"`. Estimation writes no operation or permission
+installation state and performs no signing or submission. `"account-rejected"`
+requires a canonical EntryPoint account-validation rejection from the estimation
+RPC; arbitrary error text, signature rejection, malformed responses and timeouts
+cannot produce it. Other failures throw a structured client error. This option
+currently requires the session signer, an unsponsored bundler route and no
+installation in progress. If `signer: "auto"` selects the owner, `estimate: true`
+returns `session_estimation_unavailable` without estimating or changing signers.
+An application may offer owner execution after `"account-rejected"`, but must
+review that signer choice before sending. This result never permits resending an
+operation that was already submitted or whose acceptance is uncertain.
+
 After reconnecting and resuming the grant, `grant.getOperation({ chain, id })`
 recovers that exact execution from local history, including terminal records
 after a later operation replaces the lane. Lookup and observation do not quote,
@@ -324,9 +377,56 @@ transaction from the public RPC and locates the exact EntryPoint event. Recovery
 needs neither a wallet nor a bundler index. The observer still verifies the
 receipt, transaction, canonical blocks, and finality; a missing event or a failed
 outer transaction leaves the operation unresolved and never authorizes a send.
+Finality uses the configured RPC's `finalized` tag and canonical blocks by
+number. After verifying inclusion, the observer requires the finalized height
+to cover it, rereads the canonical inclusion hash, and rebinds the finalized
+anchor by number. This takes a fixed number of reads regardless of receipt age;
+it does not walk every intervening parent. These are RPC-attested chain facts,
+not local consensus verification. A missing finalized tag, changed hash, wrong
+chain or head behind inclusion remains unresolved. Custom capabilities must
+provide canonical-by-number evidence, never a block merely located by hash.
+See the [Ethereum RPC block semantics](https://ethereum.github.io/execution-apis/api/methods/eth_getBlockByNumber/).
 Custom observation adapters receive an optional
 `transaction: { hash, entryPoint }` hint on `user_operation_receipt`. Receipt and
 execution projection also pass the verified inclusion transaction as a hint.
+
+Applications with their own operation journal can verify a saved public
+UserOperation reference without constructing an OAAth Grant or Operation:
+
+```ts
+import { createUserOperationObserver } from "@oaath/sdk/advanced";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const [port] = createViemChainPorts({
+  [chainId]: { publicRpcUrls: [rpcUrl], bundlerUrl },
+}, { retry: { attempts: 1 }, timeoutMs: 8_000, maxRequests: 96 });
+const observer = createUserOperationObserver(port.observation);
+try {
+  const result = await observer.observeReference({
+    // Exact fields; lowercase addresses/hash and a canonical decimal nonce.
+    reference: { chainId, entryPoint, account, nonce, userOperationHash },
+    observedAt: Date.now(),
+    timeoutMs: 25_000,
+    // transactionHash: savedDirectTransactionHash, when already known
+  });
+  // result.status: pending | unreadable | finalized
+} finally {
+  await observer.close();
+}
+```
+
+`parseUserOperationReference` from `@oaath/protocol` captures the same immutable
+identity at an application's input boundary. Observation verifies the exact
+EntryPoint event, sender, nonce, hash, containing transaction, canonical block
+and finality through the same pipeline as OAAth operation recovery. An
+`unreadable` result may retain a verified receipt when finality is unproven;
+only `finalized` proves finality. Receipt logs are scoped to that operation and
+include its terminal `UserOperationEvent`. This reader neither derives executed
+calls nor verifies application postconditions. It owns no journal, never checks
+for replacements, and cannot authorize retries or release an application lane.
+Recreate it after reload using the saved reference; `close()` drains active
+bounded observations and closes the supplied capability. A missing or unreadable
+receipt leaves the saved identity unresolved.
 
 Operation records now use `oaath.operation/v3`. Older records are rejected;
 IndexedDB schema 14 recreates older local state without migration. This pre-1.0
@@ -500,3 +600,11 @@ once. A recreated IndexedDB realm resumes the retained prepared operation and
 any ambiguous send without preparing, signing, or submitting another operation;
 older, unreadable, stale, and already-consumed contexts do not authorize a new
 operation.
+
+
+Owner `reviewCalls` estimates the complete call list as one UserOperation and
+returns `capacity: { kind: "single-operation", gas }`. Estimation includes any
+explicitly selected sponsorship. It prompts and submits nothing, does not
+reserve an operation slot, and fails when capacity cannot be established.
+`sendCalls` obtains a fresh quote through the existing operation journal; a
+review estimate is not an inclusion guarantee.

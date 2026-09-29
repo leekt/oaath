@@ -136,6 +136,7 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
     status: "available",
     evidence: "pinned_reviewed_module",
   }),
+  hook_rate_limit: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
 });
 
 /** Every diagnosable capability; EXPECTED_FACTS proves this list covers the union. */
@@ -150,6 +151,7 @@ const capabilities = [
   "hook_call",
   "hook_expiry",
   "hook_operation_limit",
+  "hook_rate_limit",
 ] as const satisfies readonly KernelCapability[];
 
 /** The composition failure each diagnosis reason must produce in the factory. */
@@ -192,6 +194,14 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
       return sessionOperator({
         key: keyProfiles.ecdsa(),
         policies: [scope, { kind: "operation-limit", maximumOperations: "5" }],
+      });
+    case "hook_rate_limit":
+      return sessionOperator({
+        key: keyProfiles.ecdsa(),
+        policies: [
+          scope,
+          { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" },
+        ],
       });
   }
 }

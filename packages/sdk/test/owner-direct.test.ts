@@ -62,6 +62,50 @@ function fixture(pending = false, lostReply = false) {
 }
 
 describe("owner-direct account calls", () => {
+  it("does not report one-operation capacity when estimation fails or creates an operation slot", async () => {
+    const { chain, wallet, base, prompts } = fixture();
+    let estimates = 0;
+    const client = createOAAth({
+      mode: "owner",
+      operations: createMemoryOperationStoreAdapter(),
+      chains: [
+        {
+          ...chain,
+          quote: async (request) => {
+            estimates++;
+            if (estimates === 1) throw new Error("estimation unavailable");
+            return chain.quote(request);
+          },
+        },
+      ],
+    });
+    try {
+      const owner = client.account(ACCOUNT).owner(wallet);
+      await expect(owner.reviewCalls(sendCallsInput())).rejects.toMatchObject({
+        code: "oaath_client_internal",
+      });
+      expect(prompts()).toBe(0);
+      expect(base.sends).toHaveLength(0);
+      const review = await owner.reviewCalls(sendCallsInput());
+      expect(review).toMatchObject({
+        capacity: {
+          kind: "single-operation",
+          gas: {
+            callGasLimit: "100000",
+            verificationGasLimit: "200000",
+            preVerificationGas: "50000",
+          },
+        },
+      });
+      expect(Object.isFrozen(review.capacity.gas)).toBe(true);
+      const operation = await owner.sendCalls(sendCallsInput());
+      expect(prompts()).toBe(1);
+      expect((await operation.wait()).status).toBe("finalized");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("finalizes an explicitly requested paymaster before the owner prompt", async () => {
     const { chain, wallet, base, prompts } = fixture();
     const stages: string[] = [];
@@ -109,8 +153,9 @@ describe("owner-direct account calls", () => {
       expect(await owner.reviewCalls(request)).toMatchObject({
         paymasterService: { url: "https://paymaster.test" },
       });
-      expect(stages).toEqual([]);
+      expect(stages).toEqual(["pm_getPaymasterStubData", "estimate", "pm_getPaymasterData"]);
       expect(prompts()).toBe(0);
+      stages.length = 0;
       const operation = await owner.sendCalls(request);
       expect(stages).toEqual(["pm_getPaymasterStubData", "estimate", "pm_getPaymasterData"]);
       expect(base.sends[0]?.userOperation.paymaster).toMatchObject({
@@ -195,7 +240,7 @@ describe("owner-direct account calls", () => {
         reasons: ["owner_explicit", "bundler_available"],
       });
       expect(prompts()).toBe(0);
-      expect(base.quotes).toBe(0);
+      expect(base.quotes).toBe(1);
       expect(base.sends).toHaveLength(0);
       const operation = await owner.sendCalls(sendCallsInput());
       expect(prompts()).toBe(1);

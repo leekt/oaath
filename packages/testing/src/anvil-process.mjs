@@ -35,6 +35,10 @@ import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json
 };
 import ecdsaValidator from "../../sdk/test/fixtures/kernel-ecdsa-mock.json" with { type: "json" };
 
+import resettingRateLimit from "../../sdk/test/fixtures/kernel-rate-limit-deployment.json" with {
+  type: "json",
+};
+
 const fixture = { ...runtime, ecdsaValidator, validityPolicy: validity.deployment };
 
 /** Kernel v4 pins no ECDSA validator, so the examples deploy one under this salt. */
@@ -170,9 +174,11 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   }
   for (const module of [
     fixture.ecdsaSigner,
+    fixture.webAuthnSigner,
     fixture.callPolicy,
     fixture.validityPolicy,
     fixture.rateLimitPolicy,
+    resettingRateLimit,
     // The pinned P-256 validator's constructor probes the RIP-7212 precompile
     // and reverts without it, so it deploys only on an osaka chain that asked.
     ...(p256 ? [fixture.p256Validator] : []),

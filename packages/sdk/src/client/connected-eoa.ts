@@ -1,6 +1,6 @@
 /** One optional connected-wallet send after a conclusive refusal of the exact signed operation. */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import { toHex, type WalletClient } from "viem";
+import { type Account, toHex, type WalletClient } from "viem";
 import type { OperationSubmissionSession } from "../operation-runner.js";
 import { classifyBundlerAcceptance } from "../routing/bundler.js";
 import { routingAddress } from "../routing/capabilities.js";
@@ -11,7 +11,17 @@ import type { OaathSubmissionRequest } from "./grant-handle.js";
 
 export interface OaathConnectedEoaFeePayer {
   readonly kind: "connected-eoa";
-  readonly wallet: Pick<WalletClient, "account" | "request">;
+  readonly wallet: Pick<WalletClient, "account" | "request"> & {
+    readonly sendTransaction?: (
+      input: Readonly<{
+        account: Account;
+        chain: null;
+        to: `0x${string}`;
+        data: `0x${string}`;
+        value: bigint;
+      }>,
+    ) => Promise<unknown>;
+  };
 }
 export interface OaathConnectedEoaFallbackReview {
   readonly route: "entrypoint-handleops";
@@ -21,6 +31,9 @@ export interface OaathConnectedEoaFallbackReview {
 export interface ConnectedEoa {
   readonly address: `0x${string}`;
   readonly request: WalletClient["request"];
+  readonly localSend:
+    | ((input: { to: `0x${string}`; data: `0x${string}`; value: bigint }) => Promise<unknown>)
+    | null;
 }
 
 /** Captures a borrowed wallet capability without contacting or prompting it. */
@@ -35,7 +48,20 @@ export function captureConnectedEoa(
   const account = captureRecord(wallet.account, "connected fee payer account", context, fail);
   const address = routingAddress(account.address, "connected fee payer address", fail);
   if (typeof wallet.request !== "function") return fail("connected fee payer request is missing");
-  return Object.freeze({ address, request: wallet.request as WalletClient["request"] });
+  const local = account.type === "local";
+  if (local && typeof wallet.sendTransaction !== "function")
+    return fail("local fee payer sendTransaction is missing");
+  const send = wallet.sendTransaction as NonNullable<
+    OaathConnectedEoaFeePayer["wallet"]["sendTransaction"]
+  >;
+  return Object.freeze({
+    address,
+    request: wallet.request as WalletClient["request"],
+    localSend: local
+      ? (call: { to: `0x${string}`; data: `0x${string}`; value: bigint }) =>
+          send({ ...call, account: account as Account, chain: null })
+      : null,
+  });
 }
 
 export function connectedEoaReview(
@@ -83,7 +109,9 @@ export function withConnectedEoaFallback(
     try {
       [chain, accounts] = await Promise.all([
         wallet.request({ method: "eth_chainId" }, { retryCount: 0 }),
-        wallet.request({ method: "eth_accounts" }, { retryCount: 0 }),
+        wallet.localSend === null
+          ? wallet.request({ method: "eth_accounts" }, { retryCount: 0 })
+          : Promise.resolve([wallet.address]),
       ]);
     } catch {
       return clientFail("oaath_client_capability_invalid", "connected fee payer could not be read");
@@ -103,21 +131,24 @@ export function withConnectedEoaFallback(
     }
     let hash: unknown;
     try {
-      hash = await wallet.request(
-        {
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: wallet.address,
-              to: call.entryPoint,
-              data: call.data,
-              value: "0x0",
-              chainId: toHex(call.chainId),
-            },
-          ],
-        },
-        { retryCount: 0 },
-      );
+      hash =
+        wallet.localSend !== null
+          ? await wallet.localSend({ to: call.entryPoint, data: call.data, value: 0n })
+          : await wallet.request(
+              {
+                method: "eth_sendTransaction",
+                params: [
+                  {
+                    from: wallet.address,
+                    to: call.entryPoint,
+                    data: call.data,
+                    value: "0x0",
+                    chainId: toHex(call.chainId),
+                  },
+                ],
+              },
+              { retryCount: 0 },
+            );
     } catch {
       return clientFail(
         "oaath_client_capability_invalid",

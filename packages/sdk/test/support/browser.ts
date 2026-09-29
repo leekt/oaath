@@ -707,11 +707,10 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
               }
             : null;
         }
-        // Finality equals inclusion, so no ancestor walk is needed.
+        // The fixture's finalized head is its canonical inclusion block.
         if (request.type === "finalized_block" || request.type === "canonical_block") {
           return inclusionBlock();
         }
-        if (request.type === "block_by_hash") return inclusionBlock();
         throw new Error(`unsupported observation read ${request.type}`);
       },
       async close() {},

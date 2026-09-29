@@ -105,6 +105,7 @@ describe("package boundary", () => {
       "parseServiceBootstrap",
       "parseSubjectBinding",
       "parseSubjectId",
+      "parseUserOperationReference",
       "parseVerifyGrantRevisionInput",
       "parseWorkspaceAccountContext",
       "readRpcBundlerRejection",

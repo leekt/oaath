@@ -98,8 +98,7 @@ function observation(request: KernelV4RevocationSigningRequest, finalized = fals
           gasUsed: "0x2a",
           logs,
         };
-      if (["canonical_block", "finalized_block", "block_by_hash"].includes(input.type))
-        return block;
+      if (["canonical_block", "finalized_block"].includes(input.type)) return block;
       throw new Error("unexpected observation read");
     }),
   };

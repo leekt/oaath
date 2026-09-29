@@ -54,6 +54,8 @@ export type {
 export { deriveSessionPolicyProfiles } from "./kernel/permission/profiles.js";
 export type {
   ObserveOperationResult,
+  ObserveUserOperationInput,
+  ObserveUserOperationResult,
   OperationObserver,
   OperationObserverBlockEvidence,
   OperationObserverCapabilities,
@@ -63,9 +65,12 @@ export type {
   OperationObserverTransactionEvidence,
   OperationObserverTransactionReceiptEvidence,
   OperationObserverUserOperationReceiptEvidence,
+  UserOperationObserver,
+  VerifiedOperationReceiptEvidence,
 } from "./operation-observer.js";
 export {
   createOperationObserver,
+  createUserOperationObserver,
   OaathOperationObserverError,
 } from "./operation-observer.js";
 export type {

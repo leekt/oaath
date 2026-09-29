@@ -50,6 +50,7 @@ describe("explicit Grant signer auto", () => {
     const review = await grant.reviewCalls(autoCalls());
     expect(review).toMatchObject({
       signer: "owner",
+      validation: "not-estimated",
       enableVerificationGasFloor: null,
       enforcement: { calls: "none", expiry: "client", operationCount: "none" },
       validAfter: null,
@@ -91,6 +92,38 @@ describe("explicit Grant signer auto", () => {
     );
     expect((await defaultGrant.reviewCalls(sendCallsInput())).signer).toBe("session");
     await available.oaath.close();
+  });
+
+  it("keeps session estimation separate from owner selection and sending", async () => {
+    const available = createRealm();
+    const ownerGrant = await (await available.oaath.connect()).requestPermission(permissionInput());
+    await expect(ownerGrant.reviewCalls({ ...autoCalls(), estimate: true })).rejects.toMatchObject({
+      source: "session_estimation_unavailable",
+    });
+    expect(available.chain.quotes).toBe(0);
+    expect(available.chain.signatures).toHaveLength(0);
+    expect(available.chain.sends).toHaveLength(0);
+    await available.oaath.close();
+
+    const signing = signingProfiles();
+    const realm = createRealm({
+      signing: {
+        ...signing,
+        owner: credentialKey({ credential: ownerCredential, validator: VALIDATOR }),
+      },
+    });
+    const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+    expect(await grant.reviewCalls({ ...autoCalls(), estimate: true })).toMatchObject({
+      signer: "session",
+      validation: "estimated",
+    });
+    expect(realm.chain.quotes).toBe(1);
+    await expect(grant.sendCalls({ ...autoCalls(), estimate: true })).rejects.toMatchObject({
+      code: "oaath_client_input_invalid",
+    });
+    expect(realm.chain.signatures).toHaveLength(0);
+    expect(realm.chain.sends).toHaveLength(0);
+    await realm.oaath.close();
   });
 
   it("does not try a session signature after the selected owner rejects signing", async () => {

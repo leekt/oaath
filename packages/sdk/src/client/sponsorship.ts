@@ -9,7 +9,12 @@ export interface OaathPaymasterServiceInput {
 }
 
 /** One exact plain-call request shared by owner and Grant execution/review. */
-export function capturePlainCalls(value: unknown, context: CaptureContext, allowSigner = false) {
+export function capturePlainCalls(
+  value: unknown,
+  context: CaptureContext,
+  allowSigner = false,
+  review = false,
+) {
   const fail = clientFailure("oaath_client_input_invalid");
   const captured = captureRecord(value, "sendCalls input", context, fail);
   const request = exactCapturedRecord(
@@ -20,6 +25,7 @@ export function capturePlainCalls(value: unknown, context: CaptureContext, allow
       ...(allowSigner && Object.hasOwn(captured, "signer") ? ["signer"] : []),
       ...(Object.hasOwn(captured, "paymasterService") ? ["paymasterService"] : []),
       ...(Object.hasOwn(captured, "feePayer") ? ["feePayer"] : []),
+      ...(review && Object.hasOwn(captured, "estimate") ? ["estimate"] : []),
     ],
     "sendCalls input",
     fail,
@@ -28,6 +34,8 @@ export function capturePlainCalls(value: unknown, context: CaptureContext, allow
     return fail("Grant signer must be auto or session");
   const signer = request.signer as "auto" | "session" | undefined;
   const chain = request.chain;
+  if (Object.hasOwn(request, "estimate") && typeof request.estimate !== "boolean")
+    return fail("review estimate must be a boolean");
   if (typeof chain !== "number" || !Number.isSafeInteger(chain) || chain < 1)
     return fail("sendCalls chain is invalid");
   if (Object.hasOwn(request, "feePayer") && Object.hasOwn(request, "paymasterService"))
@@ -35,6 +43,7 @@ export function capturePlainCalls(value: unknown, context: CaptureContext, allow
   return Object.freeze({
     chain,
     calls: request.calls,
+    ...(Object.hasOwn(request, "estimate") ? { estimate: request.estimate as boolean } : {}),
     ...(signer === undefined ? {} : { signer }),
     ...(Object.hasOwn(request, "feePayer") ? { feePayer: request.feePayer } : {}),
     ...(Object.hasOwn(request, "paymasterService")
