@@ -56,6 +56,7 @@ const DIRECTION = {
   "@oaath/server": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/testing": ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
   "@oaath/contracts": [],
+  oaath: ["@oaath/sdk"],
 };
 
 /** Production groups only: a devDependency never reaches a consumer. */
@@ -188,24 +189,27 @@ function checkPublishedEntries(workspace) {
     // A private package is never published, so it has no published surface to
     // resolve from src; the provenance rule applies only to released packages.
     if (manifest.private === true) continue;
-    const published = manifest.publishConfig;
-    if (published === undefined) {
-      fail(`${name}: no publishConfig; published entries would resolve to source`);
-      continue;
-    }
-    if (JSON.stringify(published).includes("./src/")) {
-      fail(`${name}: publishConfig points at src; a consumer would resolve source`);
+    for (const field of ["main", "module", "types"]) {
+      if (manifest[field] !== undefined && !manifest[field].startsWith("./dist/")) {
+        fail(`${name}: ${field} must resolve to dist`);
+      }
     }
     if (!(manifest.files ?? []).includes("dist")) {
       fail(`${name}: files must publish dist`);
     }
-    if (manifest.scripts?.prepack !== "pnpm build") {
+    if (manifest.scripts?.prepack !== "bun run build") {
       fail(`${name}: prepack must build the published dist`);
     }
-    // Every source entry needs a published counterpart, or the subpath 404s.
-    for (const subpath of Object.keys(manifest.exports ?? {})) {
-      if (published.exports?.[subpath] === undefined) {
-        fail(`${name}: exports ${subpath} has no publishConfig counterpart`);
+    // Source is opt-in for this workspace; ordinary consumers use dist.
+    for (const [subpath, entry] of Object.entries(manifest.exports ?? {})) {
+      const { "oaath-source": source, ...published } = entry;
+      if (source === undefined || Object.keys(published).length === 0) {
+        fail(`${name}: exports ${subpath} needs source and published entries`);
+      }
+      for (const target of Object.values(published)) {
+        if (typeof target !== "string" || !target.startsWith("./dist/")) {
+          fail(`${name}: exports ${subpath} must resolve to dist for consumers`);
+        }
       }
     }
   }

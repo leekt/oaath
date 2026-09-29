@@ -4,9 +4,7 @@ import {
 } from "@oaath/sdk/kernel";
 import { createPublicClient, http, keccak256 } from "viem";
 import { describe, expect, it } from "vitest";
-import deployments from "../../sdk/test/fixtures/kernel-v4-v0.7-deployments.json" with {
-  type: "json",
-};
+import deployments from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
 import { createLocalOwnerAnvilFixture } from "../src/anvil-owner.js";
 
 (process.env.OAATH_REQUIRE_ANVIL === "1" ? describe : describe.skip)(

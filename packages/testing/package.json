@@ -18,32 +18,25 @@
   "engines": {
     "node": ">=22.13"
   },
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     "./anvil": {
-      "types": "./src/anvil.ts",
-      "node": "./src/anvil.ts"
+      "oaath-source": {
+        "types": "./src/anvil.ts",
+        "node": "./src/anvil.ts"
+      },
+      "types": "./dist/anvil.d.ts",
+      "node": "./dist/anvil.js"
     },
     ".": {
-      "types": "./src/index.ts",
-      "node": "./src/index.ts"
-    }
-  },
-  "publishConfig": {
-    "main": "./dist/index.js",
-    "module": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      "./anvil": {
-        "types": "./dist/anvil.d.ts",
-        "node": "./dist/anvil.js"
+      "oaath-source": {
+        "types": "./src/index.ts",
+        "node": "./src/index.ts"
       },
-      ".": {
-        "types": "./dist/index.d.ts",
-        "node": "./dist/index.js"
-      }
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js"
     }
   },
   "files": [
@@ -52,9 +45,12 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "prepack": "pnpm build",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/anvil-owner.test.ts test/anvil-session.test.ts test/anvil-recovery.test.ts test/local-mode.anvil.test.ts"
   },
   "dependencies": {
     "@account-abstraction/contracts": "0.7.0",
@@ -66,5 +62,8 @@
   },
   "devDependencies": {
     "@types/node": "22.13.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

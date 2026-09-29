@@ -210,10 +210,13 @@ export async function startAnvil(
   });
 }
 
-async function readFixture(): Promise<DeploymentFixture> {
-  return JSON.parse(
-    await readFile(new URL("../fixtures/kernel-v4-v0.7-deployments.json", import.meta.url), "utf8"),
-  ) as DeploymentFixture;
+export async function readFixture(): Promise<DeploymentFixture> {
+  const read = async (path: string) =>
+    JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
+  const runtime = await read("../../../contracts/artifacts/KernelV4Runtime.json");
+  const validity = await read("../../../contracts/artifacts/OaathKernelV4ValidityPolicy.json");
+  const ecdsaValidator = await read("../fixtures/kernel-ecdsa-mock.json");
+  return { ...runtime, ecdsaValidator, validityPolicy: validity.deployment } as DeploymentFixture;
 }
 
 /**

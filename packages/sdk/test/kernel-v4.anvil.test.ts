@@ -32,26 +32,14 @@ import {
   prepareKernelV4UserOperation,
 } from "../src/kernel.js";
 
+import { readFixture } from "./support/anvil.js";
+
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 const chainId = 421_614;
 const addressResult = [{ type: "address" }] as const;
 const entryPointReads = parseAbi([
   "function getNonce(address sender, uint192 key) view returns (uint256)",
 ]);
-
-interface DeploymentFixture {
-  version: "kernel-v4-v0.7-local-fixture/v1";
-  entryPoint: { deploymentSalt: Hex; packageVersion: "0.7.0"; artifact: string };
-  kernelUups: { transactionHash: Hex; deploymentInput: Hex };
-  kernelImmutableEcdsa: { transactionHash: Hex; deploymentInput: Hex };
-  kernelFactory: { transactionHash: Hex; deploymentInput: Hex };
-  ecdsaValidator: {
-    repository: string;
-    commit: string;
-    source: string;
-    bytecode: Hex;
-  };
-}
 
 let anvil: ChildProcess | undefined;
 let url = "";
@@ -120,14 +108,9 @@ afterAll(() => {
 
 (requireAnvil ? describe : describe.skip)("Kernel v4 / EntryPoint 0.7 local proof", () => {
   it("deploys through the canonical factory and executes the exact prepared operation", async () => {
-    const fixture = JSON.parse(
-      await readFile(
-        new URL("./fixtures/kernel-v4-v0.7-deployments.json", import.meta.url),
-        "utf8",
-      ),
-    ) as DeploymentFixture;
+    const fixture = await readFixture();
     expect(fixture).toMatchObject({
-      version: "kernel-v4-v0.7-local-fixture/v1",
+      version: "oaath.kernel-v4-runtime-artifacts/v1",
       entryPoint: { packageVersion: "0.7.0" },
       ecdsaValidator: {
         repository: "https://github.com/zerodevapp/kernel",

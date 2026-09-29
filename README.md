@@ -2,9 +2,23 @@
 
 OAAth is OAuth for scoped smart-account authority.
 
-The intended product is a personal or team-operated delegation service: a
-phone owns account approval, and applications execute bounded jobs across
-configured chains. Both modes use the same model:
+Existing ECDSA-root Kernel **0.3.3** accounts keep their current address;
+no v4 migration or ownership transfer is required. Choose the workflow that
+matches the application:
+
+| Workflow | Constructor | Approval |
+| --- | --- | --- |
+| [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ mode: "owner", chains })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
+| [Local browser Grant](packages/sdk/README.md#local-wallet-mode) | `createOAAth({ mode: "local", owner, account, chains })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
+| [Phone service](#service-url-mode) | `createOAAth({ url })` | The service selects the account and chains; its owner phone approves the Grant. |
+
+Owner and local modes currently use existing v3.3 ECDSA accounts. The phone
+service uses Kernel v4 with a P-256 owner. All paths retain exact operation
+identity for observation after reload. Before adopting a chain, check its
+[runtime readiness](#kernel-runtime); the six-chain production v4 rollout is
+still deferred.
+
+The personal or team-operated phone service uses this model:
 
 | Entity | Owns |
 | --- | --- |
@@ -36,9 +50,10 @@ connect application
 → revoke authority
 ```
 
-Kernel/ZeroDev is the opinionated first runtime. OAAth never depends on Moesi,
-and it does not own deployment manifests, drift detection, deployment planning,
-or desired-state convergence.
+Kernel/ZeroDev is the opinionated first runtime. OAAth never depends on Moesi.
+The CLI deploys OAAth's pinned runtime contracts. Application deployment
+manifests, drift detection and desired-state convergence remain the consumer's
+responsibility.
 
 ## Packages
 
@@ -48,8 +63,9 @@ or desired-state convergence.
 | `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
 | `@oaath/server` | Deployable relay and PostgreSQL boundary. |
 | `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
+| `oaath` | Node CLI: runtime readiness, deployment planning and deterministic deployment. |
 
-All four use one fixed `0.x.y` release group. The current source is versioned
+All five use one fixed `0.x.y` release group. The current source is versioned
 `0.2.0`, following the initial `0.1.0` proof of concept; no package becomes
 `1.0.0` during this program. Versioned source does not imply npm publication.
 
@@ -58,7 +74,7 @@ SwiftUI approval app. Use its source from the same repository revision used to
 build the fixed npm group: phone and relay wire contracts change together.
 The Swift targets are not npm packages; native distribution packaging remains
 release work. Their host tests run in CI alongside the package gates;
-run the same check on macOS with `pnpm test:phone`.
+run the same check on macOS with `bun run test:phone`.
 
 ## Status
 
@@ -105,10 +121,10 @@ The Draft profiles are not advertised as stable or as generic conformance.
 ERC-7902 `multiDimensionalNonce`, AA gas parameter overrides, and
 `eip7702Auth` are explicitly unsupported and deferred.
 
-## Browser golden path
+## Service URL mode
 
-`createOAAth` is the one supported constructor, and the OAAth service URL is
-the only deployment fact an application supplies. `connect()` bootstraps the
+In service URL mode, the OAAth service URL is the only deployment fact an
+application supplies to `createOAAth`. `connect()` bootstraps the
 authenticated, versioned service context — client identity, selected workspace, the logical
 account and owner credential, and the chains the service executes on — and
 the SDK derives the rest locally: the origin, a registered same-origin
@@ -222,7 +238,9 @@ recovery. See the [SDK example](packages/sdk/README.md), including the lower-lev
 `createKernelRuntime` path. Existing v3.3 accounts also support session Grants through
 `createOAAth({ mode: "local", owner: walletClient, account: address, chains })`,
 with one wallet typed-data approval, browser custody and reload recovery.
-Local mode needs no phone or relay. Grant signer auto selection is still pending.
+Local mode needs no phone or relay. Explicit Grant `signer: "auto"` prefers an
+available owner for the atomic call bundle; execution review identifies that
+choice and its wider authority before signing.
 
 The v4 runtime is open over chains: every address in the
 deployment profile is the same CREATE2 canonical address on every chain, so
@@ -233,6 +251,45 @@ pinned globally, and the implementation is proven by its per-chain pinned
 runtime hash where one has been reviewed (Arbitrum Sepolia, Ethereum Sepolia,
 Robinhood Chain Testnet) or by nonempty code at the canonical CREATE2 address
 elsewhere; a chain missing the deployment fails closed at bind.
+
+Check the runtime before integrating a chain:
+
+```sh
+npx oaath doctor --chain 143
+npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
+npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz --dry-run
+```
+
+The `oaath` CLI joins the fixed package release group. Until it is published,
+run `bun run --filter oaath build` then
+`node packages/cli/dist/cli.mjs doctor --chain 143` from this repository.
+See [CLI usage](packages/cli/README.md) for bounds, exit codes and evidence limits.
+`doctor` checks the ECDSA session module set; the owner validator remains
+application-selected. It sends no transactions and never treats an unreadable
+RPC response as a missing contract.
+`deploy-runtime` checks EntryPoint and the singleton deployer, deploys only the
+missing deterministic core set, and retains an attempt journal before broadcast.
+See the CLI instructions for the funded-wallet environment variable and recovery;
+an uncertain transaction is observed, never automatically resent.
+
+Production readiness snapshot: **2026-09-29 KST / 2026-09-28 16:04 UTC**.
+These are read-only observations at the listed blocks, not deployment writes.
+`verified` means the pinned runtime hash matches; `missing` means empty code.
+
+| Chain / public RPC | Block | Kernel v4 | Factory | ValidityPolicy | CallPolicy | RateLimitPolicy | ECDSASigner |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [Monad 143](https://rpc.monad.xyz) | 108794023 | missing | missing | missing | verified | missing | verified |
+| [World 480](https://worldchain-mainnet.g.alchemy.com/public) | 35637905 | missing | missing | missing | verified | verified | verified |
+| [MegaETH 4326](https://mainnet.megaeth.com/rpc) | 27814440 | missing | missing | missing | verified | verified | verified |
+| [Tempo 4217](https://rpc.mainnet.tempo.xyz) | 41666362 | missing | missing | missing | verified | missing | verified |
+| [Robinhood 4663](https://rpc.mainnet.chain.robinhood.com) | 74926543 | missing | missing | missing | verified | verified | verified |
+| [Arc 5042](https://rpc.mainnet.arc.io) | 23223959 | missing | missing | missing | verified | verified | verified |
+
+All six verified EntryPoint 0.7 and the canonical CREATE2 deployer. All six
+lack the factory's immutable ECDSA implementation as well as the UUPS
+implementation shown above. Optional P-256 validator and WebAuthn signer are
+missing on all six; the P-256 verifier is verified. **None is runtime-ready.**
+Re-run `doctor` for current evidence. Production deployment writes remain deferred.
 
 `@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
@@ -327,7 +384,7 @@ published specifiers only.
 | `examples/all-chain` | one owner approval, chain B introduced afterwards, the same signature materialized on it |
 
 ```sh
-pnpm examples:check # all four; skips all-chain when Anvil is absent
+bun run examples:check # all four; skips all-chain when Anvil is absent
 ```
 
 They are documentation, not release evidence, and are deliberately not a CI gate;
@@ -338,15 +395,21 @@ the packed smokes below own that. Run them locally when a public surface changes
 Requirements:
 
 - Node.js 22.13 or newer
-- pnpm 11.15.1
+- Bun 1.4.2 (pinned in `package.json`)
+
+Bun manages the workspace, lockfile, and script execution. Use `bun run test`
+and `bun run build` to run the existing Vitest/Forge and tsdown scripts. Node
+remains required for tooling and the published Node consumer checks.
+Workspace typechecking, tests, and examples opt into `oaath-source`; ordinary
+package imports resolve the built `dist` exports.
 
 ```sh
-pnpm install
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm lint
-pnpm --filter @oaath/sdk test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
+bun install
+bun run typecheck
+bun run test
+bun run build
+bun run lint
+bun run --filter @oaath/sdk test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
 ```
 
 Automated tests must not contact paid or shared RPC services. Contract and
@@ -360,11 +423,11 @@ These run in CI on every change and prove the published artifacts, not the
 workspace:
 
 ```sh
-pnpm check:public-surface # no node:/pg leakage into a browser graph; one-way deps
-pnpm smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
-pnpm smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
-pnpm smoke:server         # packed server, relay round-trip, ./postgres under node
-pnpm smoke:all-chain      # two local Anvil chains, one replayable owner approval
+bun run check:public-surface # no node:/pg leakage into a browser graph; one-way deps
+bun run smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
+bun run smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
+bun run smoke:server         # packed server, relay round-trip, ./postgres under node
+bun run smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
 The browser, extension, and server smokes build, pack, and `npm install` the
@@ -380,21 +443,23 @@ itself.
 
 ## Release
 
-All four packages are one fixed `0.x.y` group and publish together. Publishing is
+All five packages are one fixed `0.x.y` group and publish together. Publishing is
 a manual, owner-authorized action; no workflow runs it.
 
 ```sh
-pnpm changeset         # describe the change
-pnpm release:status    # what would be released
-pnpm release:version   # apply versions and changelogs
-pnpm release:publish   # owner only: publish the fixed group and tag it
+bun run changeset         # describe the change
+bun run release:status    # what would be released
+bun run release:version   # apply versions and changelogs
+bun run release:check     # pack every public package; no publishing or tags
+bun run release:publish   # owner only: publish the fixed group and tag it
 ```
 
-`release:publish` is plain `changeset publish`, so it publishes only what
-`release:version` already committed and tags each published package. Every
-public package rebuilds its ignored `dist` during `prepack`, so a clean-checkout
-publish cannot omit or reuse its generated exports. Set `NPM_CONFIG_PROVENANCE=true`
-to attach npm provenance when publishing from a trusted CI runner.
+Changesets owns versions, changelogs, and tags; `release:version` also refreshes
+`bun.lock`. `release:publish` uses Bun to pack and publish the fixed group, resolving
+workspace dependencies to concrete versions. Existing published versions are
+tolerated so a partial release can be resumed; tags are created only after all
+packages succeed. Every public package rebuilds its ignored `dist` during
+`prepack`, so a clean-checkout publish cannot omit or reuse generated exports.
 
 ## License
 

@@ -44,27 +44,18 @@ import { relayFailure } from "../relay/errors.js";
 import type { RelayCaller } from "../security/authentication.js";
 import type { RelayStore } from "../store/interface.js";
 import {
+  NATIVE_DISPLAY_DOMAIN,
+  NATIVE_DISPLAY_PAYLOAD_LENGTH,
+  ownerPhoneDisplayPayload,
+} from "./display.js";
+import {
   type OwnerPhonePermissionApprovals,
   prepareOwnerPhonePermissionApproval,
 } from "./permission-approval.js";
 import type { OwnerPhoneRevocationScopeProjection } from "./revocation.js";
 
-/** Bounded base64url match code length. 48 bits is plenty to compare by eye. */
-export const NATIVE_DISPLAY_PAYLOAD_LENGTH = 8;
-
 /** Versioned consent envelope; the Swift decoder pins this exact value. */
 export const OAATH_NATIVE_PROJECTION_VERSION = "oaath.native-projection/v6" as const;
-
-const DISPLAY_DOMAIN = "oaath.native-display/v1:";
-
-/** One match code for inbox, consent, and push, independent of delivery state. */
-export async function ownerPhoneDisplayPayload(
-  ownerSubject: string,
-  operationId: string,
-): Promise<string> {
-  const digest = await sha256Base64Url(`${DISPLAY_DOMAIN}${ownerSubject}:${operationId}`);
-  return digest.slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH);
-}
 
 /**
  * Whether the phone may offer approval for one projected scope. Permission
@@ -234,7 +225,7 @@ export async function projectPermissionConsent(
       clientId: request.application.clientId,
       origin: request.application.origin,
       deviceFingerprint: (
-        await sha256Base64Url(`${DISPLAY_DOMAIN}device:${request.application.deviceId}`)
+        await sha256Base64Url(`${NATIVE_DISPLAY_DOMAIN}device:${request.application.deviceId}`)
       ).slice(0, NATIVE_DISPLAY_PAYLOAD_LENGTH),
     }),
     account: Object.freeze({

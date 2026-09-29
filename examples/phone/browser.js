@@ -448,12 +448,23 @@ const actions = {
         "Open Requests in the iOS app, review the request, and tap Approve.",
       );
       say("Review the request in the phone's Requests tab and approve it.");
-      grant = await connection.requestPermission({
-        chainScope: "all",
-        permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "5" }] }],
-        expiresIn: 1800,
-        perChainOperationLimit: 3,
-      });
+      const matchPanel = $("permission-match");
+      const matchCodeText = $("permission-match-code");
+      try {
+        grant = await connection.requestPermission({
+          chainScope: "all",
+          permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "5" }] }],
+          expiresIn: 1800,
+          perChainOperationLimit: 3,
+          onPending: ({ matchCode }) => {
+            matchCodeText.textContent = `${matchCode.slice(0, 4)} ${matchCode.slice(4)}`;
+            matchPanel.hidden = false;
+          },
+        });
+      } finally {
+        matchPanel.hidden = true;
+        matchCodeText.textContent = "";
+      }
       say("Permission active: up to three jobs per configured chain for 30 minutes.");
     },
   ],

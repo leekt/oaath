@@ -6,11 +6,11 @@ import {
   parseKernelV4RevocationSigningRequest,
 } from "@oaath/protocol";
 import { relayFailure } from "../relay/errors.js";
+import { ownerPhoneDisplayPayload } from "./display.js";
 import {
   OAATH_NATIVE_PROJECTION_VERSION,
   type OwnerPhonePermissionScopeProjection,
   type OwnerPhoneRequestProjection,
-  ownerPhoneDisplayPayload,
   projectPermissionConsent,
 } from "./projection.js";
 

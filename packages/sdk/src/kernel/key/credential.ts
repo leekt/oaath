@@ -45,6 +45,13 @@ const DUMMY: Readonly<Record<OwnerCredentialProfile["kind"], `0x${string}`>> = O
   webauthn: webauthnDummySignature("https://example.invalid"),
 });
 
+const publicOnlySigners = new WeakSet<KeyProfile["sign"]>();
+
+/** Internal availability fact; a public credential never offers a signing capability. */
+export function credentialKeyIsReadOnly(key: Readonly<KeyProfile>): boolean {
+  return publicOnlySigners.has(key.sign);
+}
+
 export interface CredentialKeyInput {
   /** Exact public protocol credential; owner/session behavior belongs to the operator. */
   readonly credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>;
@@ -96,7 +103,7 @@ export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
   const validator =
     record.validator === null ? null : inputAddress(record.validator, "credential owner validator");
 
-  return Object.freeze({
+  const profile: Readonly<KeyProfile> = Object.freeze({
     kind: credential.kind,
     publicMaterial: publicMaterial(credential),
     resolveValidator: (deployment: Readonly<KernelDeployment>) => {
@@ -118,4 +125,6 @@ export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
       return false;
     },
   });
+  publicOnlySigners.add(profile.sign);
+  return profile;
 }

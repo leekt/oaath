@@ -19,10 +19,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
       # Swift owns the phone dependencies; this job needs no workspace install.
       # Tests compile both native targets and consume the shared relay fixtures.
-      - run: pnpm --config.verify-deps-before-run=false test:phone
+      - run: bun run test:phone
 
   check:
     runs-on: ubuntu-latest
@@ -42,31 +44,34 @@ jobs:
           --health-retries 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: pnpm
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
         with:
           version: v1.7.1
           cache: false
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
       # Covers the root config files as well as every package.
-      - run: pnpm typecheck
-      - run: pnpm -r test
-      - run: pnpm --filter @oaath/server test:postgres
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run --filter @oaath/server test:postgres
         timeout-minutes: 2
         env:
           OAATH_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/postgres
           PGPASSWORD: oaath-ci-only
-      - run: pnpm -r build
-      - run: pnpm -r lint
-      - run: pnpm lint
-      - run: pnpm format:check
-      - run: pnpm --filter @oaath/sdk test:anvil
+      - run: bun run --workspaces --if-present build
+      - run: bun run --workspaces --if-present lint
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run --filter @oaath/sdk check:rate-limit-artifact
+      - run: bun run --filter @oaath/sdk test:anvil
+      - run: bun run --filter @oaath/testing test:anvil
       - name: Phone-owned service workflow
-        run: pnpm --filter @oaath/examples example:phone
+        run: bun run --filter @oaath/examples example:phone
         timeout-minutes: 3
         env:
           OAATH_PHONE_SIMULATE: "1"
@@ -76,14 +81,15 @@ jobs:
       # Packaging gates. Real gates, not advisory: each one fails the job. The
       # smokes pack the workspace and install the tarballs into a clean consumer,
       # so they prove the published artifacts rather than the workspace links.
-      - run: pnpm check:public-surface
-      - run: pnpm smoke:browser
+      - run: bun run check:public-surface
+      - run: bun run release:check
+      - run: bun run smoke:browser
       # The extension smoke is headful so Chrome runs its real MV3 worker and
       # IndexedDB implementation; Puppeteer then force-closes that worker.
-      - run: xvfb-run --auto-servernum pnpm smoke:extension
+      - run: xvfb-run --auto-servernum bun run smoke:extension
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
-      - run: pnpm smoke:server
+      - run: bun run smoke:server
       # Its own step, so a two-chain materialization failure names itself instead
       # of hiding inside the single-chain anvil suites above.
-      - run: pnpm smoke:all-chain
+      - run: bun run smoke:all-chain

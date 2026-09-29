@@ -1,0 +1,43 @@
+{
+  "name": "oaath",
+  "version": "0.2.0",
+  "description": "OAAth runtime deployment and readiness commands.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leekt/oaath.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "oaath": "./dist/cli.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts test/deploy.anvil.test.ts",
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
+  },
+  "dependencies": {
+    "@oaath/sdk": "workspace:*",
+    "viem": "2.55.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "@account-abstraction/contracts": "0.7.0"
+  }
+}

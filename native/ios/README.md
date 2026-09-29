@@ -199,7 +199,7 @@ this list as the record of what was rejected on purpose.
 ## Gates
 
 ```sh
-pnpm test:phone # from the repository root on macOS
+bun run test:phone # from the repository root on macOS
 ```
 
 The `phone` CI job runs this same command on every pull request and main push.

@@ -20,7 +20,7 @@ This profile uses a distinct deterministic module deployment; every bind proves
 its exact runtime hash on the action chain. Missing or different code fails with
 `kernel_runtime_policy_unavailable`. No deployment is implied or performed by
 adding the profile. The source, compiler input, licenses and deployment bytes
-are checked in and reproducible with `pnpm --filter @oaath/sdk check:rate-limit-artifact`.
+are checked in and reproducible with `bun run --filter @oaath/sdk check:rate-limit-artifact`.
 
 This is the public Kernel composition primitive needed for Orchestra's daily
 cap. Default Grant policy and permission-request schemas are unchanged; their

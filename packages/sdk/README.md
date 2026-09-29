@@ -3,6 +3,14 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
+In service URL mode, `requestPermission` accepts an optional
+`onPending({ requestId, matchCode, expiresAt })` callback before waiting for the
+owner. Display the eight-character code for comparison with the phone and clear
+it when the request settles. `expiresAt` is in Unix milliseconds; the code is
+non-secret display metadata and grants no authority. Local wallet mode does not
+call this callback.
+
+
 Custom Kernel sessions can set a fixed-window quota with
 `{ kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" }`
 in `sessionOperator({ key, policies })`. Include a `call` profile; expiry and an
@@ -19,7 +27,7 @@ The matching module must already be deployed on the action chain; binding
 fails with `kernel_runtime_policy_unavailable` for missing or different code.
 The repository's `packages/sdk/test/fixtures/kernel-rate-limit-deployment.json`
 contains the deterministic deployment input. Its complete Solidity input is
-reproduced by `pnpm --filter @oaath/sdk check:rate-limit-artifact`; bundled source
+reproduced by `bun run --filter @oaath/sdk check:rate-limit-artifact`; bundled source
 licenses are in that fixture directory's `licenses/` folder. This primitive is
 available through the Kernel API; the default permission-request schema still
 exposes its existing lifetime operation bound.
@@ -44,6 +52,8 @@ requires installation and removal to consume its permission nonce; an already
 absent, invalidated approval returns no calls. Verify both permission absence
 and `kernelV33EffectivePermissionNonce(state) > approval.nonce` at a finalized
 canonical block. A successful operation receipt alone does not prove removal.
+
+## Owner operations
 
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
@@ -76,6 +86,8 @@ EntryPoint, root validator and current ECDSA owner. Owner mode currently uses th
 bundler route by default. Applications can explicitly estimate a session before
 selecting owner execution, as described below; OAAth never silently changes the
 signer of an operation.
+
+## Local wallet mode
 
 For scoped sessions without an issuer service or phone, use local mode with the
 same existing account and either a browser or local viem wallet:
@@ -120,6 +132,34 @@ operation recovery. `close()` releases resources without revocation;
 `disconnect(grant)` revokes installed or unused approval onchain, signs out
 locally, and deletes local key custody only after revocation completes. Failed
 cleanup remains retryable. Missing receipts never authorize another submission.
+
+## Choosing a Grant signer
+
+Existing Grant users may explicitly prefer the available owner:
+
+```ts
+const request = { chain: 143, calls: [{ target, value: "0", data }], signer: "auto" as const };
+const review = await grant.reviewCalls(request); // chosen signer and structured reason
+const operation = await grant.sendCalls(request);
+```
+
+Default sends (or `signer: "session"`) still use only the approved session.
+`auto` selects owner authority when the realm has a signer; URL mode's public-only
+owner profile selects session. Each accepted plain call bundle encodes one atomic
+UserOperation. The API does not split oversized bundles, and an estimate, wallet
+rejection or uncertain submission never changes the selected signer or retries.
+Root execution does not enable the permission or consume its operation limit.
+Its review reports no onchain Grant call/expiry/count enforcement and null policy
+bounds; the client still requires an active, unexpired Grant. Owner approval of
+the exact calls authorizes that wider root operation. For a one-off change with
+no Grant approval at all, use the standalone owner mode above.
+
+Owner and session sends share the Grant/chain operation lane. `getOperation`
+recovers either signer without another signature or submission. Custom injected
+signing configurations declare an available owner unless they provide a
+public-only `credentialKey`; a failed signer never becomes a session fallback.
+
+## Runtime primitives
 
 The same owner operation is available through the lower-level runtime:
 
@@ -227,6 +267,8 @@ observed again without resubmission. Other permissions remain usable.
 V3.3 external prepared-call signing, request-time validity attenuation, and phone
 approval are not supported yet.
 
+## Chain ports
+
 For Kernel v4 or v3.3 Grant execution, build the `chains` property of a custom
 `createOAAth` configuration from RPC URLs:
 
@@ -298,7 +340,9 @@ installation state and performs no signing or submission. `"account-rejected"`
 requires a canonical EntryPoint account-validation rejection from the estimation
 RPC; arbitrary error text, signature rejection, malformed responses and timeouts
 cannot produce it. Other failures throw a structured client error. This option
-currently requires an unsponsored bundler route and no installation in progress.
+currently requires the session signer, an unsponsored bundler route and no
+installation in progress. If `signer: "auto"` selects the owner, `estimate: true`
+returns `session_estimation_unavailable` without estimating or changing signers.
 An application may offer owner execution after `"account-rejected"`, but must
 review that signer choice before sending. This result never permits resending an
 operation that was already submitted or whose acceptance is uncertain.

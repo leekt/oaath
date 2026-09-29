@@ -18,11 +18,11 @@
  *            -> observation
  * ```
  *
- * `sendCalls` composes only session authority. Owner authority is wider than
- * the session policy the owner approved, so no coverage outcome — uncovered,
- * unreadable, or missing usage evidence — may select it; those fail closed
- * with `oaath_client_scope_denied`. The owner runtime remains only for account
- * identity binding and explicit root lifecycle work.
+ * Default `sendCalls` composes session authority and denies uncovered or
+ * unreadable scope. Explicit `signer: "auto"` prefers an available owner for
+ * the atomic call bundle before execution begins. Root authority has no Grant
+ * policy envelope; its review states that distinction. Failures never select
+ * another signer or authorize another submission.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -56,6 +56,7 @@ import {
 } from "../kernel/capabilities.js";
 import type { KernelV33ReadRequest } from "../kernel/deployment/v33.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
+import { credentialKeyIsReadOnly } from "../kernel/key/credential.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import {
@@ -108,6 +109,7 @@ import {
 } from "../provider/erc7902.js";
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { OaathWalletCallResultCapabilities } from "../provider/result-capabilities.js";
+import { selectAutoSigner } from "../routing/auto.js";
 import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import {
   feePayerDescriptor,
@@ -244,6 +246,8 @@ export interface OaathCallInput {
 }
 
 export interface OaathSendCallsInput {
+  /** Explicitly prefer available owner authority for this one atomic UserOperation. */
+  readonly signer?: "session" | "auto";
   readonly feePayer?: Readonly<OaathConnectedEoaFeePayer>;
   readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
   readonly chain: number;
@@ -449,8 +453,8 @@ export interface OaathGrantHandle {
 }
 
 /** Current execution facts for exact calls, not a durable authorization or reservation. */
-export interface OaathCallsReview {
-  /** Optional estimation is read-only; only decoded account-validation rejection sets account-rejected. */
+interface OaathCallsReviewBase {
+  /** Optional session estimation is read-only; only decoded account-validation rejection sets account-rejected. */
   readonly validation: "not-estimated" | "estimated" | "account-rejected";
   readonly fallback: Readonly<OaathConnectedEoaFallbackReview> | null;
   readonly paymasterService: Readonly<{ url: string }> | null;
@@ -461,21 +465,29 @@ export interface OaathCallsReview {
   readonly accountId: string;
   readonly account: `0x${string}`;
   readonly calls: readonly Readonly<OaathCallInput>[];
-  readonly signer: "session";
   readonly route: "bundler" | "entrypoint-handleops";
   /** Structured route facts, including an unreadable bundler that forbids fallback. */
   readonly reasons: OaathExecutionDecision["reasons"];
-  readonly enforcement: Readonly<{
-    readonly calls: "onchain";
-    readonly expiry: "onchain";
-    readonly operationCount: "onchain";
-  }>;
-  /** Grant lifetime; policy validity is reported separately below. */
+  /** The Grant lifetime is always checked by this client. */
   readonly expiresAt: number;
-  readonly validAfter: number;
-  readonly validUntil: number;
-  readonly perChainOperationLimit: number;
 }
+export type OaathCallsReview = OaathCallsReviewBase &
+  (
+    | Readonly<{
+        signer: "session";
+        enforcement: Readonly<{ calls: "onchain"; expiry: "onchain"; operationCount: "onchain" }>;
+        validAfter: number;
+        validUntil: number;
+        perChainOperationLimit: number;
+      }>
+    | Readonly<{
+        signer: "owner";
+        enforcement: Readonly<{ calls: "none"; expiry: "client"; operationCount: "none" }>;
+        validAfter: null;
+        validUntil: null;
+        perChainOperationLimit: null;
+      }>
+  );
 
 /** Internal provider capability. It is deliberately absent from the package root. */
 export interface OaathGrantProviderPort {
@@ -2905,10 +2917,134 @@ export function createGrantHandle(
     });
   }
 
+  function autoSelection(requested: "auto" | "session" | undefined) {
+    // Every accepted plain call bundle is encoded atomically into one UserOp.
+    // Unsupported sizes/encodings fail before effects; this API never splits a bundle.
+    return requested === "auto"
+      ? selectAutoSigner(!credentialKeyIsReadOnly(input.ownerKey), true)
+      : null;
+  }
+
+  async function resolveAutoOwnerRead(chainId: number, calls: readonly Readonly<KernelV4Call>[]) {
+    requireExecutionPublication();
+    const grantSnapshot = await requireActive();
+    const chain = chainCapability(chainId);
+    requireKernelCapability(chainId, kernelKeyCapability("owner", input.ownerKey.kind));
+    const runtime = ownerRuntime(chainId);
+    const descriptor = await accountDescriptor(chainId, runtime);
+    const shape = {
+      chainId,
+      kind: "execution" as const,
+      signer: "owner" as const,
+      grantId: grantSnapshot.value.identity.grantId,
+      runtime,
+      descriptor,
+      calls,
+      materializer: null,
+      mode: "standard" as const,
+    };
+    // Runtime-owned preparation proves the whole call bundle fits its atomic encoding.
+    // This zero-gas simulation is neither quoted, persisted nor signed.
+    quoteRequest(shape, null, "estimate");
+    const bundler = await classifiedBundler(chainId, chain, runtime.deployment.entryPoint.address);
+    const routed = decideExecution({
+      operationKind: "execution",
+      signer: "owner",
+      sessionCoverage: "unreadable",
+      bundler,
+      feePayer: chain.feePayer,
+    });
+    if (routed.route === "none")
+      return clientFail(
+        "oaath_client_route_unavailable",
+        "no safe submission route is available",
+        routed.reasons.join(","),
+      );
+    const decision = Object.freeze({
+      ...routed,
+      reasons: Object.freeze([
+        "owner_auto_single_operation" as const,
+        ...routed.reasons.filter((reason) => reason !== "owner_explicit"),
+      ]),
+    });
+    requireExecutionPublication();
+    return { ...shape, grantSnapshot, chain, decision };
+  }
+
+  function requirePlainRoute(
+    route: OaathExecutionRoute,
+    sponsored: boolean,
+    connectedFeePayer: Readonly<ConnectedEoa> | null,
+  ) {
+    if (route !== "bundler" && (sponsored || connectedFeePayer !== null))
+      return clientFail(
+        "oaath_client_capability_unsupported",
+        "plain sponsorship and connected fee payer require the initial bundler route",
+      );
+  }
+
+  async function executeAutoOwnerCalls(
+    chainId: number,
+    calls: readonly Readonly<KernelV4Call>[],
+    sponsorship: ReturnType<typeof capturePaymasterService> | null,
+    connectedFeePayer: Readonly<ConnectedEoa> | null,
+  ): Promise<Readonly<OaathOperationHandle>> {
+    const resolved = await resolveAutoOwnerRead(chainId, calls);
+    requirePlainRoute(resolved.decision.route, sponsorship !== null, connectedFeePayer);
+    const key = Object.freeze({ grantId: resolved.grantId, chainId, kind: "execution" as const });
+    const sender = runner({
+      ...resolved,
+      requestHash: null,
+      connectedFeePayer,
+      terminalBehavior: "replace",
+      ...(sponsorship === null
+        ? {}
+        : {
+            sponsorship,
+            sponsorshipResultCapabilities: () =>
+              readCompletedErc7677ResultCapabilities(sponsorship),
+          }),
+      async authorizeOperation(operation) {
+        requireExecutionPublication();
+        const identity = operation.identity;
+        if (
+          identity.kind !== "execution" ||
+          identity.grantId !== resolved.grantId ||
+          identity.chainId !== chainId ||
+          identity.account !== resolved.descriptor.account
+        )
+          return clientFail(
+            "oaath_client_state_conflict",
+            "owner operation does not match its Grant/account",
+          );
+        const snapshot = await requireActive();
+        // Admit against revocation with the same durable CAS used for session sends.
+        // Root execution does not install or advance a session materialization.
+        await commit(snapshot, snapshot.value);
+      },
+    });
+    let result: OperationStartResult;
+    try {
+      result = await startOnce(sender, "execution", key);
+    } finally {
+      await sender.close().catch(() => undefined);
+    }
+    operationOutcome(result);
+    return trackedOperationHandle({
+      runner: observationOnlyRunner(chainId),
+      key,
+      kind: "execution",
+      timeoutMs: SUBMISSION_TIMEOUT_MS,
+      now: input.now,
+      initial: result,
+      observation: resolved.chain.observation.read,
+    });
+  }
+
   function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
     return withExecution(() => {
       const context: CaptureContext = new WeakSet();
-      const request = capturePlainCalls(value, context);
+      const request = capturePlainCalls(value, context, true);
       const connectedFeePayer = Object.hasOwn(request, "feePayer")
         ? captureConnectedEoa(request.feePayer, context)
         : null;
@@ -2919,6 +3055,13 @@ export function createGrantHandle(
             context,
           )
         : null;
+      if (autoSelection(request.signer)?.signer === "owner")
+        return executeAutoOwnerCalls(
+          request.chain,
+          captureCalls(request.calls, context),
+          sponsorship,
+          connectedFeePayer,
+        );
       return executeCalls(
         { chain: request.chain, calls: request.calls },
         null,
@@ -2940,7 +3083,7 @@ export function createGrantHandle(
   function reviewCalls(value: unknown): Promise<Readonly<OaathCallsReview>> {
     return withActivity(async () => {
       const context: CaptureContext = new WeakSet();
-      const request = capturePlainCalls(value, context, true);
+      const request = capturePlainCalls(value, context, true, true);
       const connectedFeePayer = Object.hasOwn(request, "feePayer")
         ? captureConnectedEoa(request.feePayer, context)
         : null;
@@ -2957,6 +3100,46 @@ export function createGrantHandle(
           )
         : null;
       requireExecutionPublication();
+      const selection = autoSelection(request.signer);
+      if (selection?.signer === "owner") {
+        if (request.estimate === true) return unsupported("session_estimation_unavailable");
+        const resolved = await resolveAutoOwnerRead(chainId, calls);
+        requirePlainRoute(resolved.decision.route, selectedPaymaster !== null, connectedFeePayer);
+        const current = await requireActive();
+        if (current.storeRevision !== resolved.grantSnapshot.storeRevision)
+          return clientFail(
+            "oaath_client_state_conflict",
+            "the Grant changed during execution review",
+            "grant_store_conflict",
+          );
+        requireExecutionPublication();
+        return Object.freeze({
+          validation: "not-estimated" as const,
+          grantId: resolved.grantId,
+          chainId,
+          accountId: input.binding.context.accountId,
+          account: resolved.descriptor.account,
+          calls,
+          signer: "owner" as const,
+          route: resolved.decision.route as "bundler" | "entrypoint-handleops",
+          reasons: resolved.decision.reasons,
+          fallback: connectedEoaReview(connectedFeePayer),
+          paymasterService:
+            selectedPaymaster === null
+              ? null
+              : Object.freeze({ url: chainCapability(chainId).paymasterService!.url }),
+          enableVerificationGasFloor: null,
+          enforcement: Object.freeze({
+            calls: "none" as const,
+            expiry: "client" as const,
+            operationCount: "none" as const,
+          }),
+          expiresAt: current.value.expiresAt,
+          validAfter: null,
+          validUntil: null,
+          perChainOperationLimit: null,
+        });
+      }
       const resolved = await resolveExecutionRead(chainId, calls);
       requireExecutionPublication();
       const current = await requireActive();
@@ -3058,7 +3241,10 @@ export function createGrantHandle(
         calls,
         signer,
         route,
-        reasons: resolved.decision.reasons,
+        reasons:
+          selection === null
+            ? resolved.decision.reasons
+            : Object.freeze([selection.reason, ...resolved.decision.reasons]),
         enableVerificationGasFloor:
           materialization?.state !== "installed" &&
           resolved.runtime.gasPolicy.enableVerificationGasFloor > 0n
