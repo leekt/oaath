@@ -25,8 +25,8 @@ import {
 import {
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4PermissionUninstallCalls,
+  type KernelUserOperationGas,
   type KernelV4AccountReadCapability,
-  type KernelV4UserOperationGas,
   kernelV4Deployment,
   kernelV4ReplayableInstallTypedData,
 } from "../../kernel-v4.js";
@@ -56,7 +56,7 @@ export interface PrepareKernelPhoneRevocationInput {
   readonly effect: KernelV4RevocationEffect;
   readonly nonceKey: string;
   readonly sequence: string;
-  readonly gas: Readonly<KernelV4UserOperationGas>;
+  readonly gas: Readonly<KernelUserOperationGas>;
 }
 
 export interface PreparedKernelPhoneRevocation {
@@ -154,7 +154,7 @@ export async function prepareKernelPhoneRevocation(
     nonceKey: input.nonceKey as string,
     sequence: input.sequence as string,
     calls,
-    gas: input.gas as KernelV4UserOperationGas,
+    gas: input.gas as KernelUserOperationGas,
   });
   const packed = toPackedUserOperation(asViemUserOperation(prepared.userOperation));
   const signingRequest = parseKernelV4RevocationSigningRequest({

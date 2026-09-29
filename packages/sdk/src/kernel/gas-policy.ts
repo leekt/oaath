@@ -1,4 +1,4 @@
-import { isKernelV4EnableNonce, type KernelV4UserOperationGas } from "../kernel-v4.js";
+import { isKernelV4EnableNonce, type KernelUserOperationGas } from "../kernel-v4.js";
 import { exactInput, inputInvalid, inputUint } from "./internal.js";
 import type { KernelRuntimeValidationMode } from "./types.js";
 
@@ -38,10 +38,10 @@ export function enableVerificationFloorForNonce(
 }
 
 export function applyKernelGasPolicy(
-  value: KernelV4UserOperationGas,
+  value: KernelUserOperationGas,
   mode: KernelRuntimeValidationMode | "enable",
   policy: Readonly<KernelGasPolicy>,
-): Readonly<KernelV4UserOperationGas> {
+): Readonly<KernelUserOperationGas> {
   if (
     (mode !== "enable-replayable" && mode !== "enable") ||
     policy.enableVerificationGasFloor === 0n

@@ -10,7 +10,7 @@ import {
   parseAbi,
   zeroAddress,
 } from "viem";
-import type { KernelV4Call } from "../../kernel-v4.js";
+import type { KernelCall } from "../../kernel-v4.js";
 import { exactInput, inputAddress, inputInvalid, inputUint, isBytes } from "../internal.js";
 import {
   type KernelV33PermissionApproval,
@@ -197,7 +197,7 @@ export function kernelV33PermissionRevocationCalls(
     approval: Readonly<KernelV33PermissionApproval>;
     state: Readonly<KernelV33PermissionState>;
   }>,
-): readonly Readonly<KernelV4Call>[] {
+): readonly Readonly<KernelCall>[] {
   const record = exactInput(value, ["approval", "state"], "Kernel v3.3 revocation", new WeakSet());
   const approval = parseKernelV33PermissionApproval(record.approval);
   const state = parseKernelV33PermissionState(record.state);
@@ -207,7 +207,7 @@ export function kernelV33PermissionRevocationCalls(
     return inputInvalid("Kernel v3.3 revocation nonce has not reached the approval");
   if (status === "absent" && nonce > BigInt(approval.nonce)) return Object.freeze([]);
   const vId = validationId(approval.permissionId);
-  const calls: KernelV4Call[] = [];
+  const calls: KernelCall[] = [];
   if (status === "absent") {
     // Consume just this permission's enable nonce. No application call and no
     // global nonce invalidation occur between installation and removal.

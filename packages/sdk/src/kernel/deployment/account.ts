@@ -14,15 +14,15 @@ import {
   bindKernelV4ExistingAccount,
   createKernelV4Reads,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  type KernelInstall,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadRequest,
   type KernelV4Deployment,
   type KernelV4ExistingAccountDescriptor,
-  type KernelV4Install,
   type KernelV4ReadClient,
   type KernelV4UserOperationInput,
-  type KernelV4Validation,
   type KernelV4ValidationMode,
+  type KernelValidation,
   kernelV4Deployment,
   prepareKernelV4UserOperation,
 } from "../../kernel-v4.js";
@@ -137,7 +137,7 @@ export interface BindExistingKernelAccountInput extends BindKernelAccountCommon 
  * index through the deployment's factory. Only Kernel `0.4.0` derives accounts.
  */
 export interface BindDerivedKernelAccountInput extends BindKernelAccountCommon {
-  readonly initialPackages: readonly KernelV4Install[];
+  readonly initialPackages: readonly KernelInstall[];
   readonly accountIndex: string;
 }
 
@@ -226,7 +226,7 @@ export async function bindKernelAccount(
     if (expected && expected.kernelVersion !== "0.4.0") return deploymentMismatch();
     return bindKernelV4Account({
       chainId,
-      initialPackages: record.initialPackages as readonly KernelV4Install[],
+      initialPackages: record.initialPackages as readonly KernelInstall[],
       accountIndex: record.accountIndex as string,
       reads: capability,
     });
@@ -254,7 +254,7 @@ export interface PrepareKernelUserOperationInput
   readonly nonce: Readonly<{
     /** Kernel `0.3.3` accounts support `standard` and `enable` only. */
     mode: KernelV4ValidationMode | "enable";
-    validation: Readonly<KernelV4Validation>;
+    validation: Readonly<KernelValidation>;
     nonceKey: string;
     sequence: string;
   }>;

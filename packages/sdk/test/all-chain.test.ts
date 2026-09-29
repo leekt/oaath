@@ -29,7 +29,7 @@ import {
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  type KernelV4Install,
+  type KernelInstall,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
   OaathKernelV4Error,
@@ -129,7 +129,7 @@ const local = runtimes(chainId);
 const remote = runtimes(otherChainId);
 
 async function approve(
-  packages: readonly KernelV4Install[] = local.session.packages,
+  packages: readonly KernelInstall[] = local.session.packages,
 ): Promise<Readonly<KernelAllChainApproval>> {
   return approveKernelPermissionAllChain({
     owner: ownerKey,

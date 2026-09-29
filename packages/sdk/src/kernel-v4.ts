@@ -12,8 +12,8 @@ import {
   type ExactRecord,
   exactCapturedRecord,
   KERNEL_V4_INSTALL_COMPONENTS,
+  type KernelInstall,
   OaathProtocolError,
-  type KernelV4Install as ProtocolKernelV4Install,
   type KernelV4ModuleType as ProtocolKernelV4ModuleType,
   parseKernelV4InstallPackages,
 } from "@oaath/protocol";
@@ -131,15 +131,15 @@ export interface KernelV4Deployment {
   }> | null;
 }
 
-export type KernelV4Install = ProtocolKernelV4Install;
+export type { KernelInstall };
 
-export interface KernelV4Call {
+export interface KernelCall {
   readonly target: `0x${string}`;
   readonly value: string;
   readonly data: `0x${string}`;
 }
 
-export interface KernelV4UserOperationGas {
+export interface KernelUserOperationGas {
   readonly callGasLimit: string;
   readonly verificationGasLimit: string;
   readonly preVerificationGas: string;
@@ -147,7 +147,7 @@ export interface KernelV4UserOperationGas {
   readonly maxPriorityFeePerGas: string;
 }
 
-export type KernelV4Validation =
+export type KernelValidation =
   | Readonly<{ kind: "root" }>
   | Readonly<{ kind: "validator"; validator: `0x${string}` }>
   | Readonly<{ kind: "permission"; permissionId: `0x${string}` }>;
@@ -162,13 +162,13 @@ export interface KernelV4SignerDataInput extends KernelV4ModuleDataInput {
 }
 
 export interface KernelV4AccountInput {
-  readonly initialPackages: readonly KernelV4Install[];
+  readonly initialPackages: readonly KernelInstall[];
   readonly accountIndex: string;
 }
 
 export interface KernelV4NonceKeyInput {
   readonly mode: KernelV4ValidationMode;
-  readonly validation: KernelV4Validation;
+  readonly validation: KernelValidation;
   readonly nonceKey: string;
 }
 
@@ -191,10 +191,10 @@ export interface KernelV4UserOperationInput {
   readonly grantId: string;
   readonly account: KernelV4AccountDescriptor | KernelV4ExistingAccountDescriptor;
   readonly nonce: KernelV4UserOperationNonceInput;
-  readonly calls: readonly KernelV4Call[];
-  readonly gas: KernelV4UserOperationGas;
+  readonly calls: readonly KernelCall[];
+  readonly gas: KernelUserOperationGas;
   /** Optional request-time attenuation enforced by the installed OAAth validity policy. */
-  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+  readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
   /**
    * Optional EntryPoint 0.7 paymaster sponsorship. Absent or null prepares a
    * self-funded operation. The fields are hashed into the operation identity,
@@ -205,7 +205,7 @@ export interface KernelV4UserOperationInput {
 
 export interface KernelV4EnableSignatureInput {
   readonly nonce: string;
-  readonly packages: readonly KernelV4Install[];
+  readonly packages: readonly KernelInstall[];
   readonly enableSignature: `0x${string}`;
   readonly userOperationSignature: `0x${string}`;
 }
@@ -215,16 +215,16 @@ export interface KernelV4ReplayableInstallDigestInput {
   readonly account: `0x${string}`;
   /** Kernel's own install nonce, `key << 64 | sequence`, as a decimal uint256. */
   readonly nonce: string;
-  readonly packages: readonly KernelV4Install[];
+  readonly packages: readonly KernelInstall[];
 }
 
 export interface KernelV4ExecutionInput {
-  readonly calls: readonly KernelV4Call[];
+  readonly calls: readonly KernelCall[];
   /** Optional exact ERC-7579 mode range; omission preserves the existing zero mode. */
-  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+  readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
 }
 
-export interface KernelV4ValidityTimeRange {
+export interface KernelValidityTimeRange {
   /** Inclusive lower endpoint, as canonical decimal uint48 seconds. */
   readonly validAfter: string;
   /** Inclusive nonzero upper endpoint, strictly greater than validAfter. */
@@ -297,7 +297,7 @@ export interface KernelV4AccountDescriptor {
   readonly factory: typeof KERNEL_V4_FACTORY_V07;
   readonly account: `0x${string}`;
   readonly accountIndex: string;
-  readonly initialPackages: readonly Readonly<KernelV4Install>[];
+  readonly initialPackages: readonly Readonly<KernelInstall>[];
   readonly factoryAddressCalldata: `0x${string}`;
   readonly factoryDeployCalldata: `0x${string}`;
 }
@@ -551,7 +551,7 @@ function captureInstalls(
   value: unknown,
   _context: CaptureContext,
   label: string,
-): readonly Readonly<KernelV4Install>[] {
+): readonly Readonly<KernelInstall>[] {
   try {
     return parseKernelV4InstallPackages(value);
   } catch (error) {
@@ -565,7 +565,7 @@ function captureInstalls(
 function captureInitialPackages(
   value: unknown,
   context: CaptureContext,
-): readonly Readonly<KernelV4Install>[] {
+): readonly Readonly<KernelInstall>[] {
   const packages = captureInstalls(value, context, "Kernel initial packages");
   const root = packages[0];
   if (!root || (root.moduleType !== 1 && root.moduleType !== 5 && root.moduleType !== 6)) {
@@ -588,7 +588,7 @@ function captureSelectors(value: unknown, context: CaptureContext): readonly `0x
   );
 }
 
-function installTuples(installs: readonly Readonly<KernelV4Install>[]): readonly Readonly<{
+function installTuples(installs: readonly Readonly<KernelInstall>[]): readonly Readonly<{
   moduleType: bigint;
   module: `0x${string}`;
   moduleData: `0x${string}`;
@@ -612,7 +612,7 @@ function installTuples(installs: readonly Readonly<KernelV4Install>[]): readonly
  * Not part of the public surface: it exists so a caller-injected package list
  * enters this SDK's owned representation once, wherever the boundary is.
  */
-export function captureKernelV4Installs(value: unknown): readonly Readonly<KernelV4Install>[] {
+export function captureKernelV4Installs(value: unknown): readonly Readonly<KernelInstall>[] {
   return captureInstalls(value, new WeakSet(), "Kernel install packages");
 }
 
@@ -677,7 +677,7 @@ export function encodeKernelV4SignerData(value: KernelV4SignerDataInput): Hex {
   ]);
 }
 
-export function encodeKernelV4Initialize(installs: readonly KernelV4Install[]): Hex {
+export function encodeKernelV4Initialize(installs: readonly KernelInstall[]): Hex {
   const context: CaptureContext = new WeakSet();
   const packages = captureInitialPackages(installs, context);
   return encodeFunctionData({
@@ -687,7 +687,7 @@ export function encodeKernelV4Initialize(installs: readonly KernelV4Install[]): 
   });
 }
 
-export function encodeKernelV4InstallModules(installs: readonly KernelV4Install[]): Hex {
+export function encodeKernelV4InstallModules(installs: readonly KernelInstall[]): Hex {
   const context: CaptureContext = new WeakSet();
   const packages = captureInstalls(installs, context, "Kernel install packages");
   return encodeFunctionData({
@@ -1124,7 +1124,7 @@ export function prepareKernelV4UserOperation(
     Object.hasOwn(record, "validityTimeRange")
       ? {
           calls,
-          validityTimeRange: record.validityTimeRange as Readonly<KernelV4ValidityTimeRange>,
+          validityTimeRange: record.validityTimeRange as Readonly<KernelValidityTimeRange>,
         }
       : { calls },
   );
@@ -1443,7 +1443,7 @@ export function encodeKernelV4EnableSignature(value: KernelV4EnableSignatureInpu
   );
 }
 
-function captureCalls(value: unknown, context: CaptureContext): readonly Readonly<KernelV4Call>[] {
+function captureCalls(value: unknown, context: CaptureContext): readonly Readonly<KernelCall>[] {
   const values = captureDenseArray(value, "Kernel calls", context, fail);
   if (values.length < 1 || values.length > 256) return fail("Kernel call count is invalid");
   return Object.freeze(
@@ -1461,7 +1461,7 @@ function captureCalls(value: unknown, context: CaptureContext): readonly Readonl
 function captureValidityTimeRange(
   value: unknown,
   context: CaptureContext,
-): Readonly<KernelV4ValidityTimeRange> {
+): Readonly<KernelValidityTimeRange> {
   const record = exact(value, ["validAfter", "validUntil"], "Kernel validity time range", context);
   const validAfter = uint(record.validAfter, MAX_UINT48, "Kernel validity range validAfter");
   const validUntil = uint(record.validUntil, MAX_UINT48, "Kernel validity range validUntil");
@@ -1525,13 +1525,13 @@ export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
 }
 
 /** Decodes only the exact execute forms this runtime produces. Internal evidence boundary. */
-export function decodeKernelV4Execution(value: unknown): readonly Readonly<KernelV4Call>[] {
+export function decodeKernelV4Execution(value: unknown): readonly Readonly<KernelCall>[] {
   const data = bytes(value, "Kernel execution calldata");
   const decoded = decodeFunctionData({ abi: KERNEL_ABI, data });
   if (decoded.functionName !== "execute") return fail("unsupported Kernel execution");
   const [mode, executionData] = decoded.args;
   const callType = mode.slice(2, 4);
-  let calls: readonly Readonly<KernelV4Call>[];
+  let calls: readonly Readonly<KernelCall>[];
   if (callType === "00") {
     if (executionData.length < 106) return fail("truncated Kernel execution");
     calls = captureCalls(

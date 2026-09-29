@@ -85,10 +85,10 @@ import {
 } from "../kernel/types.js";
 import {
   encodeKernelV4PermissionUninstallCalls,
+  type KernelCall,
+  type KernelUserOperationGas,
   type KernelV4AccountReadRequest,
-  type KernelV4Call,
-  type KernelV4UserOperationGas,
-  type KernelV4ValidityTimeRange,
+  type KernelValidityTimeRange,
   kernelV4Deployment,
 } from "../kernel-v4.js";
 import {
@@ -347,7 +347,7 @@ export interface OaathExternalPreparedCallPlan {
   readonly resultCapabilities: Readonly<OaathWalletCallResultCapabilities> | null;
   readonly prepared: Readonly<PreparedUserOperation>;
   /** Exact applied request range, or null when preparation retained the Grant ceiling. */
-  readonly validityTimeRange: Readonly<KernelV4ValidityTimeRange> | null;
+  readonly validityTimeRange: Readonly<KernelValidityTimeRange> | null;
   /** Exclusive bound imposed by the Grant owner or the shorter context lifetime. */
   readonly expiresAt: number;
 }
@@ -393,7 +393,7 @@ export interface OaathQuoteRequest {
   /** Selected by the runtime before quoting; neither field is a quote result. */
   readonly mode: KernelRuntimeValidationMode;
   readonly validation: KernelRuntime["validation"];
-  readonly calls: readonly Readonly<KernelV4Call>[];
+  readonly calls: readonly Readonly<KernelCall>[];
   /** Exact static sponsorship selected before quoting, or null. */
   readonly paymaster: Readonly<PreparedPaymaster> | null;
   /**
@@ -580,7 +580,7 @@ export interface OaathGrantProviderPort {
   readonly admitValidityTimeRange: (
     input: Readonly<{
       chain: number;
-      range: Readonly<KernelV4ValidityTimeRange>;
+      range: Readonly<KernelValidityTimeRange>;
     }>,
   ) => Promise<Readonly<OaathProviderValidityAdmissionResult>>;
   readonly startCalls: (
@@ -868,7 +868,7 @@ export async function classifyChainRoutes(
 export function captureCalls(
   value: unknown,
   context: CaptureContext,
-): readonly Readonly<KernelV4Call>[] {
+): readonly Readonly<KernelCall>[] {
   const entries = captureDenseArray(value, "calls", context, (message) =>
     clientFail("oaath_client_input_invalid", message),
   );
@@ -953,7 +953,7 @@ function captureProviderPublication(value: unknown): Readonly<OaathProviderOpera
 
 function captureProviderValidityAdmissionInput(value: unknown): Readonly<{
   chain: number;
-  range: Readonly<KernelV4ValidityTimeRange>;
+  range: Readonly<KernelValidityTimeRange>;
 }> {
   const context: CaptureContext = new WeakSet();
   const record = exactClientRecord(
@@ -1014,7 +1014,7 @@ function coverageToRouting(result: GrantPolicyCoverageResult): OaathSessionCover
 export function quoteFields(value: unknown): Readonly<{
   nonceKey: string;
   sequence: string;
-  gas: Readonly<KernelV4UserOperationGas>;
+  gas: Readonly<KernelUserOperationGas>;
 }> {
   const context: CaptureContext = new WeakSet();
   const record = exactClientRecord(
@@ -1076,7 +1076,7 @@ export function createGrantHandle(
 ): Readonly<OaathGrantHandle> {
   interface ValidityAdmissionEvidence {
     readonly chainId: number;
-    readonly range: Readonly<KernelV4ValidityTimeRange>;
+    readonly range: Readonly<KernelValidityTimeRange>;
     readonly runtime: Readonly<GrantKernelRuntime>;
     readonly descriptor: Readonly<GrantKernelAccount>;
   }
@@ -1341,7 +1341,7 @@ export function createGrantHandle(
   async function sessionCoverage(
     grant: Grant,
     chainId: number,
-    calls: readonly Readonly<KernelV4Call>[],
+    calls: readonly Readonly<KernelCall>[],
     identity: Readonly<{ account: `0x${string}`; permissionId: `0x${string}` }>,
   ): Promise<OaathSessionCoverage> {
     const chain = chainCapability(chainId);
@@ -1389,7 +1389,7 @@ export function createGrantHandle(
     readonly chain: Readonly<OaathChainCapability>;
     readonly runtime: Readonly<GrantKernelRuntime>;
     readonly descriptor: Readonly<GrantKernelAccount>;
-    readonly calls: readonly Readonly<KernelV4Call>[];
+    readonly calls: readonly Readonly<KernelCall>[];
     readonly mode: "standard" | "enable-replayable";
     readonly materializer: GrantKernelExecution | null;
     readonly decision: Readonly<OaathExecutionDecision>;
@@ -1400,13 +1400,13 @@ export function createGrantHandle(
     }>;
     readonly grantId: string;
     readonly grantExpiresAt: number;
-    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+    readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
   }
 
   /** Shared pre-effect checks for public review and operation execution. */
   async function resolveExecutionRead(
     chainId: number,
-    calls: readonly Readonly<KernelV4Call>[],
+    calls: readonly Readonly<KernelCall>[],
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
   ) {
@@ -1454,7 +1454,7 @@ export function createGrantHandle(
 
   async function resolveExecutionShape(
     chainId: number,
-    calls: readonly Readonly<KernelV4Call>[],
+    calls: readonly Readonly<KernelCall>[],
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
     requireInstalled = false,
@@ -1585,13 +1585,13 @@ export function createGrantHandle(
       materializer: GrantKernelExecution | null;
       descriptor: Readonly<GrantKernelAccount>;
       mode: "standard" | "enable-replayable";
-      calls: readonly Readonly<KernelV4Call>[];
-      validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+      calls: readonly Readonly<KernelCall>[];
+      validityTimeRange?: Readonly<KernelValidityTimeRange>;
       lane?: Readonly<OperationLane>;
     }>,
     paymaster: Readonly<PreparedPaymaster> | null,
     purpose: OaathQuoteRequest["purpose"],
-    retainedGas?: Readonly<KernelV4UserOperationGas>,
+    retainedGas?: Readonly<KernelUserOperationGas>,
   ): Readonly<OaathQuoteRequest> {
     const execution = spec.materializer ?? spec.runtime;
     const nonceKey = String(spec.lane?.key ?? 0);
@@ -1648,7 +1648,7 @@ export function createGrantHandle(
   async function prepareExecutionShape(
     shape: Readonly<ExecutionShape>,
     options: Readonly<{
-      gas?: Readonly<KernelV4UserOperationGas>;
+      gas?: Readonly<KernelUserOperationGas>;
       paymaster?: PreparedCallPaymasterSource;
     }> = {},
   ): Promise<
@@ -1727,7 +1727,7 @@ export function createGrantHandle(
     readonly kind: OperationKind;
     readonly runtime: Readonly<GrantKernelRuntime>;
     readonly descriptor: Readonly<GrantKernelAccount>;
-    readonly calls: readonly Readonly<KernelV4Call>[];
+    readonly calls: readonly Readonly<KernelCall>[];
     /** The proven authority; a denied decision never reaches a runner. */
     readonly signer: OaathExecutionSigner;
     /**
@@ -1742,7 +1742,7 @@ export function createGrantHandle(
     readonly terminalBehavior: "replace" | "reuse_same_kind";
     readonly grantId: string;
     readonly requestHash: `0x${string}` | null;
-    readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+    readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
     /** The explicit caller lane; absent for the default lane. */
     readonly lane?: Readonly<OperationLane>;
     readonly publication?: Readonly<OaathProviderOperationPublication>;
@@ -2811,9 +2811,7 @@ export function createGrantHandle(
     return unsupported("prepared_calls_hosted_custody_unsupported");
   }
 
-  function storedGas(
-    prepared: Readonly<PreparedUserOperation>,
-  ): Readonly<KernelV4UserOperationGas> {
+  function storedGas(prepared: Readonly<PreparedUserOperation>): Readonly<KernelUserOperationGas> {
     const operation = prepared.userOperation;
     return Object.freeze({
       callGasLimit: operation.callGasLimit,
@@ -2839,7 +2837,7 @@ export function createGrantHandle(
 
   function samePreparedCalls(
     left: readonly Readonly<OaathCallInput>[],
-    right: readonly Readonly<KernelV4Call>[],
+    right: readonly Readonly<KernelCall>[],
   ): boolean {
     return (
       left.length === right.length &&
@@ -3118,7 +3116,7 @@ export function createGrantHandle(
       : null;
   }
 
-  async function resolveAutoOwnerRead(chainId: number, calls: readonly Readonly<KernelV4Call>[]) {
+  async function resolveAutoOwnerRead(chainId: number, calls: readonly Readonly<KernelCall>[]) {
     requireExecutionPublication();
     const grantSnapshot = await requireActive();
     const chain = chainCapability(chainId);
@@ -3177,7 +3175,7 @@ export function createGrantHandle(
 
   async function executeAutoOwnerCalls(
     chainId: number,
-    calls: readonly Readonly<KernelV4Call>[],
+    calls: readonly Readonly<KernelCall>[],
     sponsorship: ReturnType<typeof capturePaymasterService> | null,
     connectedFeePayer: Readonly<ConnectedEoa> | null,
   ): Promise<Readonly<OaathOperationHandle>> {
@@ -3564,7 +3562,7 @@ export function createGrantHandle(
     return retained;
   }
 
-  function approvedValidityTimeRange(at: number): Readonly<KernelV4ValidityTimeRange> | null {
+  function approvedValidityTimeRange(at: number): Readonly<KernelValidityTimeRange> | null {
     const validAfter = input.approvedPolicy.validAfter;
     const validUntil = input.approvedPolicy.validUntil;
     if (
@@ -3594,7 +3592,7 @@ export function createGrantHandle(
   async function proveValidityTimeRange(
     value: Readonly<{
       chain: number;
-      range: Readonly<KernelV4ValidityTimeRange>;
+      range: Readonly<KernelValidityTimeRange>;
     }>,
   ): Promise<Readonly<ValidityAdmissionEvidence> | null> {
     const requested = captureProviderValidityAdmissionInput(value);
@@ -3653,7 +3651,7 @@ export function createGrantHandle(
   function admitValidityTimeRange(
     value: Readonly<{
       chain: number;
-      range: Readonly<KernelV4ValidityTimeRange>;
+      range: Readonly<KernelValidityTimeRange>;
     }>,
   ): Promise<Readonly<OaathProviderValidityAdmissionResult>> {
     return withActivity(async () => {

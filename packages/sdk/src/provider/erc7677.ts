@@ -17,7 +17,7 @@ import {
   parseIssuerIdentity,
   readValidationGasDiagnostic,
 } from "@oaath/protocol";
-import type { KernelV4UserOperationGas } from "../kernel-v4.js";
+import type { KernelUserOperationGas } from "../kernel-v4.js";
 import {
   type PreparedPaymaster,
   type PreparedUserOperation,
@@ -606,7 +606,7 @@ export function createErc7677SponsorshipCapability(
         assertFinalMatchesStub(stub, finalData);
       }
 
-      const gas: Readonly<KernelV4UserOperationGas> = Object.freeze({
+      const gas: Readonly<KernelUserOperationGas> = Object.freeze({
         callGasLimit: estimate.callGasLimit,
         verificationGasLimit: estimate.verificationGasLimit,
         preVerificationGas: estimate.preVerificationGas,

@@ -14,7 +14,7 @@ import {
   exactCapturedRecord,
 } from "@oaath/protocol";
 import { getAddress } from "viem";
-import type { KernelV4Install } from "../kernel-v4.js";
+import type { KernelInstall } from "../kernel-v4.js";
 import {
   type KernelBuiltInKeyKind,
   type KernelCustomKeyKind,
@@ -118,8 +118,8 @@ export function isHash(value: unknown): value is `0x${string}` {
 
 /** True when two ERC-7579 install packages are the same install in every field. */
 export function sameInstall(
-  left: Readonly<KernelV4Install>,
-  right: Readonly<KernelV4Install>,
+  left: Readonly<KernelInstall>,
+  right: Readonly<KernelInstall>,
 ): boolean {
   return (
     left.moduleType === right.moduleType &&

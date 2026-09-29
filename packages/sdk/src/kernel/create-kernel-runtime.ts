@@ -9,11 +9,11 @@ import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/
 import {
   bindKernelV4Account,
   encodeKernelV4NonceKey,
+  type KernelInstall,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
   type KernelV4Deployment,
-  type KernelV4Install,
-  type KernelV4Validation,
+  type KernelValidation,
   prepareKernelV4UserOperation,
 } from "../kernel-v4.js";
 import {
@@ -179,12 +179,12 @@ export function createKernelRuntime(
     "Kernel runtime read capability",
   );
   const authorityModule = operator.resolveAuthorityModule(deployment);
-  const validation: Readonly<KernelV4Validation> = operator.resolveValidation(deployment);
+  const validation: Readonly<KernelValidation> = operator.resolveValidation(deployment);
   const packages =
     isV33 && operator.authority === "owner"
       ? Object.freeze([])
       : operator.resolvePackages(deployment);
-  const rootPackage: Readonly<KernelV4Install> | undefined = packages[0];
+  const rootPackage: Readonly<KernelInstall> | undefined = packages[0];
   if (!isV33 && !rootPackage) return inputInvalid("Kernel operator resolved no install packages");
   // Kernel's ValidationManager forbids enable mode on root validation — a root
   // authority is the account's own last-resort access path and has nothing to

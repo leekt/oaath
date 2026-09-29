@@ -19,7 +19,7 @@ import {
   captureKernelV4Installs,
   encodeKernelV4SignerData,
   KERNEL_V4_EXECUTE_SELECTOR,
-  type KernelV4Install,
+  type KernelInstall,
 } from "../../kernel-v4.js";
 import type { PreparedUserOperation } from "../../prepared-user-operation.js";
 import {
@@ -58,7 +58,7 @@ export interface KernelV33PermissionScope {
   readonly nonce: string;
   readonly permissionId: `0x${string}`;
   /** Shared module configuration; encoded as v3.3 bytes[] only at the wire boundary. */
-  readonly packages: readonly Readonly<KernelV4Install>[];
+  readonly packages: readonly Readonly<KernelInstall>[];
 }
 
 export interface KernelV33PermissionApproval extends KernelV33PermissionScope {
@@ -285,7 +285,7 @@ export interface KernelV33ExpectedPermission {
    * The exact ordered install list (policies, then the signer), as a session
    * runtime's `packages`. Policy order is significant.
    */
-  readonly packages: readonly Readonly<KernelV4Install>[];
+  readonly packages: readonly Readonly<KernelInstall>[];
 }
 
 export type KernelV33ApprovalMismatchField =
