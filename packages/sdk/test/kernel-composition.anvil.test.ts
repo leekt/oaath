@@ -256,6 +256,22 @@ async function createHarness() {
       });
       expect(deployed).toMatchObject({ state: "deployed", account });
 
+      // Address-bound: the pinned validator's stored public key proves the root
+      // owner onchain, so the same key binds the account by its address alone
+      // and another P-256 key is refused before anything is signed.
+      await expect(ownerRuntime.bindAccount({ address: account })).resolves.toMatchObject({
+        state: "deployed",
+        account,
+        rootValidator: `0x01${p256Validator.expectedAddress.slice(2)}`,
+      });
+      await expect(
+        createKernelRuntime({
+          deployment,
+          operator: ownerOperator({ key: p256Owner(`0x${"33".repeat(32)}`) }),
+          reads,
+        }).bindAccount({ address: account }),
+      ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+
       // A signature from another P-256 key is refused by the installed validator,
       // not by this client: the SDK's own self-verification rejects it locally
       // first, so the on-chain refusal is proven with a signature produced outside

@@ -218,7 +218,11 @@ the account's root ECDSA validator module; it must support EIP-191, as the
 reviewed ECDSA validator does. Passing `deployment` to `bindKernelAccount`, or
 composing the runtime over another deployment, makes a mismatching account fail
 with `kernel_runtime_deployment_mismatch` before anything is signed. Local accounts
-using raw-hash signing can pass `kernelKey({ account, validator })` instead.
+using raw-hash signing can pass `kernelKey({ account, validator })` instead. On
+Kernel 0.4.0, a P-256 `kernelKey({ credential, sign })` also binds an existing
+account whose root validator is the pinned raw P-256 validator, whose stored
+public key is readable onchain. Other root validators, including WebAuthn,
+fail with `kernel_runtime_binding_mismatch`.
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
 schema calls its context label `grantId`; no Grant is created or needed here.
