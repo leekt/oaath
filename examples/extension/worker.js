@@ -81,7 +81,7 @@ async function initializeRealm(origin, configured, previous) {
   });
   try {
     const oaath = createOAAth({
-      url: configured.url,
+      approvals: { kind: "service", url: configured.url },
       origin,
       stores: {
         grants: createIndexedDbGrantStoreAdapter(database),

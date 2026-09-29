@@ -10,7 +10,38 @@ matches the application:
 | --- | --- | --- |
 | [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ chains, account })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
 | [Wallet-approved Grant](packages/sdk/README.md#wallet-approved-grants) | `createOAAth({ chains, account, approvals: { kind: "wallet", owner } })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
-| [Phone service](#service-url-mode) | `createOAAth({ url })` | The service selects the account and chains; its owner phone approves the Grant. |
+| [Phone service](#service-approvals) | `createOAAth({ approvals: { kind: "service", url } })` | The service selects the account and chains; its owner phone approves the Grant. |
+
+All three use one constructor; the optional `approvals` setting is the only
+difference:
+
+```ts
+import { createOAAth } from "@oaath/sdk";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+
+const chains = createViemChainPorts({ 143: { publicRpcUrls: [rpcUrl], bundlerUrl } });
+const oaath = createOAAth({
+  chains,
+  account: existingKernelAddress,
+  approvals: { kind: "wallet", owner: walletClient },
+});
+// Owner-only execution: omit `approvals`, then
+//   oaath.account(existingKernelAddress).owner(walletClient).sendCalls(...)
+// Phone service: createOAAth({ approvals: { kind: "service", url } });
+//   the service supplies the account and chains.
+
+const connection = await oaath.connect();
+const grant =
+  (await connection.resume()) ??
+  (await connection.requestPermission({
+    chainScope: "all",
+    permissions: [{ calls: [{ target, selectors, valueLimit: "0" }] }],
+    expiresIn: 1800,
+    perChainOperationLimit: 10,
+  }));
+const operation = await grant.sendCalls({ chain: 143, calls });
+await operation.wait();
+```
 
 Owner-only execution and wallet approvals use an existing ECDSA-owned Kernel v3.3 or v4 account;
 the SDK detects its deployment. The phone
@@ -122,10 +153,10 @@ The Draft profiles are not advertised as stable or as generic conformance.
 ERC-7902 `multiDimensionalNonce`, AA gas parameter overrides, and
 `eip7702Auth` are explicitly unsupported and deferred.
 
-## Service URL mode
+## Service approvals
 
-In service URL mode, the OAAth service URL is the only deployment fact an
-application supplies to `createOAAth`. `connect()` bootstraps the
+With `approvals: { kind: "service", url }`, the OAAth service URL is the only
+deployment fact an application supplies to `createOAAth`. `connect()` bootstraps the
 authenticated, versioned service context — client identity, selected workspace, the logical
 account and owner credential, and the chains the service executes on — and
 the SDK derives the rest locally: the origin, a registered same-origin
@@ -166,8 +197,8 @@ Account selection UI remains deployment-owned.
 ```ts
 import { createOAAth } from "@oaath/sdk";
 
-const oaath = createOAAth({ url: process.env.OAATH_URL });
-// Local development: createOAAth() connects to http://localhost:8787.
+const oaath = createOAAth({ approvals: { kind: "service", url: process.env.OAATH_URL } });
+// Local development: omitting `url` connects to http://localhost:8787.
 
 const connection = await oaath.connect();
 const grant =
@@ -205,7 +236,7 @@ one current schema; a database that does not carry it is deleted and recreated
 rather than migrated, and key custody stores only non-extractable `CryptoKey`
 handles and exposes no export path.
 
-Every port the URL mode composes — the issuer transport, the owner-decision
+Every port service approvals compose — the issuer transport, the owner-decision
 capability, the stores, the chain adapters, the signing profiles, the clock —
 remains an optional injected override on the same constructor for
 deterministic tests and custom deployments: pass a configuration carrying

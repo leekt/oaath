@@ -77,7 +77,7 @@ import {
   type OaathOwnerClient,
   type OaathOwnerOptions,
 } from "./client/owner-realm.js";
-import { createServiceRealm, SERVICE_REALM_KEYS } from "./client/service-realm.js";
+import { createServiceRealm, type OaathServiceOptions } from "./client/service-realm.js";
 import { captureStoreConfiguration } from "./client/store-configuration.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
@@ -255,21 +255,23 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * One constructor. The approval source is an optional setting:
  *
  * ```ts
- * createOAAth({ chains, account });                                          // owner-only execution
- * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });    // wallet-approved Grants
- * createOAAth({ url: "https://oaath.example" });                             // service-approved Grants
+ * createOAAth({ chains, account });                                        // owner-only execution
+ * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });  // wallet-approved Grants
+ * createOAAth({ approvals: { kind: "service", url } });                    // service-approved Grants
  * ```
  *
  * Omitting `approvals` gives owner-only execution from an existing Kernel
  * account with a connected wallet; no Grant exists. Wallet approvals add
  * durable wallet-approved sessions for that account without a service or
- * phone. A configuration carrying `binding` is the injected composition for
- * deterministic tests and custom deployments.
+ * phone. Service approvals take the account and chains from the service,
+ * whose owner phone approves. A configuration carrying `binding` is the
+ * injected composition for deterministic tests and custom deployments.
  */
 export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
+export function createOAAth(options: OaathServiceOptions): Readonly<Oaath>;
 export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
-export function createOAAth(configuration?: unknown): Readonly<Oaath>;
-export function createOAAth(configuration: unknown = {}): Readonly<Oaath | OaathOwnerClient> {
+export function createOAAth(configuration: OaathConfiguration): Readonly<Oaath>;
+export function createOAAth(configuration: unknown): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
     configuration,
     "OAAth configuration",
@@ -277,25 +279,16 @@ export function createOAAth(configuration: unknown = {}): Readonly<Oaath | Oaath
     clientFailure("oaath_client_input_invalid"),
   );
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
-  if (record.approvals !== undefined) {
-    const approvals = captureRecord(
-      record.approvals,
-      "OAAth approvals",
-      new WeakSet(),
-      clientFailure("oaath_client_input_invalid"),
-    );
-    if (approvals.kind === "wallet") return createLocalRealm(configuration, composeInjectedRealm);
-    return clientFail("oaath_client_input_invalid", "OAAth approvals kind is unsupported");
-  }
-  if (Object.hasOwn(record, "chains")) return createOwnerRealm(configuration);
-  // Every URL-mode key is optional, so exactness here is only the closed key
-  // set: an unknown key fails instead of being silently ignored.
-  for (const key of Object.keys(record)) {
-    if (!SERVICE_REALM_KEYS.includes(key)) {
-      clientFail("oaath_client_input_invalid", "OAAth configuration contains an unknown field");
-    }
-  }
-  return createServiceRealm(record, composeInjectedRealm);
+  if (record.approvals === undefined) return createOwnerRealm(configuration);
+  const approvals = captureRecord(
+    record.approvals,
+    "OAAth approvals",
+    new WeakSet(),
+    clientFailure("oaath_client_input_invalid"),
+  );
+  if (approvals.kind === "wallet") return createLocalRealm(configuration, composeInjectedRealm);
+  if (approvals.kind === "service") return createServiceRealm(configuration, composeInjectedRealm);
+  return clientFail("oaath_client_input_invalid", "OAAth approvals kind is unsupported");
 }
 
 function composeInjectedRealm(

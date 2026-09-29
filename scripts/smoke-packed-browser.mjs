@@ -827,8 +827,8 @@ relay = createRelayHandler({ ...relayOptions, bootstrap: contextDirectory, chain
   clock: { now: () => clock * 1000 }, kms: { ...relayKms } });
 const rejectedPosts = [];
 let rejectedCodePickups = 0;
-const rejectedClient = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
-  fetch: async (request) => {
+const rejectedClient = createOAAth({ origin: "https://app.example", now,
+  approvals: { kind: "service", url: ISSUER_URL, fetch: async (request) => {
     const path = new URL(request.url).pathname;
     if (request.method === "POST") rejectedPosts.push(path);
     if (path.endsWith("/code")) rejectedCodePickups += 1;
@@ -845,7 +845,7 @@ const rejectedClient = createOAAth({ url: ISSUER_URL, origin: "https://app.examp
       if (decision.outcome !== "rejected") fail("phone rejection was not committed");
     }
     return response;
-  },
+  } },
 });
 try {
   const rejectedConnection = await rejectedClient.connect();
@@ -871,8 +871,8 @@ async function queueLife() {
   relay = createRelayHandler({ ...relayOptions, bootstrap: contextDirectory, chains: queuePorts,
     clock: { now: () => clock * 1000 }, kms: { ...relayKms } });
   const db = await openOaathDatabase({ factory: queueFactory });
-  const client = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
-    fetch: async (request) => {
+  const client = createOAAth({ origin: "https://app.example", now,
+    approvals: { kind: "service", url: ISSUER_URL, fetch: async (request) => {
       const response = await relay(authorized(request, CLIENT_TOKEN));
       const path = new URL(request.url).pathname;
       if (request.method === "POST" && path === "/authorization/requests" && response.status === 201) {
@@ -884,7 +884,7 @@ async function queueLife() {
         queueResponses.push(await response.clone().json());
       }
       return response;
-    },
+    } },
     stores: { grants: createIndexedDbGrantStoreAdapter(db), operations: createIndexedDbOperationStoreAdapter(db),
       walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(db), preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(db),
       keys: createIndexedDbKeyStore(db), cleanup: createIndexedDbCleanupStore(db), context: createIndexedDbContextStore(db) },
@@ -944,8 +944,8 @@ const contextRelay = createRelayHandler({
 const contextFactory = new IDBFactory();
 async function contextLife() {
   const db = await openOaathDatabase({ factory: contextFactory });
-  const client = createOAAth({ url: ISSUER_URL, origin: "https://app.example", now,
-    fetch: (request) => contextRelay(authorized(request, CLIENT_TOKEN)),
+  const client = createOAAth({ origin: "https://app.example", now,
+    approvals: { kind: "service", url: ISSUER_URL, fetch: (request) => contextRelay(authorized(request, CLIENT_TOKEN)) },
     stores: { grants: createIndexedDbGrantStoreAdapter(db), operations: createIndexedDbOperationStoreAdapter(db),
       walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(db), preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(db),
       keys: createIndexedDbKeyStore(db), cleanup: createIndexedDbCleanupStore(db), context: createIndexedDbContextStore(db) },

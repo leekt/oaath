@@ -123,9 +123,12 @@ describe("URL-only golden path", () => {
       code: "oaath_client_capability_unsupported",
     });
     expect(realm.fetched).not.toContain("POST /session-signers");
-    expect(() => createOAAth({ url: ISSUER_URL, session: { kind: "p256" } } as never)).toThrow(
-      expect.objectContaining({ code: "oaath_client_input_invalid" }),
-    );
+    expect(() =>
+      createOAAth({
+        approvals: { kind: "service", url: ISSUER_URL },
+        session: { kind: "p256" },
+      } as never),
+    ).toThrow(expect.objectContaining({ code: "oaath_client_input_invalid" }));
   });
 
   it("exposes the issued match code once before polling for the owner decision", async () => {
@@ -241,39 +244,42 @@ describe("URL-only golden path", () => {
       const posts: string[] = [];
       let codePickups = 0;
       const oaath = createOAAth({
-        url: ISSUER_URL,
         origin: ORIGIN,
         now: clock.now,
         stores: createMemoryStores(),
-        ...(authorization ? { authorization } : {}),
-        fetch: async (request: Request) => {
-          const path = new URL(request.url).pathname;
-          if (request.method === "POST") posts.push(path);
-          if (path.endsWith("/code")) codePickups += 1;
-          const headers = new Headers(request.headers);
-          headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
-          const response = await relay(new Request(request, { headers }));
-          if (request.method === "POST" && path === "/authorization/requests") {
-            expect(response.status).toBe(201);
-            const { requestId } = await response.clone().json();
-            const ownerHeaders = { authorization: `Bearer ${OWNER_TOKEN}` };
-            const consent = await relay(
-              new Request(`${ISSUER_URL}/native/projections/${requestId}`, {
-                headers: ownerHeaders,
-              }),
-            );
-            expect(consent.status).toBe(200);
-            const decision = await relay(
-              new Request(`${ISSUER_URL}/native/decisions/${requestId}`, {
-                method: "POST",
-                headers: { ...ownerHeaders, "content-type": "application/json" },
-                body: JSON.stringify({ command: "reject" }),
-              }),
-            );
-            expect(decision.status).toBe(200);
-            expect((await decision.json()).outcome).toBe("rejected");
-          }
-          return response;
+        approvals: {
+          kind: "service",
+          url: ISSUER_URL,
+          ...(authorization ? { authorization } : {}),
+          fetch: async (request: Request) => {
+            const path = new URL(request.url).pathname;
+            if (request.method === "POST") posts.push(path);
+            if (path.endsWith("/code")) codePickups += 1;
+            const headers = new Headers(request.headers);
+            headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+            const response = await relay(new Request(request, { headers }));
+            if (request.method === "POST" && path === "/authorization/requests") {
+              expect(response.status).toBe(201);
+              const { requestId } = await response.clone().json();
+              const ownerHeaders = { authorization: `Bearer ${OWNER_TOKEN}` };
+              const consent = await relay(
+                new Request(`${ISSUER_URL}/native/projections/${requestId}`, {
+                  headers: ownerHeaders,
+                }),
+              );
+              expect(consent.status).toBe(200);
+              const decision = await relay(
+                new Request(`${ISSUER_URL}/native/decisions/${requestId}`, {
+                  method: "POST",
+                  headers: { ...ownerHeaders, "content-type": "application/json" },
+                  body: JSON.stringify({ command: "reject" }),
+                }),
+              );
+              expect(decision.status).toBe(200);
+              expect((await decision.json()).outcome).toBe("rejected");
+            }
+            return response;
+          },
         },
       });
       try {
@@ -612,13 +618,18 @@ describe("URL-only golden path", () => {
   it("defaults to the local development service URL", async () => {
     const seen: string[] = [];
     const oaath = createOAAth({
-      fetch: async (request: Request) => {
-        seen.push(request.url);
-        return new Response("{}", { status: 200 });
+      approvals: {
+        kind: "service",
+        fetch: async (request: Request) => {
+          seen.push(request.url);
+          return new Response("{}", { status: 200 });
+        },
       },
       origin: "https://app.example",
       now: () => 1_800_000_000,
     });
+    // @ts-expect-error service approvals hold no owner signer, so no owner execution
+    expect(oaath.account).toBeUndefined();
     await expect(oaath.connect()).rejects.toMatchObject({ name: "OaathClientError" });
     expect(seen).toEqual(["http://localhost:8787/bootstrap"]);
   });
@@ -642,14 +653,17 @@ describe("URL-only golden path", () => {
       chains: [relayChainPort(chain)],
     });
     const oaath = createOAAth({
-      url: ISSUER_URL,
+      approvals: {
+        kind: "service",
+        url: ISSUER_URL,
+        fetch: (request: Request) => {
+          const headers = new Headers(request.headers);
+          headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+          return relay(new Request(request, { headers }));
+        },
+      },
       origin: ORIGIN,
       now: clock.now,
-      fetch: (request: Request) => {
-        const headers = new Headers(request.headers);
-        headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
-        return relay(new Request(request, { headers }));
-      },
     });
     try {
       const connection = await oaath.connect();
@@ -688,14 +702,17 @@ describe("URL-only golden path", () => {
       chains: [relayChainPort(chain)],
     });
     const oaath = createOAAth({
-      url: ISSUER_URL,
+      approvals: {
+        kind: "service",
+        url: ISSUER_URL,
+        fetch: (request: Request) => {
+          const headers = new Headers(request.headers);
+          headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
+          return relay(new Request(request, { headers }));
+        },
+      },
       origin: ORIGIN,
       now: clock.now,
-      fetch: (request: Request) => {
-        const headers = new Headers(request.headers);
-        headers.set("authorization", `Bearer ${CLIENT_TOKEN}`);
-        return relay(new Request(request, { headers }));
-      },
     });
     try {
       await oaath.connect();
@@ -730,15 +747,18 @@ describe("URL-only golden path", () => {
       releaseBootstrap = resolve;
     });
     const oaath = createOAAth({
-      url: ISSUER_URL,
       origin: ORIGIN,
       now: () => 1_800_000_000,
-      fetch: async () => {
-        await bootstrapReleased;
-        return new Response("{}", {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+      approvals: {
+        kind: "service",
+        url: ISSUER_URL,
+        fetch: async () => {
+          await bootstrapReleased;
+          return new Response("{}", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
       },
     });
     try {
@@ -903,10 +923,19 @@ describe("URL-only golden path", () => {
     await connection.close();
   });
 
-  it("refuses an unknown configuration key on the URL mode", () => {
-    expect(() => createOAAth({ url: "https://oaath.example", relayUrl: "x" })).toThrowError(
-      expect.objectContaining({ code: "oaath_client_input_invalid" }),
-    );
+  it("refuses unknown and service-selected fields on service approvals", () => {
+    for (const configuration of [
+      { url: "https://oaath.example" },
+      { approvals: { kind: "service", url: "https://oaath.example", relayUrl: "x" } },
+      { approvals: { kind: "service" }, relayUrl: "x" },
+      { approvals: { kind: "service" }, chains: [] },
+      { approvals: { kind: "service" }, account: `0x${"11".repeat(20)}` },
+      { approvals: { kind: "phone" } },
+    ]) {
+      expect(() => createOAAth(configuration as never)).toThrowError(
+        expect.objectContaining({ code: "oaath_client_input_invalid" }),
+      );
+    }
   });
 
   it("denies execution when the service serves no usage evidence", async () => {

@@ -235,7 +235,9 @@ async function refreshAccount() {
 }
 async function connectAccount() {
   if (!connection) {
-    client ??= createOAAth({ url: location.origin, fetch: clientFetch });
+    client ??= createOAAth({
+      approvals: { kind: "service", url: location.origin, fetch: clientFetch },
+    });
     connection = await client.connect();
     grant = await connection.resume();
   }

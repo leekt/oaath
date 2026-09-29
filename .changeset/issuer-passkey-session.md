@@ -4,8 +4,8 @@
 "oaath": minor
 ---
 
-URL (issuer) mode accepts the same optional `session` setting as local mode:
-`createOAAth({ url, session: { kind: "webauthn", ...webauthnKeyInput } })`. The
+Service approvals accept the same optional `session` setting as wallet approvals:
+`createOAAth({ approvals: { kind: "service", url }, session: { kind: "webauthn", ...webauthnKeyInput } })`. The
 shared type is now `OaathSession` (was `OaathLocalSession`). The owner reviews and
 installs the passkey as the operator credential; no session key is generated or
 stored, and a deployment declaring backend or hosted session custody refuses it
