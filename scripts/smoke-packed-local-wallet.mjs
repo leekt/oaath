@@ -121,7 +121,7 @@ import { createWalletClient, custom, type EIP1193Provider, type Address } from "
 export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSendCallsInput) {
   const review = await grant.reviewCalls({ ...request, signer: "auto" });
   if (review.signer === "owner") { const limits: null = review.perChainOperationLimit; void limits; }
-  else { const limit: number = review.perChainOperationLimit; void limit; }
+  else { const limit: { count: number; intervalSeconds: number | null } = review.perChainOperationLimit; void limit; }
   return grant.sendCalls({ ...request, signer: "auto" });
 }
 export function connect(provider: EIP1193Provider, owner: Address, account: Address) {
