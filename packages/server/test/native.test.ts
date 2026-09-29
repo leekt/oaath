@@ -204,7 +204,7 @@ describe("experimental owner-phone projection", () => {
     const fixed = await fixture();
     const projection = await project(fixed);
 
-    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v6");
+    expect(OAATH_NATIVE_PROJECTION_VERSION).toBe("oaath.native-projection/v7");
     expect(projection.version).toBe(OAATH_NATIVE_PROJECTION_VERSION);
     expect(projection.operationId).toBe(fixed.requestId);
     expect(projection.displayPayload).toHaveLength(NATIVE_DISPLAY_PAYLOAD_LENGTH);
@@ -267,6 +267,7 @@ describe("experimental owner-phone projection", () => {
       policyValidAfter: 100,
       policyValidUntil: 190,
       perChainOperationLimit: 10,
+      perChainOperationIntervalSeconds: null,
     });
   });
 
@@ -281,7 +282,7 @@ describe("experimental owner-phone projection", () => {
     expect((await project(fixed)).scope).toMatchObject({ kind: "permission-request", context });
   });
 
-  it("refuses to project a windowed limit the phone cannot yet display", async () => {
+  it("projects a windowed limit's interval for phone consent", async () => {
     const scope = JSON.parse(PERMISSION_SCOPE) as { policy: Record<string, unknown> };
     const fixed = await fixture(
       JSON.stringify({
@@ -289,7 +290,11 @@ describe("experimental owner-phone projection", () => {
         policy: { ...scope.policy, perChainOperationLimit: { count: 10, intervalSeconds: 60 } },
       }),
     );
-    await expect(project(fixed)).rejects.toMatchObject({ code: "relay_request_invalid" });
+    expect((await project(fixed)).scope).toMatchObject({
+      kind: "permission-request",
+      perChainOperationLimit: 10,
+      perChainOperationIntervalSeconds: 60,
+    });
   });
 
   it("projects remote session custody as an approvable consent fact", async () => {

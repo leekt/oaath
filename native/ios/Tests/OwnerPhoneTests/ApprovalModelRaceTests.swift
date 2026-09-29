@@ -372,7 +372,8 @@ final class ApprovalModelRaceTests: XCTestCase {
             chainScope: base.chainScope, calls: base.calls,
             requestedAt: base.requestedAt, expiresAt: base.expiresAt,
             policyValidAfter: base.policyValidAfter, policyValidUntil: base.policyValidUntil,
-            perChainOperationLimit: base.perChainOperationLimit)))
+            perChainOperationLimit: base.perChainOperationLimit,
+            perChainOperationIntervalSeconds: base.perChainOperationIntervalSeconds)))
     }
 
     private func replacingScope(

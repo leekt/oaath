@@ -55,7 +55,8 @@ extension OwnerPhoneRequestProjection {
                 expiresAt: 1_754_000_000,
                 policyValidAfter: 1_753_000_000,
                 policyValidUntil: nil,
-                perChainOperationLimit: 10
+                perChainOperationLimit: 10,
+                perChainOperationIntervalSeconds: nil
             ))
         )
     }

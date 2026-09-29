@@ -26,7 +26,7 @@ import Foundation
 public let ownerPhoneMatchCodeLength = 8
 
 /// `OAATH_NATIVE_PROJECTION_VERSION` in `native/projection.ts`.
-public let ownerPhoneProjectionVersion = "oaath.native-projection/v6"
+public let ownerPhoneProjectionVersion = "oaath.native-projection/v7"
 
 /// Current protocol versions embedded in the consent projection.
 public let ownerPhoneWorkspaceAccountContextVersion = "oaath.workspace-account-context/v1"
@@ -206,6 +206,8 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
     public let policyValidAfter: Int
     public let policyValidUntil: Int?
     public let perChainOperationLimit: Int
+    /// Seconds after which the per-chain count refills, or nil for a lifetime cap.
+    public let perChainOperationIntervalSeconds: Int?
 
     public init(
         context: OwnerPhoneWorkspaceAccountContext,
@@ -219,7 +221,8 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
         expiresAt: Int,
         policyValidAfter: Int,
         policyValidUntil: Int?,
-        perChainOperationLimit: Int
+        perChainOperationLimit: Int,
+        perChainOperationIntervalSeconds: Int?
     ) {
         self.context = context
         self.application = application
@@ -233,6 +236,7 @@ public struct OwnerPhonePermissionScope: Equatable, Sendable {
         self.policyValidAfter = policyValidAfter
         self.policyValidUntil = policyValidUntil
         self.perChainOperationLimit = perChainOperationLimit
+        self.perChainOperationIntervalSeconds = perChainOperationIntervalSeconds
     }
 }
 
@@ -494,6 +498,7 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                     "kind", "decision", "context", "application", "account", "operatorCredential",
                     "sessionSigner", "chainScope", "calls", "requestedAt", "expiresAt",
                     "policyValidAfter", "policyValidUntil", "perChainOperationLimit",
+                    "perChainOperationIntervalSeconds",
                 ],
                 label: "scope")
             guard object["decision"] as? String == "approve-or-reject" else {
@@ -512,6 +517,18 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                 policyValidUntil = try Wire.timestamp(
                     object["policyValidUntil"], label: "policyValidUntil")
             }
+            let perChainOperationIntervalSeconds: Int?
+            if object["perChainOperationIntervalSeconds"] is NSNull {
+                perChainOperationIntervalSeconds = nil
+            } else {
+                let interval = try Wire.timestamp(
+                    object["perChainOperationIntervalSeconds"],
+                    label: "perChainOperationIntervalSeconds")
+                guard interval > 0 else {
+                    throw OwnerPhoneWireError.invalidField("perChainOperationIntervalSeconds")
+                }
+                perChainOperationIntervalSeconds = interval
+            }
             return .permissionRequest(OwnerPhonePermissionScope(
                 context: try decodeContext(object["context"]),
                 application: try decodeApplication(object["application"]),
@@ -527,7 +544,8 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
                     object["policyValidAfter"], label: "policyValidAfter"),
                 policyValidUntil: policyValidUntil,
                 perChainOperationLimit: try Wire.timestamp(
-                    object["perChainOperationLimit"], label: "perChainOperationLimit")
+                    object["perChainOperationLimit"], label: "perChainOperationLimit"),
+                perChainOperationIntervalSeconds: perChainOperationIntervalSeconds
             ))
         case "owner-signing-request":
             try Wire.exactKeys(

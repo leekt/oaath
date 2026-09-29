@@ -121,6 +121,14 @@ struct PermissionConsentPresentation: Equatable, Sendable {
         return order.compactMap { id in facts.first { $0.id == id } }
     }
 
+    /// "day", "2 hours", "90 seconds": the largest whole unit, never rounded.
+    static func interval(_ seconds: Int) -> String {
+        let (value, unit) = [(86_400, "day"), (3_600, "hour"), (60, "minute")]
+            .first { seconds % $0.0 == 0 }
+            .map { (seconds / $0.0, $0.1) } ?? (seconds, "second")
+        return value == 1 ? unit : "\(value) \(unit)s"
+    }
+
     init(client: OwnerPhoneClientIdentity, scope: OwnerPhonePermissionScope) {
         var highlights = scope.calls.enumerated().map { index, call in
             var detail = call.valueLimit == "0"
@@ -136,9 +144,10 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                 detail: .text(detail))
         }
         let limit = scope.perChainOperationLimit
+        let window = scope.perChainOperationIntervalSeconds.map { " per \(Self.interval($0))" } ?? ""
         highlights.append(PermissionConsentHighlight(
             id: "limit",
-            title: "Up to \(limit) operation\(limit == 1 ? "" : "s") per chain",
+            title: "Up to \(limit) operation\(limit == 1 ? "" : "s") per chain\(window)",
             detail: .text("Chain scope: \(scope.chainScope)")))
         let kind: String
         let key: String
@@ -344,6 +353,13 @@ struct PermissionConsentPresentation: Equatable, Sendable {
                     label: "Operations per chain",
                     evidence: .requestedConstraint,
                     value: .text(String(scope.perChainOperationLimit))),
+                .init(
+                    id: "validity.perChainOperationInterval",
+                    label: "Operation count refills",
+                    evidence: .requestedConstraint,
+                    value: .text(scope.perChainOperationIntervalSeconds.map {
+                        "every \(Self.interval($0))"
+                    } ?? "never")),
             ]))
 
         self.sections = sections
