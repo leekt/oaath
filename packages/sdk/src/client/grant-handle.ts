@@ -431,26 +431,22 @@ export interface OaathQuoteCapability {
 }
 
 /**
- * One deployment-owned ERC-7677 service and bundler estimator. These are
- * explicit external-service capabilities: the deployment must hard-bound
- * their time and request budget and must not retry. OAAth invokes each stage
- * at most once for one preparation.
+ * How one chain can sponsor gas. `erc7677` is a deployment-owned ERC-7677
+ * service and bundler estimator: explicit external-service capabilities the
+ * deployment must hard-bound in time and request budget and must not retry;
+ * OAAth invokes each stage at most once for one preparation. `erc7902-static`
+ * is the authenticated commitment (`hashErc7902StaticPaymasterConfiguration`)
+ * to one exact ERC-7902 static paymaster.
  */
-export interface OaathRegisteredPaymasterService {
-  readonly url: string;
-  readonly request: Erc7677RegisteredPaymasterService["request"];
-  readonly estimate: Erc7677GasEstimator["estimate"];
-}
-
-/**
- * How one chain can sponsor gas. `erc7902-static` is the authenticated
- * commitment (`hashErc7902StaticPaymasterConfiguration`) to one exact
- * ERC-7902 static paymaster.
- */
-export type OaathChainSponsorship = Readonly<{
-  kind: "erc7902-static";
-  configurationHash: `0x${string}`;
-}>;
+export type OaathChainSponsorship =
+  | Readonly<{
+      kind: "erc7677";
+      /** Public service identity that a call's `payer.url` must name exactly. */
+      url: string;
+      request: Erc7677RegisteredPaymasterService["request"];
+      estimate: Erc7677GasEstimator["estimate"];
+    }>
+  | Readonly<{ kind: "erc7902-static"; configurationHash: `0x${string}` }>;
 
 /**
  * One submission route a chain offers. Only the ERC-4337 kinds ship: a bundler
@@ -482,9 +478,7 @@ export interface OaathChainCapability {
    * deployment provides none. Absent evidence is inconclusive, never "unused".
    */
   readonly usage: ((request: Readonly<OaathUsageRequest>) => Promise<unknown>) | null;
-  /** Null means this chain does not advertise ERC-7677. */
-  readonly paymasterService: Readonly<OaathRegisteredPaymasterService> | null;
-  /** Omitted means this chain offers no sponsorship setting. */
+  /** Omitted means this chain offers no sponsorship. */
   readonly sponsorship?: OaathChainSponsorship;
 }
 
@@ -675,7 +669,6 @@ const CHAIN_KEYS: readonly string[] = Object.freeze([
   "submission",
   "quote",
   "usage",
-  "paymasterService",
 ]);
 
 function unsupported(source: string): never {
@@ -750,19 +743,45 @@ function chainSponsorship(
 ): Readonly<OaathChainSponsorship> {
   const fail = (message: string) => clientFail("oaath_client_capability_invalid", message);
   const captured = captureRecord(value, "chain sponsorship", context, fail);
-  if (captured.kind !== "erc7902-static") return fail("chain sponsorship kind is unsupported");
-  const { configurationHash } = exactCapturedRecord(
+  if (captured.kind === "erc7902-static") {
+    const { configurationHash } = exactCapturedRecord(
+      captured,
+      ["kind", "configurationHash"],
+      "chain sponsorship",
+      fail,
+    );
+    if (typeof configurationHash !== "string" || !USER_OPERATION_HASH.test(configurationHash)) {
+      return fail("static paymaster configuration commitment is invalid");
+    }
+    return Object.freeze({
+      kind: "erc7902-static",
+      configurationHash: configurationHash as `0x${string}`,
+    });
+  }
+  if (captured.kind !== "erc7677") return fail("chain sponsorship kind is unsupported");
+  const service = exactCapturedRecord(
     captured,
-    ["kind", "configurationHash"],
+    ["kind", "url", "request", "estimate"],
     "chain sponsorship",
     fail,
   );
-  if (typeof configurationHash !== "string" || !USER_OPERATION_HASH.test(configurationHash)) {
-    return fail("static paymaster configuration commitment is invalid");
+  let url: string;
+  try {
+    url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: service.url }).url;
+  } catch {
+    return fail("registered paymaster service URL is invalid");
   }
   return Object.freeze({
-    kind: "erc7902-static",
-    configurationHash: configurationHash as `0x${string}`,
+    kind: "erc7677",
+    url,
+    request: clientCapability<Erc7677RegisteredPaymasterService["request"]>(
+      service.request,
+      "registered paymaster request",
+    ),
+    estimate: clientCapability<Erc7677GasEstimator["estimate"]>(
+      service.estimate,
+      "registered paymaster estimate",
+    ),
   });
 }
 
@@ -792,36 +811,6 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
     gas = captureKernelGasPolicy(chainId, record.gas);
   } catch (error) {
     return mapClientFailure(error, "chain gas policy is invalid");
-  }
-  let paymasterService: Readonly<OaathRegisteredPaymasterService> | null = null;
-  if (record.paymasterService !== null) {
-    const service = exactClientRecord(
-      record.paymasterService,
-      ["url", "request", "estimate"],
-      "registered paymaster service",
-      context,
-      "oaath_client_capability_invalid",
-    );
-    let url: string;
-    try {
-      url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: service.url }).url;
-    } catch {
-      return clientFail(
-        "oaath_client_capability_invalid",
-        "registered paymaster service URL is invalid",
-      );
-    }
-    paymasterService = Object.freeze({
-      url,
-      request: clientCapability<Erc7677RegisteredPaymasterService["request"]>(
-        service.request,
-        "registered paymaster request",
-      ),
-      estimate: clientCapability<Erc7677GasEstimator["estimate"]>(
-        service.estimate,
-        "registered paymaster estimate",
-      ),
-    });
   }
   const sponsorship = Object.hasOwn(record, "sponsorship")
     ? chainSponsorship(record.sponsorship, context)
@@ -853,7 +842,6 @@ export function captureChainCapability(value: unknown): Readonly<OaathChainCapab
       record.usage === null
         ? null
         : clientCapability<NonNullable<OaathChainCapability["usage"]>>(record.usage, "chain usage"),
-    paymasterService,
     ...(sponsorship === null ? {} : { sponsorship }),
   });
 }
@@ -3262,7 +3250,7 @@ export function createGrantHandle(
       const sponsorship = Object.hasOwn(request, "paymasterService")
         ? capturePaymasterService(
             request.paymasterService,
-            chainCapability(request.chain).paymasterService,
+            chainCapability(request.chain).sponsorship,
             context,
           )
         : null;
@@ -3314,7 +3302,7 @@ export function createGrantHandle(
       const selectedPaymaster = Object.hasOwn(request, "paymasterService")
         ? capturePaymasterService(
             request.paymasterService,
-            chainCapability(chainId).paymasterService,
+            chainCapability(chainId).sponsorship,
             context,
           )
         : null;
@@ -3347,7 +3335,7 @@ export function createGrantHandle(
           paymasterService:
             selectedPaymaster === null
               ? null
-              : Object.freeze({ url: chainCapability(chainId).paymasterService!.url }),
+              : Object.freeze({ url: registeredPaymasterServiceUrl(chainId)! }),
           enableVerificationGasFloor: null,
           enforcement: Object.freeze({
             calls: "none" as const,
@@ -3455,7 +3443,7 @@ export function createGrantHandle(
         paymasterService:
           selectedPaymaster === null
             ? null
-            : Object.freeze({ url: chainCapability(chainId).paymasterService!.url }),
+            : Object.freeze({ url: registeredPaymasterServiceUrl(chainId)! }),
         chainId,
         accountId: input.binding.context.accountId,
         account: reviewAccount(resolved.descriptor.account),
@@ -3517,11 +3505,13 @@ export function createGrantHandle(
   }
 
   function registeredPaymasterServiceUrl(chainId: number): string | null {
-    return chainCapability(chainId).paymasterService?.url ?? null;
+    const sponsorship = chainCapability(chainId).sponsorship;
+    return sponsorship?.kind === "erc7677" ? sponsorship.url : null;
   }
 
   function staticPaymasterConfigurationHash(chainId: number): `0x${string}` | null {
-    return chainCapability(chainId).sponsorship?.configurationHash ?? null;
+    const sponsorship = chainCapability(chainId).sponsorship;
+    return sponsorship?.kind === "erc7902-static" ? sponsorship.configurationHash : null;
   }
 
   function admitExecutionRoute(
@@ -3712,7 +3702,7 @@ export function createGrantHandle(
     context: CaptureContext,
   ): Readonly<OaathKernelSponsorshipCapability> | null {
     if (value === null) return null;
-    return capturePaymasterService(value, chainCapability(chainId).paymasterService, context);
+    return capturePaymasterService(value, chainCapability(chainId).sponsorship, context);
   }
 
   function providerPaymaster(

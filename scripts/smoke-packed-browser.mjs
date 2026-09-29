@@ -437,7 +437,8 @@ const chain = {
       through: { blockNumber: "1", blockHash: "0x" + "77".repeat(32), observedAt: now() },
     };
   },
-  paymasterService: {
+  sponsorship: {
+    kind: "erc7677",
     url: ISSUER_URL + "/chains/" + CHAIN_ID + "/paymaster",
     async request(request) {
       if (request.method === "pm_getPaymasterStubData") {

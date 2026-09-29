@@ -9,7 +9,7 @@ import type {
   Erc7677PaymasterServiceRequest,
   OaathBundlerProbeRequest,
   OaathChainCapability,
-  OaathRegisteredPaymasterService,
+  OaathChainSponsorship,
 } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
@@ -77,7 +77,7 @@ function registeredService(
     sponsor?: Readonly<{ name: string; icon?: string }>;
   }> = {},
 ): Readonly<{
-  service: Readonly<OaathRegisteredPaymasterService>;
+  service: Extract<OaathChainSponsorship, { kind: "erc7677" }>;
   stages: readonly string[];
   serviceRequests: readonly Readonly<Erc7677PaymasterServiceRequest>[];
   estimatorRequests: readonly Readonly<Erc7677GasEstimationRequest>[];
@@ -85,7 +85,8 @@ function registeredService(
   const stages: string[] = [];
   const serviceRequests: Readonly<Erc7677PaymasterServiceRequest>[] = [];
   const estimatorRequests: Readonly<Erc7677GasEstimationRequest>[] = [];
-  const service: Readonly<OaathRegisteredPaymasterService> = Object.freeze({
+  const service: Extract<OaathChainSponsorship, { kind: "erc7677" }> = Object.freeze({
+    kind: "erc7677" as const,
     url: SERVICE_URL,
     async request(request: Readonly<Erc7677PaymasterServiceRequest>) {
       serviceRequests.push(request);
@@ -139,7 +140,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("finalizes sponsorship before durable identity, signing, and one submission", async () => {
     const base = createChainFixture();
     const registered = registeredService({ sponsor: SPONSOR });
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const { connection, grant, provider, account } = await activeProvider(chain);
 
     await expect(
@@ -197,7 +198,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("rejects an unregistered required URL before bundle or execution effects", async () => {
     const base = createChainFixture();
     const registered = registeredService();
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const { connection, grant, provider, account } = await activeProvider(chain);
 
     await providerError(
@@ -233,7 +234,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("ignores an unavailable optional service without attempting sponsorship", async () => {
     const base = createChainFixture();
     const registered = registeredService();
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const { connection, provider, account } = await activeProvider(chain);
 
     await expect(
@@ -259,7 +260,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("never falls back to an unsponsored identity after invalid estimator evidence", async () => {
     const base = createChainFixture();
     const registered = registeredService({ malformedEstimate: true });
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const { connection, provider, account } = await activeProvider(chain);
 
     await providerError(
@@ -293,7 +294,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
           },
         }),
       ),
-      paymasterService: registered.service,
+      sponsorship: registered.service,
     });
     const { connection, grant, provider, account } = await activeProvider(chain);
     const id = "no-direct-sponsor";
@@ -348,7 +349,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("advertises the official capability only for a registered chain", async () => {
     const registered = registeredService();
     const supported = await activeProvider(
-      replaceChain(createChainFixture(), { paymasterService: registered.service }),
+      replaceChain(createChainFixture(), { sponsorship: registered.service }),
     );
     await expect(
       supported.provider.request({
@@ -363,9 +364,7 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     });
     await supported.connection.close();
 
-    const unavailable = await activeProvider(
-      replaceChain(createChainFixture(), { paymasterService: null }),
-    );
+    const unavailable = await activeProvider(replaceChain(createChainFixture(), {}));
     await expect(
       unavailable.provider.request({
         method: "wallet_getCapabilities",
@@ -380,7 +379,8 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
   it("uses only the authenticated same-service proxy and observes after realm recreation", async () => {
     const stages: string[] = [];
     const base = createChainFixture({
-      paymasterService: Object.freeze({
+      sponsorship: Object.freeze({
+        kind: "erc7677" as const,
         url: SERVICE_URL,
         async request() {
           throw new Error("the synthetic chain never owns paymaster HTTP");
@@ -509,7 +509,7 @@ describe("plain sendCalls ERC-7677", () => {
       const base = createChainFixture();
       const registered = registeredService();
       const chain = replaceChain(base, {
-        paymasterService: registered.service,
+        sponsorship: registered.service,
         gas: { enableVerificationGasFloor: 2_000_000n },
       });
       const invoke = (method: Erc7677PaymasterServiceRequest["method"], request: unknown) =>
@@ -565,7 +565,7 @@ describe("plain sendCalls ERC-7677", () => {
       const base = createChainFixture();
       const registered = registeredService({ malformedEstimate: failure === "malformed" });
       const realm = createRealm({
-        chain: replaceChain(base, { paymasterService: registered.service }),
+        chain: replaceChain(base, { sponsorship: registered.service }),
       });
       try {
         const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());

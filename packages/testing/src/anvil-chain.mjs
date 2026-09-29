@@ -211,7 +211,6 @@ export async function createAnvilChain(chainId, options = {}) {
             },
           };
         },
-        paymasterService: null,
       },
     };
   } catch {

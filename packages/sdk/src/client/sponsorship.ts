@@ -2,9 +2,9 @@ import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/
 import { createErc7677SponsorshipCapability } from "../provider/erc7677.js";
 import type { OaathConnectedEoaPayer } from "./connected-eoa.js";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
-import type { OaathRegisteredPaymasterService } from "./grant-handle.js";
+import type { OaathChainSponsorship } from "./grant-handle.js";
 
-/** An ERC-7677 paymaster service registered on the chain capability sponsors gas. */
+/** The chain's `erc7677` sponsorship service sponsors gas. */
 export interface OaathPaymasterServicePayer {
   readonly kind: "paymaster-service";
   readonly url: string;
@@ -82,12 +82,13 @@ function capturePayer(value: unknown, context: CaptureContext) {
   return fail("payer kind is unsupported");
 }
 
-/** Selects only the registered capability; construction performs no request. */
+/** Selects only the chain's registered ERC-7677 service; construction performs no request. */
 export function capturePaymasterService(
   value: unknown,
-  registered: Readonly<OaathRegisteredPaymasterService> | null,
+  sponsorship: Readonly<OaathChainSponsorship> | undefined,
   context: CaptureContext,
 ) {
+  const registered = sponsorship?.kind === "erc7677" ? sponsorship : null;
   const requested = exactClientRecord(value, ["url", "context"], "paymaster service", context);
   if (typeof requested.url !== "string")
     return clientFail("oaath_client_input_invalid", "paymaster URL is invalid");

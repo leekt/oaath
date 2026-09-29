@@ -196,9 +196,11 @@ describe("default viem chain ports", () => {
         },
       },
     );
-    expect(chain!.paymasterService!.url).toBe("https://paymaster.test");
+    const sponsorship = chain!.sponsorship;
+    if (sponsorship?.kind !== "erc7677") throw new Error("expected ERC-7677 sponsorship");
+    expect(sponsorship.url).toBe("https://paymaster.test");
     await expect(
-      chain!.paymasterService!.request({
+      sponsorship.request({
         method: "pm_getPaymasterStubData",
         params: [
           {

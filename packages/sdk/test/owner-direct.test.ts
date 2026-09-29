@@ -118,7 +118,8 @@ describe("owner-direct account calls", () => {
             expect(request.purpose).toBe("sponsorship");
             return chain.quote(request);
           },
-          paymasterService: {
+          sponsorship: {
+            kind: "erc7677",
             url: "https://paymaster.test",
             request: async (request) => {
               expect(prompts()).toBe(0);

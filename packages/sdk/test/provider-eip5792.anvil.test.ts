@@ -538,7 +538,6 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           }),
         });
       },
-      paymasterService: null,
     });
 
     const fixtureSends: Readonly<PreparedUserOperation>[] = [];

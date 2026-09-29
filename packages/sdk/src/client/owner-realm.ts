@@ -265,7 +265,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
           const chain = chainFor(request.chain);
           const calls = captureCalls(request.calls, context);
           const sponsorship = Object.hasOwn(request, "paymasterService")
-            ? capturePaymasterService(request.paymasterService, chain.paymasterService, context)
+            ? capturePaymasterService(request.paymasterService, chain.sponsorship, context)
             : null;
           const deployment = await detectKernelAccountDeployment({
             chainId: chain.chainId,
@@ -382,9 +382,9 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 route: resolved.decision.route,
                 reasons: resolved.decision.reasons,
                 paymasterService:
-                  resolved.sponsorship === null
+                  resolved.sponsorship === null || resolved.chain.sponsorship?.kind !== "erc7677"
                     ? null
-                    : Object.freeze({ url: resolved.chain.paymasterService!.url }),
+                    : Object.freeze({ url: resolved.chain.sponsorship.url }),
               });
             }),
           sendCalls: (value: unknown) =>

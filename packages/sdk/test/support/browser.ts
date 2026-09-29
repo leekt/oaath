@@ -37,7 +37,6 @@ import type {
   OaathBundlerProbeCapability,
   OaathChainCapability,
   OaathChainSponsorship,
-  OaathRegisteredPaymasterService,
   OaathSubmissionRoute,
 } from "../../src/advanced.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
@@ -292,8 +291,10 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
         typeof request === "object" &&
         (request as { readonly version?: unknown }).version === "oaath.erc7677-gas-estimation/v1"
       ) {
-        const paymasterService = capability.paymasterService ?? null;
-        if (paymasterService === null) throw new Error("paymaster estimator is unavailable");
+        const paymasterService = capability.sponsorship;
+        if (paymasterService?.kind !== "erc7677") {
+          throw new Error("paymaster estimator is unavailable");
+        }
         const captured = request as Readonly<{
           prepared: Erc7677GasEstimationRequest["prepared"];
           userOperation: Erc7677GasEstimationRequest["userOperation"];
@@ -323,7 +324,10 @@ export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
     usage:
       capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
     feePayer: routeFeePayer(capability),
-    staticPaymasterConfigurationHash: capability.sponsorship?.configurationHash ?? null,
+    staticPaymasterConfigurationHash:
+      capability.sponsorship?.kind === "erc7902-static"
+        ? capability.sponsorship.configurationHash
+        : null,
   };
 }
 
@@ -523,7 +527,6 @@ export interface ChainFixtureOptions {
   readonly usage?: boolean;
   readonly bundler?: "available" | "absent" | "unsupported" | "unreadable";
   readonly feePayer?: Readonly<{ address: `0x${string}`; balance: string }> | null;
-  readonly paymasterService?: Readonly<OaathRegisteredPaymasterService> | null;
   readonly sponsorship?: OaathChainSponsorship;
   /** Injected crash inside the send boundary, after the transport accepted it. */
   readonly crashOnSend?: () => boolean;
@@ -822,7 +825,6 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             },
           })
         : null,
-    paymasterService: options.paymasterService ?? null,
     ...(options.sponsorship === undefined ? {} : { sponsorship: options.sponsorship }),
   });
 
