@@ -20,7 +20,7 @@
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
-  ecdsaKey,
+  kernelKey,
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
@@ -90,13 +90,13 @@ async function bringUp(chainId) {
   const deployment = kernelV4Deployment(chainId);
   const ownerRuntime = createKernelRuntime({
     deployment,
-    operator: ownerOperator({ key: ecdsaKey({ account: owner, validator: stack.validator }) }),
+    operator: ownerOperator({ key: kernelKey({ account: owner, validator: stack.validator }) }),
     reads: stack.reads,
   });
   const sessionRuntime = createKernelRuntime({
     deployment,
     operator: sessionOperator({
-      key: ecdsaKey({ account: sessionKeyAccount, validator: stack.validator }),
+      key: kernelKey({ account: sessionKeyAccount, validator: stack.validator }),
       // The approved scope: this target with empty calldata, at most 500 wei.
       policies: [
         {
@@ -157,7 +157,7 @@ try {
   // It reads no chain and no deployment profile: nothing here can depend on a
   // chain that exists, let alone on one that does not.
   approval = await approveKernelPermissionAllChain({
-    owner: ecdsaKey({ account: owner, validator: a.stack.validator }),
+    owner: kernelKey({ account: owner, validator: a.stack.validator }),
     account: a.account.account,
     installNonce: INSTALL_NONCE,
     packages: a.sessionRuntime.packages,

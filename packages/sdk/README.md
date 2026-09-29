@@ -40,16 +40,16 @@ exposes its existing lifetime operation bound.
 
 Existing Kernel `0.3.3` accounts also support custom passkey sessions through
 `createKernelRuntime({ deployment: kernelV33Deployment(chainId), reads,
-operator: sessionOperator({ key: webauthnKey(passkey), policies }) })` from
+operator: sessionOperator({ key: kernelKey(passkey), policies }) })` from
 `@oaath/sdk/kernel`. The caller supplies the selected credential and authenticator
-callback; `webauthnKey` checks its challenge, credential public key, RP ID, exact
+callback; the WebAuthn key checks its challenge, credential public key, RP ID, exact
 HTTPS origin, user presence and verification before returning a signature.
 Use the same `approveKernelV33Permission` / `materializeKernelV33Permission`
 flow as ECDSA sessions. Root-owner binding remains ECDSA-only; the permission's
 signer is independent of that root. This custom Kernel API does not replace
 the application's durable operation journal or implement browser credential UI.
 For approval and preparation with only public identity, use
-`credentialKey({ credential, validator: null })` in the session operator. It
+`kernelKey({ credential })` in the session operator. It
 derives the same permission as the matching signing profile and cannot sign.
 For custom revocation, `readKernelV33PermissionState` reads through the caller's
 block-pinned `call` capability and `kernelV33PermissionRevocationCalls` prepares
@@ -137,7 +137,7 @@ request is made. Chain RPC and bundler calls still use the configured ports.
 
 To sign local sessions with a passkey instead of the generated key, pass
 `session: { kind: "webauthn", credential, credentialId, rpId, origin, authenticate }`
-(the `webauthnKey` input). The passkey stays in its authenticator; only its public
+(the WebAuthn `kernelKey` input). The passkey stays in its authenticator; only its public
 credential is recorded in the Grant, and reopening with the same passkey resumes it.
 The pinned WebAuthn signer verifies through the Daimo P-256 verifier contract, not
 the RIP-7212 precompile, so approval fails closed with
@@ -176,7 +176,7 @@ no Grant approval at all, use the standalone owner mode above.
 Owner and session sends share the Grant/chain operation lane. `getOperation`
 recovers either signer without another signature or submission. Custom injected
 signing configurations declare an available owner unless they provide a
-public-only `credentialKey`; a failed signer never becomes a session fallback.
+public-only `kernelKey({ credential })`; a failed signer never becomes a session fallback.
 
 ## Runtime primitives
 
@@ -184,7 +184,7 @@ The same owner operation is available through the lower-level runtime:
 
 ```ts
 import {
-  createKernelRuntime, createKernelV33Reads, ecdsaWalletKey,
+  createKernelRuntime, createKernelV33Reads, kernelKey,
   kernelV33Deployment, ownerOperator,
 } from "@oaath/sdk/kernel";
 
@@ -192,7 +192,7 @@ const deployment = kernelV33Deployment(chainId);
 const runtime = createKernelRuntime({
   deployment,
   operator: ownerOperator({
-    key: ecdsaWalletKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
+    key: kernelKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
   }),
   reads: createKernelV33Reads(publicClient),
 });
@@ -204,12 +204,12 @@ const prepared = runtime.prepareOperation({
 const signature = await runtime.signOperation(prepared);
 ```
 
-`walletClient` is a connected viem wallet client with an account. `ecdsaWalletKey`
+`walletClient` is a connected viem wallet client with an account. A `wallet` key
 requests one `personal_sign` signature over the exact 32-byte operation digest
 and verifies the EIP-191 signature against that captured account locally. It
 does not request accounts or retry a rejected signature. The validator must
 support EIP-191, as the canonical Kernel v3.3 ECDSA validator does. Local accounts
-using raw-hash signing can continue to use `ecdsaKey({ account, validator })`.
+using raw-hash signing can pass `kernelKey({ account, validator })` instead.
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
 schema calls its context label `grantId`; no Grant is created or needed here.
@@ -223,7 +223,7 @@ The lower-level runtime also supports ECDSA sessions on existing v3.3 accounts:
 ```ts
 import {
   approveKernelV33Permission, createKernelRuntime, createKernelV33Reads,
-  ecdsaKey, ecdsaWalletKey, kernelV33Deployment,
+  kernelKey, kernelV33Deployment,
   kernelV33PermissionInstallNonce, materializeKernelV33Permission, sessionOperator,
 } from "@oaath/sdk/kernel";
 
@@ -232,14 +232,14 @@ const reads = createKernelV33Reads(publicClient);
 const runtime = createKernelRuntime({
   deployment, reads,
   operator: sessionOperator({
-    key: ecdsaKey({ account: sessionKey, validator: deployment.ecdsaValidator }),
+    key: kernelKey({ account: sessionKey, validator: deployment.ecdsaValidator }),
     policies: [{ kind: "call", permissions: [{ target, selector, valueLimit: "0" }] }],
   }),
 });
 const account = await runtime.bindAccount({ address: existingKernelAddress });
 const approval = await approveKernelV33Permission({
   runtime, account,
-  owner: ecdsaWalletKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
+  owner: kernelKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
   nonce: await kernelV33PermissionInstallNonce({ runtime, account, reads }),
 });
 const { prepared, signature } = await materializeKernelV33Permission({

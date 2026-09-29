@@ -27,10 +27,10 @@ import type {
 } from "../src/advanced.js";
 import {
   createKernelRuntime,
-  ecdsaKey,
   encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  kernelKey,
   kernelV4Deployment,
   ownerOperator,
   type PreparedUserOperation,
@@ -207,7 +207,7 @@ async function unrelatedOperation(
   const account = privateKeyToAccount(generatePrivateKey());
   const runtime = createKernelRuntime({
     deployment: kernelV4Deployment(CHAIN_ID),
-    operator: ownerOperator({ key: ecdsaKey({ account, validator }) }),
+    operator: ownerOperator({ key: kernelKey({ account, validator }) }),
     reads: harness.reads,
   });
   const descriptor = await runtime.bindAccount({

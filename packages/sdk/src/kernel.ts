@@ -35,8 +35,6 @@ export {
   kernelV33OperationSigningHash,
 } from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
-export type { CredentialKeyInput } from "./kernel/key/credential.js";
-export { credentialKey } from "./kernel/key/credential.js";
 export type {
   EcdsaKeyAccount,
   EcdsaKeyInput,
@@ -44,17 +42,10 @@ export type {
   EcdsaWalletClient,
   EcdsaWalletKeyInput,
 } from "./kernel/key/ecdsa.js";
-export { ecdsaKey, ecdsaWalletKey } from "./kernel/key/ecdsa.js";
-export type {
-  P256KeyInput,
-  P256SignRequest,
-} from "./kernel/key/p256.js";
-export { p256Key } from "./kernel/key/p256.js";
-export type {
-  WebAuthnAssertionRequest,
-  WebAuthnKeyInput,
-} from "./kernel/key/webauthn.js";
-export { webauthnKey } from "./kernel/key/webauthn.js";
+export type { KernelKeyInput, KernelPublicKeyInput } from "./kernel/key/kernel-key.js";
+export { kernelKey } from "./kernel/key/kernel-key.js";
+export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
+export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/webauthn.js";
 export {
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,

@@ -28,8 +28,6 @@ import {
 import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
-  credentialKey,
-  ecdsaKey,
   encodeKernelV4PermissionSignature,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
@@ -45,14 +43,13 @@ import {
   type KernelOperatorAuthority,
   type KernelV4AccountReadRequest,
   type KeyProfile,
+  kernelKey,
   kernelV4Deployment,
   type OperatorProfile,
   ownerOperator,
-  p256Key,
   pinnedPolicyModule,
   pinnedSignerModule,
   sessionOperator,
-  webauthnKey,
 } from "../src/kernel.js";
 
 const chainId = 421_614;
@@ -207,7 +204,7 @@ function customKey(
     sign?: KeyProfile["sign"];
   }> = {},
 ): Readonly<KeyProfile> {
-  const inner = ecdsaKey({ account: ecdsaAccount, validator });
+  const inner = kernelKey({ account: ecdsaAccount, validator });
   return Object.freeze({
     kind: (overrides.kind ?? customKind) as KernelKeyKind,
     publicMaterial: inner.publicMaterial,
@@ -222,10 +219,10 @@ function customKey(
 type MatrixKeyKind = KernelBuiltInKeyKind | typeof customKind;
 
 const keyProfiles: Readonly<Record<MatrixKeyKind, () => Readonly<KeyProfile>>> = Object.freeze({
-  ecdsa: () => ecdsaKey({ account: ecdsaAccount, validator }),
-  p256: () => p256Key({ credential: p256Credential, sign: p256Sign }),
+  ecdsa: () => kernelKey({ account: ecdsaAccount, validator }),
+  p256: () => kernelKey({ credential: p256Credential, sign: p256Sign }),
   webauthn: () =>
-    webauthnKey({
+    kernelKey({
       credential: webauthnCredential,
       credentialId,
       rpId,
@@ -960,7 +957,7 @@ describe("Consumer-authored key profiles", () => {
 
   it("refuses a reviewed kind that binds its own permission signer module", () => {
     // A caller may never select the module a reviewed credential installs.
-    const key = ecdsaKey({ account: ecdsaAccount, validator });
+    const key = kernelKey({ account: ecdsaAccount, validator });
     expect(() =>
       ownerOperator({ key: Object.freeze({ ...key, signerModule: customSigner }) }),
     ).toThrowError(
@@ -1037,7 +1034,7 @@ describe("Kernel key profiles", () => {
     expect(await key.verify(hash, signature)).toBe(true);
 
     const order = p256.CURVE.n;
-    const highS = p256Key({
+    const highS = kernelKey({
       credential: p256Credential,
       async sign(request) {
         const low = await p256Sign(request);
@@ -1053,14 +1050,14 @@ describe("Kernel key profiles", () => {
     ["zero scalars", async (): Promise<string> => `0x${"00".repeat(64)}`],
     ["unrelated key", async (): Promise<string> => `0x${"01".repeat(64)}`],
   ] as const)("fails closed on a P-256 capability returning %s", async (_label, sign) => {
-    const key = p256Key({ credential: p256Credential, sign });
+    const key = kernelKey({ credential: p256Credential, sign });
     await expect(key.sign(keccak256("0xdeadbeef"))).rejects.toMatchObject({
       code: "kernel_runtime_signature_invalid",
     });
   });
 
   it("maps a failing P-256 capability to one signing-failure code", async () => {
-    const key = p256Key({
+    const key = kernelKey({
       credential: p256Credential,
       sign() {
         return Promise.reject(new Error("credential-bearing authenticator detail"));
@@ -1100,7 +1097,7 @@ describe("Kernel key profiles", () => {
   });
 
   it("normalizes a high-s WebAuthn assertion", async () => {
-    const key = webauthnKey({
+    const key = kernelKey({
       credential: webauthnCredential,
       credentialId,
       rpId,
@@ -1118,7 +1115,7 @@ describe("Kernel key profiles", () => {
     ["missing user verification", { flags: 0x01 }],
     ["a foreign relying party", { rpIdHash: keccak256("0x02") }],
   ] as const)("fails closed on an assertion with %s", async (_label, overrides) => {
-    const key = webauthnKey({
+    const key = kernelKey({
       credential: webauthnCredential,
       credentialId,
       rpId,
@@ -1131,7 +1128,7 @@ describe("Kernel key profiles", () => {
   });
 
   it("rejects a WebAuthn assertion that is not an exact record", async () => {
-    const key = webauthnKey({
+    const key = kernelKey({
       credential: webauthnCredential,
       credentialId,
       rpId,
@@ -1167,12 +1164,12 @@ describe("Kernel key profiles", () => {
   it.each([
     [
       "a credential of the wrong kind",
-      () => p256Key({ credential: webauthnCredential, sign: p256Sign }),
+      () => kernelKey({ credential: webauthnCredential, sign: p256Sign }),
     ],
     [
       "a credential ID that does not match its hash",
       () =>
-        webauthnKey({
+        kernelKey({
           credential: webauthnCredential,
           credentialId: "AAEC",
           rpId,
@@ -1183,7 +1180,7 @@ describe("Kernel key profiles", () => {
     [
       "a non-canonical credential ID",
       () =>
-        webauthnKey({
+        kernelKey({
           credential: webauthnCredential,
           credentialId: `${credentialId}=`,
           rpId,
@@ -1194,7 +1191,7 @@ describe("Kernel key profiles", () => {
     [
       "an insecure origin",
       () =>
-        webauthnKey({
+        kernelKey({
           credential: webauthnCredential,
           credentialId,
           rpId,
@@ -1205,7 +1202,7 @@ describe("Kernel key profiles", () => {
     [
       "a traversing relying party",
       () =>
-        webauthnKey({
+        kernelKey({
           credential: webauthnCredential,
           credentialId,
           rpId: "app..example",
@@ -1215,11 +1212,11 @@ describe("Kernel key profiles", () => {
     ],
     [
       "a missing signing capability",
-      () => p256Key({ credential: p256Credential, sign: null as never }),
+      () => kernelKey({ credential: p256Credential, sign: null as never }),
     ],
     [
       "an ECDSA account without an address",
-      () => ecdsaKey({ account: { sign: async () => "0x" } as never, validator }),
+      () => kernelKey({ account: { sign: async () => "0x" } as never, validator }),
     ],
   ] as const)("rejects %s", (_label, build) => {
     expect(build).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
@@ -1234,7 +1231,7 @@ describe("Kernel key profiles", () => {
   });
 
   it("fails closed on an ECDSA capability returning a malformed signature", async () => {
-    const key = ecdsaKey({
+    const key = kernelKey({
       account: { address: ecdsaAccount.address, sign: async () => "0xdead" },
       validator,
     });
@@ -1245,7 +1242,7 @@ describe("Kernel key profiles", () => {
 
   it("fails closed on an ECDSA signature from an unrelated key", async () => {
     const other = privateKeyToAccount(`0x${"12".repeat(32)}`);
-    const key = ecdsaKey({
+    const key = kernelKey({
       account: { address: ecdsaAccount.address, sign: (request) => other.sign(request) },
       validator,
     });
@@ -1301,7 +1298,7 @@ describe("Kernel module registry", () => {
   });
 
   it("composes the same permission from public passkey material without signing authority", async () => {
-    const publicKey = credentialKey({ credential: webauthnCredential, validator: null });
+    const publicKey = kernelKey({ credential: webauthnCredential, validator: null });
     const signingKey = keyProfiles.webauthn();
     expect(publicKey.publicMaterial).toBe(signingKey.publicMaterial);
     const policies = [
@@ -1332,11 +1329,38 @@ describe("Kernel module registry", () => {
       ),
     ).toHaveLength(6);
     expect(() =>
-      credentialKey({
+      kernelKey({
         credential: { ...webauthnCredential, publicKey: `0x04${"00".repeat(64)}` },
         validator: null,
       }),
     ).toThrow();
+  });
+
+  it("selects the key kind and signing source from the kernelKey input alone", () => {
+    const wallet = {
+      account: { address: ecdsaAccount.address, type: "local" },
+      signMessage: async () => "0x",
+    };
+    const cases = [
+      [kernelKey({ account: ecdsaAccount, validator }), "ecdsa"],
+      [kernelKey({ wallet, validator }), "ecdsa"],
+      [kernelKey({ credential: p256Credential, sign: p256Sign }), "p256"],
+      [keyProfiles.webauthn(), "webauthn"],
+      [kernelKey({ credential: webauthnCredential }), "webauthn"],
+    ] as const;
+    for (const [key, kind] of cases) expect(key.kind).toBe(kind);
+    // An explicit kind is a check, never a conversion.
+    expect(kernelKey({ kind: "ecdsa", account: ecdsaAccount, validator }).kind).toBe("ecdsa");
+    for (const input of [
+      { kind: "p256", account: ecdsaAccount, validator },
+      { kind: "ecdsa", credential: p256Credential, sign: p256Sign },
+      { kind: "webauthn", credential: p256Credential },
+      { kind: "custom:x", account: ecdsaAccount, validator },
+    ]) {
+      expect(() => kernelKey(input as never)).toThrow(
+        expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+      );
+    }
   });
 });
 

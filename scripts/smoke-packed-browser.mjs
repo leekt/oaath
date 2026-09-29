@@ -47,36 +47,33 @@ import {
   createOAAth,
 } from "@oaath/sdk";
 import {
-  compileKernelPermissionPolicy,
-  createKernelRuntime,
-  credentialKey,
-  kernelV33EffectivePermissionNonce,
-  kernelV33PermissionRevocationCalls,
-  kernelV33PermissionStatus,
-  kernelV33PermissionEnableTypedData,
-  parseKernelV33PermissionState,
-  parseKernelV33PermissionApproval,
-  OAATH_KERNEL_V33_APPROVAL_VERSION,
-  kernelV33Deployment,
-  sessionOperator,
-  webauthnKey,
-  OAATH_KERNEL_RATE_LIMIT_POLICY,
-  p256Key,
-  kernelPermissionInstallNonce,
-  prepareKernelPhonePermissionApproval,
-  prepareKernelPhoneRevocation,
-  ecdsaKey,
-  encodeKernelV4NonceKey,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4InstallNonceRead,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
-  kernelV4Deployment,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_V33_APPROVAL_VERSION,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  compileKernelPermissionPolicy,
+  createKernelRuntime,
+  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelV4InstallNonceRead,
+  encodeKernelV4NonceKey,
+  kernelKey,
+  kernelPermissionInstallNonce,
+  kernelV33Deployment,
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionEnableTypedData,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  kernelV4Deployment,
+  parseKernelV33PermissionApproval,
+  parseKernelV33PermissionState,
+  prepareKernelPhonePermissionApproval,
+  prepareKernelPhoneRevocation,
+  sessionOperator,
 } from "@oaath/sdk/kernel";
 import {
   createIndexedDbCleanupStore,
@@ -170,7 +167,7 @@ const passkeySession = createKernelRuntime({
   deployment: kernelV33Deployment(CHAIN_ID),
   reads: { read: async () => fail("composition must not read the chain") },
   operator: sessionOperator({
-    key: webauthnKey({
+    key: kernelKey({
       credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
       credentialId: "AAECAwQFBgcICQoLDA0ODw",
       rpId: "app.example",
@@ -183,7 +180,7 @@ const passkeySession = createKernelRuntime({
 if (passkeySession.keyKind !== "webauthn" || passkeySession.authority !== "session" ||
     passkeySession.packages.at(-1)?.moduleType !== 6) fail("v3.3 passkey composition failed");
 const publicSession = sessionOperator({
-  key: credentialKey({
+  key: kernelKey({
     credential: { ...ownerCredential, kind: "webauthn", authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f") },
     validator: null,
   }),
@@ -550,8 +547,8 @@ function createRealm(chains = [chain]) {
     stores,
     chains,
     signing: {
-      owner: p256Key({ credential: ownerCredential, sign: async () => fail("application cannot sign as owner") }),
-      session: ecdsaKey({ account: sessionAccount, validator: VALIDATOR }),
+      owner: kernelKey({ credential: ownerCredential, sign: async () => fail("application cannot sign as owner") }),
+      session: kernelKey({ account: sessionAccount, validator: VALIDATOR }),
     },
     localKeyIds: ["session-key"],
     now,

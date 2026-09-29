@@ -11,9 +11,8 @@ import {
   approveKernelPermissionAllChain,
   approveKernelV33Permission,
   createKernelRuntime,
-  credentialKey,
-  ecdsaKey,
   kernelAllChainCapabilityHash,
+  kernelKey,
   kernelPermissionInstallNonce,
   kernelV4Deployment,
   kernelV33CapabilityHash,
@@ -212,10 +211,10 @@ export async function createLocalAnvilFixture(
       if (!stateResponse.ok) throw new Error("fixture_authorization_unavailable");
       const state = await stateResponse.json();
       const scope = JSON.parse(state.requestedScope);
-      const ownerKey = ecdsaKey({ account: owner, validator: first.validator });
+      const ownerKey = kernelKey({ account: owner, validator: first.validator });
       // Like an owner device: the packages bind the operator credential the
       // owner reviewed, never a key the application holds.
-      const sessionKey = credentialKey({ credential: scope.operatorCredential, validator: null });
+      const sessionKey = kernelKey({ credential: scope.operatorCredential, validator: null });
       const requestHash = hashPermissionRequest({ ...scope, requestId });
       const installApproval = await (async () => {
         if (first.existingAccount !== null) {
@@ -380,8 +379,8 @@ export async function createLocalAnvilFixture(
               },
         ),
         signing: {
-          owner: ecdsaKey({ account: owner, validator: first.validator }),
-          session: ecdsaKey({ account: session, validator: first.validator }),
+          owner: kernelKey({ account: owner, validator: first.validator }),
+          session: kernelKey({ account: session, validator: first.validator }),
         },
         localKeyIds: [],
         now,

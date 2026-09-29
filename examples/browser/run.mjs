@@ -29,8 +29,8 @@ import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
   createKernelRuntime,
-  ecdsaKey,
   kernelAllChainCapabilityHash,
+  kernelKey,
   kernelV4Deployment,
   ownerOperator,
   sessionOperator,
@@ -77,7 +77,7 @@ const chain =
     : (await import("./fake-chain.mjs")).createFakeChain(CHAIN_ID);
 
 // Two local credentials. In a browser these are non-extractable WebCrypto keys or
-// a passkey; `ecdsaKey` is the same composition path either way, and P-256 and
+// a passkey; `kernelKey` is the same composition path either way, and P-256 and
 // WebAuthn profiles plug into it identically.
 const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"12".repeat(32)}`);
@@ -140,7 +140,7 @@ const authorization = {
     // packages from the reviewed policy and operator credential. The
     // decision's capabilityHash binds exactly this capability, and the first
     // covered execution on any chain spends it.
-    const ownerKey = ecdsaKey({ account: ownerAccount, validator: chain.validator });
+    const ownerKey = kernelKey({ account: ownerAccount, validator: chain.validator });
     const deployment = kernelV4Deployment(CHAIN_ID);
     const ownerRuntime = createKernelRuntime({
       deployment,
@@ -154,7 +154,7 @@ const authorization = {
     const sessionRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
-        key: ecdsaKey({
+        key: kernelKey({
           account: { address: scope.operatorCredential.address, sign: async () => "0x" },
           validator: chain.validator,
         }),
@@ -263,8 +263,8 @@ const oaath = createOAAth({
   stores,
   chains: [chain.capability],
   signing: {
-    owner: ecdsaKey({ account: ownerAccount, validator: chain.validator }),
-    session: ecdsaKey({ account: sessionAccount, validator: chain.validator }),
+    owner: kernelKey({ account: ownerAccount, validator: chain.validator }),
+    session: kernelKey({ account: sessionAccount, validator: chain.validator }),
   },
   localKeyIds: ["session-key"],
   now,

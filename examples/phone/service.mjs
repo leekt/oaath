@@ -16,9 +16,9 @@ import {
 import {
   createKernelRuntime,
   KERNEL_V4_ENTRY_POINT_V07,
+  kernelKey,
   kernelV4Deployment,
   ownerOperator,
-  p256Key,
   parseKernelAllChainApproval,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
@@ -162,7 +162,7 @@ export async function startPhoneService({
       const runtime = createKernelRuntime({
         deployment: kernelV4Deployment(primary.capability.chainId),
         operator: ownerOperator({
-          key: p256Key({
+          key: kernelKey({
             credential: account.ownerCredential,
             sign: async () => {
               throw new Error("phone_signature_required");
