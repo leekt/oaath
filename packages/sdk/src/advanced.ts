@@ -111,39 +111,40 @@ export {
   hashErc7902StaticPaymasterConfiguration,
 } from "./provider/erc7902.js";
 export type {
-  OaathBundlerAcceptanceEvidence,
-  OaathBundlerProbeCapability,
-  OaathBundlerProbeEvidence,
-  OaathBundlerProbeInput,
-  OaathBundlerProbeRequest,
-} from "./routing/bundler.js";
-export {
-  classifyBundlerAcceptance,
-  classifyBundlerProbe,
-  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
-  probeBundlerCapability,
-} from "./routing/bundler.js";
-export type {
   OaathBundlerCapability,
+  OaathRouteFact,
   OaathRoutingCapabilities,
   OaathSessionCoverage,
 } from "./routing/capabilities.js";
 export { captureRoutingCapabilities } from "./routing/capabilities.js";
 export type { DecideExecutionInput } from "./routing/decide.js";
 export { decideExecution } from "./routing/decide.js";
-export type { OaathOperationPrefund } from "./routing/gas.js";
-export { deriveOperationPrefund } from "./routing/gas.js";
+export type {
+  OaathBundlerAcceptanceEvidence,
+  OaathBundlerProbeCapability,
+  OaathBundlerProbeEvidence,
+  OaathBundlerProbeInput,
+  OaathBundlerProbeRequest,
+} from "./routing/erc4337/bundler.js";
+export {
+  classifyBundlerAcceptance,
+  classifyBundlerProbe,
+  OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
+  probeBundlerCapability,
+} from "./routing/erc4337/bundler.js";
+export type { OaathOperationPrefund } from "./routing/erc4337/gas.js";
+export { deriveOperationPrefund } from "./routing/erc4337/gas.js";
 export type {
   OaathHandleOpsCall,
   OaathHandleOpsEncodingInput,
   OaathHandleOpsRequirement,
   OaathHandleOpsRequirementInput,
-} from "./routing/handle-ops.js";
+} from "./routing/erc4337/handle-ops.js";
 export {
   deriveHandleOpsRequirement,
   encodeHandleOps,
   OAATH_HANDLE_OPS_OVERHEAD_GAS,
-} from "./routing/handle-ops.js";
+} from "./routing/erc4337/handle-ops.js";
 export type {
   OaathKernelSponsorshipCapability,
   OaathKernelSponsorshipRequest,
@@ -161,6 +162,8 @@ export type {
   OaathExecutionSignerDecision,
   OaathExecutionSignerReason,
   OaathFeePayerDescriptor,
+  OaathRouteReasonCode,
+  OaathSubmissionRouteKind,
   RoutingErrorCode,
 } from "./routing/types.js";
 export { OaathRoutingError } from "./routing/types.js";

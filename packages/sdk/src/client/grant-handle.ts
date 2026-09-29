@@ -121,13 +121,16 @@ import {
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { OaathWalletCallResultCapabilities } from "../provider/result-capabilities.js";
 import { selectAutoSigner } from "../routing/auto.js";
-import { type OaathBundlerProbeCapability, probeBundlerCapability } from "../routing/bundler.js";
 import {
   feePayerDescriptor,
-  type OaathBundlerCapability,
+  type OaathRouteFact,
   type OaathSessionCoverage,
 } from "../routing/capabilities.js";
 import { decideExecution, supportsBundlerSponsorship } from "../routing/decide.js";
+import {
+  type OaathBundlerProbeCapability,
+  probeBundlerCapability,
+} from "../routing/erc4337/bundler.js";
 import {
   type OaathKernelSponsorshipCapability,
   prepareSponsoredKernelOperation,
@@ -1005,7 +1008,7 @@ export function createGrantHandle(
 
   interface ExecutionRouteAdmissionEvidence {
     readonly chainId: number;
-    readonly bundler: OaathBundlerCapability;
+    readonly routes: readonly OaathRouteFact[];
   }
 
   let record = input.record;
@@ -1106,16 +1109,23 @@ export function createGrantHandle(
     return chain;
   }
 
-  function classifiedBundler(
+  /** Classifies the chain's routes in preference order; only a bundler route is probed. */
+  async function classifiedRoutes(
     chainId: number,
     chain: Readonly<OaathChainCapability>,
     entryPoint: `0x${string}`,
-  ): Promise<OaathBundlerCapability> {
-    return probeBundlerCapability({
+  ): Promise<readonly OaathRouteFact[]> {
+    const bundler = await probeBundlerCapability({
       capability: chain.bundler,
       request: { chainId, entryPoint },
       timeoutMs: SUBMISSION_TIMEOUT_MS,
     }).catch((error: unknown) => mapClientFailure(error, "bundler probe failed"));
+    return Object.freeze([
+      Object.freeze({ kind: "erc4337-bundler" as const, bundler }),
+      ...(chain.feePayer === null
+        ? []
+        : [Object.freeze({ kind: "erc4337-handleops" as const, feePayer: chain.feePayer })]),
+    ]);
   }
 
   async function refresh(): Promise<GrantStoreRecord> {
@@ -1359,14 +1369,13 @@ export function createGrantHandle(
         coverage === "uncovered" ? "session_calls_uncovered" : "session_coverage_unreadable",
       );
     }
-    const bundler =
-      executionRouteAdmission?.bundler ??
-      (await classifiedBundler(chainId, chain, runtime.deployment.entryPoint.address));
+    const routes =
+      executionRouteAdmission?.routes ??
+      (await classifiedRoutes(chainId, chain, runtime.deployment.entryPoint.address));
     const decision = decideExecution({
       operationKind: "execution",
       sessionCoverage: coverage,
-      bundler,
-      feePayer: chain.feePayer,
+      routes,
     });
     if (decision.route === "none") {
       return clientFail(
@@ -3064,13 +3073,12 @@ export function createGrantHandle(
     // Runtime-owned preparation proves the whole call bundle fits its atomic encoding.
     // This zero-gas simulation is neither quoted, persisted nor signed.
     quoteRequest(shape, null, "estimate");
-    const bundler = await classifiedBundler(chainId, chain, runtime.deployment.entryPoint.address);
+    const routes = await classifiedRoutes(chainId, chain, runtime.deployment.entryPoint.address);
     const routed = decideExecution({
       operationKind: "execution",
       signer: "owner",
       sessionCoverage: "unreadable",
-      bundler,
-      feePayer: chain.feePayer,
+      routes,
     });
     if (routed.route === "none")
       return clientFail(
@@ -3446,13 +3454,13 @@ export function createGrantHandle(
           return mapClientFailure(error, "chain is not a supported Kernel deployment");
         }
       })();
-      const bundler = await classifiedBundler(chainId, chain, deployment.entryPoint.address);
+      const routes = await classifiedRoutes(chainId, chain, deployment.entryPoint.address);
       const admission = Object.freeze({
         kind: "oaath_provider_execution_route_admission" as const,
       });
-      executionRouteAdmissions.set(admission, Object.freeze({ chainId, bundler }));
+      executionRouteAdmissions.set(admission, Object.freeze({ chainId, routes }));
       return Object.freeze({
-        sponsorship: supportsBundlerSponsorship(bundler)
+        sponsorship: supportsBundlerSponsorship(routes)
           ? ("supported" as const)
           : ("unsupported" as const),
         admission,
@@ -4082,16 +4090,10 @@ export function createGrantHandle(
                 packages: input.installApproval.packages,
               });
         if (calls.length > 0) {
-          const bundler = await probeBundlerCapability({
-            capability: chain.bundler,
-            request: { chainId, entryPoint: deployment.entryPoint.address },
-            timeoutMs: SUBMISSION_TIMEOUT_MS,
-          });
           const decision = decideExecution({
             operationKind: "revocation",
             sessionCoverage: "uncovered",
-            bundler,
-            feePayer: chain.feePayer,
+            routes: await classifiedRoutes(chainId, chain, deployment.entryPoint.address),
           });
           const descriptor =
             decision.route === "none" ? null : await accountDescriptor(chainId, runtime);
@@ -4257,16 +4259,10 @@ export function createGrantHandle(
     );
     const calls = kernelV33PermissionRevocationCalls({ approval, state });
     if (calls.length === 0) return;
-    const bundler = await classifiedBundler(
-      binding.chainId,
-      chain,
-      runtime.deployment.entryPoint.address,
-    );
     const decision = decideExecution({
       operationKind: "revocation",
       sessionCoverage: "uncovered",
-      bundler,
-      feePayer: chain.feePayer,
+      routes: await classifiedRoutes(binding.chainId, chain, runtime.deployment.entryPoint.address),
     });
     if (decision.route === "none") return;
     const sender = runner({

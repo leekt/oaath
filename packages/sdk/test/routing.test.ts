@@ -14,6 +14,7 @@ import {
   type OaathBundlerCapability,
   type OaathBundlerProbeRequest,
   type OaathFeePayerDescriptor,
+  type OaathRouteFact,
   type OaathSessionCoverage,
   probeBundlerCapability,
 } from "../src/advanced.js";
@@ -68,6 +69,20 @@ const feePayer: Readonly<OaathFeePayerDescriptor> = Object.freeze({
   address: feePayerAddress,
   balance: "1000000000000000000",
 });
+
+/**
+ * The bundler + handleOps-fallback configuration expressed as ordered routes:
+ * the bundler first, then the handleOps route exactly when a fee payer exists.
+ */
+function fallbackRoutes(
+  bundler: OaathBundlerCapability,
+  payer: Readonly<OaathFeePayerDescriptor> | null,
+): readonly OaathRouteFact[] {
+  return [
+    { kind: "erc4337-bundler", bundler },
+    ...(payer === null ? [] : [{ kind: "erc4337-handleops" as const, feePayer: payer }]),
+  ];
+}
 
 /**
  * The full pre-sign decision table. Every row is `kind/coverage/bundler/feePayer
@@ -132,10 +147,8 @@ function everyFactCombination() {
     coverages.flatMap((sessionCoverage) =>
       bundlers.flatMap((bundler) =>
         [feePayer, null].map((payer) => ({
-          operationKind,
-          sessionCoverage,
-          bundler,
-          feePayer: payer,
+          facts: { bundler, feePayer: payer },
+          input: { operationKind, sessionCoverage, routes: fallbackRoutes(bundler, payer) },
         })),
       ),
     ),
@@ -147,22 +160,26 @@ describe("routing decision", () => {
     const facts = {
       operationKind: "execution" as const,
       sessionCoverage: "uncovered" as const,
-      bundler: "available" as const,
-      feePayer: null,
+      routes: fallbackRoutes("available", null),
     };
     expect(decideExecution(facts).signer).toBe("none");
     expect(decideExecution({ ...facts, signer: "session" }).signer).toBe("none");
     expect(decideExecution({ ...facts, signer: "owner" })).toMatchObject({
       signer: "owner",
       route: "bundler",
-      reasons: ["owner_explicit", "bundler_available"],
+      reasons: ["owner_explicit", "route_available:erc4337-bundler"],
     });
     expect(() => decideExecution({ ...facts, signer: "auto" } as never)).toThrowError(
       expect.objectContaining({ code: "routing_input_invalid" }),
     );
   });
   it("selects sponsorship exactly for bundler routes", () => {
-    expect(bundlers.map((bundler) => [bundler, supportsBundlerSponsorship(bundler)])).toEqual([
+    expect(
+      bundlers.map((bundler) => [
+        bundler,
+        supportsBundlerSponsorship(fallbackRoutes(bundler, feePayer)),
+      ]),
+    ).toEqual([
       ["available", true],
       ["absent", false],
       ["unsupported", false],
@@ -171,19 +188,19 @@ describe("routing decision", () => {
   });
 
   it("decides every fact combination exactly as the reviewed table", () => {
-    const rows = everyFactCombination().map((input) => {
+    const rows = everyFactCombination().map(({ facts, input }) => {
       const decision = decideExecution(input);
-      const payer = input.feePayer === null ? "none" : "payer";
-      return `${input.operationKind}/${input.sessionCoverage}/${input.bundler}/${payer} -> ${decision.signer}/${decision.route}`;
+      const payer = facts.feePayer === null ? "none" : "payer";
+      return `${input.operationKind}/${input.sessionCoverage}/${facts.bundler}/${payer} -> ${decision.signer}/${decision.route}`;
     });
     expect(rows).toEqual(DECISION_TABLE);
     expect(rows).toHaveLength(48);
   });
 
   it("carries closed reason codes for every combination", () => {
-    for (const input of everyFactCombination()) {
+    for (const { facts, input } of everyFactCombination()) {
       const decision = decideExecution(input);
-      const [signerReason, bundlerReason, feePayerReason] = decision.reasons;
+      const [signerReason, bundlerReason, handleOpsReason] = decision.reasons;
       expect(signerReason).toBe(
         input.operationKind === "revocation"
           ? "root_operation_requires_owner"
@@ -199,15 +216,17 @@ describe("routing decision", () => {
         expect(decision.reasons).toHaveLength(1);
         continue;
       }
-      expect(bundlerReason).toBe(`bundler_${input.bundler}`);
-      if (input.bundler === "available" || input.bundler === "unreadable") {
-        // An inconclusive or healthy bundler never consults the fee payer.
+      expect(bundlerReason).toBe(`route_${facts.bundler}:erc4337-bundler`);
+      if (
+        facts.bundler === "available" ||
+        facts.bundler === "unreadable" ||
+        facts.feePayer === null
+      ) {
+        // An inconclusive or healthy bundler never consults a later route.
         expect(decision.reasons).toHaveLength(2);
-        expect(feePayerReason).toBeUndefined();
+        expect(handleOpsReason).toBeUndefined();
       } else {
-        expect(feePayerReason).toBe(
-          input.feePayer === null ? "fee_payer_absent" : "fee_payer_configured",
-        );
+        expect(handleOpsReason).toBe("route_available:erc4337-handleops");
       }
     }
   });
@@ -216,8 +235,7 @@ describe("routing decision", () => {
     const decision = decideExecution({
       operationKind: "execution",
       sessionCoverage: "covered",
-      bundler: "absent",
-      feePayer,
+      routes: fallbackRoutes("absent", feePayer),
     });
     expect(Object.keys(decision).sort()).toEqual(["feePayer", "reasons", "route", "signer"]);
     expect(Object.isFrozen(decision)).toBe(true);
@@ -233,8 +251,7 @@ describe("routing decision", () => {
         const decision = decideExecution({
           operationKind,
           sessionCoverage,
-          bundler: "unreadable",
-          feePayer,
+          routes: fallbackRoutes("unreadable", feePayer),
         });
         // A denied signer denies the route; otherwise an unreadable bundler
         // stays on the bundler route. Neither authorizes the fallback.
@@ -242,80 +259,105 @@ describe("routing decision", () => {
           operationKind === "execution" && sessionCoverage !== "covered" ? "none" : "bundler",
         );
         expect(decision.feePayer).toBeNull();
-        expect(decision.reasons).not.toContain("fee_payer_configured");
+        expect(decision.reasons).not.toContain("route_available:erc4337-handleops");
       }
     }
   });
 
   it("returns a fee payer exactly when the route is the handleOps fallback", () => {
-    for (const input of everyFactCombination()) {
+    for (const { input } of everyFactCombination()) {
       const decision = decideExecution(input);
       expect(decision.feePayer !== null).toBe(decision.route === "entrypoint-handleops");
     }
   });
 
+  it("returns none with a structured reason when a chain offers no route", () => {
+    for (const operationKind of kinds) {
+      expect(
+        decideExecution({ operationKind, sessionCoverage: "covered", routes: [] }),
+      ).toMatchObject({
+        signer: operationKind === "revocation" ? "owner" : "session",
+        route: "none",
+        feePayer: null,
+        reasons: [
+          operationKind === "revocation" ? "root_operation_requires_owner" : "session_covers_calls",
+          "route_none_configured",
+        ],
+      });
+    }
+    expect(supportsBundlerSponsorship([])).toBe(false);
+  });
+
+  it("honors the configured route order and never probes past an unreadable bundler", () => {
+    const handleOps = { kind: "erc4337-handleops" as const, feePayer };
+    const covered = { operationKind: "execution" as const, sessionCoverage: "covered" as const };
+    // A pinned handleOps route selects it without any bundler fact.
+    expect(decideExecution({ ...covered, routes: [handleOps] })).toMatchObject({
+      route: "entrypoint-handleops",
+      reasons: ["session_covers_calls", "route_available:erc4337-handleops"],
+    });
+    expect(
+      decideExecution({
+        ...covered,
+        routes: [handleOps, { kind: "erc4337-bundler", bundler: "available" }],
+      }).route,
+    ).toBe("entrypoint-handleops");
+    expect(
+      decideExecution({ ...covered, routes: [{ kind: "erc4337-bundler", bundler: "absent" }] }),
+    ).toMatchObject({
+      route: "none",
+      reasons: ["session_covers_calls", "route_absent:erc4337-bundler"],
+    });
+  });
+
   it("fails closed on hostile decision input", () => {
+    const base = { operationKind: "execution", sessionCoverage: "covered" };
+    const bundlerRoute = { kind: "erc4337-bundler", bundler: "available" };
     const cases: unknown[] = [
       null,
       "execution",
       [],
-      { operationKind: "execution", sessionCoverage: "covered", bundler: "available" },
+      base,
+      { ...base, routes: [bundlerRoute], extra: 1 },
+      { ...base, bundler: "available", feePayer: null },
+      { ...base, operationKind: "install", routes: [bundlerRoute] },
+      { ...base, sessionCoverage: "denied", routes: [bundlerRoute] },
+      { ...base, routes: [{ kind: "erc4337-bundler", bundler: "healthy" }] },
+      { ...base, routes: [{ kind: "eip8141" }] },
+      { ...base, routes: [bundlerRoute, { ...bundlerRoute }] },
+      { ...base, routes: [{ ...bundlerRoute, feePayer }] },
+      { ...base, routes: [{ kind: "erc4337-handleops", feePayer: null }] },
       {
-        operationKind: "execution",
-        sessionCoverage: "covered",
-        bundler: "available",
-        feePayer: null,
-        extra: 1,
+        ...base,
+        routes: [
+          { kind: "erc4337-handleops", feePayer: { address: feePayerAddress, balance: "-1" } },
+        ],
       },
       {
-        operationKind: "install",
-        sessionCoverage: "covered",
-        bundler: "available",
-        feePayer: null,
+        ...base,
+        routes: [
+          {
+            kind: "erc4337-handleops",
+            feePayer: { address: `0x${"00".repeat(20)}`, balance: "1" },
+          },
+        ],
       },
       {
-        operationKind: "execution",
-        sessionCoverage: "denied",
-        bundler: "available",
-        feePayer: null,
+        ...base,
+        routes: [
+          {
+            kind: "erc4337-handleops",
+            feePayer: { address: feePayerAddress, balance: "1", extra: true },
+          },
+        ],
       },
-      {
-        operationKind: "execution",
-        sessionCoverage: "covered",
-        bundler: "healthy",
-        feePayer: null,
-      },
-      {
-        operationKind: "execution",
-        sessionCoverage: "covered",
-        bundler: "absent",
-        feePayer: { address: feePayerAddress, balance: "-1" },
-      },
-      {
-        operationKind: "execution",
-        sessionCoverage: "covered",
-        bundler: "absent",
-        feePayer: { address: `0x${"00".repeat(20)}`, balance: "1" },
-      },
-      {
-        operationKind: "execution",
-        sessionCoverage: "covered",
-        bundler: "absent",
-        feePayer: { address: feePayerAddress, balance: "1", extra: true },
-      },
-      Object.defineProperty(
-        {
-          sessionCoverage: "covered",
-          bundler: "available",
-          feePayer: null,
-        },
-        "operationKind",
-        { get: () => "execution", enumerable: true },
-      ),
+      Object.defineProperty({ sessionCoverage: "covered", routes: [] }, "operationKind", {
+        get: () => "execution",
+        enumerable: true,
+      }),
       Object.assign(Object.create({ operationKind: "execution" }), {
         sessionCoverage: "covered",
-        bundler: "available",
-        feePayer: null,
+        routes: [],
       }),
     ];
     for (const value of cases) {
@@ -331,53 +373,56 @@ describe("routing capabilities", () => {
     const checksummed = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" as const;
     const captured = captureRoutingCapabilities({
       chainId,
-      bundler: "available",
+      routes: fallbackRoutes("available", { address: checksummed, balance: "0" }),
       sessionCoverage: "covered",
-      feePayer: { address: checksummed, balance: "0" },
     });
     expect(captured).toEqual({
       chainId,
-      bundler: "available",
+      routes: fallbackRoutes("available", {
+        address: checksummed.toLowerCase() as `0x${string}`,
+        balance: "0",
+      }),
       sessionCoverage: "covered",
-      feePayer: { address: checksummed.toLowerCase(), balance: "0" },
     });
     expect(Object.isFrozen(captured)).toBe(true);
+    expect(Object.isFrozen(captured.routes)).toBe(true);
   });
 
-  it("accepts an absent fee payer", () => {
+  it("accepts a chain with no route", () => {
     expect(
-      captureRoutingCapabilities({
-        chainId,
-        bundler: "absent",
-        sessionCoverage: "unreadable",
-        feePayer: null,
-      }).feePayer,
-    ).toBeNull();
+      captureRoutingCapabilities({ chainId, routes: [], sessionCoverage: "unreadable" }).routes,
+    ).toEqual([]);
   });
 
   it("fails closed on hostile capability descriptors", () => {
+    const routes = fallbackRoutes("available", null);
     const cases: unknown[] = [
       undefined,
-      { chainId, bundler: "available", sessionCoverage: "covered" },
-      { chainId: 0, bundler: "available", sessionCoverage: "covered", feePayer: null },
-      { chainId: 1.5, bundler: "available", sessionCoverage: "covered", feePayer: null },
-      { chainId, bundler: "present", sessionCoverage: "covered", feePayer: null },
-      { chainId, bundler: "available", sessionCoverage: "yes", feePayer: null },
-      { chainId, bundler: "available", sessionCoverage: "covered", feePayer: undefined },
+      { chainId, sessionCoverage: "covered" },
+      { chainId: 0, routes, sessionCoverage: "covered" },
+      { chainId: 1.5, routes, sessionCoverage: "covered" },
       {
         chainId,
-        bundler: "available",
+        routes: [{ kind: "erc4337-bundler", bundler: "present" }],
         sessionCoverage: "covered",
-        feePayer: { address: "0xnothex", balance: "1" },
+      },
+      { chainId, routes, sessionCoverage: "yes" },
+      { chainId, routes: undefined, sessionCoverage: "covered" },
+      { chainId, bundler: "available", sessionCoverage: "covered", feePayer: null },
+      {
+        chainId,
+        routes: [{ kind: "erc4337-handleops", feePayer: { address: "0xnothex", balance: "1" } }],
+        sessionCoverage: "covered",
       },
       {
         chainId,
-        bundler: "available",
+        routes: [
+          { kind: "erc4337-handleops", feePayer: { address: feePayerAddress, balance: "01" } },
+        ],
         sessionCoverage: "covered",
-        feePayer: { address: feePayerAddress, balance: "01" },
       },
       new Proxy(
-        { chainId, bundler: "available", sessionCoverage: "covered", feePayer: null },
+        { chainId, routes, sessionCoverage: "covered" },
         {
           getOwnPropertyDescriptor() {
             throw new Error("hostile descriptor");
