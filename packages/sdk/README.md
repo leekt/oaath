@@ -3,15 +3,15 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
-In service URL mode, `requestPermission` accepts an optional
+With service approvals, `requestPermission` accepts an optional
 `onPending({ requestId, matchCode, expiresAt })` callback before waiting for the
 owner. Display the eight-character code for comparison with the phone and clear
 it when the request settles. `expiresAt` is in Unix milliseconds; the code is
 non-secret display metadata and grants no authority. Wallet approvals do not
 call this callback.
 
-URL mode and wallet approvals share one optional `session` setting (`OaathSession`).
-`createOAAth({ url, session: { kind: "webauthn", ...webauthnKeyInput } })` makes
+Service and wallet approvals share one optional `session` setting (`OaathSession`).
+`createOAAth({ approvals: { kind: "service", url }, session: { kind: "webauthn", ...webauthnKeyInput } })` makes
 the owner review and install the caller's passkey as the operator credential; no
 session key is generated or stored. A deployment that declares backend or hosted
 session custody refuses it with `oaath_client_capability_unsupported`.

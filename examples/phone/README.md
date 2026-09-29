@@ -2,7 +2,7 @@
 
 A personal or team service with one paired P-256 owner phone and two configured
 local chains. The browser uses
-`createOAAth({ url })`, canonical permission requests, `sendCalls`, and
+`createOAAth({ approvals: { kind: "service", url } })`, canonical permission requests, `sendCalls`, and
 `getOperation`. Session keys, submission records and finality belong to the SDK.
 
 ```sh

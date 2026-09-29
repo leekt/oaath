@@ -40,7 +40,7 @@ import type {
   OaathSubmissionRoute,
 } from "../../src/advanced.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
-import { createOAAth, type Oaath } from "../../src/index.js";
+import { createOAAth, type Oaath, type OaathServiceOptions } from "../../src/index.js";
 import {
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
@@ -997,13 +997,12 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
   };
 
   const oaath = createOAAth({
-    url: options.url ?? ISSUER_URL,
-    fetch: service,
+    approvals: { kind: "service", url: options.url ?? ISSUER_URL, fetch: service },
     origin: ORIGIN,
     stores,
     now: clock.now,
     ...(options.session === undefined ? {} : { session: options.session }),
-  });
+  } as OaathServiceOptions);
 
   return { oaath, clock, chain, stores, relay, invalidations: () => invalidations, fetched };
 }
@@ -1058,7 +1057,7 @@ export function createRealm(options: RealmOptions = {}): Realm {
   let invalidations = 0;
 
   const oaath = createOAAth({
-    binding: options.binding ?? bindingInput,
+    binding: (options.binding ?? bindingInput) as typeof bindingInput,
     issuer: {
       url: ISSUER_URL,
       fetch: async (request: Request) => {

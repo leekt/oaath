@@ -229,7 +229,10 @@ for (const { workspaceKind, restart = false } of scenarios)
         }
       };
       const clientFetch = clientFetchFor("demo-client-token");
-      oaath = createOAAth({ url: service.url, origin: service.url, fetch: clientFetch });
+      oaath = createOAAth({
+        approvals: { kind: "service", url: service.url, fetch: clientFetch },
+        origin: service.url,
+      });
       connection = await oaath.connect();
       assert.equal(await connection.resume(), null);
       const grant = await connection
@@ -280,9 +283,12 @@ for (const { workspaceKind, restart = false } of scenarios)
         // Leave the first member's SDK record submitted while another member sends.
         assert.equal(approvals, 1);
         teammate = createOAAth({
-          url: service.url,
+          approvals: {
+            kind: "service",
+            url: service.url,
+            fetch: clientFetchFor("demo-teammate-token"),
+          },
           origin: service.url,
-          fetch: clientFetchFor("demo-teammate-token"),
         });
         const teammateConnection = await teammate.connect();
         assert.equal(teammate.binding.context.workspaceKind, "team");

@@ -3,7 +3,8 @@
  * an application supplies.
  *
  * ```text
- * createOAAth({ url })          nothing fetched, nothing trusted yet
+ * createOAAth({ approvals: { kind: "service", url } })
+ *                               nothing fetched, nothing trusted yet
  * connect()                     GET /bootstrap  (authenticated, versioned)
  *                               -> exact parse; hostile context fails closed
  *                               -> owner identity from the approved credential
@@ -25,17 +26,20 @@
  */
 import {
   captureBundlerRejection,
+  captureRecord,
   captureValidationGasDiagnostic,
   parseServiceBootstrap,
   type ServiceBootstrap,
 } from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import type { OaathStoreConfiguration } from "../create-oaath.js";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
 import { OaathRpcError } from "../viem/rpc.js";
 import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
-import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
+import type { OaathAuthorizationCapability } from "./connection.js";
+import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathChainSponsorship } from "./grant-handle.js";
 
 type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" }>;
@@ -47,7 +51,7 @@ import {
   saveServiceSession,
   serviceSessionKeyId,
 } from "./service-session.js";
-import { captureSession, type SuppliedSession } from "./session-credential.js";
+import { captureSession, type OaathSession, type SuppliedSession } from "./session-credential.js";
 
 export const OAATH_DEFAULT_SERVICE_URL = "http://localhost:8787" as const;
 const POLL_INTERVAL_MS = 1_000;
@@ -58,16 +62,29 @@ const POLL_INTERVAL_MS = 1_000;
  */
 const SESSION_VALIDATOR_PLACEHOLDER = `0x${"01".repeat(20)}` as const;
 
-/** Every URL-mode key; only `url` is a normal production input. */
-export const SERVICE_REALM_KEYS: readonly string[] = Object.freeze([
-  "url",
-  "fetch",
-  "origin",
-  "authorization",
-  "stores",
-  "now",
-  "session",
-]);
+/** The OAAth service and its owner phone approve Grants. */
+export interface OaathServiceApprovals {
+  readonly kind: "service";
+  /** Defaults to local development: http://localhost:8787. */
+  readonly url?: string;
+  /** Defaults to the global fetch with the deployment's cookie credentials. */
+  readonly fetch?: (request: Request) => Promise<Response>;
+  /** Defaults to polling the service for the released authorization code. */
+  readonly authorization?: Readonly<OaathAuthorizationCapability>;
+}
+/**
+ * `createOAAth` options whose Grants the service approves. The service
+ * selects the account and chains, so neither is configured here.
+ */
+export interface OaathServiceOptions {
+  readonly approvals: Readonly<OaathServiceApprovals>;
+  readonly session?: Readonly<OaathSession>;
+  /** Browser IndexedDB by default. Non-browser callers supply durable stores. */
+  readonly stores?: Readonly<OaathStoreConfiguration>;
+  /** Defaults to the actual browser origin; required outside a browser. */
+  readonly origin?: string;
+  readonly now?: () => number;
+}
 
 interface ServiceRealmInput {
   readonly url: string;
@@ -79,9 +96,30 @@ interface ServiceRealmInput {
   readonly session: Readonly<SuppliedSession> | null;
 }
 
-function captureServiceRealmInput(
-  record: Readonly<Record<string, unknown>>,
-): Readonly<ServiceRealmInput> {
+function captureServiceRealmInput(value: unknown): Readonly<ServiceRealmInput> {
+  const fail = clientFailure("oaath_client_input_invalid");
+  const initial = captureRecord(value, "OAAth configuration", new WeakSet(), fail);
+  const options = ["session", "stores", "origin", "now"].filter((key) =>
+    Object.hasOwn(initial, key),
+  );
+  const top = exactClientRecord(
+    initial,
+    ["approvals", ...options],
+    "OAAth configuration",
+    new WeakSet(),
+  );
+  const initialApprovals = captureRecord(top.approvals, "service approvals", new WeakSet(), fail);
+  const approvals = exactClientRecord(
+    initialApprovals,
+    [
+      "kind",
+      ...["url", "fetch", "authorization"].filter((key) => Object.hasOwn(initialApprovals, key)),
+    ],
+    "service approvals",
+    new WeakSet(),
+  );
+  if (approvals.kind !== "service") return fail("service approvals kind is required");
+  const record: Readonly<Record<string, unknown>> = { ...top, ...approvals };
   const url = record.url === undefined ? OAATH_DEFAULT_SERVICE_URL : record.url;
   if (typeof url !== "string" || url.length < 1) {
     return clientFail("oaath_client_input_invalid", "OAAth service url must be a string");
@@ -550,10 +588,10 @@ async function composeConfiguration(
  * module never imports it back.
  */
 export function createServiceRealm<Realm extends object>(
-  record: Readonly<Record<string, unknown>>,
+  value: unknown,
   compose: (configuration: unknown) => Realm,
 ): Realm {
-  const input = captureServiceRealmInput(record);
+  const input = captureServiceRealmInput(value);
   const transport = serviceTransport(input);
   let inner: Realm | null = null;
   let composing: Promise<Realm> | null = null;

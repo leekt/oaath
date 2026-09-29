@@ -5,7 +5,7 @@ import {
   parseGrantPolicy,
 } from "@oaath/protocol";
 import { createOAAth, type Oaath, type OaathSession } from "@oaath/sdk";
-import type { OaathSubmissionCapability } from "@oaath/sdk/advanced";
+import type { OaathChainCapability, OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermission,
@@ -373,6 +373,7 @@ export async function createLocalAnvilFixture(
           },
         },
         stores: storage.stores,
+        // The fixture chain capability is authored in JavaScript.
         chains: [...chains.values()].map((chain) =>
           input.submission === undefined
             ? chain.capability
@@ -380,7 +381,7 @@ export async function createLocalAnvilFixture(
                 ...chain.capability,
                 submission: { open: input.submission(chain.capability.submission.open) },
               },
-        ),
+        ) as readonly OaathChainCapability[],
         signing: {
           owner: kernelKey({ account: owner, validator: first.validator }),
           session: kernelKey({ account: session, validator: first.validator }),
@@ -397,10 +398,13 @@ export async function createLocalAnvilFixture(
       await closeClient();
       storage = await openLocalClientStores(factory, stateDirectory);
       client = createOAAth({
-        url: issuerUrl,
-        fetch: (request: Request) => relay(authorized(request, clientToken)),
+        approvals: {
+          kind: "service",
+          url: issuerUrl,
+          fetch: (request: Request) => relay(authorized(request, clientToken)),
+          authorization,
+        },
         origin: new URL(redirectUri).origin,
-        authorization,
         stores: storage.stores,
         now,
         ...(options.session === undefined ? {} : { session: options.session }),

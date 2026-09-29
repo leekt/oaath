@@ -12,7 +12,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
-import { createOAAth } from "../src/index.js";
+import { createOAAth as createTypedOAAth } from "../src/index.js";
 import { kernelKey } from "../src/kernel.js";
 import {
   createIndexedDbGrantStoreAdapter,
@@ -64,6 +64,8 @@ function expectClientError(action: () => unknown, code: string): void {
   expect(action).toThrowError(expect.objectContaining({ name: "OaathClientError", code }));
 }
 
+/** Hostile input deliberately bypasses the typed options. */
+const createOAAth = (value: unknown) => createTypedOAAth(value as never);
 describe("hostile input at the client boundary", () => {
   it("keeps existing v3.3 account addresses distinct in the browser binding", () => {
     const account = {
@@ -118,9 +120,7 @@ describe("hostile input at the client boundary", () => {
   });
 
   it("refuses a configuration that is not an exact record", () => {
-    // `undefined` is deliberately absent: no configuration at all is the
-    // URL-mode local development default, not hostile input.
-    for (const value of [null, 0, "config", [], () => undefined, new Map()]) {
+    for (const value of [undefined, null, 0, "config", [], () => undefined, new Map()]) {
       expectClientError(() => createOAAth(value), "oaath_client_input_invalid");
     }
     expectClientError(
