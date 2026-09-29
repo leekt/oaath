@@ -926,7 +926,7 @@ export function captureIssuerCapability(value: unknown): Readonly<OaathIssuerCap
     "oaath_client_capability_invalid",
   );
   // The protocol's canonical URL rule is the one owner of what an issuer URL
-  // may be, including the loopback development exception the URL-only mode
+  // may be, including the loopback development exception the service-approved realm
   // relies on; restating https-only here would strand `http://localhost`.
   let url: string;
   try {

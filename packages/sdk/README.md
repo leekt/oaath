@@ -169,7 +169,7 @@ const operation = await grant.sendCalls(request);
 ```
 
 Default sends (or `signer: "session"`) still use only the approved session.
-`auto` selects owner authority when the realm has a signer; URL mode's public-only
+`auto` selects owner authority when the realm has a signer; service approvals' public-only
 owner profile selects session. Each accepted plain call bundle encodes one atomic
 UserOperation. The API does not split oversized bundles, and an estimate, wallet
 rejection or uncertain submission never changes the selected signer or retries.
@@ -521,7 +521,7 @@ retries the transaction. Retain the operation ID and observe it. This option
 cannot be combined with paymaster sponsorship, which remains on the bundler
 route. Custom direct transports must preserve `OaathRpcError` conclusive
 rejections from `@oaath/sdk/viem`. The relay forwards their closed rejection
-evidence only from submission failures; URL-only clients capture it before
+evidence only from submission failures; service-approved clients capture it before
 allowing the same local wallet fallback. Generic relay errors grant no fallback.
 
 Custom observation transports answer `transaction_execution` with exactly

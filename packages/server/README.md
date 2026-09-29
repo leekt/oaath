@@ -172,7 +172,7 @@ the existing one-time decision transaction. A committed retry returns the stored
 outcome before invoking preparation. An unconfigured deployment cannot approve
 canonical permissions through the native route.
 
-URL-mode `grant.revoke()` posts an empty object to the grant/chain revocation
+Service-approved `grant.revoke()` posts an empty object to the grant/chain revocation
 route for each target without complete chain evidence. Configure
 `RelayHandlerOptions.revocations` with the service `directory` and a
 `prepare({ request, artifact, chainId })` capability. The existing

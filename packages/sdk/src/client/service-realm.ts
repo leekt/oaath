@@ -1,5 +1,5 @@
 /**
- * The URL-only composition: one OAAth service URL is the only deployment fact
+ * The service-approved composition: one OAAth service URL is the only deployment fact
  * an application supplies.
  *
  * ```text
@@ -583,7 +583,7 @@ async function composeConfiguration(
 }
 
 /**
- * Builds the URL-mode realm. `compose` is the ordinary injected composition
+ * Builds the service-approved realm. `compose` is the ordinary injected composition
  * (`createOAAth`'s full-configuration path), handed in by the caller so this
  * module never imports it back.
  */
