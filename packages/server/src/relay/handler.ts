@@ -415,6 +415,13 @@ function capturePaymasterServices(
     if (services.has(chainId)) {
       relayFailure("relay_internal", "paymaster services repeat a chainId");
     }
+    // A chain advertises at most one sponsorship kind; clients reject both.
+    if (chains.get(chainId)?.staticPaymasterConfigurationHash !== null) {
+      relayFailure(
+        "relay_internal",
+        "a chain cannot combine a paymaster service and a static paymaster",
+      );
+    }
     if (service.requestTimeoutMs === undefined) {
       relayFailure("relay_internal", "paymaster requestTimeoutMs is required");
     }
