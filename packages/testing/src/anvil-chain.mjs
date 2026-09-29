@@ -21,8 +21,8 @@ import {
   encodeKernelV4NonceRead,
   encodeKernelV33NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
-  kernelDeployment,
-} from "@oaath/sdk/kernel";
+} from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import { parseEther } from "viem";
 import {

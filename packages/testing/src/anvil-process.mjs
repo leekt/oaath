@@ -18,8 +18,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { encodeHandleOps } from "@oaath/sdk/advanced";
-import { createKernelReads, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
+import { encodeHandleOps, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
+import { createKernelReads } from "@oaath/sdk/kernel";
 import {
   concat,
   createPublicClient,

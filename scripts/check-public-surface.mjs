@@ -8,7 +8,7 @@
  * test noticing. This walker follows workspace edges into the imported
  * package's source instead of stopping at the bare specifier.
  *
- * Three enforced facts:
+ * Four enforced facts:
  *
  *   1. Browser graphs: the transitive import graph of the `@oaath/sdk` and
  *      `@oaath/protocol` root entries reaches no `node:*`, no driver, and no
@@ -21,6 +21,10 @@
  *      `src`, and every public package builds those artifacts during `prepack`.
  *      Private packages are never published and are exempt from the provenance
  *      rule.
+ *   4. Version-agnostic names: no value or type exported from the
+ *      `@oaath/sdk` or `@oaath/sdk/kernel` entry names a Kernel version
+ *      (`V33`/`V4`). Versions are optional settings there; version-named
+ *      encoders and constants belong on `@oaath/sdk/advanced`.
  *
  * `@oaath/server`'s own entries are owned by `packages/server/test/package.test.ts`;
  * this gate covers the graphs that cross a package boundary.
@@ -215,6 +219,39 @@ function checkPublishedEntries(workspace) {
   }
 }
 
+/** Every name one entry source exports, after `as` renames, values and types alike. */
+async function exportedNames(file) {
+  const source = await readFile(file, "utf8");
+  const names = [];
+  for (const match of source.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}/gu)) {
+    for (const item of match[1].split(",")) {
+      const name = item
+        .trim()
+        .replace(/^type\s+/u, "")
+        .split(/\s+as\s+/u)
+        .at(-1);
+      if (name) names.push(name);
+    }
+  }
+  for (const match of source.matchAll(
+    /export\s+(?:declare\s+)?(?:async\s+)?(?:function|const|class|interface|type)\s+([A-Za-z0-9_$]+)/gu,
+  )) {
+    names.push(match[1]);
+  }
+  return names;
+}
+
+async function checkVersionAgnosticEntries(workspace) {
+  const sdk = workspace.get("@oaath/sdk");
+  for (const entry of ["index.ts", "kernel.ts"]) {
+    const names = await exportedNames(new URL(`src/${entry}`, sdk.directory));
+    if (names.length < 2) fail(`@oaath/sdk ${entry}: no exports parsed`);
+    for (const name of names) {
+      if (/V33|V4/u.test(name)) fail(`@oaath/sdk ${entry}: exports version-named ${name}`);
+    }
+  }
+}
+
 function externals(graph) {
   return [...graph.external].sort().join(", ");
 }
@@ -224,6 +261,7 @@ const sdk = await checkBrowserGraph("@oaath/sdk", workspace);
 const protocol = await checkBrowserGraph("@oaath/protocol", workspace);
 checkDirection(workspace);
 checkPublishedEntries(workspace);
+await checkVersionAgnosticEntries(workspace);
 
 if (failures.length > 0) {
   console.error("check-public-surface: FAILED");
@@ -238,3 +276,4 @@ console.log(
 );
 console.log(`  direction        ${Object.keys(DIRECTION).length} packages, production edges only`);
 console.log("  provenance       every published entry resolves dist");
+console.log("  versions         @oaath/sdk and /kernel export no V33/V4 name");

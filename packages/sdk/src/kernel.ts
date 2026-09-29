@@ -1,6 +1,8 @@
 /**
- * `@oaath/sdk/kernel` — the reviewed Kernel v4 runtime, key, policy, and
- * permission primitives, plus the prepared-operation vocabulary they produce.
+ * `@oaath/sdk/kernel` — the version-agnostic Kernel runtime, key, policy,
+ * account and permission primitives, plus the prepared-operation vocabulary
+ * they produce. Kernel and EntryPoint versions are optional settings here;
+ * version-named encoders and constants live in `@oaath/sdk/advanced`.
  * For owner devices, custom deployments, and audits; the default application
  * path never needs them.
  *
@@ -38,10 +40,6 @@ export {
   prepareKernelUserOperation,
 } from "./kernel/deployment/account.js";
 export type { KernelDeployment } from "./kernel/deployment/profile.js";
-export {
-  encodeKernelV33NonceKey,
-  kernelV33OperationSigningHash,
-} from "./kernel/deployment/v33-operation.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
 export type {
   EcdsaKeyAccount,
@@ -57,8 +55,6 @@ export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/we
 export {
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
-  OAATH_KERNEL_V4_VALIDITY_POLICY,
-  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
 } from "./kernel/modules.js";
@@ -121,23 +117,16 @@ export type {
   KernelV33ApprovalMismatchReason as KernelApprovalMismatchReason,
   KernelV33ExpectedPermission as KernelExpectedPermission,
 } from "./kernel/permission/v33.js";
-export { OAATH_KERNEL_V33_APPROVAL_VERSION } from "./kernel/permission/v33.js";
-export type { KernelV33PermissionState } from "./kernel/permission/v33-revocation.js";
-export {
-  kernelV33EffectivePermissionNonce,
-  kernelV33PermissionRevocationCalls,
-  kernelV33PermissionStatus,
-  parseKernelV33PermissionState,
-  readKernelV33PermissionState,
-} from "./kernel/permission/v33-revocation.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
   KernelBuiltInKeyKind,
+  KernelCall,
   KernelCallPolicyPermission,
   KernelCallPolicyProfile,
   KernelCustomKeyKind,
   KernelExpiryPolicyProfile,
+  KernelInstall,
   KernelKeyKind,
   KernelOperationLimitPolicyProfile,
   KernelOperatorAuthority,
@@ -149,61 +138,13 @@ export type {
   KernelRuntimeExistingAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
+  KernelUserOperationGas,
+  KernelValidation,
+  KernelValidityTimeRange,
   KeyProfile,
   OperatorProfile,
 } from "./kernel/types.js";
 export { OaathKernelRuntimeError } from "./kernel/types.js";
-export type {
-  KernelV4AccountInput,
-  KernelV4Call,
-  KernelV4EnableSignatureInput,
-  KernelV4ErrorCode,
-  KernelV4ExecutionInput,
-  KernelV4Install,
-  KernelV4ModuleDataInput,
-  KernelV4ModuleType,
-  KernelV4NonceInput,
-  KernelV4NonceKeyInput,
-  KernelV4NonceReadInput,
-  KernelV4ReplayableInstallDigestInput,
-  KernelV4SignerDataInput,
-  KernelV4UserOperationGas,
-  KernelV4UserOperationNonceInput,
-  KernelV4Validation,
-  KernelV4ValidationMode,
-  KernelV4ValidityTimeRange,
-} from "./kernel-v4.js";
-export {
-  encodeKernelV4EnableSignature,
-  encodeKernelV4Execution,
-  encodeKernelV4FactoryAddressRead,
-  encodeKernelV4FactoryDeploy,
-  encodeKernelV4FactoryImplementationRead,
-  encodeKernelV4Initialize,
-  encodeKernelV4InstallModules,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4InstallNonceRead,
-  encodeKernelV4Nonce,
-  encodeKernelV4NonceKey,
-  encodeKernelV4NonceRead,
-  encodeKernelV4PermissionSignature,
-  encodeKernelV4PermissionUninstallCalls,
-  encodeKernelV4PolicyData,
-  encodeKernelV4SignerData,
-  encodeKernelV4ValidatorData,
-  KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_EXECUTE_SELECTOR,
-  KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_IMPLEMENTATION_SLOT,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  kernelV4ReplayableInstallDigest,
-  kernelV4ReplayableInstallTypedData,
-  OaathKernelV4Error,
-} from "./kernel-v4.js";
 export type {
   PreparedEntryPoint,
   PreparedFactory,

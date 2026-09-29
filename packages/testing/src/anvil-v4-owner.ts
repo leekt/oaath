@@ -2,13 +2,8 @@
  * Deploy an existing ECDSA-root Kernel v4 account whose root validator is the
  * reviewed ECDSA validator, so owner mode can prove its owner onchain.
  */
-import {
-  createKernelRuntime,
-  KERNEL_V4_CREATE2_DEPLOYER,
-  kernelDeployment,
-  kernelKey,
-  ownerOperator,
-} from "@oaath/sdk/kernel";
+import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
+import { createKernelRuntime, kernelDeployment, kernelKey, ownerOperator } from "@oaath/sdk/kernel";
 import type { Hex } from "viem";
 import type { PrivateKeyAccount } from "viem/accounts";
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };

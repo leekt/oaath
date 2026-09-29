@@ -6,7 +6,8 @@ const AUTO = process.argv.includes("--auto");
 const APP = `
 import { createOAAth } from "@oaath/sdk";
 import { createWalletClient, custom } from "viem";
-import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH, kernelDeployment } from "@oaath/sdk/kernel";
+import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 const address = "0x1111111111111111111111111111111111111111";
 const target = "0x2222222222222222222222222222222222222222";
 const deployment = kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" });

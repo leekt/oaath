@@ -1,4 +1,4 @@
-import { encodeKernelV4InstallNonceRead, KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/kernel";
+import { encodeKernelV4InstallNonceRead, KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
 import { decodeEventLog, encodeFunctionData, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 

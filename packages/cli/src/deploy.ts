@@ -1,4 +1,4 @@
-import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/kernel";
+import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
 import { createWalletClient, custom, type Hex, keccak256, type PrivateKeyAccount } from "viem";
 import { type DoctorReport, doctor } from "./doctor.js";
 import type { DeploymentJournal, DeploymentRecord } from "./journal.js";

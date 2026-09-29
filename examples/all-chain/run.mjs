@@ -17,12 +17,12 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { kernelV4ReplayableInstallDigest } from "@oaath/sdk/advanced";
 import {
   approveKernelPermission,
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
-  kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,
   sessionOperator,
