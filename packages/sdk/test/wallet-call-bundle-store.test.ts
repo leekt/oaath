@@ -17,12 +17,12 @@ import {
   type WalletCallBundleStoreAdapter,
   type WalletCallBundleStoreRecord,
 } from "../src/persistence/interfaces.js";
+import { createMemoryWalletCallBundleStoreAdapter } from "../src/persistence/memory/stores.js";
 import {
   type WalletCallBundleReservationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
 import { OaathStoreError, type StoreRecord } from "../src/store.js";
-import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 
 const SCOPE = `0x${"11".repeat(32)}` as const;
 const OTHER_SCOPE = `0x${"12".repeat(32)}` as const;

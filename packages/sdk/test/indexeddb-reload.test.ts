@@ -15,18 +15,17 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it } from "vitest";
 import { GrantStore, OperationStore } from "../src/advanced.js";
+import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
+import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
+import { type OaathDatabase, openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbGrantStoreAdapter } from "../src/persistence/indexeddb/grant-store.js";
+import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.js";
+import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
 import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
   OAATH_INDEXEDDB_NAME,
   OAATH_INDEXEDDB_STORES,
   OAATH_INDEXEDDB_VERSION,
-  type OaathDatabase,
-  openOaathDatabase,
   requireNonExtractableKey,
 } from "../src/persistence.js";
 import {

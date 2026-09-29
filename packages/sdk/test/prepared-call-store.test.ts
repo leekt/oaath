@@ -1,13 +1,13 @@
 import { IDBFactory } from "fake-indexeddb";
 import type { Hash } from "viem";
 import { describe, expect, it } from "vitest";
+import { type OaathDatabase, openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+import { createMemoryPreparedCallStoreAdapter } from "../src/persistence/memory/stores.js";
 import {
-  createIndexedDbPreparedCallStoreAdapter,
   OAATH_INDEXEDDB_NAME,
   OAATH_INDEXEDDB_STORES,
   OAATH_INDEXEDDB_VERSION,
-  type OaathDatabase,
-  openOaathDatabase,
 } from "../src/persistence.js";
 import {
   type PreparedUserOperation,
@@ -27,7 +27,6 @@ import {
   parsePreparedCallRecord,
 } from "../src/provider/prepared-call-store.js";
 import { OaathStoreError, type StoreRecord } from "../src/store.js";
-import { createMemoryPreparedCallStoreAdapter } from "../src/testing.js";
 
 const PROVIDER_SCOPE_ID = hashOf("11");
 const CONTEXT_ID = hashOf("22");

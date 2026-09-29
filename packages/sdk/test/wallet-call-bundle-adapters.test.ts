@@ -5,15 +5,15 @@
  */
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
-import {
-  createIndexedDbWalletCallBundleStoreAdapter,
-  type OaathDatabase,
-  openOaathDatabase,
-  type WalletCallBundleKey,
-  type WalletCallBundleOperation,
-  type WalletCallBundleRecord,
-  type WalletCallBundleStoreAdapter,
-  type WalletCallBundleStoreRecord,
+import { type OaathDatabase, openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
+import { createMemoryWalletCallBundleStoreAdapter } from "../src/persistence/memory/stores.js";
+import type {
+  WalletCallBundleKey,
+  WalletCallBundleOperation,
+  WalletCallBundleRecord,
+  WalletCallBundleStoreAdapter,
+  WalletCallBundleStoreRecord,
 } from "../src/persistence.js";
 import {
   type WalletCallBundleMutationResult,
@@ -21,7 +21,6 @@ import {
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";
 import { OaathStoreError, type StoreRecord } from "../src/store.js";
-import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 
 const SCOPE = `0x${"61".repeat(32)}` as const;
 const OTHER_SCOPE = `0x${"62".repeat(32)}` as const;

@@ -15,16 +15,14 @@ import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { kernelKey, type WebAuthnAssertionRequest } from "../src/kernel.js";
-import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbPreparedCallStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
-  openOaathDatabase,
-} from "../src/persistence.js";
+import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
+import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
+import { openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbGrantStoreAdapter } from "../src/persistence/indexeddb/grant-store.js";
+import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.js";
+import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
 import { INTERNAL_ERROR } from "../src/provider/errors.js";
 import { oaathProvider } from "../src/viem.js";
 import {

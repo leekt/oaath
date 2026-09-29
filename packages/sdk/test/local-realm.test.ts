@@ -14,7 +14,7 @@ import {
 } from "../src/kernel/modules.js";
 
 import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
-import { createMemoryOperationStoreAdapter } from "../src/testing.js";
+import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { CALL_DATA, createChainFixture, permissionInput, TARGET } from "./support/browser.js";
 
 const address = "0xc3a56de6dfc1dcef5113927ec09513918e8c44aa";

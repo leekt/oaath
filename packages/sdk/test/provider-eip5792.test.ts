@@ -6,13 +6,13 @@
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
+import { createMemoryWalletCallBundleStoreAdapter } from "../src/persistence/memory/stores.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
   OaathProviderRpcError,
   UNSUPPORTED_CHAIN,
 } from "../src/provider/errors.js";
-import { createMemoryWalletCallBundleStoreAdapter } from "../src/testing.js";
 import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
 import {
   CALL_DATA,

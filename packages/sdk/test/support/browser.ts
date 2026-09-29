@@ -80,7 +80,7 @@ import {
   createMemoryOperationStoreAdapter,
   createMemoryPreparedCallStoreAdapter,
   createMemoryWalletCallBundleStoreAdapter,
-} from "../../src/testing.js";
+} from "../../src/persistence/memory/stores.js";
 
 export const CHAIN_ID = 421_614;
 export const ISSUER_URL = "https://issuer.example";

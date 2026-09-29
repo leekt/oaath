@@ -6,7 +6,7 @@ import { createOAAth } from "../src/index.js";
 import type { KernelV33ReadRequest } from "../src/kernel/deployment/v33.js";
 import { kernelDeployment } from "../src/kernel.js";
 import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
-import { createMemoryOperationStoreAdapter } from "../src/testing.js";
+import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { ACCOUNT, CHAIN_ID, createChainFixture, sendCallsInput } from "./support/browser.js";
 
 afterEach(() => vi.unstubAllGlobals());
