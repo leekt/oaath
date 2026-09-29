@@ -165,6 +165,9 @@ function memoryStore(control: MemoryControl): OperationStore {
     async get() {
       return control.raw;
     },
+    async list() {
+      return control.raw === undefined ? [] : [control.raw];
+    },
     async getArchived(input) {
       control.archiveReads = (control.archiveReads ?? 0) + 1;
       return control.archives?.get(JSON.stringify([input.key, input.userOperationHash]));
@@ -1851,6 +1854,9 @@ describe("OperationRunner", () => {
         async get(laneKey: unknown) {
           return records.get(JSON.stringify(laneKey));
         },
+        async list() {
+          return [...records.values()];
+        },
         async getArchived(input: { key: unknown; userOperationHash: string }) {
           return archives.get(JSON.stringify([input.key, input.userOperationHash]));
         },
@@ -2057,6 +2063,9 @@ describe("OperationRunner", () => {
     const store = new OperationStore({
       async get() {
         return retained;
+      },
+      async list() {
+        return retained === undefined ? [] : [retained];
       },
       async getArchived(input: Parameters<OperationStoreAdapter["getArchived"]>[0]) {
         return archived.get(input.userOperationHash);

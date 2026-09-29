@@ -383,6 +383,7 @@ function composeInjectedRealm(
       get: (key: Parameters<OperationStoreAdapter["get"]>[0]) => stores.operations.get(key),
       getArchived: (input: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
         stores.operations.getArchived(input),
+      list: (scope: Parameters<OperationStoreAdapter["list"]>[0]) => stores.operations.list(scope),
       compareAndSwap: (input: Parameters<OperationStoreAdapter["compareAndSwap"]>[0]) =>
         stores.operations.compareAndSwap(input),
       close: async () => undefined,
