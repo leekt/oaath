@@ -7,9 +7,8 @@
  * Fallback invariance: `OaathExecutionDecision` carries no operation field and
  * no callable field, and `decideExecution` never receives a prepared operation.
  * A decision therefore has no surface that could change an operation hash,
- * signer key, nonce, calls, values, gas, paymaster, or account binding; the
- * bundler route and the EntryPoint.handleOps route submit byte-identical
- * prepared and signed operations.
+ * signer key, nonce, calls, values, gas, paymaster, or account binding; every
+ * ERC-4337 route kind submits the byte-identical prepared and signed operation.
  *
  * Deferred: the native owner-EOA route (`routing/native-owner.ts` in the program
  * tree) is out of scope here. No route value, reason code, or capability fact
@@ -65,13 +64,20 @@ export type OaathExecutionSigner = "session" | "owner";
 export type OaathExecutionSignerDecision = OaathExecutionSigner | "none";
 
 /**
- * The submission route for one prepared operation.
+ * The submission route kinds a chain may offer, in the caller's preference
+ * order. Only the ERC-4337 kinds ship; a native account-abstraction kind is a
+ * later, separate profile.
  *
- * - `bundler`: send the signed operation to the configured ERC-4337 bundler.
- * - `entrypoint-handleops`: send the same signed operation through
+ * - `erc4337-bundler`: send the signed operation to an ERC-4337 bundler.
+ * - `erc4337-handleops`: send the same signed operation through
  *   `EntryPoint.handleOps` with an EOA fee payer.
- * - `none`: no authorized route exists; the caller must fail closed. Routing
- *   never invents a route from unreadable or unfunded evidence.
+ */
+export type OaathSubmissionRouteKind = "erc4337-bundler" | "erc4337-handleops";
+
+/**
+ * The submission route a decision selected, as recorded in review and execution
+ * evidence. `none` means no authorized route exists; the caller must fail
+ * closed. Routing never invents a route from unreadable or unfunded evidence.
  */
 export type OaathExecutionRoute = "bundler" | "entrypoint-handleops" | "none";
 
@@ -85,13 +91,20 @@ export type OaathExecutionSignerReason =
   | "session_calls_uncovered"
   | "session_coverage_unreadable";
 
+/** What routing concluded about one configured route kind. */
+export type OaathRouteReasonCode =
+  | "route_available"
+  | "route_absent"
+  | "route_unsupported"
+  | "route_unreadable";
+
+/**
+ * One per-route reason, `<code>:<route kind>`, in the order routes were
+ * considered. `route_none_configured` means the chain offers no route at all.
+ */
 export type OaathExecutionRouteReason =
-  | "bundler_available"
-  | "bundler_absent"
-  | "bundler_unsupported"
-  | "bundler_unreadable"
-  | "fee_payer_configured"
-  | "fee_payer_absent";
+  | `${OaathRouteReasonCode}:${OaathSubmissionRouteKind}`
+  | "route_none_configured";
 
 export type OaathExecutionReason = OaathExecutionSignerReason | OaathExecutionRouteReason;
 
@@ -120,7 +133,7 @@ export interface OaathExecutionDecision {
   readonly signer: OaathExecutionSignerDecision;
   readonly route: OaathExecutionRoute;
   readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
-  /** One signer reason, one bundler reason, and one fee-payer reason when a fallback was considered. */
+  /** One signer reason, then one reason per route considered, in preference order. */
   readonly reasons: readonly OaathExecutionReason[];
 }
 

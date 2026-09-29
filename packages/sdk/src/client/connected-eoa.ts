@@ -2,9 +2,9 @@
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
 import { type Account, toHex, type WalletClient } from "viem";
 import type { OperationSubmissionSession } from "../operation-runner.js";
-import { classifyBundlerAcceptance } from "../routing/bundler.js";
 import { routingAddress } from "../routing/capabilities.js";
-import { encodeHandleOps } from "../routing/handle-ops.js";
+import { classifyBundlerAcceptance } from "../routing/erc4337/bundler.js";
+import { encodeHandleOps } from "../routing/erc4337/handle-ops.js";
 import { OaathRpcError } from "../viem/rpc.js";
 import { clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathSubmissionRequest } from "./grant-handle.js";

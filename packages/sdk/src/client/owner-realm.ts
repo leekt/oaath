@@ -13,9 +13,9 @@ import {
 } from "../operation-runner.js";
 import { type OaathDatabase, openOaathDatabase } from "../persistence/indexeddb/database.js";
 import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/operation-store.js";
-import { probeBundlerCapability } from "../routing/bundler.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
+import { probeBundlerCapability } from "../routing/erc4337/bundler.js";
 import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
 import type { OaathExecutionDecision } from "../routing/types.js";
 import { OperationStore, type OperationStoreAdapter, type OperationStoreKey } from "../store.js";
@@ -283,12 +283,12 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             request: { chainId: chain.chainId, entryPoint: runtime.deployment.entryPoint.address },
             timeoutMs: TIMEOUT,
           });
+          // Owner-realm sends use only the bundler route; its fallback is the connected EOA.
           const decision = decideExecution({
             operationKind: "execution",
             signer: "owner",
             sessionCoverage: "uncovered",
-            bundler,
-            feePayer: null,
+            routes: [{ kind: "erc4337-bundler", bundler }],
           });
           if (decision.route !== "bundler")
             return clientFail(

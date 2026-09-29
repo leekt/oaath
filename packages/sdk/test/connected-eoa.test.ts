@@ -7,7 +7,7 @@ import {
   KERNEL_V4_ENTRY_POINT_V07,
   prepareUserOperation,
 } from "../src/kernel.js";
-import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/bundler.js";
+import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
 import { OaathRpcError } from "../src/viem.js";
 
 const address = `0x${"11".repeat(20)}` as const;

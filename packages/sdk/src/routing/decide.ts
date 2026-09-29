@@ -8,7 +8,7 @@
  * therefore submits the byte-identical prepared and signed operation the bundler
  * route would have submitted.
  *
- * Default decision table (48 total fact combinations):
+ * Decision table:
  *
  * ```text
  * signer
@@ -23,35 +23,35 @@
  * session requests select no authority, no route, and no fee payer. Root
  * execution requires an explicit owner request; it is never inferred from denial.
  *
- * route
- *   bundler available,  any fee payer -> bundler              (bundler_available)
- *   bundler unreadable, any fee payer -> bundler              (bundler_unreadable)
- *   bundler absent,      fee payer    -> entrypoint-handleops (bundler_absent, fee_payer_configured)
- *   bundler absent,      none         -> none                 (bundler_absent, fee_payer_absent)
- *   bundler unsupported, fee payer    -> entrypoint-handleops (bundler_unsupported, fee_payer_configured)
- *   bundler unsupported, none         -> none                 (bundler_unsupported, fee_payer_absent)
+ * route: the first conclusively usable route, in the configured order
+ *   erc4337-bundler   available   -> bundler              (route_available:erc4337-bundler)
+ *   erc4337-bundler   unreadable  -> bundler, stop        (route_unreadable:erc4337-bundler)
+ *   erc4337-bundler   absent      -> try the next route   (route_absent:erc4337-bundler)
+ *   erc4337-bundler   unsupported -> try the next route   (route_unsupported:erc4337-bundler)
+ *   erc4337-handleops             -> entrypoint-handleops (route_available:erc4337-handleops)
+ *   no route left                 -> none
+ *   no route configured           -> none                 (route_none_configured)
  * ```
  *
- * An `unreadable` bundler stays on the bundler route and never consults the fee
- * payer: a timeout, disconnect, or ambiguous response is not unavailability, so
+ * An `unreadable` bundler stays on the bundler route and never consults a later
+ * route: a timeout, disconnect, or ambiguous response is not unavailability, so
  * it authorizes no fallback and no second submission.
  *
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext, OperationKind } from "@oaath/protocol";
 import {
-  bundlerCapability,
   sessionCoverage as captureSessionCoverage,
-  feePayerDescriptor,
-  type OaathBundlerCapability,
+  type OaathRouteFact,
   type OaathSessionCoverage,
+  routeFacts,
 } from "./capabilities.js";
 import {
   exactRoutingRecord,
   inputInvalid,
   type OaathExecutionDecision,
-  type OaathExecutionReason,
   type OaathExecutionRoute,
+  type OaathExecutionRouteReason,
   type OaathExecutionSignerDecision,
   type OaathExecutionSignerReason,
   type OaathFeePayerDescriptor,
@@ -63,8 +63,8 @@ export interface DecideExecutionInput {
   /** `revocation` is owner-authorized root work; `execution` may use a session. */
   readonly operationKind: OperationKind;
   readonly sessionCoverage: OaathSessionCoverage;
-  readonly bundler: OaathBundlerCapability;
-  readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
+  /** The chain's classified routes, in preference order. */
+  readonly routes: readonly OaathRouteFact[];
 }
 
 function operationKind(value: unknown): OperationKind {
@@ -86,35 +86,32 @@ function decideSigner(
   return { signer: "none", reason: "session_coverage_unreadable" };
 }
 
-function decideRoute(
-  bundler: OaathBundlerCapability,
-  feePayer: Readonly<OaathFeePayerDescriptor> | null,
-): Readonly<{
+function decideRoute(routes: readonly OaathRouteFact[]): Readonly<{
   route: OaathExecutionRoute;
   feePayer: Readonly<OaathFeePayerDescriptor> | null;
-  reasons: readonly OaathExecutionReason[];
+  reasons: readonly OaathExecutionRouteReason[];
 }> {
-  if (bundler === "available") {
-    return { route: "bundler", feePayer: null, reasons: ["bundler_available"] };
+  if (routes.length === 0) {
+    return { route: "none", feePayer: null, reasons: ["route_none_configured"] };
   }
-  if (bundler === "unreadable") {
-    return { route: "bundler", feePayer: null, reasons: ["bundler_unreadable"] };
+  const reasons: OaathExecutionRouteReason[] = [];
+  for (const fact of routes) {
+    if (fact.kind === "erc4337-handleops") {
+      reasons.push("route_available:erc4337-handleops");
+      return { route: "entrypoint-handleops", feePayer: fact.feePayer, reasons };
+    }
+    reasons.push(`route_${fact.bundler}:erc4337-bundler`);
+    // An unreadable bundler is not unavailability: it forbids every later route.
+    if (fact.bundler === "available" || fact.bundler === "unreadable") {
+      return { route: "bundler", feePayer: null, reasons };
+    }
   }
-  const conclusive: OaathExecutionReason =
-    bundler === "absent" ? "bundler_absent" : "bundler_unsupported";
-  if (feePayer === null) {
-    return { route: "none", feePayer: null, reasons: [conclusive, "fee_payer_absent"] };
-  }
-  return {
-    route: "entrypoint-handleops",
-    feePayer,
-    reasons: [conclusive, "fee_payer_configured"],
-  };
+  return { route: "none", feePayer: null, reasons };
 }
 
-/** Whether this exact classified bundler fact selects the sponsorship-capable route. */
-export function supportsBundlerSponsorship(bundler: OaathBundlerCapability): boolean {
-  return decideRoute(bundler, null).route === "bundler";
+/** Whether these exact classified routes select the sponsorship-capable bundler route. */
+export function supportsBundlerSponsorship(routes: readonly OaathRouteFact[]): boolean {
+  return decideRoute(routes).route === "bundler";
 }
 
 /**
@@ -129,8 +126,7 @@ export function decideExecution(input: DecideExecutionInput): Readonly<OaathExec
     [
       "operationKind",
       "sessionCoverage",
-      "bundler",
-      "feePayer",
+      "routes",
       ...(input !== null && typeof input === "object" && Object.hasOwn(input, "signer")
         ? ["signer"]
         : []),
@@ -149,10 +145,7 @@ export function decideExecution(input: DecideExecutionInput): Readonly<OaathExec
     record.signer === "owner"
       ? { signer: "owner" as const, reason: "owner_explicit" as const }
       : defaultSigner;
-  const route = decideRoute(
-    bundlerCapability(record.bundler, inputInvalid),
-    feePayerDescriptor(record.feePayer, context, inputInvalid),
-  );
+  const route = decideRoute(routeFacts(record.routes, context, inputInvalid));
   if (signer.signer === "none") {
     // Route facts were still captured and validated above, but a denied signer
     // must not carry a usable route: nothing may be signed or submitted.

@@ -7,13 +7,19 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { CaptureContext } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  captureDenseArray,
+  captureRecord,
+  exactCapturedRecord,
+} from "@oaath/protocol";
 import { getAddress } from "viem";
 import {
   capabilityInvalid,
   exactRoutingRecord,
   type OaathFeePayerDescriptor,
   OaathRoutingError,
+  type OaathSubmissionRouteKind,
   routingFail,
 } from "./types.js";
 
@@ -50,14 +56,24 @@ export type OaathBundlerCapability = "available" | "absent" | "unsupported" | "u
 export type OaathSessionCoverage = "covered" | "uncovered" | "unreadable";
 
 /**
- * The exact routing facts for one chain. `feePayer` is the configured EOA
- * descriptor, or `null` when no fee payer is configured.
+ * The classified fact for one configured submission route. A bundler route
+ * carries its probe classification; a handleOps route carries its configured
+ * EOA fee payer, so configuring that route is what makes the fallback usable.
+ */
+export type OaathRouteFact =
+  | Readonly<{ kind: "erc4337-bundler"; bundler: OaathBundlerCapability }>
+  | Readonly<{ kind: "erc4337-handleops"; feePayer: Readonly<OaathFeePayerDescriptor> }>;
+
+const ROUTE_KINDS: readonly OaathSubmissionRouteKind[] = ["erc4337-bundler", "erc4337-handleops"];
+
+/**
+ * The exact routing facts for one chain. `routes` is the ordered preference;
+ * an empty list means the chain offers no submission route.
  */
 export interface OaathRoutingCapabilities {
   readonly chainId: number;
-  readonly bundler: OaathBundlerCapability;
+  readonly routes: readonly OaathRouteFact[];
   readonly sessionCoverage: OaathSessionCoverage;
-  readonly feePayer: Readonly<OaathFeePayerDescriptor> | null;
 }
 
 export function routingChainId(value: unknown, fail: (message: string) => never): number {
@@ -149,10 +165,45 @@ export function feePayerDescriptor(
   });
 }
 
+/** Captures one route kind; any other kind is unsupported. */
+export function routeKind(
+  value: unknown,
+  fail: (message: string) => never,
+): OaathSubmissionRouteKind {
+  if (!ROUTE_KINDS.includes(value as OaathSubmissionRouteKind)) {
+    return fail("routing route kind is unsupported");
+  }
+  return value as OaathSubmissionRouteKind;
+}
+
+/** Captures an ordered route fact list; each route kind appears at most once. */
+export function routeFacts(
+  value: unknown,
+  context: CaptureContext,
+  fail: (message: string) => never,
+): readonly OaathRouteFact[] {
+  const entries = captureDenseArray(value, "routing routes", context, fail);
+  const seen = new Set<OaathSubmissionRouteKind>();
+  const facts = entries.map((entry): OaathRouteFact => {
+    const captured = captureRecord(entry, "routing route", context, fail);
+    const kind = routeKind(captured.kind, fail);
+    if (seen.has(kind)) return fail("routing routes repeat a route kind");
+    seen.add(kind);
+    const fact = kind === "erc4337-bundler" ? "bundler" : "feePayer";
+    const record = exactCapturedRecord(captured, ["kind", fact], "routing route", fail);
+    if (kind === "erc4337-bundler") {
+      return Object.freeze({ kind, bundler: bundlerCapability(record.bundler, fail) });
+    }
+    const feePayer = feePayerDescriptor(record.feePayer, context, fail);
+    if (feePayer === null) return fail("routing handleOps route requires a fee payer");
+    return Object.freeze({ kind, feePayer });
+  });
+  return Object.freeze(facts);
+}
+
 /**
  * Captures one chain's routing facts exactly. The caller supplies already
- * classified evidence: `bundler` comes from `routing/bundler.ts`, or is `absent`
- * when the chain has no configured bundler at all.
+ * classified evidence: a bundler route's fact comes from `routing/erc4337/bundler.ts`.
  */
 export function captureRoutingCapabilities(
   value: OaathRoutingCapabilities,
@@ -162,16 +213,15 @@ export function captureRoutingCapabilities(
     const context: CaptureContext = new WeakSet();
     const record = exactRoutingRecord(
       value,
-      ["chainId", "bundler", "sessionCoverage", "feePayer"],
+      ["chainId", "routes", "sessionCoverage"],
       "routing capabilities",
       context,
       fail,
     );
     return Object.freeze({
       chainId: routingChainId(record.chainId, fail),
-      bundler: bundlerCapability(record.bundler, fail),
+      routes: routeFacts(record.routes, context, fail),
       sessionCoverage: sessionCoverage(record.sessionCoverage, fail),
-      feePayer: feePayerDescriptor(record.feePayer, context, fail),
     });
   } catch (error) {
     if (error instanceof OaathRoutingError) throw error;

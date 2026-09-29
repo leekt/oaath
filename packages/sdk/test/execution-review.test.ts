@@ -110,7 +110,7 @@ describe("public Grant execution review", () => {
     const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
     const review = await grant.reviewCalls(sendCallsInput());
     expect(review.route).toBe("bundler");
-    expect(review.reasons).toContain("bundler_unreadable");
+    expect(review.reasons).toContain("route_unreadable:erc4337-bundler");
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.sends).toHaveLength(0);
     await realm.oaath.close();

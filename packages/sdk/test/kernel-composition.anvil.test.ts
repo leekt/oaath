@@ -560,34 +560,44 @@ async function createHarness() {
     // denied outright — so the fallback decision is exercised as root work.
     const capabilities = captureRoutingCapabilities({
       chainId,
-      bundler: classifyBundlerAcceptance({ outcome: "rejected", code: -32505 }),
+      routes: [
+        {
+          kind: "erc4337-bundler",
+          bundler: classifyBundlerAcceptance({ outcome: "rejected", code: -32505 }),
+        },
+        {
+          kind: "erc4337-handleops",
+          feePayer: {
+            address: lower(submitter.address),
+            balance: (await client.getBalance({ address: submitter.address })).toString(10),
+          },
+        },
+      ],
       sessionCoverage: "uncovered",
-      feePayer: {
-        address: lower(submitter.address),
-        balance: (await client.getBalance({ address: submitter.address })).toString(10),
-      },
     });
-    expect(capabilities.bundler).toBe("unsupported");
+    expect(capabilities.routes[0]).toEqual({ kind: "erc4337-bundler", bundler: "unsupported" });
     // The retired escalation row: uncovered execution selects no authority and
     // no route at all, never the owner.
     expect(
       decideExecution({
         operationKind: "execution",
         sessionCoverage: capabilities.sessionCoverage,
-        bundler: capabilities.bundler,
-        feePayer: capabilities.feePayer,
+        routes: capabilities.routes,
       }),
     ).toMatchObject({ signer: "none", route: "none", feePayer: null });
     const decision = decideExecution({
       operationKind: "revocation",
       sessionCoverage: capabilities.sessionCoverage,
-      bundler: capabilities.bundler,
-      feePayer: capabilities.feePayer,
+      routes: capabilities.routes,
     });
     expect(decision).toMatchObject({
       signer: "owner",
       route: "entrypoint-handleops",
-      reasons: ["root_operation_requires_owner", "bundler_unsupported", "fee_payer_configured"],
+      reasons: [
+        "root_operation_requires_owner",
+        "route_unsupported:erc4337-bundler",
+        "route_available:erc4337-handleops",
+      ],
     });
     const decidedFeePayer = decision.feePayer;
     if (decidedFeePayer === null) throw new Error("handleOps decision carries no fee payer");

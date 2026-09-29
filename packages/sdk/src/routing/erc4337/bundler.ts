@@ -22,8 +22,8 @@ import {
   captureDenseArray,
   OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
 } from "@oaath/protocol";
-import { type OaathBundlerCapability, routingAddress, routingChainId } from "./capabilities.js";
-import { capabilityInvalid, exactRoutingRecord, inputInvalid } from "./types.js";
+import { type OaathBundlerCapability, routingAddress, routingChainId } from "../capabilities.js";
+import { capabilityInvalid, exactRoutingRecord, inputInvalid } from "../types.js";
 
 const MAX_TIMEOUT_MS = 60_000;
 const MAX_SUPPORTED_ENTRY_POINTS = 32;
