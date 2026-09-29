@@ -21,8 +21,9 @@ import {
   type OperationStoreAdapter,
   type StoreRecord,
 } from "../src/advanced.js";
-import { createIndexedDbOperationStoreAdapter, openOaathDatabase } from "../src/persistence.js";
-import { createMemoryOperationStoreAdapter } from "../src/testing.js";
+import { openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 
 const grantIdentity: GrantIdentity = {
   grantId: "grant-store",

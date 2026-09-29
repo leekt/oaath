@@ -14,23 +14,23 @@ import { describe, expect, it } from "vitest";
 import { captureOaathBinding, runOaathCleanup } from "../src/advanced.js";
 import { createOAAth as createTypedOAAth } from "../src/index.js";
 import { kernelKey } from "../src/kernel.js";
-import {
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbOperationStoreAdapter,
-  isCleanupEffectName,
-  OAATH_CLEANUP_CHECKPOINT_VERSION,
-  openOaathDatabase,
-  parseCleanupCheckpoint,
-  parseClientContext,
-  requireNonExtractableKey,
-} from "../src/persistence.js";
+import { openOaathDatabase } from "../src/persistence/indexeddb/database.js";
+import { createIndexedDbGrantStoreAdapter } from "../src/persistence/indexeddb/grant-store.js";
+import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
 import {
   createMemoryCleanupStore,
   createMemoryContextStore,
   createMemoryGrantStoreAdapter,
   createMemoryKeyStore,
   createMemoryOperationStoreAdapter,
-} from "../src/testing.js";
+} from "../src/persistence/memory/stores.js";
+import {
+  isCleanupEffectName,
+  OAATH_CLEANUP_CHECKPOINT_VERSION,
+  parseCleanupCheckpoint,
+  parseClientContext,
+  requireNonExtractableKey,
+} from "../src/persistence.js";
 import {
   bindingInput,
   CALL_DATA,

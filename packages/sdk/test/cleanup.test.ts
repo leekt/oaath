@@ -15,6 +15,7 @@ import {
   signOutEffect,
 } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
+import { createMemoryCleanupStore } from "../src/persistence/memory/stores.js";
 import {
   type OaathCleanupCheckpointStore,
   type OaathCleanupEffectName,
@@ -22,7 +23,6 @@ import {
   requireNonExtractableKey,
 } from "../src/persistence.js";
 import type { GrantStoreRecord } from "../src/store.js";
-import { createMemoryCleanupStore } from "../src/testing.js";
 import {
   createChainFixture,
   createClock,

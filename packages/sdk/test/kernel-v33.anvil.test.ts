@@ -62,8 +62,8 @@ import {
   restoreKernelPermissionRevocation,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
+import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
-import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { createViemChainPorts } from "../src/viem.js";
 import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
 import { createKernelV33Account, deployKernelV33Account } from "./support/kernel-v33.js";
