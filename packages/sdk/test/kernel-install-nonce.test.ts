@@ -1,9 +1,9 @@
 import { decodeFunctionData, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
+import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
 import {
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
-  kernelPermissionInstallNonce,
 } from "../src/kernel.js";
 
 const account = `0x${"66".repeat(20)}` as const;

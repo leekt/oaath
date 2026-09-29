@@ -27,11 +27,11 @@ import {
 import { createOAAth } from "@oaath/sdk";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
-  approveKernelPermissionAllChain,
+  approveKernelPermission,
   createKernelRuntime,
-  kernelAllChainCapabilityHash,
   kernelDeployment,
   kernelKey,
+  kernelPermissionCapabilityHash,
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
@@ -162,11 +162,11 @@ const authorization = {
       }),
       reads: chain.capability.reads,
     });
-    const installApproval = await approveKernelPermissionAllChain({
+    const installApproval = await approveKernelPermission({
       owner: ownerKey,
-      account: descriptor.account,
-      installNonce: "0",
-      packages: [...sessionRuntime.packages],
+      runtime: sessionRuntime,
+      account: descriptor,
+      nonce: "0",
     });
     const decided = await ownerFetch(`/authorization/requests/${requestId}/decision`, {
       method: "POST",
@@ -182,7 +182,7 @@ const authorization = {
           // Approving the requested policy unchanged. Narrowing it here is
           // allowed; widening it is refused by the client.
           approvedPolicy: scope.policy,
-          capabilityHash: kernelAllChainCapabilityHash(installApproval),
+          capabilityHash: kernelPermissionCapabilityHash(installApproval),
           installApproval,
         }),
       }),

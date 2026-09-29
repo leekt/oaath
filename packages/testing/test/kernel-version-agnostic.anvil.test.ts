@@ -1,20 +1,27 @@
 /**
  * #238 acceptance: one consumer path, with no Kernel or EntryPoint version
- * literal, binds and sends owner calls through an existing Kernel v3.3 and an
- * existing Kernel v4 account on local Anvil. A deployment that disagrees with
+ * literal, binds, approves and sends owner calls through an existing Kernel
+ * v3.3 and an existing Kernel v4 account on local Anvil. A deployment that disagrees with
  * the account fails with one structured code before any signing.
  */
 import type { OaathOwnerClient } from "@oaath/sdk";
 import {
+  approveKernelPermission,
   bindKernelAccount,
   createKernelReads,
   createKernelRuntime,
   kernelAccountDeployment,
   kernelDeployment,
   kernelKey,
+  kernelPermissionCapabilityHash,
+  kernelPermissionEnableTypedData,
+  kernelPermissionNonce,
   ownerOperator,
+  parseKernelPermissionApproval,
+  sessionOperator,
 } from "@oaath/sdk/kernel";
-import { createPublicClient, http } from "viem";
+import { createPublicClient, hashTypedData, http, keccak256, stringToHex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { createLocalOwnerAnvilFixture, type LocalOwnerAnvilFixture } from "../src/anvil-owner.js";
 
@@ -42,7 +49,36 @@ async function sendOwnerCalls(
   const request = { chain: input.chainId, calls: [{ target, data: "0x", value: "1" }] };
   const review = await owner.reviewCalls(request);
   const operation = await owner.sendCalls(request);
-  return { account, review, outcome: await operation.wait({ attempts: 3 }) };
+  const outcome = await operation.wait({ attempts: 3 });
+
+  // One owner approval for a scoped session on the same account.
+  if (!("rootValidator" in account)) throw new Error("existing account expected");
+  const validator = `0x${account.rootValidator.slice(4)}` as const;
+  const runtime = createKernelRuntime({
+    deployment: kernelAccountDeployment(account),
+    reads,
+    operator: sessionOperator({
+      key: kernelKey({ account: privateKeyToAccount(generatePrivateKey()), validator }),
+      policies: [
+        { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "0" }] },
+      ],
+    }),
+  });
+  const session = await runtime.bindAccount({ address: input.address });
+  const nonce = await kernelPermissionNonce({
+    runtime,
+    account: session,
+    reads,
+    requestHash: keccak256(stringToHex(`approval:${input.address}`)),
+  });
+  const typedData = kernelPermissionEnableTypedData({ runtime, account: session, nonce });
+  const approval = await approveKernelPermission({
+    owner: kernelKey({ wallet: input.wallet, validator }),
+    runtime,
+    account: session,
+    nonce,
+  });
+  return { account, review, outcome, approval, typedData };
 }
 
 (process.env.OAATH_REQUIRE_ANVIL === "1" ? describe : describe.skip)(
@@ -57,7 +93,7 @@ async function sendOwnerCalls(
             transport: http(fixture.rpcUrl, { retryCount: 0 }),
           });
           const before = await publicClient.getBalance({ address: target });
-          const { account, review, outcome } = await sendOwnerCalls({
+          const { account, review, outcome, approval, typedData } = await sendOwnerCalls({
             chainId: fixture.chainId,
             rpcUrl: fixture.rpcUrl,
             address: fixture.address,
@@ -73,7 +109,20 @@ async function sendOwnerCalls(
           });
           expect(outcome.status).toBe("finalized");
           expect(await publicClient.getBalance({ address: target })).toBe(before + 1n);
-          expect(fixture.signatureCount).toBe(1);
+          // The approval is the selected deployment's own artifact, and the typed
+          // data a wallet would sign hashes to exactly the digest it binds.
+          expect(approval.account).toBe(fixture.address);
+          expect(approval.version).toMatch(
+            kernelVersion === "0.3.3" ? /v33-permission-approval/u : /all-chain-approval/u,
+          );
+          expect(hashTypedData(typedData as Parameters<typeof hashTypedData>[0])).toBe(
+            approval.digest,
+          );
+          const parsed = parseKernelPermissionApproval(structuredClone(approval));
+          expect(kernelPermissionCapabilityHash(parsed)).toBe(
+            kernelPermissionCapabilityHash(approval),
+          );
+          expect(fixture.signatureCount).toBe(2);
           expect(fixture.bundlerSubmissionCount).toBe(1);
         } finally {
           await fixture.close();

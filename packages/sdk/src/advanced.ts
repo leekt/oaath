@@ -53,6 +53,7 @@ export type {
   OaathStoreConfiguration,
 } from "./create-oaath.js";
 export { deriveSessionPolicyProfiles } from "./kernel/permission/profiles.js";
+export { kernelV33PermissionEnableTypedData } from "./kernel/permission/v33.js";
 export type {
   ObserveOperationResult,
   ObserveUserOperationInput,

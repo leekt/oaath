@@ -19,7 +19,7 @@ import {
   kernelDeployment,
   kernelKey,
   ownerOperator,
-  parseKernelAllChainApproval,
+  parseKernelPermissionApproval,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
 } from "@oaath/sdk/kernel";
@@ -282,7 +282,7 @@ export async function startPhoneService({
         directory,
         async prepare({ request, artifact, chainId }) {
           const chain = chainById(chainId);
-          const approval = parseKernelAllChainApproval(JSON.parse(artifact).installApproval);
+          const approval = parseKernelPermissionApproval(JSON.parse(artifact).installApproval);
           const quote = await chain.quoteRevocation(approval);
           return (
             await prepareKernelPhoneRevocation({

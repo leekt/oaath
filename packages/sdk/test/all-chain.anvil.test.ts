@@ -19,21 +19,23 @@ import {
 import { bytesToHex, hexToBytes, parseAbi, parseEther, toFunctionSelector } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
+import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
+import {
+  approveKernelPermissionAllChain,
+  type KernelAllChainApproval,
+} from "../src/kernel/permission/materialize.js";
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
-  approveKernelPermissionAllChain,
   createKernelRuntime,
   type EcdsaSignRequest,
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
   encodeKernelV4PermissionUninstallCalls,
-  type KernelAllChainApproval,
   type KernelRuntime,
   type KeyProfile,
   kernelDeployment,
   kernelKey,
-  kernelPermissionInstallNonce,
   kernelV4ReplayableInstallDigest,
   materializeKernelPermission,
   ownerOperator,

@@ -6,16 +6,19 @@ import {
 } from "@oaath/protocol";
 import { hashTypedData, keccak256, recoverAddress, stringToHex } from "viem";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import { kernelV33Deployment } from "../kernel/deployment/v33.js";
+import { type KernelReads, kernelDeployment } from "../kernel/deployment/account.js";
+import type { KernelDeployment } from "../kernel/deployment/profile.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
+import {
+  type KernelPermissionEnableTypedData,
+  kernelGrantCapabilityHash,
+  kernelPermissionEnableTypedData,
+  kernelPermissionNonce,
+} from "../kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import {
-  type KernelV33PermissionApproval,
   type KernelV33PermissionScope,
-  kernelV33CapabilityHash,
-  kernelV33PermissionEnableTypedData,
-  kernelV33PermissionInstallNonce,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   parseKernelV33PermissionApproval,
 } from "../kernel/permission/v33.js";
@@ -25,8 +28,9 @@ import type { OaathBinding } from "./binding.js";
 import { clientFail, mapClientFailure } from "./errors.js";
 import type { OaathChainCapability } from "./grant-handle.js";
 
+/** Wallet typed-data signing for the selected deployment's enable approval. */
 export type LocalPermissionSign = (
-  request: ReturnType<typeof kernelV33PermissionEnableTypedData> & {
+  request: KernelPermissionEnableTypedData & {
     readonly account?: `0x${string}`;
   },
 ) => Promise<unknown>;
@@ -35,7 +39,8 @@ export interface OaathLocalApprovalReview {
   readonly account: `0x${string}`;
   readonly chainScope: "all";
   readonly policy: Readonly<PermissionRequest["policy"]>;
-  readonly typedData: ReturnType<typeof kernelV33PermissionEnableTypedData>;
+  /** The exact enable approval the wallet signs, from the account's deployment. */
+  readonly typedData: KernelPermissionEnableTypedData;
 }
 
 export function createLocalPermissionAuthority(input: {
@@ -57,12 +62,19 @@ export function createLocalPermissionAuthority(input: {
     if (input.now() >= request.expiresAt) return fail();
   }
   async function signApproval(request: Readonly<PermissionRequest>) {
+    // The protocol's existing-account profile binds Kernel 0.3.3 accounts only.
     if (request.logicalAccount.kernelVersion !== "0.3.3") return fail();
-    const address = request.logicalAccount.address;
+    const { address, kernelVersion } = request.logicalAccount;
+    const requestHash = hashPermissionRequest(request);
     let scope: Readonly<KernelV33PermissionScope> | undefined;
+    let typedData: KernelPermissionEnableTypedData | undefined;
     for (const chain of input.chains) {
-      const deployment = kernelV33Deployment(chain.chainId);
-      const options = { deployment, reads: chain.reads };
+      // The selected deployment stays typed as any supported one: approval
+      // typed data and nonce come from it, never from a version literal.
+      const options: Readonly<{ deployment: Readonly<KernelDeployment>; reads: KernelReads }> = {
+        deployment: kernelDeployment({ chainId: chain.chainId, kernelVersion }),
+        reads: chain.reads,
+      };
       // Verify the connected root owner on every configured chain before consent.
       await createKernelRuntime({
         ...options,
@@ -76,7 +88,12 @@ export function createLocalPermissionAuthority(input: {
         }),
       });
       const account = await runtime.bindAccount({ address });
-      const nonce = await kernelV33PermissionInstallNonce({ runtime, account, reads: chain.reads });
+      const nonce = await kernelPermissionNonce({
+        runtime,
+        account,
+        reads: chain.reads,
+        requestHash,
+      });
       if (runtime.validation.kind !== "permission") return fail();
       const next = Object.freeze({
         chainScope: "all" as const,
@@ -93,10 +110,10 @@ export function createLocalPermissionAuthority(input: {
         );
       }
       scope = next;
+      typedData ??= kernelPermissionEnableTypedData({ runtime, account, nonce });
     }
-    if (!scope) return fail();
-    const typedData = kernelV33PermissionEnableTypedData(scope);
-    const digest = hashTypedData(typedData);
+    if (!scope || !typedData) return fail();
+    const digest = hashTypedData(typedData as Parameters<typeof hashTypedData>[0]);
     await input
       .onApproval?.(
         structuredClone({ account: address, chainScope: "all", policy: request.policy, typedData }),
@@ -185,7 +202,7 @@ export function createLocalPermissionAuthority(input: {
           requestHash: hashPermissionRequest(request),
           decidedAt: input.now(),
           approvedPolicy: request.policy,
-          capabilityHash: kernelV33CapabilityHash(approval),
+          capabilityHash: kernelGrantCapabilityHash(approval),
           installApproval: approval,
         });
       } catch (error) {

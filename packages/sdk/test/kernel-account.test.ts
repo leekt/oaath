@@ -3,13 +3,21 @@
  * selection, onchain detection of an existing account's deployment, and the one
  * structured code for an explicit deployment that disagrees with the account.
  */
+
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import {
+  approveKernelPermission,
   bindKernelAccount,
   createKernelReads,
+  createKernelRuntime,
   kernelAccountDeployment,
   kernelDeployment,
+  kernelKey,
+  kernelPermissionEnableTypedData,
+  ownerOperator,
   prepareKernelUserOperation,
+  sessionOperator,
 } from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
@@ -235,5 +243,44 @@ describe("version-agnostic Kernel UserOperation preparation", () => {
         validityTimeRange: { validAfter: "0", validUntil: "1" },
       }),
     ).toThrow(expect.objectContaining({ code: "kernel_runtime_unsupported" }));
+  });
+});
+
+describe("version-agnostic Kernel permission approval", () => {
+  const key = kernelKey({ account: privateKeyToAccount(generatePrivateKey()), validator });
+  const policies = [
+    {
+      kind: "call" as const,
+      permissions: [
+        {
+          target: `0x${"44".repeat(20)}` as const,
+          selector: "0x00000000" as const,
+          valueLimit: "0",
+        },
+      ],
+    },
+  ];
+
+  it("approves the session packages of the runtime's own deployment", async () => {
+    const runtime = createKernelRuntime({
+      deployment: kernelDeployment({ chainId }),
+      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07).reads,
+      operator: sessionOperator({ key, policies }),
+    });
+    const approval = await approveKernelPermission({ owner: key, runtime, account, nonce: "0" });
+    expect(approval).toMatchObject({ version: "oaath.kernel.all-chain-approval/v1", account });
+    const typedData = kernelPermissionEnableTypedData({ runtime, account, nonce: "0" });
+    expect(typedData).toMatchObject({ primaryType: expect.any(String) });
+  });
+
+  it("refuses to approve an owner runtime, which installs no permission", async () => {
+    const runtime = createKernelRuntime({
+      deployment: kernelDeployment({ chainId }),
+      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07).reads,
+      operator: ownerOperator({ key }),
+    });
+    await expect(
+      approveKernelPermission({ owner: key, runtime, account, nonce: "0" }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
   });
 });
