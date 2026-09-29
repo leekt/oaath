@@ -16,6 +16,7 @@ import type { KernelDeployment } from "../kernel/deployment/profile.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
 import {
+  approveKernelPermission,
   type KernelPermissionEnableTypedData,
   kernelGrantCapabilityHash,
   kernelPermissionEnableTypedData,
@@ -50,8 +51,11 @@ export function createLocalPermissionAuthority(input: {
   readonly session: Readonly<KeyProfile>;
   readonly grants: GrantStore;
   readonly chains: readonly Readonly<OaathChainCapability>[];
-  readonly signTypedData: LocalPermissionSign;
-  readonly localWallet: boolean;
+  /** A wallet's typed-data prompt, or null when the owner key profile signs. */
+  readonly walletApproval: Readonly<{
+    signTypedData: LocalPermissionSign;
+    localWallet: boolean;
+  }> | null;
   readonly onApproval: ((review: Readonly<OaathWalletApprovalReview>) => Promise<void>) | null;
   readonly now: () => number;
 }) {
@@ -135,10 +139,19 @@ export function createLocalPermissionAuthority(input: {
         clientFail("oaath_client_decision_unavailable", "local permission approval failed"),
       );
     assertActive(request);
-    const produced = await input
+    const wallet = input.walletApproval;
+    if (wallet === null)
+      // The owner key signs the same digest; the artifact recomputes and checks it.
+      return approveKernelPermission({
+        owner: input.owner,
+        runtime: approvalInput.runtime,
+        account: approvalInput.account,
+        nonce: approvalInput.nonce,
+      }).catch((error) => mapClientFailure(error, "local permission approval failed"));
+    const produced = await wallet
       .signTypedData({
         ...typedData,
-        ...(input.localWallet ? {} : { account: input.owner.publicMaterial as `0x${string}` }),
+        ...(wallet.localWallet ? {} : { account: input.owner.publicMaterial as `0x${string}` }),
       })
       .catch(() =>
         clientFail("oaath_client_decision_unavailable", "local permission approval failed"),

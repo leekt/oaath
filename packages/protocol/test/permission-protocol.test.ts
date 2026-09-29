@@ -233,7 +233,7 @@ describe("PermissionRequest current codec", () => {
     const existing = parsePermissionRequest({
       ...request,
       logicalAccount: {
-        version: "oaath.kernel-existing-account-profile/v2",
+        version: "oaath.kernel-existing-account-profile/v3",
         kind: "kernel",
         kernelVersion: "0.3.3",
         address: target,

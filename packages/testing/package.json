@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "@account-abstraction/contracts": "0.7.0",
+    "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
     "@oaath/server": "workspace:*",

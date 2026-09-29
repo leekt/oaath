@@ -11,7 +11,6 @@ import {
   captureRecord,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   parseKernelAccountProfile,
 } from "@oaath/protocol";
 import type { Address } from "viem";
@@ -20,7 +19,8 @@ import { OaathCleanupError } from "../cleanup/coordinator.js";
 import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
 import { detectKernelAccountDeployment } from "../kernel/deployment/account.js";
 import { kernelV33Deployment } from "../kernel/deployment/v33.js";
-import { type EcdsaWalletClient, ecdsaKey, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
+import { type EcdsaWalletClient, ecdsaKey } from "../kernel/key/ecdsa.js";
+import type { KeyProfile } from "../kernel/types.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { GrantStore, type OperationStoreAdapter } from "../store.js";
 import { captureOaathBinding } from "./binding.js";
@@ -36,13 +36,18 @@ import {
   OaathClientError,
 } from "./errors.js";
 import { captureChainCapability, type OaathChainCapability } from "./grant-handle.js";
-import { deriveOperatorCredentialProfile } from "./key-credential.js";
+import { deriveOperatorCredentialProfile, deriveOwnerCredentialProfile } from "./key-credential.js";
 import {
   createLocalPermissionAuthority,
   type LocalPermissionSign,
   type OaathWalletApprovalReview,
 } from "./local-permission.js";
-import { createOwnerRealm, type OaathOwnerClient } from "./owner-realm.js";
+import {
+  captureOwnerKey,
+  createOwnerRealm,
+  type OaathOwnerClient,
+  ownerKeyUnsupported,
+} from "./owner-realm.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
 import {
   captureSession,
@@ -54,11 +59,17 @@ import { captureStoreConfiguration } from "./store-configuration.js";
 export type OaathApprovalWallet = EcdsaWalletClient & {
   readonly signTypedData: LocalPermissionSign;
 };
+/**
+ * The account's root owner: a connected wallet that approves with one
+ * typed-data signature (the ECDSA default), or any `kernelKey(...)` signing
+ * profile, such as a raw P-256 key, that signs the same approval digest.
+ */
+export type OaathApprovalOwner = OaathApprovalWallet | Readonly<KeyProfile>;
 export type { OaathWalletApprovalReview } from "./local-permission.js";
-/** The connected wallet approves Grants with one typed-data signature. */
+/** The account's root owner approves Grants with one signature. */
 export interface OaathWalletApprovals {
   readonly kind: "wallet";
-  readonly owner: OaathApprovalWallet;
+  readonly owner: OaathApprovalOwner;
   /** Display the decoded policy before wallet consent. Throw to cancel. */
   readonly onApproval?: (review: Readonly<OaathWalletApprovalReview>) => Promise<void>;
 }
@@ -105,7 +116,6 @@ export function createLocalRealm(
     new WeakSet(),
   );
   if (approvals.kind !== "wallet") return fail("wallet approvals kind is required");
-  const owner = approvals.owner as OaathApprovalWallet;
   const onApproval =
     approvals.onApproval === undefined
       ? null
@@ -113,12 +123,25 @@ export function createLocalRealm(
           approvals.onApproval,
           "local approval display",
         );
-  const wallet = captureRecord(owner, "local wallet", context, fail);
-  const walletAccount = captureRecord(wallet.account, "local wallet account", context, fail);
-  const signTypedData = clientCapability<LocalPermissionSign>(
-    wallet.signTypedData,
-    "wallet typed-data signing",
-  );
+  const ownerKey = captureOwnerKey(approvals.owner);
+  // A wallet approves through its typed-data prompt; a key profile signs the
+  // same digest through its own signing capability.
+  const walletApproval = (() => {
+    if (Object.hasOwn(approvals.owner as object, "publicMaterial")) return null;
+    const owner = approvals.owner as OaathApprovalWallet;
+    const wallet = captureRecord(owner, "local wallet", context, fail);
+    const walletAccount = captureRecord(wallet.account, "local wallet account", context, fail);
+    const signTypedData = clientCapability<LocalPermissionSign>(
+      wallet.signTypedData,
+      "wallet typed-data signing",
+    );
+    return Object.freeze({
+      signTypedData: signTypedData.bind(owner),
+      localWallet: walletAccount.type === "local",
+    });
+  })();
+  const ownerCredential = deriveOwnerCredentialProfile(ownerKey);
+  if (ownerCredential === null || ownerCredential.kind === "webauthn") return ownerKeyUnsupported();
   const entries = captureDenseArray(config.chains, "local chains", context, fail);
   if (entries.length < 1 || entries.length > 32) return fail("local mode requires 1 to 32 chains");
   const chains = Object.freeze(entries.map(captureChainCapability));
@@ -130,10 +153,6 @@ export function createLocalRealm(
     unsupportedSessionCustody("wallet approvals support browser session custody only");
   }
   const suppliedSession = session.supplied;
-  const ownerKey = ecdsaWalletKey({
-    wallet: owner,
-    validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,
-  });
   const origin =
     config.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
   if (typeof origin !== "string")
@@ -166,11 +185,7 @@ export function createLocalRealm(
       kernelVersion,
       address,
       entryPoint: { version: "0.7" },
-      ownerCredential: {
-        version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-        kind: "ecdsa",
-        address: ownerKey.publicMaterial,
-      },
+      ownerCredential,
     });
   }
   const identityInput = {
@@ -228,13 +243,15 @@ export function createLocalRealm(
     composing ??= (async () => {
       const bindingInput = { ...identityInput, account: await detectedAccountProfile() };
       // Capture public identity before opening storage or invoking a wallet.
+      // No session exists yet, so a fixed placeholder fills the operator slot;
+      // only the identity fields below are read from this binding.
       const baseBinding = captureOaathBinding({
         ...bindingInput,
         deviceId: "local",
         operatorCredential: {
           version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
           kind: "ecdsa",
-          address: ownerKey.publicMaterial,
+          address: `0x${"00".repeat(19)}01`,
         },
       });
       const owned = await storage();
@@ -265,8 +282,7 @@ export function createLocalRealm(
         session: sessionKey,
         grants: new GrantStore({ ...owned.grants, close: async () => undefined }),
         chains,
-        signTypedData: signTypedData.bind(owner),
-        localWallet: walletAccount.type === "local",
+        walletApproval,
         onApproval,
         now,
       });

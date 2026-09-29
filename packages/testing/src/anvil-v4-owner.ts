@@ -1,22 +1,23 @@
 /**
- * Deploy an existing ECDSA-root Kernel v4 account whose root validator is the
- * reviewed ECDSA validator, so owner mode can prove its owner onchain.
+ * Deploy an existing Kernel v4 account whose root validator exposes its owner
+ * onchain (the reviewed ECDSA validator or the pinned raw P-256 validator), so
+ * owner mode can prove the owner.
  */
-import { createKernelRuntime, kernelDeployment, kernelKey, ownerOperator } from "@oaath/sdk/kernel";
+import {
+  createKernelRuntime,
+  type KeyProfile,
+  kernelDeployment,
+  ownerOperator,
+} from "@oaath/sdk/kernel";
 import type { Hex } from "viem";
-import type { PrivateKeyAccount } from "viem/accounts";
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import type { deployKernelStack, startAnvil } from "./anvil-process.mjs";
 
 export async function deployLocalV4OwnerAccount(
   chain: Awaited<ReturnType<typeof startAnvil>>,
   stack: Awaited<ReturnType<typeof deployKernelStack>>,
-  owner: PrivateKeyAccount,
+  owner: Readonly<KeyProfile>,
 ): Promise<Hex> {
-  const validator = kernelDeployment({
-    chainId: chain.chainId,
-    kernelVersion: "0.3.3",
-  }).ecdsaValidator;
   const deployed = await stack.wallet.sendTransaction({
     account: stack.submitter,
     chain: null,
@@ -28,7 +29,7 @@ export async function deployLocalV4OwnerAccount(
     throw new Error("local_fixture_deployment_failed");
   const runtime = createKernelRuntime({
     deployment: kernelDeployment({ chainId: chain.chainId }),
-    operator: ownerOperator({ key: kernelKey({ account: owner, validator }) }),
+    operator: ownerOperator({ key: owner }),
     reads: stack.reads,
   });
   const account = await runtime.bindAccount({

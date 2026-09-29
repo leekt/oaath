@@ -205,7 +205,7 @@ describe("canonical permission approval by the owner", () => {
         fixed.prepare({
           ...fixed.request,
           logicalAccount: {
-            version: "oaath.kernel-existing-account-profile/v2",
+            version: "oaath.kernel-existing-account-profile/v3",
             kind: "kernel",
             kernelVersion,
             address: `0x${"55".repeat(20)}`,

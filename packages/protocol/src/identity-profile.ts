@@ -13,7 +13,7 @@ export const OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION =
   "oaath.operator-credential-profile/v1" as const;
 export const OAATH_KERNEL_ACCOUNT_PROFILE_VERSION = "oaath.kernel-account-profile/v1" as const;
 export const OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION =
-  "oaath.kernel-existing-account-profile/v2" as const;
+  "oaath.kernel-existing-account-profile/v3" as const;
 const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
   "@oaath/protocol:owner-credential-profile" as const;
 
@@ -87,7 +87,12 @@ export interface KernelExistingAccountProfile {
   /** Existing account address, identical on each chain where the account is bound. */
   readonly address: `0x${string}`;
   readonly entryPoint: Readonly<{ version: "0.7" }>;
-  readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile>;
+  /**
+   * A root owner the account's root validator exposes onchain: ECDSA on either
+   * version, or raw P-256 through the pinned validator on Kernel `0.4.0`. No
+   * WebAuthn root validator is pinned.
+   */
+  readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile | P256OwnerCredentialProfile>;
 }
 
 export type KernelExistingAccountVersion = "0.3.3" | "0.4.0";
@@ -115,7 +120,7 @@ export type KernelAccountActionInput =
       readonly kernelVersion: KernelExistingAccountVersion;
       readonly address: `0x${string}`;
       readonly entryPointVersion: "0.7";
-      readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile>;
+      readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile | P256OwnerCredentialProfile>;
     };
 
 export type IdentityProfileErrorCode =
@@ -321,9 +326,12 @@ export function captureKernelAccountProfile(
   if (entryPoint.version !== "0.7") return fail("Kernel account EntryPoint is unsupported");
   const ownerCredential = captureOwnerCredentialProfile(record.ownerCredential, context, fail);
   if (existing) {
-    // Only an ECDSA root owner is provable onchain for an existing account.
-    if (ownerCredential.kind !== "ecdsa")
-      return fail("Kernel existing account requires an ECDSA owner");
+    // Only a root owner the account's validator exposes is provable onchain.
+    if (
+      ownerCredential.kind === "webauthn" ||
+      (ownerCredential.kind === "p256" && record.kernelVersion !== "0.4.0")
+    )
+      return fail("Kernel existing account owner kind is unsupported");
     return Object.freeze({
       version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
       kind: "kernel",

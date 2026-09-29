@@ -3,6 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { p256 } from "@noble/curves/nist.js";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import {
   createOAAth,
   type OaathApprovalWallet,
@@ -10,14 +12,16 @@ import {
   type OaathConnectedEoaPayer,
   type OaathOwnerClient,
 } from "@oaath/sdk";
-import { kernelDeployment } from "@oaath/sdk/kernel";
+import { type KeyProfile, kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
+  bytesToHex,
   createWalletClient,
   custom,
   encodeErrorResult,
   encodeFunctionData,
   type Hex,
+  hexToBytes,
   http,
   parseEther,
   toHex,
@@ -41,6 +45,8 @@ export interface LocalOwnerAnvilFixture {
   readonly rpcUrl: string;
   readonly address: Hex;
   readonly wallet: OwnerWallet;
+  /** The account's raw P-256 root owner key when `owner: "p256"`, counted in `signatureCount`. */
+  readonly ownerKey: Readonly<KeyProfile> | null;
   readonly signatureCount: number;
   readonly bundlerSubmissionCount: number;
   readonly fallbackSubmissionCount: number;
@@ -68,6 +74,8 @@ export async function createLocalOwnerAnvilFixture(
     wallet?: "browser" | "local";
     /** The existing account's Kernel version; the SDK under test must detect it. */
     kernelVersion?: "0.3.3" | "0.4.0";
+    /** The account's root owner; `"p256"` requires Kernel `"0.4.0"`. Defaults to the ECDSA wallet. */
+    owner?: "ecdsa" | "p256";
     bundler?: "accept" | "reject" | "uncertain";
     /** Fault injection for session estimation; owner execution remains real EntryPoint execution. */
     sessionValidation?: "rejected" | "unavailable";
@@ -76,7 +84,11 @@ export async function createLocalOwnerAnvilFixture(
   const chainId = input.chainId ?? 143;
   if (!Number.isSafeInteger(chainId) || chainId < 1) throw new Error("local_fixture_chain_invalid");
   const directory = await mkdtemp(join(tmpdir(), "oaath-owner-fixture-"));
-  const chain = await startAnvil(chainId);
+  const p256Owner = input.owner === "p256";
+  if (p256Owner && input.kernelVersion !== "0.4.0") throw new Error("local_fixture_owner_invalid");
+  // The pinned P-256 validator needs the precompile Osaka carries.
+  const chain = await startAnvil(chainId, p256Owner ? "osaka" : "prague");
+  let signatures = 0;
   let client: Readonly<OaathOwnerClient> | undefined;
   let bundlerServer: Promise<{ server: Server; url: string }> | undefined;
   let closed = false;
@@ -94,17 +106,36 @@ export async function createLocalOwnerAnvilFixture(
       throw new Error("local_fixture_cleanup_failed");
   }
   try {
-    const stack = await deployKernelStack(chain);
+    const stack = await deployKernelStack(chain, { p256: p256Owner });
     const deployment = kernelDeployment({ chainId });
+    const deployment33 = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
     const owner = privateKeyToAccount(generatePrivateKey());
+    const p256Secret = p256.utils.randomPrivateKey();
+    // A raw P-256 root owner: only compact low-s (r || s) crosses the boundary.
+    const ownerKey = p256Owner
+      ? kernelKey({
+          credential: {
+            version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+            kind: "p256",
+            publicKey: bytesToHex(p256.getPublicKey(p256Secret, false)),
+          },
+          sign: async ({ hash }) => {
+            signatures++;
+            return `0x${p256.sign(hexToBytes(hash), p256Secret, { lowS: true, prehash: false }).toCompactHex()}`;
+          },
+        })
+      : null;
     const address =
       input.kernelVersion === "0.4.0"
-        ? await deployLocalV4OwnerAccount(chain, stack, owner)
+        ? await deployLocalV4OwnerAccount(
+            chain,
+            stack,
+            ownerKey ?? kernelKey({ account: owner, validator: deployment33.ecdsaValidator }),
+          )
         : await deployLocalV33Account(chain, stack, owner.address);
     await stack.fund(address, parseEther("10"));
     await stack.fund(owner.address, parseEther("10"));
-    let signatures = 0,
-      bundlerSends = 0,
+    let bundlerSends = 0,
       fallbackSends = 0;
     let sessionEstimates = 0;
     let rpcRequests = 0;
@@ -329,6 +360,7 @@ export async function createLocalOwnerAnvilFixture(
       rpcUrl: chain.url,
       address,
       wallet,
+      ownerKey,
       createChainPorts: ports,
       async chainDescriptors() {
         if (closed) throw new Error("local_fixture_closed");

@@ -10,9 +10,10 @@ owns PKCE S256 challenge derivation. Authorization request/code storage, decisio
 transactions, code consumption, and HTTP responses belong to `@oaath/server`.
 
 `KernelAccountProfile` distinguishes derived Kernel v4 accounts from existing
-accounts. The latter use `oaath.kernel-existing-account-profile/v2` with the
+accounts. The latter use `oaath.kernel-existing-account-profile/v3` with the
 detected `kernelVersion` (`"0.3.3"` or `"0.4.0"`), an
-`address`, EntryPoint `0.7`, and an ECDSA `ownerCredential`; factory indices and
+`address`, EntryPoint `0.7`, and an ECDSA `ownerCredential`
+(or, on `"0.4.0"`, a raw P-256 one); a WebAuthn owner, factory indices and
 routes are rejected. Permission hashes and Grant identity bind that existing
 address and owner. Parsing the profile does not prove deployment or ownership;
 the runtime checks those facts on each action chain.

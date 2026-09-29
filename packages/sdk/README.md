@@ -66,11 +66,11 @@ removal.
 
 ## Owner operations
 
-For an existing ECDSA-root Kernel account, execute calls directly with a
-connected viem wallet. The account's Kernel version (`0.3.3` or `0.4.0`) is
-detected onchain on each send and reported as `review.kernelVersion`; no
-version is configured. Omitting `approvals` gives owner-only execution, which
-needs no issuer, relay, Grant, or enable approval:
+For an existing Kernel account, execute calls directly as its root owner. The
+account's Kernel version (`0.3.3` or `0.4.0`) is detected onchain on each send and
+reported as `review.kernelVersion`; no version is configured. Omitting
+`approvals` gives owner-only execution, which needs no issuer, relay, Grant, or
+enable approval:
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
@@ -94,9 +94,14 @@ The default operation journal uses IndexedDB. Custom deployments may inject
 one account/chain slot. Concurrent sends and sends after reload fail with a state
 conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
-The account stays at its existing address. Each send checks its implementation,
-EntryPoint, root validator and current ECDSA owner. The root validator must be
-the reviewed ECDSA validator, whose owner is readable onchain. Owner-only execution uses the
+The owner key is an optional setting: a connected viem wallet (the ECDSA
+default) or any `kernelKey(...)` signing profile, such as a raw P-256 key
+(`account.owner(kernelKey({ credential, sign }))`). The account stays at its
+existing address. Each send checks its implementation, EntryPoint, root
+validator and current owner. The root validator must expose its owner onchain:
+the reviewed ECDSA validator, or on Kernel `0.4.0` the pinned raw P-256
+validator. A WebAuthn owner key fails with `oaath_client_capability_unsupported`
+(`source: "owner_key_kind_unsupported"`) before it signs. Owner-only execution uses the
 bundler route by default. Applications can explicitly estimate a session before
 selecting owner execution, as described below; OAAth never silently changes the
 signer of an operation.
@@ -104,8 +109,10 @@ signer of an operation.
 ## Wallet-approved Grants
 
 For scoped sessions without an issuer service or phone, add
-`approvals: { kind: "wallet", owner }` to the same options, with either a
-browser or local viem wallet. The account's
+`approvals: { kind: "wallet", owner }` to the same options. `owner` is a
+browser or local viem wallet, which approves with one typed-data prompt, or any
+`kernelKey(...)` signing profile the owner operations above accept, which signs
+the same approval digest. The account's
 Kernel deployment is detected on every configured chain; chains that disagree
 fail with `local_account_deployment_mismatch`:
 
@@ -295,7 +302,7 @@ The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
 chain-bound approval records are rejected and must be recreated.
 
 Custom issuer configurations can execute a v3.3 Grant using an account profile
-with version `oaath.kernel-existing-account-profile/v2`, `kernelVersion: "0.3.3"`,
+with version `oaath.kernel-existing-account-profile/v3`, `kernelVersion: "0.3.3"`,
 the existing `address`, EntryPoint version `0.7`, and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
 decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission

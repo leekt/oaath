@@ -26,7 +26,10 @@ own loopback HTTP routes to this handler while the browser uses the normal SDK
 transport and native storage. The harness owns exact host/origin checks,
 request budgets and its HTTP server's cleanup. `rpcFetch` rejects unrelated
 origins, non-POST requests and calls after `close()`; it does not start a server.
-Signature, submission and RPC counters cover these calls too. Do not retain
+Signature, submission and RPC counters cover these calls too.
+`createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0", owner: "p256" })` roots
+the account in a raw P-256 `ownerKey` through the pinned P-256 validator on an
+Osaka chain; its signatures count in `signatureCount`. Do not retain
 request payloads, signatures, approval data or browser profiles as evidence.
 
 The local stack also deploys the pinned WebAuthn signer and resetting rate-limit
