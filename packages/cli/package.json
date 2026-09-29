@@ -29,7 +29,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/doctor.anvil.test.ts test/deploy.anvil.test.ts",
-    "release:publish": "bun publish --access public --tolerate-republish"
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
   },
   "dependencies": {
     "@oaath/sdk": "workspace:*",

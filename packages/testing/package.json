@@ -48,7 +48,8 @@
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "release:publish": "bun publish --access public --tolerate-republish"
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
   },
   "dependencies": {
     "@account-abstraction/contracts": "0.7.0",

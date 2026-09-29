@@ -39,7 +39,7 @@
     "changeset": "changeset",
     "release:status": "changeset status",
     "release:version": "changeset version && bun install --lockfile-only",
-    "release:check": "bun run --workspaces --if-present release:publish --dry-run",
+    "release:check": "bun run --workspaces --if-present release:check",
     "release:publish": "bun run --workspaces --if-present release:publish && changeset tag",
     "smoke:process-recovery": "node scripts/smoke-packed-process-recovery.mjs",
     "smoke:runtime": "node scripts/smoke-packed-runtime.mjs"
