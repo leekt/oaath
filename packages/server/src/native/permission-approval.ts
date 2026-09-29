@@ -2,17 +2,17 @@
 import {
   captureRecord,
   hashOwnerSigningRequest,
-  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type KernelReplayableInstallOwnerSigningRequest,
   type OwnerSigningArtifact,
   type PermissionRequest,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
   sameOwnerCredentialProfile,
 } from "@oaath/protocol";
 import { relayFailure } from "../relay/errors.js";
 import { boundedText, RELAY_LIMITS } from "../store/records.js";
 
 export interface PreparedOwnerPhonePermissionApproval {
-  readonly signingRequest: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+  readonly signingRequest: Readonly<KernelReplayableInstallOwnerSigningRequest>;
   /** Verifies and serializes the SDK's decision plus install approval; submits nothing. */
   complete(artifact: Readonly<OwnerSigningArtifact>, decidedAt: number): Promise<string>;
 }
@@ -38,7 +38,7 @@ export async function prepareOwnerPhonePermissionApproval(
     new WeakSet(),
     invalid,
   );
-  const signingRequest = parseKernelV4ReplayableInstallOwnerSigningRequest(result.signingRequest);
+  const signingRequest = parseKernelReplayableInstallOwnerSigningRequest(result.signingRequest);
   if (
     signingRequest.signer.ownerCredential.kind !== "p256" ||
     !sameOwnerCredentialProfile(

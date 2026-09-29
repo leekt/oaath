@@ -23,9 +23,9 @@ import { hashOwnerCredentialProfile } from "./identity-profile.js";
 import { exactRecord } from "./internal/exact-record.js";
 import {
   type KernelInstall,
-  type KernelV4ReplayableInstallOwnerSigningRequest,
-  parseKernelV4InstallPackages,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  type KernelReplayableInstallOwnerSigningRequest,
+  parseKernelInstallPackages,
+  parseKernelReplayableInstallOwnerSigningRequest,
 } from "./kernel-v4-replayable-install.js";
 import {
   hashPermissionRequest,
@@ -72,7 +72,7 @@ export interface KernelRevocationSigningRequest {
   readonly kind: "kernel-revocation";
   readonly permissionRequest: Readonly<PermissionRequest>;
   /** Public install scope only; no retained enable signature is sent to the phone. */
-  readonly install: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+  readonly install: Readonly<KernelReplayableInstallOwnerSigningRequest>;
   readonly effect: KernelRevocationEffect;
   readonly chainId: number;
   /** EntryPoint 0.7 address, part of the digest the phone independently derives. */
@@ -129,7 +129,7 @@ export function encodeKernelPermissionUninstallCalls(value: {
       fail,
     );
     const account = address(record.account, "Kernel permission uninstall account");
-    const packages = parseKernelV4InstallPackages(record.packages);
+    const packages = parseKernelInstallPackages(record.packages);
     const policies = packages.filter((entry) => entry.moduleType === 5);
     const signers = packages.filter((entry) => entry.moduleType === 6);
     if (signers.length !== 1 || policies.length + 1 !== packages.length)
@@ -193,7 +193,7 @@ export function encodeKernelInstallNonceInvalidationCall(value: {
 }
 
 function revocationCallData(
-  install: KernelV4ReplayableInstallOwnerSigningRequest,
+  install: KernelReplayableInstallOwnerSigningRequest,
   effect: KernelRevocationEffect,
 ): Hex {
   const account = install.signer.account;
@@ -276,7 +276,7 @@ export function parseKernelRevocationSigningRequest(
     )
       return fail("Kernel revocation chain is invalid");
     const permissionRequest = parsePermissionRequest(record.permissionRequest);
-    const install = parseKernelV4ReplayableInstallOwnerSigningRequest(record.install);
+    const install = parseKernelReplayableInstallOwnerSigningRequest(record.install);
     if (
       install.signer.ownerCredential.kind !== "p256" ||
       hashOwnerCredentialProfile(install.signer.ownerCredential) !==

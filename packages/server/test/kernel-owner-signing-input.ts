@@ -11,7 +11,7 @@
 import { p256 } from "@noble/curves/nist.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import {
-  createKernelV4ReplayableInstallTypedData,
+  createKernelReplayableInstallTypedData,
   hashCanonicalEip712TypedData,
   hashOwnerSigningRequest,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -29,7 +29,7 @@ export function createKernelOwnerApprovalInput(): KernelOwnerApprovalInput {
   const privateKey = p256.utils.randomPrivateKey();
   try {
     const account = `0x${"66".repeat(20)}` as const;
-    const typedData = createKernelV4ReplayableInstallTypedData({
+    const typedData = createKernelReplayableInstallTypedData({
       account,
       nonce: "0",
       packages: [

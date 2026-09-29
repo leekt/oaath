@@ -16,7 +16,7 @@ import {
   hashKernelRevocationSigningRequest,
   hashOwnerSigningRequest,
   type KernelRevocationSigningRequest,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
   parseOwnerSigningArtifact,
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
@@ -34,7 +34,7 @@ export function verifyKernelV4ReplayableInstallOwnerSigningArtifact(
   artifactPlaintext: unknown,
 ): string {
   try {
-    const request = parseKernelV4ReplayableInstallOwnerSigningRequest(requestValue);
+    const request = parseKernelReplayableInstallOwnerSigningRequest(requestValue);
     if (request.signer.ownerCredential.kind !== "p256") throw new TypeError();
 
     return verifyArtifact(

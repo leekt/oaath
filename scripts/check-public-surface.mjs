@@ -22,12 +22,15 @@
  *      Private packages are never published and are exempt from the provenance
  *      rule.
  *   4. Version-agnostic names: no value or type exported from any published
- *      `@oaath/sdk` entry, `/advanced` included, names a Kernel version
- *      (`V33`/`V4`). Kernel and EntryPoint versions are detected or optional
- *      settings; deployment-specific addresses are `kernelDeployment(...)` fields.
+ *      `@oaath/protocol`, `@oaath/sdk`, `@oaath/server` or `@oaath/testing`
+ *      entry names a Kernel version (`V33`/`V4`). An artifact's own version
+ *      discriminant carries its version. Kernel and EntryPoint versions are
+ *      detected or optional settings; deployment-specific addresses are
+ *      `kernelDeployment(...)` fields.
  *
- * `@oaath/server`'s own entries are owned by `packages/server/test/package.test.ts`;
- * this gate covers the graphs that cross a package boundary.
+ * `@oaath/server`'s own entry graphs are owned by
+ * `packages/server/test/package.test.ts`; this gate covers the graphs that
+ * cross a package boundary.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -241,18 +244,31 @@ async function exportedNames(file) {
   return names;
 }
 
+/** Published packages whose every entry must export no Kernel-version name. */
+const VERSION_AGNOSTIC_PACKAGES = [
+  "@oaath/protocol",
+  "@oaath/sdk",
+  "@oaath/server",
+  "@oaath/testing",
+];
+
 async function checkVersionAgnosticEntries(workspace) {
-  const sdk = workspace.get("@oaath/sdk");
-  const entries = Object.values(sdk.manifest.exports).map((entry) => entry["oaath-source"].default);
-  if (entries.length < 2) fail("@oaath/sdk: no published entries parsed");
-  for (const entry of entries) {
-    const names = await exportedNames(new URL(entry, sdk.directory));
-    if (names.length < 2) fail(`@oaath/sdk ${entry}: no exports parsed`);
-    for (const name of names) {
-      if (/V33|V4/u.test(name)) fail(`@oaath/sdk ${entry}: exports version-named ${name}`);
+  let count = 0;
+  for (const name of VERSION_AGNOSTIC_PACKAGES) {
+    const { manifest, directory } = workspace.get(name);
+    const entries = Object.values(manifest.exports).map(
+      (entry) => entry["oaath-source"].default ?? entry["oaath-source"].node,
+    );
+    for (const entry of entries) {
+      const names = await exportedNames(new URL(entry, directory));
+      if (names.length < 2) fail(`${name} ${entry}: no exports parsed`);
+      for (const exported of names) {
+        if (/V33|V4/u.test(exported)) fail(`${name} ${entry}: exports version-named ${exported}`);
+      }
     }
+    count += entries.length;
   }
-  return entries.length;
+  return count;
 }
 
 function externals(graph) {
@@ -279,6 +295,4 @@ console.log(
 );
 console.log(`  direction        ${Object.keys(DIRECTION).length} packages, production edges only`);
 console.log("  provenance       every published entry resolves dist");
-console.log(
-  `  versions         ${versionAgnosticEntries} @oaath/sdk entries export no V33/V4 name`,
-);
+console.log(`  versions         ${versionAgnosticEntries} published entries export no V33/V4 name`);

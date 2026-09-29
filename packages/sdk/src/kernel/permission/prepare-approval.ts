@@ -12,12 +12,12 @@ import {
   hashOwnerSigningRequest,
   hashPermissionRequest,
   isKernelExistingAccountProfile,
-  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type KernelReplayableInstallOwnerSigningRequest,
   OAATH_OWNER_SIGNING_REQUEST_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
   type OwnerSigningArtifact,
   type PermissionRequest,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
   parseOwnerSigningArtifact,
   parsePermissionRequest,
 } from "@oaath/protocol";
@@ -57,7 +57,7 @@ export interface KernelPermissionDecision extends ApprovePermissionDecision {
 export interface PreparedKernelPermissionApproval {
   readonly request: Readonly<PermissionRequest>;
   /** The exact owner signing request, for an owner device that returns a signing artifact. */
-  readonly signingRequest: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+  readonly signingRequest: Readonly<KernelReplayableInstallOwnerSigningRequest>;
   /**
    * Takes the one signature from a key profile for the request's owner
    * credential, wherever that key lives, and assembles a decision. The decision
@@ -133,7 +133,7 @@ export async function prepareKernelPermissionApproval(
     nonce: installNonce,
     packages: sessionRuntime.packages,
   });
-  const signingRequest = parseKernelV4ReplayableInstallOwnerSigningRequest({
+  const signingRequest = parseKernelReplayableInstallOwnerSigningRequest({
     version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
     kind: "eip712",
     purpose: "kernel-enable",

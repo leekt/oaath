@@ -8,14 +8,14 @@ import {
   type CaptureContext,
   captureDenseArray,
   captureRecord,
-  createKernelV4ReplayableInstallTypedData,
+  createKernelReplayableInstallTypedData,
   type ExactRecord,
   exactCapturedRecord,
-  KERNEL_V4_INSTALL_COMPONENTS,
+  KERNEL_INSTALL_COMPONENTS,
   type KernelInstall,
   OaathProtocolError,
-  type KernelV4ModuleType as ProtocolKernelV4ModuleType,
-  parseKernelV4InstallPackages,
+  type KernelModuleType as ProtocolKernelV4ModuleType,
+  parseKernelInstallPackages,
 } from "@oaath/protocol";
 import {
   concat,
@@ -381,7 +381,7 @@ const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
   type: "tuple[]",
-  components: KERNEL_V4_INSTALL_COMPONENTS,
+  components: KERNEL_INSTALL_COMPONENTS,
 } as const;
 
 const ENTRY_POINT_GET_NONCE_ABI = [
@@ -574,7 +574,7 @@ function captureInstalls(
   label: string,
 ): readonly Readonly<KernelInstall>[] {
   try {
-    return parseKernelV4InstallPackages(value);
+    return parseKernelInstallPackages(value);
   } catch (error) {
     if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
       return fail(`${label} is invalid`);
@@ -1437,7 +1437,7 @@ export function kernelV4ReplayableInstallTypedData(
   const nonce = uint(record.nonce, MAX_UINT256, "Kernel install nonce").toString(10);
   const packages = captureInstalls(record.packages, context, "Kernel enable packages");
   try {
-    return createKernelV4ReplayableInstallTypedData({ account, nonce, packages });
+    return createKernelReplayableInstallTypedData({ account, nonce, packages });
   } catch (error) {
     if (error instanceof OaathProtocolError && error.code === "signing_request_invalid") {
       return fail("Kernel replayable install typed data is invalid");
