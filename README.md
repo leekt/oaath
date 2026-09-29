@@ -12,6 +12,13 @@ matches the application:
 | [Wallet-approved Grant](packages/sdk/README.md#wallet-approved-grants) | `createOAAth({ chains, account, approvals: { kind: "wallet", owner } })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
 | [Phone service](#service-approvals) | `createOAAth({ approvals: { kind: "service", url } })` | The service selects the account and chains; its owner phone approves the Grant. |
 
+Install from npm (`@oaath/cli` provides the `oaath` command):
+
+```sh
+npm install @oaath/sdk
+npm install -D @oaath/cli   # optional: `npx oaath doctor --chain 143`
+```
+
 All three use one constructor; the optional `approvals` setting is the only
 difference:
 
@@ -496,6 +503,10 @@ bun run release:version   # apply versions and changelogs
 bun run release:check     # pack every public package; no publishing or tags
 bun run release:publish   # owner only: publish the fixed group and tag it
 ```
+
+Publish only from `main` after the versioning PR has merged; `release:publish`
+publishes whatever versions the checkout carries. npm two-factor prompts need an
+interactive terminal, and each package asks for its own confirmation.
 
 Changesets owns versions, changelogs, and tags; `release:version` also refreshes
 `bun.lock`. `release:publish` uses Bun to pack and publish the fixed group, resolving
