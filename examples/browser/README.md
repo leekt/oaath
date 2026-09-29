@@ -57,7 +57,8 @@ both. That boundary is the point.
 
 ## Persistence
 
-The example uses the in-memory stores. A browser passes the `createIndexedDb*`
-adapters from the same entry instead — same five names, same journey — and gets
-non-extractable key custody plus a Grant that survives a reload.
+The example uses `createMemoryStores()` from `@oaath/sdk/testing`. A browser
+passes `(await openIndexedDbStores()).stores` from `@oaath/sdk/persistence`
+instead — same store names, same journey — and gets non-extractable key custody
+plus a Grant that survives a reload.
 `bun run smoke:browser` owns the full realm-recreation proof.

@@ -247,9 +247,11 @@ The root import carries only this workflow. Infrastructure lives behind
 explicit subpaths: `@oaath/sdk/kernel` (the version-agnostic Kernel primitives,
 for owner devices and audits; Kernel and EntryPoint versions are optional
 settings), `@oaath/sdk/advanced` (custom-deployment ports, version-named Kernel
-encoders and deployment constants, and the overridden composition), `@oaath/sdk/persistence` (IndexedDB adapters and
-record contracts), and `@oaath/sdk/testing` (deterministic memory stores,
-never a production dependency).
+encoders and deployment constants, and the overridden composition), `@oaath/sdk/persistence` (`openIndexedDbStores`,
+the full IndexedDB store set, and record contracts), and `@oaath/sdk/testing`
+(`createMemoryStores`, the deterministic memory store set, never a production
+dependency). Both serve the overridden composition; `createOAAth` options
+name a backend in `stores` instead.
 
 For viem-based applications, `@oaath/sdk/viem` exposes an active Grant as a
 narrow EIP-1193 provider — `eth_accounts` answers the chain-read-derived smart

@@ -1,27 +1,17 @@
 /**
- * `@oaath/sdk/persistence` — the IndexedDB adapters and the persisted record
- * contracts, for applications that genuinely need direct access to the
- * realm's durable state.
+ * `@oaath/sdk/persistence` — the full IndexedDB store set and the persisted
+ * record contracts, for applications that genuinely need direct access to the
+ * realm's durable state. `createOAAth` options take
+ * `stores: { kind: "indexeddb" }` instead.
  *
  * @author taek <leekt216@gmail.com>
  */
-export { createIndexedDbCleanupStore } from "./persistence/indexeddb/cleanup-store.js";
-export { createIndexedDbContextStore } from "./persistence/indexeddb/context-store.js";
-export type {
-  OaathDatabase,
-  OaathObjectStoreName,
-} from "./persistence/indexeddb/database.js";
+export { openIndexedDbStores } from "./client/stores.js";
 export {
   OAATH_INDEXEDDB_NAME,
   OAATH_INDEXEDDB_STORES,
   OAATH_INDEXEDDB_VERSION,
-  openOaathDatabase,
 } from "./persistence/indexeddb/database.js";
-export { createIndexedDbGrantStoreAdapter } from "./persistence/indexeddb/grant-store.js";
-export { createIndexedDbKeyStore } from "./persistence/indexeddb/key-store.js";
-export { createIndexedDbOperationStoreAdapter } from "./persistence/indexeddb/operation-store.js";
-export { createIndexedDbPreparedCallStoreAdapter } from "./persistence/indexeddb/prepared-call-store.js";
-export { createIndexedDbWalletCallBundleStoreAdapter } from "./persistence/indexeddb/wallet-call-bundle-store.js";
 export type {
   OaathCleanupCheckpoint,
   OaathCleanupCheckpointStore,

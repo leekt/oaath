@@ -1,16 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { OaathStoreConfiguration } from "@oaath/sdk/advanced";
-import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbPreparedCallStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
-  openOaathDatabase,
-} from "@oaath/sdk/persistence";
+import { openIndexedDbStores } from "@oaath/sdk/persistence";
 import type { IDBFactory } from "fake-indexeddb";
 import {
   createSqliteContextStore,
@@ -25,7 +16,7 @@ export async function openLocalClientStores(factory: IDBFactory, stateDirectory?
       throw new Error("local_fixture_storage_invalid");
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
   }
-  const database = await openOaathDatabase({ factory });
+  const database = await openIndexedDbStores({ factory });
   const owned: Array<{ close: () => Promise<unknown> }> = [];
   let databaseClosed = false;
   function track<T extends { close: () => Promise<unknown> }>(store: T): T {
@@ -45,7 +36,7 @@ export async function openLocalClientStores(factory: IDBFactory, stateDirectory?
   async function close() {
     const results = await Promise.allSettled(owned.map((store) => store.close()));
     if (!databaseClosed) {
-      database.close();
+      await database.close();
       databaseClosed = true;
     }
     if (results.some((result) => result.status === "rejected"))
@@ -53,24 +44,17 @@ export async function openLocalClientStores(factory: IDBFactory, stateDirectory?
   }
   try {
     const file = stateDirectory === undefined ? null : join(stateDirectory, "client.sqlite");
+    const indexed = database.stores;
     const stores: OaathStoreConfiguration = {
-      grants: track(
-        file === null
-          ? createIndexedDbGrantStoreAdapter(database)
-          : createSqliteGrantStoreAdapter(file),
-      ),
+      grants: track(file === null ? indexed.grants : createSqliteGrantStoreAdapter(file)),
       operations: track(
-        file === null
-          ? createIndexedDbOperationStoreAdapter(database)
-          : createSqliteOperationStoreAdapter(file),
+        file === null ? indexed.operations : createSqliteOperationStoreAdapter(file),
       ),
-      context: track(
-        file === null ? createIndexedDbContextStore(database) : createSqliteContextStore(file),
-      ),
-      walletCallBundles: track(createIndexedDbWalletCallBundleStoreAdapter(database)),
-      preparedCallContexts: track(createIndexedDbPreparedCallStoreAdapter(database)),
-      keys: track(createIndexedDbKeyStore(database)),
-      cleanup: track(createIndexedDbCleanupStore(database)),
+      context: track(file === null ? indexed.context : createSqliteContextStore(file)),
+      walletCallBundles: track(indexed.walletCallBundles),
+      preparedCallContexts: track(indexed.preparedCallContexts),
+      keys: track(indexed.keys),
+      cleanup: track(indexed.cleanup),
     };
     return { stores, close };
   } catch {

@@ -5,6 +5,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import * as advanced from "../src/advanced.js";
 import * as root from "../src/index.js";
@@ -128,7 +129,7 @@ describe("package boundary", () => {
     ]);
   });
 
-  it("exposes durable adapters and record contracts on /persistence", () => {
+  it("exposes one IndexedDB store set and record contracts on /persistence", () => {
     expect(Object.keys(persistence).sort()).toEqual([
       "OAATH_CLEANUP_CHECKPOINT_VERSION",
       "OAATH_CLIENT_CONTEXT_VERSION",
@@ -138,31 +139,38 @@ describe("package boundary", () => {
       "OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION",
       "OAATH_WALLET_CALL_BUNDLE_VERSION",
       "OaathPersistenceError",
-      "createIndexedDbCleanupStore",
-      "createIndexedDbContextStore",
-      "createIndexedDbGrantStoreAdapter",
-      "createIndexedDbKeyStore",
-      "createIndexedDbOperationStoreAdapter",
-      "createIndexedDbPreparedCallStoreAdapter",
-      "createIndexedDbWalletCallBundleStoreAdapter",
       "isCleanupEffectName",
-      "openOaathDatabase",
+      "openIndexedDbStores",
       "parseCleanupCheckpoint",
       "parseClientContext",
       "requireNonExtractableKey",
     ]);
   });
 
-  it("exposes only deterministic memory stores on /testing", () => {
-    expect(Object.keys(testing).sort()).toEqual([
-      "createMemoryCleanupStore",
-      "createMemoryContextStore",
-      "createMemoryGrantStoreAdapter",
-      "createMemoryKeyStore",
-      "createMemoryOperationStoreAdapter",
-      "createMemoryPreparedCallStoreAdapter",
-      "createMemoryWalletCallBundleStoreAdapter",
-    ]);
+  it("exposes only the deterministic memory store set on /testing", () => {
+    expect(Object.keys(testing).sort()).toEqual(["createMemoryStores"]);
+  });
+
+  it("returns every store from each backend factory and fails closed without IndexedDB", async () => {
+    const names = [
+      "cleanup",
+      "context",
+      "grants",
+      "keys",
+      "operations",
+      "preparedCallContexts",
+      "walletCallBundles",
+    ];
+    expect(Object.keys(testing.createMemoryStores()).sort()).toEqual(names);
+    const indexed = await persistence.openIndexedDbStores({ factory: new IDBFactory() });
+    expect(Object.keys(indexed.stores).sort()).toEqual(names);
+    await indexed.close();
+    await expect(persistence.openIndexedDbStores()).rejects.toMatchObject({
+      code: "oaath_client_store_unavailable",
+    });
+    await expect(
+      persistence.openIndexedDbStores({ operations: {} } as never),
+    ).rejects.toMatchObject({ code: "oaath_client_input_invalid" });
   });
 
   it("exposes the provider and default chain ports on /viem", () => {

@@ -48,16 +48,7 @@ import {
 } from "@oaath/sdk";
 import { OAATH_KERNEL_VALIDITY_POLICY, OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH, encodeKernelInstallNonceInvalidationCall, encodeKernelInstallNonceRead, encodeKernelNonceKey } from "@oaath/sdk/advanced";
 import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, prepareKernelPermissionApproval, prepareKernelPermissionRevocation, sessionOperator } from "@oaath/sdk/kernel";
-import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbPreparedCallStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
-  openOaathDatabase,
-} from "@oaath/sdk/persistence";
+import { openIndexedDbStores } from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
 import {
   hashGrantPolicy,
@@ -451,17 +442,9 @@ const chain = {
 // A new database connection and new adapters are composed after the first realm
 // closes; only IndexedDB state survives the recreation.
 const indexedDb = new IDBFactory();
-let database = await openOaathDatabase({ factory: indexedDb });
+let database = await openIndexedDbStores({ factory: indexedDb });
 function durableStores() {
-  return {
-    grants: createIndexedDbGrantStoreAdapter(database),
-    operations: createIndexedDbOperationStoreAdapter(database),
-    walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
-    preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
-    keys: createIndexedDbKeyStore(database),
-    cleanup: createIndexedDbCleanupStore(database),
-    context: createIndexedDbContextStore(database),
-  };
+  return database.stores;
 }
 let stores = durableStores();
 
@@ -561,7 +544,7 @@ if (revocationDecision.version !== "oaath.native-revocation-decision/v1" || revo
 const revocationReplay = await decideRevocation({ command: "reject" });
 if (revocationReplay.outcome !== "approved" || revocationReplay.settlement !== "replayed" || sends.length !== sendsBeforeRevocation) fail("revocation replay changed custody or submitted");
 const revocationFactory = new IDBFactory();
-let revocationDatabase = await openOaathDatabase({ factory: revocationFactory });
+let revocationDatabase = await openIndexedDbStores({ factory: revocationFactory });
 let revocationSends = 0;
 const revocationObservation = () => ({ close: async () => {}, async read(request) {
   if (request.type === "chain_id") return CHAIN_ID;
@@ -570,9 +553,9 @@ const revocationObservation = () => ({ close: async () => {}, async read(request
 } });
 const ownerExecutor = await createOwnerPhoneRevocationExecutor({
   store: relayStore, kms: relayKms, clock: relayClock, operationId: revocation.operationId,
-  operations: createIndexedDbOperationStoreAdapter(revocationDatabase), observation: revocationObservation(),
+  operations: revocationDatabase.stores.operations, observation: revocationObservation(),
   submission: { close: async () => {}, async openSubmission(prepared, signature) {
-    const state = await createIndexedDbOperationStoreAdapter(revocationDatabase).get({ grantId: prepared.grantId, chainId: prepared.chainId, kind: "revocation" });
+    const state = await revocationDatabase.stores.operations.get({ grantId: prepared.grantId, chainId: prepared.chainId, kind: "revocation" });
     if (state?.value?.state !== "submission_attempted" || prepared.userOperationHash !== revocationConsent.scope.expectedDigest || !signature.startsWith("0x")) fail("owner submission lacks exact durable evidence");
     return { close: async () => {}, async submit(...args) { if (args.length !== 0) fail("owner submit accepted replacement input"); revocationSends += 1; return { userOperationHash: prepared.userOperationHash }; } };
   } },
@@ -580,11 +563,11 @@ const ownerExecutor = await createOwnerPhoneRevocationExecutor({
 const startedRevocation = await ownerExecutor.start(1000);
 if (startedRevocation.record.value.state !== "submitted") fail("owner revocation did not submit: " + JSON.stringify({ status: startedRevocation.status, reason: startedRevocation.reason, state: startedRevocation.record.value.state, sends: revocationSends }));
 await ownerExecutor.close(); await revocationDatabase.close();
-revocationDatabase = await openOaathDatabase({ factory: revocationFactory });
+revocationDatabase = await openIndexedDbStores({ factory: revocationFactory });
 const forbiddenOwnerEffect = async () => { throw new Error("recovery must not open an owner effect"); };
 const recoveredOwnerExecutor = await createOwnerPhoneRevocationExecutor({
   store: relayStore, kms: { encrypt: forbiddenOwnerEffect, decrypt: forbiddenOwnerEffect }, clock: relayClock,
-  operationId: revocation.operationId, operations: createIndexedDbOperationStoreAdapter(revocationDatabase), observation: revocationObservation(),
+  operationId: revocation.operationId, operations: revocationDatabase.stores.operations, observation: revocationObservation(),
   submission: { openSubmission: forbiddenOwnerEffect, close: async () => {} },
 });
 if ((await recoveredOwnerExecutor.start(1000)).record.value.state !== "submitted") fail("owner recovery lost submission");
@@ -655,7 +638,7 @@ const exactHash = sends[0].userOperationHash;
 await connection.close();
 await oaath.close();
 database.close();
-database = await openOaathDatabase({ factory: indexedDb });
+database = await openIndexedDbStores({ factory: indexedDb });
 stores = durableStores();
 
 // Full realm recreation: a new composition, a new connection, and a new Grant
@@ -703,7 +686,7 @@ if (invalidations !== 0) fail("the smoke never revokes, so nothing may be invali
 // A separate application life proves primary send/recovery using only the ID
 // on the public handle. No provider bundle or injected journal supplies it.
 const operationDb = new IDBFactory();
-database = await openOaathDatabase({ factory: operationDb });
+database = await openIndexedDbStores({ factory: operationDb });
 stores = durableStores();
 const jobs = createRealm();
 const jobsConnection = await jobs.connect();
@@ -749,7 +732,7 @@ if (occupiedCode !== "oaath_client_state_conflict") fail("occupied primary lane 
 await jobs.close();
 await database.close();
 clock += EXPIRES_IN + 1;
-database = await openOaathDatabase({ factory: operationDb });
+database = await openIndexedDbStores({ factory: operationDb });
 stores = durableStores();
 const restoredJobs = createRealm();
 const restoredJobsConnection = await restoredJobs.connect();
@@ -784,7 +767,7 @@ const effectChain = (chainId, consumed) => ({ ...chain, chainId, observation: {
     fail("unexpected configured revocation read");
   },
 } });
-database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+database = await openIndexedDbStores({ factory: configuredDb }); stores = durableStores();
 const revokingClient = createRealm([effectChain(CHAIN_ID, true), effectChain(otherChainId, false)]);
 const configuredGrant = await (await revokingClient.connect()).requestPermission({
   chainScope: "all", permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
@@ -794,13 +777,13 @@ const beforeRevoking = { sends: sends.length, invalidations };
 await configuredGrant.revoke();
 if (configuredGrant.state !== "revoking") fail("untouched chain completed without consumed install nonce");
 await revokingClient.close(); await database.close();
-database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+database = await openIndexedDbStores({ factory: configuredDb }); stores = durableStores();
 const smallerClient = createRealm([chain]);
 const smallerGrant = await (await smallerClient.connect()).resume();
 await smallerGrant.revoke();
 if (smallerGrant.state !== "revoking") fail("configuration shrink discarded a revocation target");
 await smallerClient.close(); await database.close();
-database = await openOaathDatabase({ factory: configuredDb }); stores = durableStores();
+database = await openIndexedDbStores({ factory: configuredDb }); stores = durableStores();
 const completedClient = createRealm([chain, effectChain(otherChainId, true)]);
 const completedGrant = await (await completedClient.connect()).resume();
 await completedGrant.revoke();
@@ -1004,9 +987,7 @@ import {
   type OaathOperationExecution,
   createOAAth,
 } from "@oaath/sdk";
-import {
-  createMemoryGrantStoreAdapter,
-} from "@oaath/sdk/testing";
+import { createMemoryStores } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler, type RelayHandler, type ServiceDirectory, type EnrollOwnerDeviceInput } from "@oaath/server";
 import { requestOwnerPhoneRevocation, type OwnerPhonePermissionApprovals, type RequestOwnerPhoneRevocationInput } from "@oaath/server/native";
 
@@ -1018,7 +999,7 @@ export function enrollPhone(directory: ServiceDirectory, enrollment: EnrollOwner
 
 export const version: PermissionRequest["version"] = OAATH_PERMISSION_REQUEST_VERSION;
 
-export const grants: GrantStoreAdapter = createMemoryGrantStoreAdapter();
+export const grants: GrantStoreAdapter = createMemoryStores().grants;
 
 export function review(grant: OaathGrantHandle, calls: OaathSendCallsInput): Promise<Readonly<OaathCallsReview>> {
   return grant.reviewCalls(calls);

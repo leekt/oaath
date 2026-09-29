@@ -12,16 +12,6 @@
  * @author taek <leekt216@gmail.com>
  */
 import { createOAAth } from "@oaath/sdk";
-import {
-  createIndexedDbCleanupStore,
-  createIndexedDbContextStore,
-  createIndexedDbGrantStoreAdapter,
-  createIndexedDbKeyStore,
-  createIndexedDbOperationStoreAdapter,
-  createIndexedDbPreparedCallStoreAdapter,
-  createIndexedDbWalletCallBundleStoreAdapter,
-  openOaathDatabase,
-} from "@oaath/sdk/persistence";
 import { oaathProvider } from "@oaath/sdk/viem";
 import { showWalletCallStatus } from "./status-presentation.js";
 import {
@@ -73,46 +63,28 @@ async function initializeRealm(origin, configured, previous) {
     const old = await previous.catch(() => null);
     if (old) await old.close().catch(() => undefined);
   }
-  const database = await openOaathDatabase({
-    factory: indexedDB,
+  const oaath = createOAAth({
+    approvals: { kind: "service", url: configured.url },
+    origin,
     // One database per (service, origin): a service change starts fresh
     // rather than resuming authority issued by another service.
-    name: `oaath-extension:${configured.url}:${origin}`,
+    stores: { kind: "indexeddb", name: `oaath-extension:${configured.url}:${origin}` },
   });
   try {
-    const oaath = createOAAth({
-      approvals: { kind: "service", url: configured.url },
-      origin,
-      stores: {
-        kind: "indexeddb",
-        grants: createIndexedDbGrantStoreAdapter(database),
-        operations: createIndexedDbOperationStoreAdapter(database),
-        walletCallBundles: createIndexedDbWalletCallBundleStoreAdapter(database),
-        preparedCallContexts: createIndexedDbPreparedCallStoreAdapter(database),
-        keys: createIndexedDbKeyStore(database),
-        cleanup: createIndexedDbCleanupStore(database),
-        context: createIndexedDbContextStore(database),
-      },
-    });
     const connection = await oaath.connect();
     return {
       origin,
       url: configured.url,
       chain: configured.chain,
       connection,
-      async close() {
-        try {
-          await connection.close();
-        } finally {
-          database.close();
-        }
-      },
+      // Closes the connection, then the realm's own database.
+      close: () => oaath.close(),
       grant: null,
       pairing: false,
       providers: new Map(),
     };
   } catch (error) {
-    database.close();
+    await oaath.close().catch(() => undefined);
     throw error;
   }
 }

@@ -261,7 +261,7 @@ async function checkVersionAgnosticEntries(workspace) {
     );
     for (const entry of entries) {
       const names = await exportedNames(new URL(entry, directory));
-      if (names.length < 2) fail(`${name} ${entry}: no exports parsed`);
+      if (names.length < 1) fail(`${name} ${entry}: no exports parsed`);
       for (const exported of names) {
         if (/V33|V4/u.test(exported)) fail(`${name} ${entry}: exports version-named ${exported}`);
       }
