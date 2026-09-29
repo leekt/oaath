@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  type OaathBundlerProbeCapability,
+  type OaathBundlerProbeRequest,
   type OaathChainCapability,
   OperationStore,
   type OperationStoreKey,
@@ -20,6 +22,7 @@ import * as publicSdk from "../src/index.js";
 import {
   ACCOUNT,
   bindingInput,
+  bundlerProbe,
   CHAIN_ID,
   type ChainFixture,
   createChainFixture,
@@ -29,6 +32,7 @@ import {
   createRelay,
   permissionInput,
   sendCallsInput,
+  withBundler,
 } from "./support/browser.js";
 
 type OperationBinding = OaathProviderOperationPointer;
@@ -143,12 +147,15 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = {
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            probes += 1;
-            return base.capability.bundler.probe(request);
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            async probe(request: OaathBundlerProbeRequest) {
+              probes += 1;
+              return bundlerProbe(base.capability)(request);
+            },
+          }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,
@@ -280,13 +287,16 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = {
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            enterProbe();
-            await probeReleased;
-            return base.capability.bundler.probe(request);
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            async probe(request: OaathBundlerProbeRequest) {
+              enterProbe();
+              await probeReleased;
+              return bundlerProbe(base.capability)(request);
+            },
+          }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,
@@ -324,13 +334,16 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = {
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            enterProbe();
-            await probeReleased;
-            return base.capability.bundler.probe(request);
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            async probe(request: OaathBundlerProbeRequest) {
+              enterProbe();
+              await probeReleased;
+              return bundlerProbe(base.capability)(request);
+            },
+          }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,
@@ -441,13 +454,16 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = {
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            enterProbe();
-            await probeReleased;
-            return base.capability.bundler.probe(request);
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            async probe(request: OaathBundlerProbeRequest) {
+              enterProbe();
+              await probeReleased;
+              return bundlerProbe(base.capability)(request);
+            },
+          }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,
@@ -920,13 +936,16 @@ describe("private Grant provider port", () => {
       permissionInstalled: () => installed,
       blockOffset: () => blockOffset,
     });
-    const probe: OaathChainCapability["bundler"]["probe"] = async (request) => ({
+    const probe: OaathBundlerProbeCapability["probe"] = async (request) => ({
       accepting: bundlerState !== "absent",
       chainId: request.chainId,
       supportedEntryPoints: [request.entryPoint],
     });
     const chain: ChainFixture = Object.freeze({
-      capability: Object.freeze({ ...base.capability, bundler: Object.freeze({ probe }) }),
+      capability: Object.freeze({
+        ...base.capability,
+        routes: withBundler(base.capability, Object.freeze({ probe })),
+      }),
       sends: base.sends,
       signatures: base.signatures,
       get quotes() {
@@ -970,13 +989,16 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = Object.freeze({
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          probe: async (request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) => ({
-            accepting: true,
-            chainId: request.chainId,
-            supportedEntryPoints: [request.entryPoint],
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            probe: async (request: OaathBundlerProbeRequest) => ({
+              accepting: true,
+              chainId: request.chainId,
+              supportedEntryPoints: [request.entryPoint],
+            }),
           }),
-        }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,
@@ -1037,20 +1059,23 @@ describe("private Grant provider port", () => {
     const chain: ChainFixture = Object.freeze({
       capability: Object.freeze({
         ...base.capability,
-        bundler: Object.freeze({
-          probe: async (request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) => {
-            if (gateProbe) {
-              gateProbe = false;
-              enterProbe();
-              await probeReleased;
-            }
-            return {
-              accepting: true,
-              chainId: request.chainId,
-              supportedEntryPoints: [request.entryPoint],
-            };
-          },
-        }),
+        routes: withBundler(
+          base.capability,
+          Object.freeze({
+            probe: async (request: OaathBundlerProbeRequest) => {
+              if (gateProbe) {
+                gateProbe = false;
+                enterProbe();
+                await probeReleased;
+              }
+              return {
+                accepting: true,
+                chainId: request.chainId,
+                supportedEntryPoints: [request.entryPoint],
+              };
+            },
+          }),
+        ),
       }),
       sends: base.sends,
       signatures: base.signatures,

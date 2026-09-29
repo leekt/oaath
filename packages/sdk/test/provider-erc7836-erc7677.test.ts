@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type {
   Erc7677GasEstimationRequest,
   Erc7677PaymasterServiceRequest,
+  OaathBundlerProbeRequest,
   OaathChainCapability,
   OaathRegisteredPaymasterService,
 } from "../src/advanced.js";
@@ -25,6 +26,7 @@ import {
 } from "../src/persistence.js";
 import { oaathProvider } from "../src/viem.js";
 import {
+  bundlerProbe,
   CALL_DATA,
   CHAIN_ID,
   type ChainFixture,
@@ -36,6 +38,7 @@ import {
   SESSION_PUBLIC_KEY,
   signPreparedDigest,
   TARGET,
+  withBundler,
 } from "./support/browser.js";
 
 const CHAIN_HEX = `0x${CHAIN_ID.toString(16)}` as const;
@@ -445,12 +448,15 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       },
     });
     const chain = replaceChain(base, {
-      bundler: Object.freeze({
-        async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-          probes += 1;
-          return base.capability.bundler.probe(request);
-        },
-      }),
+      routes: withBundler(
+        base.capability,
+        Object.freeze({
+          async probe(request: OaathBundlerProbeRequest) {
+            probes += 1;
+            return bundlerProbe(base.capability)(request);
+          },
+        }),
+      ),
       paymasterService: registered.service,
     });
     const realm = createRealm({ chain });

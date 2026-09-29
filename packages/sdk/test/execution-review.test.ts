@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { OaathChainCapability } from "../src/advanced.js";
 import {
   ACCOUNT,
   CALL_DATA,
   CHAIN_ID,
+  type ChainFixture,
   createChainFixture,
   createMemoryStores,
   createRealm,
@@ -114,6 +116,61 @@ describe("public Grant execution review", () => {
     expect(realm.chain.quotes).toBe(0);
     expect(realm.chain.sends).toHaveLength(0);
     await realm.oaath.close();
+  });
+
+  it("routes a chain with no bundler route without any bundler probe", async () => {
+    const feePayer = { address: `0x${"88".repeat(20)}` as const, balance: "1000000000000000000" };
+    const base = createChainFixture();
+    const routed = (routes: unknown): ChainFixture => ({
+      capability: { ...base.capability, routes } as ChainFixture["capability"],
+      sends: base.sends,
+      signatures: base.signatures,
+      get quotes() {
+        return base.quotes;
+      },
+    });
+    // A chain that pins handleOps selects it; nothing names or probes a bundler.
+    const pinned = createRealm({
+      chain: routed([{ kind: "erc4337-handleops", feePayer }]),
+    });
+    const grant = await (await pinned.oaath.connect()).requestPermission(permissionInput());
+    await expect(grant.reviewCalls(sendCallsInput())).resolves.toMatchObject({
+      route: "entrypoint-handleops",
+      reasons: ["session_covers_calls", "route_available:erc4337-handleops"],
+    });
+    await pinned.oaath.close();
+
+    // A chain that offers no route type-checks and fails closed before effects.
+    const { routes: _omitted, ...routeless } = base.capability;
+    const chain: Readonly<OaathChainCapability> = routeless;
+    const none = createRealm({ chain: { ...routed([]), capability: chain } });
+    const noneGrant = await (await none.oaath.connect()).requestPermission(permissionInput());
+    await expect(noneGrant.reviewCalls(sendCallsInput())).rejects.toMatchObject({
+      code: "oaath_client_route_unavailable",
+      source: "session_covers_calls,route_none_configured",
+    });
+    expect(base.quotes).toBe(0);
+    expect(base.sends).toHaveLength(0);
+    await none.oaath.close();
+  });
+
+  it.each([
+    [[{ kind: "eip8141" }]],
+    [[{ kind: "erc4337-handleops", feePayer: null }]],
+    [
+      [
+        { kind: "erc4337-handleops", feePayer: { address: `0x${"88".repeat(20)}`, balance: "1" } },
+        { kind: "erc4337-handleops", feePayer: { address: `0x${"99".repeat(20)}`, balance: "1" } },
+      ],
+    ],
+    [[{ kind: "erc4337-bundler", bundler: {} }]],
+  ])("rejects an unsupported or repeated chain route %#", (routes) => {
+    const base = createChainFixture();
+    expect(() =>
+      createRealm({
+        chain: { ...base, capability: { ...base.capability, routes } as never },
+      }),
+    ).toThrowError(expect.objectContaining({ code: "oaath_client_capability_invalid" }));
   });
 
   it("rejects uncovered and expired calls instead of claiming enforceable execution", async () => {

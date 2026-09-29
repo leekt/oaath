@@ -187,15 +187,20 @@ export function createFakeChain(chainId) {
         },
         async close() {},
       },
-      bundler: {
-        async probe(request) {
-          return {
-            accepting: true,
-            chainId: request.chainId,
-            supportedEntryPoints: [request.entryPoint],
-          };
+      routes: [
+        {
+          kind: "erc4337-bundler",
+          bundler: {
+            async probe(request) {
+              return {
+                accepting: true,
+                chainId: request.chainId,
+                supportedEntryPoints: [request.entryPoint],
+              };
+            },
+          },
         },
-      },
+      ],
       submission: {
         async open(request) {
           sends.push(request.prepared);
@@ -239,7 +244,6 @@ export function createFakeChain(chainId) {
           },
         };
       },
-      feePayer: null,
       paymasterService: null,
       staticPaymasterConfigurationHash: null,
     },

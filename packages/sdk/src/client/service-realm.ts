@@ -247,7 +247,13 @@ function serviceChainCapability(
       : { gas: { enableVerificationGasFloor: BigInt(chain.gas.enableVerificationGasFloor) } }),
     reads: Object.freeze({ read: port("reads") }),
     observation: Object.freeze({ read: port("observation"), close: async () => undefined }),
-    bundler: Object.freeze({ probe: port("bundler") }),
+    // The relay serves one bundler probe; its fee payer, when present, offers handleOps.
+    routes: Object.freeze([
+      Object.freeze({ kind: "erc4337-bundler" as const, bundler: { probe: bundler } }),
+      ...(chain.feePayer === null
+        ? []
+        : [Object.freeze({ kind: "erc4337-handleops" as const, feePayer: chain.feePayer })]),
+    ]),
     submission: Object.freeze({
       // The durable journal marks the attempt before `send` runs; the service
       // settles one submission per call and this session never retries.
@@ -259,7 +265,6 @@ function serviceChainCapability(
     }),
     quote: port("quote"),
     usage: chain.usage ? port("usage") : null,
-    feePayer: chain.feePayer,
     paymasterService,
     staticPaymasterConfigurationHash: chain.staticPaymasterConfigurationHash,
   }) as Readonly<OaathChainCapability>;

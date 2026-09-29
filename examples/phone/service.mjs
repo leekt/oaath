@@ -56,12 +56,17 @@ const sendJson = (outgoing, status, body) => {
 };
 const refuse = (outgoing, status, code) => sendJson(outgoing, status, { error: { code } });
 
+/** The capability's route of one kind, or undefined. */
+function route(capability, kind) {
+  return capability.routes.find((entry) => entry.kind === kind);
+}
+
 function chainPort(capability) {
   return {
     chainId: capability.chainId,
     reads: (request) => capability.reads.read(request),
     observation: (request) => capability.observation.read(request),
-    bundler: (request) => capability.bundler.probe(request),
+    bundler: (request) => route(capability, "erc4337-bundler").bundler.probe(request),
     quote: (request) => capability.quote(request),
     async submission(request) {
       const session = await capability.submission.open(request);
@@ -72,7 +77,7 @@ function chainPort(capability) {
       }
     },
     usage: (request) => capability.usage(request),
-    feePayer: capability.feePayer,
+    feePayer: route(capability, "erc4337-handleops")?.feePayer ?? null,
     staticPaymasterConfigurationHash: null,
   };
 }
@@ -229,7 +234,7 @@ export async function startPhoneService({
                 prepared,
                 signature,
                 route: "entrypoint-handleops",
-                feePayer: chain.capability.feePayer,
+                feePayer: route(chain.capability, "erc4337-handleops").feePayer,
               });
               return { submit: () => session.send(), close: () => session.close() };
             },

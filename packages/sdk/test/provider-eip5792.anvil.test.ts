@@ -432,15 +432,20 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
         },
       },
       observation: Object.freeze({ read: observe, async close() {} }),
-      bundler: Object.freeze({
-        async probe(request: { readonly chainId: number; readonly entryPoint: `0x${string}` }) {
-          return Object.freeze({
-            accepting: true,
-            chainId: request.chainId,
-            supportedEntryPoints: Object.freeze([request.entryPoint]),
-          });
-        },
-      }),
+      routes: Object.freeze([
+        Object.freeze({
+          kind: "erc4337-bundler" as const,
+          bundler: Object.freeze({
+            async probe(request: { readonly chainId: number; readonly entryPoint: `0x${string}` }) {
+              return Object.freeze({
+                accepting: true,
+                chainId: request.chainId,
+                supportedEntryPoints: Object.freeze([request.entryPoint]),
+              });
+            },
+          }),
+        }),
+      ]),
       submission: Object.freeze({
         async open(request: Readonly<OaathSubmissionRequest>) {
           if (request.route !== "bundler" || request.feePayer !== null) {
@@ -530,7 +535,6 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           }),
         });
       },
-      feePayer: null,
       paymasterService: null,
       staticPaymasterConfigurationHash: null,
     });

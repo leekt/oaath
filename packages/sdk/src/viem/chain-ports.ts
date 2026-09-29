@@ -41,6 +41,7 @@ import {
   type UnsignedUserOperationV07,
 } from "../prepared-user-operation.js";
 import type { Erc7677EstimationUserOperationV07 } from "../provider/erc7677.js";
+import type { OaathBundlerProbeRequest } from "../routing/erc4337/bundler.js";
 import {
   evidence,
   integer,
@@ -600,14 +601,19 @@ export function createViemChainPorts(
         reads,
         observation,
         quote,
-        bundler: Object.freeze({
-          async probe(request: Parameters<OaathChainCapability["bundler"]["probe"]>[0]) {
-            if (request.chainId !== chainId) return invalid();
-            const supported = await bundler("eth_supportedEntryPoints");
-            if (!Array.isArray(supported)) return evidence();
-            return { accepting: true, chainId, supportedEntryPoints: supported.map(address) };
-          },
-        }),
+        routes: Object.freeze([
+          Object.freeze({
+            kind: "erc4337-bundler" as const,
+            bundler: Object.freeze({
+              async probe(request: Readonly<OaathBundlerProbeRequest>) {
+                if (request.chainId !== chainId) return invalid();
+                const supported = await bundler("eth_supportedEntryPoints");
+                if (!Array.isArray(supported)) return evidence();
+                return { accepting: true, chainId, supportedEntryPoints: supported.map(address) };
+              },
+            }),
+          }),
+        ]),
         submission: Object.freeze({
           async open(request: Parameters<OaathChainCapability["submission"]["open"]>[0]) {
             const prepared = parsePreparedUserOperation(request.prepared);
@@ -642,7 +648,6 @@ export function createViemChainPorts(
           if (request.chainId !== chainId) return invalid();
           return usage(publicRpc, request);
         },
-        feePayer: null,
         paymasterService:
           paymaster === null || paymasterUrl === null
             ? null

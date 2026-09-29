@@ -15,7 +15,6 @@ import { type OaathDatabase, openOaathDatabase } from "../persistence/indexeddb/
 import { createIndexedDbOperationStoreAdapter } from "../persistence/indexeddb/operation-store.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { decideExecution } from "../routing/decide.js";
-import { probeBundlerCapability } from "../routing/erc4337/bundler.js";
 import { prepareSponsoredKernelOperation } from "../routing/sponsorship.js";
 import type { OaathExecutionDecision } from "../routing/types.js";
 import { OperationStore, type OperationStoreAdapter, type OperationStoreKey } from "../store.js";
@@ -30,6 +29,7 @@ import {
   captureCalls,
   captureChainCapability,
   captureSubmissionSession,
+  classifyChainRoutes,
   type OaathCallInput,
   type OaathChainCapability,
   quoteFields,
@@ -278,17 +278,21 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
             calls,
             gas: ZERO_GAS,
           });
-          const bundler = await probeBundlerCapability({
-            capability: chain.bundler,
-            request: { chainId: chain.chainId, entryPoint: runtime.deployment.entryPoint.address },
-            timeoutMs: TIMEOUT,
-          });
-          // Owner-realm sends use only the bundler route; its fallback is the connected EOA.
+          const routes = await classifyChainRoutes(
+            chain.chainId,
+            // Owner-realm sends use only a bundler route; its fallback is the connected EOA.
+            {
+              ...chain,
+              routes: (chain.routes ?? []).filter((route) => route.kind === "erc4337-bundler"),
+            },
+            runtime.deployment.entryPoint.address,
+            TIMEOUT,
+          );
           const decision = decideExecution({
             operationKind: "execution",
             signer: "owner",
             sessionCoverage: "uncovered",
-            routes: [{ kind: "erc4337-bundler", bundler }],
+            routes,
           });
           if (decision.route !== "bundler")
             return clientFail(

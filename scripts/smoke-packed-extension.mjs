@@ -270,7 +270,10 @@ try {
       counts.observations += 1;
       return chain.capability.observation.read(request);
     },
-    bundler: (request) => chain.capability.bundler.probe(request),
+    bundler: (request) =>
+      chain.capability.routes
+        .find((entry) => entry.kind === "erc4337-bundler")
+        .bundler.probe(request),
     quote: (request) => chain.capability.quote(request),
     async submission(request) {
       counts.submissions += 1;
@@ -286,7 +289,9 @@ try {
       chain.capability.usage === null
         ? null
         : (request) => chain.capability.usage(request),
-    feePayer: chain.capability.feePayer,
+    feePayer:
+      chain.capability.routes.find((entry) => entry.kind === "erc4337-handleops")?.feePayer ??
+      null,
     staticPaymasterConfigurationHash: chain.capability.staticPaymasterConfigurationHash,
   };
 
