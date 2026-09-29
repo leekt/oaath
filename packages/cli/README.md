@@ -47,7 +47,8 @@ npx oaath deploy-runtime --chain 143 --rpc https://rpc.monad.xyz
 The command requires an explicit RPC URL. The endpoint must report the requested
 chain and carry the exact EntryPoint 0.7 and singleton CREATE2 deployer runtimes.
 It deploys only missing core components: Kernel UUPS, the factory's immutable
-ECDSA implementation, factory, OAAth ValidityPolicy, CallPolicy, RateLimitPolicy
+ECDSA implementation, factory, OAAth ValidityPolicy, CallPolicy, RateLimitPolicy,
+the fixed-window RateLimitPolicy for windowed operation limits
 and ECDSASigner. Every payload uses the canonical `0x4e59…956C` deployer and zero
 salt; addresses are derived from the retained creation code and checked against
 SDK bindings. Existing code with a wrong hash or unreadable evidence stops the

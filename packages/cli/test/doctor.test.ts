@@ -39,6 +39,10 @@ describe("runtime readiness", () => {
     });
     expect(report.ready).toBe(false);
     expect(report.components.find((row) => row.id === "kernelUups")?.status).toBe("missing");
+    expect(report.components.find((row) => row.id === "resettingRateLimitPolicy")).toMatchObject({
+      status: "missing",
+      required: true,
+    });
     expect(report.components.find((row) => row.id === "callPolicy")?.status).toBe("mismatch");
     expect(report.components.find((row) => row.id === "rateLimitPolicy")?.status).toBe(
       "unreadable",

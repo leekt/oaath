@@ -6,12 +6,17 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   kernelV4Deployment,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
 } from "@oaath/sdk/kernel";
 import { getCreate2Address, type Hex, sliceHex } from "viem";
 import runtime from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
 import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json" with {
+  type: "json",
+};
+// The SDK owns this reproducible artifact and checks it against its pinned hash.
+import resettingRateLimit from "../../sdk/test/fixtures/kernel-rate-limit-deployment.json" with {
   type: "json",
 };
 
@@ -83,6 +88,11 @@ export function components(chainId: number): readonly Component[] {
     deployable("validityPolicy", validity.deployment, pinnedPolicyModule("expiry")),
     deployable("callPolicy", runtime.callPolicy, pinnedPolicyModule("call")),
     deployable("rateLimitPolicy", runtime.rateLimitPolicy, pinnedPolicyModule("operation-limit")),
+    deployable(
+      "resettingRateLimitPolicy",
+      { ...resettingRateLimit, runtimeCodeHash: OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH },
+      pinnedPolicyModule("rate-limit"),
+    ),
     deployable("ecdsaSigner", runtime.ecdsaSigner, pinnedSignerModule("ecdsa")),
     deployable(
       "p256Validator",
