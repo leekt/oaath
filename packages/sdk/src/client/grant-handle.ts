@@ -84,7 +84,7 @@ import {
   type KeyProfile,
 } from "../kernel/types.js";
 import {
-  encodeKernelV4PermissionUninstallCalls,
+  encodeKernelPermissionUninstallCalls,
   type KernelCall,
   type KernelUserOperationGas,
   type KernelV4AccountReadRequest,
@@ -4168,7 +4168,7 @@ export function createGrantHandle(
                   await chain.reads.read({ type: "kernel_v33_permission_state", ...binding }),
                 ),
               })
-            : encodeKernelV4PermissionUninstallCalls({
+            : encodeKernelPermissionUninstallCalls({
                 account: entry.account,
                 packages: input.installApproval.packages,
               });

@@ -71,8 +71,8 @@ export type {
   KernelV4ReplayableInstallDigestInput as KernelReplayableInstallDigestInput,
 } from "./kernel-v4.js";
 export {
+  encodeKernelInstallNonceInvalidationCall,
   encodeKernelV4FactoryImplementationRead as encodeKernelFactoryImplementationRead,
-  encodeKernelV4InstallNonceInvalidationCall as encodeKernelInstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead as encodeKernelInstallNonceRead,
   encodeKernelV4NonceRead as encodeKernelNonceRead,
   kernelV4ReplayableInstallDigest as kernelReplayableInstallDigest,

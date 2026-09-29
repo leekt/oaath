@@ -6,8 +6,8 @@ import {
 } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import {
-  type KernelV4RevocationOperation,
-  parseKernelV4RevocationSigningRequest,
+  type KernelRevocationOperation,
+  parseKernelRevocationSigningRequest,
 } from "../src/index.js";
 
 interface Entry {
@@ -15,7 +15,7 @@ interface Entry {
   readonly effect: string;
   readonly chainId: number;
   readonly entryPoint: `0x${string}`;
-  readonly operation: KernelV4RevocationOperation;
+  readonly operation: KernelRevocationOperation;
   readonly expectedDigest: `0x${string}`;
 }
 const fixture = JSON.parse(
@@ -39,7 +39,7 @@ function request({ name: _name, ...entry }: Entry) {
 
 describe("unsigned revocation fixture shared with the native phone", () => {
   it.each(fixture.valid)("accepts $name", (entry) => {
-    expect(parseKernelV4RevocationSigningRequest(request(entry))).toEqual(request(entry));
+    expect(parseKernelRevocationSigningRequest(request(entry))).toEqual(request(entry));
   });
 
   it.each(fixture.forbiddenCalls)("refuses $name despite its correct hash", (entry) => {
@@ -59,7 +59,7 @@ describe("unsigned revocation fixture shared with the native phone", () => {
         userOperation,
       }),
     ).toBe(entry.expectedDigest);
-    expect(() => parseKernelV4RevocationSigningRequest(request(entry))).toThrowError(
+    expect(() => parseKernelRevocationSigningRequest(request(entry))).toThrowError(
       expect.objectContaining({ code: "signing_request_invalid" }),
     );
   });

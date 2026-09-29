@@ -2,7 +2,7 @@ import { decodeFunctionData, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
 import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
 import {
-  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelInstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
 } from "../src/kernel-v4.js";
 
@@ -38,7 +38,7 @@ describe("Kernel install nonce invalidation codecs", () => {
   it("targets the same install key at the next sequence with a zero-value self-call", () => {
     const key = (1n << 192n) - 1n;
     const installNonce = ((key << 64n) | 7n).toString(10);
-    const call = encodeKernelV4InstallNonceInvalidationCall({ account, installNonce });
+    const call = encodeKernelInstallNonceInvalidationCall({ account, installNonce });
     expect(call.target).toBe(account);
     expect(call.value).toBe("0");
     expect(decodeFunctionData({ abi: nonceAbi, data: call.data })).toEqual({
@@ -55,7 +55,7 @@ describe("Kernel install nonce invalidation codecs", () => {
 
   it("refuses an exhausted sequence instead of overflowing into another install key", () => {
     expect(() =>
-      encodeKernelV4InstallNonceInvalidationCall({
+      encodeKernelInstallNonceInvalidationCall({
         account,
         installNonce: ((9n << 64n) | ((1n << 64n) - 1n)).toString(10),
       }),

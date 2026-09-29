@@ -5,16 +5,16 @@
  * @author taek <leekt216@gmail.com>
  */
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashPermissionRequest,
   isKernelExistingAccountProfile,
-  type KernelV4RevocationEffect,
-  type KernelV4RevocationSigningRequest,
-  OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+  type KernelRevocationEffect,
+  type KernelRevocationSigningRequest,
+  OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
   OAATH_OWNER_SIGNING_REQUEST_VERSION,
   type OwnerSigningArtifact,
   type PermissionRequest,
-  parseKernelV4RevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
   parseOwnerSigningArtifact,
   parsePermissionRequest,
 } from "@oaath/protocol";
@@ -24,8 +24,8 @@ import {
   type UserOperation,
 } from "viem/account-abstraction";
 import {
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4PermissionUninstallCalls,
+  encodeKernelInstallNonceInvalidationCall,
+  encodeKernelPermissionUninstallCalls,
   type KernelUserOperationGas,
   type KernelV4AccountReadCapability,
   kernelV4Deployment,
@@ -60,14 +60,14 @@ export interface PrepareKernelV4RevocationInput {
   readonly chainId: number;
   readonly reads: Readonly<KernelV4AccountReadCapability>;
   /** Chosen from chain evidence: invalidate an unused install, or remove an installed permission. */
-  readonly effect: KernelV4RevocationEffect;
+  readonly effect: KernelRevocationEffect;
   readonly nonceKey: string;
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
 }
 
 export interface KernelSigningRequestRevocation {
-  readonly signingRequest: Readonly<KernelV4RevocationSigningRequest>;
+  readonly signingRequest: Readonly<KernelRevocationSigningRequest>;
   readonly prepared: Readonly<PreparedUserOperation>;
   /** One owner key-profile signature over exactly `prepared`, encoded for the account; never submits. */
   sign(owner: Readonly<KeyProfile>): Promise<`0x${string}`>;
@@ -147,12 +147,12 @@ export async function prepareKernelV4Revocation(
   const calls =
     input.effect === "invalidate-install"
       ? [
-          encodeKernelV4InstallNonceInvalidationCall({
+          encodeKernelInstallNonceInvalidationCall({
             account: account.account,
             installNonce: approval.installNonce,
           }),
         ]
-      : encodeKernelV4PermissionUninstallCalls({
+      : encodeKernelPermissionUninstallCalls({
           account: account.account,
           packages: approval.packages,
         });
@@ -166,8 +166,8 @@ export async function prepareKernelV4Revocation(
     gas: input.gas as KernelUserOperationGas,
   });
   const packed = toPackedUserOperation(asViemUserOperation(prepared.userOperation));
-  const signingRequest = parseKernelV4RevocationSigningRequest({
-    version: OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+  const signingRequest = parseKernelRevocationSigningRequest({
+    version: OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
     kind: "kernel-revocation",
     permissionRequest: request,
     install: {
@@ -210,7 +210,7 @@ export async function prepareKernelV4Revocation(
 export function restoreKernelV4Revocation(
   value: unknown,
 ): Readonly<KernelSigningRequestRevocation> {
-  const signingRequest = parseKernelV4RevocationSigningRequest(value);
+  const signingRequest = parseKernelRevocationSigningRequest(value);
   const credential = signingRequest.install.signer.ownerCredential;
   if (credential.kind !== "p256") return inputInvalid("Kernel v4 revocation requires P-256");
   const owner = createKernelRuntime({
@@ -260,11 +260,11 @@ export function restoreKernelV4Revocation(
   return restoredRevocation(signingRequest, prepared, owner);
 }
 function restoredRevocation(
-  signingRequest: Readonly<KernelV4RevocationSigningRequest>,
+  signingRequest: Readonly<KernelRevocationSigningRequest>,
   prepared: Readonly<PreparedUserOperation>,
   owner: Readonly<KernelRuntime>,
 ): Readonly<KernelSigningRequestRevocation> {
-  const requestHash = hashKernelV4RevocationSigningRequest(signingRequest);
+  const requestHash = hashKernelRevocationSigningRequest(signingRequest);
   const credential = signingRequest.install.signer.ownerCredential;
   if (credential.kind !== "p256") return inputInvalid("Kernel v4 revocation requires P-256");
   const ownerKey = p256Key({

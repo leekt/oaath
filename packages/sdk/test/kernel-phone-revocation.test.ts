@@ -1,8 +1,8 @@
 import { p256 } from "@noble/curves/nist.js";
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashOwnerSigningRequest,
-  parseKernelV4RevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
 import { bytesToHex, hexToBytes } from "viem";
@@ -20,9 +20,9 @@ import {
   restoreKernelPermissionRevocation,
 } from "../src/kernel.js";
 import {
+  encodeKernelInstallNonceInvalidationCall,
+  encodeKernelPermissionUninstallCalls,
   encodeKernelV4Execution,
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4PermissionUninstallCalls,
 } from "../src/kernel-v4.js";
 import {
   accountProfile,
@@ -221,7 +221,7 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     const signature = await prepared.sign(ownerKey());
     const artifact = sign(
       prepared.signingRequest.expectedDigest,
-      hashKernelV4RevocationSigningRequest(prepared.signingRequest),
+      hashKernelRevocationSigningRequest(prepared.signingRequest),
     );
     expect(await prepared.complete(artifact)).toBe(signature);
     await expect(prepared.sign(ownerKey(p256.utils.randomPrivateKey()))).rejects.toMatchObject({
@@ -246,12 +246,12 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
           calls:
             effect === "invalidate-install"
               ? [
-                  encodeKernelV4InstallNonceInvalidationCall({
+                  encodeKernelInstallNonceInvalidationCall({
                     account: input.approval.account,
                     installNonce: input.approval.installNonce,
                   }),
                 ]
-              : encodeKernelV4PermissionUninstallCalls({
+              : encodeKernelPermissionUninstallCalls({
                   account: input.approval.account,
                   packages: input.approval.packages,
                 }),
@@ -260,7 +260,7 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
       expect(prepared.signingRequest.expectedDigest).toBe(prepared.prepared.userOperationHash);
       const artifact = sign(
         prepared.signingRequest.expectedDigest,
-        hashKernelV4RevocationSigningRequest(prepared.signingRequest),
+        hashKernelRevocationSigningRequest(prepared.signingRequest),
       );
       expect(await recreated.complete(artifact)).toBe(artifact.signature);
     },
@@ -288,7 +288,7 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     });
     expect(expectedDigest === prepared.signingRequest.expectedDigest).toBe(false);
     expect(() =>
-      parseKernelV4RevocationSigningRequest({
+      parseKernelRevocationSigningRequest({
         ...prepared.signingRequest,
         operation,
         expectedDigest,
@@ -305,7 +305,7 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     const other = await prepareKernelPermissionRevocation({ ...input, sequence: "1" });
     const artifact = sign(
       other.signingRequest.expectedDigest,
-      hashKernelV4RevocationSigningRequest(other.signingRequest),
+      hashKernelRevocationSigningRequest(other.signingRequest),
     );
     await expect(first.complete(artifact)).rejects.toMatchObject({
       code: "kernel_runtime_signature_invalid",
@@ -313,7 +313,7 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     await expect(
       first.complete({
         ...artifact,
-        requestHash: hashKernelV4RevocationSigningRequest(first.signingRequest),
+        requestHash: hashKernelRevocationSigningRequest(first.signingRequest),
       }),
     ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
   });

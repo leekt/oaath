@@ -9,9 +9,9 @@
  * @author taek <leekt216@gmail.com>
  */
 import {
-  type KernelV4RevocationEffect,
-  type KernelV4RevocationSigningRequest,
-  OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+  type KernelRevocationEffect,
+  type KernelRevocationSigningRequest,
+  OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
   type PermissionRequest,
 } from "@oaath/protocol";
 import type {
@@ -80,7 +80,7 @@ export interface PrepareKernelPermissionRevocationInput {
    * install, or remove an installed permission. A Kernel `0.3.3` teardown is
    * derived from the permission state read here instead.
    */
-  readonly effect?: KernelV4RevocationEffect;
+  readonly effect?: KernelRevocationEffect;
   /** Optional expectations, each defaulting from the approval or its deployment. */
   readonly account?: `0x${string}`;
   readonly kernelVersion?: "0.3.3" | "0.4.0";
@@ -128,7 +128,7 @@ export interface RestoreKernelPermissionRevocationInput {
    */
   readonly preparation:
     | Readonly<KernelPermissionRevocationPreparation>
-    | Readonly<KernelV4RevocationSigningRequest>;
+    | Readonly<KernelRevocationSigningRequest>;
   /** Required for a recorded preparation; a signing request restores without chain reads. */
   readonly reads?: KernelV33Reads;
 }
@@ -300,7 +300,7 @@ export async function prepareKernelPermissionRevocation(
       approval: parsed,
       chainId: deployment.chainId,
       reads: input.reads as Readonly<KernelV4AccountReadCapability>,
-      effect: input.effect as KernelV4RevocationEffect,
+      effect: input.effect as KernelRevocationEffect,
       nonceKey: input.nonceKey,
       sequence: input.sequence,
       gas: input.gas as Readonly<KernelUserOperationGas>,
@@ -354,7 +354,7 @@ export async function prepareKernelPermissionRevocation(
  */
 export async function restoreKernelPermissionRevocation(
   value: Readonly<RestoreKernelPermissionRevocationInput> & {
-    readonly preparation: Readonly<KernelV4RevocationSigningRequest>;
+    readonly preparation: Readonly<KernelRevocationSigningRequest>;
   },
 ): Promise<Readonly<KernelSigningRequestRevocation>>;
 export async function restoreKernelPermissionRevocation(
@@ -379,7 +379,7 @@ export async function restoreKernelPermissionRevocation(
     "Kernel revocation record",
     new WeakSet(),
   ).version;
-  if (version === OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION)
+  if (version === OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION)
     return restoreKernelV4Revocation(input.preparation);
   if (input.reads === undefined)
     return inputInvalid("Kernel revocation preparation restore requires reads");

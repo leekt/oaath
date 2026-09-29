@@ -1,6 +1,6 @@
 export {
-  encodeKernelV4InstallNonceInvalidationCall,
-  encodeKernelV4PermissionUninstallCalls,
+  encodeKernelInstallNonceInvalidationCall,
+  encodeKernelPermissionUninstallCalls,
 } from "@oaath/protocol";
 
 import {

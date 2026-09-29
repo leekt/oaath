@@ -1,9 +1,9 @@
 /** Consent projection for an immutable owner revocation request; no admission or decision state. */
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashOwnerSigningRequest,
-  type KernelV4RevocationSigningRequest,
-  parseKernelV4RevocationSigningRequest,
+  type KernelRevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
 } from "@oaath/protocol";
 import { relayFailure } from "../relay/errors.js";
 import { ownerPhoneDisplayPayload } from "./display.js";
@@ -24,12 +24,12 @@ export interface OwnerPhoneRevocationScopeProjection {
     kind: "owner-signing-request";
     decision: "approve-or-reject";
     requestHash: `0x${string}`;
-    request: KernelV4RevocationSigningRequest["install"];
+    request: KernelRevocationSigningRequest["install"];
   }>;
-  readonly effect: KernelV4RevocationSigningRequest["effect"];
+  readonly effect: KernelRevocationSigningRequest["effect"];
   readonly chainId: number;
   readonly entryPoint: `0x${string}`;
-  readonly operation: KernelV4RevocationSigningRequest["operation"];
+  readonly operation: KernelRevocationSigningRequest["operation"];
   readonly expectedDigest: `0x${string}`;
 }
 
@@ -60,7 +60,7 @@ export async function projectOwnerPhoneRevocation(input: {
     input.expiresAt < 0
   )
     return relayFailure("relay_request_invalid", "revocation projection metadata is invalid");
-  const request = parseKernelV4RevocationSigningRequest(input.request);
+  const request = parseKernelRevocationSigningRequest(input.request);
   return Object.freeze({
     version: OAATH_NATIVE_PROJECTION_VERSION,
     operationId: input.operationId,
@@ -73,7 +73,7 @@ export async function projectOwnerPhoneRevocation(input: {
     scope: Object.freeze({
       kind: "kernel-revocation",
       decision: "approve-or-reject",
-      requestHash: hashKernelV4RevocationSigningRequest(request),
+      requestHash: hashKernelRevocationSigningRequest(request),
       permission: await projectPermissionConsent(request.permissionRequest),
       install: Object.freeze({
         kind: "owner-signing-request",

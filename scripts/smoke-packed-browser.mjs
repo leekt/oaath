@@ -64,7 +64,7 @@ import {
   hashGrantPolicyCalls,
   hashOwnerSigningRequest,
   hashPermissionRequest,
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   serializeOwnerSigningArtifact,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -238,7 +238,7 @@ const relayOptions = {
             chainId: CHAIN_ID, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
             gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } });
           const revocationArtifact = { version: "oaath.owner-signing-artifact/v1", kind: "p256",
-            requestHash: hashKernelV4RevocationSigningRequest(revocation.signingRequest),
+            requestHash: hashKernelRevocationSigningRequest(revocation.signingRequest),
             signature: bytesToHex(p256.sign(hexToBytes(revocation.signingRequest.expectedDigest), phoneKey, { prehash: false, lowS: true }).toCompactRawBytes()) };
           if (await revocation.complete(revocationArtifact) !== revocationArtifact.signature) fail("phone revocation signature changed");
           return JSON.stringify(approved);

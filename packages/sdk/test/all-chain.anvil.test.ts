@@ -12,7 +12,7 @@
 
 import { p256 } from "@noble/curves/nist.js";
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashOwnerSigningRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
@@ -43,9 +43,9 @@ import {
 } from "../src/kernel.js";
 import type { KernelV4AccountDescriptor } from "../src/kernel-v4.js";
 import {
-  encodeKernelV4InstallNonceInvalidationCall,
+  encodeKernelInstallNonceInvalidationCall,
+  encodeKernelPermissionUninstallCalls,
   encodeKernelV4InstallNonceRead,
-  encodeKernelV4PermissionUninstallCalls,
   kernelV4ReplayableInstallDigest,
 } from "../src/kernel-v4.js";
 import type { OperationObserverCapabilities } from "../src/operation-observer.js";
@@ -385,7 +385,7 @@ async function bringUp(
       const signature = await restored.complete(
         sign(
           revocation.signingRequest.expectedDigest,
-          hashKernelV4RevocationSigningRequest(revocation.signingRequest),
+          hashKernelRevocationSigningRequest(revocation.signingRequest),
         ),
       );
       expect(await harness.sendSigned(restored.prepared, signature)).toBe("success");
@@ -496,7 +496,7 @@ async function bringUp(
       nonceKey: "0",
       sequence: "0",
       calls: [
-        encodeKernelV4InstallNonceInvalidationCall({ account: b.account.account, installNonce }),
+        encodeKernelInstallNonceInvalidationCall({ account: b.account.account, installNonce }),
       ],
       gas,
     });
@@ -789,7 +789,7 @@ async function bringUp(
           account: deployed,
           nonceKey: "0",
           sequence: "0",
-          calls: encodeKernelV4PermissionUninstallCalls({
+          calls: encodeKernelPermissionUninstallCalls({
             account: account.account,
             packages: sessionRuntime.packages,
           }),
