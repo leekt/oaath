@@ -16,6 +16,7 @@ import {
 } from "./grant-policy.js";
 import {
   hashOwnerCredentialProfile,
+  isKernelExistingAccountProfile,
   type KernelAccountProfile,
   type OperatorCredentialProfile,
 } from "./identity-profile.js";
@@ -296,7 +297,7 @@ export function parsePermissionRequest(value: unknown): Readonly<PermissionReque
 }
 
 function hashKernelAccountProfile(profile: KernelAccountProfile): `0x${string}` {
-  if (profile.kernelVersion === "0.3.3")
+  if (isKernelExistingAccountProfile(profile))
     return keccak256(
       encodeAbiParameters(
         [

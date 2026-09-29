@@ -7,6 +7,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { isKernelExistingAccountProfile } from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
@@ -66,7 +67,7 @@ function expectClientError(action: () => unknown, code: string): void {
 describe("hostile input at the client boundary", () => {
   it("keeps existing v3.3 account addresses distinct in the browser binding", () => {
     const account = {
-      version: "oaath.kernel-existing-account-profile/v1",
+      version: "oaath.kernel-existing-account-profile/v2",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: TARGET,
@@ -105,7 +106,10 @@ describe("hostile input at the client boundary", () => {
     ];
     for (const alternative of alternatives) {
       const other = captureOaathBinding({ ...bindingInput, ...alternative });
-      if (other.account.kernelVersion !== "0.4.0" || original.account.kernelVersion !== "0.4.0")
+      if (
+        isKernelExistingAccountProfile(other.account) ||
+        isKernelExistingAccountProfile(original.account)
+      )
         throw new Error("expected v4 fixture");
       expect(other.account.accountIndex).toBe(original.account.accountIndex);
       expect(other.bindingId).not.toBe(original.bindingId);

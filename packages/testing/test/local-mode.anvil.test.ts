@@ -18,6 +18,41 @@ const permission = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode", () => {
+  it("approves once and executes an allowed call on an existing Kernel v4 account", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });
+    const client = createOAAth({
+      mode: "local",
+      owner: fixture.wallet,
+      account: fixture.address,
+      chains: fixture.createChainPorts(),
+      origin: "https://consumer.example",
+    });
+    try {
+      const grant = await (await client.connect()).requestPermission(permission);
+      expect(client.binding.account).toMatchObject({
+        kernelVersion: "0.4.0",
+        address: fixture.address,
+      });
+      expect(fixture.signatureCount).toBe(1);
+      const operation = await grant.sendCalls({ chain: fixture.chainId, calls });
+      expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
+      expect(await operation.execution()).toMatchObject({ sender: fixture.address, calls });
+      // A call outside the approved scope is refused before any submission.
+      await expect(
+        grant.sendCalls({
+          chain: fixture.chainId,
+          calls: [{ target, data: "0x87654321", value: "0" }],
+        }),
+      ).rejects.toMatchObject({ code: "oaath_client_scope_denied" });
+      expect(fixture.signatureCount).toBe(1);
+      expect(fixture.bundlerSubmissionCount).toBe(1);
+    } finally {
+      await client.close();
+      await fixture.close();
+    }
+  });
+
   it.each(["rejected", "unavailable"] as const)(
     "keeps %s session estimation separate from owner execution",
     async (sessionValidation) => {

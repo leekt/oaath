@@ -1,6 +1,7 @@
 /** Adapts the Grant's semantic enable mode to its captured Kernel account version. */
-import type { KernelAccountProfile } from "@oaath/protocol";
+import { isKernelExistingAccountProfile, type KernelAccountProfile } from "@oaath/protocol";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
+import type { KernelAccountDescriptor } from "../kernel/deployment/account.js";
 import {
   type KernelV33AccountDescriptor,
   type KernelV33Reads,
@@ -29,7 +30,7 @@ import {
 import type { PreparedUserOperation } from "../prepared-user-operation.js";
 import { clientFail } from "./errors.js";
 
-export type GrantKernelAccount = KernelV4AccountDescriptor | KernelV33AccountDescriptor;
+export type GrantKernelAccount = KernelAccountDescriptor;
 export type GrantKernelPrepareInput = KernelRuntimePrepareInput<GrantKernelAccount>;
 export interface GrantKernelExecution {
   readonly gasPolicy: Readonly<KernelGasPolicy>;
@@ -149,11 +150,16 @@ export function createGrantKernelRuntime(
     ...adapt(runtime),
     validation: runtime.validation,
     deployment: runtime.deployment,
-    bindAccount: () =>
-      runtime.bindAccount({
-        accountIndex: account.accountIndex,
-        initialPackages: [...owner.packages],
-      }),
+    async bindAccount() {
+      if (!isKernelExistingAccountProfile(account))
+        return runtime.bindAccount({
+          accountIndex: account.accountIndex,
+          initialPackages: [...owner.packages],
+        });
+      // An existing account proves its root owner before the operator binds.
+      await owner.bindAccount({ address: account.address });
+      return runtime.bindAccount({ address: account.address });
+    },
     bindApproval(approval, address) {
       if (approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION) return mismatch();
       return adapt(bindKernelPermissionApproval({ runtime, approval, account: address }));

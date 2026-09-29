@@ -12,7 +12,8 @@ matches the application:
 | [Local browser Grant](packages/sdk/README.md#local-wallet-mode) | `createOAAth({ mode: "local", owner, account, chains })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
 | [Phone service](#service-url-mode) | `createOAAth({ url })` | The service selects the account and chains; its owner phone approves the Grant. |
 
-Owner and local modes currently use existing v3.3 ECDSA accounts. The phone
+Owner and local modes use an existing ECDSA-owned Kernel v3.3 or v4 account;
+the SDK detects its deployment. The phone
 service uses Kernel v4 with a P-256 owner. All paths retain exact operation
 identity for observation after reload. Before adopting a chain, check its
 [runtime readiness](#kernel-runtime); the six-chain production v4 rollout is

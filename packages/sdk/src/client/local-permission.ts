@@ -1,12 +1,17 @@
 /** Wallet-owned consent through the canonical local Grant authorization boundary. */
 import {
   hashPermissionRequest,
+  isKernelExistingAccountProfile,
   OAATH_PERMISSION_DECISION_VERSION,
   type PermissionRequest,
 } from "@oaath/protocol";
 import { hashTypedData, keccak256, recoverAddress, stringToHex } from "viem";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import { type KernelReads, kernelDeployment } from "../kernel/deployment/account.js";
+import {
+  type KernelAccountDescriptor,
+  type KernelReads,
+  kernelDeployment,
+} from "../kernel/deployment/account.js";
 import type { KernelDeployment } from "../kernel/deployment/profile.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { sessionOperator } from "../kernel/operator/session.js";
@@ -15,14 +20,10 @@ import {
   kernelGrantCapabilityHash,
   kernelPermissionEnableTypedData,
   kernelPermissionNonce,
+  signedKernelPermissionApproval,
 } from "../kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
-import {
-  type KernelV33PermissionScope,
-  OAATH_KERNEL_V33_APPROVAL_VERSION,
-  parseKernelV33PermissionApproval,
-} from "../kernel/permission/v33.js";
-import type { KeyProfile } from "../kernel/types.js";
+import type { KernelRuntime, KeyProfile } from "../kernel/types.js";
 import type { GrantStore } from "../store.js";
 import type { OaathBinding } from "./binding.js";
 import { clientFail, mapClientFailure } from "./errors.js";
@@ -62,12 +63,19 @@ export function createLocalPermissionAuthority(input: {
     if (input.now() >= request.expiresAt) return fail();
   }
   async function signApproval(request: Readonly<PermissionRequest>) {
-    // The protocol's existing-account profile binds Kernel 0.3.3 accounts only.
-    if (request.logicalAccount.kernelVersion !== "0.3.3") return fail();
+    // Local mode binds an existing account on its detected deployment.
+    if (!isKernelExistingAccountProfile(request.logicalAccount)) return fail();
     const { address, kernelVersion } = request.logicalAccount;
     const requestHash = hashPermissionRequest(request);
-    let scope: Readonly<KernelV33PermissionScope> | undefined;
-    let typedData: KernelPermissionEnableTypedData | undefined;
+    let scope: Readonly<Record<string, unknown>> | undefined;
+    let approvalInput:
+      | Readonly<{
+          runtime: Readonly<KernelRuntime>;
+          account: Readonly<KernelAccountDescriptor>;
+          nonce: string;
+          typedData: KernelPermissionEnableTypedData;
+        }>
+      | undefined;
     for (const chain of input.chains) {
       // The selected deployment stays typed as any supported one: approval
       // typed data and nonce come from it, never from a version literal.
@@ -96,7 +104,6 @@ export function createLocalPermissionAuthority(input: {
       });
       if (runtime.validation.kind !== "permission") return fail();
       const next = Object.freeze({
-        chainScope: "all" as const,
         account: address,
         nonce,
         permissionId: runtime.validation.permissionId,
@@ -110,9 +117,15 @@ export function createLocalPermissionAuthority(input: {
         );
       }
       scope = next;
-      typedData ??= kernelPermissionEnableTypedData({ runtime, account, nonce });
+      approvalInput ??= Object.freeze({
+        runtime,
+        account,
+        nonce,
+        typedData: kernelPermissionEnableTypedData({ runtime, account, nonce }),
+      });
     }
-    if (!scope || !typedData) return fail();
+    if (!scope || !approvalInput) return fail();
+    const { typedData } = approvalInput;
     const digest = hashTypedData(typedData as Parameters<typeof hashTypedData>[0]);
     await input
       .onApproval?.(
@@ -138,9 +151,10 @@ export function createLocalPermissionAuthority(input: {
       input.owner.publicMaterial
     )
       return clientFail("oaath_client_signing_failed", "local permission signer changed");
-    return parseKernelV33PermissionApproval({
-      version: OAATH_KERNEL_V33_APPROVAL_VERSION,
-      ...scope,
+    return signedKernelPermissionApproval({
+      runtime: approvalInput.runtime,
+      account: approvalInput.account,
+      nonce: approvalInput.nonce,
       digest,
       enableSignature: signature,
     });
