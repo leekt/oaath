@@ -117,9 +117,9 @@ export type {
   IdentityProfileErrorCode,
   KernelAccountActionInput,
   KernelAccountProfile,
+  KernelDerivedAccountProfile,
   KernelExistingAccountProfile,
   KernelExistingAccountVersion,
-  KernelV4AccountProfile,
   OperatorCredentialKind,
   OperatorCredentialProfile,
   OwnerCredentialKind,
@@ -168,17 +168,17 @@ export {
 } from "./internal/exact-record.js";
 export type {
   KernelInstall,
-  KernelV4ModuleType,
-  KernelV4ReplayableInstallOwnerSigningRequest,
-  KernelV4ReplayableInstallPackage,
-  KernelV4ReplayableInstallTypedData,
-  KernelV4ReplayableInstallTypedDataInput,
+  KernelModuleType,
+  KernelReplayableInstallOwnerSigningRequest,
+  KernelReplayableInstallPackage,
+  KernelReplayableInstallTypedData,
+  KernelReplayableInstallTypedDataInput,
 } from "./kernel-v4-replayable-install.js";
 export {
-  createKernelV4ReplayableInstallTypedData,
-  KERNEL_V4_INSTALL_COMPONENTS,
-  parseKernelV4InstallPackages,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  createKernelReplayableInstallTypedData,
+  KERNEL_INSTALL_COMPONENTS,
+  parseKernelInstallPackages,
+  parseKernelReplayableInstallOwnerSigningRequest,
 } from "./kernel-v4-replayable-install.js";
 export type {
   KernelRevocationEffect,

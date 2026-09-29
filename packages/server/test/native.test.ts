@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import {
   hashOwnerSigningRequest,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
 } from "@oaath/protocol";
 import { describe, expect, it } from "vitest";
 import { createAuthorizationRequest } from "../src/authorization/request.js";
@@ -58,7 +58,7 @@ const PERMISSION_SCOPE = APPROVABLE_PERMISSION_SCOPE;
 // Generated in memory. The packed consumer proves SDK completion; these unit
 // tests isolate the native port and existing decision transaction.
 const PHONE = createKernelOwnerApprovalInput();
-const PHONE_SIGNING = parseKernelV4ReplayableInstallOwnerSigningRequest(
+const PHONE_SIGNING = parseKernelReplayableInstallOwnerSigningRequest(
   JSON.parse(PHONE.requestedScope),
 );
 const BASE_PERMISSION = JSON.parse(PERMISSION_SCOPE);

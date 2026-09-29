@@ -1,6 +1,6 @@
 import {
   isKernelExistingAccountProfile,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
 } from "@oaath/protocol";
 import type {
   EnrollOwnerDeviceInput,
@@ -107,7 +107,7 @@ export function phoneEnrollment(
   const device = document.ownerDevices.find((entry) => entry.workspaceId === workspaceId)!;
   const account = document.accounts.find((entry) => entry.workspaceId === workspaceId)!;
   if (isKernelExistingAccountProfile(account.account)) throw new Error("phone fixture requires v4");
-  const ownerCredential = parseKernelV4ReplayableInstallOwnerSigningRequest(
+  const ownerCredential = parseKernelReplayableInstallOwnerSigningRequest(
     JSON.parse(createKernelOwnerApprovalInput().requestedScope),
   ).signer.ownerCredential;
   return {

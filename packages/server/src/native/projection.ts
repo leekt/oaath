@@ -32,7 +32,7 @@
 import {
   hashOwnerSigningRequest,
   isKernelExistingAccountProfile,
-  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type KernelReplayableInstallOwnerSigningRequest,
   type OwnerSigningRequest,
   type PermissionRequest,
   type WorkspaceAccountContext,
@@ -139,7 +139,7 @@ export type OwnerPhoneScopeProjection =
       /** Canonical hash binding every captured request fact. */
       requestHash: `0x${string}`;
       /** Exact Kernel request independently refined by the protocol owner. */
-      request: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+      request: Readonly<KernelReplayableInstallOwnerSigningRequest>;
     }>
   | Readonly<{
       kind: "owner-signing-request";

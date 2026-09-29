@@ -34,17 +34,17 @@ const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_PACKAGES = 256;
 
-export const KERNEL_V4_INSTALL_COMPONENTS = Object.freeze([
+export const KERNEL_INSTALL_COMPONENTS = Object.freeze([
   Object.freeze({ name: "moduleType", type: "uint256" }),
   Object.freeze({ name: "module", type: "address" }),
   Object.freeze({ name: "moduleData", type: "bytes" }),
   Object.freeze({ name: "internalData", type: "bytes" }),
 ] as const);
 
-export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
+export type KernelModuleType = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface KernelInstall {
-  readonly moduleType: KernelV4ModuleType;
+  readonly moduleType: KernelModuleType;
   readonly module: `0x${string}`;
   readonly moduleData: `0x${string}`;
   readonly internalData: `0x${string}`;
@@ -60,17 +60,17 @@ const KERNEL_V4_REPLAYABLE_INSTALL_TYPES = Object.freeze({
     Object.freeze({ name: "nonce", type: "uint256" }),
     Object.freeze({ name: "packages", type: "Install[]" }),
   ] as const),
-  Install: KERNEL_V4_INSTALL_COMPONENTS,
+  Install: KERNEL_INSTALL_COMPONENTS,
 });
 
-export interface KernelV4ReplayableInstallPackage extends CanonicalEip712Object {
+export interface KernelReplayableInstallPackage extends CanonicalEip712Object {
   readonly moduleType: string;
   readonly module: `0x${string}`;
   readonly moduleData: `0x${string}`;
   readonly internalData: `0x${string}`;
 }
 
-export interface KernelV4ReplayableInstallTypedData extends CanonicalEip712TypedData {
+export interface KernelReplayableInstallTypedData extends CanonicalEip712TypedData {
   readonly types: Readonly<{
     readonly EIP712Domain: readonly [
       Readonly<{ readonly name: "name"; readonly type: "string" }>,
@@ -81,7 +81,7 @@ export interface KernelV4ReplayableInstallTypedData extends CanonicalEip712Typed
       Readonly<{ readonly name: "nonce"; readonly type: "uint256" }>,
       Readonly<{ readonly name: "packages"; readonly type: "Install[]" }>,
     ];
-    readonly Install: typeof KERNEL_V4_INSTALL_COMPONENTS;
+    readonly Install: typeof KERNEL_INSTALL_COMPONENTS;
   }>;
   readonly primaryType: "InstallPackages";
   readonly domain: Readonly<
@@ -94,20 +94,20 @@ export interface KernelV4ReplayableInstallTypedData extends CanonicalEip712Typed
   readonly message: Readonly<
     CanonicalEip712Object & {
       readonly nonce: string;
-      readonly packages: readonly Readonly<KernelV4ReplayableInstallPackage>[];
+      readonly packages: readonly Readonly<KernelReplayableInstallPackage>[];
     }
   >;
 }
 
-export interface KernelV4ReplayableInstallTypedDataInput {
+export interface KernelReplayableInstallTypedDataInput {
   readonly account: `0x${string}`;
   readonly nonce: string;
   readonly packages: readonly Readonly<KernelInstall>[];
 }
 
-export interface KernelV4ReplayableInstallOwnerSigningRequest extends Eip712OwnerSigningRequest {
+export interface KernelReplayableInstallOwnerSigningRequest extends Eip712OwnerSigningRequest {
   readonly purpose: "kernel-enable";
-  readonly typedData: Readonly<KernelV4ReplayableInstallTypedData>;
+  readonly typedData: Readonly<KernelReplayableInstallTypedData>;
   readonly replay: Readonly<{ readonly nonce: string; readonly deadline: null }>;
 }
 
@@ -165,7 +165,7 @@ function captureInstall(
     return fail("Kernel enable module type is unsupported");
   }
   return Object.freeze({
-    moduleType: record.moduleType as KernelV4ModuleType,
+    moduleType: record.moduleType as KernelModuleType,
     module: address(record.module, "Kernel enable module", fail),
     moduleData: bytes(record.moduleData, "Kernel enable module data", fail),
     internalData: bytes(record.internalData, "Kernel enable internal data", fail),
@@ -202,7 +202,7 @@ function captureInstallPackages(
 }
 
 /** Captures the one current Kernel v4 install-package representation. */
-export function parseKernelV4InstallPackages(value: unknown): readonly Readonly<KernelInstall>[] {
+export function parseKernelInstallPackages(value: unknown): readonly Readonly<KernelInstall>[] {
   return capturedByProtocol(
     ERROR_CODE,
     "Kernel v4 install packages could not be captured safely",
@@ -214,7 +214,7 @@ function captureInput(
   value: unknown,
   context: CaptureContext,
   fail: CaptureFailure,
-): Readonly<KernelV4ReplayableInstallTypedDataInput> {
+): Readonly<KernelReplayableInstallTypedDataInput> {
   const record = exactRecord(
     value,
     ["account", "nonce", "packages"],
@@ -230,8 +230,8 @@ function captureInput(
 }
 
 function createCapturedTypedData(
-  input: Readonly<KernelV4ReplayableInstallTypedDataInput>,
-): Readonly<KernelV4ReplayableInstallTypedData> {
+  input: Readonly<KernelReplayableInstallTypedDataInput>,
+): Readonly<KernelReplayableInstallTypedData> {
   return Object.freeze({
     types: KERNEL_V4_REPLAYABLE_INSTALL_TYPES,
     primaryType: "InstallPackages",
@@ -257,9 +257,9 @@ function createCapturedTypedData(
 }
 
 /** Builds the exact chainless EIP-712 value Kernel 0.4.0 verifies. */
-export function createKernelV4ReplayableInstallTypedData(
-  value: KernelV4ReplayableInstallTypedDataInput,
-): Readonly<KernelV4ReplayableInstallTypedData> {
+export function createKernelReplayableInstallTypedData(
+  value: KernelReplayableInstallTypedDataInput,
+): Readonly<KernelReplayableInstallTypedData> {
   return capturedByProtocol(
     ERROR_CODE,
     "Kernel enable typed data could not be captured safely",
@@ -302,9 +302,9 @@ function sameValue(left: unknown, right: unknown): boolean {
  * Captures and refines only an exact Kernel enable request whose signer,
  * typed-data digest, and replay facts all describe the same install.
  */
-export function parseKernelV4ReplayableInstallOwnerSigningRequest(
+export function parseKernelReplayableInstallOwnerSigningRequest(
   value: unknown,
-): Readonly<KernelV4ReplayableInstallOwnerSigningRequest> {
+): Readonly<KernelReplayableInstallOwnerSigningRequest> {
   return capturedByProtocol(
     ERROR_CODE,
     "Kernel enable owner signing request could not be captured safely",
@@ -323,7 +323,7 @@ export function parseKernelV4ReplayableInstallOwnerSigningRequest(
       if (!Array.isArray(packageValues)) {
         return fail("Kernel enable typed data does not contain install packages");
       }
-      const expectedTypedData = createKernelV4ReplayableInstallTypedData({
+      const expectedTypedData = createKernelReplayableInstallTypedData({
         account: request.signer.account,
         nonce: request.replay.nonce,
         packages: packageValues.map((entry) => {
@@ -332,7 +332,7 @@ export function parseKernelV4ReplayableInstallOwnerSigningRequest(
           }
           const record = entry as Readonly<Record<string, unknown>>;
           return {
-            moduleType: Number(record.moduleType) as KernelV4ModuleType,
+            moduleType: Number(record.moduleType) as KernelModuleType,
             module: record.module as `0x${string}`,
             moduleData: record.moduleData as `0x${string}`,
             internalData: record.internalData as `0x${string}`,
@@ -345,7 +345,7 @@ export function parseKernelV4ReplayableInstallOwnerSigningRequest(
       if (request.expectedDigest !== hashCanonicalEip712TypedData(request.typedData)) {
         return fail("Kernel enable expected digest does not match its typed data");
       }
-      return request as Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+      return request as Readonly<KernelReplayableInstallOwnerSigningRequest>;
     },
   );
 }

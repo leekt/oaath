@@ -68,7 +68,7 @@ export type OperatorCredentialProfile =
   | EcdsaOperatorCredentialProfile
   | WebAuthnOperatorCredentialProfile;
 
-export interface KernelV4AccountProfile {
+export interface KernelDerivedAccountProfile {
   readonly version: typeof OAATH_KERNEL_ACCOUNT_PROFILE_VERSION;
   readonly kind: "kernel";
   readonly accountIndex: string;
@@ -92,7 +92,7 @@ export interface KernelExistingAccountProfile {
 
 export type KernelExistingAccountVersion = "0.3.3" | "0.4.0";
 
-export type KernelAccountProfile = KernelV4AccountProfile | KernelExistingAccountProfile;
+export type KernelAccountProfile = KernelDerivedAccountProfile | KernelExistingAccountProfile;
 
 /** Whether a captured profile names an existing account rather than a derived one. */
 export function isKernelExistingAccountProfile(
@@ -106,7 +106,7 @@ export type KernelAccountActionInput =
       readonly chainId: number;
       readonly accountIndex: string;
       readonly kernelVersion: "0.4.0";
-      readonly factoryRoute: KernelV4AccountProfile["factoryRoute"];
+      readonly factoryRoute: KernelDerivedAccountProfile["factoryRoute"];
       readonly entryPointVersion: "0.7";
       readonly ownerCredential: Readonly<OwnerCredentialProfile>;
     }
@@ -338,7 +338,7 @@ export function captureKernelAccountProfile(
     kind: "kernel",
     accountIndex: accountIndex(record.accountIndex, fail),
     kernelVersion: "0.4.0",
-    factoryRoute: record.factoryRoute as KernelV4AccountProfile["factoryRoute"],
+    factoryRoute: record.factoryRoute as KernelDerivedAccountProfile["factoryRoute"],
     entryPoint: Object.freeze({ version: "0.7" }),
     ownerCredential,
   });

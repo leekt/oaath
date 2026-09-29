@@ -4,7 +4,7 @@ import * as protocol from "../src/index.js";
 describe("package boundary", () => {
   it("exports only shared id, actor, PKCE, grant, operation, permission, signing, bootstrap, and capture owners", () => {
     expect(Object.keys(protocol).sort()).toEqual([
-      "KERNEL_V4_INSTALL_COMPONENTS",
+      "KERNEL_INSTALL_COMPONENTS",
       "OAATH_CLIENT_BINDING_VERSION",
       "OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES",
       "OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN",
@@ -56,7 +56,7 @@ describe("package boundary", () => {
       "createGrant",
       "createGrantFromPermissionRequest",
       "createKernelAccountActionInput",
-      "createKernelV4ReplayableInstallTypedData",
+      "createKernelReplayableInstallTypedData",
       "createOperation",
       "createSubjectBinding",
       "deriveCodeChallenge",
@@ -90,9 +90,9 @@ describe("package boundary", () => {
       "parseGrantVerificationResult",
       "parseIssuerIdentity",
       "parseKernelAccountProfile",
+      "parseKernelInstallPackages",
+      "parseKernelReplayableInstallOwnerSigningRequest",
       "parseKernelRevocationSigningRequest",
-      "parseKernelV4InstallPackages",
-      "parseKernelV4ReplayableInstallOwnerSigningRequest",
       "parseOaathGrantRef",
       "parseOperation",
       "parseOperationIdentity",

@@ -13,7 +13,7 @@ import {
   hashGrantPolicy,
   hashPermissionDecision,
   hashPermissionRequest,
-  type KernelV4AccountProfile,
+  type KernelDerivedAccountProfile,
   OAATH_PERMISSION_DECISION_HASH_DOMAIN,
   OAATH_PERMISSION_DECISION_VERSION,
   OAATH_PERMISSION_REQUEST_HASH_DOMAIN,
@@ -50,7 +50,7 @@ const policy: GrantPolicy = {
 const basePolicyCall = policy.calls[0];
 if (!basePolicyCall) throw new Error("missing policy call fixture");
 
-const request: PermissionRequest & { readonly logicalAccount: KernelV4AccountProfile } = {
+const request: PermissionRequest & { readonly logicalAccount: KernelDerivedAccountProfile } = {
   version: "oaath.permission-request/v2",
   context: {
     version: "oaath.workspace-account-context/v1",

@@ -6,12 +6,12 @@ import {
   type Grant,
   type GrantIdentity,
   type GrantTransition,
-  type KernelV4AccountProfile,
+  type KernelDerivedAccountProfile,
   OaathGrantError,
   parseGrant,
 } from "../src/index.js";
 
-const identity: GrantIdentity & { readonly logicalAccount: KernelV4AccountProfile } = {
+const identity: GrantIdentity & { readonly logicalAccount: KernelDerivedAccountProfile } = {
   grantId: "transition-grant",
   chainScope: "all",
   application: {

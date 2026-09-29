@@ -1,7 +1,7 @@
 import { p256 } from "@noble/curves/nist.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import {
-  createKernelV4ReplayableInstallTypedData,
+  createKernelReplayableInstallTypedData,
   hashCanonicalEip712TypedData,
   hashOwnerSigningRequest,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -29,7 +29,7 @@ function createFixture(signWrongDigest = false): Fixture {
   const privateKey = p256.utils.randomPrivateKey();
   try {
     const publicKey = `0x${bytesToHex(p256.getPublicKey(privateKey, false))}` as const;
-    const typedData = createKernelV4ReplayableInstallTypedData({
+    const typedData = createKernelReplayableInstallTypedData({
       account: ACCOUNT,
       nonce: "0",
       packages: [

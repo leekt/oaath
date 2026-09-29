@@ -11,10 +11,10 @@
  */
 
 import {
-  type KernelV4ReplayableInstallOwnerSigningRequest,
+  type KernelReplayableInstallOwnerSigningRequest,
   type OwnerSigningRequest,
   type PermissionRequest,
-  parseKernelV4ReplayableInstallOwnerSigningRequest,
+  parseKernelReplayableInstallOwnerSigningRequest,
   parseOwnerSigningRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
@@ -28,7 +28,7 @@ export type StoredAuthorizationScope =
   | Readonly<{
       kind: "kernel-owner-signing-request";
       decision: "approve-or-reject";
-      request: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
+      request: Readonly<KernelReplayableInstallOwnerSigningRequest>;
     }>
   | Readonly<{
       kind: "owner-signing-request";
@@ -55,7 +55,7 @@ export function classifyStoredAuthorizationScope(
     } catch {
       const request = parseOwnerSigningRequest(parsed);
       try {
-        const kernelRequest = parseKernelV4ReplayableInstallOwnerSigningRequest(request);
+        const kernelRequest = parseKernelReplayableInstallOwnerSigningRequest(request);
         if (kernelRequest.signer.ownerCredential.kind === "p256") {
           return Object.freeze({
             kind: "kernel-owner-signing-request",
