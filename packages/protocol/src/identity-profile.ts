@@ -13,7 +13,7 @@ export const OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION =
   "oaath.operator-credential-profile/v1" as const;
 export const OAATH_KERNEL_ACCOUNT_PROFILE_VERSION = "oaath.kernel-account-profile/v1" as const;
 export const OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION =
-  "oaath.kernel-existing-account-profile/v1" as const;
+  "oaath.kernel-existing-account-profile/v2" as const;
 const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
   "@oaath/protocol:owner-credential-profile" as const;
 
@@ -78,17 +78,28 @@ export interface KernelV4AccountProfile {
   readonly ownerCredential: Readonly<OwnerCredentialProfile>;
 }
 
-export interface KernelV33AccountProfile {
+/** An existing account at its address, on any supported Kernel deployment. */
+export interface KernelExistingAccountProfile {
   readonly version: typeof OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION;
   readonly kind: "kernel";
-  readonly kernelVersion: "0.3.3";
+  /** The deployment the account's onchain implementation was detected as. */
+  readonly kernelVersion: KernelExistingAccountVersion;
   /** Existing account address, identical on each chain where the account is bound. */
   readonly address: `0x${string}`;
   readonly entryPoint: Readonly<{ version: "0.7" }>;
   readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile>;
 }
 
-export type KernelAccountProfile = KernelV4AccountProfile | KernelV33AccountProfile;
+export type KernelExistingAccountVersion = "0.3.3" | "0.4.0";
+
+export type KernelAccountProfile = KernelV4AccountProfile | KernelExistingAccountProfile;
+
+/** Whether a captured profile names an existing account rather than a derived one. */
+export function isKernelExistingAccountProfile(
+  profile: Readonly<KernelAccountProfile>,
+): profile is Readonly<KernelExistingAccountProfile> {
+  return profile.version === OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION;
+}
 
 export type KernelAccountActionInput =
   | {
@@ -101,7 +112,7 @@ export type KernelAccountActionInput =
     }
   | {
       readonly chainId: number;
-      readonly kernelVersion: "0.3.3";
+      readonly kernelVersion: KernelExistingAccountVersion;
       readonly address: `0x${string}`;
       readonly entryPointVersion: "0.7";
       readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile>;
@@ -267,7 +278,7 @@ export function captureKernelAccountProfile(
   fail: CaptureFailure,
 ): Readonly<KernelAccountProfile> {
   const captured = captureRecord(value, "Kernel account profile", context, fail);
-  const existing = captured.kernelVersion === "0.3.3";
+  const existing = captured.version === OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION;
   const record = exactCapturedRecord(
     captured,
     [
@@ -290,7 +301,7 @@ export function captureKernelAccountProfile(
   ) {
     return fail("Kernel account profile version or kind is unsupported");
   }
-  if (!existing && record.kernelVersion !== "0.4.0") {
+  if (record.kernelVersion !== "0.4.0" && !(existing && record.kernelVersion === "0.3.3")) {
     return fail("Kernel account version is unsupported");
   }
   if (
@@ -310,12 +321,13 @@ export function captureKernelAccountProfile(
   if (entryPoint.version !== "0.7") return fail("Kernel account EntryPoint is unsupported");
   const ownerCredential = captureOwnerCredentialProfile(record.ownerCredential, context, fail);
   if (existing) {
+    // Only an ECDSA root owner is provable onchain for an existing account.
     if (ownerCredential.kind !== "ecdsa")
-      return fail("Kernel v3.3 account requires an ECDSA owner");
+      return fail("Kernel existing account requires an ECDSA owner");
     return Object.freeze({
       version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
       kind: "kernel",
-      kernelVersion: "0.3.3",
+      kernelVersion: record.kernelVersion as KernelExistingAccountVersion,
       address: address(record.address, "Kernel existing account address", fail),
       entryPoint: Object.freeze({ version: "0.7" }),
       ownerCredential,
@@ -432,7 +444,7 @@ export function createKernelAccountActionInput(
     ) {
       return invalid("kernel_account_action_input_invalid", "action chainId must be positive");
     }
-    if (profile.kernelVersion === "0.3.3")
+    if (isKernelExistingAccountProfile(profile))
       return Object.freeze({
         chainId: chainIdValue,
         kernelVersion: profile.kernelVersion,
@@ -496,11 +508,12 @@ export function sameKernelAccountProfile(
     !sameOwnerCredentialProfile(left.ownerCredential, right.ownerCredential)
   )
     return false;
-  if (left.kernelVersion === "0.3.3" && right.kernelVersion === "0.3.3")
+  if (left.kernelVersion !== right.kernelVersion) return false;
+  if (isKernelExistingAccountProfile(left) && isKernelExistingAccountProfile(right))
     return left.address === right.address;
   return (
-    left.kernelVersion === "0.4.0" &&
-    right.kernelVersion === "0.4.0" &&
+    !isKernelExistingAccountProfile(left) &&
+    !isKernelExistingAccountProfile(right) &&
     left.accountIndex === right.accountIndex &&
     left.factoryRoute === right.factoryRoute
   );

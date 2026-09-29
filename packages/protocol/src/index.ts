@@ -117,8 +117,9 @@ export type {
   IdentityProfileErrorCode,
   KernelAccountActionInput,
   KernelAccountProfile,
+  KernelExistingAccountProfile,
+  KernelExistingAccountVersion,
   KernelV4AccountProfile,
-  KernelV33AccountProfile,
   OperatorCredentialKind,
   OperatorCredentialProfile,
   OwnerCredentialKind,
@@ -129,6 +130,7 @@ export type {
 } from "./identity-profile.js";
 export {
   createKernelAccountActionInput,
+  isKernelExistingAccountProfile,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,

@@ -4,7 +4,11 @@
  * (`materialize.ts` for Kernel 0.4.0, `v33.ts` for Kernel 0.3.3); this module
  * only selects one from the runtime's deployment or the artifact's version.
  */
-import type { CanonicalEip712TypedData, KernelAccountProfile } from "@oaath/protocol";
+import {
+  type CanonicalEip712TypedData,
+  isKernelExistingAccountProfile,
+  type KernelAccountProfile,
+} from "@oaath/protocol";
 import { kernelV4ReplayableInstallTypedData } from "../../kernel-v4.js";
 import type { KernelAccountDescriptor, KernelReads } from "../deployment/account.js";
 import type { KernelV33AccountDescriptor } from "../deployment/v33.js";
@@ -47,11 +51,49 @@ export function parseKernelGrantApproval(
   value: unknown,
   account: Readonly<KernelAccountProfile>,
 ): Readonly<KernelGrantApproval> {
-  if (account.kernelVersion === "0.4.0") return parseKernelAllChainApproval(value);
-  const approval = parseKernelV33PermissionApproval(value);
-  if (approval.account !== account.address)
-    return inputInvalid("Kernel v3.3 approval names another account");
+  const approval =
+    account.kernelVersion === "0.4.0"
+      ? parseKernelAllChainApproval(value)
+      : parseKernelV33PermissionApproval(value);
+  if (isKernelExistingAccountProfile(account) && approval.account !== account.address)
+    return inputInvalid("Kernel approval names another account");
   return approval;
+}
+
+/**
+ * Assembles the selected deployment's approval artifact from an owner signature
+ * over `kernelPermissionEnableTypedData` for the same runtime, account and nonce.
+ * The captured artifact recomputes its digest, so a signature over other typed
+ * data is rejected rather than stored.
+ */
+export function signedKernelPermissionApproval(
+  value: Omit<ApproveKernelPermissionInput, "owner"> & {
+    readonly digest: `0x${string}`;
+    readonly enableSignature: `0x${string}`;
+  },
+): Readonly<KernelGrantApproval> {
+  const runtime = value.runtime;
+  if (isV33(runtime)) {
+    const scope = kernelV33RuntimeScope(
+      runtime as unknown as Readonly<KernelV33Runtime>,
+      value.account as Readonly<KernelV33AccountDescriptor>,
+      value.nonce,
+    );
+    return parseKernelV33PermissionApproval({
+      version: OAATH_KERNEL_V33_APPROVAL_VERSION,
+      ...scope,
+      digest: value.digest,
+      enableSignature: value.enableSignature,
+    });
+  }
+  return parseKernelAllChainApproval({
+    version: OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
+    account: accountAddress(value.account),
+    installNonce: value.nonce,
+    packages: sessionPackages(runtime),
+    digest: value.digest,
+    enableSignature: value.enableSignature,
+  });
 }
 
 /** Captures an approval by its own version discriminant, with no account profile. */

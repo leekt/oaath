@@ -86,7 +86,7 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
 describe("identity profile codecs", () => {
   it("captures an existing v3.3 address without factory derivation and keeps its owner bound", () => {
     const existing = {
-      version: "oaath.kernel-existing-account-profile/v1",
+      version: "oaath.kernel-existing-account-profile/v2",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: `0x${"55".repeat(20)}`,
@@ -118,8 +118,36 @@ describe("identity profile codecs", () => {
       { ...existing, accountIndex: "0" },
       { ...existing, factoryRoute: "kernel_factory" },
       { ...existing, ownerCredential: ownerP256 },
+      { ...existing, version: "oaath.kernel-existing-account-profile/v1" },
     ])
       expect(() => parseKernelAccountProfile(altered)).toThrow();
+  });
+
+  it("captures an existing v4 address as a distinct identity from the same v3.3 address", () => {
+    const existing = {
+      version: "oaath.kernel-existing-account-profile/v2",
+      kind: "kernel",
+      kernelVersion: "0.4.0",
+      address: `0x${"55".repeat(20)}`,
+      entryPoint: { version: "0.7" },
+      ownerCredential: ownerEcdsa,
+    };
+    const parsed = parseKernelAccountProfile(existing);
+    expect(parsed).toEqual(existing);
+    expect(createKernelAccountActionInput(parsed, 143)).toMatchObject({
+      kernelVersion: "0.4.0",
+      address: existing.address,
+    });
+    expect(
+      sameKernelAccountProfile(
+        parsed,
+        parseKernelAccountProfile({ ...existing, kernelVersion: "0.3.3" }),
+      ),
+    ).toBe(false);
+    // A derived v4 profile never accepts an address in place of its index.
+    expect(() =>
+      parseKernelAccountProfile({ ...existing, version: "oaath.kernel-account-profile/v1" }),
+    ).toThrow();
   });
 
   it("round-trips the three exact owner public-identity shapes immutably", () => {

@@ -100,7 +100,9 @@ signer of an operation.
 ## Local wallet mode
 
 For scoped sessions without an issuer service or phone, use local mode with the
-same existing account and either a browser or local viem wallet:
+same existing account and either a browser or local viem wallet. The account's
+Kernel deployment is detected on every configured chain; chains that disagree
+fail with `local_account_deployment_mismatch`:
 
 ```ts
 const oaath = createOAAth({
@@ -281,7 +283,7 @@ The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
 chain-bound approval records are rejected and must be recreated.
 
 Custom issuer configurations can execute a v3.3 Grant using an account profile
-with version `oaath.kernel-existing-account-profile/v1`, `kernelVersion: "0.3.3"`,
+with version `oaath.kernel-existing-account-profile/v2`, `kernelVersion: "0.3.3"`,
 the existing `address`, EntryPoint version `0.7`, and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
 decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission

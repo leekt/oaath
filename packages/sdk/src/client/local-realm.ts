@@ -18,6 +18,7 @@ import type { Address } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { OaathCleanupError } from "../cleanup/coordinator.js";
 import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
+import { detectKernelAccountDeployment } from "../kernel/deployment/account.js";
 import { kernelV33Deployment } from "../kernel/deployment/v33.js";
 import { type EcdsaWalletClient, ecdsaKey, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
 import { routingAddress } from "../routing/capabilities.js";
@@ -108,18 +109,6 @@ export function createLocalRealm(
     wallet: config.owner as OaathLocalWallet,
     validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,
   });
-  const account = parseKernelAccountProfile({
-    version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
-    kind: "kernel",
-    kernelVersion: "0.3.3",
-    address,
-    entryPoint: { version: "0.7" },
-    ownerCredential: {
-      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-      kind: "ecdsa",
-      address: ownerKey.publicMaterial,
-    },
-  });
   const origin =
     config.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
   if (typeof origin !== "string")
@@ -128,7 +117,38 @@ export function createLocalRealm(
     config.now === undefined
       ? () => Math.floor(Date.now() / 1000)
       : clientCapability<() => number>(config.now, "local clock");
-  const bindingInput = {
+  // The account's deployment is detected on every configured chain, never
+  // assumed. Chains that disagree cannot share one account profile.
+  async function detectedAccountProfile() {
+    let kernelVersion: string | undefined;
+    for (const chain of chains) {
+      const deployment = await detectKernelAccountDeployment({
+        chainId: chain.chainId,
+        address,
+        reads: chain.reads,
+      });
+      if (kernelVersion !== undefined && deployment.kernelVersion !== kernelVersion)
+        return clientFail(
+          "oaath_client_state_conflict",
+          "configured chains run different Kernel deployments",
+          "local_account_deployment_mismatch",
+        );
+      kernelVersion = deployment.kernelVersion;
+    }
+    return parseKernelAccountProfile({
+      version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+      kind: "kernel",
+      kernelVersion,
+      address,
+      entryPoint: { version: "0.7" },
+      ownerCredential: {
+        version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+        kind: "ecdsa",
+        address: ownerKey.publicMaterial,
+      },
+    });
+  }
+  const identityInput = {
     issuer: origin,
     applicationId: "local",
     applicationName: "Local OAAth",
@@ -142,18 +162,7 @@ export function createLocalRealm(
       workspaceKind: "personal",
       accountId: address,
     } as const,
-    account,
   };
-  // Capture public identity before opening storage or invoking a wallet.
-  const baseBinding = captureOaathBinding({
-    ...bindingInput,
-    deviceId: "local",
-    operatorCredential: {
-      version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-      kind: "ecdsa",
-      address: ownerKey.publicMaterial,
-    },
-  });
   let stores = config.stores === undefined ? undefined : captureStoreConfiguration(config.stores);
   let storeOwner: Readonly<OwnedDefaultStores> | undefined;
   let openingStores: Promise<Readonly<OaathStoreConfiguration>> | undefined;
@@ -192,6 +201,17 @@ export function createLocalRealm(
   async function realm() {
     if (inner) return inner;
     composing ??= (async () => {
+      const bindingInput = { ...identityInput, account: await detectedAccountProfile() };
+      // Capture public identity before opening storage or invoking a wallet.
+      const baseBinding = captureOaathBinding({
+        ...bindingInput,
+        deviceId: "local",
+        operatorCredential: {
+          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+          kind: "ecdsa",
+          address: ownerKey.publicMaterial,
+        },
+      });
       const owned = await storage();
       const bootstrap = {
         application: bindingInput,

@@ -1,6 +1,7 @@
 import {
   captureRecord,
   exactCapturedRecord,
+  isKernelExistingAccountProfile,
   OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,
   parseAccountId,
   parseClientId,
@@ -213,7 +214,7 @@ export function createServiceDirectory(store: ServiceDirectoryStore): Readonly<S
           (account) =>
             account.workspaceId !== device.workspaceId ||
             account.ownerDeviceId !== device.ownerDeviceId ||
-            account.account.kernelVersion !== "0.4.0" ||
+            isKernelExistingAccountProfile(account.account) ||
             account.account.factoryRoute !== "kernel_factory" ||
             account.account.ownerCredential.kind !== "p256" ||
             account.account.ownerCredential.publicKey !== owner.publicKey,

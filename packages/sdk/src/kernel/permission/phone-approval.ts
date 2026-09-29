@@ -9,6 +9,7 @@ import {
   type ApprovePermissionDecision,
   hashOwnerSigningRequest,
   hashPermissionRequest,
+  isKernelExistingAccountProfile,
   type KernelV4ReplayableInstallOwnerSigningRequest,
   OAATH_OWNER_SIGNING_REQUEST_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
@@ -82,7 +83,7 @@ export async function prepareKernelPhonePermissionApproval(
   if (ownerCredential.kind !== "p256")
     return inputInvalid("phone permission approval requires a P-256 owner");
   if (
-    request.logicalAccount.kernelVersion !== "0.4.0" ||
+    isKernelExistingAccountProfile(request.logicalAccount) ||
     request.logicalAccount.factoryRoute !== "kernel_factory"
   ) {
     return inputInvalid("Kernel v4 phone approval requires the Kernel factory route");

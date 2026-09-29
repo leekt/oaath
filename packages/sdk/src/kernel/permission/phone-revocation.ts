@@ -7,6 +7,7 @@
 import {
   hashKernelV4RevocationSigningRequest,
   hashPermissionRequest,
+  isKernelExistingAccountProfile,
   type KernelV4RevocationEffect,
   type KernelV4RevocationSigningRequest,
   OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
@@ -86,7 +87,7 @@ export async function prepareKernelPhoneRevocation(
   const ownerCredential = request.logicalAccount.ownerCredential;
   if (
     ownerCredential.kind !== "p256" ||
-    request.logicalAccount.kernelVersion !== "0.4.0" ||
+    isKernelExistingAccountProfile(request.logicalAccount) ||
     request.logicalAccount.factoryRoute !== "kernel_factory"
   )
     return inputInvalid("phone revocation requires the P-256 Kernel owner");

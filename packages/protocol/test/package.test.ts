@@ -78,6 +78,7 @@ describe("package boundary", () => {
       "hashPermissionDecision",
       "hashPermissionRequest",
       "isGrantPolicyAttenuation",
+      "isKernelExistingAccountProfile",
       "operationOccupiesLane",
       "parseAccountId",
       "parseCanonicalEip712TypedData",

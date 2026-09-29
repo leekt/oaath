@@ -260,7 +260,7 @@ describe("Kernel v3.3 session composition", () => {
   it("binds a Grant approval to the account version and existing address", async () => {
     const { approval } = await sessionFixture();
     const profile = {
-      version: "oaath.kernel-existing-account-profile/v1",
+      version: "oaath.kernel-existing-account-profile/v2",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: account,

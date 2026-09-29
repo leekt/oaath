@@ -1,4 +1,7 @@
-import { parseKernelV4ReplayableInstallOwnerSigningRequest } from "@oaath/protocol";
+import {
+  isKernelExistingAccountProfile,
+  parseKernelV4ReplayableInstallOwnerSigningRequest,
+} from "@oaath/protocol";
 import type {
   EnrollOwnerDeviceInput,
   RelayCaller,
@@ -103,7 +106,7 @@ export function phoneEnrollment(
   const document = directoryDocument();
   const device = document.ownerDevices.find((entry) => entry.workspaceId === workspaceId)!;
   const account = document.accounts.find((entry) => entry.workspaceId === workspaceId)!;
-  if (account.account.kernelVersion !== "0.4.0") throw new Error("phone fixture requires v4");
+  if (isKernelExistingAccountProfile(account.account)) throw new Error("phone fixture requires v4");
   const ownerCredential = parseKernelV4ReplayableInstallOwnerSigningRequest(
     JSON.parse(createKernelOwnerApprovalInput().requestedScope),
   ).signer.ownerCredential;
