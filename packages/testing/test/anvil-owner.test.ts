@@ -34,7 +34,7 @@ import { createLocalOwnerAnvilFixture } from "../src/anvil-owner.js";
           const request = {
             chain: fixture.chainId,
             calls: [{ target: `0x${"44".repeat(20)}`, data: "0x", value: "1" }],
-            feePayer: { kind: "connected-eoa", wallet: fixture.wallet },
+            payer: { kind: "connected-eoa", wallet: fixture.wallet },
           };
           expect(await account.owner(fixture.wallet).reviewCalls(request)).toMatchObject({
             signer: "owner",

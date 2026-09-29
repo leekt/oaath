@@ -162,7 +162,6 @@ import {
   captureConnectedEoa,
   connectedEoaReview,
   type OaathConnectedEoaFallbackReview,
-  type OaathConnectedEoaFeePayer,
   withConnectedEoaFallback,
 } from "./connected-eoa.js";
 import {
@@ -184,11 +183,7 @@ import {
   type OaathOperationHandle,
   operationOutcome,
 } from "./operation-handle.js";
-import {
-  capturePaymasterService,
-  capturePlainCalls,
-  type OaathPaymasterServiceInput,
-} from "./sponsorship.js";
+import { capturePaymasterService, capturePlainCalls, type OaathPayer } from "./sponsorship.js";
 
 const SUBMISSION_TIMEOUT_MS = 30_000;
 /** Only `revoked` completes a target; every other answer leaves it pending. */
@@ -285,8 +280,8 @@ export interface OaathOperationLane {
 export interface OaathSendCallsInput {
   /** Explicitly prefer available owner authority for this one atomic UserOperation. */
   readonly signer?: "session" | "auto";
-  readonly feePayer?: Readonly<OaathConnectedEoaFeePayer>;
-  readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
+  /** Who pays gas. Omit it and the chain's configured submission routes decide. */
+  readonly payer?: Readonly<OaathPayer>;
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
   /**

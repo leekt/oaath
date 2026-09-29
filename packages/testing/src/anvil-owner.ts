@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createOAAth,
-  type OaathConnectedEoaFeePayer,
+  type OaathConnectedEoaPayer,
   type OaathLocalWallet,
   type OaathOwnerClient,
 } from "@oaath/sdk";
@@ -33,7 +33,7 @@ import { deployLocalV4OwnerAccount } from "./anvil-v4-owner.js";
 import { deployLocalV33Account } from "./anvil-v33.js";
 import { createSqliteOperationStoreAdapter } from "./sqlite-store.js";
 
-type OwnerWallet = OaathLocalWallet & OaathConnectedEoaFeePayer["wallet"];
+type OwnerWallet = OaathLocalWallet & OaathConnectedEoaPayer["wallet"];
 export interface LocalOwnerAnvilFixture {
   readonly chainId: number;
   readonly rpcUrl: string;

@@ -9,7 +9,8 @@ import { OaathRpcError } from "../viem/rpc.js";
 import { clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathSubmissionRequest } from "./grant-handle.js";
 
-export interface OaathConnectedEoaFeePayer {
+/** A connected wallet that sends `handleOps` after a conclusive bundler rejection. */
+export interface OaathConnectedEoaPayer {
   readonly kind: "connected-eoa";
   readonly wallet: Pick<WalletClient, "account" | "request"> & {
     readonly sendTransaction?: (
@@ -53,7 +54,7 @@ export function captureConnectedEoa(
   if (local && typeof wallet.sendTransaction !== "function")
     return fail("local fee payer sendTransaction is missing");
   const send = wallet.sendTransaction as NonNullable<
-    OaathConnectedEoaFeePayer["wallet"]["sendTransaction"]
+    OaathConnectedEoaPayer["wallet"]["sendTransaction"]
   >;
   return Object.freeze({
     address,

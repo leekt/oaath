@@ -55,7 +55,7 @@ describe("Grant connected EOA fallback", () => {
       const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
       const operation = await grant.sendCalls({
         ...(sendCallsInput() as Record<string, unknown>),
-        feePayer: { kind: "connected-eoa", wallet },
+        payer: { kind: "connected-eoa", wallet },
       });
       expect(operation.outcome.status).toBe("pending");
       expect(attempts).toBe(1);
@@ -132,7 +132,7 @@ describe("Grant connected EOA fallback", () => {
       const grant = await connection.requestPermission(permissionInput());
       const input = {
         ...(sendCallsInput() as Record<string, unknown>),
-        feePayer: { kind: "connected-eoa", wallet },
+        payer: { kind: "connected-eoa", wallet },
       };
       const quotes = base.quotes;
       const review = await grant.reviewCalls(input);
@@ -179,22 +179,24 @@ describe("Grant connected EOA fallback", () => {
       await realm.oaath.close();
     }
   });
-  it("refuses combined sponsorship and connected fallback before wallet or quote work", async () => {
+  it("refuses a payer that mixes sponsorship and connected fallback before wallet or quote work", async () => {
     const realm = createRealm();
     try {
       const connection = await realm.oaath.connect();
       const grant = await connection.requestPermission(permissionInput());
-      const input = {
-        ...(sendCallsInput() as Record<string, unknown>),
-        feePayer: { kind: "connected-eoa", wallet: {} },
-        paymasterService: { url: "https://paymaster.test", context: {} },
-      };
-      await expect(grant.reviewCalls(input)).rejects.toMatchObject({
-        code: "oaath_client_input_invalid",
-      });
-      await expect(grant.sendCalls(input)).rejects.toMatchObject({
-        code: "oaath_client_input_invalid",
-      });
+      for (const payer of [
+        { kind: "connected-eoa", wallet: {}, url: "https://paymaster.test", context: {} },
+        { kind: "paymaster-service", wallet: {}, url: "https://paymaster.test", context: {} },
+        { kind: "account" },
+      ]) {
+        const input = { ...(sendCallsInput() as Record<string, unknown>), payer };
+        await expect(grant.reviewCalls(input)).rejects.toMatchObject({
+          code: "oaath_client_input_invalid",
+        });
+        await expect(grant.sendCalls(input)).rejects.toMatchObject({
+          code: "oaath_client_input_invalid",
+        });
+      }
       expect(realm.chain.quotes).toBe(0);
       expect(realm.chain.sends).toHaveLength(0);
     } finally {

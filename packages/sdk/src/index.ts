@@ -14,7 +14,7 @@ export type { OaathCallsReviewContract } from "./client/calls-review.js";
 export { OAATH_CALLS_REVIEW_VERSION, parseOaathCallsReview } from "./client/calls-review.js";
 export type {
   OaathConnectedEoaFallbackReview,
-  OaathConnectedEoaFeePayer,
+  OaathConnectedEoaPayer,
 } from "./client/connected-eoa.js";
 export type {
   OaathConnection,
@@ -55,6 +55,6 @@ export type {
   OaathOwnerHandle,
 } from "./client/owner-realm.js";
 export type { OaathSession } from "./client/session-credential.js";
-export type { OaathPaymasterServiceInput } from "./client/sponsorship.js";
+export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";
