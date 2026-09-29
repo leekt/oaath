@@ -7,12 +7,12 @@
  * @author taek <leekt216@gmail.com>
  */
 import type {
+  KernelCall,
+  KernelInstall,
+  KernelUserOperationGas,
   KernelV4AccountDescriptor,
-  KernelV4Call,
-  KernelV4Install,
-  KernelV4UserOperationGas,
-  KernelV4Validation,
-  KernelV4ValidityTimeRange,
+  KernelValidation,
+  KernelValidityTimeRange,
 } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 import type { KernelAccountDescriptor, KernelReads } from "./deployment/account.js";
@@ -24,15 +24,14 @@ import type {
 } from "./deployment/v33.js";
 import type { KernelGasPolicy } from "./gas-policy.js";
 
-/**
- * Shapes every supported Kernel deployment shares. Each version's codec owns
- * its encoding; these are the version-agnostic names the public entry uses.
- */
-export type KernelCall = KernelV4Call;
-export type KernelInstall = KernelV4Install;
-export type KernelUserOperationGas = KernelV4UserOperationGas;
-export type KernelValidation = KernelV4Validation;
-export type KernelValidityTimeRange = KernelV4ValidityTimeRange;
+/** Shapes every supported Kernel deployment shares. */
+export type {
+  KernelCall,
+  KernelInstall,
+  KernelUserOperationGas,
+  KernelValidation,
+  KernelValidityTimeRange,
+};
 
 export type KernelRuntimeErrorCode =
   | "kernel_runtime_input_invalid"
@@ -212,16 +211,16 @@ export interface OperatorProfile {
   /** Kernel validation binding used for nonce keys and validation type. */
   readonly resolveValidation: (
     deployment: Readonly<KernelDeployment>,
-  ) => Readonly<KernelV4Validation>;
+  ) => Readonly<KernelValidation>;
   /** ERC-7579 packages this authority requires on the action chain. */
   readonly resolvePackages: (
     deployment: Readonly<KernelDeployment>,
-  ) => readonly Readonly<KernelV4Install>[];
+  ) => readonly Readonly<KernelInstall>[];
 }
 
 export interface KernelRuntimeBindAccountInput {
   readonly accountIndex: string;
-  readonly initialPackages: readonly KernelV4Install[];
+  readonly initialPackages: readonly KernelInstall[];
 }
 
 /**
@@ -252,10 +251,10 @@ export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> 
   readonly account: Readonly<Account>;
   readonly nonceKey: string;
   readonly sequence: string;
-  readonly calls: readonly KernelV4Call[];
-  readonly gas: KernelV4UserOperationGas;
+  readonly calls: readonly KernelCall[];
+  readonly gas: KernelUserOperationGas;
   /** Optional signed request-time attenuation within an installed session ceiling. */
-  readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+  readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
   /**
    * Defaults to `standard`. Only kernel/permission/materialize.ts prepares
    * `enable-replayable`, because only it holds the owner enable signature the
@@ -284,9 +283,9 @@ export interface KernelRuntime {
   readonly keyKind: KernelKeyKind;
   /** Validator module for root authority, permission signer module for a session. */
   readonly authorityModule: `0x${string}`;
-  readonly validation: Readonly<KernelV4Validation>;
+  readonly validation: Readonly<KernelValidation>;
   /** ERC-7579 packages this operator installs, in Kernel install order. */
-  readonly packages: readonly Readonly<KernelV4Install>[];
+  readonly packages: readonly Readonly<KernelInstall>[];
   readonly dummySignature: `0x${string}`;
   /**
    * Binds an account derived from initial packages (Kernel `0.4.0` only) or an

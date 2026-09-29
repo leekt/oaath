@@ -5,8 +5,8 @@ import {
   encodeKernelV4Execution,
   encodeKernelV4Nonce,
   encodeKernelV4NonceKey,
-  type KernelV4UserOperationGas,
-  type KernelV4Validation,
+  type KernelUserOperationGas,
+  type KernelValidation,
 } from "../../kernel-v4.js";
 import {
   asViemUserOperation,
@@ -46,7 +46,7 @@ export function kernelV33OperationSigningHash(value: unknown): `0x${string}` {
 /** v3.3 uses mode 0x01 for enable; its validation/namespace layout matches v4. */
 export function encodeKernelV33NonceKey(value: {
   mode: "standard" | "enable";
-  validation: Readonly<KernelV4Validation>;
+  validation: Readonly<KernelValidation>;
   nonceKey: string;
 }): string {
   const input = exactInput(
@@ -60,7 +60,7 @@ export function encodeKernelV33NonceKey(value: {
   const key = BigInt(
     encodeKernelV4NonceKey({
       mode: "standard",
-      validation: input.validation as KernelV4Validation,
+      validation: input.validation as KernelValidation,
       nonceKey: input.nonceKey as string,
     }),
   );
@@ -71,7 +71,7 @@ export function encodeKernelV33NonceKey(value: {
 
 export function prepareKernelV33Operation(
   value: KernelV33RuntimePrepareInput,
-  validation: Readonly<KernelV4Validation>,
+  validation: Readonly<KernelValidation>,
   gasPolicy: Readonly<KernelGasPolicy>,
 ): PreparedUserOperation {
   const context: CaptureContext = new WeakSet();
@@ -131,7 +131,7 @@ export function prepareKernelV33UserOperation(value: unknown): PreparedUserOpera
     record,
     {
       mode: nonce.mode,
-      validation: nonce.validation as Readonly<KernelV4Validation>,
+      validation: nonce.validation as Readonly<KernelValidation>,
       nonceKey: nonce.nonceKey,
       sequence: nonce.sequence,
     },
@@ -144,11 +144,11 @@ function encodeKernelV33Operation(
   record: Readonly<Record<string, unknown>>,
   nonce: Readonly<{
     mode: "standard" | "enable";
-    validation: Readonly<KernelV4Validation>;
+    validation: Readonly<KernelValidation>;
     nonceKey: unknown;
     sequence: unknown;
   }>,
-  gasFor: (gas: KernelV4UserOperationGas) => KernelV4UserOperationGas,
+  gasFor: (gas: KernelUserOperationGas) => KernelUserOperationGas,
   context: CaptureContext,
 ): PreparedUserOperation {
   const account = provenKernelV33Account(record.account);
@@ -182,7 +182,7 @@ function encodeKernelV33Operation(
       callData: encodeKernelV4Execution({
         calls: record.calls as KernelV33RuntimePrepareInput["calls"],
       }),
-      ...gasFor(gas as unknown as KernelV4UserOperationGas),
+      ...gasFor(gas as unknown as KernelUserOperationGas),
       factory: null,
       paymaster: (record.paymaster ?? null) as KernelV33RuntimePrepareInput["paymaster"] &
         (object | null),

@@ -6,7 +6,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { KernelV4Call, KernelV4UserOperationGas } from "../../kernel-v4.js";
+import type { KernelCall, KernelUserOperationGas } from "../../kernel-v4.js";
 import {
   type PreparedUserOperation,
   parsePreparedUserOperation,
@@ -48,7 +48,7 @@ export interface PrepareKernelPermissionRevocationInput {
   /** Root EntryPoint lane: a caller-reserved uint16 key and its uint64 sequence. */
   readonly nonceKey: string;
   readonly sequence: string;
-  readonly gas: Readonly<KernelV4UserOperationGas>;
+  readonly gas: Readonly<KernelUserOperationGas>;
   /** Optional expectations, each defaulting from the approval or its deployment. */
   readonly account?: `0x${string}`;
   readonly kernelVersion?: "0.3.3" | "0.4.0";
@@ -63,10 +63,10 @@ export interface KernelPermissionRevocationPreparation {
   readonly owner: `0x${string}`;
   /** Permission state the calls were derived from. */
   readonly state: Readonly<KernelV33PermissionState>;
-  readonly calls: readonly Readonly<KernelV4Call>[];
+  readonly calls: readonly Readonly<KernelCall>[];
   readonly nonceKey: string;
   readonly sequence: string;
-  readonly gas: Readonly<KernelV4UserOperationGas>;
+  readonly gas: Readonly<KernelUserOperationGas>;
   /** The exact unsigned operation and its hash. */
   readonly prepared: Readonly<PreparedUserOperation>;
 }
@@ -109,11 +109,11 @@ function v33Approval(
   return approval;
 }
 
-function captureGas(value: unknown): Readonly<KernelV4UserOperationGas> {
+function captureGas(value: unknown): Readonly<KernelUserOperationGas> {
   const gas = exactInput(value, GAS_KEYS, "Kernel revocation gas", new WeakSet());
   return Object.freeze(
     Object.fromEntries(GAS_KEYS.map((key) => [key, gas[key]])),
-  ) as Readonly<KernelV4UserOperationGas>;
+  ) as Readonly<KernelUserOperationGas>;
 }
 
 function ownerRuntime(chainId: number, owner: Readonly<KeyProfile>, reads: KernelV33Reads) {

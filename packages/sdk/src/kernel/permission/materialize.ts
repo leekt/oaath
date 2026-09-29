@@ -32,7 +32,7 @@ import {
   captureKernelV4Installs,
   encodeKernelV4EnableSignature,
   encodeKernelV4NonceKey,
-  type KernelV4Install,
+  type KernelInstall,
   kernelV4ReplayableInstallDigest,
 } from "../../kernel-v4.js";
 import type { PreparedUserOperation } from "../../prepared-user-operation.js";
@@ -66,7 +66,7 @@ export interface KernelAllChainApproval {
   /** Kernel's own install nonce, `key << 64 | sequence`, as a decimal uint256. */
   readonly installNonce: string;
   /** The exact ERC-7579 packages the enable envelope installs, in install order. */
-  readonly packages: readonly Readonly<KernelV4Install>[];
+  readonly packages: readonly Readonly<KernelInstall>[];
   /** The chain-agnostic digest the owner signed. */
   readonly digest: `0x${string}`;
   /** The one owner signature. Kernel's root validation verifies it as-is. */
@@ -91,7 +91,7 @@ export interface ApproveKernelPermissionAllChainInput {
   /** Kernel's install nonce for this approval, as a decimal uint256. */
   readonly installNonce: string;
   /** The permission's install packages, exactly as the session runtime resolves them. */
-  readonly packages: readonly KernelV4Install[];
+  readonly packages: readonly KernelInstall[];
 }
 
 /**
@@ -124,7 +124,7 @@ function capturedApprovalScope(
 ): Readonly<{
   account: `0x${string}`;
   installNonce: string;
-  packages: readonly Readonly<KernelV4Install>[];
+  packages: readonly Readonly<KernelInstall>[];
 }> {
   return Object.freeze({
     account: inputAddress(account, "Kernel all-chain approval account"),

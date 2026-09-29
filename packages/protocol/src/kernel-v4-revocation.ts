@@ -22,7 +22,7 @@ import { capturedByProtocol, protocolFailure } from "./errors.js";
 import { hashOwnerCredentialProfile } from "./identity-profile.js";
 import { exactRecord } from "./internal/exact-record.js";
 import {
-  type KernelV4Install,
+  type KernelInstall,
   type KernelV4ReplayableInstallOwnerSigningRequest,
   parseKernelV4InstallPackages,
   parseKernelV4ReplayableInstallOwnerSigningRequest,
@@ -118,7 +118,7 @@ function uint(value: unknown, maximum: bigint, label: string): bigint {
  */
 export function encodeKernelV4PermissionUninstallCalls(value: {
   readonly account: Hex;
-  readonly packages: readonly KernelV4Install[];
+  readonly packages: readonly KernelInstall[];
 }): readonly Call[] {
   return capturedByProtocol(ERROR_CODE, "Kernel permission uninstall is invalid", () => {
     const record = exactRecord(
@@ -209,7 +209,7 @@ function revocationCallData(
           account,
           packages: install.typedData.message.packages.map((entry) => ({
             ...entry,
-            moduleType: Number(entry.moduleType) as KernelV4Install["moduleType"],
+            moduleType: Number(entry.moduleType) as KernelInstall["moduleType"],
           })),
         });
   const single = calls.length === 1 ? calls[0] : undefined;

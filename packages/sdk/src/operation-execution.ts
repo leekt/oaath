@@ -11,7 +11,7 @@ import {
   toUserOperation,
   type UserOperation,
 } from "viem/account-abstraction";
-import { decodeKernelV4Execution, type KernelV4Call } from "./kernel-v4.js";
+import { decodeKernelV4Execution, type KernelCall } from "./kernel-v4.js";
 
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 
@@ -30,7 +30,7 @@ export function verifyOperationExecutionEvidence(
     inclusion: Readonly<OperationInclusion>;
     transaction: unknown;
   }>,
-): Readonly<{ sender: Hex; calls: readonly Readonly<KernelV4Call>[] }> {
+): Readonly<{ sender: Hex; calls: readonly Readonly<KernelCall>[] }> {
   const { identity, inclusion } = input;
   const transaction = exactCapturedRecord(
     captureRecord(input.transaction, "execution transaction", new WeakSet(), invalid),
@@ -54,7 +54,7 @@ export function verifyOperationExecutionEvidence(
       : decoded.functionName === "handleAggregatedOps"
         ? decoded.args[0].flatMap((group) => group.userOps)
         : invalid();
-  let calls: readonly Readonly<KernelV4Call>[] | undefined;
+  let calls: readonly Readonly<KernelCall>[] | undefined;
   for (const packed of operations) {
     // Use the library's EntryPoint hash implementation, including factory,
     // paymaster and gas fields, rather than trusting a provider's claimed ID.

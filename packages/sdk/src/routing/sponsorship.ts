@@ -13,7 +13,7 @@ import {
   type KernelGasPolicy,
 } from "../kernel/gas-policy.js";
 import type { KernelRuntimePrepareInput, KernelV33RuntimePrepareInput } from "../kernel/types.js";
-import type { KernelV4UserOperationGas } from "../kernel-v4.js";
+import type { KernelUserOperationGas } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "./types.js";
 
@@ -45,7 +45,7 @@ export interface OaathKernelSponsorshipCapability {
 }
 
 export interface OaathKernelSponsorshipResult {
-  readonly gas: Readonly<KernelV4UserOperationGas>;
+  readonly gas: Readonly<KernelUserOperationGas>;
   readonly paymaster: Readonly<PreparedPaymaster>;
 }
 

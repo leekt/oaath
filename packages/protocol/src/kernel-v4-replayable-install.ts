@@ -43,7 +43,7 @@ export const KERNEL_V4_INSTALL_COMPONENTS = Object.freeze([
 
 export type KernelV4ModuleType = 1 | 2 | 3 | 4 | 5 | 6;
 
-export interface KernelV4Install {
+export interface KernelInstall {
   readonly moduleType: KernelV4ModuleType;
   readonly module: `0x${string}`;
   readonly moduleData: `0x${string}`;
@@ -102,7 +102,7 @@ export interface KernelV4ReplayableInstallTypedData extends CanonicalEip712Typed
 export interface KernelV4ReplayableInstallTypedDataInput {
   readonly account: `0x${string}`;
   readonly nonce: string;
-  readonly packages: readonly Readonly<KernelV4Install>[];
+  readonly packages: readonly Readonly<KernelInstall>[];
 }
 
 export interface KernelV4ReplayableInstallOwnerSigningRequest extends Eip712OwnerSigningRequest {
@@ -148,7 +148,7 @@ function captureInstall(
   index: number,
   context: CaptureContext,
   fail: CaptureFailure,
-): Readonly<KernelV4Install> {
+): Readonly<KernelInstall> {
   const record = exactRecord(
     value,
     ["moduleType", "module", "moduleData", "internalData"],
@@ -176,7 +176,7 @@ function captureInstallPackages(
   value: unknown,
   context: CaptureContext,
   fail: CaptureFailure,
-): readonly Readonly<KernelV4Install>[] {
+): readonly Readonly<KernelInstall>[] {
   const entries = captureDenseArray(value, "Kernel enable packages", context, fail);
   if (entries.length < 1 || entries.length > MAX_PACKAGES) {
     return fail("Kernel enable package count is invalid");
@@ -202,7 +202,7 @@ function captureInstallPackages(
 }
 
 /** Captures the one current Kernel v4 install-package representation. */
-export function parseKernelV4InstallPackages(value: unknown): readonly Readonly<KernelV4Install>[] {
+export function parseKernelV4InstallPackages(value: unknown): readonly Readonly<KernelInstall>[] {
   return capturedByProtocol(
     ERROR_CODE,
     "Kernel v4 install packages could not be captured safely",

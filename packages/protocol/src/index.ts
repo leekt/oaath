@@ -165,7 +165,7 @@ export {
   exactRecord,
 } from "./internal/exact-record.js";
 export type {
-  KernelV4Install,
+  KernelInstall,
   KernelV4ModuleType,
   KernelV4ReplayableInstallOwnerSigningRequest,
   KernelV4ReplayableInstallPackage,

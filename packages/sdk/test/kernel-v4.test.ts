@@ -35,8 +35,8 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  type KernelInstall,
   type KernelV4AccountReadRequest,
-  type KernelV4Install,
   kernelV4Deployment,
   prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
@@ -60,13 +60,13 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
-const baseInstall: KernelV4Install = Object.freeze({
+const baseInstall: KernelInstall = Object.freeze({
   moduleType: 1,
   module: validator,
   moduleData: "0x1234",
   internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
 });
-const installs = Object.freeze([baseInstall]) satisfies readonly KernelV4Install[];
+const installs = Object.freeze([baseInstall]) satisfies readonly KernelInstall[];
 
 const installComponents = [
   { name: "moduleType", type: "uint256" },
@@ -358,12 +358,12 @@ describe("Kernel v4 module and account codecs", () => {
   });
 
   it("requires every permission signer to follow its policy packages", () => {
-    const policy: KernelV4Install = {
+    const policy: KernelInstall = {
       ...baseInstall,
       moduleType: 5,
       internalData: encodeKernelV4PolicyData(permissionId),
     };
-    const signer: KernelV4Install = {
+    const signer: KernelInstall = {
       ...baseInstall,
       moduleType: 6,
       internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
@@ -373,7 +373,7 @@ describe("Kernel v4 module and account codecs", () => {
 
   it("derives reverse-ordered permission uninstall self-calls from the install packages", () => {
     const permissionPrefix = pad(permissionId, { size: 32, dir: "right" });
-    const policyPackage = (module: `0x${string}`, policyData: `0x${string}`): KernelV4Install => ({
+    const policyPackage = (module: `0x${string}`, policyData: `0x${string}`): KernelInstall => ({
       moduleType: 5,
       module,
       moduleData: concat([permissionPrefix, policyData]),
@@ -381,7 +381,7 @@ describe("Kernel v4 module and account codecs", () => {
     });
     const policyA = policyPackage(`0x${"55".repeat(20)}`, "0x01");
     const policyB = policyPackage(`0x${"77".repeat(20)}`, "0x02");
-    const signer: KernelV4Install = {
+    const signer: KernelInstall = {
       moduleType: 6,
       module: `0x${"88".repeat(20)}`,
       moduleData: concat([permissionPrefix, "0x99"]),
