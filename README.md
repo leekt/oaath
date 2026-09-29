@@ -17,9 +17,8 @@ difference:
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
-import { createViemChainPorts } from "@oaath/sdk/viem";
 
-const chains = createViemChainPorts({ 143: { publicRpcUrls: [rpcUrl], bundlerUrl } });
+const chains = { 143: { publicRpcUrls: [rpcUrl], bundlerUrl } };
 const oaath = createOAAth({
   chains,
   account: existingKernelAddress,

@@ -18,6 +18,44 @@ const permission = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode", () => {
+  it("runs owner-only and wallet-approved quick starts from plain chain descriptors", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture();
+    const chains = await fixture.chainDescriptors();
+    const ownerOnly = createOAAth({ chains, account: fixture.address });
+    const wallet = createOAAth({
+      chains,
+      account: fixture.address,
+      approvals: { kind: "wallet", owner: fixture.wallet },
+      origin: "https://consumer.example",
+    });
+    try {
+      const owned = await ownerOnly
+        .account(fixture.address)
+        .owner(fixture.wallet)
+        .sendCalls({ chain: fixture.chainId, calls });
+      expect((await owned.wait({ attempts: 3 })).status).toBe("finalized");
+      await ownerOnly.close();
+      const grant = await (await wallet.connect()).requestPermission(permission);
+      const operation = await grant.sendCalls({ chain: fixture.chainId, calls });
+      expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
+      expect(fixture.signatureCount).toBe(2);
+      expect(fixture.bundlerSubmissionCount).toBe(2);
+      expect(() =>
+        createOAAth({ chains: { [fixture.chainId]: { publicRpcUrls: [] } } as never }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "oaath_client_input_invalid",
+          source: "oaath_rpc_config_invalid",
+        }),
+      );
+    } finally {
+      await ownerOnly.close();
+      await wallet.close();
+      await fixture.close();
+    }
+  }, 60_000);
+
   it("approves once and executes an allowed call on an existing Kernel v4 account", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });

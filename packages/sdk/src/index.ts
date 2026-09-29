@@ -12,6 +12,7 @@
 export type { ValidationGasDiagnostic } from "@oaath/protocol";
 export type { OaathCallsReviewContract } from "./client/calls-review.js";
 export { OAATH_CALLS_REVIEW_VERSION, parseOaathCallsReview } from "./client/calls-review.js";
+export type { OaathChainDescriptor } from "./client/chain-descriptors.js";
 export type {
   OaathConnectedEoaFallbackReview,
   OaathConnectedEoaPayer,

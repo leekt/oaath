@@ -24,6 +24,7 @@ import {
   OAATH_CALLS_REVIEW_VERSION,
   type OaathCallsReviewContract,
 } from "./calls-review.js";
+import type { OaathChains } from "./chain-descriptors.js";
 import {
   captureConnectedEoa,
   connectedEoaReview,
@@ -55,7 +56,8 @@ interface OwnerChain extends OaathChainCapability {
  * exists; the connected wallet signs each operation.
  */
 export interface OaathOwnerOptions {
-  readonly chains: readonly Readonly<OwnerChain>[];
+  /** Plain descriptors build the default viem ports; custom capabilities override them. */
+  readonly chains: OaathChains<OwnerChain>;
   /** When set, `account(address)` refuses every other address. */
   readonly account?: `0x${string}`;
   /** Omitted: owner-only execution. */

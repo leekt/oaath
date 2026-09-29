@@ -67,9 +67,9 @@ needs no issuer, relay, Grant, or enable approval:
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
-import { createViemChainPorts } from "@oaath/sdk/viem";
 
-const chains = createViemChainPorts({ 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } });
+// Plain descriptors: createOAAth builds the default viem chain ports.
+const chains = { 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } };
 const oaath = createOAAth({ chains, account: existingKernelAddress });
 const account = oaath.account(existingKernelAddress);
 const owner = account.owner(walletClient);
@@ -307,8 +307,11 @@ approval are not supported yet.
 
 ## Chain ports
 
-For Kernel v4 or v3.3 Grant execution, build the `chains` property of a custom
-`createOAAth` configuration from RPC URLs:
+`createOAAth` builds these default ports from plain `chains` descriptors
+(`OaathChainDescriptor`) with the default request budget. To set the budget,
+retries, or `fetch`, or to reuse the ports elsewhere, build them explicitly and
+pass the array as `chains`; any `OaathChainCapability[]` is accepted the same
+way as a custom override:
 
 ```ts
 import { createViemChainPorts } from "@oaath/sdk/viem";

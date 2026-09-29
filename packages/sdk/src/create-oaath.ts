@@ -42,6 +42,7 @@ import {
   type OaathBinding,
   type OaathBindingInput,
 } from "./client/binding.js";
+import { withDefaultChainPorts } from "./client/chain-descriptors.js";
 import {
   captureAuthorizationCapability,
   captureIssuerCapability,
@@ -255,6 +256,7 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * One constructor. The approval source is an optional setting:
  *
  * ```ts
+ * const chains = { 143: { publicRpcUrls: [rpcUrl], bundlerUrl } };         // default viem ports
  * createOAAth({ chains, account });                                        // owner-only execution
  * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });  // wallet-approved Grants
  * createOAAth({ approvals: { kind: "service", url } });                    // service-approved Grants
@@ -271,13 +273,14 @@ export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletAp
 export function createOAAth(options: OaathServiceOptions): Readonly<Oaath>;
 export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
 export function createOAAth(configuration: OaathConfiguration): Readonly<Oaath>;
-export function createOAAth(configuration: unknown): Readonly<Oaath | OaathOwnerClient> {
+export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> {
   const record = captureRecord(
-    configuration,
+    value,
     "OAAth configuration",
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
+  const configuration = withDefaultChainPorts(value, record);
   if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
   if (record.approvals === undefined) return createOwnerRealm(configuration);
   const approvals = captureRecord(
