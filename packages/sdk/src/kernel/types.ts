@@ -8,15 +8,14 @@
  */
 import type {
   KernelV4AccountDescriptor,
-  KernelV4AccountReadCapability,
   KernelV4Call,
-  KernelV4Deployment,
   KernelV4Install,
   KernelV4UserOperationGas,
   KernelV4Validation,
   KernelV4ValidityTimeRange,
 } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
+import type { KernelAccountDescriptor, KernelReads } from "./deployment/account.js";
 import type { KernelDeployment } from "./deployment/profile.js";
 import type {
   KernelV33AccountDescriptor,
@@ -34,6 +33,8 @@ export type KernelRuntimeErrorCode =
   | "kernel_runtime_signing_failed"
   | "kernel_runtime_signature_invalid"
   | "kernel_runtime_binding_mismatch"
+  /** An explicit deployment disagrees with the account's own onchain deployment. */
+  | "kernel_runtime_deployment_mismatch"
   /** The input's own version is valid but this stage does not implement it. */
   | "kernel_runtime_unsupported";
 
@@ -230,6 +231,11 @@ export type KernelRuntimeValidationMode = "standard" | "enable-replayable";
  */
 export const KERNEL_MAX_OPERATION_LANE_KEY = 0xffff;
 
+/** An account the runtime binds at its existing address; its deployment must match. */
+export interface KernelRuntimeExistingAccountInput {
+  readonly address: `0x${string}`;
+}
+
 export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> {
   readonly kind: "execution" | "revocation";
   readonly grantId: string;
@@ -255,14 +261,15 @@ export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> 
 
 export interface CreateKernelRuntimeInput {
   readonly gas?: Readonly<KernelGasPolicy>;
-  readonly deployment: Readonly<KernelV4Deployment>;
+  /** From `kernelDeployment` or a bound account; the runtime never switches it. */
+  readonly deployment: Readonly<KernelDeployment>;
   readonly operator: Readonly<OperatorProfile>;
-  readonly reads: KernelV4AccountReadCapability;
+  readonly reads: KernelReads;
 }
 
 export interface KernelRuntime {
   readonly gasPolicy: Readonly<KernelGasPolicy>;
-  readonly deployment: Readonly<KernelV4Deployment>;
+  readonly deployment: Readonly<KernelDeployment>;
   readonly authority: KernelOperatorAuthority;
   readonly keyKind: KernelKeyKind;
   /** Validator module for root authority, permission signer module for a session. */
@@ -271,10 +278,16 @@ export interface KernelRuntime {
   /** ERC-7579 packages this operator installs, in Kernel install order. */
   readonly packages: readonly Readonly<KernelV4Install>[];
   readonly dummySignature: `0x${string}`;
-  readonly bindAccount: (
-    input: KernelRuntimeBindAccountInput,
-  ) => Promise<Readonly<KernelV4AccountDescriptor>>;
-  readonly prepareOperation: (input: KernelRuntimePrepareInput) => PreparedUserOperation;
+  /**
+   * Binds an account derived from initial packages (Kernel `0.4.0` only) or an
+   * existing account by address. An account of another deployment fails with
+   * `kernel_runtime_deployment_mismatch`.
+   */
+  bindAccount(input: KernelRuntimeBindAccountInput): Promise<Readonly<KernelV4AccountDescriptor>>;
+  bindAccount(input: KernelRuntimeExistingAccountInput): Promise<Readonly<KernelAccountDescriptor>>;
+  prepareOperation(
+    input: KernelRuntimePrepareInput<KernelAccountDescriptor> | KernelV33RuntimePrepareInput,
+  ): PreparedUserOperation;
   /**
    * This authority's signature over one prepared operation. For an
    * `enable-replayable` operation it is the inner UserOperation signature only:

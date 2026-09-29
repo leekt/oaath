@@ -27,7 +27,7 @@ import { readKernelV33PermissionState } from "../permission/v33-revocation.js";
 // Contract ABI: zerodevapp/kernel v3.3, cd697c7e21715d015e0643af22310a99aa17433b.
 const IMPLEMENTATION = "0xd6cedde84be40893d153be9d467cd6ad37875b28" as const;
 const FACTORY = "0x2577507b78c2008ff367261cb6285d44ba5ef2e9" as const;
-const ECDSA_VALIDATOR = "0x845adb2c711129d4f3966735ed98a9f09fc4ce57" as const;
+export const ECDSA_VALIDATOR = "0x845adb2c711129d4f3966735ed98a9f09fc4ce57" as const;
 const ABI = parseAbi([
   "function accountId() view returns (string)",
   "function entrypoint() view returns (address)",
@@ -94,8 +94,7 @@ export interface KernelV33Reads {
   readonly read: (request: KernelV33ReadRequest) => Promise<unknown>;
 }
 
-export interface BindKernelAccountInput {
-  readonly version: "0.3.3";
+export interface BindKernelV33AccountInput {
   readonly chainId: number;
   readonly address: `0x${string}`;
   readonly reads: KernelV33Reads;
@@ -132,18 +131,16 @@ export function provenKernelV33Account(value: unknown): Readonly<KernelV33Accoun
  * account, change its owner, or authorize an operation. Unavailable evidence
  * never triggers deployment, a retry, or a switch to another Kernel version.
  */
-export async function bindKernelAccount(
-  value: BindKernelAccountInput,
+export async function bindKernelV33Account(
+  value: BindKernelV33AccountInput,
 ): Promise<Readonly<KernelV33AccountDescriptor>> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(
     value,
-    ["version", "chainId", "address", "reads"],
+    ["chainId", "address", "reads"],
     "Kernel existing account",
     context,
   );
-  if (record.version !== "0.3.3")
-    return inputInvalid("Kernel existing account version is unsupported");
   const deployment = kernelV33Deployment(record.chainId);
   const account = inputAddress(record.address, "Kernel existing account address");
   const read = inputCapability<KernelV33Reads["read"]>(

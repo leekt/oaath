@@ -18,20 +18,14 @@ import type {
   OaathRegisteredPaymasterService,
   OaathUsageRequest,
 } from "../client/grant-handle.js";
-import {
-  createKernelV33Reads,
-  type KernelV33ReadRequest,
-  type KernelV33Reads,
-} from "../kernel/deployment/v33.js";
+import { createKernelReads, type KernelReads } from "../kernel/deployment/account.js";
 import { encodeKernelV33NonceKey } from "../kernel/deployment/v33-operation.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { resolvePolicyModule } from "../kernel/modules.js";
 import { readKernelV33PermissionState } from "../kernel/permission/v33-revocation.js";
 import {
-  createKernelV4Reads,
   encodeKernelV4InstallNonceRead,
   encodeKernelV4NonceKey,
-  type KernelV4AccountReadRequest,
   type KernelV4ReadClient,
 } from "../kernel-v4.js";
 import type { OperationObserverReadRequest } from "../operation-observer.js";
@@ -64,7 +58,7 @@ export interface ViemChainPortConfiguration {
 }
 
 export interface ViemChainCapability extends OaathChainCapability {
-  readonly reads: OaathChainCapability["reads"] & KernelV33Reads;
+  readonly reads: KernelReads;
 }
 
 const PUBLIC_METHODS = [
@@ -479,23 +473,7 @@ export function createViemChainPorts(
           data: hex(await publicRpc("eth_call", [{ to, data }, "latest"])),
         }),
       };
-      const v4Reads = createKernelV4Reads(readClient);
-      const v33Reads = createKernelV33Reads(readClient);
-      const reads = Object.freeze({
-        read(request: KernelV4AccountReadRequest | KernelV33ReadRequest): Promise<unknown> {
-          switch (request.type) {
-            case "kernel_account_version":
-            case "kernel_account_entrypoint":
-            case "kernel_account_root_validator":
-            case "kernel_ecdsa_owner":
-            case "kernel_v33_permission_nonce":
-            case "kernel_v33_permission_state":
-              return v33Reads.read(request);
-            default:
-              return v4Reads.read(request as KernelV4AccountReadRequest);
-          }
-        },
-      });
+      const reads = createKernelReads(readClient);
       const observation = observer(publicRpc, bundler);
 
       async function estimate(

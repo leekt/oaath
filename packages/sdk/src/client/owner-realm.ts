@@ -1,7 +1,12 @@
 /** Owner-only existing-account execution. The Operation journal remains the lifecycle owner. */
 import { captureDenseArray, captureRecord } from "@oaath/protocol";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
-import { type KernelV33Reads, kernelV33Deployment } from "../kernel/deployment/v33.js";
+import {
+  detectKernelAccountDeployment,
+  type KernelReads,
+  type KernelVersion,
+} from "../kernel/deployment/account.js";
+import { ECDSA_VALIDATOR } from "../kernel/deployment/v33.js";
 import { type EcdsaWalletClient, ecdsaWalletKey } from "../kernel/key/ecdsa.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import { createOperationObserver, type OperationObserver } from "../operation-observer.js";
@@ -42,7 +47,7 @@ import {
 import { capturePaymasterService, capturePlainCalls } from "./sponsorship.js";
 
 interface OwnerChain extends OaathChainCapability {
-  readonly reads: OaathChainCapability["reads"] & KernelV33Reads;
+  readonly reads: KernelReads;
 }
 export interface OaathOwnerConfiguration {
   readonly mode: "owner";
@@ -64,7 +69,8 @@ export interface OaathOwnerCallsReview {
   readonly paymasterService: Readonly<{ url: string }> | null;
   readonly chainId: number;
   readonly account: `0x${string}`;
-  readonly kernelVersion: "0.3.3";
+  /** Detected from the account onchain; never a caller setting. */
+  readonly kernelVersion: KernelVersion;
   readonly calls: readonly Readonly<OaathCallInput>[];
   readonly signer: "owner";
   readonly route: "bundler";
@@ -81,7 +87,10 @@ export interface OaathOwnerAccount {
   readonly getOperation: (input: unknown) => Promise<Readonly<OaathOperationHandle> | null>;
 }
 export interface OaathOwnerClient {
-  /** Existing ECDSA-root Kernel v3.3 only; binding checks the version on each send. */
+  /**
+   * An existing ECDSA-root Kernel account of any supported version. Each send
+   * detects and proves the account's deployment and root owner onchain.
+   */
   readonly account: (address: `0x${string}`) => Readonly<OaathOwnerAccount>;
   readonly close: () => Promise<void>;
 }
@@ -235,7 +244,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
     assertOpen();
     const address = routingAddress(addressValue, "owner account", fail);
     // This is an operation lane label only. No Grant or permission is created.
-    const contextId = `owner:kernel:0.3.3:${address}`;
+    const contextId = `owner:kernel:${address}`;
     const keyFor = (chainId: number) =>
       Object.freeze({ grantId: contextId, chainId, kind: "execution" as const });
     return Object.freeze({
@@ -244,7 +253,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
         assertOpen();
         const key = (() => {
           try {
-            return ecdsaWalletKey({ wallet, validator: kernelV33Deployment(1).ecdsaValidator });
+            return ecdsaWalletKey({ wallet, validator: ECDSA_VALIDATOR });
           } catch (error) {
             return mapClientFailure(error, "owner wallet could not be captured");
           }
@@ -261,8 +270,14 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
           const sponsorship = Object.hasOwn(request, "paymasterService")
             ? capturePaymasterService(request.paymasterService, chain.paymasterService, context)
             : null;
+          const deployment = await detectKernelAccountDeployment({
+            chainId: chain.chainId,
+            address,
+            reads: chain.reads,
+          });
+          assertOpen();
           const runtime = createKernelRuntime({
-            deployment: kernelV33Deployment(chain.chainId),
+            deployment,
             operator: ownerOperator({ key }),
             reads: chain.reads,
             ...(chain.gas === undefined ? {} : { gas: chain.gas }),
@@ -351,7 +366,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 chainId: resolved.chain.chainId,
                 fallback: connectedEoaReview(resolved.feePayer),
                 account: address,
-                kernelVersion: "0.3.3" as const,
+                kernelVersion: resolved.runtime.deployment.kernelVersion,
                 calls: resolved.calls,
                 signer: "owner" as const,
                 route: "bundler" as const,

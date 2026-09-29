@@ -61,8 +61,10 @@ canonical block. A successful operation receipt alone does not prove removal.
 
 ## Owner operations
 
-For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
-connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:
+For an existing ECDSA-root Kernel account, execute calls directly with a
+connected viem wallet. The account's Kernel version (`0.3.3` or `0.4.0`) is
+detected onchain on each send and reported as `review.kernelVersion`; no
+version is configured. This mode needs no issuer, relay, Grant, or enable approval:
 
 ```ts
 import { createOAAth } from "@oaath/sdk";
@@ -88,7 +90,8 @@ one account/chain slot. Concurrent sends and sends after reload fail with a stat
 conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
 The account stays at its existing address. Each send checks its implementation,
-EntryPoint, root validator and current ECDSA owner. Owner mode currently uses the
+EntryPoint, root validator and current ECDSA owner. The root validator must be
+the reviewed ECDSA validator, whose owner is readable onchain. Owner mode currently uses the
 bundler route by default. Applications can explicitly estimate a session before
 selecting owner execution, as described below; OAAth never silently changes the
 signer of an operation.
@@ -184,17 +187,17 @@ The same owner operation is available through the lower-level runtime:
 
 ```ts
 import {
-  createKernelRuntime, createKernelV33Reads, kernelKey,
-  kernelV33Deployment, ownerOperator,
+  bindKernelAccount, createKernelReads, createKernelRuntime, kernelAccountDeployment,
+  kernelKey, ownerOperator,
 } from "@oaath/sdk/kernel";
 
-const deployment = kernelV33Deployment(chainId);
+const reads = createKernelReads(publicClient);
+// Detects the account's Kernel and EntryPoint versions onchain.
+const existing = await bindKernelAccount({ chainId, address: existingKernelAddress, reads });
 const runtime = createKernelRuntime({
-  deployment,
-  operator: ownerOperator({
-    key: kernelKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
-  }),
-  reads: createKernelV33Reads(publicClient),
+  deployment: kernelAccountDeployment(existing),
+  operator: ownerOperator({ key: kernelKey({ wallet: walletClient, validator: ecdsaValidator }) }),
+  reads,
 });
 const account = await runtime.bindAccount({ address: existingKernelAddress });
 const prepared = runtime.prepareOperation({
@@ -207,8 +210,11 @@ const signature = await runtime.signOperation(prepared);
 `walletClient` is a connected viem wallet client with an account. A `wallet` key
 requests one `personal_sign` signature over the exact 32-byte operation digest
 and verifies the EIP-191 signature against that captured account locally. It
-does not request accounts or retry a rejected signature. The validator must
-support EIP-191, as the canonical Kernel v3.3 ECDSA validator does. Local accounts
+does not request accounts or retry a rejected signature. `ecdsaValidator` is
+the account's root ECDSA validator module; it must support EIP-191, as the
+reviewed ECDSA validator does. Passing `deployment` to `bindKernelAccount`, or
+composing the runtime over another deployment, makes a mismatching account fail
+with `kernel_runtime_deployment_mismatch` before anything is signed. Local accounts
 using raw-hash signing can pass `kernelKey({ account, validator })` instead.
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation

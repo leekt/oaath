@@ -17,16 +17,34 @@ export type {
 } from "./kernel/capabilities.js";
 export { diagnoseKernelCapability } from "./kernel/capabilities.js";
 export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
+export type {
+  BindDerivedKernelAccountInput,
+  BindExistingKernelAccountInput,
+  BindKernelAccountInput,
+  KernelAccountDescriptor,
+  KernelDeploymentInput,
+  KernelEntryPointVersion,
+  KernelReadClient,
+  KernelReadRequest,
+  KernelReads,
+  KernelVersion,
+  PrepareKernelUserOperationInput,
+} from "./kernel/deployment/account.js";
+export {
+  bindKernelAccount,
+  createKernelReads,
+  kernelAccountDeployment,
+  kernelDeployment,
+  prepareKernelUserOperation,
+} from "./kernel/deployment/account.js";
 export type { KernelDeployment } from "./kernel/deployment/profile.js";
 export type {
-  BindKernelAccountInput,
   KernelV33AccountDescriptor,
   KernelV33Deployment,
   KernelV33ReadRequest,
   KernelV33Reads,
 } from "./kernel/deployment/v33.js";
 export {
-  bindKernelAccount,
   createKernelV33Reads,
   kernelV33Deployment,
 } from "./kernel/deployment/v33.js";
@@ -148,6 +166,7 @@ export type {
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,
+  KernelRuntimeExistingAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
   KernelV33Runtime,
