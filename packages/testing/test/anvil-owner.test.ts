@@ -1,4 +1,12 @@
+import {
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
+} from "@oaath/sdk/kernel";
+import { createPublicClient, http, keccak256 } from "viem";
 import { describe, expect, it } from "vitest";
+import deployments from "../../sdk/test/fixtures/kernel-v4-v0.7-deployments.json" with {
+  type: "json",
+};
 import { createLocalOwnerAnvilFixture } from "../src/anvil-owner.js";
 
 (process.env.OAATH_REQUIRE_ANVIL === "1" ? describe : describe.skip)(
@@ -9,6 +17,20 @@ import { createLocalOwnerAnvilFixture } from "../src/anvil-owner.js";
       async (wallet) => {
         const fixture = await createLocalOwnerAnvilFixture({ wallet, bundler: "reject" });
         try {
+          const publicClient = createPublicClient({
+            transport: http(fixture.rpcUrl, { retryCount: 0 }),
+          });
+          for (const [address, expectedHash] of [
+            [
+              deployments.webAuthnSigner.expectedAddress,
+              deployments.webAuthnSigner.runtimeCodeHash,
+            ],
+            [OAATH_KERNEL_RATE_LIMIT_POLICY, OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH],
+          ] as const) {
+            const code = await publicClient.getCode({ address: address as `0x${string}` });
+            expect(code).toBeDefined();
+            expect(keccak256(code!)).toBe(expectedHash);
+          }
           const client = await fixture.openClient();
           const account = client.account(fixture.address);
           const request = {

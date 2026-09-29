@@ -29,6 +29,11 @@ origins, non-POST requests and calls after `close()`; it does not start a server
 Signature, submission and RPC counters cover these calls too. Do not retain
 request payloads, signatures, approval data or browser profiles as evidence.
 
+The local stack also deploys the pinned WebAuthn signer and resetting rate-limit
+policy so consumers can install and revoke their real passkey approval packages.
+These are actual CREATE2 deployments; the fixture never substitutes module code
+or permission storage. Authenticator interaction remains the consumer's test.
+
 With `stateDirectory`, the SDK writes its direct Grant, Operation and client
 context to `client.sqlite`. The returned `recovery` descriptor contains only
 public identities and loopback endpoints. After client process loss, pass it
