@@ -196,6 +196,13 @@ export async function startAnvil(
       "--accounts",
       "0",
       ...(slotsInEpoch === undefined ? [] : ["--slots-in-an-epoch", slotsInEpoch.toString(10)]),
+      // Anvil derives its clock offset from a genesis timestamp it reads before
+      // its clock starts; a second boundary between the two reads leaves every
+      // block a second behind wall time, so a wall-clock validAfter (AA22) is
+      // not yet due. An explicit genesis one second ahead keeps chain time at or
+      // ahead of wall time unless startup itself takes over a second.
+      "--timestamp",
+      String(Math.floor(Date.now() / 1000) + 1),
       "--silent",
     ],
     { env: scrubLiveProviderEnvironment(process.env), stdio: "ignore" },
