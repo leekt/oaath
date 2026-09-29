@@ -307,6 +307,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
               kind: "execution",
               signer: "owner",
               account: address,
+              nonceKey: "0",
               mode: "standard",
               validation: runtime.validation,
               calls,

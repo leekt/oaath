@@ -186,8 +186,14 @@ await oaath.disconnect(grant); // revoke, signOut, forgetLocal, close
 
 `sendCalls` starts a new operation. One unresolved operation occupies each
 grant/chain lane; another send returns `oaath_client_state_conflict`.
+Independent jobs can reserve their own lane with
+`sendCalls({ chain, calls, lane: { id: "run_01", nonceKey: 17n } })`. OAAth
+never allocates lanes. The key must be one the runtime can represent (Kernel:
+1 to 65535), and a lane is refused until the default lane has installed the
+permission on that chain. `revoke()` does not complete while any lane has an
+unresolved operation.
 After reload, resume the grant and call `grant.getOperation({ chain, id })`
-with the saved reference. Its `observe()` and `wait()` methods submit nothing
+with the saved reference, adding the same `lane` for a laned operation. Its `observe()` and `wait()` methods submit nothing
 and remain available after grant expiry or revocation. A missing local record
 returns `null`; it is not evidence that the operation was never submitted.
 

@@ -749,11 +749,11 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
         };
       },
     }),
-    async quote(request: { readonly chainId: number }) {
+    async quote(request: { readonly chainId: number; readonly nonceKey: string }) {
       fixture.quotes += 1;
       if (request.chainId !== chainId) throw new Error("unexpected quote chain");
       return {
-        nonceKey: "0",
+        nonceKey: request.nonceKey,
         // The account's next sequence, as a chain read would report it.
         sequence: String((options.startSequence ?? 0) + sends.length),
         gas: {

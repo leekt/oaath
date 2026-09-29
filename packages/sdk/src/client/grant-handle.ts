@@ -44,9 +44,12 @@ import {
   OAATH_ISSUER_VERSION,
   type OperationIdentity,
   type OperationKind,
+  type OperationLane,
+  operationOccupiesLane,
   type PermissionRequest,
   parseIssuerIdentity,
   parseOperationIdentity,
+  parseOperationLane,
 } from "@oaath/protocol";
 import { publicKeyToAddress } from "viem/accounts";
 import {
@@ -74,7 +77,12 @@ import {
   kernelV33PermissionStatus,
   parseKernelV33PermissionState,
 } from "../kernel/permission/v33-revocation.js";
-import type { KernelRuntime, KernelRuntimeValidationMode, KeyProfile } from "../kernel/types.js";
+import {
+  KERNEL_MAX_OPERATION_LANE_KEY,
+  type KernelRuntime,
+  type KernelRuntimeValidationMode,
+  type KeyProfile,
+} from "../kernel/types.js";
 import {
   encodeKernelV4PermissionUninstallCalls,
   type KernelV4AccountReadRequest,
@@ -251,6 +259,20 @@ export interface OaathCallInput {
   readonly data: `0x${string}`;
 }
 
+/**
+ * One explicit, caller-reserved operation lane. Lanes are never allocated for
+ * the caller; omit `lane` for the one default lane per Grant and chain.
+ */
+export interface OaathOperationLane {
+  /** The caller's label for the run on this lane; `getOperation` must name it. */
+  readonly id: string;
+  /**
+   * The caller-reserved sequence key. The runtime maps it to its own nonce
+   * namespace and rejects a key it cannot represent (Kernel: 1 to 65535).
+   */
+  readonly nonceKey: bigint;
+}
+
 export interface OaathSendCallsInput {
   /** Explicitly prefer available owner authority for this one atomic UserOperation. */
   readonly signer?: "session" | "auto";
@@ -258,9 +280,15 @@ export interface OaathSendCallsInput {
   readonly paymasterService?: Readonly<OaathPaymasterServiceInput>;
   readonly chain: number;
   readonly calls: readonly Readonly<OaathCallInput>[];
+  /**
+   * An independent session sequence for this Grant and chain. It keeps its
+   * own journal and its own one-unresolved-operation rule, and requires the
+   * permission to be installed on the chain already.
+   */
+  readonly lane?: Readonly<OaathOperationLane>;
 }
 
-export interface OaathReviewCallsInput extends OaathSendCallsInput {
+export interface OaathReviewCallsInput extends Omit<OaathSendCallsInput, "lane"> {
   /** Estimate the session operation without publishing, signing or submitting. */
   readonly estimate?: boolean;
 }
@@ -269,6 +297,8 @@ export interface OaathGetOperationInput {
   readonly chain: number;
   /** The stable ID returned by an operation handle. */
   readonly id: `0x${string}`;
+  /** The exact lane the operation was sent on; omit for the default lane. */
+  readonly lane?: Readonly<OaathOperationLane>;
 }
 
 /** OAAth's explicit experimental ERC-7836 external-key profile. */
@@ -346,6 +376,11 @@ export interface OaathQuoteRequest {
   readonly kind: OperationKind;
   readonly signer: OaathExecutionSigner;
   readonly account: `0x${string}`;
+  /**
+   * The lane's nonce namespace, `"0"` for the default lane. Quote exactly this
+   * namespace and return it unchanged; any other key is refused.
+   */
+  readonly nonceKey: string;
   /** Selected by the runtime before quoting; neither field is a quote result. */
   readonly mode: KernelRuntimeValidationMode;
   readonly validation: KernelRuntime["validation"];
@@ -449,7 +484,7 @@ export interface OaathGrantHandle {
   readonly account: (chain: unknown) => Promise<`0x${string}`>;
   /** Read-only execution facts; does not reserve a nonce, authorize, sign, or submit. */
   readonly reviewCalls: (input: unknown) => Promise<Readonly<OaathCallsReview>>;
-  /** Starts new calls; an unresolved operation on this chain is a state conflict. */
+  /** Starts new calls; an unresolved operation on the same chain lane is a state conflict. */
   readonly sendCalls: (input: unknown) => Promise<Readonly<OaathOperationHandle>>;
   /**
    * Recovers an exact execution from this Grant's local history, even after
@@ -1348,6 +1383,7 @@ export function createGrantHandle(
     calls: readonly Readonly<KernelV4Call>[],
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
+    requireInstalled = false,
   ): Promise<Readonly<ExecutionShape>> {
     const { grantSnapshot, chain, runtime, descriptor, decision } = await resolveExecutionRead(
       chainId,
@@ -1386,6 +1422,15 @@ export function createGrantHandle(
       publicationGrant = publicationSnapshot.value;
       materialization = publicationGrant.materializations.find(
         (entry) => entry.chainId === chainId && entry.state !== "unsupported",
+      );
+    }
+    // Only the default lane may enable on first use, so two lanes can never
+    // race the install: an explicit lane waits for observed installation.
+    if (requireInstalled && materialization?.state !== "installed") {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "an explicit lane requires the permission to be installed on this chain",
+        "operation_lane_permission_not_installed",
       );
     }
     let mode: "standard" | "enable-replayable" = "standard";
@@ -1468,17 +1513,19 @@ export function createGrantHandle(
       mode: "standard" | "enable-replayable";
       calls: readonly Readonly<KernelV4Call>[];
       validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+      lane?: Readonly<OperationLane>;
     }>,
     paymaster: Readonly<PreparedPaymaster> | null,
     purpose: OaathQuoteRequest["purpose"],
     retainedGas?: Readonly<KernelV4UserOperationGas>,
   ): Readonly<OaathQuoteRequest> {
     const execution = spec.materializer ?? spec.runtime;
+    const nonceKey = String(spec.lane?.key ?? 0);
     const prepared = execution.prepareOperation({
       kind: spec.kind,
       grantId: spec.grantId,
       account: spec.descriptor,
-      nonceKey: "0",
+      nonceKey,
       sequence: "0",
       calls: [...spec.calls],
       gas: retainedGas ?? {
@@ -1499,12 +1546,29 @@ export function createGrantHandle(
       kind: spec.kind,
       signer: spec.signer,
       account: spec.descriptor.account,
+      nonceKey,
       mode: spec.mode,
       validation: spec.runtime.validation,
       calls: spec.calls,
       paymaster,
       simulation: Object.freeze({ prepared, signature: execution.dummySignature }),
     });
+  }
+
+  /** A quote for any other nonce namespace would sequence the operation on another lane. */
+  async function laneQuote(
+    chain: Readonly<OaathChainCapability>,
+    request: Readonly<OaathQuoteRequest>,
+  ): Promise<ReturnType<typeof quoteFields>> {
+    const quote = quoteFields(await chain.quote(request));
+    if (quote.nonceKey !== request.nonceKey) {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "operation quote names another nonce namespace",
+        "quote_nonce_key_mismatch",
+      );
+    }
+    return quote;
   }
 
   async function prepareExecutionShape(
@@ -1521,18 +1585,17 @@ export function createGrantHandle(
     }>
   > {
     const paymaster = options.paymaster?.kind === "retained" ? options.paymaster.paymaster : null;
-    const quote = quoteFields(
-      await shape.chain.quote(
-        quoteRequest(
-          { ...shape, kind: "execution", signer: "session" },
-          paymaster,
-          options.gas !== undefined
-            ? "revalidate"
-            : options.paymaster?.kind === "resolve-erc7677"
-              ? "sponsorship"
-              : "estimate",
-          options.gas,
-        ),
+    const quote = await laneQuote(
+      shape.chain,
+      quoteRequest(
+        { ...shape, kind: "execution", signer: "session" },
+        paymaster,
+        options.gas !== undefined
+          ? "revalidate"
+          : options.paymaster?.kind === "resolve-erc7677"
+            ? "sponsorship"
+            : "estimate",
+        options.gas,
       ),
     );
     const fields = {
@@ -1606,6 +1669,8 @@ export function createGrantHandle(
     readonly grantId: string;
     readonly requestHash: `0x${string}` | null;
     readonly validityTimeRange?: Readonly<KernelV4ValidityTimeRange>;
+    /** The explicit caller lane; absent for the default lane. */
+    readonly lane?: Readonly<OperationLane>;
     readonly publication?: Readonly<OaathProviderOperationPublication>;
     readonly authorizeOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
     readonly abandonOperation?: (operation: OaathProviderOperationPointer) => Promise<void>;
@@ -1632,6 +1697,7 @@ export function createGrantHandle(
       return createOperationRunner({
         terminalBehavior: spec.terminalBehavior,
         requestHash: spec.requestHash,
+        ...(spec.lane === undefined ? {} : { lane: spec.lane }),
         // A scoped store and facades: the realm owns the adapter, the observer,
         // and the caller's transports, so closing one runner never disables
         // another that still has work.
@@ -1643,13 +1709,12 @@ export function createGrantHandle(
         preparation: {
           prepare: async () => {
             if (spec.prepared !== undefined) return spec.prepared;
-            const quote = quoteFields(
-              await chain.quote(
-                quoteRequest(
-                  spec,
-                  spec.staticPaymaster ?? null,
-                  spec.sponsorship === undefined ? "estimate" : "sponsorship",
-                ),
+            const quote = await laneQuote(
+              chain,
+              quoteRequest(
+                spec,
+                spec.staticPaymaster ?? null,
+                spec.sponsorship === undefined ? "estimate" : "sponsorship",
               ),
             );
             const fields = {
@@ -2487,6 +2552,45 @@ export function createGrantHandle(
     await commit(snapshot, grant);
   }
 
+  function executionKey(
+    grantId: string,
+    chainId: number,
+    lane: Readonly<OperationLane> | null,
+  ): Readonly<OperationStoreKey> {
+    return Object.freeze({
+      grantId,
+      chainId,
+      kind: "execution" as const,
+      ...(lane === null ? {} : { lane: lane.key }),
+    });
+  }
+
+  /** Captures one caller lane exactly; the runtime owns the representable key range. */
+  function captureLane(value: unknown): Readonly<OperationLane> {
+    const record = exactClientRecord(value, ["id", "nonceKey"], "operation lane", new WeakSet());
+    const nonceKey = record.nonceKey;
+    if (
+      typeof nonceKey !== "bigint" ||
+      nonceKey < 1n ||
+      nonceKey > BigInt(KERNEL_MAX_OPERATION_LANE_KEY)
+    ) {
+      return clientFail(
+        "oaath_client_input_invalid",
+        "operation lane key is outside the runtime's nonce namespace",
+        "operation_lane_key_unsupported",
+      );
+    }
+    try {
+      return parseOperationLane({ id: record.id, key: Number(nonceKey) });
+    } catch {
+      return clientFail(
+        "oaath_client_input_invalid",
+        "operation lane id is invalid",
+        "operation_lane_id_invalid",
+      );
+    }
+  }
+
   async function executeCalls(
     value: unknown,
     requestHash: `0x${string}` | null,
@@ -2502,6 +2606,7 @@ export function createGrantHandle(
     validityAdmission: Readonly<ValidityAdmissionEvidence> | null = null,
     executionRouteAdmission: Readonly<ExecutionRouteAdmissionEvidence> | null = null,
     connectedFeePayer: Readonly<ConnectedEoa> | null = null,
+    lane: Readonly<OperationLane> | null = null,
   ): Promise<Readonly<OaathOperationHandle>> {
     const context: CaptureContext = new WeakSet();
     const request = exactClientRecord(value, ["chain", "calls"], "sendCalls input", context);
@@ -2515,6 +2620,7 @@ export function createGrantHandle(
       calls,
       validityAdmission,
       executionRouteAdmission,
+      lane !== null,
     );
     if (paymaster !== null && resolved.decision.route !== "bundler") {
       return clientFail(
@@ -2528,11 +2634,7 @@ export function createGrantHandle(
         "oaath_client_capability_unsupported",
         "connected fee payer requires the initial bundler route",
       );
-    const key = Object.freeze({
-      grantId: resolved.grantId,
-      chainId,
-      kind: "execution" as const,
-    });
+    const key = executionKey(resolved.grantId, chainId, lane);
 
     const shape = {
       chainId,
@@ -2549,6 +2651,7 @@ export function createGrantHandle(
       ...(resolved.validityTimeRange === undefined
         ? {}
         : { validityTimeRange: resolved.validityTimeRange }),
+      ...(lane === null ? {} : { lane }),
       authorizeOperation: (operation: OaathProviderOperationPointer) =>
         authorizeExecutionOperation(resolved.binding, resolved.mode, operation),
       abandonOperation: (operation: OaathProviderOperationPointer) =>
@@ -3059,7 +3162,8 @@ export function createGrantHandle(
   function sendCalls(value: unknown): Promise<Readonly<OaathOperationHandle>> {
     return withExecution(() => {
       const context: CaptureContext = new WeakSet();
-      const request = capturePlainCalls(value, context, true);
+      const request = capturePlainCalls(value, context, true, false, true);
+      const lane = Object.hasOwn(request, "lane") ? captureLane(request.lane) : null;
       const connectedFeePayer = Object.hasOwn(request, "feePayer")
         ? captureConnectedEoa(request.feePayer, context)
         : null;
@@ -3091,6 +3195,7 @@ export function createGrantHandle(
         null,
         null,
         connectedFeePayer,
+        lane,
       );
     });
   }
@@ -3280,12 +3385,16 @@ export function createGrantHandle(
 
   function getOperation(value: unknown): Promise<Readonly<OaathOperationHandle> | null> {
     return withActivity(async () => {
-      const request = exactClientRecord(
-        value,
-        ["chain", "id"],
-        "getOperation input",
-        new WeakSet(),
+      const captured = captureRecord(value, "getOperation input", new WeakSet(), (message) =>
+        clientFail("oaath_client_input_invalid", message),
       );
+      const request = exactCapturedRecord(
+        captured,
+        Object.hasOwn(captured, "lane") ? ["chain", "id", "lane"] : ["chain", "id"],
+        "getOperation input",
+        (message) => clientFail("oaath_client_input_invalid", message),
+      );
+      const lane = Object.hasOwn(request, "lane") ? captureLane(request.lane) : null;
       const chainId = request.chain;
       const id = request.id;
       if (
@@ -3298,13 +3407,11 @@ export function createGrantHandle(
         return clientFail("oaath_client_input_invalid", "getOperation reference is invalid");
       }
       chainCapability(chainId);
-      const key = Object.freeze({
-        grantId: record.value.identity.grantId,
-        chainId,
-        kind: "execution" as const,
-      });
+      const key = executionKey(record.value.identity.grantId, chainId, lane);
       const operation = await exactOperation(key, id as `0x${string}`);
-      return operation === undefined ? null : observationHandle(key, operation);
+      // The lane label scopes the lookup: another run on the same key is not a match.
+      if (operation === undefined || operation.value.lane?.id !== lane?.id) return null;
+      return observationHandle(key, operation);
     });
   }
 
@@ -4089,6 +4196,18 @@ export function createGrantHandle(
     );
   }
 
+  async function executionLaneUnresolved(grantId: string, chainId: number): Promise<boolean> {
+    const journal = operationStore();
+    try {
+      const lanes = await journal.list({ grantId, chainId, kind: "execution" });
+      return lanes.some((lane) => operationOccupiesLane(lane.value));
+    } catch {
+      return true;
+    } finally {
+      await journal.close().catch(() => undefined);
+    }
+  }
+
   /** Unused v3.3 approvals still need a journaled, owner-authorized nonce consumption. */
   async function revokeUnusedV33Approval(binding: Readonly<ChainBinding>): Promise<void> {
     const approval = input.installApproval;
@@ -4342,6 +4461,12 @@ export function createGrantHandle(
       )
     ) {
       return;
+    }
+    // Completion accounts for every lane: an unresolved or unreadable execution
+    // lane on any target chain keeps the Grant revoking. Resolve it by
+    // observation (getOperation().wait()), then call revoke again.
+    for (const binding of grant.revocation.targets) {
+      if (await executionLaneUnresolved(grant.identity.grantId, binding.chainId)) return;
     }
     await commit(
       snapshot,

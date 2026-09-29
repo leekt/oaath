@@ -14,6 +14,7 @@ export function capturePlainCalls(
   context: CaptureContext,
   allowSigner = false,
   review = false,
+  allowLane = false,
 ) {
   const fail = clientFailure("oaath_client_input_invalid");
   const captured = captureRecord(value, "sendCalls input", context, fail);
@@ -26,6 +27,7 @@ export function capturePlainCalls(
       ...(Object.hasOwn(captured, "paymasterService") ? ["paymasterService"] : []),
       ...(Object.hasOwn(captured, "feePayer") ? ["feePayer"] : []),
       ...(review && Object.hasOwn(captured, "estimate") ? ["estimate"] : []),
+      ...(allowLane && Object.hasOwn(captured, "lane") ? ["lane"] : []),
     ],
     "sendCalls input",
     fail,
@@ -40,12 +42,16 @@ export function capturePlainCalls(
     return fail("sendCalls chain is invalid");
   if (Object.hasOwn(request, "feePayer") && Object.hasOwn(request, "paymasterService"))
     return fail("connected fee payer fallback cannot be combined with paymaster sponsorship");
+  // An explicit lane is session sequencing; owner selection never borrows it.
+  if (Object.hasOwn(request, "lane") && signer === "auto")
+    return fail("an explicit lane cannot be combined with automatic signer selection");
   return Object.freeze({
     chain,
     calls: request.calls,
     ...(Object.hasOwn(request, "estimate") ? { estimate: request.estimate as boolean } : {}),
     ...(signer === undefined ? {} : { signer }),
     ...(Object.hasOwn(request, "feePayer") ? { feePayer: request.feePayer } : {}),
+    ...(Object.hasOwn(request, "lane") ? { lane: request.lane } : {}),
     ...(Object.hasOwn(request, "paymasterService")
       ? { paymasterService: request.paymasterService }
       : {}),

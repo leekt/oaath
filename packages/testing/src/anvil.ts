@@ -5,6 +5,7 @@ import {
   parseGrantPolicy,
 } from "@oaath/protocol";
 import { createOAAth, type Oaath } from "@oaath/sdk";
+import type { OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
   approveKernelPermissionAllChain,
@@ -58,6 +59,11 @@ export async function createLocalAnvilFixture(
     chainIds?: readonly number[];
     stateDirectory?: string;
     kernelVersion?: "0.4.0" | "0.3.3";
+    /**
+     * Test-only interposition on the SDK's submission capability, e.g. to hold
+     * one accepted send. The fixture never retries or replays on its behalf.
+     */
+    submission?: (open: OaathSubmissionCapability["open"]) => OaathSubmissionCapability["open"];
   }> = {},
 ): Promise<Readonly<LocalAnvilFixture>> {
   const version = input.kernelVersion ?? "0.4.0";
@@ -320,7 +326,14 @@ export async function createLocalAnvilFixture(
           },
         },
         stores: storage.stores,
-        chains: [...chains.values()].map((chain) => chain.capability),
+        chains: [...chains.values()].map((chain) =>
+          input.submission === undefined
+            ? chain.capability
+            : {
+                ...chain.capability,
+                submission: { open: input.submission(chain.capability.submission.open) },
+              },
+        ),
         signing: {
           owner: ecdsaKey({ account: owner, validator: first.validator }),
           session: ecdsaKey({ account: session, validator: first.validator }),

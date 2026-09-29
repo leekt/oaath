@@ -223,6 +223,13 @@ export interface KernelRuntimeBindAccountInput {
  */
 export type KernelRuntimeValidationMode = "standard" | "enable-replayable";
 
+/**
+ * Both supported Kernel versions encode a uint16 nonce namespace below the
+ * validation bytes. Namespace 0 is the default lane; an explicit caller lane
+ * reserves one of the remaining keys.
+ */
+export const KERNEL_MAX_OPERATION_LANE_KEY = 0xffff;
+
 export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> {
   readonly kind: "execution" | "revocation";
   readonly grantId: string;

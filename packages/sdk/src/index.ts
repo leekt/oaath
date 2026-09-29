@@ -27,6 +27,7 @@ export type {
   OaathCallsReview,
   OaathGetOperationInput,
   OaathGrantHandle,
+  OaathOperationLane,
   OaathReviewCallsInput,
   OaathSendCallsInput,
 } from "./client/grant-handle.js";

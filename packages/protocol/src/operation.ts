@@ -938,6 +938,13 @@ export function parseOperation(value: unknown): Operation {
   }
 }
 
+/** Capture one explicit execution lane exactly, before any effect that would use it. */
+export function parseOperationLane(value: unknown): Readonly<OperationLane> {
+  const lane = parseLane(value, "execution", "operation_input_invalid", new WeakSet());
+  if (lane === null) return invalid("operation_input_invalid", "operation lane is absent");
+  return lane;
+}
+
 export function parseOperationIdentity(value: unknown): Readonly<OperationIdentity> {
   try {
     return parseIdentity(value, "operation_record_invalid", new WeakSet());

@@ -10,6 +10,7 @@ import {
   type Operation,
   type OperationIdentity,
   type OperationKind,
+  type OperationLane,
   type OperationSubmissionEvidence,
   operationOccupiesLane,
   parseOperation,
@@ -101,6 +102,11 @@ export interface OperationRunnerConfiguration {
   readonly terminalBehavior: OperationTerminalBehavior;
   /** Provider request provenance, or null for direct and revocation operations. */
   readonly requestHash: `0x${string}` | null;
+  /**
+   * The caller-reserved lane a fresh Operation is created on; omitted for the
+   * default lane. A run key must name exactly this lane to create one.
+   */
+  readonly lane?: Readonly<OperationLane>;
   readonly store: OperationStore;
   readonly observer: OperationObserver;
   readonly preparation: OperationPreparationCapability;
@@ -230,6 +236,7 @@ function callable(
 function captureConfiguration(value: unknown): {
   terminalBehavior: OperationTerminalBehavior;
   requestHash: `0x${string}` | null;
+  lane: Readonly<OperationLane> | null;
   store: OperationStore;
   observer: CapturedObserver;
   preparation: CapturedPreparation;
@@ -237,13 +244,43 @@ function captureConfiguration(value: unknown): {
 } {
   try {
     const context: CaptureContext = new WeakSet();
-    const record = exact(
-      value,
-      ["terminalBehavior", "requestHash", "store", "observer", "preparation", "submission"],
-      "OperationRunner configuration",
-      "operation_runner_capability_invalid",
-      context,
+    const captured = captureRecord(value, "OperationRunner configuration", context, (message) =>
+      runnerError("operation_runner_capability_invalid", message),
     );
+    const record = exactCapturedRecord(
+      captured,
+      [
+        "terminalBehavior",
+        "requestHash",
+        ...(Object.hasOwn(captured, "lane") ? ["lane"] : []),
+        "store",
+        "observer",
+        "preparation",
+        "submission",
+      ],
+      "OperationRunner configuration",
+      (message) => runnerError("operation_runner_capability_invalid", message),
+    );
+    let lane: Readonly<OperationLane> | null = null;
+    if (Object.hasOwn(record, "lane")) {
+      const laneRecord = exact(
+        record.lane,
+        ["id", "key"],
+        "OperationRunner lane",
+        "operation_runner_capability_invalid",
+        context,
+      );
+      // The protocol Operation owns the exact lane rules; runner input stays plain.
+      if (
+        typeof laneRecord.id !== "string" ||
+        typeof laneRecord.key !== "number" ||
+        !Number.isSafeInteger(laneRecord.key) ||
+        laneRecord.key < 1
+      ) {
+        return runnerError("operation_runner_capability_invalid", "runner lane is invalid");
+      }
+      lane = Object.freeze({ id: laneRecord.id, key: laneRecord.key });
+    }
     if (!(record.store instanceof OperationStore)) {
       return runnerError("operation_runner_capability_invalid", "runner store is invalid");
     }
@@ -294,6 +331,7 @@ function captureConfiguration(value: unknown): {
     return {
       terminalBehavior: record.terminalBehavior,
       requestHash: record.requestHash as `0x${string}` | null,
+      lane,
       store: record.store,
       observer: Object.freeze({
         observeOperation: callable(
@@ -363,12 +401,15 @@ function parseKind(value: unknown): OperationKind {
 }
 
 function parseKey(value: unknown, context: CaptureContext): Readonly<OperationStoreKey> {
-  const record = exact(
-    value,
-    ["grantId", "chainId", "kind"],
+  const captured = captureRecord(value, "OperationRunner key", context, (message) =>
+    runnerError("operation_runner_input_invalid", message),
+  );
+  const hasLane = Object.hasOwn(captured, "lane");
+  const record = exactCapturedRecord(
+    captured,
+    hasLane ? ["grantId", "chainId", "kind", "lane"] : ["grantId", "chainId", "kind"],
     "OperationRunner key",
-    "operation_runner_input_invalid",
-    context,
+    (message) => runnerError("operation_runner_input_invalid", message),
   );
   if (
     typeof record.grantId !== "string" ||
@@ -381,10 +422,16 @@ function parseKey(value: unknown, context: CaptureContext): Readonly<OperationSt
   ) {
     return runnerError("operation_runner_input_invalid", "runner key is invalid");
   }
+  const kind = parseKind(record.kind);
+  if (!hasLane) return Object.freeze({ grantId: record.grantId, chainId: record.chainId, kind });
+  if (typeof record.lane !== "number" || !Number.isSafeInteger(record.lane) || record.lane < 1) {
+    return runnerError("operation_runner_input_invalid", "runner lane key is invalid");
+  }
   return Object.freeze({
     grantId: record.grantId,
     chainId: record.chainId,
-    kind: parseKind(record.kind),
+    kind,
+    lane: record.lane,
   });
 }
 
@@ -877,6 +924,7 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
     const operation = createOperation({
       identity: deriveOperationId(prepared, configuration.requestHash),
       preparedAt: input.preparedAt,
+      ...(configuration.lane === null ? {} : { lane: configuration.lane }),
     });
     if (current && sameIdentity(current.value.identity, operation.identity)) {
       await releasePreparedReservation(prepared);
@@ -954,6 +1002,11 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
     input: OperationRunInput,
     expectedIdentity?: OperationIdentity,
   ): Promise<PreparedUserOperation> {
+    // Preparation happens only on the exact lane this runner reserved, so a
+    // fresh Operation can never be created under another lane's key.
+    if (configuration.lane?.key !== input.key.lane) {
+      return runnerError("operation_runner_input_invalid", "runner key names another lane");
+    }
     let raw: unknown;
     try {
       raw = await configuration.preparation.prepare(
