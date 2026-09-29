@@ -78,7 +78,11 @@ import {
   type OaathOwnerClient,
   type OaathOwnerOptions,
 } from "./client/owner-realm.js";
-import { createServiceRealm, type OaathServiceOptions } from "./client/service-realm.js";
+import {
+  createServiceRealm,
+  type OaathServiceOptions,
+  type RemoteSessionCustody,
+} from "./client/service-realm.js";
 import { captureStoreConfiguration } from "./client/store-configuration.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
@@ -157,28 +161,6 @@ const CONFIGURATION_KEYS: readonly string[] = Object.freeze([
   "localKeyIds",
   "now",
 ]);
-
-/** Remote session-key custody, declared by the composition when it exists. */
-function captureSessionSigner(
-  value: unknown,
-  context: CaptureContext,
-): Readonly<{ mode: "application_backend" | "oaath_hosted"; providerId: string }> | null {
-  if (value === undefined || value === null) return null;
-  const record = exactClientRecord(
-    value,
-    ["mode", "providerId"],
-    "OAAth session signer",
-    context,
-    "oaath_client_capability_invalid",
-  );
-  if (record.mode !== "application_backend" && record.mode !== "oaath_hosted") {
-    return clientFail("oaath_client_capability_invalid", "session signer mode is unsupported");
-  }
-  if (typeof record.providerId !== "string" || record.providerId.length < 1) {
-    return clientFail("oaath_client_capability_invalid", "session signer provider is invalid");
-  }
-  return Object.freeze({ mode: record.mode, providerId: record.providerId });
-}
 
 function storePort<Port>(
   value: unknown,
@@ -281,7 +263,9 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
     clientFailure("oaath_client_input_invalid"),
   );
   const configuration = withDefaultChainPorts(value, record);
-  if (Object.hasOwn(record, "binding")) return composeInjectedRealm(configuration);
+  if (Object.hasOwn(record, "binding")) {
+    return composeInjectedRealm(configuration, { localAuthorization: null, remoteCustody: null });
+  }
   if (record.approvals === undefined) return createOwnerRealm(configuration);
   const approvals = captureRecord(
     record.approvals,
@@ -289,19 +273,37 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
-  if (approvals.kind === "wallet") return createLocalRealm(configuration, composeInjectedRealm);
-  if (approvals.kind === "service") return createServiceRealm(configuration, composeInjectedRealm);
+  if (approvals.kind === "wallet") {
+    return createLocalRealm(configuration, (inner, localAuthorization) =>
+      composeInjectedRealm(inner, { localAuthorization, remoteCustody: null }),
+    );
+  }
+  if (approvals.kind === "service") {
+    return createServiceRealm(configuration, (inner, remoteCustody) =>
+      composeInjectedRealm(inner, { localAuthorization: null, remoteCustody }),
+    );
+  }
   return clientFail("oaath_client_input_invalid", "OAAth approvals kind is unsupported");
+}
+
+/**
+ * Facts only the approval realms supply: wallet approval replaces the issuer,
+ * and remote session custody is the service bootstrap's declaration, never an
+ * application option.
+ */
+interface RealmComposition {
+  readonly localAuthorization: LocalPermissionAuthorization | null;
+  readonly remoteCustody: Readonly<RemoteSessionCustody> | null;
 }
 
 function composeInjectedRealm(
   configuration: unknown,
-  localAuthorization?: LocalPermissionAuthorization,
+  { localAuthorization, remoteCustody }: Readonly<RealmComposition>,
 ): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
   const optionalKeys =
     typeof configuration === "object" && configuration !== null
-      ? ["sessionSigner", "ownerRevocations"].filter((key) => Object.hasOwn(configuration, key))
+      ? ["ownerRevocations"].filter((key) => Object.hasOwn(configuration, key))
       : [];
   const record = exactClientRecord(
     configuration,
@@ -314,7 +316,6 @@ function composeInjectedRealm(
     "OAAth configuration",
     context,
   );
-  const sessionSigner = captureSessionSigner(record.sessionSigner, context);
   const ownerRevocations =
     record.ownerRevocations === undefined || record.ownerRevocations === null
       ? null
@@ -438,7 +439,7 @@ function composeInjectedRealm(
       sessionKey,
       invalidation,
       ownerRevocations,
-      sessionSigner,
+      sessionSigner: remoteCustody,
       now,
     });
     const connection = Object.freeze({

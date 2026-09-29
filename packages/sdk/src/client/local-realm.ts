@@ -44,7 +44,11 @@ import {
 } from "./local-permission.js";
 import { createOwnerRealm, type OaathOwnerClient } from "./owner-realm.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
-import { captureSession, type OaathSession } from "./session-credential.js";
+import {
+  captureSession,
+  type OaathSession,
+  unsupportedSessionCustody,
+} from "./session-credential.js";
 import { captureStoreConfiguration } from "./store-configuration.js";
 
 export type OaathApprovalWallet = EcdsaWalletClient & {
@@ -120,7 +124,12 @@ export function createLocalRealm(
   const chains = Object.freeze(entries.map(captureChainCapability));
   if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length)
     return fail("local chains repeat an ID");
-  const suppliedSession = captureSession(config.session, context);
+  const session = captureSession(config.session, context);
+  // Wallet approvals have no service to serve remote custody.
+  if (session.custody !== null && session.custody !== "browser") {
+    unsupportedSessionCustody("wallet approvals support browser session custody only");
+  }
+  const suppliedSession = session.supplied;
   const ownerKey = ecdsaWalletKey({
     wallet: owner,
     validator: kernelV33Deployment(chains[0]!.chainId).ecdsaValidator,

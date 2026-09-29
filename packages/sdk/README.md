@@ -10,11 +10,18 @@ it when the request settles. `expiresAt` is in Unix milliseconds; the code is
 non-secret display metadata and grants no authority. Wallet approvals do not
 call this callback.
 
-Service and wallet approvals share one optional `session` setting (`OaathSession`).
-`createOAAth({ approvals: { kind: "service", url }, session: { kind: "webauthn", ...webauthnKeyInput } })` makes
-the owner review and install the caller's passkey as the operator credential; no
-session key is generated or stored. A deployment that declares backend or hosted
-session custody refuses it with `oaath_client_capability_unsupported`.
+Service and wallet approvals share one optional `session` setting (`OaathSession`):
+`session?: { kind?: "ecdsa" | "webauthn", custody?: "browser" | "application-backend" | "oaath-hosted", ... }`.
+Omitted, the realm generates an ECDSA session key in the custody the deployment
+declares. `session: { kind: "webauthn", ...webauthnKeyInput }` makes the owner
+review and install the caller's passkey as the operator credential; no session
+key is generated or stored.
+
+The service bootstrap owns custody; `custody` never selects or overrides it. It
+is a requirement: a declared custody that differs, a passkey under backend or
+hosted custody, or remote custody under wallet approvals fails with
+`oaath_client_capability_unsupported` (source `session_custody_unsupported`)
+before any session key, store, or signer request exists.
 
 
 Custom Kernel sessions can set a fixed-window quota with
