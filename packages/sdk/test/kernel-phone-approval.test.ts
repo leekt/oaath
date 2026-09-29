@@ -43,7 +43,7 @@ function fixture() {
     operatorCredential,
     sessionSigner: null,
     policy: {
-      version: "oaath.grant-policy/v1",
+      version: "oaath.grant-policy/v2",
       calls: [
         {
           target: `0x${"44".repeat(20)}`,
@@ -54,7 +54,7 @@ function fixture() {
       ],
       validAfter: 100,
       validUntil: 190,
-      perChainOperationLimit: 10,
+      perChainOperationLimit: { count: 10, intervalSeconds: null },
     },
     requestedAt: 100,
     expiresAt: 200,

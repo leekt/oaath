@@ -7,7 +7,7 @@ import {
   exactRecord,
 } from "./internal/exact-record.js";
 
-export const OAATH_GRANT_POLICY_VERSION = "oaath.grant-policy/v1" as const;
+export const OAATH_GRANT_POLICY_VERSION = "oaath.grant-policy/v2" as const;
 export const OAATH_GRANT_POLICY_USAGE_VERSION = "oaath.grant-policy-usage/v1" as const;
 export const OAATH_GRANT_POLICY_HASH_DOMAIN = "@oaath/protocol:grant-policy" as const;
 export const OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN = "@oaath/protocol:grant-policy-calls" as const;
@@ -55,6 +55,18 @@ export interface GrantPolicyCall {
   readonly argumentEquals: readonly Readonly<GrantPolicyArgumentEquality>[];
 }
 
+/**
+ * How many covered UserOperations one Grant may validate on one concrete chain.
+ * With `intervalSeconds` null the count is a lifetime cap. Otherwise the count
+ * refills once per fixed window of that many seconds; unused slots do not carry
+ * over. A validated operation consumes a slot even when its execution reverts.
+ */
+export interface GrantPolicyOperationLimit {
+  readonly count: number;
+  /** Positive uint48 window length, or null as the only non-resetting representation. */
+  readonly intervalSeconds: number | null;
+}
+
 export interface GrantPolicy {
   readonly version: typeof OAATH_GRANT_POLICY_VERSION;
   readonly calls: readonly Readonly<GrantPolicyCall>[];
@@ -63,7 +75,7 @@ export interface GrantPolicy {
   /** Inclusive Unix timestamp, or null as the only indefinite representation. */
   readonly validUntil: number | null;
   /** Each covered UserOperation consumes one use on its concrete chain. */
-  readonly perChainOperationLimit: number;
+  readonly perChainOperationLimit: Readonly<GrantPolicyOperationLimit>;
 }
 
 export interface GrantPolicyUsageCheckpoint {
@@ -79,7 +91,9 @@ export interface CompleteGrantPolicyUsageEvidence {
   readonly chainId: number;
   /**
    * Complete count of finalized included executions on this chain. Both successful and reverted
-   * executions consume first-party rate-limit allowance.
+   * executions consume first-party rate-limit allowance. For a windowed limit this counts only
+   * the window the next validation will use, as of the finalized checkpoint: a reader may report
+   * a reset only once the finalized chain time has reached the window end.
    */
   readonly finalizedOperationCount: string;
   readonly through: Readonly<GrantPolicyUsageCheckpoint>;
@@ -335,13 +349,40 @@ function capturePolicy(
     calls: Object.freeze(calls),
     validAfter,
     validUntil,
-    perChainOperationLimit: safeInteger(
-      record.perChainOperationLimit,
-      "grant policy perChainOperationLimit",
+    perChainOperationLimit: captureOperationLimit(record.perChainOperationLimit, code, context),
+  });
+}
+
+function captureOperationLimit(
+  value: unknown,
+  code: GrantPolicyErrorCode,
+  context: CaptureContext,
+): Readonly<GrantPolicyOperationLimit> {
+  const record = exactRecord(
+    value,
+    ["count", "intervalSeconds"],
+    "grant policy perChainOperationLimit",
+    context,
+    failFor(code),
+  );
+  return Object.freeze({
+    count: safeInteger(
+      record.count,
+      "grant policy perChainOperationLimit count",
       code,
       1,
       MAX_UINT48,
     ),
+    intervalSeconds:
+      record.intervalSeconds === null
+        ? null
+        : safeInteger(
+            record.intervalSeconds,
+            "grant policy perChainOperationLimit intervalSeconds",
+            code,
+            1,
+            MAX_UINT48,
+          ),
   });
 }
 
@@ -377,6 +418,8 @@ function encodeCapturedGrantPolicy(policy: GrantPolicy): Hex {
       { type: "bool", name: "hasValidUntil" },
       { type: "uint48", name: "validUntil" },
       { type: "uint48", name: "perChainOperationLimit" },
+      // Zero is unambiguous as "no window": a present interval is at least one second.
+      { type: "uint48", name: "perChainOperationIntervalSeconds" },
     ],
     [
       OAATH_GRANT_POLICY_HASH_DOMAIN,
@@ -393,7 +436,8 @@ function encodeCapturedGrantPolicy(policy: GrantPolicy): Hex {
       policy.validAfter,
       policy.validUntil !== null,
       policy.validUntil ?? 0,
-      policy.perChainOperationLimit,
+      policy.perChainOperationLimit.count,
+      policy.perChainOperationLimit.intervalSeconds ?? 0,
     ],
   );
 }
@@ -504,7 +548,12 @@ export function isGrantPolicyAttenuation(requested: unknown, approved: unknown):
       (requestedPolicy.validUntil !== null &&
         (approvedPolicy.validUntil === null ||
           approvedPolicy.validUntil > requestedPolicy.validUntil)) ||
-      approvedPolicy.perChainOperationLimit > requestedPolicy.perChainOperationLimit
+      approvedPolicy.perChainOperationLimit.count > requestedPolicy.perChainOperationLimit.count ||
+      // The window is kept exactly. A shorter window refills sooner and is broader. A longer
+      // window, or a lifetime cap for a windowed request, is narrower in rate but is still
+      // rejected: approval may only lower the count of the shape the application requested.
+      approvedPolicy.perChainOperationLimit.intervalSeconds !==
+        requestedPolicy.perChainOperationLimit.intervalSeconds
     ) {
       return false;
     }
@@ -733,7 +782,8 @@ export function evaluateGrantPolicyCoverage(value: unknown): GrantPolicyCoverage
       });
     }
     if (
-      BigInt(input.usage.finalizedOperationCount) >= BigInt(input.policy.perChainOperationLimit)
+      BigInt(input.usage.finalizedOperationCount) >=
+      BigInt(input.policy.perChainOperationLimit.count)
     ) {
       return denied(policyHash, input.chainId, "operation_limit_exhausted");
     }

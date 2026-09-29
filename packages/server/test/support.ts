@@ -68,7 +68,7 @@ export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
     address: `0x${"44".repeat(20)}`,
   },
   policy: {
-    version: "oaath.grant-policy/v1",
+    version: "oaath.grant-policy/v2",
     calls: [
       {
         target: `0x${"11".repeat(20)}`,
@@ -79,7 +79,7 @@ export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
     ],
     validAfter: 100,
     validUntil: 190,
-    perChainOperationLimit: 10,
+    perChainOperationLimit: { count: 10, intervalSeconds: null },
   },
   requestedAt: 100,
   expiresAt: 200,
@@ -91,7 +91,7 @@ export const TEST_CLOCK_SECONDS = 1_700_000_000;
 
 /** A policy whose window is live at the test clock, for verification tests. */
 export const LIVE_PERMISSION_POLICY = {
-  version: "oaath.grant-policy/v1",
+  version: "oaath.grant-policy/v2",
   calls: [
     {
       target: `0x${"11".repeat(20)}`,
@@ -102,7 +102,7 @@ export const LIVE_PERMISSION_POLICY = {
   ],
   validAfter: 100,
   validUntil: TEST_CLOCK_SECONDS + 600,
-  perChainOperationLimit: 10,
+  perChainOperationLimit: { count: 10, intervalSeconds: null },
 } as const;
 
 /** The approvable fixture scope, with times live at the test clock. */

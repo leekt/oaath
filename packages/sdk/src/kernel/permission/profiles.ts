@@ -32,6 +32,7 @@ export function deriveSessionPolicyProfiles(
     runtimeFail("kernel_runtime_policy_unavailable", "policy has no calls");
   if (policy.validUntil === null)
     runtimeFail("kernel_runtime_policy_unavailable", "policy expiry is unbounded");
+  const limit = policy.perChainOperationLimit;
   return Object.freeze([
     Object.freeze({ kind: "call" as const, permissions: Object.freeze(permissions) }),
     Object.freeze({
@@ -39,9 +40,17 @@ export function deriveSessionPolicyProfiles(
       validAfter: policy.validAfter.toString(10),
       validUntil: policy.validUntil.toString(10),
     }),
-    Object.freeze({
-      kind: "operation-limit" as const,
-      maximumOperations: policy.perChainOperationLimit.toString(10),
-    }),
+    // A lifetime cap never resets; a windowed limit maps to the fixed-window
+    // rate-limit profile, whose on-chain quota refills once per interval.
+    limit.intervalSeconds === null
+      ? Object.freeze({
+          kind: "operation-limit" as const,
+          maximumOperations: limit.count.toString(10),
+        })
+      : Object.freeze({
+          kind: "rate-limit" as const,
+          intervalSeconds: limit.intervalSeconds.toString(10),
+          maximumOperations: limit.count.toString(10),
+        }),
   ]);
 }

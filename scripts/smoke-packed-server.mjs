@@ -157,7 +157,7 @@ const requestedScope = JSON.stringify({
     calls: policyCalls,
     validAfter: requestedAt,
     validUntil: requestedAt + 599,
-    perChainOperationLimit: 1,
+    perChainOperationLimit: { count: 1, intervalSeconds: null },
   },
   requestedAt,
   expiresAt: requestedAt + 600,

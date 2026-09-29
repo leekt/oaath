@@ -102,7 +102,7 @@ describe("POST /grants/verify", () => {
       ...LIVE_POLICY,
       calls: [{ ...LIVE_POLICY.calls[0], valueLimit: "1" }],
       validUntil: TEST_CLOCK_SECONDS + 30,
-      perChainOperationLimit: 2,
+      perChainOperationLimit: { count: 2, intervalSeconds: null },
     };
     await approve(
       harness,

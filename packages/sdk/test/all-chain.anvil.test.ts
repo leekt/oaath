@@ -271,11 +271,11 @@ async function bringUp(
         },
         sessionSigner: null,
         policy: {
-          version: "oaath.grant-policy/v1",
+          version: "oaath.grant-policy/v2",
           calls: [{ target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] }],
           validAfter: 0,
           validUntil: now + 600,
-          perChainOperationLimit: 3,
+          perChainOperationLimit: { count: 3, intervalSeconds: null },
         },
         requestedAt: now,
         expiresAt: now + 601,

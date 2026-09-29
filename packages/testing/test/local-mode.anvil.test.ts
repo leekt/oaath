@@ -1,8 +1,21 @@
 import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { createOAAth, type OaathLocalClient, type OaathLocalSession } from "@oaath/sdk";
+import type { OaathUsageRequest } from "@oaath/sdk/advanced";
+import { OAATH_KERNEL_RATE_LIMIT_POLICY } from "@oaath/sdk/kernel";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import { IDBFactory } from "fake-indexeddb";
-import { bytesToHex, concat, hexToBytes, keccak256, sha256, stringToBytes } from "viem";
+import {
+  bytesToHex,
+  concat,
+  encodeFunctionData,
+  hexToBytes,
+  keccak256,
+  pad,
+  parseAbi,
+  sha256,
+  stringToBytes,
+  toFunctionSelector,
+} from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const target = `0x${"44".repeat(20)}` as const;
@@ -373,6 +386,95 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
           calls: [{ target: `0x${"77".repeat(20)}`, data: "0x12345678", value: "1" }],
         }),
       ).rejects.toMatchObject({ code: "oaath_client_scope_denied" });
+      expect(fixture.bundlerSubmissionCount).toBe(3);
+    } finally {
+      await client.close();
+      await fixture.close();
+    }
+  }, 60_000);
+
+  it("refills a windowed per-chain operation limit only after its interval", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture();
+    let usage: Readonly<OaathUsageRequest> | undefined;
+    const client = createOAAth({
+      mode: "local",
+      owner: fixture.wallet,
+      account: fixture.address,
+      chains: fixture.createChainPorts().map((port) => ({
+        ...port,
+        usage: (request: Readonly<OaathUsageRequest>) => {
+          usage = request;
+          return port.usage!(request);
+        },
+      })),
+      origin: "https://consumer.example",
+    });
+    const rpc = async (method: string, params: unknown[]) =>
+      (await (
+        await fixture.rpcFetch(
+          new Request(fixture.rpcUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          }),
+        )
+      ).json()) as { result?: unknown; error?: { data?: unknown } };
+    // The pinned module's own validation, called as the account, with the exact
+    // installed permission; the operation fields are unused by this policy.
+    const validate = () =>
+      rpc("eth_call", [
+        {
+          from: usage!.account,
+          to: OAATH_KERNEL_RATE_LIMIT_POLICY,
+          data: encodeFunctionData({
+            abi: parseAbi([
+              "function checkUserOpPolicy(bytes32 id, (address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) payable returns (uint256)",
+            ]),
+            functionName: "checkUserOpPolicy",
+            args: [
+              pad(usage!.permissionId, { size: 32, dir: "right" }),
+              {
+                sender: usage!.account,
+                nonce: 0n,
+                initCode: "0x",
+                callData: "0x",
+                accountGasLimits: pad("0x0"),
+                preVerificationGas: 0n,
+                gasFees: pad("0x0"),
+                paymasterAndData: "0x",
+                signature: "0x",
+              },
+            ],
+          }),
+        },
+        "latest",
+      ]);
+    try {
+      const grant = await (await client.connect()).requestPermission({
+        ...permission,
+        perChainOperationLimit: { count: 2, intervalSeconds: 60 },
+      });
+      for (let index = 0; index < 2; index++) {
+        const operation = await grant.sendCalls({ chain: fixture.chainId, calls });
+        expect((await operation.wait({ attempts: 3 })).status).toBe("finalized");
+      }
+      expect(usage).toMatchObject({ maximumOperations: "2", intervalSeconds: "60" });
+      expect(fixture.bundlerSubmissionCount).toBe(2);
+      // The third operation is outside the window's quota: the module's validation
+      // rejects it, and local accounting refuses it before any submission.
+      expect((await validate()).error?.data).toBe(toFunctionSelector("RateLimited()"));
+      await expect(grant.sendCalls({ chain: fixture.chainId, calls })).rejects.toMatchObject({
+        code: "oaath_client_scope_denied",
+        source: "session_calls_uncovered",
+      });
+      expect(fixture.bundlerSubmissionCount).toBe(2);
+
+      await rpc("evm_increaseTime", [60]);
+      await fixture.mine();
+      expect((await validate()).error).toBeUndefined();
+      const third = await grant.sendCalls({ chain: fixture.chainId, calls });
+      expect((await third.wait({ attempts: 3 })).status).toBe("finalized");
       expect(fixture.bundlerSubmissionCount).toBe(3);
     } finally {
       await client.close();

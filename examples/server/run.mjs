@@ -76,7 +76,7 @@ const DEMO_PERMISSION_SCOPE = JSON.stringify({
     address: `0x${"44".repeat(20)}`,
   },
   policy: {
-    version: "oaath.grant-policy/v1",
+    version: "oaath.grant-policy/v2",
     calls: [
       {
         target: `0x${"11".repeat(20)}`,
@@ -87,7 +87,7 @@ const DEMO_PERMISSION_SCOPE = JSON.stringify({
     ],
     validAfter: REQUESTED_AT,
     validUntil: REQUESTED_AT + 599,
-    perChainOperationLimit: 10,
+    perChainOperationLimit: { count: 10, intervalSeconds: null },
   },
   requestedAt: REQUESTED_AT,
   expiresAt: REQUESTED_AT + 600,
