@@ -101,6 +101,7 @@ describe("package boundary", () => {
       "readKernelV33PermissionState",
       "restoreKernelPhoneRevocation",
       "sessionOperator",
+      "verifyKernelPermissionApproval",
       "webauthnKey",
     ]);
   });

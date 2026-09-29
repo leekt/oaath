@@ -6,7 +6,15 @@
  * selects Kernel's chain-zero UserOperation signing hash. Operation identity
  * and observation still use the actual chain's EntryPoint hash.
  */
-import { concat, encodeAbiParameters, hashTypedData, keccak256, pad } from "viem";
+import {
+  concat,
+  encodeAbiParameters,
+  hashTypedData,
+  keccak256,
+  pad,
+  recoverAddress,
+  size,
+} from "viem";
 import {
   captureKernelV4Installs,
   encodeKernelV4SignerData,
@@ -262,6 +270,109 @@ export function parseKernelV33PermissionApproval(
     digest,
     enableSignature: record.enableSignature,
   });
+}
+
+/** The scope a consumer reviewed for one v3.3 approval. */
+export interface KernelV33ExpectedPermission {
+  /** Root ECDSA owner EOA that must have signed the enable digest. */
+  readonly owner: `0x${string}`;
+  readonly account: `0x${string}`;
+  readonly permissionId: `0x${string}`;
+  /** Session signer: its moduleType 6 module and the key's public material. */
+  readonly sessionKey: Readonly<{ module: `0x${string}`; publicMaterial: `0x${string}` }>;
+  /**
+   * The exact ordered install list (policies, then the signer), as a session
+   * runtime's `packages`. Policy order is significant.
+   */
+  readonly packages: readonly Readonly<KernelV4Install>[];
+}
+
+export type KernelV33ApprovalMismatchField =
+  | "account"
+  | "permissionId"
+  | "sessionKey"
+  | "packages"
+  | "enableSignature";
+export type KernelV33ApprovalMismatchReason =
+  | "different"
+  | "reordered"
+  | "unrecoverable"
+  | "wrong_signer";
+
+/**
+ * Offline v3.3 check: no reads, signer or submission. Owner recovery is raw
+ * 65-byte ECDSA over the enable digest (what signTypedData produces); an
+ * ERC-1271 or other contract root cannot be proven offline and never verifies.
+ * Returns the recovered owner when every reviewed field matches.
+ */
+export async function checkKernelV33PermissionApproval(
+  approval: Readonly<KernelV33PermissionApproval>,
+  value: unknown,
+): Promise<
+  | { readonly owner: `0x${string}` }
+  | {
+      readonly field: KernelV33ApprovalMismatchField;
+      readonly reason: KernelV33ApprovalMismatchReason;
+    }
+> {
+  const context = new WeakSet();
+  const record = exactInput(
+    value,
+    ["owner", "account", "permissionId", "sessionKey", "packages"],
+    "Kernel v3.3 expected permission",
+    context,
+  );
+  const owner = inputAddress(record.owner, "Kernel v3.3 expected owner");
+  const account = inputAddress(record.account, "Kernel v3.3 expected account");
+  const sessionKey = exactInput(
+    record.sessionKey,
+    ["module", "publicMaterial"],
+    "Kernel v3.3 expected session key",
+    context,
+  );
+  const signerModule = inputAddress(sessionKey.module, "Kernel v3.3 expected session module");
+  if (!isBytes(sessionKey.publicMaterial) || sessionKey.publicMaterial === "0x")
+    return inputInvalid("Kernel v3.3 expected session material is invalid");
+  if (typeof record.permissionId !== "string" || !/^0x[0-9a-f]{8}$/u.test(record.permissionId))
+    return inputInvalid("Kernel v3.3 expected permission ID is invalid");
+  const packages = captureKernelV4Installs(record.packages);
+  const mismatch = (
+    field: KernelV33ApprovalMismatchField,
+    reason: KernelV33ApprovalMismatchReason = "different",
+  ) => Object.freeze({ field, reason });
+  if (account !== approval.account) return mismatch("account");
+  if (record.permissionId !== approval.permissionId) return mismatch("permissionId");
+  const signer = approval.packages.at(-1)!;
+  if (
+    signer.module !== signerModule ||
+    signer.moduleData.slice(66) !== sessionKey.publicMaterial.slice(2)
+  )
+    return mismatch("sessionKey");
+  const approved = approval.packages;
+  if (
+    approved.length !== packages.length ||
+    !approved.every((install, index) => sameInstall(install, packages[index]!))
+  )
+    return mismatch(
+      "packages",
+      approved.length === packages.length &&
+        approved.every((install) => packages.some((expected) => sameInstall(install, expected)))
+        ? "reordered"
+        : "different",
+    );
+  if (size(approval.enableSignature) !== 65) return mismatch("enableSignature", "unrecoverable");
+  let recovered: `0x${string}`;
+  try {
+    recovered = await recoverAddress({
+      hash: approval.digest,
+      signature: approval.enableSignature,
+    });
+  } catch {
+    return mismatch("enableSignature", "unrecoverable");
+  }
+  return recovered.toLowerCase() === owner
+    ? Object.freeze({ owner })
+    : mismatch("enableSignature", "wrong_signer");
 }
 
 export interface MaterializeKernelV33PermissionInput

@@ -67,6 +67,8 @@ export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
 export { ownerOperator } from "./kernel/operator/owner.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
+export type { KernelPermissionApprovalVerification } from "./kernel/permission/approval.js";
+export { verifyKernelPermissionApproval } from "./kernel/permission/approval.js";
 export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
 export { kernelPermissionInstallNonce } from "./kernel/permission/install-nonce.js";
 export type {
@@ -98,6 +100,9 @@ export {
 } from "./kernel/permission/phone-revocation.js";
 export type {
   ApproveKernelV33PermissionInput,
+  KernelV33ApprovalMismatchField,
+  KernelV33ApprovalMismatchReason,
+  KernelV33ExpectedPermission,
   KernelV33PermissionApproval,
   KernelV33PermissionScope,
   MaterializeKernelV33PermissionInput,

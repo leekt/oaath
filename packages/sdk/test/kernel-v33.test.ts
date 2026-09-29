@@ -16,15 +16,21 @@ import {
 } from "../src/kernel/deployment/v33.js";
 import { kernelV33OperationSigningHash } from "../src/kernel/deployment/v33-operation.js";
 import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
+import {
+  OAATH_KERNEL_RATE_LIMIT_POLICY,
+  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
+} from "../src/kernel/modules.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import {
   kernelGrantCapabilityHash,
   parseKernelGrantApproval,
+  verifyKernelPermissionApproval,
 } from "../src/kernel/permission/approval.js";
 import {
   approveKernelV33Permission,
   bindKernelV33PermissionApproval,
+  type KernelV33ExpectedPermission,
   kernelV33PermissionEnableTypedData,
   kernelV33PermissionInstallNonce,
   materializeKernelV33Permission,
@@ -387,6 +393,129 @@ describe("Kernel v3.3 session composition", () => {
         version: "oaath.kernel.v33-permission-approval/v1",
       }),
     ).toThrow();
+  });
+
+  it("verifies an approval offline against the reviewed scope and types each mismatch", async () => {
+    const owner = privateKeyToAccount(generatePrivateKey());
+    const session = privateKeyToAccount(generatePrivateKey());
+    const { read } = fixture();
+    const runtime = createKernelRuntime({
+      deployment: kernelV33Deployment(143),
+      operator: sessionOperator({
+        key: ecdsaKey({ account: session, validator }),
+        policies: [
+          {
+            kind: "call",
+            permissions: [{ target: account, selector: "0x00000000", valueLimit: "5" }],
+          },
+          { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" },
+        ],
+      }),
+      reads: { read },
+    });
+    const original = read.getMockImplementation()!;
+    read.mockImplementation(async (request) =>
+      request.type === "runtime_code_hash" && request.address === OAATH_KERNEL_RATE_LIMIT_POLICY
+        ? OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH
+        : original(request),
+    );
+    const bound = await runtime.bindAccount({ address: account });
+    const approval = await approveKernelV33Permission({
+      owner: ecdsaKey({ account: owner, validator }),
+      runtime,
+      account: bound,
+      nonce: "1",
+    });
+    read.mockClear();
+    const signer = runtime.packages.at(-1)!;
+    const policies = runtime.packages.slice(0, -1);
+    expect(policies).toHaveLength(2);
+    const expected: KernelV33ExpectedPermission = {
+      owner: owner.address,
+      account,
+      permissionId: approval.permissionId,
+      sessionKey: {
+        module: signer.module,
+        publicMaterial: session.address.toLowerCase() as `0x${string}`,
+      },
+      packages: runtime.packages,
+    };
+    const wire = JSON.parse(JSON.stringify(approval));
+    expect(await verifyKernelPermissionApproval({ approval: wire, expected })).toEqual({
+      status: "verified",
+      binding: { approval, owner: owner.address.toLowerCase() },
+    });
+
+    const other = privateKeyToAccount(generatePrivateKey());
+    const cases: [Record<string, unknown>, string, string][] = [
+      [{ owner: other.address }, "enableSignature", "wrong_signer"],
+      [{ account: validator }, "account", "different"],
+      [{ permissionId: "0x12345678" }, "permissionId", "different"],
+      [
+        { sessionKey: { module: signer.module, publicMaterial: other.address.toLowerCase() } },
+        "sessionKey",
+        "different",
+      ],
+      [
+        { sessionKey: { module: validator, publicMaterial: session.address.toLowerCase() } },
+        "sessionKey",
+        "different",
+      ],
+      [{ packages: [...policies].reverse().concat(signer) }, "packages", "reordered"],
+      [{ packages: [policies[0], signer] }, "packages", "different"],
+    ];
+    for (const [change, field, reason] of cases) {
+      expect(
+        await verifyKernelPermissionApproval({
+          approval: wire,
+          expected: { ...expected, ...change } as never,
+        }),
+      ).toEqual({ status: "mismatch", field, reason });
+    }
+
+    // Re-hashed scope keeps the old signature: well-formed, but not the owner's.
+    const { version: _v, digest: _d, enableSignature, ...scope } = approval;
+    const nonce2 = { ...scope, nonce: "2" };
+    const rehashed = {
+      ...approval,
+      nonce: "2",
+      digest: hashTypedData(kernelV33PermissionEnableTypedData(nonce2)),
+    };
+    expect(await verifyKernelPermissionApproval({ approval: rehashed, expected })).toEqual({
+      status: "mismatch",
+      field: "enableSignature",
+      reason: "wrong_signer",
+    });
+    const flipped = `${enableSignature.slice(0, -2)}${enableSignature.endsWith("1b") ? "1c" : "1b"}`;
+    expect(
+      await verifyKernelPermissionApproval({
+        approval: { ...approval, enableSignature: flipped },
+        expected,
+      }),
+    ).toMatchObject({ status: "mismatch", field: "enableSignature" });
+    expect(
+      await verifyKernelPermissionApproval({
+        approval: { ...approval, enableSignature: `0x${"11".repeat(64)}` },
+        expected,
+      }),
+    ).toEqual({ status: "mismatch", field: "enableSignature", reason: "unrecoverable" });
+
+    expect(
+      await verifyKernelPermissionApproval({
+        approval: { version: "oaath.kernel.all-chain-approval/v1" },
+        expected,
+      }),
+    ).toEqual({ status: "mismatch", field: "version", reason: "unsupported" });
+    await expect(
+      verifyKernelPermissionApproval({ approval: { ...approval, nonce: "2" }, expected }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+    await expect(
+      verifyKernelPermissionApproval({
+        approval: wire,
+        expected: { ...expected, accountIndex: "0" } as never,
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+    expect(read).not.toHaveBeenCalled();
   });
 
   it("does not invent a nonce from unavailable or malformed chain evidence", async () => {
