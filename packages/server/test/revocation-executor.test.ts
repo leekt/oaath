@@ -292,3 +292,65 @@ function observation(request: KernelV4RevocationSigningRequest, finalized = fals
     await a.pool.end();
   });
 });
+
+(requirePostgres ? describe : describe.skip)("PostgreSQL Operation lanes", () => {
+  let fixture: PostgresFixture;
+  beforeAll(async () => {
+    fixture = await createPostgresFixture();
+    await createPostgresOperationSchema(fixture.createPool());
+  });
+  afterAll(async () => {
+    await fixture.end();
+  });
+
+  it("keeps caller-reserved lanes independent across independent connections", async () => {
+    const scope = { grantId: "grant-lanes", chainId: 1, kind: "execution" } as const;
+    const onLane = (seed: string, key: number | null) =>
+      createOperation({
+        identity: {
+          ...scope,
+          entryPoint: `0x${"11".repeat(20)}`,
+          account: `0x${"22".repeat(20)}`,
+          nonce: seed,
+          userOperationHash: `0x${seed.repeat(64)}`,
+          requestHash: null,
+        },
+        preparedAt: 10,
+        ...(key === null ? {} : { lane: { id: `run_${key}`, key } }),
+      });
+    const store = () =>
+      new OperationStore(createPostgresOperationStoreAdapter({ pool: fixture.createPool() }));
+    const left = store();
+    const right = store();
+    const lanes = await Promise.all([
+      left.compareAndSwap({ key: scope, expectedStoreRevision: null, next: onLane("1", null) }),
+      right.compareAndSwap({
+        key: { ...scope, lane: 17 },
+        expectedStoreRevision: null,
+        next: onLane("2", 17),
+      }),
+      left.compareAndSwap({
+        key: { ...scope, lane: 18 },
+        expectedStoreRevision: null,
+        next: onLane("3", 18),
+      }),
+    ]);
+    expect(lanes.map((result) => result.status)).toEqual(["committed", "committed", "committed"]);
+    await expect(
+      right.compareAndSwap({
+        key: { ...scope, lane: 17 },
+        expectedStoreRevision: 0,
+        next: onLane("4", 17),
+      }),
+    ).rejects.toMatchObject({ code: "store_lane_occupied" });
+    await expect(
+      left.compareAndSwap({ key: scope, expectedStoreRevision: 0, next: onLane("4", 17) }),
+    ).rejects.toMatchObject({ code: "store_key_mismatch" });
+
+    const fresh = store();
+    expect((await fresh.get({ ...scope, lane: 17 }))?.value.lane).toEqual({
+      id: "run_17",
+      key: 17,
+    });
+  });
+});

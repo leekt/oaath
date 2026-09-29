@@ -7,7 +7,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { OperationStoreAdapter, OperationStoreKey, StoreRecord } from "../../store.js";
+import type {
+  OperationStoreAdapter,
+  OperationStoreKey,
+  OperationStoreScope,
+  StoreRecord,
+} from "../../store.js";
 import { persistenceFail, persistenceId } from "../interfaces.js";
 import {
   matchesExpectedRevision,
@@ -17,7 +22,7 @@ import {
   readRecord,
 } from "./database.js";
 
-function keyParts(value: Readonly<OperationStoreKey>): readonly [string, number, string] {
+function scopeParts(value: Readonly<OperationStoreScope>): readonly [string, number, string] {
   const chainId = value.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return persistenceFail("persistence_input_invalid", "IndexedDB chainId must be positive");
@@ -26,6 +31,15 @@ function keyParts(value: Readonly<OperationStoreKey>): readonly [string, number,
     return persistenceFail("persistence_input_invalid", "IndexedDB kind must name a lane");
   }
   return [persistenceId(value.grantId, "IndexedDB grantId"), chainId, value.kind];
+}
+
+/** The default lane is 0; a reserved lane key is always positive. */
+function keyParts(value: Readonly<OperationStoreKey>): readonly [string, number, string, number] {
+  const lane = value.lane ?? 0;
+  if (!Number.isSafeInteger(lane) || lane < 0) {
+    return persistenceFail("persistence_input_invalid", "IndexedDB lane must be a lane key");
+  }
+  return [...scopeParts(value), lane];
 }
 
 function laneKey(value: Readonly<OperationStoreKey>): IDBValidKey {

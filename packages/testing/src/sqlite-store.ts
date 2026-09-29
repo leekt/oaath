@@ -11,7 +11,7 @@ import {
 import type { OaathContextStore } from "@oaath/sdk/persistence";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
-const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v2";
+const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v3";
 
 const METADATA_SCHEMA = `
   CREATE TABLE oaath_test_store_schema_v1 (
@@ -31,15 +31,16 @@ const GRANT_SCHEMA = `
 `;
 
 const OPERATION_SCHEMA = `
-  CREATE TABLE oaath_test_operation_store_v1 (
+  CREATE TABLE oaath_test_operation_store_v2 (
     grant_id TEXT NOT NULL,
     chain_id INTEGER NOT NULL CHECK (chain_id >= 1 AND chain_id <= ${MAX_SAFE_INTEGER}),
     kind TEXT NOT NULL CHECK (kind IN ('execution', 'revocation')),
+    lane INTEGER NOT NULL CHECK (lane >= 0 AND lane <= ${MAX_SAFE_INTEGER} AND (lane = 0 OR kind = 'execution')),
     record_version TEXT NOT NULL,
     store_revision INTEGER NOT NULL CHECK (store_revision >= 0 AND store_revision <= ${MAX_SAFE_INTEGER}),
     updated_at INTEGER NOT NULL CHECK (updated_at >= 0 AND updated_at <= ${MAX_SAFE_INTEGER}),
     payload TEXT NOT NULL,
-    PRIMARY KEY (grant_id, chain_id, kind)
+    PRIMARY KEY (grant_id, chain_id, kind, lane)
   ) STRICT, WITHOUT ROWID
 `;
 
@@ -54,7 +55,7 @@ const EXPECTED_SCHEMAS = new Map([
   ["oaath_test_context_store_v1", CONTEXT_SCHEMA],
   ["oaath_test_store_schema_v1", METADATA_SCHEMA],
   ["oaath_test_grant_store_v1", GRANT_SCHEMA],
-  ["oaath_test_operation_store_v1", OPERATION_SCHEMA],
+  ["oaath_test_operation_store_v2", OPERATION_SCHEMA],
 ]);
 
 type StoredRow = Readonly<{
@@ -270,31 +271,36 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
   return prepareStore(database, () => {
     const get = database.prepare(`
     SELECT record_version, store_revision, updated_at, payload
-    FROM oaath_test_operation_store_v1
-    WHERE grant_id = ? AND chain_id = ? AND kind = ?
+    FROM oaath_test_operation_store_v2
+    WHERE grant_id = ? AND chain_id = ? AND kind = ? AND lane = ?
   `);
     const insert = database.prepare(`
-    INSERT INTO oaath_test_operation_store_v1 (
-      grant_id, chain_id, kind, record_version, store_revision, updated_at, payload
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (grant_id, chain_id, kind) DO NOTHING
+    INSERT INTO oaath_test_operation_store_v2 (
+      grant_id, chain_id, kind, lane, record_version, store_revision, updated_at, payload
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (grant_id, chain_id, kind, lane) DO NOTHING
   `);
     const update = database.prepare(`
-    UPDATE oaath_test_operation_store_v1
+    UPDATE oaath_test_operation_store_v2
     SET record_version = ?, store_revision = ?, updated_at = ?, payload = ?
-    WHERE grant_id = ? AND chain_id = ? AND kind = ? AND store_revision = ?
+    WHERE grant_id = ? AND chain_id = ? AND kind = ? AND lane = ? AND store_revision = ?
   `);
     const adapter: OperationStoreAdapter = {
       async get(key) {
         return envelope(
-          get.get(operationLaneId(key.grantId), key.chainId, key.kind) as StoredRow | undefined,
+          get.get(operationLaneId(key.grantId), key.chainId, key.kind, key.lane ?? 0) as
+            | StoredRow
+            | undefined,
         );
       },
       async getArchived({ key, userOperationHash }) {
         return envelope(
-          get.get(operationArchiveId(key.grantId, userOperationHash), key.chainId, key.kind) as
-            | StoredRow
-            | undefined,
+          get.get(
+            operationArchiveId(key.grantId, userOperationHash),
+            key.chainId,
+            key.kind,
+            key.lane ?? 0,
+          ) as StoredRow | undefined,
         );
       },
       async compareAndSwap({
@@ -310,10 +316,13 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
           expectedArchiveAbsentUserOperationHash,
         );
         const payload = encode(next.value);
+        const lane = key.lane ?? 0;
         database.exec("BEGIN IMMEDIATE");
         let transactionOpen = true;
         try {
-          const current = envelope(get.get(laneId, key.chainId, key.kind) as StoredRow | undefined);
+          const current = envelope(
+            get.get(laneId, key.chainId, key.kind, lane) as StoredRow | undefined,
+          );
           if (
             expectedStoreRevision === null
               ? current !== undefined
@@ -323,7 +332,7 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
             transactionOpen = false;
             return false;
           }
-          if (get.get(expectedAbsentArchiveId, key.chainId, key.kind) !== undefined) {
+          if (get.get(expectedAbsentArchiveId, key.chainId, key.kind, lane) !== undefined) {
             database.exec("ROLLBACK");
             transactionOpen = false;
             return false;
@@ -343,6 +352,7 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
               operationArchiveId(key.grantId, archive.userOperationHash),
               key.chainId,
               key.kind,
+              lane,
               archive.record.version,
               archive.record.storeRevision,
               archive.record.updatedAt,
@@ -360,6 +370,7 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
                   laneId,
                   key.chainId,
                   key.kind,
+                  lane,
                   next.version,
                   next.storeRevision,
                   next.updatedAt,
@@ -373,6 +384,7 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
                   laneId,
                   key.chainId,
                   key.kind,
+                  lane,
                   expectedStoreRevision,
                 );
           if (Number(result.changes) !== 1) {
