@@ -1,8 +1,8 @@
 /**
- * The extension's service worker: one URL-mode OAAth realm per page origin.
+ * The extension's service worker: one service-approved OAAth realm per page origin.
  *
  * Authority boundaries:
- * - URL mode never holds owner authority — pairing still routes the owner's
+ * - Service approvals never hold owner authority — pairing still routes the owner's
  *   review through the service's own authorization flow (the phone).
  * - One Grant per origin, in that origin's own IndexedDB database; nothing is
  *   shared across origins, so one dapp can never spend another's scope.

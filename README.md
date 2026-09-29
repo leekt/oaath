@@ -390,7 +390,7 @@ chains. `revoked` requires finalized permission absence and a consumed approval
 install nonce on every chain in that snapshot, including unused chains. Relay
 invalidation stops service admission; it does not invalidate the owner signature
 onchain. A missing chain transport leaves the Grant `revoking`, even after reload.
-URL-mode `grant.revoke()` requests durable phone custody for every target still
+Service-approved `grant.revoke()` requests durable phone custody for every target still
 missing proof. Repeated calls recover the current request; phone approval alone
 leaves the Grant `revoking`. The deployment supplies chain preparation, phone
 delivery and an execution worker, while the client observes the resulting effects.
@@ -404,7 +404,7 @@ operation deploys it, rebind before preparing the next operation, or EntryPoint
 rejects the stale factory evidence (`AA10 sender already constructed`).
 
 Gas values in the low-level Kernel helpers are caller-supplied decimal strings;
-bring them from your own estimation source. The experimental URL-mode ERC-7677
+bring them from your own estimation source. The experimental service-approved ERC-7677
 path makes one post-stub estimate through the deployment's registered bundler
 port. `createKernelReads` adapts any viem-style public client into the account
 read capability for every supported deployment, and `asViemUserOperation` maps a prepared operation into viem's

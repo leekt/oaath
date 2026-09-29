@@ -1,5 +1,5 @@
 /**
- * Durable continuity for the URL-only realm: the device identity and the
+ * Durable continuity for the service-approved realm: the device identity and the
  * session key survive a reload, so `resume()` finds a Grant whose operator
  * credential still names a key this realm can use, and the permission
  * materialized on chain stays the permission this session signs for.

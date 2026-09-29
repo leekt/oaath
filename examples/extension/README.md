@@ -1,7 +1,7 @@
 # OAAth Chrome extension
 
 Any existing dapp already speaks EIP-1193/EIP-6963 to whatever wallet announces
-itself. This MV3 extension runs the URL-mode OAAth realm in its service worker
+itself. This MV3 extension runs the service-approved OAAth realm in its service worker
 and announces the Grant provider to every page, so a dapp with **zero OAAth
 integration** executes through scoped session authority: the user pairs once
 per origin, the owner approves the scope on their own device, and
@@ -27,7 +27,7 @@ per origin, the owner approves the scope on their own device, and
   expiry, or closing the tab returns `4001`, while a worker restart cannot
   recover an approval or start the operation. Rejected and expired explicit IDs
   remain durable tombstones and cannot be reused.
-- **URL mode never holds owner authority.** Pairing routes the owner's review
+- **Service approvals never hold owner authority.** Pairing routes the owner's review
   through the service's authorization flow (the phone); revocation from the
   extension invalidates the capability and leaves the Grant durably `revoking`
   until the owner's console removes the chain permission (through the relay's

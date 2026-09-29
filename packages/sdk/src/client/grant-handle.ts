@@ -4430,7 +4430,7 @@ export function createGrantHandle(
     }
     // Each chain-local installed permission is removed on that chain by an
     // owner-signed revocation operation. A realm holding the owner's signing
-    // capability completes it here; one that does not (URL mode never holds
+    // capability completes it here; one that does not (service approvals never hold
     // owner authority) leaves the chain pending. The Grant stays durably
     // `revoking` until every chain's removal is conclusively observed.
     for (const original of [...grant.materializations]) {
