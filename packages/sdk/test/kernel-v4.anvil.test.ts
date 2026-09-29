@@ -18,9 +18,8 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // One repo-owned deny list; this copy had already gone stale against it.
 import { scrubLiveProviderEnvironment } from "../../../scripts/live-provider-environment.mjs";
+import { bindKernelAccount, createKernelReads, prepareKernelUserOperation } from "../src/kernel.js";
 import {
-  bindKernelAccount,
-  createKernelReads,
   encodeKernelV4FactoryAddressRead,
   encodeKernelV4InstallModules,
   encodeKernelV4ValidatorData,
@@ -29,8 +28,7 @@ import {
   KERNEL_V4_EXECUTE_SELECTOR,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  prepareKernelUserOperation,
-} from "../src/kernel.js";
+} from "../src/kernel-v4.js";
 
 import { readFixture } from "./support/anvil.js";
 

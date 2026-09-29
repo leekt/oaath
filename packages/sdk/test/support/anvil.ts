@@ -37,12 +37,11 @@ import { expect } from "vitest";
 import { scrubLiveProviderEnvironment } from "../../../../scripts/live-provider-environment.mjs";
 import {
   createKernelReads,
-  KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
   type KernelRuntime,
   type PreparedUserOperation,
 } from "../../src/kernel.js";
 import type { KernelV4AccountReadCapability } from "../../src/kernel-v4.js";
+import { KERNEL_V4_CREATE2_DEPLOYER, KERNEL_V4_ENTRY_POINT_V07 } from "../../src/kernel-v4.js";
 
 export interface ModuleFixture {
   repository: string;

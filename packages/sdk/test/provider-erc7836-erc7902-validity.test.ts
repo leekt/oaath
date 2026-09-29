@@ -3,6 +3,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
@@ -10,7 +11,9 @@ import {
   grantProviderPort,
   type OaathProviderValidityAdmission,
 } from "../src/client/grant-handle.js";
-import { encodeKernelV4Execution, OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel.js";
+import { OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel/modules.js";
+import { encodeKernelV4Execution } from "../src/kernel-v4.js";
+
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,

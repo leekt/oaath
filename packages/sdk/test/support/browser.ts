@@ -59,10 +59,6 @@ import {
 } from "../../src/kernel/permission/v33.js";
 import {
   createKernelRuntime,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KeyProfile,
   kernelDeployment,
   kernelKey,
@@ -70,6 +66,12 @@ import {
   type PreparedUserOperation,
   sessionOperator,
 } from "../../src/kernel.js";
+import {
+  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+} from "../../src/kernel-v4.js";
 import {
   createMemoryCleanupStore,
   createMemoryContextStore,

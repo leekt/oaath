@@ -8,12 +8,12 @@ import {
   prepareSponsoredKernelOperation,
 } from "../src/advanced.js";
 import type { KernelRuntimePrepareInput } from "../src/kernel.js";
+import { prepareUserOperation } from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  prepareUserOperation,
-} from "../src/kernel.js";
+} from "../src/kernel-v4.js";
 import { readCompletedErc7677ResultCapabilities } from "../src/provider/erc7677.js";
 
 const SERVICE_URL = "https://service.example/chains/421614/paymaster";

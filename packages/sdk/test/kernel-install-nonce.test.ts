@@ -4,7 +4,7 @@ import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-n
 import {
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4InstallNonceRead,
-} from "../src/kernel.js";
+} from "../src/kernel-v4.js";
 
 const account = `0x${"66".repeat(20)}` as const;
 const nonceAbi = parseAbi([

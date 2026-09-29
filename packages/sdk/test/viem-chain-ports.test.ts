@@ -1,7 +1,8 @@
 import { encodeAbiParameters, encodeEventTopics, zeroAddress } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
-import { KERNEL_V4_ENTRY_POINT_V07, prepareUserOperation } from "../src/kernel.js";
+import { prepareUserOperation } from "../src/kernel.js";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
 import { createViemChainPorts } from "../src/viem.js";
 
 const config = {

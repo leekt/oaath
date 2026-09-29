@@ -23,7 +23,8 @@ import { describe, expect, it } from "vitest";
 import { createUserOperationObserver, type OaathUsageRequest } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../src/index.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel.js";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,

@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { OaathKernelSponsorshipRuntime } from "../src/advanced.js";
 import { type OaathRoutingError, prepareSponsoredKernelOperation } from "../src/advanced.js";
 import type { KernelRuntimePrepareInput, PreparedPaymaster } from "../src/kernel.js";
+import { prepareUserOperation } from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  prepareUserOperation,
-} from "../src/kernel.js";
+} from "../src/kernel-v4.js";
 
 const ACCOUNT = `0x${"11".repeat(20)}` as const;
 const TARGET = `0x${"22".repeat(20)}` as const;

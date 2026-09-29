@@ -2,11 +2,8 @@ import { createWalletClient, custom, decodeFunctionData } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/connected-eoa.js";
-import {
-  asViemUserOperation,
-  KERNEL_V4_ENTRY_POINT_V07,
-  prepareUserOperation,
-} from "../src/kernel.js";
+import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
+import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
 import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
 import { OaathRpcError } from "../src/viem.js";
 

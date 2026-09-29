@@ -9,11 +9,10 @@ import { kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import {
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
-} from "../src/kernel/modules.js";
-import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
-} from "../src/kernel.js";
+} from "../src/kernel/modules.js";
+
 import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
 import { createChainFixture, permissionInput } from "./support/browser.js";
 
