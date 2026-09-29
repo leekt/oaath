@@ -183,6 +183,19 @@ export const OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH =
   "0x6bb7a4d8507d7824e806f730683d532961dc2117ce530a8216765ddd2b1f17b5" as const;
 
 /**
+ * Daimo's P256Verifier (daimo-eth/p256-verifier 607d3ec), the singleton the
+ * pinned WebAuthn signer staticcalls at this fixed address when an assertion
+ * carries `usePrecompiled = false`. kernel/key/webauthn.ts always signs that
+ * way, so RIP-7212 presence never changes the path: a WebAuthn session needs
+ * this exact runtime code on every chain, and a session bind proves it before
+ * any consent or signature. contracts/artifacts/KernelV4Runtime.json carries
+ * the deterministic deployment input.
+ */
+export const KERNEL_P256_VERIFIER = "0xc2b78104907f722dabac4c69f826a522b2754de4" as const;
+export const KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH =
+  "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc" as const;
+
+/**
  * Policy modules bound per policy axis. CallPolicy enforces the call and value
  * axes together, in one module, from one configuration. A session installs one
  * package per distinct module, so a scope spanning several axes installs several

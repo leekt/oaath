@@ -124,6 +124,14 @@ revoking Grant for observation or cleanup; only an active covering Grant may sen
 Another permission request requires explicit wallet consent. No issuer network
 request is made. Chain RPC and bundler calls still use the configured ports.
 
+To sign sessions with a passkey instead of the generated key, pass
+`session: { kind: "webauthn", credential, credentialId, rpId, origin, authenticate }`
+(the `webauthnKey` input). The passkey stays in its authenticator; only its public
+credential is recorded in the Grant, and reopening with the same passkey resumes it.
+The pinned WebAuthn signer verifies through the Daimo P-256 verifier contract, not
+the RIP-7212 precompile, so approval fails closed with
+`oaath_client_capability_unsupported` before any prompt on a chain without it.
+
 Outside a browser, supply an explicit `origin` and durable `stores` through
 `OaathLocalConfiguration`. Local mode fails if default IndexedDB is unavailable;
 it does not silently create an ephemeral session. The same client also exposes

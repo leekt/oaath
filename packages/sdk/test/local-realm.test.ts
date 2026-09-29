@@ -1,9 +1,15 @@
+import { p256 } from "@noble/curves/nist.js";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import { IDBFactory } from "fake-indexeddb";
-import { hashTypedData } from "viem";
+import { bytesToHex, hashTypedData, keccak256 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAAth, type OaathLocalApprovalReview } from "../src/index.js";
 import { kernelV33Deployment } from "../src/kernel/deployment/v33.js";
+import {
+  KERNEL_P256_VERIFIER,
+  KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
+} from "../src/kernel/modules.js";
 import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
@@ -12,7 +18,7 @@ import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
 import { createChainFixture, permissionInput } from "./support/browser.js";
 
 const address = "0xc3a56de6dfc1dcef5113927ec09513918e8c44aa";
-function fixture() {
+function fixture(verifier = false) {
   const account = privateKeyToAccount(generatePrivateKey());
   const deployment = kernelV33Deployment(143);
   const chain = createChainFixture({ chainId: 143 });
@@ -27,6 +33,8 @@ function fixture() {
       case "code":
         return "0x6000";
       case "runtime_code_hash":
+        if (verifier && request.address === KERNEL_P256_VERIFIER)
+          return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
         return request.address === OAATH_KERNEL_V4_VALIDITY_POLICY
           ? OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH
           : KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
@@ -57,6 +65,23 @@ function fixture() {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+const credentialId = "AAECAwQFBgcICQoLDA0ODw";
+const passkeySession = Object.freeze({
+  kind: "webauthn" as const,
+  credential: {
+    version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+    kind: "webauthn" as const,
+    publicKey: bytesToHex(p256.getPublicKey(p256.utils.randomPrivateKey(), false)),
+    authenticatorIdHash: keccak256("0x000102030405060708090a0b0c0d0e0f"),
+  },
+  credentialId,
+  rpId: "app.example",
+  origin: "https://app.example",
+  authenticate: async () => {
+    throw new Error("approval must not use the passkey");
+  },
+});
 
 describe("local wallet realm", () => {
   it("does not create a Grant after a rejected wallet prompt or sign again automatically", async () => {
@@ -147,6 +172,47 @@ describe("local wallet realm", () => {
     expect(await connection.resume()).toBeNull();
     await realm.close();
   });
+
+  it("refuses an unsupported session kind before opening storage", () => {
+    const { input } = fixture();
+    expect(() => createOAAth({ ...input, session: { kind: "p256" } } as never)).toThrowError(
+      expect.objectContaining({ code: "oaath_client_input_invalid" }),
+    );
+  });
+
+  it.each([false, true])(
+    "binds a caller-supplied passkey session only where its verifier exists (%s)",
+    async (verifier) => {
+      vi.stubGlobal("indexedDB", new IDBFactory());
+      const { input, owner } = fixture(verifier);
+      const onApproval = vi.fn(async () => undefined);
+      const open = () => createOAAth({ ...input, session: passkeySession, onApproval });
+      let realm = open();
+      const request = (await realm.connect()).requestPermission(permissionInput());
+      if (!verifier) {
+        // Fail closed before the owner reviews or signs anything.
+        await expect(request).rejects.toMatchObject({
+          code: "oaath_client_capability_unsupported",
+        });
+        expect(onApproval).not.toHaveBeenCalled();
+        expect(owner.signTypedData).not.toHaveBeenCalled();
+        await realm.close();
+        return;
+      }
+      expect((await request).state).toBe("active");
+      expect(realm.binding.operatorCredential).toMatchObject({
+        kind: "webauthn",
+        publicKey: passkeySession.credential.publicKey,
+      });
+      const identity = realm.binding;
+      await realm.close();
+      realm = open();
+      expect((await (await realm.connect()).resume())?.state).toBe("active");
+      expect(realm.binding).toEqual(identity);
+      expect(owner.signTypedData).toHaveBeenCalledTimes(1);
+      await realm.close();
+    },
+  );
 
   it("approves once, shows the bound policy, and restores the same Grant without any issuer fetch", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());

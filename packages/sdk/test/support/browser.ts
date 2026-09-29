@@ -39,6 +39,8 @@ import type {
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
 import { createOAAth, type Oaath } from "../../src/index.js";
 import {
+  KERNEL_P256_VERIFIER,
+  KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../../src/kernel/modules.js";
@@ -465,6 +467,7 @@ function word(value: bigint): string {
 
 function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }

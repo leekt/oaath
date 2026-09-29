@@ -45,10 +45,13 @@ import {
 } from "./internal.js";
 import {
   exactKernelDeployment,
+  KERNEL_P256_VERIFIER,
+  KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  pinnedSignerModule,
 } from "./modules.js";
 import type {
   CreateKernelRuntimeInput,
@@ -220,6 +223,24 @@ export function createKernelRuntime(
     }
     if (!isBytes(code) || code === "0x") {
       return runtimeFail(unavailable, "Kernel authority module carries no code on this chain");
+    }
+    // The pinned WebAuthn signer verifies through the software P-256 verifier
+    // (kernel/key/webauthn.ts never selects the RIP-7212 precompile), so a
+    // passkey session is unusable on a chain without that exact verifier.
+    if (operator.authority !== "session" || authorityModule !== pinnedSignerModule("webauthn"))
+      return;
+    let verifier: unknown;
+    try {
+      verifier = await read({
+        type: "runtime_code_hash",
+        chainId: deployment.chainId,
+        address: KERNEL_P256_VERIFIER,
+      });
+    } catch {
+      return runtimeFail(unavailable, "P-256 verifier code could not be read");
+    }
+    if (verifier !== KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH) {
+      return runtimeFail(unavailable, "P-256 verifier is not deployed on this chain");
     }
   }
 

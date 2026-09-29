@@ -1,6 +1,8 @@
-import { createOAAth, type OaathLocalClient } from "@oaath/sdk";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import { createOAAth, type OaathLocalClient, type OaathLocalSession } from "@oaath/sdk";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import { IDBFactory } from "fake-indexeddb";
+import { bytesToHex, concat, hexToBytes, keccak256, sha256, stringToBytes } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const target = `0x${"44".repeat(20)}` as const;
@@ -12,6 +14,57 @@ const permission = {
   perChainOperationLimit: 3,
 };
 afterEach(() => vi.unstubAllGlobals());
+
+/** A software passkey: WebCrypto P-256 signs exactly what an authenticator signs. */
+async function softwarePasskey(origin: string) {
+  const rpId = new URL(origin).hostname;
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, [
+    "sign",
+  ]);
+  const rawId = crypto.getRandomValues(new Uint8Array(16));
+  let assertions = 0;
+  const session: OaathLocalSession = {
+    kind: "webauthn",
+    credential: {
+      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+      kind: "webauthn",
+      publicKey: bytesToHex(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))),
+      authenticatorIdHash: keccak256(rawId),
+    },
+    credentialId: Buffer.from(rawId).toString("base64url"),
+    rpId,
+    origin,
+    async authenticate(request) {
+      assertions++;
+      const clientDataJSON = JSON.stringify({
+        type: "webauthn.get",
+        challenge: request.challenge,
+        origin,
+        crossOrigin: false,
+      });
+      const authenticatorData = concat([sha256(stringToBytes(rpId)), "0x0500000001"]);
+      const signed = new Uint8Array(
+        hexToBytes(concat([authenticatorData, sha256(stringToBytes(clientDataJSON))])),
+      );
+      const signature = new Uint8Array(
+        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, signed),
+      );
+      return {
+        authenticatorData,
+        clientDataJSON,
+        responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+        r: bytesToHex(signature.slice(0, 32)),
+        s: bytesToHex(signature.slice(32)),
+      };
+    },
+  };
+  return {
+    session,
+    get assertions() {
+      return assertions;
+    },
+  };
+}
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode", () => {
   it.each(["rejected", "unavailable"] as const)(
@@ -213,6 +266,62 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     },
     60_000,
   );
+
+  it("runs a caller-supplied WebAuthn session on an existing v3.3 account", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const fixture = await createLocalOwnerAnvilFixture();
+    const origin = "https://consumer.example";
+    const passkey = await softwarePasskey(origin);
+    const open = () =>
+      createOAAth({
+        mode: "local",
+        owner: fixture.wallet,
+        account: fixture.address,
+        chains: fixture.createChainPorts(),
+        origin,
+        session: passkey.session,
+      });
+    let client = open();
+    try {
+      const grant = await (await client.connect()).requestPermission(permission);
+      // One ECDSA owner consent; the passkey has not signed anything yet.
+      expect(fixture.signatureCount).toBe(1);
+      expect(passkey.assertions).toBe(0);
+      const first = await grant.sendCalls({ chain: fixture.chainId, calls });
+      expect((await first.wait({ attempts: 3 })).status).toBe("finalized");
+      expect(await first.execution()).toMatchObject({ sender: fixture.address, calls });
+      expect(passkey.assertions).toBe(1);
+      expect(fixture.bundlerSubmissionCount).toBe(1);
+      await expect(
+        grant.sendCalls({
+          chain: fixture.chainId,
+          calls: [{ target, data: "0xabcdef01", value: "1" }],
+        }),
+      ).rejects.toMatchObject({ code: "oaath_client_scope_denied" });
+      expect(passkey.assertions).toBe(1);
+      expect(fixture.bundlerSubmissionCount).toBe(1);
+      // Recreate every instance; the same passkey resumes the same Grant.
+      await client.close();
+      client = open();
+      const resumed = await (await client.connect()).resume();
+      if (!resumed) throw new Error("passkey grant missing after reload");
+      expect(await resumed.account(fixture.chainId)).toBe(fixture.address);
+      await resumed.revoke();
+      if (resumed.state !== "revoked") {
+        await fixture.mine();
+        await resumed.revoke();
+      }
+      expect(resumed.state).toBe("revoked");
+      expect(fixture.signatureCount).toBe(2);
+      expect(passkey.assertions).toBe(1);
+      await expect(resumed.sendCalls({ chain: fixture.chainId, calls })).rejects.toMatchObject({
+        code: "oaath_client_grant_inactive",
+      });
+    } finally {
+      await client.close();
+      await fixture.close();
+    }
+  }, 60_000);
 
   it("installs a four-call permission after owner execution and reuses it after reload", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
