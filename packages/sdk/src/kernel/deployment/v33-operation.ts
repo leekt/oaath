@@ -15,7 +15,7 @@ import {
   prepareUserOperation,
 } from "../../prepared-user-operation.js";
 import { applyKernelGasPolicy, type KernelGasPolicy } from "../gas-policy.js";
-import { exactInput, inputInvalid } from "../internal.js";
+import { exactInput, inputInvalid, runtimeFail } from "../internal.js";
 import type { KernelV33RuntimePrepareInput } from "../types.js";
 import { provenKernelV33Account } from "./v33.js";
 
@@ -83,8 +83,75 @@ export function prepareKernelV33Operation(
     "Kernel v3.3 operation",
     inputInvalid,
   );
-  const account = provenKernelV33Account(record.account);
   const mode = (record.mode === undefined ? "standard" : record.mode) as "standard" | "enable";
+  return encodeKernelV33Operation(
+    record,
+    { mode, validation, nonceKey: record.nonceKey, sequence: record.sequence },
+    (gas) => applyKernelGasPolicy(gas, mode, gasPolicy),
+    context,
+  );
+}
+
+/**
+ * One v3.3 UserOperation from an explicit validation binding and exact gas, with
+ * no gas policy applied: the version-agnostic `prepareKernelUserOperation`
+ * reaches this for a v3.3 account.
+ */
+export function prepareKernelV33UserOperation(value: unknown): PreparedUserOperation {
+  const context: CaptureContext = new WeakSet();
+  const captured = captureRecord(value, "Kernel v3.3 UserOperation", context, inputInvalid);
+  if (Object.hasOwn(captured, "validityTimeRange"))
+    return runtimeFail(
+      "kernel_runtime_unsupported",
+      "Kernel v3.3 has no OAAth validity policy for a requested time range",
+    );
+  const record = exactCapturedRecord(
+    captured,
+    [
+      "kind",
+      "grantId",
+      "account",
+      "nonce",
+      "calls",
+      "gas",
+      ...(Object.hasOwn(captured, "paymaster") ? ["paymaster"] : []),
+    ],
+    "Kernel v3.3 UserOperation",
+    inputInvalid,
+  );
+  const nonce = exactInput(
+    record.nonce,
+    ["mode", "validation", "nonceKey", "sequence"],
+    "Kernel v3.3 UserOperation nonce",
+    context,
+  );
+  if (nonce.mode !== "standard" && nonce.mode !== "enable")
+    return inputInvalid("Kernel v3.3 validation mode is unsupported");
+  return encodeKernelV33Operation(
+    record,
+    {
+      mode: nonce.mode,
+      validation: nonce.validation as Readonly<KernelV4Validation>,
+      nonceKey: nonce.nonceKey,
+      sequence: nonce.sequence,
+    },
+    (gas) => gas,
+    context,
+  );
+}
+
+function encodeKernelV33Operation(
+  record: Readonly<Record<string, unknown>>,
+  nonce: Readonly<{
+    mode: "standard" | "enable";
+    validation: Readonly<KernelV4Validation>;
+    nonceKey: unknown;
+    sequence: unknown;
+  }>,
+  gasFor: (gas: KernelV4UserOperationGas) => KernelV4UserOperationGas,
+  context: CaptureContext,
+): PreparedUserOperation {
+  const account = provenKernelV33Account(record.account);
   const gas = exactInput(
     record.gas,
     [
@@ -106,16 +173,16 @@ export function prepareKernelV33Operation(
       sender: account.account,
       nonce: encodeKernelV4Nonce({
         key: encodeKernelV33NonceKey({
-          mode,
-          validation,
-          nonceKey: record.nonceKey as string,
+          mode: nonce.mode,
+          validation: nonce.validation,
+          nonceKey: nonce.nonceKey as string,
         }),
-        sequence: record.sequence as string,
+        sequence: nonce.sequence as string,
       }),
       callData: encodeKernelV4Execution({
         calls: record.calls as KernelV33RuntimePrepareInput["calls"],
       }),
-      ...applyKernelGasPolicy(gas as unknown as KernelV4UserOperationGas, mode, gasPolicy),
+      ...gasFor(gas as unknown as KernelV4UserOperationGas),
       factory: null,
       paymaster: (record.paymaster ?? null) as KernelV33RuntimePrepareInput["paymaster"] &
         (object | null),

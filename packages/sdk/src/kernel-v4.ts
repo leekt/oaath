@@ -189,7 +189,7 @@ export interface KernelV4UserOperationNonceInput extends KernelV4NonceKeyInput {
 export interface KernelV4UserOperationInput {
   readonly kind: "execution" | "revocation";
   readonly grantId: string;
-  readonly account: KernelV4AccountDescriptor;
+  readonly account: KernelV4AccountDescriptor | KernelV4ExistingAccountDescriptor;
   readonly nonce: KernelV4UserOperationNonceInput;
   readonly calls: readonly KernelV4Call[];
   readonly gas: KernelV4UserOperationGas;
@@ -256,7 +256,7 @@ export type KernelV4AccountReadRequest =
       calldata: `0x${string}`;
     }>
   | Readonly<{
-      type: "kernel_account_implementation";
+      type: "kernel_account_implementation" | "kernel_v4_account_root";
       chainId: number;
       account: `0x${string}`;
     }>;
@@ -300,6 +300,22 @@ export interface KernelV4AccountDescriptor {
   readonly initialPackages: readonly Readonly<KernelV4Install>[];
   readonly factoryAddressCalldata: `0x${string}`;
   readonly factoryDeployCalldata: `0x${string}`;
+}
+
+/**
+ * A deployed Kernel v4 account bound by its address alone. It carries no
+ * factory derivation, so it can never prepare a deployment; the root validation
+ * it records is the account's current root, read onchain.
+ */
+export interface KernelV4ExistingAccountDescriptor {
+  readonly profile: "kernel-v4-uups-entrypoint-v0.7";
+  readonly state: "deployed";
+  readonly chainId: number;
+  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V07;
+  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+  readonly account: `0x${string}`;
+  /** Current root ValidationId: `0x01 || validator` or `0x02 || permissionId || 0`. */
+  readonly rootValidator: `0x${string}`;
 }
 
 const ENTRY_POINT = Object.freeze({
@@ -408,6 +424,13 @@ const KERNEL_ABI = [
     stateMutability: "view",
     inputs: [{ name: "key", type: "uint192" }],
     outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "root",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bytes21" }],
   },
   {
     type: "function",
@@ -723,6 +746,19 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
         if (!result.data) return undefined;
         return decodeAbiParameters([{ type: "address" }] as const, result.data)[0].toLowerCase();
       }
+      if (request.type === "kernel_v4_account_root") {
+        const result = await client.call({
+          to: request.account,
+          data: encodeFunctionData({ abi: KERNEL_ABI, functionName: "root" }),
+        });
+        if (!result.data) return undefined;
+        const parameters = [{ type: "bytes21" }] as const;
+        const [root] = decodeAbiParameters(parameters, result.data);
+        // Noncanonical return data is contradictory evidence, not a root.
+        return encodeAbiParameters(parameters, [root]).toLowerCase() === result.data.toLowerCase()
+          ? root.toLowerCase()
+          : undefined;
+      }
       const value = await client.getStorageAt({
         address: request.account,
         slot: KERNEL_V4_IMPLEMENTATION_SLOT,
@@ -733,29 +769,14 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
 }
 
 /**
- * Resolves one counterfactual or deployed Kernel account after proving that the
- * registered factory is bound to the supported v4 UUPS implementation.
+ * Chain, EntryPoint, implementation and factory code evidence for one v4
+ * deployment profile, shared by counterfactual and existing-account binding.
  */
-export async function bindKernelV4Account(
-  value: KernelV4BindAccountInput,
-): Promise<Readonly<KernelV4AccountDescriptor>> {
-  const context: CaptureContext = new WeakSet();
-  const record = exact(
-    value,
-    ["chainId", "initialPackages", "accountIndex", "reads"],
-    "Kernel account binding",
-    context,
-  );
-  const deployment = kernelV4Deployment(record.chainId);
+async function proveDeploymentCode(
+  read: KernelV4AccountReadCapability["read"],
+  deployment: Readonly<KernelV4Deployment>,
+): Promise<void> {
   const factory = deployment.factory;
-  const initialPackages = captureInitialPackages(record.initialPackages, context);
-  const accountIndex = uint(record.accountIndex, MAX_UINT256, "Kernel account index").toString(10);
-  const readsRecord = exact(record.reads, ["read"], "Kernel account reads", context);
-  const read = callable(readsRecord.read, "Kernel account read capability");
-  const accountInput = Object.freeze({ initialPackages, accountIndex });
-  const factoryAddressCalldata = encodeKernelV4FactoryAddressRead(accountInput);
-  const factoryDeployCalldata = encodeKernelV4FactoryDeploy(accountInput);
-
   const observedChainId = await readEvidence(read, {
     type: "chain_id",
     chainId: deployment.chainId,
@@ -807,13 +828,14 @@ export async function bindKernelV4Account(
     KERNEL_V4_FACTORY_V07_CODE_HASH,
     "Kernel v4 factory runtime code",
   );
-  for (const module of new Set(initialPackages.map((install) => install.module))) {
-    evidenceCode(
-      await readEvidence(read, { type: "code", chainId: deployment.chainId, address: module }),
-      "Kernel v4 initial module code",
-    );
-  }
+}
 
+/** The hash-pinned factory must report the profile's UUPS implementation. */
+async function proveFactoryImplementation(
+  read: KernelV4AccountReadCapability["read"],
+  deployment: Readonly<KernelV4Deployment>,
+): Promise<void> {
+  const factory = deployment.factory;
   const factoryImplementation = evidenceAddress(
     await readEvidence(read, {
       type: "kernel_factory_implementation",
@@ -826,6 +848,115 @@ export async function bindKernelV4Account(
   if (factoryImplementation !== deployment.implementation) {
     return evidenceInvalid("Kernel factory implementation does not match the deployment profile");
   }
+}
+
+const ROOT_VALIDATION = /^0x(?:01[0-9a-f]{40}|02[0-9a-f]{8}0{32})$/u;
+const EXISTING_ACCOUNTS = new WeakSet<object>();
+
+/**
+ * Binds a deployed Kernel v4 account at its existing address. Nothing is
+ * derived from a factory: the account must already carry the profile's UUPS
+ * implementation, and its current root validation is read, never assumed.
+ */
+export async function bindKernelV4ExistingAccount(value: {
+  readonly chainId: number;
+  readonly address: `0x${string}`;
+  readonly reads: KernelV4AccountReadCapability;
+}): Promise<Readonly<KernelV4ExistingAccountDescriptor>> {
+  const context: CaptureContext = new WeakSet();
+  const record = exact(value, ["chainId", "address", "reads"], "Kernel existing account", context);
+  const deployment = kernelV4Deployment(record.chainId);
+  const account = address(record.address, "Kernel existing account address");
+  const readsRecord = exact(record.reads, ["read"], "Kernel account reads", context);
+  const read = callable(readsRecord.read, "Kernel account read capability");
+  await proveDeploymentCode(read, deployment);
+  await proveFactoryImplementation(read, deployment);
+  evidenceCode(
+    await readEvidence(read, { type: "code", chainId: deployment.chainId, address: account }),
+    "Kernel existing account code",
+  );
+  const implementation = evidenceAddress(
+    await readEvidence(read, {
+      type: "kernel_account_implementation",
+      chainId: deployment.chainId,
+      account,
+    }),
+    "Kernel account implementation",
+  );
+  if (implementation !== deployment.implementation) {
+    return evidenceInvalid("Kernel account implementation does not match the deployment profile");
+  }
+  const root = await readEvidence(read, {
+    type: "kernel_v4_account_root",
+    chainId: deployment.chainId,
+    account,
+  });
+  if (typeof root !== "string" || !ROOT_VALIDATION.test(root) || /^0x(?:01|02)0{40}$/u.test(root)) {
+    return evidenceInvalid("Kernel v4 root validation is invalid or unsupported");
+  }
+  if (root.startsWith("0x01")) {
+    evidenceCode(
+      await readEvidence(read, {
+        type: "code",
+        chainId: deployment.chainId,
+        address: `0x${root.slice(4)}`,
+      }),
+      "Kernel v4 root validator code",
+    );
+  }
+  const descriptor: Readonly<KernelV4ExistingAccountDescriptor> = Object.freeze({
+    profile: deployment.profile,
+    state: "deployed",
+    chainId: deployment.chainId,
+    entryPoint: deployment.entryPoint.address,
+    implementation: deployment.implementation,
+    account,
+    rootValidator: root as `0x${string}`,
+  });
+  EXISTING_ACCOUNTS.add(descriptor);
+  return descriptor;
+}
+
+/** True for a descriptor this SDK instance bound by address. */
+export function isKernelV4ExistingAccount(
+  value: unknown,
+): value is Readonly<KernelV4ExistingAccountDescriptor> {
+  return !!value && typeof value === "object" && EXISTING_ACCOUNTS.has(value);
+}
+
+/**
+ * Resolves one counterfactual or deployed Kernel account after proving that the
+ * registered factory is bound to the supported v4 UUPS implementation.
+ */
+export async function bindKernelV4Account(
+  value: KernelV4BindAccountInput,
+): Promise<Readonly<KernelV4AccountDescriptor>> {
+  const context: CaptureContext = new WeakSet();
+  const record = exact(
+    value,
+    ["chainId", "initialPackages", "accountIndex", "reads"],
+    "Kernel account binding",
+    context,
+  );
+  const deployment = kernelV4Deployment(record.chainId);
+  const factory = deployment.factory;
+  const initialPackages = captureInitialPackages(record.initialPackages, context);
+  const accountIndex = uint(record.accountIndex, MAX_UINT256, "Kernel account index").toString(10);
+  const readsRecord = exact(record.reads, ["read"], "Kernel account reads", context);
+  const read = callable(readsRecord.read, "Kernel account read capability");
+  const accountInput = Object.freeze({ initialPackages, accountIndex });
+  const factoryAddressCalldata = encodeKernelV4FactoryAddressRead(accountInput);
+  const factoryDeployCalldata = encodeKernelV4FactoryDeploy(accountInput);
+
+  await proveDeploymentCode(read, deployment);
+  for (const module of new Set(initialPackages.map((install) => install.module))) {
+    evidenceCode(
+      await readEvidence(read, { type: "code", chainId: deployment.chainId, address: module }),
+      "Kernel v4 initial module code",
+    );
+  }
+
+  await proveFactoryImplementation(read, deployment);
 
   const account = evidenceAddress(
     await readEvidence(read, {
@@ -879,7 +1010,10 @@ export async function bindKernelV4Account(
 function captureAccountDescriptor(
   value: unknown,
   context: CaptureContext,
-): Readonly<KernelV4AccountDescriptor> {
+): Readonly<KernelV4AccountDescriptor | KernelV4ExistingAccountDescriptor> {
+  // An address-bound descriptor is this module's own frozen object; it has no
+  // factory derivation to cross-check.
+  if (isKernelV4ExistingAccount(value)) return value;
   if (!value || typeof value !== "object" || !BOUND_ACCOUNTS.has(value)) {
     return fail("Kernel account descriptor has not been proven by this SDK instance");
   }
@@ -1038,7 +1172,7 @@ export function prepareKernelV4UserOperation(
         "Kernel max priority fee per gas",
       ),
       factory:
-        account.state === "counterfactual"
+        account.state === "counterfactual" && !isKernelV4ExistingAccount(account)
           ? { address: account.factory, data: account.factoryDeployCalldata }
           : null,
       paymaster: capturePaymaster(record.paymaster, context),

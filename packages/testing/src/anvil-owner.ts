@@ -1,4 +1,4 @@
-/** Existing Kernel v3.3 fixture over the public owner client and viem ports. */
+/** Existing Kernel account fixture over the public owner client and viem ports. */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import {
   type OaathLocalWallet,
   type OaathOwnerClient,
 } from "@oaath/sdk";
-import { kernelV33Deployment } from "@oaath/sdk/kernel";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
   createWalletClient,
@@ -29,6 +29,7 @@ import {
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { readLocalOperationReceipt } from "./anvil-observation.mjs";
 import { deployKernelStack, startAnvil } from "./anvil-process.mjs";
+import { deployLocalV4OwnerAccount } from "./anvil-v4-owner.js";
 import { deployLocalV33Account } from "./anvil-v33.js";
 import { createSqliteOperationStoreAdapter } from "./sqlite-store.js";
 
@@ -58,6 +59,8 @@ export async function createLocalOwnerAnvilFixture(
   input: {
     chainId?: number;
     wallet?: "browser" | "local";
+    /** The existing account's Kernel version; the SDK under test must detect it. */
+    kernelVersion?: "0.3.3" | "0.4.0";
     bundler?: "accept" | "reject" | "uncertain";
     /** Fault injection for session estimation; owner execution remains real EntryPoint execution. */
     sessionValidation?: "rejected" | "unavailable";
@@ -81,9 +84,12 @@ export async function createLocalOwnerAnvilFixture(
   }
   try {
     const stack = await deployKernelStack(chain);
-    const deployment = kernelV33Deployment(chainId);
+    const deployment = kernelDeployment({ chainId });
     const owner = privateKeyToAccount(generatePrivateKey());
-    const address = await deployLocalV33Account(chain, stack, owner.address);
+    const address =
+      input.kernelVersion === "0.4.0"
+        ? await deployLocalV4OwnerAccount(chain, stack, owner)
+        : await deployLocalV33Account(chain, stack, owner.address);
     await stack.fund(address, parseEther("10"));
     await stack.fund(owner.address, parseEther("10"));
     let signatures = 0,
