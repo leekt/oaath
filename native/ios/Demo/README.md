@@ -9,7 +9,7 @@ stability guarantee and no production qualification.
 
 ## Run on a physical iPhone (primary target)
 
-1. Start the web half on your Mac: `pnpm --filter @oaath/examples example:phone`
+1. Start the web half on your Mac: `bun run --filter @oaath/examples example:phone`
    (see `examples/phone/README.md`). Open its printed loopback browser URL and
    click **Pair phone** to reveal the one-shot link/QR; the secret is never
    printed in captured output. macOS will ask to allow incoming connections for

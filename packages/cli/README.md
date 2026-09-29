@@ -8,7 +8,7 @@ npx oaath doctor --chain 143
 npx oaath doctor --chain 143 --rpc https://rpc.monad.xyz --json
 ```
 
-Until the package is published, run `pnpm --filter oaath build` and
+Until the package is published, run `bun run --filter oaath build` and
 `node packages/cli/dist/cli.mjs doctor --chain 143` from the repository, or install
 the exact packed `oaath`, `@oaath/sdk` and `@oaath/protocol` tarballs together.
 

@@ -3,8 +3,8 @@
 The supported browser journey, end to end, in one file.
 
 ```sh
-pnpm --filter @oaath/examples example:browser                       # injected chain facts
-OAATH_REQUIRE_ANVIL=1 pnpm --filter @oaath/examples example:browser # real local chain
+bun run --filter @oaath/examples example:browser                       # injected chain facts
+OAATH_REQUIRE_ANVIL=1 bun run --filter @oaath/examples example:browser # real local chain
 ```
 
 ## What it demonstrates
@@ -60,4 +60,4 @@ both. That boundary is the point.
 The example uses the in-memory stores. A browser passes the `createIndexedDb*`
 adapters from the same entry instead — same five names, same journey — and gets
 non-extractable key custody plus a Grant that survives a reload.
-`pnpm smoke:browser` owns the full realm-recreation proof.
+`bun run smoke:browser` owns the full realm-recreation proof.

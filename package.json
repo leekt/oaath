@@ -14,15 +14,15 @@
     "url": "https://github.com/leekt/oaath/issues"
   },
   "homepage": "https://github.com/leekt/oaath#readme",
-  "packageManager": "pnpm@11.15.1",
+  "packageManager": "bun@1.4.2",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
     "preinstall": "node scripts/check-package-manager.mjs",
-    "build": "pnpm -r build",
-    "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "build": "bun run --workspaces --if-present build",
+    "typecheck": "tsc -p tsconfig.json && bun run --workspaces --if-present typecheck",
+    "test": "bun run --workspaces --sequential --if-present test",
     "test:phone": "swift test --package-path native/ios --force-resolved-versions",
     "lint": "biome check . --diagnostic-level=error",
     "format": "biome format --write .",
@@ -32,14 +32,15 @@
     "smoke:browser": "node scripts/smoke-packed-browser.mjs",
     "smoke:extension": "node scripts/smoke-packed-extension.mjs",
     "smoke:server": "node scripts/smoke-packed-server.mjs",
-    "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs && pnpm smoke:local-consumer && pnpm smoke:runtime",
-    "smoke:local-consumer": "node scripts/smoke-packed-local.mjs && pnpm smoke:process-recovery",
-    "smoke": "pnpm smoke:browser && pnpm smoke:server && pnpm smoke:all-chain",
+    "smoke:all-chain": "node scripts/smoke-all-chain-anvil.mjs && bun run smoke:local-consumer && bun run smoke:runtime",
+    "smoke:local-consumer": "node scripts/smoke-packed-local.mjs && bun run smoke:process-recovery",
+    "smoke": "bun run smoke:browser && bun run smoke:server && bun run smoke:all-chain",
     "examples:check": "node examples/check.mjs",
     "changeset": "changeset",
     "release:status": "changeset status",
-    "release:version": "changeset version",
-    "release:publish": "changeset publish",
+    "release:version": "changeset version && bun install --lockfile-only",
+    "release:check": "bun run --workspaces --if-present release:check",
+    "release:publish": "bun run --workspaces --if-present release:publish && changeset tag",
     "smoke:process-recovery": "node scripts/smoke-packed-process-recovery.mjs",
     "smoke:runtime": "node scripts/smoke-packed-runtime.mjs"
   },
@@ -49,5 +50,12 @@
     "tsdown": "^0.22.7",
     "typescript": "^7.0.2",
     "vitest": "^4.1.0"
-  }
+  },
+  "workspaces": [
+    "packages/*",
+    "examples"
+  ],
+  "trustedDependencies": [
+    "esbuild"
+  ]
 }

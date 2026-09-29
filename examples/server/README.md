@@ -5,8 +5,8 @@ server-specific code in [run.mjs](run.mjs) is a ~25 line `node:http` adapter.
 Everything else in the file is what a deployment owns.
 
 ```sh
-pnpm --filter @oaath/examples example:server            # memory store, port 8787
-OAATH_SMOKE=1 pnpm --filter @oaath/examples example:server  # drive the round-trip and exit
+bun run --filter @oaath/examples example:server            # memory store, port 8787
+OAATH_SMOKE=1 bun run --filter @oaath/examples example:server  # drive the round-trip and exit
 ```
 
 | Variable | Effect |
@@ -20,7 +20,7 @@ OAATH_SMOKE=1 pnpm --filter @oaath/examples example:server  # drive the round-tr
 createdb oaath_relay
 OAATH_POSTGRES_URL=postgres://localhost/oaath_relay \
 OAATH_POSTGRES_CREATE_SCHEMA=1 \
-  pnpm --filter @oaath/examples example:server
+  bun run --filter @oaath/examples example:server
 ```
 
 ## The four ports a deployment owns
@@ -129,4 +129,4 @@ lost its local state.
 This example proves the wiring, not the deployment. It never claims durability
 across a process restart, concurrent claim safety, or KMS behaviour;
 `packages/server/test/postgres.test.ts` and `restart.test.ts` own those behind
-`OAATH_REQUIRE_POSTGRES`, and `pnpm smoke:server` owns the packed-consumer claim.
+`OAATH_REQUIRE_POSTGRES`, and `bun run smoke:server` owns the packed-consumer claim.

@@ -6,9 +6,9 @@ local chains. The browser uses
 `getOperation`. Session keys, submission records and finality belong to the SDK.
 
 ```sh
-pnpm --filter @oaath/examples example:phone
-OAATH_WORKSPACE_KIND=team pnpm --filter @oaath/examples example:phone
-OAATH_PHONE_SIMULATE=1 pnpm --filter @oaath/examples example:phone
+bun run --filter @oaath/examples example:phone
+OAATH_WORKSPACE_KIND=team bun run --filter @oaath/examples example:phone
+OAATH_PHONE_SIMULATE=1 bun run --filter @oaath/examples example:phone
 ```
 
 Anvil is required. The service starts two local Osaka chains with the pinned
@@ -117,7 +117,7 @@ An enrolled account does not expose another pairing invitation after restart.
 Run the local PostgreSQL restart workflow explicitly:
 
 ```sh
-OAATH_REQUIRE_POSTGRES=1 OAATH_PHONE_SIMULATE=1 pnpm --filter @oaath/examples example:phone
+OAATH_REQUIRE_POSTGRES=1 OAATH_PHONE_SIMULATE=1 bun run --filter @oaath/examples example:phone
 ```
 
 It uses `OAATH_POSTGRES_URL` (default `postgres://localhost:5432/postgres`), owns

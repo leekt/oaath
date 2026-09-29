@@ -224,10 +224,10 @@ if (mode === "--write") {
   try {
     current = await readFile(PINNED_ARTIFACT_PATH, "utf8");
   } catch {
-    fail("pinned artifact is missing; run pnpm artifact:generate");
+    fail("pinned artifact is missing; run bun run artifact:generate");
   }
   if (current !== serialized) {
-    fail("pinned artifact drifted; run pnpm artifact:generate and review the bytecode change");
+    fail("pinned artifact drifted; run bun run artifact:generate and review the bytecode change");
   }
   process.stdout.write("verified deterministic Kernel validity policy artifact\n");
 }

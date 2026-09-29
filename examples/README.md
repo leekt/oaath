@@ -12,12 +12,12 @@ The other examples demonstrate individual capabilities.
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
 
 ```sh
-pnpm install
-pnpm examples:check                                   # from the repo root
-pnpm --filter @oaath/examples example:browser         # one at a time
-pnpm --filter @oaath/examples example:server
-pnpm --filter @oaath/examples example:phone           # pairs with native/ios/Demo
-pnpm --filter @oaath/examples example:all-chain       # needs Anvil
+bun install
+bun run examples:check                                   # from the repo root
+bun run --filter @oaath/examples example:browser         # one at a time
+bun run --filter @oaath/examples example:server
+bun run --filter @oaath/examples example:phone           # pairs with native/ios/Demo
+bun run --filter @oaath/examples example:all-chain       # needs Anvil
 ```
 
 `phone` and `all-chain` require Anvil from
@@ -44,17 +44,17 @@ them. An adopter installs the built packages and needs none of it.
 
 ## Evidence
 
-`pnpm examples:check` runs locally. CI separately runs the phone service workflow
+`bun run examples:check` runs locally. CI separately runs the phone service workflow
 and the native phone suite. Workspace examples demonstrate composition; packed
 smokes own evidence about published artifacts:
 
 ```sh
-pnpm check:public-surface
-pnpm smoke:browser    # packed tarball consumer, golden path, realm recreation
-pnpm smoke:extension  # packed MV3 extension, worker death, durable status recovery
-pnpm smoke:server     # packed tarball consumer, relay round-trip, ./postgres
-pnpm smoke:all-chain  # two local Anvil chains, one replayable owner approval
+bun run check:public-surface
+bun run smoke:browser    # packed tarball consumer, golden path, realm recreation
+bun run smoke:extension  # packed MV3 extension, worker death, durable status recovery
+bun run smoke:server     # packed tarball consumer, relay round-trip, ./postgres
+bun run smoke:all-chain  # two local Anvil chains, one replayable owner approval
 ```
 
-Run `pnpm examples:check` locally when you change a public surface, so the
+Run `bun run examples:check` locally when you change a public surface, so the
 documentation cannot drift away from the code it documents.

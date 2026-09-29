@@ -18,64 +18,57 @@
   "engines": {
     "node": ">=22.13"
   },
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "oaath-source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./kernel": {
-      "types": "./src/kernel.ts",
-      "default": "./src/kernel.ts"
+      "oaath-source": {
+        "types": "./src/kernel.ts",
+        "default": "./src/kernel.ts"
+      },
+      "types": "./dist/kernel.d.ts",
+      "default": "./dist/kernel.js"
     },
     "./advanced": {
-      "types": "./src/advanced.ts",
-      "default": "./src/advanced.ts"
+      "oaath-source": {
+        "types": "./src/advanced.ts",
+        "default": "./src/advanced.ts"
+      },
+      "types": "./dist/advanced.d.ts",
+      "default": "./dist/advanced.js"
     },
     "./persistence": {
-      "types": "./src/persistence.ts",
-      "default": "./src/persistence.ts"
+      "oaath-source": {
+        "types": "./src/persistence.ts",
+        "default": "./src/persistence.ts"
+      },
+      "types": "./dist/persistence.d.ts",
+      "default": "./dist/persistence.js"
     },
     "./testing": {
-      "types": "./src/testing.ts",
-      "default": "./src/testing.ts"
+      "oaath-source": {
+        "types": "./src/testing.ts",
+        "default": "./src/testing.ts"
+      },
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     },
     "./viem": {
-      "types": "./src/viem.ts",
-      "default": "./src/viem.ts"
-    }
-  },
-  "publishConfig": {
-    "main": "./dist/index.js",
-    "module": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
+      "oaath-source": {
+        "types": "./src/viem.ts",
+        "default": "./src/viem.ts"
       },
-      "./kernel": {
-        "types": "./dist/kernel.d.ts",
-        "default": "./dist/kernel.js"
-      },
-      "./advanced": {
-        "types": "./dist/advanced.d.ts",
-        "default": "./dist/advanced.js"
-      },
-      "./persistence": {
-        "types": "./dist/persistence.d.ts",
-        "default": "./dist/persistence.js"
-      },
-      "./testing": {
-        "types": "./dist/testing.d.ts",
-        "default": "./dist/testing.js"
-      },
-      "./viem": {
-        "types": "./dist/viem.d.ts",
-        "default": "./dist/viem.js"
-      }
+      "types": "./dist/viem.d.ts",
+      "default": "./dist/viem.js"
     }
   },
   "files": [
@@ -84,12 +77,14 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "prepack": "pnpm build",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-v33.anvil.test.ts test/kernel-composition.anvil.test.ts test/all-chain.anvil.test.ts test/provider-eip5792.anvil.test.ts test/viem-chain-ports.anvil.test.ts",
     "test:provider-anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/provider-eip5792.anvil.test.ts",
-    "lint": "node scripts/check-package-boundary.mjs"
+    "lint": "node scripts/check-package-boundary.mjs",
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
   },
   "devDependencies": {
     "@account-abstraction/contracts": "0.7.0",
@@ -102,5 +97,8 @@
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "viem": "2.55.8"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

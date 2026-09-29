@@ -4,8 +4,8 @@
  *
  * Shared by `smoke-packed-browser.mjs` and `smoke-packed-server.mjs`. A consumer
  * lives in a fresh temporary directory with its own `node_modules`, installed by
- * `npm` from tarballs only, so nothing resolves through the pnpm workspace link
- * farm and no `src` path is reachable. `pnpm pack` rewrites `workspace:*` to the
+ * `npm` from tarballs only, so nothing resolves through the Bun workspace link
+ * farm and no `src` path is reachable. `bun pm pack` rewrites `workspace:*` to the
  * literal version, which is unpublished, so every internal edge is pinned back
  * to its tarball through npm `overrides`.
  *
@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,25 +42,30 @@ export function run(command, args, options = {}) {
  */
 export async function packWorkspacePackages(names, destination) {
   const filters = names.flatMap((name) => ["--filter", name]);
-  run("pnpm", [...filters, "build"], { cwd: WORKSPACE_ROOT });
+  run("bun", ["run", ...filters, "build"], { cwd: WORKSPACE_ROOT });
+  const packages = new Map();
+  for (const entry of await readdir(join(WORKSPACE_ROOT, "packages"), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const directory = join(WORKSPACE_ROOT, "packages", entry.name);
+    const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
+    packages.set(manifest.name, { directory, version: manifest.version });
+  }
   const tarballs = new Map();
   for (const name of names) {
-    const output = run(
-      "pnpm",
-      ["--filter", name, "pack", "--pack-destination", destination, "--json"],
-      { cwd: WORKSPACE_ROOT },
+    const workspace = packages.get(name);
+    if (!workspace) throw new Error(`Unknown workspace package: ${name}`);
+    const filename = join(
+      destination,
+      `${name.replace(/^@/u, "").replaceAll("/", "-")}-${workspace.version}.tgz`,
     );
-    const objectStart = output.lastIndexOf("\n{");
-    let packed;
-    try {
-      packed = JSON.parse(output.slice(objectStart === -1 ? 0 : objectStart + 1));
-    } catch {
-      throw new Error(`pnpm pack returned an unreadable result for ${name}`);
+    run("bun", ["pm", "pack", "--filename", filename, "--quiet"], {
+      cwd: workspace.directory,
+    });
+    const packed = await stat(filename);
+    if (!packed.isFile() || packed.size === 0) {
+      throw new Error(`bun pm pack did not produce a tarball for ${name}`);
     }
-    if (packed.name !== name || typeof packed.filename !== "string") {
-      throw new Error(`pnpm pack returned an invalid result for ${name}`);
-    }
-    tarballs.set(name, packed.filename);
+    tarballs.set(name, filename);
   }
   return tarballs;
 }
@@ -149,14 +154,12 @@ export function assert(condition, message) {
 /**
  * The export names the workspace build produced for one package, read from the
  * bundle's trailing `export { ... };` statement. The packed consumer must
- * observe exactly these, which is what proves `files`, `exports`, and
- * `publishConfig` deliver the built surface. The surface list itself is owned by
+ * observe exactly these, which is what proves `files` and `exports`
+ * deliver the built surface. The surface list itself is owned by
  * each package's own boundary test and is never restated here.
  *
- * Read rather than imported: inside the workspace an internal edge such as
- * `@oaath/protocol` resolves through the pnpm link to that package's `src`
- * entry, which Node cannot load. The consumer is the only realm that resolves
- * these bundles the way a published consumer does.
+ * Read rather than imported so only the clean consumer loads the bundles and
+ * their dependencies; workspace source conditions cannot affect the proof.
  */
 export async function builtExports(name, entry = "index.js") {
   const bundle = await readFile(

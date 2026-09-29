@@ -23,7 +23,7 @@ existing durable resume validation. Anvil must still be running; a parent
 harness that kills the producing process owns cleanup of `processIds` and the
 temporary directory. Normal fixture `close()` stops its own Anvil processes.
 
-`pnpm smoke:process-recovery` packs the public packages, submits once, checks
+`bun run smoke:process-recovery` packs the public packages, submits once, checks
 that the SDK record is still `submitted`, kills that OS process, and opens new
 processes over disk and the existing chain. Unreadable receipt evidence remains
 unresolved; restored reads recover the same operation and exact finalized calls
@@ -38,6 +38,6 @@ store tests. SQLite test schema `oaath.sqlite-test-store/v2` rejects old files;
 recreate disposable state instead of migrating it. These are test-only adapters,
 not a production SQLite persistence guarantee.
 
-Install Anvil and run `pnpm smoke:local-consumer` to prove the packed two-chain
+Install Anvil and run `bun run smoke:local-consumer` to prove the packed two-chain
 client path. It uses no shared RPC or external credentials. Revocation and real
 browser persistence are outside this fixture's execution/recovery proof.
