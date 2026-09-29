@@ -1,7 +1,8 @@
 /**
  * #238 acceptance: one consumer path, with no Kernel or EntryPoint version
  * literal, binds, approves and sends owner calls through an existing Kernel
- * v3.3 and an existing Kernel v4 account on local Anvil. A deployment that disagrees with
+ * v3.3 and an existing Kernel v4 account on local Anvil, then materializes that
+ * approval onchain with one allowed session call. A deployment that disagrees with
  * the account fails with one structured code before any signing.
  */
 import type { OaathOwnerClient } from "@oaath/sdk";
@@ -16,11 +17,12 @@ import {
   kernelPermissionCapabilityHash,
   kernelPermissionEnableTypedData,
   kernelPermissionNonce,
+  materializeKernelPermission,
   ownerOperator,
   parseKernelPermissionApproval,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import { createPublicClient, hashTypedData, http, keccak256, stringToHex } from "viem";
+import { createPublicClient, hashTypedData, http, keccak256, stringToHex, toHex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { createLocalOwnerAnvilFixture, type LocalOwnerAnvilFixture } from "../src/anvil-owner.js";
@@ -35,6 +37,8 @@ async function sendOwnerCalls(
     address: `0x${string}`;
     client: Readonly<OaathOwnerClient>;
     wallet: LocalOwnerAnvilFixture["wallet"];
+    /** Sends one wire user operation to the chain's bundler. */
+    submit: (userOperation: Readonly<Record<string, string>>) => Promise<unknown>;
   }>,
 ) {
   const reads = createKernelReads(
@@ -60,7 +64,7 @@ async function sendOwnerCalls(
     operator: sessionOperator({
       key: kernelKey({ account: privateKeyToAccount(generatePrivateKey()), validator }),
       policies: [
-        { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "0" }] },
+        { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
       ],
     }),
   });
@@ -78,7 +82,37 @@ async function sendOwnerCalls(
     account: session,
     nonce,
   });
-  return { account, review, outcome, approval, typedData };
+
+  // The session's first call carries that approval and installs the permission.
+  const { prepared, signature } = await materializeKernelPermission({
+    approval,
+    runtime,
+    grantId: "version-agnostic-acceptance",
+    account: session,
+    nonceKey: "0",
+    sequence: "0",
+    calls: [{ target, data: "0x", value: "1" }],
+    gas: {
+      callGasLimit: "500000",
+      verificationGasLimit: "3000000",
+      preVerificationGas: "150000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    },
+  });
+  const wire = prepared.userOperation;
+  const response = await input.submit({
+    sender: wire.sender,
+    nonce: toHex(BigInt(wire.nonce)),
+    callData: wire.callData,
+    callGasLimit: toHex(BigInt(wire.callGasLimit)),
+    verificationGasLimit: toHex(BigInt(wire.verificationGasLimit)),
+    preVerificationGas: toHex(BigInt(wire.preVerificationGas)),
+    maxFeePerGas: toHex(BigInt(wire.maxFeePerGas)),
+    maxPriorityFeePerGas: toHex(BigInt(wire.maxPriorityFeePerGas)),
+    signature,
+  });
+  return { account, review, outcome, approval, typedData, prepared, response };
 }
 
 (process.env.OAATH_REQUIRE_ANVIL === "1" ? describe : describe.skip)(
@@ -93,13 +127,29 @@ async function sendOwnerCalls(
             transport: http(fixture.rpcUrl, { retryCount: 0 }),
           });
           const before = await publicClient.getBalance({ address: target });
-          const { account, review, outcome, approval, typedData } = await sendOwnerCalls({
-            chainId: fixture.chainId,
-            rpcUrl: fixture.rpcUrl,
-            address: fixture.address,
-            client: await fixture.openClient(),
-            wallet: fixture.wallet,
-          });
+          const { account, review, outcome, approval, typedData, prepared, response } =
+            await sendOwnerCalls({
+              chainId: fixture.chainId,
+              rpcUrl: fixture.rpcUrl,
+              address: fixture.address,
+              client: await fixture.openClient(),
+              wallet: fixture.wallet,
+              async submit(userOperation) {
+                const reply = await fixture.rpcFetch(
+                  new Request("http://owner-bundler.test", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      jsonrpc: "2.0",
+                      id: 1,
+                      method: "eth_sendUserOperation",
+                      params: [userOperation],
+                    }),
+                  }),
+                );
+                return reply.json();
+              },
+            });
           expect(account.account).toBe(fixture.address);
           expect(kernelAccountDeployment(account).kernelVersion).toBe(kernelVersion);
           expect(review).toMatchObject({
@@ -108,7 +158,9 @@ async function sendOwnerCalls(
             route: "erc4337-bundler",
           });
           expect(outcome.status).toBe("finalized");
-          expect(await publicClient.getBalance({ address: target })).toBe(before + 1n);
+          // The owner call and the one allowed session call each moved one wei.
+          expect(await publicClient.getBalance({ address: target })).toBe(before + 2n);
+          expect(response).toMatchObject({ result: prepared.userOperationHash });
           // The approval is the selected deployment's own artifact, and the typed
           // data a wallet would sign hashes to exactly the digest it binds.
           expect(approval.account).toBe(fixture.address);
@@ -123,7 +175,7 @@ async function sendOwnerCalls(
             kernelPermissionCapabilityHash(approval),
           );
           expect(fixture.signatureCount).toBe(2);
-          expect(fixture.bundlerSubmissionCount).toBe(1);
+          expect(fixture.bundlerSubmissionCount).toBe(2);
         } finally {
           await fixture.close();
         }
