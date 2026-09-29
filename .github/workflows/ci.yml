@@ -57,7 +57,7 @@ jobs:
       - run: bun install --frozen-lockfile
       # Covers the root config files as well as every package.
       - run: bun run typecheck
-      - run: bun run --workspaces --if-present test
+      - run: bun run test
       - run: bun run --filter @oaath/server test:postgres
         timeout-minutes: 2
         env:
