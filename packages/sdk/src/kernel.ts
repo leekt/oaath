@@ -88,21 +88,15 @@ export type {
 } from "./kernel/permission/observe-revocation.js";
 export { verifyKernelPermissionRevocation } from "./kernel/permission/observe-revocation.js";
 export type {
-  KernelPhonePermissionArtifact,
-  PreparedKernelPhonePermissionApproval,
-  PrepareKernelPhonePermissionApprovalInput,
-} from "./kernel/permission/phone-approval.js";
-export { prepareKernelPhonePermissionApproval } from "./kernel/permission/phone-approval.js";
-export type {
-  PreparedKernelPhoneRevocation,
-  PrepareKernelPhoneRevocationInput,
-} from "./kernel/permission/phone-revocation.js";
-export {
-  prepareKernelPhoneRevocation,
-  restoreKernelPhoneRevocation,
-} from "./kernel/permission/phone-revocation.js";
+  KernelPermissionDecision,
+  PreparedKernelPermissionApproval,
+  PrepareKernelPermissionApprovalInput,
+} from "./kernel/permission/prepare-approval.js";
+export { prepareKernelPermissionApproval } from "./kernel/permission/prepare-approval.js";
 export type {
   KernelPermissionRevocationPreparation,
+  KernelRecordedRevocation,
+  KernelSigningRequestRevocation,
   PreparedKernelPermissionRevocation,
   PrepareKernelPermissionRevocationInput,
   RestoreKernelPermissionRevocationInput,

@@ -9,7 +9,7 @@ import {
   OperationStore,
   type OperationStoreAdapter,
 } from "@oaath/sdk/advanced";
-import { type PreparedUserOperation, restoreKernelPhoneRevocation } from "@oaath/sdk/kernel";
+import { type PreparedUserOperation, restoreKernelPermissionRevocation } from "@oaath/sdk/kernel";
 import { openArtifact } from "../artifact/encrypt.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { relayFailure } from "../relay/errors.js";
@@ -64,7 +64,7 @@ export async function createOwnerPhoneRevocationExecutor(
   if (decision?.outcome !== "approved" || decision.artifactRef === null)
     return relayFailure("relay_request_invalid", "revocation has no approved custody");
   const artifactRef = decision.artifactRef;
-  const restored = restoreKernelPhoneRevocation(request.signingRequest);
+  const restored = await restoreKernelPermissionRevocation({ preparation: request.signingRequest });
   const prepared = restored.prepared;
   const key = Object.freeze({
     grantId: prepared.grantId,

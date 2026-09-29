@@ -47,7 +47,7 @@ import {
   createOAAth,
 } from "@oaath/sdk";
 import { KERNEL_V4_ENTRY_POINT_V07, KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, KERNEL_V4_FACTORY_V07, KERNEL_V4_FACTORY_V07_CODE_HASH, KERNEL_V4_UUPS_IMPLEMENTATION_V07, OAATH_KERNEL_V33_APPROVAL_VERSION, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH, encodeKernelV4InstallNonceInvalidationCall, encodeKernelV4InstallNonceRead, encodeKernelV4NonceKey, kernelV33EffectivePermissionNonce, kernelV33PermissionRevocationCalls, kernelV33PermissionStatus, parseKernelV33PermissionState } from "@oaath/sdk/advanced";
-import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, parseKernelPermissionApproval, prepareKernelPhonePermissionApproval, prepareKernelPhoneRevocation, sessionOperator } from "@oaath/sdk/kernel";
+import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, parseKernelPermissionApproval, prepareKernelPermissionApproval, prepareKernelPermissionRevocation, sessionOperator } from "@oaath/sdk/kernel";
 import { kernelV33PermissionEnableTypedData } from "@oaath/sdk/advanced";
 import {
   createIndexedDbCleanupStore,
@@ -233,14 +233,14 @@ const relayOptions = {
   revocations: { directory: contextDirectory, async prepare({ request, artifact, chainId }) {
     revocationPreparations += 1;
     const approved = JSON.parse(artifact);
-    return (await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
+    return (await prepareKernelPermissionRevocation({ request, approval: approved.installApproval,
       chainId, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
       gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" },
     })).signingRequest;
   } },
   permissionApprovals: {
     async prepare(request) {
-      const prepared = await prepareKernelPhonePermissionApproval({
+      const prepared = await prepareKernelPermissionApproval({
         request, chainId: CHAIN_ID, reads: { read: accountRead },
       });
       if (prepared.signingRequest.replay.nonce !== installNonceFor(hashPermissionRequest(request))) {
@@ -250,7 +250,7 @@ const relayOptions = {
         complete: async (artifact, decidedAt) => {
           const approved = await prepared.complete(artifact, decidedAt);
           approvedPermissionPolicy = approved.approvedPolicy;
-          const revocation = await prepareKernelPhoneRevocation({ request, approval: approved.installApproval,
+          const revocation = await prepareKernelPermissionRevocation({ request, approval: approved.installApproval,
             chainId: CHAIN_ID, reads: { read: accountRead }, effect: "invalidate-install", nonceKey: "0", sequence: "0",
             gas: { callGasLimit: "100000", verificationGasLimit: "200000", preVerificationGas: "50000", maxFeePerGas: "1000000000", maxPriorityFeePerGas: "100000000" } });
           const revocationArtifact = { version: "oaath.owner-signing-artifact/v1", kind: "p256",
@@ -993,15 +993,15 @@ const TYPES = `import { OAATH_PERMISSION_REQUEST_VERSION, type PermissionRequest
 import { type KernelRateLimitPolicyProfile, compileKernelPermissionPolicy } from "@oaath/sdk/kernel";
 export const dailyCap: KernelRateLimitPolicyProfile = { kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" };
 export const dailyPolicy = compileKernelPermissionPolicy([{ kind: "call", permissions: [{ target: "0x1111111111111111111111111111111111111111", selector: "0x00000000", valueLimit: "0" }] }, dailyCap]);
-import { type KernelPhonePermissionArtifact, type PrepareKernelPhonePermissionApprovalInput, prepareKernelPhonePermissionApproval } from "@oaath/sdk/kernel";
-import { type PrepareKernelPhoneRevocationInput, prepareKernelPhoneRevocation } from "@oaath/sdk/kernel";
+import { type KernelPermissionDecision, type PrepareKernelPermissionApprovalInput, prepareKernelPermissionApproval } from "@oaath/sdk/kernel";
+import { type PrepareKernelPermissionRevocationInput, prepareKernelPermissionRevocation } from "@oaath/sdk/kernel";
 
-export async function completePhoneRevocation(input: PrepareKernelPhoneRevocationInput, artifact: OwnerSigningArtifact): Promise<\`0x\${string}\`> {
-  return (await prepareKernelPhoneRevocation(input)).complete(artifact);
+export async function completePhoneRevocation(input: PrepareKernelPermissionRevocationInput & { readonly request: Readonly<PermissionRequest> }, artifact: OwnerSigningArtifact): Promise<\`0x\${string}\`> {
+  return (await prepareKernelPermissionRevocation(input)).complete(artifact);
 }
 
-export async function completePhoneApproval(input: PrepareKernelPhonePermissionApprovalInput, artifact: OwnerSigningArtifact, decidedAt: number): Promise<Readonly<KernelPhonePermissionArtifact>> {
-  return (await prepareKernelPhonePermissionApproval(input)).complete(artifact, decidedAt);
+export async function completePhoneApproval(input: PrepareKernelPermissionApprovalInput, artifact: OwnerSigningArtifact, decidedAt: number): Promise<Readonly<KernelPermissionDecision>> {
+  return (await prepareKernelPermissionApproval(input)).complete(artifact, decidedAt);
 }
 
 import {

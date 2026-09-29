@@ -33,6 +33,11 @@ describe("package boundary", () => {
     expect(versioned).toEqual([]);
   });
 
+  it("names no owner signing location on /kernel", () => {
+    // Where the owner key lives is expressed by who signs, never by a name.
+    expect(Object.keys(kernel).filter((name) => /Phone/u.test(name))).toEqual([]);
+  });
+
   it("exposes the version-agnostic Kernel primitives on /kernel", () => {
     expect(Object.keys(kernel).sort()).toEqual([
       "OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION",
@@ -63,13 +68,11 @@ describe("package boundary", () => {
       "parsePreparedUserOperation",
       "pinnedPolicyModule",
       "pinnedSignerModule",
+      "prepareKernelPermissionApproval",
       "prepareKernelPermissionRevocation",
-      "prepareKernelPhonePermissionApproval",
-      "prepareKernelPhoneRevocation",
       "prepareKernelUserOperation",
       "prepareUserOperation",
       "restoreKernelPermissionRevocation",
-      "restoreKernelPhoneRevocation",
       "sessionOperator",
       "verifyKernelPermissionApproval",
       "verifyKernelPermissionRevocation",

@@ -14,10 +14,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import {
+  kernelKey,
+  prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
-  prepareKernelPhonePermissionApproval,
-  prepareKernelPhoneRevocation,
-  restoreKernelPhoneRevocation,
+  restoreKernelPermissionRevocation,
 } from "../src/kernel.js";
 import {
   encodeKernelV4Execution,
@@ -89,7 +89,7 @@ async function fixture() {
       p256.sign(hexToBytes(digest), secret, { prehash: false, lowS: true }).toCompactRawBytes(),
     ),
   });
-  const permission = await prepareKernelPhonePermissionApproval({
+  const permission = await prepareKernelPermissionApproval({
     request,
     chainId: CHAIN_ID,
     reads,
@@ -111,10 +111,22 @@ async function fixture() {
     sequence: "0",
     gas,
   };
-  return { input, sign };
+  const ownerKey = (key = secret) =>
+    kernelKey({
+      credential: {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "p256",
+        publicKey: bytesToHex(p256.getPublicKey(key, false)),
+      },
+      sign: async ({ hash }) =>
+        bytesToHex(
+          p256.sign(hexToBytes(hash), key, { prehash: false, lowS: true }).toCompactRawBytes(),
+        ),
+    });
+  return { input, sign, ownerKey };
 }
 
-describe("phone revocation preparation", () => {
+describe("Kernel 0.4.0 owner revocation preparation", () => {
   it("observes only finalized absence with the consumed approval nonce on its own chain", async () => {
     const { input } = await fixture();
     const binding = {
@@ -191,18 +203,30 @@ describe("phone revocation preparation", () => {
     }
   });
 
-  it("fails closed with a structured code for a v4 owner revocation preparation", async () => {
+  it("requires the permission request and effect for a Kernel 0.4.0 approval", async () => {
     const { input } = await fixture();
-    await expect(
-      prepareKernelPermissionRevocation({
-        approval: input.approval,
-        chainId: CHAIN_ID,
-        reads: input.reads as never,
-        nonceKey: "0",
-        sequence: "0",
-        gas: input.gas,
-      }),
-    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
+    const { request: _request, effect: _effect, ...v33Shape } = input;
+    await expect(prepareKernelPermissionRevocation(v33Shape)).rejects.toMatchObject({
+      code: "kernel_runtime_input_invalid",
+    });
+    const { effect: _missing, ...withoutEffect } = input;
+    await expect(prepareKernelPermissionRevocation(withoutEffect)).rejects.toMatchObject({
+      code: "kernel_runtime_input_invalid",
+    });
+  });
+
+  it("signs through an owner key profile, refusing another key before it signs", async () => {
+    const { input, sign, ownerKey } = await fixture();
+    const prepared = await prepareKernelPermissionRevocation(input);
+    const signature = await prepared.sign(ownerKey());
+    const artifact = sign(
+      prepared.signingRequest.expectedDigest,
+      hashKernelV4RevocationSigningRequest(prepared.signingRequest),
+    );
+    expect(await prepared.complete(artifact)).toBe(signature);
+    await expect(prepared.sign(ownerKey(p256.utils.randomPrivateKey()))).rejects.toMatchObject({
+      code: "kernel_runtime_binding_mismatch",
+    });
   });
 
   it.each(["invalidate-install", "uninstall-permission"] as const)(
@@ -210,10 +234,10 @@ describe("phone revocation preparation", () => {
     async (effect) => {
       const { input, sign } = await fixture();
       const value = { ...input, effect };
-      const prepared = await prepareKernelPhoneRevocation(value);
-      const recreated = restoreKernelPhoneRevocation(
-        JSON.parse(JSON.stringify(prepared.signingRequest)),
-      );
+      const prepared = await prepareKernelPermissionRevocation(value);
+      const recreated = await restoreKernelPermissionRevocation({
+        preparation: JSON.parse(JSON.stringify(prepared.signingRequest)),
+      });
       expect(recreated.signingRequest).toEqual(prepared.signingRequest);
       expect(recreated.prepared).toEqual(prepared.prepared);
       expect(prepared.prepared.kind).toBe("revocation");
@@ -244,7 +268,7 @@ describe("phone revocation preparation", () => {
 
   it("rejects correctly hashed execution calldata in a revocation request", async () => {
     const { input } = await fixture();
-    const prepared = await prepareKernelPhoneRevocation(input);
+    const prepared = await prepareKernelPermissionRevocation(input);
     const operation = {
       ...prepared.signingRequest.operation,
       callData: encodeKernelV4Execution({
@@ -274,9 +298,11 @@ describe("phone revocation preparation", () => {
 
   it("rejects another operation's artifact, including a relabeled signature", async () => {
     const { input, sign } = await fixture();
-    const original = await prepareKernelPhoneRevocation(input);
-    const first = restoreKernelPhoneRevocation(JSON.parse(JSON.stringify(original.signingRequest)));
-    const other = await prepareKernelPhoneRevocation({ ...input, sequence: "1" });
+    const original = await prepareKernelPermissionRevocation(input);
+    const first = await restoreKernelPermissionRevocation({
+      preparation: JSON.parse(JSON.stringify(original.signingRequest)),
+    });
+    const other = await prepareKernelPermissionRevocation({ ...input, sequence: "1" });
     const artifact = sign(
       other.signingRequest.expectedDigest,
       hashKernelV4RevocationSigningRequest(other.signingRequest),
@@ -295,7 +321,7 @@ describe("phone revocation preparation", () => {
   it("refuses an approval belonging to a different canonical request", async () => {
     const { input } = await fixture();
     await expect(
-      prepareKernelPhoneRevocation({
+      prepareKernelPermissionRevocation({
         ...input,
         request: { ...input.request, requestId: "other-grant" },
       }),
