@@ -6,7 +6,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v4" as const;
+export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v5" as const;
 
 const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -123,10 +123,16 @@ export interface OperationAbandonment {
   readonly reason: "submission_not_attempted";
 }
 
+/**
+ * The submission route an operation was sent on. The same value names the
+ * configured route kind, the routing decision, and retained submission evidence.
+ */
+export type OperationSubmissionRoute = "erc4337-bundler" | "erc4337-handleops";
+
 /** Adapter acknowledgement only. Inclusion and finality still require chain evidence. */
 export type OperationSubmissionEvidence =
-  | Readonly<{ route: "bundler"; transactionHash: null }>
-  | Readonly<{ route: "entrypoint-handleops"; transactionHash: `0x${string}` }>;
+  | Readonly<{ route: "erc4337-bundler"; transactionHash: null }>
+  | Readonly<{ route: "erc4337-handleops"; transactionHash: `0x${string}` }>;
 
 interface OperationCommon {
   readonly lane: Readonly<OperationLane> | null;
@@ -968,11 +974,11 @@ function parseSubmission(
     code,
     context,
   );
-  if (record.route === "bundler" && record.transactionHash === null)
-    return Object.freeze({ route: "bundler", transactionHash: null });
-  if (record.route === "entrypoint-handleops")
+  if (record.route === "erc4337-bundler" && record.transactionHash === null)
+    return Object.freeze({ route: "erc4337-bundler", transactionHash: null });
+  if (record.route === "erc4337-handleops")
     return Object.freeze({
-      route: "entrypoint-handleops",
+      route: "erc4337-handleops",
       transactionHash: hash(record.transactionHash, "submission transaction hash", code),
     });
   return invalid(code, "operation submission evidence is invalid");

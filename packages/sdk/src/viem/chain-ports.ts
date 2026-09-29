@@ -611,7 +611,7 @@ export function createViemChainPorts(
                   if (hex(hash) !== prepared.userOperationHash) return evidence();
                   return {
                     userOperationHash: prepared.userOperationHash,
-                    submission: { route: "bundler", transactionHash: null },
+                    submission: { route: "erc4337-bundler", transactionHash: null },
                   };
                 });
                 return sent;

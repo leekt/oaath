@@ -163,7 +163,7 @@ export function withConnectedEoaFallback(
     return Object.freeze({
       userOperationHash: call.userOperationHash,
       submission: Object.freeze({
-        route: "entrypoint-handleops",
+        route: "erc4337-handleops",
         transactionHash: hash.toLowerCase() as `0x${string}`,
       }),
     });

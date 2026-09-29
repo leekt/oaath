@@ -206,6 +206,7 @@ export type {
   OperationLane,
   OperationOutcome,
   OperationSubmissionEvidence,
+  OperationSubmissionRoute,
   OperationSupersession,
   OperationTransition,
   OperationWeakObservation,

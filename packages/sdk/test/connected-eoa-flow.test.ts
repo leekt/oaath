@@ -163,7 +163,7 @@ describe("Grant connected EOA fallback", () => {
         value: {
           state: code === -32500 ? "submitted" : "submission_attempted",
           submission:
-            code === -32500 ? { route: "entrypoint-handleops", transactionHash: hash } : null,
+            code === -32500 ? { route: "erc4337-handleops", transactionHash: hash } : null,
         },
       });
       await operation.wait({ attempts: 1 });

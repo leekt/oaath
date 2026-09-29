@@ -129,7 +129,7 @@ describe("Operation abandonment", () => {
     const operation = abandoned(prepared());
 
     expect(operation).toEqual({
-      version: "oaath.operation/v4",
+      version: "oaath.operation/v5",
       lane: null,
       submission: null,
       identity,
@@ -671,7 +671,7 @@ describe("Operation aggregate", () => {
 
 describe("acknowledged submission route", () => {
   it("preserves acknowledgement when superseded evidence is strengthened to a finalized replacement", () => {
-    const submission = { route: "entrypoint-handleops" as const, transactionHash };
+    const submission = { route: "erc4337-handleops" as const, transactionHash };
     const sent = advanceOperation(attempted(prepared()), {
       type: "mark_submitted",
       identity,
@@ -697,7 +697,7 @@ describe("acknowledged submission route", () => {
   });
 
   it("retains a direct transaction hint through observation without resolving the lane on acknowledgement", () => {
-    const submission = { route: "entrypoint-handleops" as const, transactionHash };
+    const submission = { route: "erc4337-handleops" as const, transactionHash };
     const sent = advanceOperation(attempted(prepared()), {
       type: "mark_submitted",
       identity,
@@ -715,20 +715,29 @@ describe("acknowledged submission route", () => {
   it("refuses claimed submission before an attempt and retired records", () => {
     expectOperationError(
       () =>
-        parseOperation({ ...prepared(), submission: { route: "bundler", transactionHash: null } }),
+        parseOperation({
+          ...prepared(),
+          submission: { route: "erc4337-bundler", transactionHash: null },
+        }),
       "operation_record_invalid",
     );
     expectOperationError(
       () => parseOperation({ ...prepared(), version: "oaath.operation/v2" }),
       "operation_record_invalid",
     );
+    expectOperationError(
+      () => parseOperation({ ...prepared(), version: "oaath.operation/v4" }),
+      "operation_record_invalid",
+    );
   });
 
   it.each([
-    { route: "entrypoint-handleops", transactionHash: null },
-    { route: "bundler", transactionHash },
+    { route: "erc4337-handleops", transactionHash: null },
+    { route: "erc4337-bundler", transactionHash },
     { route: "native", transactionHash },
-    { route: "bundler", transactionHash: null, providerMessage: "private" },
+    { route: "bundler", transactionHash: null },
+    { route: "entrypoint-handleops", transactionHash },
+    { route: "erc4337-bundler", transactionHash: null, providerMessage: "private" },
   ])("refuses malformed submission evidence", (submission) => {
     expectOperationError(
       () =>

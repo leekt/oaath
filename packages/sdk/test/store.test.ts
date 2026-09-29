@@ -1124,14 +1124,14 @@ describe("aggregate store boundary", () => {
     const key = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
     const store = new OperationStore(createMemoryOperationStoreAdapter());
     const submission = {
-      route: "entrypoint-handleops" as const,
+      route: "erc4337-handleops" as const,
       transactionHash: `0x${"77".repeat(32)}` as const,
     };
     const current = { ...finalizedOperation(), submission };
     await store.compareAndSwap({ key, expectedStoreRevision: null, next: current });
     for (const replacement of [
       null,
-      { route: "bundler", transactionHash: null },
+      { route: "erc4337-bundler", transactionHash: null },
       { ...submission, transactionHash: `0x${"88".repeat(32)}` },
     ]) {
       await expectStoreError(

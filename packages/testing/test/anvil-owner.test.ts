@@ -52,7 +52,7 @@ import { createLocalOwnerAnvilFixture } from "../src/anvil-owner.js";
           expect((await restored.wait({ attempts: 3 })).status).toBe("finalized");
           expect(await restored.execution()).toMatchObject({
             sender: fixture.address,
-            route: "entrypoint-handleops",
+            route: "erc4337-handleops",
           });
           expect(fixture.signatureCount).toBe(1);
           expect(fixture.bundlerSubmissionCount).toBe(1);

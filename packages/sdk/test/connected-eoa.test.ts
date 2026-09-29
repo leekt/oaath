@@ -153,7 +153,7 @@ describe("connected EOA fallback", () => {
       const [first, second] = await Promise.all([test.session.submit(), test.session.submit()]);
       expect(first).toEqual({
         userOperationHash: prepared.userOperationHash,
-        submission: { route: "entrypoint-handleops", transactionHash },
+        submission: { route: "erc4337-handleops", transactionHash },
       });
       expect(second).toEqual(first);
       expect(test.sends()).toBe(1);

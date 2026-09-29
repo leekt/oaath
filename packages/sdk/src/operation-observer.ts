@@ -1092,7 +1092,7 @@ function createObserver(capabilityValue: unknown) {
       ): Promise<OperationInclusion | null> {
         const hint =
           reference.userOperationHash === operation.identity.userOperationHash &&
-          operation.submission?.route === "entrypoint-handleops"
+          operation.submission?.route === "erc4337-handleops"
             ? operation.submission.transactionHash
             : undefined;
         return (await readVerifiedInclusion(read, reference, observedAt, hint))?.inclusion ?? null;

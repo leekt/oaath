@@ -270,7 +270,7 @@ describe("OperationObserver", () => {
     const observer = createOperationObserver(adapter.capabilities);
     const result = await observer.observeOperation({
       operation: submitted({
-        route: "entrypoint-handleops",
+        route: "erc4337-handleops",
         transactionHash: targetTransactionHash,
       }),
       observedAt: 100,

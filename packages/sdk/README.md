@@ -387,14 +387,14 @@ supported atomic Kernel execution. These are top-level requested calls; a
 unreadable, mismatched, and unsupported evidence fails with a structured
 `oaath_client_observation_unavailable` error. It never signs or sends.
 
-Its `route` is the retained transport acknowledgement (`bundler` or
-`entrypoint-handleops`), or `null` when the adapter did not report it or
+Its `route` is the retained transport acknowledgement (`erc4337-bundler` or
+`erc4337-handleops`), or `null` when the adapter did not report it or
 observation won the acknowledgement race. A direct route is reported only when
 its acknowledged transaction hash matches the verified inclusion transaction.
 The acknowledgement alone never proves inclusion, finality, or permission to
 resubmit. Custom submission sessions may return
-`{ userOperationHash, submission: { route: "bundler", transactionHash: null } }`
-or `submission: { route: "entrypoint-handleops", transactionHash }`; omit
+`{ userOperationHash, submission: { route: "erc4337-bundler", transactionHash: null } }`
+or `submission: { route: "erc4337-handleops", transactionHash }`; omit
 `submission` when the route is unknown.
 
 For direct acknowledgements, default viem observation reads the retained
@@ -453,8 +453,8 @@ Recreate it after reload using the saved reference; `close()` drains active
 bounded observations and closes the supplied capability. A missing or unreadable
 receipt leaves the saved identity unresolved.
 
-Operation records now use `oaath.operation/v4`. Older records are rejected;
-IndexedDB schema 15 recreates older local state without migration. This pre-1.0
+Operation records now use `oaath.operation/v5`. Older records are rejected;
+IndexedDB schema 16 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.
 
