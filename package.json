@@ -20,7 +20,7 @@
   },
   "scripts": {
     "preinstall": "node scripts/check-package-manager.mjs",
-    "build": "bun run --workspaces --if-present build",
+    "build": "node scripts/build-workspaces.mjs",
     "typecheck": "tsc -p tsconfig.json && bun run --workspaces --if-present typecheck",
     "test": "bun run --workspaces --sequential --if-present test",
     "test:phone": "swift test --package-path native/ios --force-resolved-versions",
