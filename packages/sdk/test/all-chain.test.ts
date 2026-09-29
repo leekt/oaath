@@ -18,10 +18,9 @@ import {
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelAllChainApproval,
-  type KernelV4AccountReadRequest,
   type KernelV4Install,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
   materializeKernelPermission,
@@ -30,6 +29,7 @@ import {
   ownerOperator,
   sessionOperator,
 } from "../src/kernel.js";
+import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
 
 const chainId = 421_614;
 // Base mainnet: an open production chain with no pinned per-chain evidence,
@@ -50,7 +50,7 @@ const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"33".repeat(32)}`);
 
 function pinnedRuntimeCodeHash(chain: number): `0x${string}` {
-  const pinned = kernelV4Deployment(chain).implementationDeployment;
+  const pinned = kernelDeployment({ chainId: chain }).implementationDeployment;
   if (!pinned) throw new Error("an open chain must verify implementation by code, not hash");
   return pinned.runtimeCodeHash;
 }
@@ -101,7 +101,7 @@ function reads(state: "counterfactual" | "deployed" = "counterfactual") {
 const ownerKey = kernelKey({ account: ownerAccount, validator });
 
 function runtimes(chain: typeof chainId | typeof otherChainId) {
-  const profile = kernelV4Deployment(chain);
+  const profile = kernelDeployment({ chainId: chain });
   return {
     owner: createKernelRuntime({
       deployment: profile,
@@ -541,7 +541,7 @@ describe("all-chain permission materialization", () => {
 
   it("forwards a requested validity range without changing the approved package ceiling", async () => {
     const runtime = createKernelRuntime({
-      deployment: kernelV4Deployment(chainId),
+      deployment: kernelDeployment({ chainId }),
       operator: sessionOperator({
         key: kernelKey({ account: sessionAccount, validator }),
         policies: [

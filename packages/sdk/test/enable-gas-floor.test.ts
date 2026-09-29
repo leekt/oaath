@@ -3,7 +3,7 @@ import type { Erc7677PaymasterServiceRequest, OaathChainCapability } from "../sr
 import { prepareSponsoredKernelOperation } from "../src/advanced.js";
 import {
   createKernelRuntime,
-  kernelV4Deployment,
+  kernelDeployment,
   ownerOperator,
   prepareUserOperation,
   sessionOperator,
@@ -120,7 +120,7 @@ describe("per-chain session-enable verification gas", () => {
   it("keeps owner gas unchanged and refuses to sign an externally prepared enable below the floor", async () => {
     const chain = configured(143);
     const keys = signingProfiles();
-    const deployment = kernelV4Deployment(143);
+    const deployment = kernelDeployment({ chainId: 143 });
     const owner = createKernelRuntime({
       deployment,
       operator: ownerOperator({ key: keys.owner }),

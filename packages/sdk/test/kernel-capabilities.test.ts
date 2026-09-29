@@ -17,8 +17,8 @@ import {
   type KernelRuntime,
   type KernelRuntimeErrorCode,
   type KeyProfile,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   type OperatorProfile,
   ownerOperator,
   pinnedSignerModule,
@@ -207,7 +207,7 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
 function compose(chainId: number, capability: KernelCapability) {
   return () =>
     createKernelRuntime({
-      deployment: kernelV4Deployment(chainId),
+      deployment: kernelDeployment({ chainId }),
       operator: operatorFor(capability),
       reads,
     });
@@ -280,7 +280,7 @@ describe("Kernel capability diagnosis", () => {
     "never downgrades a %s credential to ECDSA authority",
     (kind) => {
       const chainId = 421_614;
-      const deployment = kernelV4Deployment(chainId);
+      const deployment = kernelDeployment({ chainId });
       // The ECDSA authority is reachable on this chain, so an accidental
       // fallback would have produced a runtime instead of failing.
       expect(

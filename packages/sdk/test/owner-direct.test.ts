@@ -3,11 +3,9 @@ import { createWalletClient, custom } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAAth } from "../src/index.js";
-import {
-  type KernelV4AccountReadRequest,
-  type KernelV33ReadRequest,
-  kernelV33Deployment,
-} from "../src/kernel.js";
+import type { KernelV33ReadRequest } from "../src/kernel/deployment/v33.js";
+import { kernelDeployment } from "../src/kernel.js";
+import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/testing.js";
 import { ACCOUNT, CHAIN_ID, createChainFixture, sendCallsInput } from "./support/browser.js";
 
@@ -27,7 +25,7 @@ function fixture(pending = false, lostReply = false) {
     }),
   });
   const base = createChainFixture({ withholdReceipt: () => pending, crashOnSend: () => lostReply });
-  const deployment = kernelV33Deployment(CHAIN_ID);
+  const deployment = kernelDeployment({ chainId: CHAIN_ID, kernelVersion: "0.3.3" });
   const chain = {
     ...base.capability,
     reads: {

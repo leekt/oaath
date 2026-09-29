@@ -36,8 +36,8 @@ import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   type KeyProfile,
+  kernelDeployment,
   kernelKey,
-  kernelV4Deployment,
   ownerOperator,
   pinnedPolicyModule,
   pinnedSignerModule,
@@ -70,7 +70,7 @@ const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
 const CALL_POLICY_INVALID_CALL_DATA = toFunctionSelector("InvalidCallData()");
 const CALL_POLICY_VIOLATES_VALUE_RULE = toFunctionSelector("CallViolatesValueRule()");
 const chainId = 421_614;
-const deployment = kernelV4Deployment(chainId);
+const deployment = kernelDeployment({ chainId });
 const gas = Object.freeze({
   callGasLimit: "900000",
   verificationGasLimit: "3000000",

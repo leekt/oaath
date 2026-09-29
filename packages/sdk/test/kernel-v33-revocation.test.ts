@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { parseKernelV33PermissionState } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
+  kernelDeployment,
   kernelKey,
-  kernelV33Deployment,
   kernelV33PermissionEnableTypedData,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   sessionOperator,
@@ -37,7 +37,7 @@ describe("v3.3 revocation state", () => {
   it("reports replayable, active, revoked and unreadable from one finalized block", async () => {
     const account = "0x1111111111111111111111111111111111111111";
     const runtime = createKernelRuntime({
-      deployment: kernelV33Deployment(143),
+      deployment: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }),
       reads: {
         read: async () => {
           throw new Error("unused");
@@ -46,7 +46,7 @@ describe("v3.3 revocation state", () => {
       operator: sessionOperator({
         key: kernelKey({
           account: { address: account, sign: async () => "0x" },
-          validator: kernelV33Deployment(143).ecdsaValidator,
+          validator: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }).ecdsaValidator,
         }),
         policies: [
           {

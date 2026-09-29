@@ -1,9 +1,9 @@
 import { createWalletClient, custom, hashMessage } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { kernelKey, kernelV33Deployment } from "../src/kernel.js";
+import { kernelDeployment, kernelKey } from "../src/kernel.js";
 
-const validator = kernelV33Deployment(143).ecdsaValidator;
+const validator = kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }).ecdsaValidator;
 const hash = `0x${"12".repeat(32)}` as const;
 
 function fixture() {

@@ -19,8 +19,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // One repo-owned deny list; this copy had already gone stale against it.
 import { scrubLiveProviderEnvironment } from "../../../scripts/live-provider-environment.mjs";
 import {
-  bindKernelV4Account,
-  createKernelV4Reads,
+  bindKernelAccount,
+  createKernelReads,
   encodeKernelV4FactoryAddressRead,
   encodeKernelV4InstallModules,
   encodeKernelV4ValidatorData,
@@ -29,7 +29,7 @@ import {
   KERNEL_V4_EXECUTE_SELECTOR,
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  prepareKernelV4UserOperation,
+  prepareKernelUserOperation,
 } from "../src/kernel.js";
 
 import { readFixture } from "./support/anvil.js";
@@ -192,8 +192,8 @@ afterAll(() => {
     });
     await client.waitForTransactionReceipt({ hash: fundHash });
 
-    const reads = createKernelV4Reads(client);
-    const descriptor = await bindKernelV4Account({
+    const reads = createKernelReads(client);
+    const descriptor = await bindKernelAccount({
       chainId,
       initialPackages: packages,
       accountIndex: "0",
@@ -206,7 +206,7 @@ afterAll(() => {
     });
 
     const target = lower(privateKeyToAccount(generatePrivateKey()).address);
-    const prepared = prepareKernelV4UserOperation({
+    const prepared = prepareKernelUserOperation({
       kind: "execution",
       grantId: "kernel-v4-local-proof",
       account: descriptor,
@@ -270,7 +270,7 @@ afterAll(() => {
         args: [account, 0n],
       }),
     ).toBe(1n);
-    const deployedDescriptor = await bindKernelV4Account({
+    const deployedDescriptor = await bindKernelAccount({
       chainId,
       initialPackages: packages,
       accountIndex: "0",
@@ -286,7 +286,7 @@ afterAll(() => {
     const nonRootOperator = privateKeyToAccount(generatePrivateKey());
     const blockedValidator = await deployValidator();
     const blockedOperator = privateKeyToAccount(generatePrivateKey());
-    const installOp = prepareKernelV4UserOperation({
+    const installOp = prepareKernelUserOperation({
       kind: "execution",
       grantId: "kernel-v4-local-proof-install",
       account: deployedDescriptor,
@@ -327,7 +327,7 @@ afterAll(() => {
     );
 
     const nonRootTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
-    const nonRootOp = prepareKernelV4UserOperation({
+    const nonRootOp = prepareKernelUserOperation({
       kind: "execution",
       grantId: "kernel-v4-local-proof-non-root",
       account: deployedDescriptor,
@@ -354,7 +354,7 @@ afterAll(() => {
 
     // Negative: an installed non-root validator whose selector allow-list is
     // empty must not validate the same wrapped operation shape.
-    const blockedOp = prepareKernelV4UserOperation({
+    const blockedOp = prepareKernelUserOperation({
       kind: "execution",
       grantId: "kernel-v4-local-proof-blocked",
       account: deployedDescriptor,
