@@ -1254,6 +1254,23 @@ describe("URL-only service surface", () => {
         ),
       "relay_internal",
     );
+    expectConstructionFailure(
+      () =>
+        createHarness(
+          bootstrapOptions({
+            chains: [chainPort({ staticPaymasterConfigurationHash: `0x${"44".repeat(32)}` })],
+            rateLimit: {
+              async check() {
+                return "allowed" as const;
+              },
+            },
+            paymasterServices: [
+              { chainId: 31_337, providerId: "paymaster-primary", requestTimeoutMs: 1, provider },
+            ],
+          }),
+        ),
+      "relay_internal",
+    );
     const harness = createHarness(
       bootstrapOptions({
         rateLimit: {
