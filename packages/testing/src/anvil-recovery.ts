@@ -160,7 +160,6 @@ export async function openLocalAnvilRecoveryClient(
         submission: { open: unavailable },
         quote: unavailable,
         usage: unavailable,
-        paymasterService: null,
       };
     });
     // Resume still uses authenticated relay protocol. A new local relay has no

@@ -350,10 +350,14 @@ operations for observation instead of repeating sends. Errors omit URLs,
 provider prose, and request bodies. An optional `fetch(Request)` can supply an
 application transport or local test fixture. Construction performs no I/O.
 
-The public paymaster service identity at `chain.paymasterService.url` omits the
-query and trailing slash. Use that identity in a requested `paymasterService`
-capability; transport still calls the exact configured endpoint, including its
-query parameters.
+With `paymasterUrl`, the chain gets `sponsorship: { kind: "erc7677", url }`,
+whose public service identity omits the query and trailing slash. Use that
+identity in a requested `paymasterService` capability or a call's `payer.url`;
+transport still calls the exact configured endpoint, including its query
+parameters. A chain capability sets at most one optional `sponsorship`: either
+`{ kind: "erc7677", url, request, estimate }` or `{ kind: "erc7902-static",
+configurationHash }`, where the hash comes from
+`hashErc7902StaticPaymasterConfiguration`. Omit it for no sponsorship.
 
 `grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
 without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`

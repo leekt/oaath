@@ -69,7 +69,7 @@ function fixture(data: unknown = revert(), onSend = false) {
       gas: { enableVerificationGasFloor: 2_000_000n },
       quote: onSend ? base.capability.quote : ports!.quote,
       submission: onSend ? ports!.submission : base.capability.submission,
-      paymasterService: ports!.paymasterService,
+      ...(ports!.sponsorship === undefined ? {} : { sponsorship: ports!.sponsorship }),
     },
   };
   return { chain, base, sent: () => sent };

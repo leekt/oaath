@@ -11,7 +11,7 @@ import type {
   Erc7677PaymasterServiceRequest,
   OaathBundlerProbeRequest,
   OaathChainCapability,
-  OaathRegisteredPaymasterService,
+  OaathChainSponsorship,
 } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { encodeKernelV4Execution } from "../src/kernel-v4.js";
@@ -129,7 +129,7 @@ function registeredService(
     sponsor?: Readonly<{ name: string; icon?: string }>;
   }> = {},
 ): Readonly<{
-  service: Readonly<OaathRegisteredPaymasterService>;
+  service: Extract<OaathChainSponsorship, { kind: "erc7677" }>;
   stages: readonly string[];
   serviceRequests: readonly Readonly<Erc7677PaymasterServiceRequest>[];
   estimatorRequests: readonly Readonly<Erc7677GasEstimationRequest>[];
@@ -137,7 +137,8 @@ function registeredService(
   const stages: string[] = [];
   const serviceRequests: Readonly<Erc7677PaymasterServiceRequest>[] = [];
   const estimatorRequests: Readonly<Erc7677GasEstimationRequest>[] = [];
-  const service: Readonly<OaathRegisteredPaymasterService> = Object.freeze({
+  const service: Extract<OaathChainSponsorship, { kind: "erc7677" }> = Object.freeze({
+    kind: "erc7677" as const,
     url: SERVICE_URL,
     async request(request: Readonly<Erc7677PaymasterServiceRequest>) {
       serviceRequests.push(request);
@@ -211,7 +212,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const clock = createClock();
     const base = createChainFixture();
     const registered = registeredService({ sponsor: SPONSOR });
-    const firstChain = replaceChain(base, { paymasterService: registered.service });
+    const firstChain = replaceChain(base, { sponsorship: registered.service });
     const before = createRealm({ stores: firstStores.stores, clock, chain: firstChain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
@@ -289,7 +290,8 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     await firstConnection.close();
     firstStores.database.close();
 
-    const poisonService: Readonly<OaathRegisteredPaymasterService> = Object.freeze({
+    const poisonService: Extract<OaathChainSponsorship, { kind: "erc7677" }> = Object.freeze({
+      kind: "erc7677" as const,
       url: SERVICE_URL,
       async request() {
         throw new Error("send must not call the paymaster service");
@@ -303,7 +305,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       stores: secondStores.stores,
       clock,
       relay: before.relay,
-      chain: replaceChain(base, { paymasterService: poisonService }),
+      chain: replaceChain(base, { sponsorship: poisonService }),
     });
     const secondConnection = await after.oaath.connect();
     const secondGrant = await secondConnection.resume();
@@ -357,7 +359,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
       stores: thirdStores.stores,
       clock,
       relay: before.relay,
-      chain: replaceChain(base, { paymasterService: poisonService }),
+      chain: replaceChain(base, { sponsorship: poisonService }),
     });
     const thirdConnection = await recreated.oaath.connect();
     const thirdGrant = await thirdConnection.resume();
@@ -414,7 +416,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
             }
           : {},
       );
-      const chain = replaceChain(base, { paymasterService: registered.service });
+      const chain = replaceChain(base, { sponsorship: registered.service });
       const counted = countPreparedContextWrites(createMemoryStores());
       const realm = createRealm({ chain, stores: counted.stores });
       const connection = await realm.oaath.connect();
@@ -459,7 +461,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
           },
         }),
       ),
-      paymasterService: registered.service,
+      sponsorship: registered.service,
     });
     const realm = createRealm({ chain });
     const connection = await realm.oaath.connect();
@@ -498,7 +500,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
   it("does not fall back unsponsored after an optional selected service fails", async () => {
     const registered = registeredService({ malformedEstimate: true });
     const base = createChainFixture();
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const counted = countPreparedContextWrites(createMemoryStores());
     const realm = createRealm({ chain, stores: counted.stores });
     const connection = await realm.oaath.connect();
@@ -526,7 +528,7 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
   it("uses an explicitly optional unavailable service only as an unsponsored request", async () => {
     const registered = registeredService();
     const base = createChainFixture();
-    const chain = replaceChain(base, { paymasterService: registered.service });
+    const chain = replaceChain(base, { sponsorship: registered.service });
     const realm = createRealm({ chain });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());

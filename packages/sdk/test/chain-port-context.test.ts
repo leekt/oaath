@@ -109,8 +109,9 @@ describe("runtime-owned chain port context", () => {
     async (sponsored) => {
       const { chain, base, quotes } = capturedChain();
       const url = "https://issuer.example/paymaster";
-      const paymasterService: OaathChainCapability["paymasterService"] = sponsored
+      const sponsorship: OaathChainCapability["sponsorship"] = sponsored
         ? {
+            kind: "erc7677",
             url,
             async request(request) {
               return {
@@ -130,9 +131,12 @@ describe("runtime-owned chain port context", () => {
               };
             },
           }
-        : null;
+        : undefined;
       const realm = createRealm({
-        chain: { ...chain, capability: { ...chain.capability, paymasterService } },
+        chain: {
+          ...chain,
+          capability: { ...chain.capability, ...(sponsorship ? { sponsorship } : {}) },
+        },
       });
       try {
         const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());

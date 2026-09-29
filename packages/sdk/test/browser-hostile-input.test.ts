@@ -197,7 +197,7 @@ describe("hostile input at the client boundary", () => {
           },
         ],
       },
-      // One sponsorship setting: no unknown kind, no mixed fields, no retired field.
+      // One sponsorship setting: no unknown kind, no mixed fields, no retired fields.
       {
         chains: [
           {
@@ -218,6 +218,19 @@ describe("hostile input at the client boundary", () => {
           },
         ],
       },
+      {
+        chains: [
+          {
+            ...createChainFixture().capability,
+            sponsorship: {
+              kind: "erc7677",
+              url: "https://paymaster.test",
+              request: async () => ({}),
+            },
+          },
+        ],
+      },
+      { chains: [{ ...createChainFixture().capability, paymasterService: null }] },
       { chains: [{ ...createChainFixture().capability, staticPaymasterConfigurationHash: null }] },
       { signing: { owner: signingProfiles().owner } },
       { signing: { owner: { kind: "ecdsa" }, session: signingProfiles().session } },

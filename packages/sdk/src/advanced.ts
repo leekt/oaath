@@ -43,7 +43,6 @@ export type {
   OaathOwnerRevocationCapability,
   OaathQuoteCapability,
   OaathQuoteRequest,
-  OaathRegisteredPaymasterService,
   OaathSubmissionCapability,
   OaathSubmissionRequest,
   OaathSubmissionRoute,

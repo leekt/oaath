@@ -9,7 +9,7 @@ import type {
   Erc7677GasEstimationRequest,
   Erc7677PaymasterServiceRequest,
   OaathChainCapability,
-  OaathRegisteredPaymasterService,
+  OaathChainSponsorship,
 } from "../src/advanced.js";
 import { hashErc7902StaticPaymasterConfiguration } from "../src/advanced.js";
 import {
@@ -189,11 +189,12 @@ function staticConfiguration(): Readonly<Record<string, unknown>> {
 }
 
 function registeredService(): Readonly<{
-  service: Readonly<OaathRegisteredPaymasterService>;
+  service: Extract<OaathChainSponsorship, { kind: "erc7677" }>;
   stages: readonly string[];
 }> {
   const stages: string[] = [];
   const service = Object.freeze({
+    kind: "erc7677" as const,
     url: SERVICE_URL,
     async request(request: Readonly<Erc7677PaymasterServiceRequest>) {
       stages.push(request.method === "pm_getPaymasterStubData" ? "stub" : "final");
@@ -668,7 +669,7 @@ describe("wallet_sendCalls ERC-7902 validity admission", () => {
     const dynamicBase = createChainFixture();
     const registered = registeredService();
     const dynamicActive = await activeProvider({
-      chain: replaceChain(dynamicBase, { paymasterService: registered.service }),
+      chain: replaceChain(dynamicBase, { sponsorship: registered.service }),
       confirmCalls: async () => "approved" as const,
     });
     await expect(

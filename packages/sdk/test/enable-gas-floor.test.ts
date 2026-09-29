@@ -222,7 +222,8 @@ describe("per-chain session-enable verification gas", () => {
       ...base,
       capability: {
         ...base.capability,
-        paymasterService: {
+        sponsorship: {
+          kind: "erc7677" as const,
           url,
           async request(request: Readonly<Erc7677PaymasterServiceRequest>) {
             requests.push(request);

@@ -36,7 +36,10 @@ import type { KeyProfile } from "../kernel/types.js";
 import { OaathRpcError } from "../viem/rpc.js";
 import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
 import { clientCapability, clientFail, exactClientRecord } from "./errors.js";
-import type { OaathChainCapability, OaathRegisteredPaymasterService } from "./grant-handle.js";
+import type { OaathChainCapability, OaathChainSponsorship } from "./grant-handle.js";
+
+type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" }>;
+
 import { deriveOperatorCredentialProfile } from "./key-credential.js";
 import {
   loadServiceSession,
@@ -203,43 +206,56 @@ function serviceChainCapability(
     chainPort(transport, url, chain.chainId, name);
   const submissions = port("submissions");
   const bundler = port("bundler");
-  const paymasterService: Readonly<OaathRegisteredPaymasterService> | null =
-    chain.paymasterService === null
-      ? null
-      : Object.freeze({
-          url: `${url}/chains/${chain.chainId}/paymaster`,
-          async request(request: Parameters<OaathRegisteredPaymasterService["request"]>[0]) {
-            const path = request.method === "pm_getPaymasterStubData" ? "stub-data" : "data";
-            const envelope = exactClientRecord(
-              await fetchJson(
-                transport,
-                jsonRequest(`${url}/chains/${chain.chainId}/paymaster/${path}`, {
-                  params: request.params,
-                }),
-                `chain ${chain.chainId} paymaster ${path}`,
-              ),
-              ["present", "result"],
-              "paymaster service envelope",
-              new WeakSet(),
-              "oaath_client_capability_invalid",
-            );
-            if (typeof envelope.present !== "boolean") {
-              return clientFail(
+  // The chain sponsorship setting holds one kind; a bootstrap naming both is contradictory.
+  if (chain.paymasterService !== null && chain.staticPaymasterConfigurationHash !== null) {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "service chain advertises more than one sponsorship kind",
+    );
+  }
+  const sponsorship: Readonly<OaathChainSponsorship> | null =
+    chain.staticPaymasterConfigurationHash !== null
+      ? Object.freeze({
+          kind: "erc7902-static" as const,
+          configurationHash: chain.staticPaymasterConfigurationHash,
+        })
+      : chain.paymasterService === null
+        ? null
+        : Object.freeze({
+            kind: "erc7677" as const,
+            url: `${url}/chains/${chain.chainId}/paymaster`,
+            async request(request: Parameters<Erc7677ChainSponsorship["request"]>[0]) {
+              const path = request.method === "pm_getPaymasterStubData" ? "stub-data" : "data";
+              const envelope = exactClientRecord(
+                await fetchJson(
+                  transport,
+                  jsonRequest(`${url}/chains/${chain.chainId}/paymaster/${path}`, {
+                    params: request.params,
+                  }),
+                  `chain ${chain.chainId} paymaster ${path}`,
+                ),
+                ["present", "result"],
+                "paymaster service envelope",
+                new WeakSet(),
                 "oaath_client_capability_invalid",
-                "paymaster service envelope is invalid",
               );
-            }
-            return envelope.present ? envelope.result : undefined;
-          },
-          estimate: (request: Parameters<OaathRegisteredPaymasterService["estimate"]>[0]) =>
-            bundler(
-              Object.freeze({
-                version: "oaath.erc7677-gas-estimation/v1",
-                prepared: request.prepared,
-                userOperation: request.userOperation,
-              }),
-            ),
-        });
+              if (typeof envelope.present !== "boolean") {
+                return clientFail(
+                  "oaath_client_capability_invalid",
+                  "paymaster service envelope is invalid",
+                );
+              }
+              return envelope.present ? envelope.result : undefined;
+            },
+            estimate: (request: Parameters<Erc7677ChainSponsorship["estimate"]>[0]) =>
+              bundler(
+                Object.freeze({
+                  version: "oaath.erc7677-gas-estimation/v1",
+                  prepared: request.prepared,
+                  userOperation: request.userOperation,
+                }),
+              ),
+          });
   return Object.freeze({
     chainId: chain.chainId,
     ...(chain.gas === undefined
@@ -265,15 +281,7 @@ function serviceChainCapability(
     }),
     quote: port("quote"),
     usage: chain.usage ? port("usage") : null,
-    paymasterService,
-    ...(chain.staticPaymasterConfigurationHash === null
-      ? {}
-      : {
-          sponsorship: Object.freeze({
-            kind: "erc7902-static" as const,
-            configurationHash: chain.staticPaymasterConfigurationHash,
-          }),
-        }),
+    ...(sponsorship === null ? {} : { sponsorship }),
   }) as Readonly<OaathChainCapability>;
 }
 

@@ -477,6 +477,24 @@ describe("URL-only golden path", () => {
     await third.close();
   });
 
+  it("rejects a service chain that advertises both sponsorship kinds", async () => {
+    // The chain sponsorship setting holds one kind; the bootstrap cannot name two.
+    const bootstrap = (document: Record<string, unknown>) => ({
+      ...document,
+      chains: (document.chains as Record<string, unknown>[]).map((chain) => ({
+        ...chain,
+        paymasterService: { providerId: "sponsor" },
+        staticPaymasterConfigurationHash: `0x${"11".repeat(32)}`,
+      })),
+    });
+    const realm = createUrlRealm({ bootstrap });
+    await expect(realm.oaath.connect()).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_capability_invalid",
+    });
+    expect(realm.fetched).not.toContain("POST /authorization/requests");
+  });
+
   it("retains revocation when phone preparation is unconfigured and completes from observed effects", async () => {
     // The chain's answer to "is the permission still installed", and how far
     // the chain advanced beyond this realm's own submissions — both flip when

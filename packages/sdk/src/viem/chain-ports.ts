@@ -14,8 +14,8 @@ import {
 import { entryPoint07Abi } from "viem/account-abstraction";
 import type {
   OaathChainCapability,
+  OaathChainSponsorship,
   OaathQuoteRequest,
-  OaathRegisteredPaymasterService,
   OaathUsageRequest,
 } from "../client/grant-handle.js";
 import { createKernelReads, type KernelReads } from "../kernel/deployment/account.js";
@@ -82,6 +82,7 @@ const BUNDLER_METHODS = [
   "eth_sendUserOperation",
   "eth_getUserOperationReceipt",
 ];
+type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" }>;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const USER_OPERATION_EVENT = toEventSelector(
   getAbiItem({ abi: entryPoint07Abi, name: "UserOperationEvent" }),
@@ -627,21 +628,23 @@ export function createViemChainPorts(
           if (request.chainId !== chainId) return invalid();
           return usage(publicRpc, request);
         },
-        paymasterService:
-          paymaster === null || paymasterUrl === null
-            ? null
-            : Object.freeze({
+        ...(paymaster === null || paymasterUrl === null
+          ? {}
+          : {
+              sponsorship: Object.freeze({
+                kind: "erc7677" as const,
                 // Service identity excludes endpoint credentials; requests still
                 // use the exact configured transport URL captured above.
                 url: `${new URL(paymasterUrl).origin}${new URL(paymasterUrl).pathname}`.replace(
                   /\/$/u,
                   "",
                 ),
-                request: (request: Parameters<OaathRegisteredPaymasterService["request"]>[0]) =>
+                request: (request: Parameters<Erc7677ChainSponsorship["request"]>[0]) =>
                   paymaster(request.method, request.params, false),
-                estimate: (request: Parameters<OaathRegisteredPaymasterService["estimate"]>[0]) =>
+                estimate: (request: Parameters<Erc7677ChainSponsorship["estimate"]>[0]) =>
                   estimate(parsePreparedUserOperation(request.prepared), request.userOperation),
               }),
+            }),
       } satisfies OaathChainCapability);
     }),
   );
