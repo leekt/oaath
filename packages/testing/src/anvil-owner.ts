@@ -1,10 +1,12 @@
 /** Existing Kernel account fixture over the public owner client and viem ports. */
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createOAAth,
   type OaathApprovalWallet,
+  type OaathChainDescriptor,
   type OaathConnectedEoaPayer,
   type OaathOwnerClient,
 } from "@oaath/sdk";
@@ -51,6 +53,11 @@ export interface LocalOwnerAnvilFixture {
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
   /** Fresh bounded public SDK ports for testing local client composition. */
   readonly createChainPorts: () => ReturnType<typeof createViemChainPorts>;
+  /**
+   * Plain `createOAAth` chain descriptors: the Anvil RPC plus this fixture's
+   * bundler served over loopback HTTP, so the SDK builds its default ports.
+   */
+  readonly chainDescriptors: () => Promise<Readonly<Record<number, OaathChainDescriptor>>>;
   readonly mine: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -71,11 +78,15 @@ export async function createLocalOwnerAnvilFixture(
   const directory = await mkdtemp(join(tmpdir(), "oaath-owner-fixture-"));
   const chain = await startAnvil(chainId);
   let client: Readonly<OaathOwnerClient> | undefined;
+  let bundlerServer: Promise<{ server: Server; url: string }> | undefined;
   let closed = false;
   async function close() {
     const results = await Promise.allSettled([
       client?.close(),
       Promise.resolve().then(() => chain.stop()),
+      bundlerServer?.then(
+        ({ server }) => new Promise<void>((resolve) => server.close(() => resolve())),
+      ),
     ]);
     await rm(directory, { recursive: true, force: true });
     closed = true;
@@ -286,12 +297,44 @@ export async function createLocalOwnerAnvilFixture(
         { [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: "http://owner-bundler.test" } },
         { maxRequests: 1_000, fetch: rpcFetch },
       );
+    // Loopback HTTP in front of the fixture bundler; no external host is reachable.
+    const hostedBundler = () =>
+      (bundlerServer ??= new Promise((resolve, reject) => {
+        const server = createServer(async (request, response) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(chunk as Buffer);
+          try {
+            const answer = await rpcFetch(
+              new Request("http://owner-bundler.test/", {
+                method: request.method ?? "GET",
+                headers: { "content-type": "application/json" },
+                body: Buffer.concat(chunks).toString("utf8"),
+              }),
+            );
+            response.writeHead(answer.status, { "content-type": "application/json" });
+            response.end(await answer.text());
+          } catch {
+            response.writeHead(500).end();
+          }
+        });
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          const endpoint = server.address();
+          if (!endpoint || typeof endpoint === "string") return reject(new Error("no port"));
+          resolve({ server, url: `http://127.0.0.1:${endpoint.port}` });
+        });
+      }));
     return Object.freeze({
       chainId,
       rpcUrl: chain.url,
       address,
       wallet,
       createChainPorts: ports,
+      async chainDescriptors() {
+        if (closed) throw new Error("local_fixture_closed");
+        const { url } = await hostedBundler();
+        return Object.freeze({ [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: url } });
+      },
       rpcFetch,
       get signatureCount() {
         return signatures;

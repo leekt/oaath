@@ -116,7 +116,6 @@ const consumer = await createConsumer({
     "run.mjs": RUN,
     "surface.ts": `
 import { createOAAth, type OaathWalletOptions, type OaathWalletApprovalReview, type OaathGrantHandle, type OaathSendCallsInput } from "@oaath/sdk";
-import { createViemChainPorts } from "@oaath/sdk/viem";
 import { createWalletClient, custom, type EIP1193Provider, type Address } from "viem";
 export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSendCallsInput) {
   const review = await grant.reviewCalls({ ...request, signer: "auto" });
@@ -126,7 +125,7 @@ export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSend
 }
 export function connect(provider: EIP1193Provider, owner: Address, account: Address) {
   const wallet = createWalletClient({ account: owner, transport: custom(provider) });
-  const config: OaathWalletOptions = { approvals: { kind: "wallet", owner: wallet, onApproval: async (review: Readonly<OaathWalletApprovalReview>) => { void review.policy; } }, account, chains: createViemChainPorts({ 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } }) };
+  const config: OaathWalletOptions = { approvals: { kind: "wallet", owner: wallet, onApproval: async (review: Readonly<OaathWalletApprovalReview>) => { void review.policy; } }, account, chains: { 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } } };
   return createOAAth(config);
 }
 `,

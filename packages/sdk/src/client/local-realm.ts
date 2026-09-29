@@ -25,6 +25,7 @@ import { routingAddress } from "../routing/capabilities.js";
 import { GrantStore, type OperationStoreAdapter } from "../store.js";
 import { captureOaathBinding } from "./binding.js";
 import { defaultStores, type OwnedDefaultStores } from "./browser-stores.js";
+import type { OaathChains } from "./chain-descriptors.js";
 import type { LocalPermissionAuthorization } from "./connection.js";
 import {
   clientCapability,
@@ -59,7 +60,8 @@ export interface OaathWalletApprovals {
 }
 /** `createOAAth` options whose Grants the connected wallet approves. */
 export interface OaathWalletOptions {
-  readonly chains: readonly Readonly<OaathChainCapability>[];
+  /** Plain descriptors build the default viem ports; custom capabilities override them. */
+  readonly chains: OaathChains<OaathChainCapability>;
   readonly account: Address;
   readonly approvals: Readonly<OaathWalletApprovals>;
   readonly session?: Readonly<OaathSession>;
