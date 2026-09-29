@@ -51,7 +51,13 @@ import {
   saveServiceSession,
   serviceSessionKeyId,
 } from "./service-session.js";
-import { captureSession, type OaathSession, type SuppliedSession } from "./session-credential.js";
+import {
+  captureSession,
+  type OaathSession,
+  type OaathSessionCustody,
+  type SuppliedSession,
+  unsupportedSessionCustody,
+} from "./session-credential.js";
 
 export const OAATH_DEFAULT_SERVICE_URL = "http://localhost:8787" as const;
 const POLL_INTERVAL_MS = 1_000;
@@ -94,6 +100,40 @@ interface ServiceRealmInput {
   readonly stores: unknown;
   readonly now: (() => number) | null;
   readonly session: Readonly<SuppliedSession> | null;
+  readonly custody: OaathSessionCustody | null;
+}
+
+/** Remote session-key custody the realm names in every permission request. */
+export interface RemoteSessionCustody {
+  readonly mode: "application_backend" | "oaath_hosted";
+  readonly providerId: string;
+}
+
+const DECLARED_CUSTODY: Readonly<
+  Record<ServiceBootstrap["sessionSigner"]["mode"], OaathSessionCustody>
+> = Object.freeze({
+  frontend: "browser",
+  application_backend: "application-backend",
+  oaath_hosted: "oaath-hosted",
+});
+
+/**
+ * The service bootstrap owns custody; the application's `session` setting
+ * never selects it. A passkey is browser custody the caller holds, and an
+ * explicit `custody` is a requirement: either one that differs from the
+ * declaration fails closed before any store, key, or further request exists.
+ */
+function requireDeclaredCustody(
+  input: Readonly<ServiceRealmInput>,
+  bootstrap: Readonly<ServiceBootstrap>,
+): void {
+  const declared = DECLARED_CUSTODY[bootstrap.sessionSigner.mode];
+  if (input.session !== null && declared !== "browser") {
+    unsupportedSessionCustody("a caller-supplied session requires browser session custody");
+  }
+  if (input.custody !== null && input.custody !== declared) {
+    unsupportedSessionCustody("the service declares a different session custody");
+  }
 }
 
 function captureServiceRealmInput(value: unknown): Readonly<ServiceRealmInput> {
@@ -137,7 +177,10 @@ function captureServiceRealmInput(value: unknown): Readonly<ServiceRealmInput> {
     authorization: record.authorization === undefined ? null : record.authorization,
     stores: record.stores === undefined ? null : record.stores,
     now: record.now === undefined ? null : clientCapability<() => number>(record.now, "clock"),
-    session: captureSession(record.session, new WeakSet()),
+    ...(() => {
+      const session = captureSession(record.session, new WeakSet());
+      return { session: session.supplied, custody: session.custody };
+    })(),
   });
 }
 
@@ -495,16 +538,9 @@ async function composeConfiguration(
   // substituted. Frontend custody is the local non-extractable session key;
   // backend and hosted custody bind the credential the deployment's registered
   // provider serves and route every signature through it. The vocabulary is
-  // closed at the bootstrap parser, so no other mode can reach here. A
-  // caller-supplied session is frontend custody the caller holds, so a
-  // remote-custody deployment refuses it instead of choosing one silently.
+  // closed at the bootstrap parser, and requireDeclaredCustody already refused
+  // a caller-supplied session under remote custody.
   const supplied = "sessionKey" in session;
-  if (supplied && bootstrap.sessionSigner.mode !== "frontend") {
-    return clientFail(
-      "oaath_client_capability_unsupported",
-      "a caller-supplied session requires frontend session custody",
-    );
-  }
   const deviceId = session.deviceId;
   const remote =
     bootstrap.sessionSigner.mode === "frontend"
@@ -564,16 +600,6 @@ async function composeConfiguration(
       }),
       session: sessionKey,
     },
-    // The owner approves the custody model with the scope: remote custody is
-    // named in every permission request this realm creates.
-    ...(remote === null
-      ? {}
-      : {
-          sessionSigner: {
-            mode: bootstrap.sessionSigner.mode,
-            providerId: bootstrap.sessionSigner.providerId,
-          },
-        }),
     // Deleting the wrapping key on disconnect durably orphans the persisted
     // session ciphertext, so `forgetLocal` forgets the session too. A
     // caller-held session has no local custody to forget.
@@ -589,7 +615,7 @@ async function composeConfiguration(
  */
 export function createServiceRealm<Realm extends object>(
   value: unknown,
-  compose: (configuration: unknown) => Realm,
+  compose: (configuration: unknown, remoteCustody: Readonly<RemoteSessionCustody> | null) => Realm,
 ): Realm {
   const input = captureServiceRealmInput(value);
   const transport = serviceTransport(input);
@@ -664,6 +690,7 @@ export function createServiceRealm<Realm extends object>(
         }
       });
       const selectedBootstrap = await bootstrap;
+      requireDeclaredCustody(input, selectedBootstrap);
       if (input.stores === null) defaultStoreOwner = await defaultStores();
       const stores = (input.stores ?? defaultStoreOwner?.stores) as {
         readonly context: Parameters<typeof loadServiceSession>[0]["stores"]["context"];
@@ -677,8 +704,14 @@ export function createServiceRealm<Realm extends object>(
       // way.
       const origin = localOrigin(input);
       const session = input.session ?? (await ownSession(stores, origin, selectedBootstrap));
+      const declared = selectedBootstrap.sessionSigner;
       inner = compose(
         await composeConfiguration(input, transport, selectedBootstrap, stores, session),
+        // The owner approves the custody model with the scope: remote custody
+        // is named in every permission request this realm creates.
+        declared.mode === "frontend"
+          ? null
+          : Object.freeze({ mode: declared.mode, providerId: declared.providerId! }),
       );
       return inner;
     })().catch(async (error: unknown) => {

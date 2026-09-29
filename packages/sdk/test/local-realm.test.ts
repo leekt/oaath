@@ -181,6 +181,18 @@ describe("local wallet realm", () => {
     );
   });
 
+  it("refuses remote session custody under wallet approvals before opening storage", () => {
+    const { input } = fixture();
+    expect(() =>
+      createOAAth({ ...input, session: { custody: "application-backend" } }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "oaath_client_capability_unsupported",
+        source: "session_custody_unsupported",
+      }),
+    );
+  });
+
   it.each([false, true])(
     "binds a caller-supplied passkey session only where its verifier exists (%s)",
     async (verifier) => {

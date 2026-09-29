@@ -121,8 +121,27 @@ describe("URL-only golden path", () => {
     });
     await expect(realm.oaath.connect()).rejects.toMatchObject({
       code: "oaath_client_capability_unsupported",
+      source: "session_custody_unsupported",
     });
-    expect(realm.fetched).not.toContain("POST /session-signers");
+    expect(realm.fetched).toEqual(["GET /bootstrap"]);
+    // A passkey asserting remote custody fails at configuration, before any fetch.
+    expect(() =>
+      createOAAth({
+        approvals: { kind: "service", url: ISSUER_URL },
+        session: { ...passkeySession().session, custody: "oaath-hosted" },
+      } as never),
+    ).toThrow(
+      expect.objectContaining({
+        code: "oaath_client_capability_unsupported",
+        source: "session_custody_unsupported",
+      }),
+    );
+    expect(() =>
+      createOAAth({
+        approvals: { kind: "service", url: ISSUER_URL },
+        session: { custody: "owner-hosted" },
+      } as never),
+    ).toThrow(expect.objectContaining({ code: "oaath_client_input_invalid" }));
     expect(() =>
       createOAAth({
         approvals: { kind: "service", url: ISSUER_URL },
@@ -847,6 +866,7 @@ describe("URL-only golden path", () => {
 
   it("runs hosted session custody end to end: the page never holds session key material", async () => {
     const realm = createUrlRealm({
+      session: { custody: "oaath-hosted" },
       sessionSigner: {
         mode: "oaath_hosted",
         providerId: "kms-primary",
@@ -870,6 +890,35 @@ describe("URL-only golden path", () => {
     expect(
       realm.fetched.filter((entry) => entry === "POST /session-signers/signatures").length,
     ).toBeGreaterThan(0);
+    await connection.close();
+  });
+
+  it("fails closed when the declared custody differs from the session custody requirement", async () => {
+    const hosted = createUrlRealm({
+      session: { custody: "browser" },
+      sessionSigner: {
+        mode: "oaath_hosted",
+        providerId: "kms-primary",
+        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+      },
+    });
+    await expect(hosted.oaath.connect()).rejects.toMatchObject({
+      name: "OaathClientError",
+      code: "oaath_client_capability_unsupported",
+      source: "session_custody_unsupported",
+    });
+    const browser = createUrlRealm({ session: { custody: "application-backend" } });
+    await expect(browser.oaath.connect()).rejects.toMatchObject({
+      code: "oaath_client_capability_unsupported",
+      source: "session_custody_unsupported",
+    });
+    // The server's declaration is never overridden: nothing past the
+    // bootstrap is requested, so no session key or signer route exists.
+    expect(hosted.fetched).toEqual(["GET /bootstrap"]);
+    expect(browser.fetched).toEqual(["GET /bootstrap"]);
+    const matching = createUrlRealm({ session: { kind: "ecdsa", custody: "browser" } });
+    const connection = await matching.oaath.connect();
+    expect(matching.oaath.binding.operatorCredential.kind).toBe("ecdsa");
     await connection.close();
   });
 
