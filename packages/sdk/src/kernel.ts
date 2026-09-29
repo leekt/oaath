@@ -117,6 +117,7 @@ export type {
   KernelV33ApprovalMismatchReason as KernelApprovalMismatchReason,
   KernelV33ExpectedPermission as KernelExpectedPermission,
 } from "./kernel/permission/v33.js";
+export { OAATH_KERNEL_V33_APPROVAL_VERSION as OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION } from "./kernel/permission/v33.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
