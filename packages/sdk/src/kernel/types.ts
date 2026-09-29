@@ -33,7 +33,9 @@ export type KernelRuntimeErrorCode =
   | "kernel_runtime_policy_unavailable"
   | "kernel_runtime_signing_failed"
   | "kernel_runtime_signature_invalid"
-  | "kernel_runtime_binding_mismatch";
+  | "kernel_runtime_binding_mismatch"
+  /** The input's own version is valid but this stage does not implement it. */
+  | "kernel_runtime_unsupported";
 
 export class OaathKernelRuntimeError extends Error {
   readonly code: KernelRuntimeErrorCode;

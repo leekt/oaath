@@ -4,6 +4,7 @@ import { captureInput, exactInput, inputInvalid } from "../internal.js";
 import {
   type KernelAllChainApproval,
   kernelAllChainCapabilityHash,
+  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   parseKernelAllChainApproval,
 } from "./materialize.js";
 import {
@@ -28,6 +29,15 @@ export function parseKernelGrantApproval(
   if (approval.account !== account.address)
     return inputInvalid("Kernel v3.3 approval names another account");
   return approval;
+}
+
+/** Captures an approval by its own version discriminant, with no account profile. */
+export function parseVersionedKernelGrantApproval(value: unknown): Readonly<KernelGrantApproval> {
+  const version = captureInput(value, "Kernel approval", new WeakSet()).version;
+  if (version === OAATH_KERNEL_V33_APPROVAL_VERSION) return parseKernelV33PermissionApproval(value);
+  if (version === OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION)
+    return parseKernelAllChainApproval(value);
+  return inputInvalid("Kernel approval version is unsupported");
 }
 
 export function kernelGrantCapabilityHash(approval: Readonly<KernelGrantApproval>): `0x${string}` {

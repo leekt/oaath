@@ -6,8 +6,8 @@ import {
   type Hex,
   parseAbi,
   parseEther,
+  toHex,
   zeroAddress,
-  zeroHash,
 } from "viem";
 import { expect } from "vitest";
 import { kernelV33Deployment } from "../../src/kernel/deployment/v33.js";
@@ -52,6 +52,19 @@ export async function deployKernelV33Account(
   expect(fixture.kernel.address).toBe(deployment.implementation);
   expect(fixture.factory.address).toBe(deployment.factory);
   expect(fixture.ecdsaValidator.address).toBe(deployment.ecdsaValidator);
+  const address = await createKernelV33Account(harness, chainId, ownerAddress, 0n);
+  return { deployment, address };
+}
+
+/** One more real v3.3 account for the same owner; `index` is the factory salt. */
+export async function createKernelV33Account(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+  chainId: number,
+  ownerAddress: Hex,
+  index: bigint,
+): Promise<Hex> {
+  const deployment = kernelV33Deployment(chainId);
+  const salt = toHex(index, { size: 32 });
   const init = encodeFunctionData({
     abi: parseAbi([
       "function initialize(bytes21 rootValidator, address hook, bytes validatorData, bytes hookData, bytes[] initConfig)",
@@ -67,19 +80,18 @@ export async function deployKernelV33Account(
     address: deployment.factory,
     abi: factoryAbi,
     functionName: "getAddress",
-    args: [init, zeroHash],
+    args: [init, salt],
   });
   const creation = await harness.wallet.writeContract({
     chain: null,
     address: deployment.factory,
     abi: factoryAbi,
     functionName: "createAccount",
-    args: [init, zeroHash],
+    args: [init, salt],
   });
   expect((await harness.client.waitForTransactionReceipt({ hash: creation })).status).toBe(
     "success",
   );
   await harness.fund(address, parseEther("1"));
-
-  return { deployment, address };
+  return address;
 }

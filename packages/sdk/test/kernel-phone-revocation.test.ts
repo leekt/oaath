@@ -17,6 +17,7 @@ import {
   encodeKernelV4Execution,
   encodeKernelV4InstallNonceInvalidationCall,
   encodeKernelV4PermissionUninstallCalls,
+  prepareKernelPermissionRevocation,
   prepareKernelPhonePermissionApproval,
   prepareKernelPhoneRevocation,
   restoreKernelPhoneRevocation,
@@ -186,6 +187,20 @@ describe("phone revocation preparation", () => {
                 : "unreadable",
         });
     }
+  });
+
+  it("fails closed with a structured code for a v4 owner revocation preparation", async () => {
+    const { input } = await fixture();
+    await expect(
+      prepareKernelPermissionRevocation({
+        approval: input.approval,
+        chainId: CHAIN_ID,
+        reads: input.reads as never,
+        nonceKey: "0",
+        sequence: "0",
+        gas: input.gas,
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
   });
 
   it.each(["invalidate-install", "uninstall-permission"] as const)(

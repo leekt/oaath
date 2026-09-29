@@ -1,12 +1,12 @@
 import { type ChainBinding, type ChainRevocationEvidence, captureRecord } from "@oaath/protocol";
 import type { OperationObserverCapabilities } from "../../operation-observer.js";
 import { captureInput, inputInvalid } from "../internal.js";
-import { type KernelGrantApproval, kernelGrantApprovalNonce } from "./approval.js";
 import {
-  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
-  parseKernelAllChainApproval,
-} from "./materialize.js";
-import { OAATH_KERNEL_V33_APPROVAL_VERSION, parseKernelV33PermissionApproval } from "./v33.js";
+  type KernelGrantApproval,
+  kernelGrantApprovalNonce,
+  parseVersionedKernelGrantApproval,
+} from "./approval.js";
+import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "./v33.js";
 import {
   kernelV33EffectivePermissionNonce,
   kernelV33PermissionStatus,
@@ -162,13 +162,7 @@ export async function verifyKernelPermissionRevocation(
   const input = captureInput(value, "Kernel revocation verification", new WeakSet());
   if (Object.keys(input).some((key) => !["approval", "chainId", "reads", "now"].includes(key)))
     return inputInvalid("Kernel revocation verification contains unknown fields");
-  const version = captureInput(input.approval, "Kernel approval", new WeakSet()).version;
-  const approval =
-    version === OAATH_KERNEL_V33_APPROVAL_VERSION
-      ? parseKernelV33PermissionApproval(input.approval)
-      : version === OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION
-        ? parseKernelAllChainApproval(input.approval)
-        : inputInvalid("Kernel approval version is unsupported");
+  const approval = parseVersionedKernelGrantApproval(input.approval);
   const reads = input.reads as VerifyKernelPermissionRevocationInput["reads"];
   if (
     typeof input.chainId !== "number" ||
