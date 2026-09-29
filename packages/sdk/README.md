@@ -37,6 +37,13 @@ the application's durable operation journal or implement browser credential UI.
 For approval and preparation with only public identity, use
 `credentialKey({ credential, validator: null })` in the session operator. It
 derives the same permission as the matching signing profile and cannot sign.
+For custom revocation, `readKernelV33PermissionState` reads through the caller's
+block-pinned `call` capability and `kernelV33PermissionRevocationCalls` prepares
+the exact owner calls. Send all returned calls atomically. An unused approval
+requires installation and removal to consume its permission nonce; an already
+absent, invalidated approval returns no calls. Verify both permission absence
+and `kernelV33EffectivePermissionNonce(state) > approval.nonce` at a finalized
+canonical block. A successful operation receipt alone does not prove removal.
 
 For an existing ECDSA-root Kernel `0.3.3` account, execute calls directly with a
 connected viem wallet. This mode needs no issuer, relay, Grant, or enable approval:

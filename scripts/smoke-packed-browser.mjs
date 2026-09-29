@@ -50,6 +50,13 @@ import {
   compileKernelPermissionPolicy,
   createKernelRuntime,
   credentialKey,
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  kernelV33PermissionEnableTypedData,
+  parseKernelV33PermissionState,
+  parseKernelV33PermissionApproval,
+  OAATH_KERNEL_V33_APPROVAL_VERSION,
   kernelV33Deployment,
   sessionOperator,
   webauthnKey,
@@ -93,7 +100,7 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
-import { bytesToHex, hexToBytes, keccak256, stringToBytes } from "viem";
+import { bytesToHex, hashTypedData, hexToBytes, keccak256, stringToBytes } from "viem";
 import { p256 } from "@noble/curves/nist.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { IDBFactory } from "fake-indexeddb";
@@ -184,6 +191,21 @@ const publicSession = sessionOperator({
 });
 if (JSON.stringify(publicSession.resolvePackages(kernelV33Deployment(CHAIN_ID))) !== JSON.stringify(passkeySession.packages)) {
   fail("public credential changed the approved passkey permission");
+}
+const v33Scope = { chainScope: "all", account: ACCOUNT, nonce: "1",
+  permissionId: passkeySession.validation.permissionId, packages: passkeySession.packages };
+const v33Approval = parseKernelV33PermissionApproval({ version: OAATH_KERNEL_V33_APPROVAL_VERSION,
+  ...v33Scope, digest: hashTypedData(kernelV33PermissionEnableTypedData(v33Scope)), enableSignature: "0x11" });
+const absent = parseKernelV33PermissionState({ currentNonce: "1", validationNonce: "0",
+  hook: "0x" + "00".repeat(20), signer: "0x" + "00".repeat(20), permissionFlag: "0x0000", policies: [] });
+if (kernelV33PermissionStatus(absent, v33Approval) !== "absent" ||
+    kernelV33EffectivePermissionNonce(absent) !== "1" ||
+    kernelV33PermissionRevocationCalls({ approval: v33Approval, state: absent }).length !== 2) {
+  fail("unused approval was not revoked through its permission nonce");
+}
+const revoked = parseKernelV33PermissionState({ ...absent, validationNonce: "1" });
+if (kernelV33PermissionRevocationCalls({ approval: v33Approval, state: revoked }).length !== 0) {
+  fail("invalidated approval requested another operation");
 }
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,

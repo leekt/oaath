@@ -111,6 +111,14 @@ export {
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   parseKernelV33PermissionApproval,
 } from "./kernel/permission/v33.js";
+export type { KernelV33PermissionState } from "./kernel/permission/v33-revocation.js";
+export {
+  kernelV33EffectivePermissionNonce,
+  kernelV33PermissionRevocationCalls,
+  kernelV33PermissionStatus,
+  parseKernelV33PermissionState,
+  readKernelV33PermissionState,
+} from "./kernel/permission/v33-revocation.js";
 export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
