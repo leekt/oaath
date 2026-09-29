@@ -6,7 +6,7 @@ const AUTO = process.argv.includes("--auto");
 const APP = `
 import { createOAAth } from "@oaath/sdk";
 import { createWalletClient, custom } from "viem";
-import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH } from "@oaath/sdk/advanced";
+import { OAATH_KERNEL_VALIDITY_POLICY, OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 const address = "0x1111111111111111111111111111111111111111";
 const target = "0x2222222222222222222222222222222222222222";
@@ -14,7 +14,7 @@ const deployment = kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" });
 const now = () => Math.floor(Date.now() / 1000);
 const wallet = createWalletClient({ account: window.ownerAddress, transport: custom({ request: (request) => window.walletRequest(request) }) });
 const reads = { async read(request) {
-  if (request.type === "runtime_code_hash") return request.address === OAATH_KERNEL_V4_VALIDITY_POLICY ? OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH : KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (request.type === "runtime_code_hash") return request.address === OAATH_KERNEL_VALIDITY_POLICY ? OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH : deployment.entryPoint.runtimeCodeHash;
   const result = { chain_id: 143, code: "0x6000", kernel_account_implementation: deployment.implementation, kernel_account_version: "kernel.advanced.v0.3.3", kernel_account_entrypoint: deployment.entryPoint.address, kernel_account_root_validator: "0x01" + deployment.ecdsaValidator.slice(2), kernel_ecdsa_owner: window.ownerAddress.toLowerCase(), kernel_v33_permission_nonce: "1" }[request.type];
   if (result === undefined) throw new Error("unexpected fixture read");
   return result;

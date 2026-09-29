@@ -1,12 +1,4 @@
 import {
-  KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-} from "@oaath/sdk/advanced";
-import {
   kernelDeployment,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
@@ -33,7 +25,16 @@ export interface Component {
 }
 
 // CREATE2 inputs live with the contracts. No test validator is packaged here.
-function deployable(
+type DeployableArgs = [
+  id: string,
+  artifact: { deploymentInput: string; runtimeCodeHash?: string },
+  expectedAddress: string | null,
+  required?: boolean,
+  passkeySession?: boolean,
+];
+
+function deployableComponent(
+  create2Deployer: Hex,
   id: string,
   artifact: { deploymentInput: string; runtimeCodeHash?: string },
   expectedAddress: string | null,
@@ -44,7 +45,7 @@ function deployable(
   const salt = sliceHex(input, 0, 32);
   if (salt !== `0x${"00".repeat(32)}`) throw new Error(`Nonzero deployment salt: ${id}`);
   const address = getCreate2Address({
-    from: KERNEL_V4_CREATE2_DEPLOYER,
+    from: create2Deployer,
     salt,
     bytecode: sliceHex(input, 32),
   }).toLowerCase() as Hex;
@@ -61,20 +62,22 @@ function deployable(
 }
 
 export function components(chainId: number): readonly Component[] {
-  const implementationHash = kernelDeployment({ chainId }).implementationDeployment
-    ?.runtimeCodeHash;
+  const deployment = kernelDeployment({ chainId });
+  const implementationHash = deployment.implementationDeployment?.runtimeCodeHash;
+  const deployable = (...args: DeployableArgs) =>
+    deployableComponent(deployment.create2Deployer, ...args);
   return [
     {
       id: "entryPoint",
-      address: KERNEL_V4_ENTRY_POINT_V07,
+      address: deployment.entryPoint.address,
       required: true,
       passkeySession: false,
-      runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+      runtimeCodeHash: deployment.entryPoint.runtimeCodeHash,
       deploymentInput: null,
     },
     {
       id: "create2Deployer",
-      address: KERNEL_V4_CREATE2_DEPLOYER,
+      address: deployment.create2Deployer,
       required: true,
       passkeySession: false,
       runtimeCodeHash: validity.deployment.deployerRuntimeCodeHash as Hex,
@@ -86,13 +89,13 @@ export function components(chainId: number): readonly Component[] {
         ...runtime.kernelUups,
         ...(implementationHash ? { runtimeCodeHash: implementationHash } : {}),
       },
-      KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+      deployment.implementation,
     ),
     deployable("kernelImmutableEcdsa", runtime.kernelImmutableEcdsa, null),
     deployable(
       "kernelFactory",
-      { ...runtime.kernelFactory, runtimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH },
-      KERNEL_V4_FACTORY_V07,
+      { ...runtime.kernelFactory, runtimeCodeHash: deployment.factoryRuntimeCodeHash },
+      deployment.factory,
     ),
     deployable("validityPolicy", validity.deployment, pinnedPolicyModule("expiry")),
     deployable("callPolicy", runtime.callPolicy, pinnedPolicyModule("call")),

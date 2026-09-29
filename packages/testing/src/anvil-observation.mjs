@@ -1,4 +1,5 @@
-import { encodeKernelV4InstallNonceRead, KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
+import { encodeKernelInstallNonceRead } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { decodeEventLog, encodeFunctionData, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 
@@ -29,9 +30,10 @@ const logEvidence = (log) => ({
 
 /** Rebuild the local receipt from chain evidence; no process-local transaction cache. */
 export async function readLocalOperationReceipt(chain, userOperationHash) {
+  const entryPoint = kernelDeployment({ chainId: chain.chainId }).entryPoint.address;
   const logs = await chain.rpc("eth_getLogs", [
     {
-      address: KERNEL_V4_ENTRY_POINT_V07,
+      address: entryPoint,
       fromBlock: "0x0",
       toBlock: "latest",
       topics: [USER_OPERATION_EVENT, userOperationHash],
@@ -44,7 +46,7 @@ export async function readLocalOperationReceipt(chain, userOperationHash) {
   if (receipt === null) return null;
   const log = receipt.logs.find(
     (entry) =>
-      entry.address === KERNEL_V4_ENTRY_POINT_V07 &&
+      entry.address === entryPoint &&
       entry.topics[0] === USER_OPERATION_EVENT &&
       entry.topics[1] === userOperationHash,
   );
@@ -52,7 +54,7 @@ export async function readLocalOperationReceipt(chain, userOperationHash) {
   const { args } = decodeEventLog({ abi: entryPoint07Abi, data: log.data, topics: log.topics });
   return {
     userOperationHash,
-    entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+    entryPoint,
     sender: `0x${log.topics[2].slice(26)}`,
     nonce: toHex(args.nonce),
     paymaster: `0x${log.topics[3].slice(26)}`,
@@ -163,7 +165,7 @@ export function createLocalAnvilObservation(chain) {
         return await chain.rpc("eth_call", [
           {
             to: request.account,
-            data: encodeKernelV4InstallNonceRead({
+            data: encodeKernelInstallNonceRead({
               key: (BigInt(request.nonce) >> 64n).toString(10),
             }),
           },

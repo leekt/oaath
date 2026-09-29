@@ -17,7 +17,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { kernelV4ReplayableInstallDigest } from "@oaath/sdk/advanced";
+import { kernelReplayableInstallDigest } from "@oaath/sdk/advanced";
 import {
   approveKernelPermission,
   createKernelRuntime,
@@ -165,7 +165,7 @@ try {
   expect(ownerSignatures === 1, `the owner signed ${ownerSignatures} times`);
   expect(
     approval.digest ===
-      kernelV4ReplayableInstallDigest({
+      kernelReplayableInstallDigest({
         account: a.account.account,
         nonce: INSTALL_NONCE,
         packages: a.sessionRuntime.packages,

@@ -2,7 +2,6 @@
  * Deploy an existing ECDSA-root Kernel v4 account whose root validator is the
  * reviewed ECDSA validator, so owner mode can prove its owner onchain.
  */
-import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
 import { createKernelRuntime, kernelDeployment, kernelKey, ownerOperator } from "@oaath/sdk/kernel";
 import type { Hex } from "viem";
 import type { PrivateKeyAccount } from "viem/accounts";
@@ -21,7 +20,7 @@ export async function deployLocalV4OwnerAccount(
   const deployed = await stack.wallet.sendTransaction({
     account: stack.submitter,
     chain: null,
-    to: KERNEL_V4_CREATE2_DEPLOYER,
+    to: kernelDeployment({ chainId: chain.chainId }).create2Deployer,
     data: v33.ecdsaValidator.deploymentInput as Hex,
     gas: 10_000_000n,
   });

@@ -1,4 +1,4 @@
-import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { createWalletClient, custom, type Hex, keccak256, type PrivateKeyAccount } from "viem";
 import { type DoctorReport, doctor } from "./doctor.js";
 import type { DeploymentJournal, DeploymentRecord } from "./journal.js";
@@ -87,6 +87,7 @@ async function observe(
     throw new DeploymentError("deployment_journal_conflict");
   if (record.state === "confirmed") return true;
   if (record.state === "reverted") throw new DeploymentError("deployment_reverted");
+  const deployer = kernelDeployment({ chainId: record.chainId }).create2Deployer;
   for (let count = 0; count < attempts; count += 1) {
     if (count > 0) await new Promise((resolve) => setTimeout(resolve, 1_000));
     try {
@@ -96,7 +97,7 @@ async function observe(
       if (
         hash(receipt.transactionHash) !== record.transactionHash ||
         receipt.from !== record.wallet ||
-        receipt.to !== KERNEL_V4_CREATE2_DEPLOYER ||
+        receipt.to !== deployer ||
         (receipt.status !== "0x1" && receipt.status !== "0x0")
       )
         throw new DeploymentError("deployment_evidence_invalid");
@@ -126,7 +127,7 @@ async function observe(
       if (
         hash(transaction.hash) !== record.transactionHash ||
         transaction.from !== record.wallet ||
-        transaction.to !== KERNEL_V4_CREATE2_DEPLOYER ||
+        transaction.to !== deployer ||
         transaction.input !== component.deploymentInput ||
         quantity(transaction.nonce) !== BigInt(record.nonce) ||
         quantity(transaction.value) !== 0n ||
@@ -169,6 +170,7 @@ export async function deployRuntime(input: {
 }): Promise<DeploymentResult> {
   const { chainId, rpc, journal } = input;
   const manifest = components(chainId);
+  const deployer = kernelDeployment({ chainId }).create2Deployer;
   let report = await doctor(chainId, rpc);
   validateReadiness(report);
   const result = (
@@ -222,7 +224,7 @@ export async function deployRuntime(input: {
     const request = await client.prepareTransactionRequest({
       account: client.account,
       chain: null,
-      to: KERNEL_V4_CREATE2_DEPLOYER,
+      to: deployer,
       data: component.deploymentInput as Hex,
       value: 0n,
     });
@@ -238,7 +240,7 @@ export async function deployRuntime(input: {
       chainId,
       nonce: request.nonce,
       gas: request.gas,
-      to: KERNEL_V4_CREATE2_DEPLOYER,
+      to: deployer,
       data: component.deploymentInput as Hex,
       value: 0n,
     };

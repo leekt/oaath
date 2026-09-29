@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
-import { KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { concat, createWalletClient, http, parseEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const exec = promisify(execFile);
@@ -60,7 +60,7 @@ try {
   await rpc("anvil_setBalance", [account.address, "0x" + parseEther("100").toString(16)]);
   const artifact = JSON.parse(await readFile(createRequire(import.meta.url).resolve("@account-abstraction/contracts/artifacts/EntryPoint.json"), "utf8"));
   const wallet = createWalletClient({ account, transport: http(url, { retryCount: 0 }) });
-  const epHash = await wallet.sendTransaction({ chain: null, to: KERNEL_V4_CREATE2_DEPLOYER, data: concat([${JSON.stringify(runtime.entryPoint.deploymentSalt)}, artifact.bytecode]), gas: 10000000n });
+  const epHash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 421614 }).create2Deployer, data: concat([${JSON.stringify(runtime.entryPoint.deploymentSalt)}, artifact.bytecode]), gas: 10000000n });
   // Anvil can answer sendTransaction before its automined block lands; poll the receipt, bounded.
   let epReceipt = null;
   for (let attempt = 0; attempt < 50 && epReceipt === null; attempt++) {

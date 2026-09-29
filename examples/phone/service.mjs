@@ -14,7 +14,6 @@ import {
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
 import {
   createKernelRuntime,
   kernelDeployment,
@@ -384,7 +383,10 @@ export async function startPhoneService({
         version: "oaath.phone-pairing/v1",
         deviceCredential: pushDestination.credential,
         account: descriptor.account,
-        chains: chainIds.map((chainId) => ({ chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 })),
+        chains: chainIds.map((chainId) => ({
+          chainId,
+          entryPoint: kernelDeployment({ chainId }).entryPoint.address,
+        })),
       });
     }
 

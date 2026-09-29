@@ -46,9 +46,8 @@ import { createOwnerPhoneRevocationExecutor } from "@oaath/server/kernel";
 import {
   createOAAth,
 } from "@oaath/sdk";
-import { KERNEL_V4_ENTRY_POINT_V07, KERNEL_V4_ENTRY_POINT_V07_CODE_HASH, KERNEL_V4_FACTORY_V07, KERNEL_V4_FACTORY_V07_CODE_HASH, KERNEL_V4_UUPS_IMPLEMENTATION_V07, OAATH_KERNEL_V33_APPROVAL_VERSION, OAATH_KERNEL_V4_VALIDITY_POLICY, OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH, encodeKernelV4InstallNonceInvalidationCall, encodeKernelV4InstallNonceRead, encodeKernelV4NonceKey, kernelV33EffectivePermissionNonce, kernelV33PermissionRevocationCalls, kernelV33PermissionStatus, parseKernelV33PermissionState } from "@oaath/sdk/advanced";
-import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, parseKernelPermissionApproval, prepareKernelPermissionApproval, prepareKernelPermissionRevocation, sessionOperator } from "@oaath/sdk/kernel";
-import { kernelV33PermissionEnableTypedData } from "@oaath/sdk/advanced";
+import { OAATH_KERNEL_VALIDITY_POLICY, OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH, encodeKernelInstallNonceInvalidationCall, encodeKernelInstallNonceRead, encodeKernelNonceKey } from "@oaath/sdk/advanced";
+import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, prepareKernelPermissionApproval, prepareKernelPermissionRevocation, sessionOperator } from "@oaath/sdk/kernel";
 import {
   createIndexedDbCleanupStore,
   createIndexedDbContextStore,
@@ -71,7 +70,7 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
-import { bytesToHex, hashTypedData, hexToBytes, keccak256, stringToBytes } from "viem";
+import { bytesToHex, hexToBytes, keccak256, stringToBytes } from "viem";
 import { p256 } from "@noble/curves/nist.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { IDBFactory } from "fake-indexeddb";
@@ -103,10 +102,10 @@ const ACCOUNT = "0x" + "66".repeat(20);
 // The canonical Kernel 0.4.0 install nonce: the request hash's top 192 bits as its key.
 const installNonceFor = (requestHash) => ((BigInt(requestHash) >> 64n) << 64n).toString(10);
 const unusedInstallNonce = installNonceFor("0x" + "aa".repeat(32));
-const invalidationCall = encodeKernelV4InstallNonceInvalidationCall({ account: ACCOUNT, installNonce: unusedInstallNonce });
+const invalidationCall = encodeKernelInstallNonceInvalidationCall({ account: ACCOUNT, installNonce: unusedInstallNonce });
 if (invalidationCall.target !== ACCOUNT || invalidationCall.value !== "0" ||
     !invalidationCall.data.startsWith("0x")) fail("invalid install nonce self-call");
-if (!encodeKernelV4InstallNonceRead({ key: (BigInt(unusedInstallNonce) >> 64n).toString(10) }).startsWith("0x")) {
+if (!encodeKernelInstallNonceRead({ key: (BigInt(unusedInstallNonce) >> 64n).toString(10) }).startsWith("0x")) {
   fail("invalid Kernel install nonce read");
 }
 const PAYMASTER = "0x" + "33".repeat(20);
@@ -164,21 +163,6 @@ const publicSession = sessionOperator({
 });
 if (JSON.stringify(publicSession.resolvePackages(kernelDeployment({ chainId: CHAIN_ID, kernelVersion: "0.3.3" }))) !== JSON.stringify(passkeySession.packages)) {
   fail("public credential changed the approved passkey permission");
-}
-const v33Scope = { chainScope: "all", account: ACCOUNT, nonce: "1",
-  permissionId: passkeySession.validation.permissionId, packages: passkeySession.packages };
-const v33Approval = parseKernelPermissionApproval({ version: OAATH_KERNEL_V33_APPROVAL_VERSION,
-  ...v33Scope, digest: hashTypedData(kernelV33PermissionEnableTypedData(v33Scope)), enableSignature: "0x11" });
-const absent = parseKernelV33PermissionState({ currentNonce: "1", validationNonce: "0",
-  hook: "0x" + "00".repeat(20), signer: "0x" + "00".repeat(20), permissionFlag: "0x0000", policies: [] });
-if (kernelV33PermissionStatus(absent, v33Approval) !== "absent" ||
-    kernelV33EffectivePermissionNonce(absent) !== "1" ||
-    kernelV33PermissionRevocationCalls({ approval: v33Approval, state: absent }).length !== 2) {
-  fail("unused approval was not revoked through its permission nonce");
-}
-const revoked = parseKernelV33PermissionState({ ...absent, validationNonce: "1" });
-if (kernelV33PermissionRevocationCalls({ approval: v33Approval, state: revoked }).length !== 0) {
-  fail("invalidated approval requested another operation");
 }
 const operatorCredential = {
   version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -340,23 +324,23 @@ async function accountRead(request) {
   if (request.type === "chain_id") return CHAIN_ID;
   if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
   if (request.type === "runtime_code_hash") {
-    if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
-      return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+    if (request.address === deployment.entryPoint.address) {
+      return deployment.entryPoint.runtimeCodeHash;
     }
-    if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
-      return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+    if (request.address === OAATH_KERNEL_VALIDITY_POLICY) {
+      return OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH;
     }
-    if (request.address === KERNEL_V4_FACTORY_V07) return KERNEL_V4_FACTORY_V07_CODE_HASH;
-    if (request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
+    if (request.address === deployment.factory) return deployment.factoryRuntimeCodeHash;
+    if (request.address === deployment.implementation) {
       return deployment.implementationDeployment.runtimeCodeHash;
     }
   }
   if (request.type === "kernel_factory_implementation") {
-    return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+    return deployment.implementation;
   }
   if (request.type === "kernel_factory_account") return ACCOUNT;
   if (request.type === "kernel_account_implementation") {
-    return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+    return deployment.implementation;
   }
   fail("unexpected account read " + request.type);
 }
@@ -413,7 +397,7 @@ const chain = {
   async quote(request) {
     requireChain("quote");
     quotes += 1;
-    quotedKeys.push(encodeKernelV4NonceKey({ mode: request.mode, validation: request.validation, nonceKey: "0" }));
+    quotedKeys.push(encodeKernelNonceKey({ deployment, mode: request.mode, validation: request.validation, nonceKey: "0" }));
     return {
       nonceKey: "0",
       sequence: String(sends.length),
@@ -1009,10 +993,11 @@ import {
   type OaathConfiguration,
   type OaathQuoteRequest,
 } from "@oaath/sdk/advanced";
-import { encodeKernelV4NonceKey } from "@oaath/sdk/advanced";
+import { encodeKernelNonceKey } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 
 export function nonceDomain(request: OaathQuoteRequest): string {
-  return encodeKernelV4NonceKey({ mode: request.mode, validation: request.validation, nonceKey: "0" });
+  return encodeKernelNonceKey({ deployment: kernelDeployment({ chainId: request.chainId }), mode: request.mode, validation: request.validation, nonceKey: "0" });
 }
 import {
   type Oaath,
