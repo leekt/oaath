@@ -34,7 +34,7 @@ import {
 } from "./permission-protocol.js";
 import { hashOwnerSigningRequest } from "./signing-request.js";
 
-export const OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION =
+export const OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION =
   "oaath.kernel-revocation-signing-request/v1" as const;
 const ERROR_CODE = "signing_request_invalid" as const;
 const fail = protocolFailure(ERROR_CODE);
@@ -51,11 +51,11 @@ const MODULE_DATA = [
   { name: "internalData", type: "bytes" },
 ] as const;
 
-export type KernelV4RevocationEffect = "invalidate-install" | "uninstall-permission";
+export type KernelRevocationEffect = "invalidate-install" | "uninstall-permission";
 type Call = Readonly<{ target: Hex; value: string; data: Hex }>;
 
 /** EntryPoint 0.7's packed unsigned operation, with decimal integers for JSON. */
-export interface KernelV4RevocationOperation {
+export interface KernelRevocationOperation {
   readonly sender: Hex;
   readonly nonce: string;
   readonly initCode: Hex;
@@ -67,17 +67,17 @@ export interface KernelV4RevocationOperation {
   readonly paymasterAndData: "0x";
 }
 
-export interface KernelV4RevocationSigningRequest {
-  readonly version: typeof OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION;
+export interface KernelRevocationSigningRequest {
+  readonly version: typeof OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION;
   readonly kind: "kernel-revocation";
   readonly permissionRequest: Readonly<PermissionRequest>;
   /** Public install scope only; no retained enable signature is sent to the phone. */
   readonly install: Readonly<KernelV4ReplayableInstallOwnerSigningRequest>;
-  readonly effect: KernelV4RevocationEffect;
+  readonly effect: KernelRevocationEffect;
   readonly chainId: number;
   /** EntryPoint 0.7 address, part of the digest the phone independently derives. */
   readonly entryPoint: Hex;
-  readonly operation: Readonly<KernelV4RevocationOperation>;
+  readonly operation: Readonly<KernelRevocationOperation>;
   readonly expectedDigest: Hex;
 }
 
@@ -116,7 +116,7 @@ function uint(value: unknown, maximum: bigint, label: string): bigint {
  * Removes policies in reverse install order, then their signer. Kernel requires
  * that order; the install packages own the permission identity and module data.
  */
-export function encodeKernelV4PermissionUninstallCalls(value: {
+export function encodeKernelPermissionUninstallCalls(value: {
   readonly account: Hex;
   readonly packages: readonly KernelInstall[];
 }): readonly Call[] {
@@ -164,7 +164,7 @@ export function encodeKernelV4PermissionUninstallCalls(value: {
  * Already consumed/invalidated approvals require observation: setNonce must
  * increase the stored sequence. Installed permissions still need uninstall.
  */
-export function encodeKernelV4InstallNonceInvalidationCall(value: {
+export function encodeKernelInstallNonceInvalidationCall(value: {
   readonly account: Hex;
   readonly installNonce: string;
 }): Call {
@@ -194,18 +194,18 @@ export function encodeKernelV4InstallNonceInvalidationCall(value: {
 
 function revocationCallData(
   install: KernelV4ReplayableInstallOwnerSigningRequest,
-  effect: KernelV4RevocationEffect,
+  effect: KernelRevocationEffect,
 ): Hex {
   const account = install.signer.account;
   const calls =
     effect === "invalidate-install"
       ? [
-          encodeKernelV4InstallNonceInvalidationCall({
+          encodeKernelInstallNonceInvalidationCall({
             account,
             installNonce: install.replay.nonce,
           }),
         ]
-      : encodeKernelV4PermissionUninstallCalls({
+      : encodeKernelPermissionUninstallCalls({
           account,
           packages: install.typedData.message.packages.map((entry) => ({
             ...entry,
@@ -240,9 +240,9 @@ function revocationCallData(
  * Checks call meaning and digest. The owner device still binds its paired
  * account/key, current review and configured chain before releasing a signature.
  */
-export function parseKernelV4RevocationSigningRequest(
+export function parseKernelRevocationSigningRequest(
   value: unknown,
-): Readonly<KernelV4RevocationSigningRequest> {
+): Readonly<KernelRevocationSigningRequest> {
   return capturedByProtocol(ERROR_CODE, "Kernel revocation request is invalid", () => {
     const context = new WeakSet();
     const record = exactRecord(
@@ -263,7 +263,7 @@ export function parseKernelV4RevocationSigningRequest(
       fail,
     );
     if (
-      record.version !== OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION ||
+      record.version !== OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION ||
       record.kind !== "kernel-revocation"
     )
       return fail("Kernel revocation version or kind is unsupported");
@@ -300,7 +300,7 @@ export function parseKernelV4RevocationSigningRequest(
       fail,
     );
     if (op.paymasterAndData !== "0x") return fail("Kernel phone revocation must be self-funded");
-    const operation: Readonly<KernelV4RevocationOperation> = Object.freeze({
+    const operation: Readonly<KernelRevocationOperation> = Object.freeze({
       sender: address(op.sender, "Kernel revocation sender"),
       nonce: uint(op.nonce, MAX_UINT256, "Kernel revocation operation nonce").toString(10),
       initCode: bytes(op.initCode, "Kernel revocation initCode"),
@@ -345,7 +345,7 @@ export function parseKernelV4RevocationSigningRequest(
     )
       return fail("Kernel revocation digest contradicts its operation");
     return Object.freeze({
-      version: OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+      version: OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
       kind: "kernel-revocation",
       permissionRequest,
       install,
@@ -360,10 +360,10 @@ export function parseKernelV4RevocationSigningRequest(
 
 /**
  * Hashes a captured request for the returned artifact. Parse wire/storage input
- * once with parseKernelV4RevocationSigningRequest before calling this pure hash.
+ * once with parseKernelRevocationSigningRequest before calling this pure hash.
  */
-export function hashKernelV4RevocationSigningRequest(
-  request: Readonly<KernelV4RevocationSigningRequest>,
+export function hashKernelRevocationSigningRequest(
+  request: Readonly<KernelRevocationSigningRequest>,
 ): Hex {
   return keccak256(
     encodeAbiParameters(
@@ -375,7 +375,7 @@ export function hashKernelV4RevocationSigningRequest(
         { type: "bytes32" },
       ],
       [
-        OAATH_KERNEL_V4_REVOCATION_SIGNING_REQUEST_VERSION,
+        OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
         hashPermissionRequest(request.permissionRequest),
         hashOwnerSigningRequest(request.install),
         request.effect,

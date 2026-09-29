@@ -1,8 +1,8 @@
 /** Current immutable revocation request and terminal phone decision. No submission evidence. */
 import {
   exactRecord,
-  type KernelV4RevocationSigningRequest,
-  parseKernelV4RevocationSigningRequest,
+  type KernelRevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
 } from "@oaath/protocol";
 import { relayFailure } from "../relay/errors.js";
 import { boundedText, canonicalIdentifier, RELAY_LIMITS, timestamp } from "../store/records.js";
@@ -21,7 +21,7 @@ export interface RevocationRequestRecord {
   readonly ownerSubject: string;
   readonly createdAt: number;
   readonly expiresAt: number;
-  readonly signingRequest: Readonly<KernelV4RevocationSigningRequest>;
+  readonly signingRequest: Readonly<KernelRevocationSigningRequest>;
 }
 export interface RevocationDecisionRecord {
   readonly version: typeof OAATH_REVOCATION_DECISION_RECORD_VERSION;
@@ -57,9 +57,9 @@ export function parseRevocationRequestRecord(value: unknown): Readonly<Revocatio
   const createdAt = timestamp(record.createdAt, "createdAt", UNREADABLE);
   const expiresAt = timestamp(record.expiresAt, "expiresAt", UNREADABLE);
   if (expiresAt < createdAt) return fail("revocation request expiry precedes creation");
-  let signingRequest: Readonly<KernelV4RevocationSigningRequest>;
+  let signingRequest: Readonly<KernelRevocationSigningRequest>;
   try {
-    signingRequest = parseKernelV4RevocationSigningRequest(record.signingRequest);
+    signingRequest = parseKernelRevocationSigningRequest(record.signingRequest);
   } catch {
     return fail("stored revocation signing request is unreadable");
   }

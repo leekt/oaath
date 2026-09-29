@@ -13,9 +13,9 @@
 import { p256 } from "@noble/curves/nist.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashOwnerSigningRequest,
-  type KernelV4RevocationSigningRequest,
+  type KernelRevocationSigningRequest,
   parseKernelV4ReplayableInstallOwnerSigningRequest,
   parseOwnerSigningArtifact,
   serializeOwnerSigningArtifact,
@@ -50,13 +50,13 @@ export function verifyKernelV4ReplayableInstallOwnerSigningArtifact(
 
 /** Stored signing request has already crossed the durable record boundary. */
 export function verifyKernelV4RevocationOwnerSigningArtifact(
-  request: Readonly<KernelV4RevocationSigningRequest>,
+  request: Readonly<KernelRevocationSigningRequest>,
   artifactPlaintext: unknown,
 ): string {
   try {
     if (request.install.signer.ownerCredential.kind !== "p256") throw new TypeError();
     return verifyArtifact(
-      hashKernelV4RevocationSigningRequest(request),
+      hashKernelRevocationSigningRequest(request),
       request.expectedDigest,
       request.install.signer.ownerCredential.publicKey,
       artifactPlaintext,

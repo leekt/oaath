@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   bindKernelV4Account,
   createKernelV4Reads,
+  encodeKernelPermissionUninstallCalls,
   encodeKernelV4EnableSignature,
   encodeKernelV4Execution,
   encodeKernelV4FactoryAddressRead,
@@ -23,7 +24,6 @@ import {
   encodeKernelV4NonceKey,
   encodeKernelV4NonceRead,
   encodeKernelV4PermissionSignature,
-  encodeKernelV4PermissionUninstallCalls,
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
@@ -399,7 +399,7 @@ describe("Kernel v4 module and account codecs", () => {
       moduleData: concat([permissionPrefix, "0x99"]),
       internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
     };
-    const calls = encodeKernelV4PermissionUninstallCalls({
+    const calls = encodeKernelPermissionUninstallCalls({
       account,
       packages: [policyA, policyB, signer],
     });
@@ -451,12 +451,12 @@ describe("Kernel v4 module and account codecs", () => {
   ])("rejects uninstall inputs that cannot express a complete permission", (packages, reason) => {
     expect(() =>
       asHostile((value: never) =>
-        encodeKernelV4PermissionUninstallCalls({ account, packages: value }),
+        encodeKernelPermissionUninstallCalls({ account, packages: value }),
       )(packages),
     ).toThrowError(expect.objectContaining({ code: "signing_request_invalid" }));
     expect(() =>
       asHostile((value: never) =>
-        encodeKernelV4PermissionUninstallCalls({ account, packages: value }),
+        encodeKernelPermissionUninstallCalls({ account, packages: value }),
       )(packages),
     ).toThrowError(new RegExp(reason, "u"));
   });

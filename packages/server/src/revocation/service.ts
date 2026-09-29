@@ -11,9 +11,9 @@
  */
 import {
   hashPermissionRequest,
-  type KernelV4RevocationSigningRequest,
+  type KernelRevocationSigningRequest,
   type PermissionRequest,
-  parseKernelV4RevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
 } from "@oaath/protocol";
 import { sealArtifact } from "../artifact/encrypt.js";
 import { readApprovedPermission } from "../authorization/approved-permission.js";
@@ -174,9 +174,9 @@ export async function requestOwnerPhoneRevocation(
     return { request: scope.request, artifact: retained.plaintext, owner } as const;
   });
   if ("retained" in source) return Object.freeze({ ...source.retained, created: false });
-  let signingRequest: Readonly<KernelV4RevocationSigningRequest>;
+  let signingRequest: Readonly<KernelRevocationSigningRequest>;
   try {
-    signingRequest = parseKernelV4RevocationSigningRequest(
+    signingRequest = parseKernelRevocationSigningRequest(
       await prepare(Object.freeze({ request: source.request, artifact: source.artifact, chainId })),
     );
   } catch {

@@ -39,8 +39,8 @@ import {
   sessionOperator,
 } from "../src/kernel.js";
 import {
+  encodeKernelPermissionUninstallCalls,
   encodeKernelV4InstallModules,
-  encodeKernelV4PermissionUninstallCalls,
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
@@ -1196,7 +1196,7 @@ async function createHarness() {
           account: deployed,
           nonceKey: "0",
           sequence: "1",
-          calls: encodeKernelV4PermissionUninstallCalls({
+          calls: encodeKernelPermissionUninstallCalls({
             account,
             packages: sessionRuntime.packages,
           }),

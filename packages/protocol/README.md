@@ -28,10 +28,10 @@ refusal code. `readRpcBundlerRejection` reads that code from structured SDK RPC
 error fields without inspecting prose or accessors. Relays may forward this
 evidence for a failed submission; HTTP errors alone never prove non-acceptance.
 
-`parseKernelV4RevocationSigningRequest` captures the self-funded Kernel 0.4.0 /
+`parseKernelRevocationSigningRequest` captures the self-funded Kernel 0.4.0 /
 EntryPoint 0.7 owner-phone revocation profile. Its packed operation must contain
 only the declared install-nonce invalidation or permission-uninstall calls.
-`hashKernelV4RevocationSigningRequest` binds review metadata and the chain-bound
+`hashKernelRevocationSigningRequest` binds review metadata and the chain-bound
 operation into the returned owner artifact. The owner device still verifies its
 paired account, current consent and configured chain before signing. This is
 separate from generic owner-signing requests; raw digests remain reject-only.

@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { p256 } from "@noble/curves/nist.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import {
-  hashKernelV4RevocationSigningRequest,
+  hashKernelRevocationSigningRequest,
   hashPermissionRequest,
-  type KernelV4RevocationSigningRequest,
-  parseKernelV4RevocationSigningRequest,
+  type KernelRevocationSigningRequest,
+  parseKernelRevocationSigningRequest,
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
 import { vi } from "vitest";
@@ -95,7 +95,7 @@ export async function setupRevocation(store: RelayStore) {
     }),
   );
   const { name: _name, ...operation } = source.valid[0];
-  const signingRequest = parseKernelV4RevocationSigningRequest({
+  const signingRequest = parseKernelRevocationSigningRequest({
     version: "oaath.kernel-revocation-signing-request/v1",
     kind: "kernel-revocation",
     permissionRequest,
@@ -121,11 +121,11 @@ export async function setupRevocation(store: RelayStore) {
     requestTtlMs: 60_000,
     prepare,
   };
-  const artifact = (request: KernelV4RevocationSigningRequest = signingRequest) =>
+  const artifact = (request: KernelRevocationSigningRequest = signingRequest) =>
     serializeOwnerSigningArtifact({
       version: "oaath.owner-signing-artifact/v1",
       kind: "p256",
-      requestHash: hashKernelV4RevocationSigningRequest(request),
+      requestHash: hashKernelRevocationSigningRequest(request),
       signature: `0x${p256.sign(hexToBytes(request.expectedDigest.slice(2)), key, { prehash: false, lowS: true }).toCompactHex()}`,
     });
   return { harness, input, prepare, signingRequest, artifact, erase: () => key.fill(0) };

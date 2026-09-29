@@ -1,9 +1,6 @@
 import { p256 } from "@noble/curves/nist.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
-import {
-  hashKernelV4RevocationSigningRequest,
-  serializeOwnerSigningArtifact,
-} from "@oaath/protocol";
+import { hashKernelRevocationSigningRequest, serializeOwnerSigningArtifact } from "@oaath/protocol";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMemoryRelayStore, OaathRelayError, type RelayStore } from "../src/index.js";
 import { requestOwnerPhoneRevocation } from "../src/native.js";
@@ -171,7 +168,7 @@ describe("durable phone revocation admission and decision", () => {
     const wrongSignature = serializeOwnerSigningArtifact({
       version: "oaath.owner-signing-artifact/v1",
       kind: "p256",
-      requestHash: hashKernelV4RevocationSigningRequest(f.signingRequest),
+      requestHash: hashKernelRevocationSigningRequest(f.signingRequest),
       signature: `0x${p256.sign(hexToBytes(f.signingRequest.expectedDigest.slice(2)), wrongKey, { prehash: false, lowS: true }).toCompactHex()}`,
     });
     wrongKey.fill(0);

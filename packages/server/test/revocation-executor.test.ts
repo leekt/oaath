@@ -1,4 +1,4 @@
-import { createOperation, type KernelV4RevocationSigningRequest } from "@oaath/protocol";
+import { createOperation, type KernelRevocationSigningRequest } from "@oaath/protocol";
 import {
   type OperationObserverReadRequest,
   OperationStore,
@@ -27,7 +27,7 @@ const unavailable = async () => {
   throw new Error("capability unavailable");
 };
 const noClose = async () => {};
-function observation(request: KernelV4RevocationSigningRequest, finalized = false) {
+function observation(request: KernelRevocationSigningRequest, finalized = false) {
   const tx = `0x${"44".repeat(32)}`;
   const hash = `0x${"55".repeat(32)}`;
   const parent = `0x${"66".repeat(32)}`;
