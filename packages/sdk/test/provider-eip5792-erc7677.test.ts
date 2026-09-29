@@ -536,7 +536,7 @@ describe("plain sendCalls ERC-7677", () => {
         const request = {
           chain: CHAIN_ID,
           calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
-          paymasterService: { url: SERVICE_URL, context: { policyId: "plain" } },
+          payer: { kind: "paymaster-service", url: SERVICE_URL, context: { policyId: "plain" } },
         };
         expect(await grant.reviewCalls(request)).toMatchObject({
           paymasterService: { url: SERVICE_URL },
@@ -573,7 +573,8 @@ describe("plain sendCalls ERC-7677", () => {
           grant.sendCalls({
             chain: CHAIN_ID,
             calls: [{ target: TARGET, value: "0", data: CALL_DATA }],
-            paymasterService: {
+            payer: {
+              kind: "paymaster-service",
               url: failure === "unregistered" ? FOREIGN_URL : SERVICE_URL,
               context: {},
             },

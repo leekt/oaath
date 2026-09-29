@@ -477,13 +477,15 @@ IndexedDB schema 16 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.
 
-Plain Grant and owner calls can explicitly use a connected EOA as a fallback:
+Plain Grant and owner calls take one optional `payer` setting that says who pays
+gas. Omit it and the account pays through the chain's configured routes. A
+connected EOA can pay as a fallback:
 
 ```ts
 const request = {
   chain,
   calls,
-  feePayer: { kind: "connected-eoa", wallet: walletClient },
+  payer: { kind: "connected-eoa", wallet: walletClient },
 };
 const review = await grant.reviewCalls(request); // initial route plus conditional fallback
 const operation = await grant.sendCalls(request);
@@ -557,11 +559,12 @@ The lower-level `createKernelRuntime` accepts the same `gas` option.
 Relay bootstrap preserves an explicitly configured floor.
 
 ERC-7677 sponsorship applies the floor before requesting final paymaster data.
-Both Grant and owner calls accept an explicit registered service:
+Both Grant and owner calls accept an explicit registered service as the payer:
 
 ```ts
-const request = { chain, calls, paymasterService: {
-  url: registeredPaymasterUrl, context: { policyId: "application-policy" },
+const request = { chain, calls, payer: {
+  kind: "paymaster-service", url: registeredPaymasterUrl,
+  context: { policyId: "application-policy" },
 } };
 await grant.reviewCalls(request); // reports the selected URL; no sponsorship request
 const operation = await grant.sendCalls(request); // owner.sendCalls accepts the same selection

@@ -2,7 +2,7 @@
 "@oaath/sdk": minor
 ---
 
-Add optional `feePayer: { kind: "connected-eoa", wallet }` to plain Grant and
+Add optional `payer: { kind: "connected-eoa", wallet }` to plain Grant and
 owner calls. A conclusive bundler RPC rejection permits one connected-wallet
 EntryPoint `handleOps` transaction containing the same signed UserOperation.
 Review exposes its conditional route and address; acknowledged direct execution

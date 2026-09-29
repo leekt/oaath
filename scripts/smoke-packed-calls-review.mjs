@@ -54,7 +54,7 @@ try {
   const fallback = await handle.reviewCalls({
     chain: owner.chainId,
     calls,
-    feePayer: { kind: "connected-eoa", wallet: owner.wallet },
+    payer: { kind: "connected-eoa", wallet: owner.wallet },
   });
   assert.notEqual(fallback.fallback, null);
   fingerprints.push(acceptReview(fallback));

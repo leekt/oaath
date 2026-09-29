@@ -146,7 +146,7 @@ describe("owner-direct account calls", () => {
       const owner = client.account(ACCOUNT).owner(wallet);
       const request = {
         ...(sendCallsInput() as Record<string, unknown>),
-        paymasterService: { url: "https://paymaster.test", context: {} },
+        payer: { kind: "paymaster-service", url: "https://paymaster.test", context: {} },
       };
       expect(await owner.reviewCalls(request)).toMatchObject({
         paymasterService: { url: "https://paymaster.test" },

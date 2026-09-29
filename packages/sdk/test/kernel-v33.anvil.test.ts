@@ -1036,7 +1036,7 @@ function passkeySession() {
         const request = {
           chain: 143,
           calls: [{ target, value: "17", data: "0x" }],
-          feePayer: { kind: "connected-eoa", wallet: feeWallet },
+          payer: { kind: "connected-eoa", wallet: feeWallet },
         };
         const handle = direct
           .account(address)
