@@ -16,12 +16,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import {
-  encodeKernelV4NonceKey,
-  encodeKernelV4NonceRead,
-  encodeKernelV33NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
-} from "@oaath/sdk/advanced";
+import { encodeKernelNonceKey, encodeKernelNonceRead } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 import { createViemChainPorts } from "@oaath/sdk/viem";
 import { parseEther } from "viem";
@@ -67,20 +62,22 @@ export async function createAnvilChain(chainId, options = {}) {
       const nonceKey = request.nonceKey ?? "0";
       const key =
         existingAccount === null
-          ? encodeKernelV4NonceKey({
+          ? encodeKernelNonceKey({
+              deployment: kernelDeployment({ chainId }),
               mode: request.mode,
               validation: request.validation,
               nonceKey,
             })
-          : encodeKernelV33NonceKey({
+          : encodeKernelNonceKey({
+              deployment: kernelDeployment({ chainId, kernelVersion: "0.3.3" }),
               mode: request.mode === "enable-replayable" ? "enable" : "standard",
               validation: request.validation,
               nonceKey,
             });
       const raw = await chain.rpc("eth_call", [
         {
-          to: KERNEL_V4_ENTRY_POINT_V07,
-          data: encodeKernelV4NonceRead({ account: request.account, key }),
+          to: kernelDeployment({ chainId }).entryPoint.address,
+          data: encodeKernelNonceRead({ account: request.account, key }),
         },
         "latest",
       ]);

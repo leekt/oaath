@@ -15,12 +15,8 @@
  */
 
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  OAATH_KERNEL_V4_VALIDITY_POLICY,
-  OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  OAATH_KERNEL_VALIDITY_POLICY,
+  OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 
@@ -133,18 +129,18 @@ export function createFakeChain(chainId) {
           if (request.type === "chain_id") return request.chainId;
           if (request.type === "code") return request.address === ACCOUNT ? "0x" : "0x01";
           if (request.type === "runtime_code_hash") {
-            if (request.address === KERNEL_V4_ENTRY_POINT_V07) {
-              return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+            if (request.address === deployment.entryPoint.address) {
+              return deployment.entryPoint.runtimeCodeHash;
             }
-            if (request.address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
-              return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
+            if (request.address === OAATH_KERNEL_VALIDITY_POLICY) {
+              return OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH;
             }
-            return request.address === KERNEL_V4_UUPS_IMPLEMENTATION_V07
+            return request.address === deployment.implementation
               ? deployment.implementationDeployment.runtimeCodeHash
-              : KERNEL_V4_FACTORY_V07_CODE_HASH;
+              : deployment.factoryRuntimeCodeHash;
           }
           if (request.type === "kernel_factory_account") return ACCOUNT;
-          return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+          return deployment.implementation;
         },
       },
       observation: {

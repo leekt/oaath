@@ -51,14 +51,11 @@ the application's durable operation journal or implement browser credential UI.
 For approval and preparation with only public identity, use
 `kernelKey({ credential })` in the session operator. It
 derives the same permission as the matching signing profile and cannot sign.
-For custom revocation of a Kernel `0.3.3` permission, `@oaath/sdk/advanced`'s
-`readKernelV33PermissionState` reads through the caller's
-block-pinned `call` capability and `kernelV33PermissionRevocationCalls` prepares
-the exact owner calls. Send all returned calls atomically. An unused approval
-requires installation and removal to consume its permission nonce; an already
-absent, invalidated approval returns no calls. Verify both permission absence
-and `kernelV33EffectivePermissionNonce(state) > approval.nonce` at a finalized
-canonical block. A successful operation receipt alone does not prove removal.
+For custom revocation of a permission, `prepareKernelPermissionRevocation`
+(from `@oaath/sdk/kernel`) prepares the exact owner calls for the approval's
+Kernel version, and `verifyKernelPermissionRevocation` proves removal at a
+finalized canonical block. A successful operation receipt alone does not prove
+removal.
 
 ## Owner operations
 
@@ -271,12 +268,13 @@ representation and restore with `parseKernelPermissionApproval`. Each destinatio
 validation nonce; stale or mismatched state rejects rather than requesting another
 signature silently. The first operation enables and executes together; after confirmed installation, use the
 same runtime's `prepareOperation` and `signOperation` in `standard` mode.
-`encodeKernelV33NonceKey` (from `@oaath/sdk/advanced`) derives the EntryPoint key for each mode; read that
+`encodeKernelNonceKey({ deployment, mode, validation, nonceKey })` (from
+`@oaath/sdk/advanced`) derives the EntryPoint key for each mode; read that
 key's sequence before preparing. Enable and standard mode have distinct keys.
 Kernel v3.3's replayable enable uses an EIP-712 domain with `chainId: 0` and a
-chain-zero session signing digest. `kernelV33OperationSigningHash` (also on
-`/advanced`) returns the
-digest for an external session signer; `encodeVerifiedSignature` verifies that
+chain-zero session signing digest.
+`kernelOperationSigningHash({ deployment, operation })` (also on `/advanced`)
+returns the digest for an external session signer; `encodeVerifiedSignature` verifies that
 digest. The stored prepared operation always retains its actual chain and
 EntryPoint hash. Installed sessions and owner operations sign that actual hash.
 The Monad enable gas floor applies before hashing or signing. Missing signer or
@@ -529,7 +527,7 @@ this method adds no durable execution artifact.
 
 Custom deployment quotes receive the selected Kernel `mode` and `validation`.
 Choose a nonce namespace, encode its EntryPoint key with `@oaath/sdk/advanced`'s
-`encodeKernelV4NonceKey`,
+`encodeKernelNonceKey({ deployment, mode, validation, nonceKey })`,
 and read that key's sequence. The root, enable, and standard permission paths
 have separate nonce domains; the SDK supplies the authority and the deployment
 supplies its current chain sequence and gas.
@@ -623,9 +621,9 @@ accounts with an advanced global minimum require separate reconciliation.
 The install nonce is separate from the EntryPoint operation nonce above.
 
 For an untouched chain, `@oaath/sdk/advanced`'s
-`encodeKernelV4InstallNonceInvalidationCall({ account,
+`encodeKernelInstallNonceInvalidationCall({ account,
 installNonce })` encodes an owner self-call that advances that approval's key
-to the next sequence. `encodeKernelV4InstallNonceRead({ key })` encodes the
+to the next sequence. `encodeKernelInstallNonceRead({ key })` encodes the
 account's `nonce(uint192)` read for checking its effective sequence. An already
 consumed or invalidated nonce requires observation; repeating the self-call can
 revert because Kernel requires an increase. Installed permissions still need

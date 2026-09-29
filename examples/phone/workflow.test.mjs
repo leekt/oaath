@@ -7,7 +7,7 @@ import {
   serializeOwnerSigningArtifact,
 } from "@oaath/protocol";
 import { createOAAth } from "@oaath/sdk";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 
 import {
   createPostgresOperationSchema,
@@ -125,7 +125,7 @@ for (const { workspaceKind, restart = false } of scenarios)
         paired.chains,
         service.chains.map((chain) => ({
           chainId: chain.capability.chainId,
-          entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+          entryPoint: kernelDeployment({ chainId: chain.capability.chainId }).entryPoint.address,
         })),
       );
       assert.deepEqual(Object.keys(paired), ["version", "deviceCredential", "account", "chains"]);

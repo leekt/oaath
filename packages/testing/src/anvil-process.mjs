@@ -18,8 +18,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { encodeHandleOps, KERNEL_V4_CREATE2_DEPLOYER } from "@oaath/sdk/advanced";
-import { createKernelReads } from "@oaath/sdk/kernel";
+import { encodeHandleOps } from "@oaath/sdk/advanced";
+import { createKernelReads, kernelDeployment } from "@oaath/sdk/kernel";
 import {
   concat,
   createPublicClient,
@@ -151,6 +151,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
  * }>}
  */
 export async function deployKernelStack(chain, { p256 = false } = {}) {
+  const deployer = kernelDeployment({ chainId: chain.chainId }).create2Deployer;
   const entryPoint = JSON.parse(
     await readFile(createRequire(import.meta.url).resolve(fixture.entryPoint.artifact), "utf8"),
   );
@@ -167,7 +168,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   const deploy = async (deploymentInput) => {
     const hash = await wallet.sendTransaction({
       chain: null,
-      to: KERNEL_V4_CREATE2_DEPLOYER,
+      to: deployer,
       data: deploymentInput,
       gas: 10_000_000n,
     });
@@ -196,7 +197,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   }
   /** @type {import("viem").Address} */
   const validator = getCreate2Address({
-    from: KERNEL_V4_CREATE2_DEPLOYER,
+    from: deployer,
     salt: VALIDATOR_SALT,
     bytecode: fixture.ecdsaValidator.bytecode,
   }).toLowerCase();

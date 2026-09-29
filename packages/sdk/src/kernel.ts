@@ -1,8 +1,8 @@
 /**
  * `@oaath/sdk/kernel` — the version-agnostic Kernel runtime, key, policy,
  * account and permission primitives, plus the prepared-operation vocabulary
- * they produce. Kernel and EntryPoint versions are optional settings here;
- * version-named encoders and constants live in `@oaath/sdk/advanced`.
+ * they produce. Kernel and EntryPoint versions are optional settings; no
+ * `@oaath/sdk` entry exports a version-named value or type.
  * For owner devices, custom deployments, and audits; the default application
  * path never needs them.
  *

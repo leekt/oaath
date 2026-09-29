@@ -1,7 +1,5 @@
-import {
-  encodeKernelV4FactoryImplementationRead,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-} from "@oaath/sdk/advanced";
+import { encodeKernelFactoryImplementationRead } from "@oaath/sdk/advanced";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { decodeAbiParameters, type Hex, keccak256 } from "viem";
 import { type Component, components } from "./manifest.js";
 import type { RpcReader } from "./rpc.js";
@@ -113,14 +111,16 @@ export async function doctor(chainId: number, rpc: RpcReader): Promise<DoctorRep
   if (factory?.status === "verified") {
     try {
       const result = await rpc.request("eth_call", [
-        { to: factory.address, data: encodeKernelV4FactoryImplementationRead() },
+        { to: factory.address, data: encodeKernelFactoryImplementationRead() },
         block,
       ]);
       if (typeof result !== "string" || !/^0x0{24}[0-9a-fA-F]{40}$/u.test(result))
         throw new Error();
       const [address] = decodeAbiParameters([{ type: "address" }], result as Hex);
       factoryBinding =
-        address.toLowerCase() === KERNEL_V4_UUPS_IMPLEMENTATION_V07 ? "verified" : "mismatch";
+        address.toLowerCase() === kernelDeployment({ chainId }).implementation
+          ? "verified"
+          : "mismatch";
     } catch {}
   }
   const ready =

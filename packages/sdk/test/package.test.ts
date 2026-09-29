@@ -23,13 +23,13 @@ describe("package boundary", () => {
     ]);
   });
 
-  it("names no Kernel version on the root or /kernel entry", () => {
-    // Kernel and EntryPoint versions are optional settings of these entries,
-    // never part of a function or constant name. Version-named encoders and
-    // constants live on /advanced; the type-level check is check:public-surface.
-    const versioned = [...Object.keys(root), ...Object.keys(kernel)].filter((name) =>
-      /V33|V4/u.test(name),
-    );
+  it("names no Kernel version on any entry", () => {
+    // Kernel and EntryPoint versions are detected or optional settings, never
+    // part of a function or constant name, /advanced included. The type-level
+    // check is check:public-surface.
+    const versioned = [root, kernel, advanced, persistence, testing, viem]
+      .flatMap((entry) => Object.keys(entry))
+      .filter((name) => /V33|V4/u.test(name));
     expect(versioned).toEqual([]);
   });
 
@@ -84,20 +84,11 @@ describe("package boundary", () => {
       "ERC7902_STATIC_PAYMASTER_CONFIGURATION_HASH_DOMAIN",
       "ERC7902_STATIC_PAYMASTER_LIMITS",
       "GrantStore",
-      "KERNEL_V4_CREATE2_DEPLOYER",
-      "KERNEL_V4_ENTRY_POINT_V07",
-      "KERNEL_V4_ENTRY_POINT_V07_CODE_HASH",
-      "KERNEL_V4_FACTORY_V07",
-      "KERNEL_V4_FACTORY_V07_CODE_HASH",
-      "KERNEL_V4_UUPS_IMPLEMENTATION_V07",
       "OAATH_BINDING_HASH_DOMAIN",
       "OAATH_BINDING_VERSION",
       "OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES",
       "OAATH_GRANT_STORE_RECORD_VERSION",
       "OAATH_HANDLE_OPS_OVERHEAD_GAS",
-      "OAATH_KERNEL_V33_APPROVAL_VERSION",
-      "OAATH_KERNEL_V4_VALIDITY_POLICY",
-      "OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH",
       "OAATH_KERNEL_VALIDITY_POLICY",
       "OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH",
       "OAATH_OPERATION_STORE_RECORD_VERSION",
@@ -125,26 +116,12 @@ describe("package boundary", () => {
       "encodeKernelInstallNonceRead",
       "encodeKernelNonceKey",
       "encodeKernelNonceRead",
-      "encodeKernelV33NonceKey",
-      "encodeKernelV4FactoryImplementationRead",
-      "encodeKernelV4InstallNonceInvalidationCall",
-      "encodeKernelV4InstallNonceRead",
-      "encodeKernelV4NonceKey",
-      "encodeKernelV4NonceRead",
       "forgetLocalEffect",
       "hashErc7902StaticPaymasterConfiguration",
       "kernelOperationSigningHash",
       "kernelReplayableInstallDigest",
-      "kernelV33EffectivePermissionNonce",
-      "kernelV33OperationSigningHash",
-      "kernelV33PermissionEnableTypedData",
-      "kernelV33PermissionRevocationCalls",
-      "kernelV33PermissionStatus",
-      "kernelV4ReplayableInstallDigest",
-      "parseKernelV33PermissionState",
       "prepareSponsoredKernelOperation",
       "probeBundlerCapability",
-      "readKernelV33PermissionState",
       "revokeEffect",
       "runOaathCleanup",
       "signOutEffect",

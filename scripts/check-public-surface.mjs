@@ -21,10 +21,10 @@
  *      `src`, and every public package builds those artifacts during `prepack`.
  *      Private packages are never published and are exempt from the provenance
  *      rule.
- *   4. Version-agnostic names: no value or type exported from the
- *      `@oaath/sdk` or `@oaath/sdk/kernel` entry names a Kernel version
- *      (`V33`/`V4`). Versions are optional settings there; version-named
- *      encoders and constants belong on `@oaath/sdk/advanced`.
+ *   4. Version-agnostic names: no value or type exported from any published
+ *      `@oaath/sdk` entry, `/advanced` included, names a Kernel version
+ *      (`V33`/`V4`). Kernel and EntryPoint versions are detected or optional
+ *      settings; deployment-specific addresses are `kernelDeployment(...)` fields.
  *
  * `@oaath/server`'s own entries are owned by `packages/server/test/package.test.ts`;
  * this gate covers the graphs that cross a package boundary.
@@ -243,13 +243,16 @@ async function exportedNames(file) {
 
 async function checkVersionAgnosticEntries(workspace) {
   const sdk = workspace.get("@oaath/sdk");
-  for (const entry of ["index.ts", "kernel.ts"]) {
-    const names = await exportedNames(new URL(`src/${entry}`, sdk.directory));
+  const entries = Object.values(sdk.manifest.exports).map((entry) => entry["oaath-source"].default);
+  if (entries.length < 2) fail("@oaath/sdk: no published entries parsed");
+  for (const entry of entries) {
+    const names = await exportedNames(new URL(entry, sdk.directory));
     if (names.length < 2) fail(`@oaath/sdk ${entry}: no exports parsed`);
     for (const name of names) {
       if (/V33|V4/u.test(name)) fail(`@oaath/sdk ${entry}: exports version-named ${name}`);
     }
   }
+  return entries.length;
 }
 
 function externals(graph) {
@@ -261,7 +264,7 @@ const sdk = await checkBrowserGraph("@oaath/sdk", workspace);
 const protocol = await checkBrowserGraph("@oaath/protocol", workspace);
 checkDirection(workspace);
 checkPublishedEntries(workspace);
-await checkVersionAgnosticEntries(workspace);
+const versionAgnosticEntries = await checkVersionAgnosticEntries(workspace);
 
 if (failures.length > 0) {
   console.error("check-public-surface: FAILED");
@@ -276,4 +279,6 @@ console.log(
 );
 console.log(`  direction        ${Object.keys(DIRECTION).length} packages, production edges only`);
 console.log("  provenance       every published entry resolves dist");
-console.log("  versions         @oaath/sdk and /kernel export no V33/V4 name");
+console.log(
+  `  versions         ${versionAgnosticEntries} @oaath/sdk entries export no V33/V4 name`,
+);
