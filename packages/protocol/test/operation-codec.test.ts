@@ -121,6 +121,47 @@ describe("Operation current codec", () => {
     );
   });
 
+  it("binds one explicit execution lane through every transition", () => {
+    const execution = { ...identity, kind: "execution" as const };
+    const lane = { id: "run_01", key: 17 };
+    const prepared = createOperation({ identity: execution, preparedAt: 10, lane });
+    expect(prepared.lane).toEqual(lane);
+    expect(Object.isFrozen(prepared.lane)).toBe(true);
+    expect(createOperation({ identity: execution, preparedAt: 10 }).lane).toBeNull();
+    const attempted = advanceOperation(prepared, {
+      type: "mark_submission_attempted",
+      identity: execution,
+      attemptedAt: 11,
+    });
+    expect(attempted.lane).toEqual(lane);
+    expect(parseOperation(clone(attempted))).toEqual(attempted);
+
+    // Revocation keeps its one fixed lane; a lane needs a bounded label and a
+    // positive key, and a persisted record must name its lane (null or exact).
+    expectOperationError(
+      () => createOperation({ identity, preparedAt: 10, lane }),
+      "operation_input_invalid",
+    );
+    for (const invalid of [
+      { id: "run_01", key: 0 },
+      { id: "run_01", key: 1.5 },
+      { id: "run_01", key: "17" },
+      { id: "", key: 17 },
+      { id: " run", key: 17 },
+      { id: "x".repeat(129), key: 17 },
+      { id: "run_01", key: 17, extra: true },
+    ]) {
+      expectOperationError(
+        () => createOperation({ identity: execution, preparedAt: 10, lane: invalid }),
+        "operation_input_invalid",
+      );
+    }
+    const missingLane = clone(attempted) as unknown as Record<string, unknown>;
+    delete missingLane.lane;
+    expectRecordInvalid(missingLane);
+    expectRecordInvalid({ ...clone(attempted), version: "oaath.operation/v3" });
+  });
+
   it("accepts only the exact current abandoned record", () => {
     const operation = abandonedOperation();
     expect(parseOperation(clone(operation))).toEqual(operation);

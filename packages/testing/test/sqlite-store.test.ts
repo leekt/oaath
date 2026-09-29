@@ -291,6 +291,59 @@ describe("test-only durable SQLite stores", () => {
     await Promise.all([left.close(), right.close()]);
   });
 
+  it("keeps caller-reserved lanes independent across independent connections", async () => {
+    const filePath = await databasePath();
+    const left = createSqliteOperationStore(filePath);
+    const right = createSqliteOperationStore(filePath);
+    const scope = operationStoreKey(grantIdentity.grantId, 1);
+    const onLane = (seed: string, key: number) =>
+      createOperation({
+        identity: operationIdentity(1, seed),
+        preparedAt: 10,
+        lane: { id: `run_${key}`, key },
+      });
+
+    const lanes = await Promise.all([
+      left.compareAndSwap({
+        key: scope,
+        expectedStoreRevision: null,
+        next: preparedOperation(1, "1"),
+      }),
+      right.compareAndSwap({
+        key: { ...scope, lane: 17 },
+        expectedStoreRevision: null,
+        next: onLane("2", 17),
+      }),
+      left.compareAndSwap({
+        key: { ...scope, lane: 18 },
+        expectedStoreRevision: null,
+        next: onLane("3", 18),
+      }),
+    ]);
+    expect(lanes.map((result) => result.status)).toEqual(["committed", "committed", "committed"]);
+    await expectStoreError(
+      () =>
+        left.compareAndSwap({
+          key: { ...scope, lane: 17 },
+          expectedStoreRevision: 0,
+          next: onLane("4", 17),
+        }),
+      "store_lane_occupied",
+    );
+    await expectStoreError(
+      () => right.compareAndSwap({ key: scope, expectedStoreRevision: 0, next: onLane("4", 17) }),
+      "store_key_mismatch",
+    );
+    await Promise.all([left.close(), right.close()]);
+
+    const reopened = createSqliteOperationStore(filePath);
+    expect((await reopened.get({ ...scope, lane: 17 }))?.value.lane).toEqual({
+      id: "run_17",
+      key: 17,
+    });
+    await reopened.close();
+  });
+
   it("releases a terminal lane for a new aggregate without resetting its store revision", async () => {
     const filePath = await databasePath();
     const store = createSqliteOperationStore(filePath);
@@ -598,9 +651,9 @@ describe("test-only durable SQLite stores", () => {
     const database = new DatabaseSync(filePath);
     database.exec(`
       CREATE TRIGGER sqliteX_mutate_another_chain
-      AFTER UPDATE ON oaath_test_operation_store_v1
+      AFTER UPDATE ON oaath_test_operation_store_v2
       BEGIN
-        UPDATE oaath_test_operation_store_v1
+        UPDATE oaath_test_operation_store_v2
         SET payload = NEW.payload
         WHERE grant_id = NEW.grant_id AND chain_id <> NEW.chain_id;
       END

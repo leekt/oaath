@@ -202,6 +202,7 @@ export type {
   OperationIdentity,
   OperationInclusion,
   OperationKind,
+  OperationLane,
   OperationOutcome,
   OperationSubmissionEvidence,
   OperationSupersession,

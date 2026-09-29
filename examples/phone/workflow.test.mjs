@@ -372,7 +372,7 @@ for (const { workspaceKind, restart = false } of scenarios)
           if (restart) {
             const beforeRecovery = service.chains.map((chain) => chain.sends.length);
             const retained = await pool.query(
-              "SELECT record FROM oaath_operation_lane_v1 WHERE record #>> '{value,identity,userOperationHash}' = $1",
+              "SELECT record FROM oaath_operation_lane_v2 WHERE record #>> '{value,identity,userOperationHash}' = $1",
               [request.expectedDigest],
             );
             assert.equal(

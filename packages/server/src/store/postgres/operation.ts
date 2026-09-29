@@ -4,23 +4,27 @@ import type { Pool } from "pg";
 import { relayFailure } from "../../relay/errors.js";
 import type { RelaySchemaExecutor } from "./schema.js";
 
-/** Current schema; obsolete state is recreated, never migrated. Records remain SDK-owned v2. */
+/**
+ * Current schema; obsolete state is recreated, never migrated. Records remain
+ * SDK-owned v3. Lane 0 is the default lane; a reserved lane key is positive.
+ */
 export async function createPostgresOperationSchema(executor: RelaySchemaExecutor): Promise<void> {
-  await executor.query(`CREATE TABLE oaath_operation_lane_v1 (
+  await executor.query(`CREATE TABLE oaath_operation_lane_v2 (
     grant_id text NOT NULL, chain_id bigint NOT NULL, kind text NOT NULL,
+    lane integer NOT NULL CHECK (lane >= 0 AND (lane = 0 OR kind = 'execution')),
     record jsonb,
-    PRIMARY KEY (grant_id, chain_id, kind)
+    PRIMARY KEY (grant_id, chain_id, kind, lane)
   )`);
-  await executor.query(`CREATE TABLE oaath_operation_archive_v1 (
-    grant_id text NOT NULL, chain_id bigint NOT NULL, kind text NOT NULL,
+  await executor.query(`CREATE TABLE oaath_operation_archive_v2 (
+    grant_id text NOT NULL, chain_id bigint NOT NULL, kind text NOT NULL, lane integer NOT NULL,
     user_operation_hash text NOT NULL, record jsonb NOT NULL,
-    PRIMARY KEY (grant_id, chain_id, kind, user_operation_hash),
-    FOREIGN KEY (grant_id, chain_id, kind) REFERENCES oaath_operation_lane_v1
+    PRIMARY KEY (grant_id, chain_id, kind, lane, user_operation_hash),
+    FOREIGN KEY (grant_id, chain_id, kind, lane) REFERENCES oaath_operation_lane_v2
   )`);
 }
-const lane = "grant_id = $1 AND chain_id = $2 AND kind = $3";
+const lane = "grant_id = $1 AND chain_id = $2 AND kind = $3 AND lane = $4";
 function keyParts(key: Readonly<OperationStoreKey>) {
-  return [key.grantId, key.chainId, key.kind];
+  return [key.grantId, key.chainId, key.kind, key.lane ?? 0];
 }
 
 /**
@@ -44,10 +48,10 @@ export function createPostgresOperationStoreAdapter({
   }
   return Object.freeze({
     get: (key: Readonly<OperationStoreKey>) =>
-      read(`SELECT record FROM oaath_operation_lane_v1 WHERE ${lane}`, keyParts(key)),
+      read(`SELECT record FROM oaath_operation_lane_v2 WHERE ${lane}`, keyParts(key)),
     getArchived: (input: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
       read(
-        `SELECT record FROM oaath_operation_archive_v1 WHERE ${lane} AND user_operation_hash = $4`,
+        `SELECT record FROM oaath_operation_archive_v2 WHERE ${lane} AND user_operation_hash = $5`,
         [...keyParts(input.key), input.userOperationHash],
       ),
     async compareAndSwap(
@@ -62,12 +66,12 @@ export function createPostgresOperationStoreAdapter({
         await client.query("BEGIN");
         const parts = keyParts(input.key);
         await client.query(
-          `INSERT INTO oaath_operation_lane_v1 (grant_id, chain_id, kind) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          `INSERT INTO oaath_operation_lane_v2 (grant_id, chain_id, kind, lane) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
           parts,
         );
         const row = (
           await client.query(
-            `SELECT record, record = $4::jsonb AS matches_archive FROM oaath_operation_lane_v1 WHERE ${lane} FOR UPDATE`,
+            `SELECT record, record = $5::jsonb AS matches_archive FROM oaath_operation_lane_v2 WHERE ${lane} FOR UPDATE`,
             [...parts, input.archive === null ? null : JSON.stringify(input.archive.record)],
           )
         ).rows[0];
@@ -75,7 +79,7 @@ export function createPostgresOperationStoreAdapter({
         if (
           (
             await client.query(
-              `SELECT 1 FROM oaath_operation_archive_v1 WHERE ${lane} AND user_operation_hash = $4`,
+              `SELECT 1 FROM oaath_operation_archive_v2 WHERE ${lane} AND user_operation_hash = $5`,
               [...parts, input.expectedArchiveAbsentUserOperationHash],
             )
           ).rowCount !== 0
@@ -91,7 +95,7 @@ export function createPostgresOperationStoreAdapter({
             accepted =
               (
                 await client.query(
-                  `INSERT INTO oaath_operation_archive_v1 (grant_id, chain_id, kind, user_operation_hash, record) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT DO NOTHING`,
+                  `INSERT INTO oaath_operation_archive_v2 (grant_id, chain_id, kind, lane, user_operation_hash, record) VALUES ($1, $2, $3, $4, $5, $6::jsonb) ON CONFLICT DO NOTHING`,
                   [...parts, input.archive.userOperationHash, JSON.stringify(input.archive.record)],
                 )
               ).rowCount === 1;
@@ -100,7 +104,7 @@ export function createPostgresOperationStoreAdapter({
           await client.query("ROLLBACK");
           return false;
         }
-        await client.query(`UPDATE oaath_operation_lane_v1 SET record = $4::jsonb WHERE ${lane}`, [
+        await client.query(`UPDATE oaath_operation_lane_v2 SET record = $5::jsonb WHERE ${lane}`, [
           ...parts,
           JSON.stringify(input.next),
         ]);

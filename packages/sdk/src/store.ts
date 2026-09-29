@@ -1,5 +1,7 @@
 import {
   type CaptureContext,
+  captureRecord as captureRecordValue,
+  exactCapturedRecord,
   exactRecord as exactRecordValue,
   type Grant,
   type Operation,
@@ -11,7 +13,7 @@ import {
 } from "@oaath/protocol";
 
 export const OAATH_GRANT_STORE_RECORD_VERSION = "oaath.grant-store-record/v1" as const;
-export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v2" as const;
+export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-record/v3" as const;
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
@@ -70,10 +72,18 @@ export interface GrantStoreAdapter {
  * a revocation can proceed while an execution is still in flight on the same
  * chain.
  */
-export interface OperationStoreKey {
+export interface OperationStoreScope {
   readonly grantId: string;
   readonly chainId: number;
   readonly kind: OperationKind;
+}
+
+/**
+ * One journal slot. An absent `lane` is the scope's default lane; a present
+ * one is the caller-reserved execution lane key the Operation record names.
+ */
+export interface OperationStoreKey extends OperationStoreScope {
+  readonly lane?: number;
 }
 
 export interface OperationStoreArchive {
@@ -215,17 +225,38 @@ function canonicalUserOperationHash(value: unknown): `0x${string}` {
 }
 
 function parseOperationKey(value: unknown): Readonly<OperationStoreKey> {
-  const record = exactRecord(
-    value,
-    ["grantId", "chainId", "kind"],
+  const fail = (message: string): never => invalid("store_input_invalid", message);
+  const captured = captureRecordValue(value, "Operation store key", new WeakSet(), fail);
+  const record = exactCapturedRecord(
+    captured,
+    Object.hasOwn(captured, "lane")
+      ? ["grantId", "chainId", "kind", "lane"]
+      : ["grantId", "chainId", "kind"],
     "Operation store key",
-    "store_input_invalid",
+    fail,
   );
-  return Object.freeze({
+  const kind = canonicalOperationKind(record.kind);
+  const scope = {
     grantId: canonicalGrantId(record.grantId),
     chainId: canonicalChainId(record.chainId),
-    kind: canonicalOperationKind(record.kind),
-  });
+    kind,
+  };
+  if (!Object.hasOwn(record, "lane")) return Object.freeze(scope);
+  const lane = record.lane;
+  if (kind !== "execution" || typeof lane !== "number" || !Number.isSafeInteger(lane) || lane < 1) {
+    return invalid("store_input_invalid", "store lane must be a positive execution lane key");
+  }
+  return Object.freeze({ ...scope, lane });
+}
+
+/** The one journal key an Operation record may occupy. */
+export function operationStoreKeyOf(operation: Operation): Readonly<OperationStoreKey> {
+  const scope = {
+    grantId: operation.identity.grantId,
+    chainId: operation.identity.chainId,
+    kind: operation.identity.kind,
+  };
+  return Object.freeze(operation.lane === null ? scope : { ...scope, lane: operation.lane.key });
 }
 
 function expectedStoreRevision(value: unknown): number | null {
@@ -580,10 +611,7 @@ export class OperationStore {
       {
         version: OAATH_OPERATION_STORE_RECORD_VERSION,
         parse: parseOperation,
-        keyMatches: (operation, key) =>
-          operation.identity.grantId === key.grantId &&
-          operation.identity.chainId === key.chainId &&
-          operation.identity.kind === key.kind,
+        keyMatches: (operation, key) => sameValue(operationStoreKeyOf(operation), key),
         updatedAt: (operation) => operation.updatedAt,
         validateNext: (current, next) => {
           if (
@@ -597,7 +625,7 @@ export class OperationStore {
           if (
             current !== undefined &&
             current.identity.userOperationHash === next.identity.userOperationHash &&
-            !sameOperationIdentity(current, next)
+            (!sameOperationIdentity(current, next) || !sameValue(current.lane, next.lane))
           ) {
             invalid(
               "store_identity_mismatch",
@@ -692,11 +720,7 @@ export class OperationStore {
     } catch {
       return invalid("store_input_invalid", "next Operation record is invalid");
     }
-    if (
-      next.identity.grantId !== key.grantId ||
-      next.identity.chainId !== key.chainId ||
-      next.identity.kind !== key.kind
-    ) {
+    if (!sameValue(operationStoreKeyOf(next), key)) {
       return invalid("store_key_mismatch", "next Operation belongs to another key");
     }
     if ((await this.#readArchived(key, next.identity.userOperationHash)) !== undefined) {

@@ -19,7 +19,13 @@ import {
   type PreparedCallStoreAdapter,
   parsePreparedCallKey,
 } from "../../provider/prepared-call-store.js";
-import type { GrantStoreAdapter, OperationStoreAdapter, StoreRecord } from "../../store.js";
+import type {
+  GrantStoreAdapter,
+  OperationStoreAdapter,
+  OperationStoreKey,
+  OperationStoreScope,
+  StoreRecord,
+} from "../../store.js";
 import {
   matchesExpectedRevision,
   matchesExpectedRevisionAndGeneration,
@@ -44,8 +50,8 @@ function assertOpen(closed: boolean): void {
   if (closed) persistenceFail("persistence_unavailable", "memory store is closed");
 }
 
-function operationKeyParts(
-  input: Readonly<{ grantId: string; chainId: number; kind: string }>,
+function operationScopeParts(
+  input: Readonly<OperationStoreScope>,
 ): readonly [string, number, string] {
   const chainId = input.chainId;
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
@@ -57,14 +63,25 @@ function operationKeyParts(
   return [persistenceId(input.grantId, "memory grantId"), chainId, input.kind];
 }
 
-function operationKey(input: Readonly<{ grantId: string; chainId: number; kind: string }>): string {
+/** The default lane is 0; a reserved lane key is always positive. */
+function operationKeyParts(
+  input: Readonly<OperationStoreKey>,
+): readonly [string, number, string, number] {
+  const lane = input.lane ?? 0;
+  if (!Number.isSafeInteger(lane) || lane < 0) {
+    return persistenceFail("persistence_input_invalid", "memory lane must be a lane key");
+  }
+  return [...operationScopeParts(input), lane];
+}
+
+function operationKey(input: Readonly<OperationStoreKey>): string {
   // The array form keeps a grantId containing a separator from colliding with
   // another lane, the same way the IndexedDB backend uses a composite key.
   return JSON.stringify(["lane", ...operationKeyParts(input)]);
 }
 
 function operationArchiveKey(
-  input: Readonly<{ grantId: string; chainId: number; kind: string }>,
+  input: Readonly<OperationStoreKey>,
   userOperationHash: string,
 ): string {
   if (!/^0x[0-9a-f]{64}$/u.test(userOperationHash)) {
