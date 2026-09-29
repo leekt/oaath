@@ -173,6 +173,7 @@ export type {
   OperationStoreCompareAndSwapResult,
   OperationStoreKey,
   OperationStoreRecord,
+  OperationStoreScope,
   StoreErrorCode,
   StoreRecord,
 } from "./store.js";

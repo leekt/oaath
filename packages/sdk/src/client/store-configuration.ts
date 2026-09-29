@@ -58,7 +58,7 @@ export function captureStoreConfiguration(
     ),
     operations: storePort<OperationStoreAdapter>(
       storeRecord.operations,
-      ["get", "getArchived", "compareAndSwap", "close"],
+      ["get", "getArchived", "list", "compareAndSwap", "close"],
       "Operation store",
       context,
     ),

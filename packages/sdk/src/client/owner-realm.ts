@@ -121,7 +121,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
   if (Object.hasOwn(config, "operations")) {
     const fields = exactClientRecord(
       config.operations,
-      ["get", "getArchived", "compareAndSwap", "close"],
+      ["get", "getArchived", "list", "compareAndSwap", "close"],
       "owner operation store",
       new WeakSet(),
     );
@@ -163,6 +163,7 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
     return new OperationStore({
       get: (key) => port.get(key),
       getArchived: (key) => port.getArchived(key),
+      list: (scope) => port.list(scope),
       compareAndSwap: (input) => port.compareAndSwap(input),
       close: nothing,
     } satisfies OperationStoreAdapter);

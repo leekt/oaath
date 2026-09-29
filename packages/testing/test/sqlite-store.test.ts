@@ -341,6 +341,10 @@ describe("test-only durable SQLite stores", () => {
       id: "run_17",
       key: 17,
     });
+    expect((await reopened.list(scope)).map((record) => record.value.lane?.key ?? 0)).toEqual([
+      0, 17, 18,
+    ]);
+    await expect(reopened.list(operationStoreKey(grantIdentity.grantId, 2))).resolves.toEqual([]);
     await reopened.close();
   });
 

@@ -841,6 +841,8 @@ describe("private Grant provider port", () => {
           },
           getArchived: (input: Parameters<typeof memory.operations.getArchived>[0]) =>
             memory.operations.getArchived(input),
+          list: (scope: Parameters<typeof memory.operations.list>[0]) =>
+            memory.operations.list(scope),
           compareAndSwap: (input: Parameters<typeof memory.operations.compareAndSwap>[0]) =>
             memory.operations.compareAndSwap(input),
           close: () => memory.operations.close(),
@@ -1171,6 +1173,8 @@ describe("private Grant provider port", () => {
           },
           getArchived: (input: Parameters<typeof memory.operations.getArchived>[0]) =>
             memory.operations.getArchived(input),
+          list: (scope: Parameters<typeof memory.operations.list>[0]) =>
+            memory.operations.list(scope),
           compareAndSwap: (input: Parameters<typeof memory.operations.compareAndSwap>[0]) =>
             memory.operations.compareAndSwap(input),
           close: () => memory.operations.close(),

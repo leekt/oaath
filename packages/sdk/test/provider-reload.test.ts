@@ -363,6 +363,7 @@ describe("durable ID uniqueness", () => {
         get: (key: Parameters<typeof stores.operations.get>[0]) => operations.get(key),
         getArchived: (input: Parameters<typeof stores.operations.getArchived>[0]) =>
           operations.getArchived(input),
+        list: (scope: Parameters<typeof stores.operations.list>[0]) => operations.list(scope),
         async compareAndSwap(input: Parameters<typeof stores.operations.compareAndSwap>[0]) {
           const envelope = plainRecord(input.next, "operation store envelope");
           const value = plainRecord(envelope.value, "operation store value");
@@ -1142,6 +1143,7 @@ describe("terminal retention and exact history", () => {
         get: (key: Parameters<typeof operations.get>[0]) => operations.get(key),
         getArchived: (input: Parameters<typeof operations.getArchived>[0]) =>
           operations.getArchived(input),
+        list: (scope: Parameters<typeof operations.list>[0]) => operations.list(scope),
         compareAndSwap: (input: Parameters<typeof operations.compareAndSwap>[0]) =>
           operations.compareAndSwap(input),
         close: async () => undefined,

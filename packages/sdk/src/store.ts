@@ -1,5 +1,6 @@
 import {
   type CaptureContext,
+  captureDenseArray,
   captureRecord as captureRecordValue,
   exactCapturedRecord,
   exactRecord as exactRecordValue,
@@ -17,6 +18,8 @@ export const OAATH_OPERATION_STORE_RECORD_VERSION = "oaath.operation-store-recor
 
 const MAX_GRANT_ID_LENGTH = 256;
 const MAX_STORE_REVISION = Number.MAX_SAFE_INTEGER;
+/** One default lane plus every uint16 key a runtime can reserve. */
+const MAX_LISTED_LANES = 65_537;
 const HASH = /^0x[0-9a-f]{64}$/u;
 
 export type StoreErrorCode =
@@ -93,6 +96,8 @@ export interface OperationStoreArchive {
 
 export interface OperationStoreAdapter {
   get(key: Readonly<OperationStoreKey>): Promise<unknown>;
+  /** The current record of every lane in one scope, default lane included. */
+  list(scope: Readonly<OperationStoreScope>): Promise<unknown>;
   getArchived(input: {
     readonly key: Readonly<OperationStoreKey>;
     readonly userOperationHash: `0x${string}`;
@@ -170,18 +175,22 @@ function captureAdapter(
 ): {
   readonly get: (...arguments_: readonly unknown[]) => Promise<unknown>;
   readonly getArchived?: (...arguments_: readonly unknown[]) => Promise<unknown>;
+  readonly list?: (...arguments_: readonly unknown[]) => Promise<unknown>;
   readonly compareAndSwap: (...arguments_: readonly unknown[]) => Promise<unknown>;
   readonly close: (...arguments_: readonly unknown[]) => Promise<unknown>;
 } {
   const keys =
     kind === "Operation"
-      ? ["get", "getArchived", "compareAndSwap", "close"]
+      ? ["get", "getArchived", "list", "compareAndSwap", "close"]
       : ["get", "compareAndSwap", "close"];
   const record = exactRecord(value, keys, `${kind} store adapter`, "store_input_invalid");
   return Object.freeze({
     get: capability(record.get, `${kind} store get`),
     ...(kind === "Operation"
-      ? { getArchived: capability(record.getArchived, "Operation store getArchived") }
+      ? {
+          getArchived: capability(record.getArchived, "Operation store getArchived"),
+          list: capability(record.list, "Operation store list"),
+        }
       : {}),
     compareAndSwap: capability(record.compareAndSwap, `${kind} store compareAndSwap`),
     close: capability(record.close, `${kind} store close`),
@@ -222,6 +231,20 @@ function canonicalUserOperationHash(value: unknown): `0x${string}` {
     );
   }
   return value as `0x${string}`;
+}
+
+function parseOperationScope(value: unknown): Readonly<OperationStoreScope> {
+  const record = exactRecord(
+    value,
+    ["grantId", "chainId", "kind"],
+    "Operation store scope",
+    "store_input_invalid",
+  );
+  return Object.freeze({
+    grantId: canonicalGrantId(record.grantId),
+    chainId: canonicalChainId(record.chainId),
+    kind: canonicalOperationKind(record.kind),
+  });
 }
 
 function parseOperationKey(value: unknown): Readonly<OperationStoreKey> {
@@ -550,6 +573,7 @@ export class OperationStore {
     Readonly<OperationStoreKey>,
     typeof OAATH_OPERATION_STORE_RECORD_VERSION
   >;
+  readonly #list: (scope: Readonly<OperationStoreScope>) => Promise<unknown>;
   readonly #getArchived: (
     input: Readonly<{
       key: Readonly<OperationStoreKey>;
@@ -560,7 +584,10 @@ export class OperationStore {
   constructor(adapter: unknown) {
     const captured = captureAdapter(adapter, "Operation");
     const getArchived = captured.getArchived;
-    if (!getArchived) invalid("store_input_invalid", "Operation store getArchived is unavailable");
+    const list = captured.list;
+    if (!getArchived || !list) {
+      invalid("store_input_invalid", "Operation store getArchived or list is unavailable");
+    }
     let store: AggregateStore<
       Operation,
       Readonly<OperationStoreKey>,
@@ -644,10 +671,65 @@ export class OperationStore {
     );
     this.#store = store;
     this.#getArchived = (input) => getArchived(input);
+    this.#list = (scope) => list(scope);
   }
 
   get(key: unknown): Promise<OperationStoreRecord | undefined> {
     return this.#store.get(parseOperationKey(key));
+  }
+
+  /** Current records of every lane in one scope; each must name its own lane once. */
+  async list(scopeValue: unknown): Promise<readonly OperationStoreRecord[]> {
+    const scope = parseOperationScope(scopeValue);
+    this.#store.assertOpen();
+    let raw: unknown;
+    try {
+      raw = await this.#list(scope);
+    } catch {
+      return invalid("store_unavailable", "Operation store list is unavailable");
+    }
+    let entries: readonly unknown[];
+    try {
+      entries = captureDenseArray(raw, "Operation store list", new WeakSet(), (message) =>
+        invalid("store_record_invalid", message),
+      );
+    } catch {
+      return invalid("store_record_invalid", "Operation store list is invalid");
+    }
+    if (entries.length > MAX_LISTED_LANES) {
+      return invalid("store_record_invalid", "Operation store list exceeds its lane bound");
+    }
+    const seen = new Set<string>();
+    const records: OperationStoreRecord[] = [];
+    for (const entry of entries) {
+      let key: Readonly<OperationStoreKey>;
+      try {
+        const envelope = exactRecord(
+          entry,
+          ["version", "storeRevision", "updatedAt", "value"],
+          "listed Operation record",
+          "store_record_invalid",
+        );
+        key = operationStoreKeyOf(parseOperation(envelope.value));
+      } catch {
+        return invalid("store_record_invalid", "listed Operation record is invalid");
+      }
+      if (
+        key.grantId !== scope.grantId ||
+        key.chainId !== scope.chainId ||
+        key.kind !== scope.kind
+      ) {
+        return invalid("store_key_mismatch", "listed Operation belongs to another scope");
+      }
+      const lane = String(key.lane ?? 0);
+      if (seen.has(lane)) {
+        return invalid("store_record_invalid", "Operation store listed one lane twice");
+      }
+      seen.add(lane);
+      const record = this.#store.parse(entry, key);
+      if (record !== undefined) records.push(record);
+    }
+    return Object.freeze(records);
   }
 
   async #readArchived(

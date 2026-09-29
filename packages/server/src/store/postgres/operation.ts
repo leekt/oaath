@@ -1,5 +1,9 @@
 /** PostgreSQL persistence for the existing SDK OperationStore; no second state machine. */
-import type { OperationStoreAdapter, OperationStoreKey } from "@oaath/sdk/advanced";
+import type {
+  OperationStoreAdapter,
+  OperationStoreKey,
+  OperationStoreScope,
+} from "@oaath/sdk/advanced";
 import type { Pool } from "pg";
 import { relayFailure } from "../../relay/errors.js";
 import type { RelaySchemaExecutor } from "./schema.js";
@@ -49,6 +53,18 @@ export function createPostgresOperationStoreAdapter({
   return Object.freeze({
     get: (key: Readonly<OperationStoreKey>) =>
       read(`SELECT record FROM oaath_operation_lane_v2 WHERE ${lane}`, keyParts(key)),
+    async list(scope: Readonly<OperationStoreScope>): Promise<unknown> {
+      try {
+        return (
+          await pool.query(
+            `SELECT record FROM oaath_operation_lane_v2 WHERE grant_id = $1 AND chain_id = $2 AND kind = $3 AND record IS NOT NULL ORDER BY lane`,
+            [scope.grantId, scope.chainId, scope.kind],
+          )
+        ).rows.map((row) => row.record);
+      } catch {
+        return relayFailure("relay_store_unavailable", "operation list unavailable");
+      }
+    },
     getArchived: (input: Parameters<OperationStoreAdapter["getArchived"]>[0]) =>
       read(
         `SELECT record FROM oaath_operation_archive_v2 WHERE ${lane} AND user_operation_hash = $5`,
