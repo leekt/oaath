@@ -313,8 +313,8 @@ proven. They are separate deliverables, not prerequisites for the initial gate.
 
 Public functions should not depend on Kernel version, EntryPoint version, key
 kind, or transport. Where entry points do the same job and differ only in
-implementation, they become one entry point with optional settings. Three pairs
-were deliberately kept separate during the 2026-09-29 DevEx review. Revisit
+implementation, they become one entry point with optional settings. Four items
+were deliberately kept as they are during the 2026-09-29 DevEx reviews. Revisit
 each when the consolidation stack lands, and again at the release-candidate
 boundary:
 
@@ -323,6 +323,7 @@ boundary:
 | `ownerOperator` vs `sessionOperator` (`packages/sdk/src/kernel/operator/`) | They change who holds authority (root validation vs a scoped permission), so the difference is semantic, not an implementation detail. AGENTS.md treats operator role as its own composition axis. | A consumer needs to choose authority at runtime from data, or a third authority kind appears. Then consider `operator({ authority?: "session" })` with the same two owners behind it. |
 | EIP-5792 vs ERC-7836 handling in `oaathProvider` (`packages/sdk/src/provider/`) | These are the wallet RPC standards callers speak, and both already sit behind one provider entry. | Either standard is superseded, or adopters need to enable only one. Then consider an optional `standards` setting on `oaathProvider`. |
 | `createOperationObserver` vs `createUserOperationObserver` (`packages/sdk/src/operation-observer.ts`, `@oaath/sdk/advanced`) | Both use the same inclusion and finality verification, but they carry different authority. `observeOperation` advances a journaled `Operation` through the operation state machine, including `dropped` and `superseded` results that free a lane. `observeReference` only reports receipt and finality evidence for a saved reference. It never creates or advances an `Operation`, and it never decides a retry, a replacement, or a lane release. | An adopter journal needs to advance its own `Operation` from a saved reference, or the reference observer gains a state transition. Then consider one `observe({ operation } \| { reference })` entry that keeps the two result types. |
+| ERC-4337 naming of the prepared operation (`PreparedUserOperation`, `UnsignedUserOperationV07`, `prepareUserOperation`, `asViemUserOperation`, `parsePreparedUserOperation` on `@oaath/sdk/kernel`) | Every shipped route kind is ERC-4337 (#239), so the prepared operation is a UserOperation in practice. AGENTS.md forbids generalizing before a second released implementation exists. Review and execution evidence already use opaque route and implementation identity (#237). | A native execution profile (EIP-8130 or EIP-8141) is implemented. Then derive a transport-neutral prepared-operation type from both implementations and scope the UserOperation shape to the ERC-4337 route kinds. |
 
 The native specifications are evolving inputs, not a launch promise. References:
 [EIP-8130](https://eips.ethereum.org/EIPS/eip-8130) and
