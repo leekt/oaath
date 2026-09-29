@@ -8,16 +8,18 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../src/kernel/modules.js";
-import { bindKernelPermissionApproval } from "../src/kernel/permission/materialize.js";
 import {
   approveKernelPermissionAllChain,
+  bindKernelPermissionApproval,
+  type KernelAllChainApproval,
+} from "../src/kernel/permission/materialize.js";
+import {
   createKernelRuntime,
   encodeKernelV4NonceKey,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-  type KernelAllChainApproval,
   type KernelV4Install,
   kernelDeployment,
   kernelKey,

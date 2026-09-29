@@ -149,7 +149,8 @@ export function kernelV33PermissionEnableTypedData(value: KernelV33PermissionSco
   );
 }
 
-function runtimeScope(
+/** The exact v3.3 approval scope a session runtime and bound account produce. */
+export function kernelV33RuntimeScope(
   runtime: Readonly<KernelV33Runtime>,
   accountValue: Readonly<KernelV33AccountDescriptor>,
   nonce: string,
@@ -191,7 +192,7 @@ export async function kernelV33PermissionInstallNonce(value: {
     "Kernel v3.3 nonce request",
     context,
   );
-  const scope = runtimeScope(
+  const scope = kernelV33RuntimeScope(
     record.runtime as KernelV33Runtime,
     record.account as KernelV33AccountDescriptor,
     "1",
@@ -230,7 +231,7 @@ export async function approveKernelV33Permission(
     new WeakSet(),
   );
   const owner = captureKeyProfile(record.owner);
-  const scope = runtimeScope(
+  const scope = kernelV33RuntimeScope(
     record.runtime as KernelV33Runtime,
     record.account as KernelV33AccountDescriptor,
     record.nonce as string,

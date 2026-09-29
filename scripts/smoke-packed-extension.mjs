@@ -72,7 +72,7 @@ import {
   parseGrantPolicy,
 } from "@oaath/protocol";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
-import { approveKernelPermissionAllChain, createKernelRuntime, kernelAllChainCapabilityHash, kernelDeployment, kernelKey, ownerOperator, sessionOperator } from "@oaath/sdk/kernel";
+import { approveKernelPermission, createKernelRuntime, kernelDeployment, kernelKey, kernelPermissionCapabilityHash, ownerOperator, sessionOperator } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import puppeteer from "puppeteer-core";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -382,11 +382,11 @@ try {
       }),
       reads: chain.capability.reads,
     });
-    const installApproval = await approveKernelPermissionAllChain({
+    const installApproval = await approveKernelPermission({
       owner: ownerKey,
-      account: descriptor.account,
-      installNonce: "0",
-      packages: [...sessionRuntime.packages],
+      runtime: sessionRuntime,
+      account: descriptor,
+      nonce: "0",
     });
     const decided = await ownerFetch("/authorization/requests/" + requestId + "/decision", {
       method: "POST",
@@ -400,7 +400,7 @@ try {
           requestHash: hashPermissionRequest({ ...scope, requestId }),
           decidedAt: Math.floor(Date.now() / 1_000),
           approvedPolicy: scope.policy,
-          capabilityHash: kernelAllChainCapabilityHash(installApproval),
+          capabilityHash: kernelPermissionCapabilityHash(installApproval),
           installApproval,
         }),
       }),

@@ -8,15 +8,14 @@ import { createOAAth, type Oaath, type OaathSession } from "@oaath/sdk";
 import type { OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
-  approveKernelPermissionAllChain,
-  approveKernelV33Permission,
+  approveKernelPermission,
+  bindKernelAccount,
   createKernelRuntime,
-  kernelAllChainCapabilityHash,
+  kernelAccountDeployment,
   kernelDeployment,
   kernelKey,
-  kernelPermissionInstallNonce,
-  kernelV33CapabilityHash,
-  kernelV33PermissionInstallNonce,
+  kernelPermissionCapabilityHash,
+  kernelPermissionNonce,
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
@@ -229,52 +228,46 @@ export async function createLocalAnvilFixture(
       const sessionKey = kernelKey({ credential: scope.operatorCredential, validator: null });
       const requestHash = hashPermissionRequest({ ...scope, requestId });
       const installApproval = await (async () => {
-        if (first.existingAccount !== null) {
-          const deployment = kernelDeployment({ chainId: firstChainId, kernelVersion: "0.3.3" });
-          const runtime = createKernelRuntime({
-            deployment,
-            operator: sessionOperator({
-              key: sessionKey,
-              policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-            }),
-            reads: first.capability.reads,
-          });
-          const descriptor = await runtime.bindAccount({ address: first.existingAccount });
-          const nonce = await kernelV33PermissionInstallNonce({
-            runtime,
-            account: descriptor,
-            reads: first.capability.reads,
-          });
-          return approveKernelV33Permission({
-            owner: ownerKey,
-            runtime,
-            account: descriptor,
-            nonce,
-          });
-        }
-        const deployment = kernelDeployment({ chainId: firstChainId });
+        const reads = first.capability.reads;
+        const sessionOperatorProfile = sessionOperator({
+          key: sessionKey,
+          policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
+        });
+        // An existing account names its own deployment; a derived one uses the default.
+        const existing =
+          first.existingAccount === null
+            ? null
+            : await bindKernelAccount({
+                chainId: firstChainId,
+                address: first.existingAccount,
+                reads,
+              });
+        const deployment =
+          existing === null
+            ? kernelDeployment({ chainId: firstChainId })
+            : kernelAccountDeployment(existing);
+        const runtime = createKernelRuntime({
+          deployment,
+          operator: sessionOperatorProfile,
+          reads,
+        });
         const ownerRuntime = createKernelRuntime({
           deployment,
           operator: ownerOperator({ key: ownerKey }),
-          reads: first.capability.reads,
+          reads,
         });
-        const descriptor = await ownerRuntime.bindAccount({
-          accountIndex: "0",
-          initialPackages: [...ownerRuntime.packages],
-        });
-        const sessionRuntime = createKernelRuntime({
-          deployment,
-          operator: sessionOperator({
-            key: sessionKey,
-            policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-          }),
-          reads: first.capability.reads,
-        });
-        return approveKernelPermissionAllChain({
+        const account =
+          first.existingAccount !== null
+            ? await runtime.bindAccount({ address: first.existingAccount })
+            : await ownerRuntime.bindAccount({
+                accountIndex: "0",
+                initialPackages: [...ownerRuntime.packages],
+              });
+        return approveKernelPermission({
           owner: ownerKey,
-          account: descriptor.account,
-          installNonce: kernelPermissionInstallNonce(requestHash),
-          packages: [...sessionRuntime.packages],
+          runtime,
+          account,
+          nonce: await kernelPermissionNonce({ runtime, account, reads, requestHash }),
         });
       })();
       const response = await relay(
@@ -291,10 +284,7 @@ export async function createLocalAnvilFixture(
                 requestHash,
                 decidedAt: now(),
                 approvedPolicy: scope.policy,
-                capabilityHash:
-                  installApproval.version === "oaath.kernel.v33-permission-approval/v2"
-                    ? kernelV33CapabilityHash(installApproval)
-                    : kernelAllChainCapabilityHash(installApproval),
+                capabilityHash: kernelPermissionCapabilityHash(installApproval),
                 installApproval,
               }),
             }),

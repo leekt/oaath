@@ -44,7 +44,7 @@ operator: sessionOperator({ key: kernelKey(passkey), policies }) })` from
 `@oaath/sdk/kernel`. The caller supplies the selected credential and authenticator
 callback; the WebAuthn key checks its challenge, credential public key, RP ID, exact
 HTTPS origin, user presence and verification before returning a signature.
-Use the same `approveKernelV33Permission` / `materializeKernelV33Permission`
+Use the same `approveKernelPermission` / `materializeKernelPermission`
 flow as ECDSA sessions. Root-owner binding remains ECDSA-only; the permission's
 signer is independent of that root. This custom Kernel API does not replace
 the application's durable operation journal or implement browser credential UI.
@@ -224,39 +224,43 @@ operation and submission evidence using its chosen transport. An unavailable
 read returns `kernel_runtime_read_unavailable`; it never creates an account or
 selects a different Kernel version.
 
-The lower-level runtime also supports ECDSA sessions on existing v3.3 accounts:
+The lower-level runtime also supports ECDSA sessions on existing accounts. No
+Kernel version is named; the approval follows the account's detected deployment:
 
 ```ts
 import {
-  approveKernelV33Permission, createKernelReads, createKernelRuntime,
-  kernelDeployment, kernelKey,
-  kernelV33PermissionInstallNonce, materializeKernelV33Permission, sessionOperator,
+  approveKernelPermission, bindKernelAccount, createKernelReads, createKernelRuntime,
+  kernelAccountDeployment, kernelKey, kernelPermissionNonce, materializeKernelPermission,
+  sessionOperator,
 } from "@oaath/sdk/kernel";
 
-const deployment = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
 const reads = createKernelReads(publicClient);
+const existing = await bindKernelAccount({ chainId, address: existingKernelAddress, reads });
 const runtime = createKernelRuntime({
-  deployment, reads,
+  deployment: kernelAccountDeployment(existing), reads,
   operator: sessionOperator({
-    key: kernelKey({ account: sessionKey, validator: deployment.ecdsaValidator }),
+    key: kernelKey({ account: sessionKey, validator: ecdsaValidator }),
     policies: [{ kind: "call", permissions: [{ target, selector, valueLimit: "0" }] }],
   }),
 });
 const account = await runtime.bindAccount({ address: existingKernelAddress });
-const approval = await approveKernelV33Permission({
+const approval = await approveKernelPermission({
   runtime, account,
-  owner: kernelKey({ wallet: walletClient, validator: deployment.ecdsaValidator }),
-  nonce: await kernelV33PermissionInstallNonce({ runtime, account, reads }),
+  owner: kernelKey({ wallet: walletClient, validator: ecdsaValidator }),
+  nonce: await kernelPermissionNonce({ runtime, account, reads, requestHash }),
 });
-const { prepared, signature } = await materializeKernelV33Permission({
+const { prepared, signature } = await materializeKernelPermission({
   runtime, account, approval, grantId: operationContextId,
   nonceKey: "0", sequence, calls, gas,
 });
 ```
 
-This approval binds the account, effective validation nonce and exact permission
-on every chain. Store it using its versioned representation and restore with
-`parseKernelV33PermissionApproval`. Each destination must have the same effective
+`kernelPermissionEnableTypedData({ runtime, account, nonce })` returns the exact
+EIP-712 value for a wallet's `signTypedData` prompt instead. On a Kernel `0.3.3`
+account the approval binds the account, effective validation nonce and exact
+permission on every chain; `requestHash` is used only by Kernel `0.4.0`, where it
+selects a fresh install key. Store the approval using its versioned
+representation and restore with `parseKernelPermissionApproval`. Each destination must have the same effective
 validation nonce; stale or mismatched state rejects rather than requesting another
 signature silently. The first operation enables and executes together; after confirmed installation, use the
 same runtime's `prepareOperation` and `signOperation` in `standard` mode.
@@ -278,7 +282,7 @@ Custom issuer configurations can execute a v3.3 Grant using an account profile
 with version `oaath.kernel-existing-account-profile/v1`, `kernelVersion: "0.3.3"`,
 the existing `address`, EntryPoint version `0.7`, and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
-decision and binds it with `kernelV33CapabilityHash(approval)`. The permission
+decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission
 packages must be derived from the exact approved policy and session credential.
 `grant.sendCalls` then enables on first use and uses the installed session on
 later calls, at the same address. It journals before signing; `resume` and
@@ -577,8 +581,8 @@ client. The caller owns phone transport; the helper does not submit or persist
 anything. It supports the P-256 owner phone and the
 current ECDSA/WebAuthn operator profiles, using the Kernel factory route.
 
-Phone preparation derives its install nonce with
-`kernelPermissionInstallNonce(hashPermissionRequest(request))`: the first 192
+Phone preparation derives its install nonce from
+`hashPermissionRequest(request)`, as `kernelPermissionNonce` does: the first 192
 hash bits select a request-specific Kernel install key at sequence zero. The
 same request recreates the same signing packet, while different requests can
 install in different orders across chains. This requires an unused key and

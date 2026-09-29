@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import {
   hashPermissionRequest,
   type KernelAccountProfile,
@@ -50,10 +51,13 @@ import {
   type KernelGrantApproval,
   kernelGrantCapabilityHash,
 } from "../../src/kernel/permission/approval.js";
+import { approveKernelPermissionAllChain } from "../../src/kernel/permission/materialize.js";
 import { deriveSessionPolicyProfiles } from "../../src/kernel/permission/profiles.js";
 import {
-  approveKernelPermissionAllChain,
   approveKernelV33Permission,
+  kernelV33PermissionInstallNonce,
+} from "../../src/kernel/permission/v33.js";
+import {
   createKernelRuntime,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -62,7 +66,6 @@ import {
   type KeyProfile,
   kernelDeployment,
   kernelKey,
-  kernelV33PermissionInstallNonce,
   ownerOperator,
   type PreparedUserOperation,
   sessionOperator,

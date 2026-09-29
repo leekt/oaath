@@ -16,7 +16,7 @@ Kernel v4 stack takes roughly 20 seconds.
    factory, the pinned policy and signer modules, and one ECDSA validator — every
    one of them CREATE2-derived. The session runtime binds a counterfactual account
    from the *owner's* initial packages.
-2. **The owner approves once.** `approveKernelPermissionAllChain` signs Kernel v4's
+2. **The owner approves once.** `approveKernelPermission` signs Kernel v4's
    replayable enable digest, whose EIP-712 domain omits the chain id and binds only
    the account, Kernel's install nonce, and the exact install packages. It reads no
    chain and no deployment profile, so nothing about it can depend on a chain —

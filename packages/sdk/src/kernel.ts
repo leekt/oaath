@@ -66,23 +66,26 @@ export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
 export { ownerOperator } from "./kernel/operator/owner.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
-export type { KernelPermissionApprovalVerification } from "./kernel/permission/approval.js";
-export { verifyKernelPermissionApproval } from "./kernel/permission/approval.js";
-export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
-export { kernelPermissionInstallNonce } from "./kernel/permission/install-nonce.js";
 export type {
-  ApproveKernelPermissionAllChainInput,
-  KernelAllChainApproval,
-  KernelPermissionMaterialization,
+  ApproveKernelPermissionInput,
+  KernelGrantApproval as KernelPermissionApproval,
+  KernelPermissionApprovalVerification,
+  KernelPermissionEnableTypedData,
+  KernelPermissionNonceInput,
   MaterializeKernelPermissionInput,
-} from "./kernel/permission/materialize.js";
+} from "./kernel/permission/approval.js";
 export {
-  approveKernelPermissionAllChain,
-  kernelAllChainCapabilityHash,
+  approveKernelPermission,
+  kernelGrantCapabilityHash as kernelPermissionCapabilityHash,
+  kernelPermissionEnableTypedData,
+  kernelPermissionNonce,
   materializeKernelPermission,
-  OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
-  parseKernelAllChainApproval,
-} from "./kernel/permission/materialize.js";
+  parseVersionedKernelGrantApproval as parseKernelPermissionApproval,
+  verifyKernelPermissionApproval,
+} from "./kernel/permission/approval.js";
+export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
+export type { KernelPermissionMaterialization } from "./kernel/permission/materialize.js";
+export { OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION } from "./kernel/permission/materialize.js";
 export type {
   KernelPermissionRevocationVerification,
   VerifyKernelPermissionRevocationInput,
@@ -114,23 +117,11 @@ export {
   restoreKernelPermissionRevocation,
 } from "./kernel/permission/revocation.js";
 export type {
-  ApproveKernelV33PermissionInput,
-  KernelV33ApprovalMismatchField,
-  KernelV33ApprovalMismatchReason,
-  KernelV33ExpectedPermission,
-  KernelV33PermissionApproval,
-  KernelV33PermissionScope,
-  MaterializeKernelV33PermissionInput,
+  KernelV33ApprovalMismatchField as KernelApprovalMismatchField,
+  KernelV33ApprovalMismatchReason as KernelApprovalMismatchReason,
+  KernelV33ExpectedPermission as KernelExpectedPermission,
 } from "./kernel/permission/v33.js";
-export {
-  approveKernelV33Permission,
-  kernelV33CapabilityHash,
-  kernelV33PermissionEnableTypedData,
-  kernelV33PermissionInstallNonce,
-  materializeKernelV33Permission,
-  OAATH_KERNEL_V33_APPROVAL_VERSION,
-  parseKernelV33PermissionApproval,
-} from "./kernel/permission/v33.js";
+export { OAATH_KERNEL_V33_APPROVAL_VERSION } from "./kernel/permission/v33.js";
 export type { KernelV33PermissionState } from "./kernel/permission/v33-revocation.js";
 export {
   kernelV33EffectivePermissionNonce,

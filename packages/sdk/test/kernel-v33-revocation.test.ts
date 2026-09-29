@@ -1,11 +1,11 @@
 import { hashTypedData } from "viem";
 import { describe, expect, it } from "vitest";
+import { kernelV33PermissionEnableTypedData } from "../src/kernel/permission/v33.js";
 import { parseKernelV33PermissionState } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
-  kernelV33PermissionEnableTypedData,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   sessionOperator,
   verifyKernelPermissionRevocation,

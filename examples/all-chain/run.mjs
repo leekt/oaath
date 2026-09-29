@@ -18,7 +18,7 @@
  */
 
 import {
-  approveKernelPermissionAllChain,
+  approveKernelPermission,
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
@@ -156,11 +156,11 @@ try {
   step("one owner approval");
   // It reads no chain and no deployment profile: nothing here can depend on a
   // chain that exists, let alone on one that does not.
-  approval = await approveKernelPermissionAllChain({
+  approval = await approveKernelPermission({
     owner: kernelKey({ account: owner, validator: a.stack.validator }),
+    runtime: a.sessionRuntime,
     account: a.account.account,
-    installNonce: INSTALL_NONCE,
-    packages: a.sessionRuntime.packages,
+    nonce: INSTALL_NONCE,
   });
   expect(ownerSignatures === 1, `the owner signed ${ownerSignatures} times`);
   expect(

@@ -9,11 +9,9 @@ import {
 } from "@oaath/protocol";
 import { bytesToHex, hexToBytes } from "viem";
 import { describe, expect, it } from "vitest";
-import {
-  kernelAllChainCapabilityHash,
-  kernelPermissionInstallNonce,
-  prepareKernelPhonePermissionApproval,
-} from "../src/kernel.js";
+import { kernelPermissionInstallNonce } from "../src/kernel/permission/install-nonce.js";
+import { kernelAllChainCapabilityHash } from "../src/kernel/permission/materialize.js";
+import { prepareKernelPhonePermissionApproval } from "../src/kernel.js";
 import {
   accountProfile,
   CHAIN_ID,

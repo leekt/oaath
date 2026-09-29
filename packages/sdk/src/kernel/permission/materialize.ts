@@ -99,7 +99,7 @@ export interface ApproveKernelPermissionAllChainInput {
  * contract minus the two fields this module owns: the kind is always an
  * execution, and the mode is always Kernel's replayable enable mode.
  */
-export interface MaterializeKernelPermissionInput
+export interface MaterializeKernelV4PermissionInput
   extends Omit<KernelRuntimePrepareInput, "kind" | "mode"> {
   readonly approval: Readonly<KernelAllChainApproval>;
   /** The session runtime for the target chain, composed over that chain's deployment. */
@@ -323,8 +323,8 @@ export function bindKernelPermissionApproval(
 }
 
 /** Prepares and signs one execution through the shared materialization owner. */
-export async function materializeKernelPermission(
-  value: MaterializeKernelPermissionInput,
+export async function materializeKernelV4Permission(
+  value: MaterializeKernelV4PermissionInput,
 ): Promise<Readonly<KernelPermissionMaterialization>> {
   const materialization = bindKernelPermissionApproval({
     runtime: value.runtime,
