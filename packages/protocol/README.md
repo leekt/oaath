@@ -17,8 +17,8 @@ routes are rejected. Permission hashes and Grant identity bind that existing
 address and owner. Parsing the profile does not prove deployment or ownership;
 the runtime checks those facts on each action chain.
 
-`oaath.operation/v4` names its lane and retains nullable `submission` evidence: a bundler
-acknowledgement or an EntryPoint `handleOps` transaction hash. The closed
+`oaath.operation/v5` names its lane and retains nullable `submission` evidence: an
+`erc4337-bundler` acknowledgement or an `erc4337-handleops` EntryPoint transaction hash. The closed
 `OperationSubmissionEvidence` type and `parseOperationSubmissionEvidence` own
 that shape. It is transport evidence only; authoritative observation still owns
 inclusion, finality, and lane release. Retired record versions are rejected.

@@ -320,8 +320,8 @@ function expectRunnerError(
 
 describe("OperationRunner", () => {
   it.each([
-    { route: "bundler", transactionHash: null },
-    { route: "entrypoint-handleops", transactionHash: `0x${"44".repeat(32)}` },
+    { route: "erc4337-bundler", transactionHash: null },
+    { route: "erc4337-handleops", transactionHash: `0x${"44".repeat(32)}` },
   ] as const)(
     "retains $route acknowledgement after full SQLite recreation without sending again",
     async (submission) => {
@@ -366,9 +366,9 @@ describe("OperationRunner", () => {
   );
 
   it.each([
-    { route: "entrypoint-handleops", transactionHash: null },
-    { route: "bundler", transactionHash: `0x${"44".repeat(32)}` },
-    { route: "bundler", transactionHash: null, providerMessage: "private" },
+    { route: "erc4337-handleops", transactionHash: null },
+    { route: "erc4337-bundler", transactionHash: `0x${"44".repeat(32)}` },
+    { route: "erc4337-bundler", transactionHash: null, providerMessage: "private" },
   ])("keeps malformed route acknowledgements uncertain and never resends", async (submission) => {
     const control: MemoryControl = { closeFailures: 0, closeCalls: 0 };
     const count = counters();

@@ -23,6 +23,7 @@ import {
   captureValidationGasDiagnostic,
   type ExactRecord,
   exactCapturedRecord,
+  type OperationSubmissionRoute,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
@@ -72,7 +73,7 @@ export type OaathExecutionSignerDecision = OaathExecutionSigner | "none";
  * - `erc4337-handleops`: send the same signed operation through
  *   `EntryPoint.handleOps` with an EOA fee payer.
  */
-export type OaathSubmissionRouteKind = "erc4337-bundler" | "erc4337-handleops";
+export type OaathSubmissionRouteKind = OperationSubmissionRoute;
 
 /**
  * The submission route a decision selected, as recorded in review and execution

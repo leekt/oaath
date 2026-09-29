@@ -366,9 +366,9 @@ export function createOperationHandle(
         return Object.freeze({
           id: identity.userOperationHash,
           route:
-            current.submission?.route === "entrypoint-handleops"
+            current.submission?.route === "erc4337-handleops"
               ? current.submission.transactionHash === inclusion.transactionHash
-                ? "entrypoint-handleops"
+                ? "erc4337-handleops"
                 : null
               : (current.submission?.route ?? null),
           grantId: identity.grantId,

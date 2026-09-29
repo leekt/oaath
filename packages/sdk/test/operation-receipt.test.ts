@@ -487,9 +487,9 @@ describe("exact UserOperation receipt evidence", () => {
 describe("operation handle receipt binding", () => {
   it.each([
     [null, null],
-    [{ route: "bundler", transactionHash: null }, "bundler"],
-    [{ route: "entrypoint-handleops", transactionHash: TRANSACTION_HASH }, "entrypoint-handleops"],
-    [{ route: "entrypoint-handleops", transactionHash: BLOCK_HASH }, null],
+    [{ route: "erc4337-bundler", transactionHash: null }, "erc4337-bundler"],
+    [{ route: "erc4337-handleops", transactionHash: TRANSACTION_HASH }, "erc4337-handleops"],
+    [{ route: "erc4337-handleops", transactionHash: BLOCK_HASH }, null],
   ] as const)(
     "reports only retained route evidence matching the finalized transaction",
     async (submission, route) => {

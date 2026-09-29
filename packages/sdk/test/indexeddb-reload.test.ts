@@ -316,8 +316,8 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect(database.name).toBe(OAATH_INDEXEDDB_NAME);
-    expect(database.version).toBe(15);
-    expect(OAATH_INDEXEDDB_VERSION).toBe(15);
+    expect(database.version).toBe(16);
+    expect(OAATH_INDEXEDDB_VERSION).toBe(16);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",
@@ -385,7 +385,7 @@ describe("IndexedDB realm recreation", () => {
 
     const database = await openRealmDatabase(factory);
     expect((await factory.databases()).map((entry) => entry.name)).toEqual([OAATH_INDEXEDDB_NAME]);
-    expect(database.version).toBe(15);
+    expect(database.version).toBe(16);
 
     const staleBundleKey = {
       providerScopeId: `0x${"51".repeat(32)}` as const,
@@ -430,7 +430,7 @@ describe("IndexedDB realm recreation", () => {
       });
 
       const database = await openRealmDatabase(factory);
-      expect(database.version).toBe(15);
+      expect(database.version).toBe(16);
       await expect(
         createIndexedDbOperationStoreAdapter(database).get({
           grantId: "stale-grant",
@@ -463,7 +463,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(15);
+    expect(database.version).toBe(16);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -495,7 +495,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(15);
+    expect(database.version).toBe(16);
     await expect(
       createIndexedDbWalletCallBundleStoreAdapter(database).get({
         providerScopeId,
@@ -534,7 +534,7 @@ describe("IndexedDB realm recreation", () => {
     });
 
     const database = await openRealmDatabase(factory);
-    expect(database.version).toBe(15);
+    expect(database.version).toBe(16);
     expect(await readStoreNames(factory)).toEqual([
       "cleanup",
       "context",

@@ -923,7 +923,7 @@ function passkeySession() {
         expect(directSends).toBe(1);
         expect(await harness.client.getBalance({ address: target })).toBe(31n);
         expect((await operation.receipt()).status).toBe("success");
-        expect((await operation.execution()).route).toBe("bundler");
+        expect((await operation.execution()).route).toBe("erc4337-bundler");
       } finally {
         await client.close();
       }
@@ -1077,7 +1077,7 @@ function passkeySession() {
         expect((await recovered!.wait()).status).toBe("finalized");
         expect((await recovered!.receipt()).status).toBe("success");
         expect(await recovered!.execution()).toMatchObject({
-          route: "entrypoint-handleops",
+          route: "erc4337-handleops",
           id: saved.id,
           calls: [{ target, value: "17", data: "0x" }],
         });
