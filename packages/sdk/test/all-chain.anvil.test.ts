@@ -69,12 +69,6 @@ const CHAIN_A = 421_614;
 const CHAIN_B = 8_453;
 /** Kernel's own install nonce for the one approval; per-chain state, same value. */
 const INSTALL_NONCE = "0";
-/**
- * ZeroDev CallPolicy's `InvalidCallData()`: the operation named a
- * (target, selector) pair the installed permission holds no entry for. Naming the
- * class from its signature keeps the assertion machine-checked rather than prose.
- */
-const CALL_POLICY_INVALID_CALL_DATA = toFunctionSelector("InvalidCallData()");
 const REVERTING_CONTRACT_DEPLOYMENT = "0x6005600c60003960056000f360006000fd" as const;
 const KERNEL_MODULE_VIEW_ABI = [
   {
@@ -925,27 +919,20 @@ async function bringUp(
     expect(await b.harness.client.getBalance({ address: sessionTarget })).toBe(1_000n);
 
     // The materialized scope is the approved scope, not whole-account authority:
-    // on chain B a target the policy never named is refused inside Kernel's
-    // validation phase by CallPolicy itself, and the refusal is decoded to its
-    // class rather than observed as a bare revert.
+    // on chain B a target the policy never named is refused before any key
+    // signs, with the structured call-policy code.
     const uncoveredTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
-    expect(
-      await b.harness.rejection(
-        b.sessionRuntime,
-        b.sessionRuntime.prepareOperation({
-          kind: "execution",
-          grantId: "all-chain-b-uncovered",
-          account: deployedB,
-          nonceKey: "0",
-          sequence: "1",
-          calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
-          gas,
-        }),
-      ),
-    ).toMatchObject({
-      errorName: "FailedOpWithRevert",
-      args: [0n, "AA23 reverted", CALL_POLICY_INVALID_CALL_DATA],
-    });
+    expect(() =>
+      b.sessionRuntime.prepareOperation({
+        kind: "execution",
+        grantId: "all-chain-b-uncovered",
+        account: deployedB,
+        nonceKey: "0",
+        sequence: "1",
+        calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
+        gas,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
     expect(await b.harness.client.getBalance({ address: uncoveredTarget })).toBe(0n);
     expect(owner.signatures()).toBe(1);
   }, 180_000);

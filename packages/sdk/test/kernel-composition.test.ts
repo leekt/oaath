@@ -19,6 +19,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
+import { mapClientFailure } from "../src/client/errors.js";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
 import {
@@ -55,6 +56,7 @@ import {
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
 
 const chainId = 421_614;
@@ -237,11 +239,15 @@ const keyProfiles: Readonly<Record<MatrixKeyKind, () => Readonly<KeyProfile>>> =
   [customKind]: () => customKey(),
 });
 
-/** One bounded scope every session composition in this file installs. */
+/**
+ * One bounded scope every session composition in this file installs: it
+ * permits exactly the one-wei plain transfer to `target` the session
+ * operations below prepare.
+ */
 const sessionScope = Object.freeze({
   kind: "call" as const,
   permissions: Object.freeze([
-    Object.freeze({ target, selector: KERNEL_V4_EXECUTE_SELECTOR, valueLimit: "0" }),
+    Object.freeze({ target, selector: "0x00000000" as const, valueLimit: "1" }),
   ]),
 });
 
@@ -1738,5 +1744,121 @@ describe("Kernel permission policy compilation", () => {
         sessionOperator({ key, policies: [{ kind: "call", permissions: [permissions[0]] }] }),
       ),
     ).not.toBe(first);
+  });
+});
+
+describe("Session call policy before signing", () => {
+  const transfer = "0xa9059cbb" as const;
+  const other = `0x${"55".repeat(20)}` as const;
+  // One plain transfer of at most one wei, and one zero-value ERC-20 transfer.
+  const policies = [
+    {
+      kind: "call" as const,
+      permissions: [
+        { target, selector: "0x00000000" as const, valueLimit: "1" },
+        { target, selector: transfer, valueLimit: "0" },
+      ],
+    },
+  ];
+  const transferData = concat([transfer, pad("0x01"), pad("0x02")]);
+  type Call = { target: `0x${string}`; value: string; data: `0x${string}` };
+
+  async function scopedSession() {
+    const signed: `0x${string}`[] = [];
+    const verified: `0x${string}`[] = [];
+    const inner = customKey();
+    const key = Object.freeze({
+      ...inner,
+      sign: async (hash: `0x${string}`) => {
+        signed.push(hash);
+        return inner.sign(hash);
+      },
+      verify: async (hash: `0x${string}`, signature: `0x${string}`) => {
+        verified.push(hash);
+        return inner.verify(hash, signature);
+      },
+    });
+    const runtime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({ key, policies }),
+      reads: reads(),
+    });
+    const account = await ecdsaAccountDescriptor();
+    const input = (calls: readonly Call[]) =>
+      ({
+        kind: "execution",
+        grantId: "kernel-call-policy",
+        account,
+        nonceKey: "0",
+        sequence: "0",
+        calls,
+        gas,
+      }) as const;
+    return { runtime, account, input, signed, verified };
+  }
+
+  it("prepares and signs single and batched calls the policy permits", async () => {
+    const { runtime, input, signed } = await scopedSession();
+    const permitted: readonly (readonly Call[])[] = [
+      [{ target, value: "1", data: "0x" }],
+      [{ target, value: "0", data: "0x" }],
+      [
+        { target, value: "1", data: "0x" },
+        { target, value: "0", data: transferData },
+      ],
+    ];
+    for (const calls of permitted) {
+      await runtime.signOperation(runtime.prepareOperation(input(calls)));
+    }
+    expect(signed).toHaveLength(3);
+  });
+
+  it.each<[string, readonly Call[]]>([
+    ["an unnamed target", [{ target: other, value: "0", data: "0x" }]],
+    ["an unnamed selector", [{ target, value: "0", data: "0x12345678" }]],
+    ["a partial selector", [{ target, value: "0", data: "0xa9059c" }]],
+    ["value above a transfer limit", [{ target, value: "2", data: "0x" }]],
+    ["value on a zero-limit selector", [{ target, value: "1", data: transferData }]],
+    [
+      "one forbidden call in a batch",
+      [
+        { target, value: "1", data: "0x" },
+        { target: other, value: "0", data: transferData },
+      ],
+    ],
+  ])("refuses %s before any key signs", async (_label, calls) => {
+    const { runtime, input, signed } = await scopedSession();
+    let failure: unknown;
+    try {
+      runtime.prepareOperation(input(calls));
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: "kernel_runtime_call_forbidden" });
+    expect(() => mapClientFailure(failure, "prepare failed")).toThrowError(
+      expect.objectContaining({ code: "oaath_client_scope_denied" }),
+    );
+    expect(signed).toEqual([]);
+  });
+
+  it("refuses a hand-built forbidden operation at sign and external signature encoding", async () => {
+    const { runtime, account, signed, verified } = await scopedSession();
+    const forbidden = prepareKernelV4UserOperation({
+      kind: "execution",
+      grantId: "kernel-call-policy",
+      account,
+      nonce: { mode: "standard", validation: runtime.validation, nonceKey: "0", sequence: "0" },
+      calls: [{ target: other, value: "0", data: "0x" }],
+      gas,
+      paymaster: null,
+    });
+    await expect(runtime.signOperation(forbidden)).rejects.toMatchObject({
+      code: "kernel_runtime_call_forbidden",
+    });
+    await expect(
+      runtime.encodeVerifiedSignature(forbidden, `0x${"11".repeat(65)}`),
+    ).rejects.toMatchObject({ code: "kernel_runtime_call_forbidden" });
+    expect(signed).toEqual([]);
+    expect(verified).toEqual([]);
   });
 });

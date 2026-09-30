@@ -44,6 +44,7 @@ import {
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
+  prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
 import {
   type AnvilChain,
@@ -375,26 +376,19 @@ async function createHarness() {
       ).toBe("success");
       expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-      // The scope still bounds the session installed by a P-256 owner: CallPolicy
-      // refuses a value above the installed ceiling inside Kernel's validation
-      // phase, so nothing moves.
-      expect(
-        await harness.rejection(
-          sessionRuntime,
-          sessionRuntime.prepareOperation({
-            kind: "execution",
-            grantId: "kernel-composition-p256-session-excessive",
-            account: deployed,
-            nonceKey: "0",
-            sequence: "1",
-            calls: [{ target: sessionTarget, value: "778", data: "0x" }],
-            gas,
-          }),
-        ),
-      ).toMatchObject({
-        errorName: "FailedOpWithRevert",
-        args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
-      });
+      // The scope still bounds the session installed by a P-256 owner: a value
+      // above the installed ceiling is refused before any key signs.
+      expect(() =>
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-p256-session-excessive",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+          gas,
+        }),
+      ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
       expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
     } finally {
       chain.stop();
@@ -421,19 +415,17 @@ async function createHarness() {
     await deployModule(fixture.ecdsaSigner);
     const sessionTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
     const sessionAccount = privateKeyToAccount(generatePrivateKey());
-    const sessionRuntime = createKernelRuntime({
-      deployment,
-      operator: sessionOperator({
-        key: kernelKey({ account: sessionAccount, validator: await deployValidator() }),
-        policies: [
-          {
-            kind: "call",
-            permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
-          },
-        ],
-      }),
-      reads,
+    const sessionKey = kernelKey({ account: sessionAccount, validator: await deployValidator() });
+    const sessionProfile = sessionOperator({
+      key: sessionKey,
+      policies: [
+        {
+          kind: "call",
+          permissions: [{ target: sessionTarget, selector: "0x00000000", valueLimit: "777" }],
+        },
+      ],
     });
+    const sessionRuntime = createKernelRuntime({ deployment, operator: sessionProfile, reads });
 
     // Root authority: the composed owner runtime derives, deploys, and executes.
     const counterfactual = await ownerRuntime.bindAccount({
@@ -514,42 +506,69 @@ async function createHarness() {
     expect(await send(sessionRuntime, sessionOperation)).toBe("success");
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-    // Scope tightening, proven on-chain by the same installed session: a target
-    // the policy never named and a value above the ceiling are both rejected in
-    // Kernel's validation phase, so neither moves anything. Each refusal is
-    // decoded to its own class rather than observed as a bare revert, and the two
-    // classes differ: an unnamed target has no permission entry at all, while an
-    // excessive value violates the entry it does match. "The transaction failed"
-    // for any other reason would not satisfy either assertion.
+    // Scope tightening, proven twice for the same calls: the runtime refuses a
+    // target the policy never named and a value above the ceiling before any key
+    // signs, and the installed session on-chain rejects the very same operations
+    // in Kernel's validation phase, so the offline check is never more permissive
+    // than CallPolicy. The chain proof builds and signs each operation outside the
+    // runtime, which is the only way left to reach EntryPoint with it. Each
+    // refusal is decoded to its own class: an unnamed target has no permission
+    // entry at all, while an excessive value violates the entry it does match.
     const uncoveredTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
-    const uncovered = sessionRuntime.prepareOperation({
-      kind: "execution",
-      grantId: "kernel-composition-session-uncovered",
-      account: deployed,
-      nonceKey: "0",
-      sequence: "1",
-      calls: [{ target: uncoveredTarget, value: "1", data: "0x" }],
-      gas,
-    });
-    expect(await harness.rejection(sessionRuntime, uncovered)).toMatchObject({
-      errorName: "FailedOpWithRevert",
-      args: [0n, "AA23 reverted", CALL_POLICY_INVALID_CALL_DATA],
-    });
+    for (const [grantId, call, policyError] of [
+      [
+        "kernel-composition-session-uncovered",
+        { target: uncoveredTarget, value: "1", data: "0x" },
+        CALL_POLICY_INVALID_CALL_DATA,
+      ],
+      [
+        "kernel-composition-session-excessive",
+        { target: sessionTarget, value: "778", data: "0x" },
+        CALL_POLICY_VIOLATES_VALUE_RULE,
+      ],
+    ] as const) {
+      expect(() =>
+        sessionRuntime.prepareOperation({
+          kind: "execution",
+          grantId,
+          account: deployed,
+          nonceKey: "0",
+          sequence: "1",
+          calls: [call],
+          gas,
+        }),
+      ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
+      const forbidden = prepareKernelV4UserOperation({
+        kind: "execution",
+        grantId,
+        account: deployed,
+        nonce: {
+          mode: "standard",
+          validation: sessionRuntime.validation,
+          nonceKey: "0",
+          sequence: "1",
+        },
+        calls: [call],
+        gas,
+        paymaster: null,
+      });
+      await expect(sessionRuntime.signOperation(forbidden)).rejects.toMatchObject({
+        code: "kernel_runtime_call_forbidden",
+      });
+      expect(
+        await harness.rejectionOf(
+          forbidden,
+          sessionProfile.encodeSignature(
+            await sessionKey.sign(forbidden.userOperationHash),
+            deployment,
+          ),
+        ),
+      ).toMatchObject({
+        errorName: "FailedOpWithRevert",
+        args: [0n, "AA23 reverted", policyError],
+      });
+    }
     expect(await client.getBalance({ address: uncoveredTarget })).toBe(0n);
-
-    const excessive = sessionRuntime.prepareOperation({
-      kind: "execution",
-      grantId: "kernel-composition-session-excessive",
-      account: deployed,
-      nonceKey: "0",
-      sequence: "1",
-      calls: [{ target: sessionTarget, value: "778", data: "0x" }],
-      gas,
-    });
-    expect(await harness.rejection(sessionRuntime, excessive)).toMatchObject({
-      errorName: "FailedOpWithRevert",
-      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
-    });
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
     // Authorities never borrow one another's operations: the owner runtime refuses
@@ -783,25 +802,19 @@ async function createHarness() {
     ).toBe("success");
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-    // The scope still bounds this kind on-chain: CallPolicy itself refuses a value
-    // above the installed ceiling inside Kernel's validation phase.
-    expect(
-      await harness.rejection(
-        sessionRuntime,
-        sessionRuntime.prepareOperation({
-          kind: "execution",
-          grantId: "kernel-composition-custom-excessive",
-          account: deployed,
-          nonceKey: "0",
-          sequence: "1",
-          calls: [{ target: sessionTarget, value: "778", data: "0x" }],
-          gas,
-        }),
-      ),
-    ).toMatchObject({
-      errorName: "FailedOpWithRevert",
-      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
-    });
+    // The scope still bounds this kind: a value above the installed ceiling is
+    // refused before any key signs.
+    expect(() =>
+      sessionRuntime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition-custom-excessive",
+        account: deployed,
+        nonceKey: "0",
+        sequence: "1",
+        calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+        gas,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
     // Fail-closed negatives on the same live chain. Self-verification is
@@ -1076,26 +1089,19 @@ async function createHarness() {
     });
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
 
-    // Bounded signing: the installed policy set bounds the WebAuthn session
-    // on-chain — a value above the ceiling is refused inside Kernel's
-    // validation phase, so nothing moves.
-    expect(
-      await harness.rejection(
-        sessionRuntime,
-        sessionRuntime.prepareOperation({
-          kind: "execution",
-          grantId: "kernel-composition-webauthn-excessive",
-          account: deployed,
-          nonceKey: "0",
-          sequence: "1",
-          calls: [{ target: sessionTarget, value: "778", data: "0x" }],
-          gas,
-        }),
-      ),
-    ).toMatchObject({
-      errorName: "FailedOpWithRevert",
-      args: [0n, "AA23 reverted", CALL_POLICY_VIOLATES_VALUE_RULE],
-    });
+    // Bounded signing: the installed policy set bounds the WebAuthn session —
+    // a value above the ceiling is refused before any passkey prompt.
+    expect(() =>
+      sessionRuntime.prepareOperation({
+        kind: "execution",
+        grantId: "kernel-composition-webauthn-excessive",
+        account: deployed,
+        nonceKey: "0",
+        sequence: "1",
+        calls: [{ target: sessionTarget, value: "778", data: "0x" }],
+        gas,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
     expect(await client.getBalance({ address: sessionTarget })).toBe(777n);
   }, 90_000);
 
