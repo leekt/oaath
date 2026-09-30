@@ -83,6 +83,9 @@ jobs:
       # so they prove the published artifacts rather than the workspace links.
       - run: bun run check:public-surface
       - run: bun run release:check
+      - run: bun run smoke:passkey
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
       - run: bun run smoke:browser
       # The extension smoke is headful so Chrome runs its real MV3 worker and
       # IndexedDB implementation; Puppeteer then force-closes that worker.

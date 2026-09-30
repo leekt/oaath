@@ -52,6 +52,13 @@ export type {
   EcdsaWalletClient,
   EcdsaWalletKeyInput,
 } from "./kernel/key/ecdsa.js";
+export {
+  type EnrolledWebAuthnCredential,
+  type EnrolWebAuthnCredentialInput,
+  enrolWebAuthnCredential,
+  OaathWebAuthnEnrolmentError,
+  type WebAuthnEnrolmentErrorCode,
+} from "./kernel/key/enrol-webauthn.js";
 export type { KernelKeyInput, KernelPublicKeyInput } from "./kernel/key/kernel-key.js";
 export { kernelKey } from "./kernel/key/kernel-key.js";
 export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
