@@ -29,13 +29,13 @@ import {
   captureRecord,
   captureValidationGasDiagnostic,
   parseServiceBootstrap,
+  parseUserOperationFailure,
   type ServiceBootstrap,
 } from "@oaath/protocol";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
-import { parseUserOperationFailure } from "../user-operation-error.js";
 import { OaathRpcError } from "../viem/rpc.js";
 import type { OaathAuthorizationCapability } from "./connection.js";
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./errors.js";

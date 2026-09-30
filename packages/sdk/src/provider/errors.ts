@@ -9,12 +9,13 @@
  */
 import {
   captureValidationGasDiagnostic,
+  type OaathUserOperationError,
+  readUserOperationFailure,
   readValidationGasDiagnostic,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 import { OaathClientError, type OaathClientErrorCode } from "../client/errors.js";
-import { type OaathUserOperationError, readUserOperationFailure } from "../user-operation-error.js";
 
 export const CONTRACT_CREATION_UNSUPPORTED = -32000;
 export const INVALID_PARAMS = -32602;

@@ -11,6 +11,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type {
+  OaathUserOperationError,
   Operation,
   OperationIdentity,
   OperationInclusion,
@@ -32,7 +33,6 @@ import type {
   OperationStartResult,
 } from "../operation-runner.js";
 import type { OperationStoreKey } from "../store.js";
-import type { OaathUserOperationError } from "../user-operation-error.js";
 import { clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 
 const MAX_ATTEMPTS = 16;

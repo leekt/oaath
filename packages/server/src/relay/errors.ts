@@ -11,10 +11,9 @@ import {
   type BundlerRejection,
   captureBundlerRejection,
   captureValidationGasDiagnostic,
+  serializeUserOperationFailure,
   type ValidationGasDiagnostic,
 } from "@oaath/protocol";
-
-import { serializeUserOperationFailure } from "@oaath/sdk/viem";
 
 export type RelayErrorCode =
   /** Wire input is missing, malformed, oversized, or contains unknown fields. */
