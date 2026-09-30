@@ -63,8 +63,11 @@ export interface KernelRevocationOperation {
   readonly accountGasLimits: Hex;
   readonly preVerificationGas: string;
   readonly gasFees: Hex;
-  /** This first owner-phone revocation profile is self-funded. */
-  readonly paymasterAndData: "0x";
+  /**
+   * `0x` for a self-funded revocation, otherwise EntryPoint 0.7's packed
+   * `paymaster(20) || verificationGasLimit(16) || postOpGasLimit(16) || data`.
+   */
+  readonly paymasterAndData: Hex;
 }
 
 export interface KernelRevocationSigningRequest {
@@ -299,7 +302,9 @@ export function parseKernelRevocationSigningRequest(
       context,
       fail,
     );
-    if (op.paymasterAndData !== "0x") return fail("Kernel phone revocation must be self-funded");
+    const paymasterAndData = bytes(op.paymasterAndData, "Kernel revocation paymasterAndData");
+    if (paymasterAndData !== "0x" && paymasterAndData.length < 2 + 52 * 2)
+      return fail("Kernel revocation paymasterAndData is invalid");
     const operation: Readonly<KernelRevocationOperation> = Object.freeze({
       sender: address(op.sender, "Kernel revocation sender"),
       nonce: uint(op.nonce, MAX_UINT256, "Kernel revocation operation nonce").toString(10),
@@ -312,7 +317,7 @@ export function parseKernelRevocationSigningRequest(
         "Kernel revocation preVerificationGas",
       ).toString(10),
       gasFees: bytes(op.gasFees, "Kernel revocation gas fees", 32),
-      paymasterAndData: "0x",
+      paymasterAndData,
     });
     // Only standard root validation, with the existing uint16 operation namespace.
     if (BigInt(operation.nonce) >> 80n !== 0n || operation.sender !== install.signer.account)

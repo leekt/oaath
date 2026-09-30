@@ -270,6 +270,60 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     },
   );
 
+  it("binds a caller-supplied paymaster into the restored revocation identity", async () => {
+    const { input, sign } = await fixture();
+    const paymaster = {
+      address: `0x${"55".repeat(20)}`,
+      verificationGasLimit: "60000",
+      postOpGasLimit: "0",
+      data: "0xabcd",
+    } as const;
+    const unsponsored = await prepareKernelPermissionRevocation(input);
+    expect(unsponsored.prepared.userOperation.paymaster).toBeNull();
+    expect(unsponsored.signingRequest.operation.paymasterAndData).toBe("0x");
+    const sponsored = await prepareKernelPermissionRevocation({ ...input, paymaster });
+    expect(sponsored.prepared.userOperation.paymaster).toEqual(paymaster);
+    expect(sponsored.signingRequest.operation.paymasterAndData).toBe(
+      `0x${"55".repeat(20)}${(60000).toString(16).padStart(32, "0")}${"0".repeat(32)}abcd`,
+    );
+    expect(sponsored.prepared.userOperationHash).not.toBe(unsponsored.prepared.userOperationHash);
+    expect(sponsored.signingRequest.expectedDigest).toBe(sponsored.prepared.userOperationHash);
+
+    const restored = await restoreKernelPermissionRevocation({
+      preparation: JSON.parse(JSON.stringify(sponsored.signingRequest)),
+    });
+    expect(restored.prepared).toEqual(sponsored.prepared);
+    expect(restored.signingRequest).toEqual(sponsored.signingRequest);
+    const artifact = sign(
+      sponsored.signingRequest.expectedDigest,
+      hashKernelRevocationSigningRequest(sponsored.signingRequest),
+    );
+    expect(await restored.complete(artifact)).toBe(artifact.signature);
+    await expect(
+      restored.complete(
+        sign(
+          unsponsored.signingRequest.expectedDigest,
+          hashKernelRevocationSigningRequest(unsponsored.signingRequest),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_signature_invalid" });
+
+    const packed = sponsored.signingRequest.operation.paymasterAndData;
+    for (const paymasterAndData of [
+      "0x",
+      `${packed.slice(0, -2)}ce`,
+      packed.slice(0, 104),
+    ] as `0x${string}`[])
+      await expect(
+        restoreKernelPermissionRevocation({
+          preparation: {
+            ...sponsored.signingRequest,
+            operation: { ...sponsored.signingRequest.operation, paymasterAndData },
+          },
+        }),
+      ).rejects.toMatchObject({ code: "signing_request_invalid" });
+  });
+
   it("rejects correctly hashed execution calldata in a revocation request", async () => {
     const { input } = await fixture();
     const prepared = await prepareKernelPermissionRevocation(input);
