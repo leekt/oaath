@@ -10,7 +10,11 @@ const consumer = await createConsumer({
     "index.mjs": `
 import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
-import { createPublicClient, getCreate2Address, http } from "viem";
+import { createUserOperationObserver } from "@oaath/sdk/advanced";
+import { createViemChainPorts } from "@oaath/sdk/viem";
+import { kernelDeployment } from "@oaath/sdk/kernel";
+import { createPublicClient, decodeEventLog, getCreate2Address, http } from "viem";
+import { entryPoint07Abi } from "viem/account-abstraction";
 await assert.rejects(createLocalAnvilFixture({ chainIds: [] }), /local_fixture_chains_invalid/);
 await assert.rejects(createLocalAnvilFixture({ chainIds: [421614, 421614] }), /local_fixture_chains_invalid/);
 const fixture = await createLocalAnvilFixture({ chainIds: [421614, 11155111] });
@@ -39,6 +43,24 @@ try {
   assert.deepEqual(deployed.calls, deploymentCalls);
   const reader = createPublicClient({ transport: http(fixture.rpcUrl(421614), { retryCount: 0 }) });
   assert.equal(await reader.getCode({ address: getCreate2Address({ from: factory, salt, bytecode: initCode }) }), "0x6000");
+  const receipt = await reader.getTransactionReceipt({ hash: deployed.transactionHash });
+  const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPoint07Abi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
+  assert.ok(event);
+  const reference = { chainId: 421614, entryPoint: kernelDeployment({ chainId: 421614 }).entryPoint.address, account: event.args.sender.toLowerCase(), nonce: event.args.nonce.toString(), userOperationHash: first.id };
+  const ports = () => createViemChainPorts({ 421614: { publicRpcUrls: [fixture.rpcUrl(421614)], bundlerUrl: fixture.rpcUrl(421614) } });
+  const beforeFinality = ports()[0].observation;
+  const observer = createUserOperationObserver({
+    read: request => beforeFinality.read(request.type === "finalized_block" ? { type: "canonical_block", chainId: 421614, blockNumber: "0" } : request),
+    close: beforeFinality.close,
+  });
+  const observationInput = { reference, transactionHash: deployed.transactionHash, observedAt: Date.now(), timeoutMs: 10000 };
+  const included = await observer.observeReference(observationInput);
+  assert.equal(included.status, "included");
+  assert.equal(included.block.hash, receipt.blockHash);
+  await observer.close();
+  const recoveredObserver = createUserOperationObserver(ports()[0].observation);
+  assert.equal((await recoveredObserver.observeReference(JSON.parse(JSON.stringify(observationInput)))).status, "finalized");
+  await recoveredObserver.close();
   const last = await grant.sendCalls({ chain: 11155111, calls });
   assert.equal(last.outcome.status, "pending");
   const retained = { chain: last.chainId, id: last.id };
@@ -64,6 +86,8 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
     "surface.ts": `
 import type { Oaath } from "@oaath/sdk";
 import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
+import type { ObserveUserOperationResult } from "@oaath/sdk/advanced";
+export function inclusion(result: ObserveUserOperationResult) { return result.status === "included" ? result.block.hash : null; }
 import { createLocalAnvilFixture, type LocalAnvilFixture } from "@oaath/testing/anvil";
 export const create: () => Promise<Readonly<LocalAnvilFixture>> = createLocalAnvilFixture;
 export function open(fixture: LocalAnvilFixture): Promise<Readonly<Oaath>> { return fixture.openClient(); }
