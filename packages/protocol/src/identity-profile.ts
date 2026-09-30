@@ -1,5 +1,5 @@
 import { p256 } from "@noble/curves/nist.js";
-import { encodeAbiParameters, type Hex, keccak256 } from "viem";
+import { encodeAbiParameters, type Hex, isAddress, keccak256 } from "viem";
 import {
   type CaptureContext,
   type CaptureFailure,
@@ -17,7 +17,6 @@ export const OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION =
 const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
   "@oaath/protocol:owner-credential-profile" as const;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const P256_PUBLIC_KEY = /^0x04[0-9a-f]{128}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
@@ -143,11 +142,14 @@ function invalid(code: IdentityProfileErrorCode, message: string): never {
   throw new OaathIdentityProfileError(code, message);
 }
 
+/** Accepts a lowercase or valid EIP-55 address and captures it in canonical lowercase. */
 function address(value: unknown, label: string, fail: CaptureFailure): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return fail(`${label} must be a nonzero lowercase address`);
+  if (typeof value !== "string" || !isAddress(value, { strict: true })) {
+    return fail(`${label} must be a lowercase or EIP-55 checksummed address`);
   }
-  return value as `0x${string}`;
+  const lowercase = value.toLowerCase() as `0x${string}`;
+  if (lowercase === ZERO_ADDRESS) return fail(`${label} must be nonzero`);
+  return lowercase;
 }
 
 function hash(value: unknown, label: string, fail: CaptureFailure): `0x${string}` {
