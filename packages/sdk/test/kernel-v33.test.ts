@@ -1,7 +1,9 @@
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import {
   encodeAbiParameters,
   encodeFunctionData,
   hashTypedData,
+  keccak256,
   pad,
   parseAbi,
   recoverAddress,
@@ -37,7 +39,12 @@ import {
   materializeKernelV33Permission,
   parseKernelV33PermissionApproval,
 } from "../src/kernel/permission/v33.js";
-import { kernelPermissionEnableTypedData, signedKernelPermissionApproval } from "../src/kernel.js";
+import {
+  kernelKey,
+  kernelPermissionEnableTypedData,
+  prepareExistingAccountPermissionApproval,
+  signedKernelPermissionApproval,
+} from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -733,5 +740,97 @@ describe("existing Kernel v3.3 owner composition", () => {
       code: "kernel_runtime_binding_mismatch",
     });
     expect(sign).not.toHaveBeenCalled();
+  });
+});
+
+describe("existing-account permission approval across chains", () => {
+  const owner = privateKeyToAccount(generatePrivateKey());
+  const session = privateKeyToAccount(generatePrivateKey());
+  function chainReads(chainId: number, nonce: string) {
+    const original = fixture().read.getMockImplementation()!;
+    return {
+      read: vi.fn(async (request: { type: string; chainId: number }) => {
+        if (request.type === "chain_id") return request.chainId;
+        if (request.type === "kernel_ecdsa_owner") return owner.address.toLowerCase();
+        if (request.type === "kernel_v33_permission_nonce") return nonce;
+        if (request.chainId !== chainId) throw new Error("wrong chain");
+        return original(request);
+      }),
+    };
+  }
+  const input = (nonces: readonly [number, string][]) => ({
+    account: account as `0x${string}`,
+    owner: kernelKey({
+      credential: {
+        version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+        kind: "ecdsa",
+        address: owner.address.toLowerCase() as `0x${string}`,
+      },
+      validator,
+    }),
+    operator: sessionOperator({
+      key: ecdsaKey({ account: session, validator }),
+      policies: [
+        {
+          kind: "call",
+          permissions: [{ target: account, selector: "0x00000000", valueLimit: "0" }],
+        },
+      ],
+    }),
+    chains: nonces.map(([chainId, nonce]) => ({ chainId, reads: chainReads(chainId, nonce) })),
+    requestHash: keccak256("0x01"),
+  });
+
+  it("derives one approval the owner signs for every chain with equal nonces", async () => {
+    const prepared = await prepareExistingAccountPermissionApproval(
+      input([
+        [143, "3"],
+        [10, "3"],
+      ]),
+    );
+    expect(prepared.nonce).toBe("3");
+    expect(prepared.account.account).toBe(account);
+    expect(prepared.digest).toBe(hashTypedData(prepared.typedData as never));
+    expect(prepared.typedData).toEqual(
+      kernelPermissionEnableTypedData({
+        runtime: prepared.runtime,
+        account: prepared.account,
+        nonce: "3",
+      }),
+    );
+    // The owner signs the digest once; the approval assembles and verifies.
+    const approval = await signedKernelPermissionApproval({
+      runtime: prepared.runtime,
+      account: prepared.account,
+      nonce: prepared.nonce,
+      owner: owner.address,
+      typedData: prepared.typedData,
+      signature: await owner.signTypedData(prepared.typedData as never),
+    });
+    expect(approval.digest).toBe(prepared.digest);
+  });
+
+  it("fails with a typed error when chains have different effective nonces", async () => {
+    await expect(
+      prepareExistingAccountPermissionApproval(
+        input([
+          [143, "3"],
+          [10, "5"],
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: "kernel_runtime_nonce_mismatch" });
+  });
+
+  it("refuses a key that is not the account's onchain root owner", async () => {
+    const value = input([[143, "3"]]);
+    await expect(
+      prepareExistingAccountPermissionApproval({
+        ...value,
+        owner: ecdsaKey({ account: privateKeyToAccount(generatePrivateKey()), validator }),
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    await expect(
+      prepareExistingAccountPermissionApproval({ ...value, chains: [] }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
   });
 });

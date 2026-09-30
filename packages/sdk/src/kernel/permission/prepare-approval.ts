@@ -32,18 +32,28 @@ import {
 } from "../../kernel-v4.js";
 import { createKernelRuntime } from "../create-kernel-runtime.js";
 import {
+  detectKernelAccountDeployment,
   type KernelAccountDescriptor,
   type KernelReads,
+  type KernelVersion,
   kernelDeployment,
 } from "../deployment/account.js";
 import type { KernelDeployment } from "../deployment/profile.js";
 import { ECDSA_VALIDATOR } from "../deployment/v33.js";
-import { captureKeyProfile, exactInput, inputInvalid, runtimeFail } from "../internal.js";
+import {
+  captureInput,
+  captureKeyProfile,
+  exactCaptured,
+  exactInput,
+  inputAddress,
+  inputInvalid,
+  runtimeFail,
+} from "../internal.js";
 import { credentialKey } from "../key/credential.js";
 import { p256Key } from "../key/p256.js";
 import { ownerOperator } from "../operator/owner.js";
 import { sessionOperator } from "../operator/session.js";
-import type { KernelRuntime, KeyProfile } from "../types.js";
+import type { KernelRuntime, KeyProfile, OperatorProfile } from "../types.js";
 import {
   approveKernelPermission,
   type KernelGrantApproval,
@@ -97,7 +107,24 @@ export interface ExistingAccountApprovalChain {
   readonly reads: KernelReads;
 }
 
-/** The one enable approval an existing account's request binds on every configured chain. */
+export interface PrepareExistingAccountPermissionApprovalInput {
+  /** The existing Kernel account's address, the same on every chain. */
+  readonly account: `0x${string}`;
+  /** The account's root owner key; a public `kernelKey({ credential })` suffices. */
+  readonly owner: Readonly<KeyProfile>;
+  /** The session operator whose permission is approved, from `sessionOperator`. */
+  readonly operator: Readonly<OperatorProfile>;
+  readonly chains: readonly Readonly<ExistingAccountApprovalChain>[];
+  /**
+   * A unique 32-byte hash for this approval. It seeds a Kernel `0.4.0` install
+   * nonce; a Kernel `0.3.3` account's validation nonce is read onchain.
+   */
+  readonly requestHash: `0x${string}`;
+  /** Defaults to the version detected on the first chain; every chain must match. */
+  readonly kernelVersion?: KernelVersion;
+}
+
+/** The one enable approval an existing account binds on every given chain. */
 export interface ExistingAccountApproval {
   /** The first chain's session runtime; the approval is identical on every chain. */
   readonly runtime: Readonly<KernelRuntime>;
@@ -109,26 +136,40 @@ export interface ExistingAccountApproval {
 }
 
 /**
- * Binds an existing-account request on each configured chain and derives the
- * one enable approval its root owner signs. The owner key is proven as the
- * account's onchain root owner on every chain first; chains that would need
- * different approvals fail with `kernel_runtime_binding_mismatch`. The owner
+ * Binds an existing account on each given chain and derives the one enable
+ * approval its root owner signs. The owner key is proven as the account's
+ * onchain root owner on every chain first. Chains whose effective enable nonces
+ * differ fail with `kernel_runtime_nonce_mismatch`; any other difference in the
+ * approved permission fails with `kernel_runtime_binding_mismatch`. The owner
  * key may be public-only: this never signs.
  */
-export async function prepareExistingAccountApproval(input: {
-  readonly request: Readonly<PermissionRequest>;
-  readonly owner: Readonly<KeyProfile>;
-  readonly session: Readonly<KeyProfile>;
-  readonly chains: readonly Readonly<ExistingAccountApprovalChain>[];
-}): Promise<Readonly<ExistingAccountApproval>> {
-  const { request } = input;
-  if (!isKernelExistingAccountProfile(request.logicalAccount))
-    return runtimeFail("kernel_runtime_unsupported", "the request names no existing account");
-  const { address, kernelVersion } = request.logicalAccount;
-  const requestHash = hashPermissionRequest(request);
-  let scope: string | undefined;
+export async function prepareExistingAccountPermissionApproval(
+  value: PrepareExistingAccountPermissionApprovalInput,
+): Promise<Readonly<ExistingAccountApproval>> {
+  const captured = captureInput(value, "Kernel existing-account approval", new WeakSet());
+  const input = exactCaptured(
+    captured,
+    [
+      "account",
+      "owner",
+      "operator",
+      "chains",
+      "requestHash",
+      ...(Object.hasOwn(captured, "kernelVersion") ? ["kernelVersion"] : []),
+    ],
+    "Kernel existing-account approval",
+  ) as unknown as PrepareExistingAccountPermissionApprovalInput;
+  const address = inputAddress(input.account, "Kernel existing account");
+  const owner = captureKeyProfile(input.owner);
+  if (!Array.isArray(input.chains) || input.chains.length === 0)
+    return inputInvalid("approval requires at least one chain");
+  let kernelVersion = input.kernelVersion;
+  let scope: Readonly<{ nonce: string; permission: string }> | undefined;
   let approval: Readonly<Omit<ExistingAccountApproval, "digest">> | undefined;
   for (const chain of input.chains) {
+    kernelVersion ??= (
+      await detectKernelAccountDeployment({ chainId: chain.chainId, address, reads: chain.reads })
+    ).kernelVersion;
     // The selected deployment stays typed as any supported one: approval
     // typed data and nonce come from it, never from a version literal.
     const options: Readonly<{ deployment: Readonly<KernelDeployment>; reads: KernelReads }> = {
@@ -137,33 +178,34 @@ export async function prepareExistingAccountApproval(input: {
     };
     await createKernelRuntime({
       ...options,
-      operator: ownerOperator({ key: input.owner }),
+      operator: ownerOperator({ key: owner }),
     }).bindAccount({ address });
-    const runtime = createKernelRuntime({
-      ...options,
-      operator: sessionOperator({
-        key: input.session,
-        policies: deriveSessionPolicyProfiles(request.policy),
-      }),
-    });
+    const runtime = createKernelRuntime({ ...options, operator: input.operator });
     const account = await runtime.bindAccount({ address });
+    if (runtime.validation.kind !== "permission")
+      return runtimeFail("kernel_runtime_binding_mismatch", "session runtime has no permission");
     const nonce = await kernelPermissionNonce({
       runtime,
       account,
       reads: chain.reads,
-      requestHash,
+      requestHash: input.requestHash,
     });
-    if (runtime.validation.kind !== "permission")
-      return runtimeFail("kernel_runtime_binding_mismatch", "session runtime has no permission");
-    const next = JSON.stringify({
+    const next = Object.freeze({
       nonce,
-      permissionId: runtime.validation.permissionId,
-      packages: runtime.packages,
+      permission: JSON.stringify({
+        permissionId: runtime.validation.permissionId,
+        packages: runtime.packages,
+      }),
     });
-    if (scope !== undefined && scope !== next)
+    if (scope !== undefined && scope.permission !== next.permission)
       return runtimeFail(
         "kernel_runtime_binding_mismatch",
         "configured chains require different permission approvals",
+      );
+    if (scope !== undefined && scope.nonce !== next.nonce)
+      return runtimeFail(
+        "kernel_runtime_nonce_mismatch",
+        "configured chains have different effective enable nonces",
       );
     scope = next;
     approval ??= Object.freeze({
@@ -177,6 +219,29 @@ export async function prepareExistingAccountApproval(input: {
   return Object.freeze({
     ...approval,
     digest: hashTypedData(approval.typedData as Parameters<typeof hashTypedData>[0]),
+  });
+}
+
+/** The existing-account approval one captured permission request binds. */
+export function prepareExistingAccountApproval(input: {
+  readonly request: Readonly<PermissionRequest>;
+  readonly owner: Readonly<KeyProfile>;
+  readonly session: Readonly<KeyProfile>;
+  readonly chains: readonly Readonly<ExistingAccountApprovalChain>[];
+}): Promise<Readonly<ExistingAccountApproval>> {
+  const { request } = input;
+  if (!isKernelExistingAccountProfile(request.logicalAccount))
+    return runtimeFail("kernel_runtime_unsupported", "the request names no existing account");
+  return prepareExistingAccountPermissionApproval({
+    account: request.logicalAccount.address,
+    owner: input.owner,
+    operator: sessionOperator({
+      key: input.session,
+      policies: deriveSessionPolicyProfiles(request.policy),
+    }),
+    chains: input.chains,
+    requestHash: hashPermissionRequest(request),
+    kernelVersion: request.logicalAccount.kernelVersion,
   });
 }
 

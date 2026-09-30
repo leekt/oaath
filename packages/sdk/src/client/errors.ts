@@ -152,6 +152,7 @@ const KERNEL_CODES: Readonly<Record<string, OaathClientErrorCode>> = Object.free
   kernel_runtime_signature_invalid: "oaath_client_signing_failed",
   kernel_runtime_binding_mismatch: "oaath_client_state_conflict",
   kernel_runtime_deployment_mismatch: "oaath_client_state_conflict",
+  kernel_runtime_nonce_mismatch: "oaath_client_state_conflict",
 });
 
 const BY_NAME: Readonly<Record<string, OaathClientErrorCode>> = Object.freeze({
