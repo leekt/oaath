@@ -11,7 +11,7 @@ const consumer = await createConsumer({
 import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
-import { createViemChainPorts, classifyUserOperationError } from "@oaath/sdk/viem";
+import { createViemChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/viem";
 import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
 import { createPublicClient, decodeEventLog, getCreate2Address, http } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
@@ -21,6 +21,8 @@ const classified = classifyUserOperationError({ stage: "send", error: providerCa
 assert.equal(classified.code, "nonce");
 assert.equal(classified.retryable, false);
 assert.equal(classified.cause, providerCause);
+assert.equal(readUserOperationFailure(new Error("wrapped", { cause: classified })), classified);
+assert.equal(readUserOperationFailure({ ...classified }), null);
 const failed = createViemChainPorts({ 421614: { publicRpcUrls: ["https://fixture.test"], bundlerUrl: "https://fixture.test" } }, {
   retry: { attempts: 1 }, fetch: async () => new Response(null, { status: 503 }),
 })[0];
@@ -99,8 +101,9 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
 import type { Oaath } from "@oaath/sdk";
 import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
 import type { ObserveUserOperationResult } from "@oaath/sdk/advanced";
-import { classifyUserOperationError } from "@oaath/sdk/viem";
+import { classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/viem";
 import type { UserOperationFailureCode } from "@oaath/sdk";
+export const readFailure: typeof readUserOperationFailure = readUserOperationFailure;
 export const classifiedCode: UserOperationFailureCode = classifyUserOperationError({ stage: "send", error: null }).code;
 export function inclusion(result: ObserveUserOperationResult) { return result.status === "included" ? result.block.hash : null; }
 import { createLocalAnvilFixture, type LocalAnvilFixture } from "@oaath/testing/anvil";
