@@ -34,7 +34,12 @@ import type { KeyProfile } from "../types.js";
 
 const BASE64URL = /^[A-Za-z0-9_-]{1,1024}$/u;
 const RP_ID = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
-const ORIGIN = /^https:\/\/[a-z0-9.-]{1,253}(?::[0-9]{1,5})?$/u;
+/**
+ * An https origin, or an http `localhost` / `*.localhost` origin: browsers
+ * treat both as secure contexts for WebAuthn.
+ */
+const ORIGIN =
+  /^(?:https:\/\/[a-z0-9.-]{1,253}|http:\/\/(?:[a-z0-9-]{1,63}\.)*localhost)(?::[0-9]{1,5})?$/u;
 const P256_ORDER = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
 const P256_HALF_ORDER = P256_ORDER / 2n;
 const MAX_AUTHENTICATOR_DATA_BYTES = 2048;
@@ -89,7 +94,7 @@ export interface WebAuthnKeyInput {
   /** base64url credential ID whose keccak256 must equal the profile authenticatorIdHash. */
   readonly credentialId: string;
   readonly rpId: string;
-  /** Exact expected clientDataJSON origin, for example https://app.example. */
+  /** Exact expected clientDataJSON origin: https, or http on `localhost` / `*.localhost`. */
   readonly origin: string;
   /** Caller-owned authenticator capability returning one WebAuthn assertion. */
   readonly authenticate: (request: WebAuthnAssertionRequest) => Promise<unknown>;
