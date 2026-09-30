@@ -61,7 +61,13 @@ try {
   const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPoint07Abi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
   assert.ok(event);
   const reference = { chainId: 421614, entryPoint: kernelDeployment({ chainId: 421614 }).entryPoint.address, account: event.args.sender.toLowerCase(), nonce: event.args.nonce.toString(), userOperationHash: first.id };
-  const ports = () => createViemChainPorts({ 421614: { publicRpcUrls: [fixture.rpcUrl(421614)], bundlerUrl: fixture.rpcUrl(421614) } });
+  const ports = () => createViemChainPorts({ 421614: {
+    publicRpcUrls: [fixture.rpcUrl(421614)], headers: { "x-oaath-fixture": "observation" },
+  } }, { maxRequests: 64, signal: new AbortController().signal, fetch: request => {
+    assert.equal(request.headers.get("x-oaath-fixture"), "observation");
+    return fetch(request);
+  } });
+  assert.deepEqual(ports()[0].routes, []);
   const beforeFinality = ports()[0].observation;
   const observer = createUserOperationObserver({
     read: request => beforeFinality.read(request.type === "finalized_block" ? { type: "canonical_block", chainId: 421614, blockNumber: "0" } : request),

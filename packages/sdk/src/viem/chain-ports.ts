@@ -53,7 +53,10 @@ import {
 
 export interface ViemChainPortConfiguration {
   readonly publicRpcUrls: readonly string[];
-  readonly bundlerUrl: string;
+  /** Read endpoint headers only; never sent to bundler/paymaster URLs. Captured at construction. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Omit for public-chain reads and direct-receipt observation without a submission route. */
+  readonly bundlerUrl?: string;
   readonly paymasterUrl?: string;
   readonly gas?: Readonly<KernelGasPolicy>;
 }
@@ -443,9 +446,29 @@ export function createViemChainPorts(
     entries.map(([key, value]) => {
       const chainId = integer(Number(key), 0, Number.MAX_SAFE_INTEGER);
       if (String(chainId) !== key) return invalid();
-      const config = record(value, ["publicRpcUrls", "bundlerUrl", "paymasterUrl", "gas"]);
-      const publicRpc = owner.pool(urls(config.publicRpcUrls), chainId, PUBLIC_METHODS);
-      const bundler = owner.pool([url(config.bundlerUrl)], chainId, BUNDLER_METHODS);
+      const config = record(value, [
+        "publicRpcUrls",
+        "headers",
+        "bundlerUrl",
+        "paymasterUrl",
+        "gas",
+      ]);
+      const publicRpc = owner.pool(
+        urls(config.publicRpcUrls),
+        chainId,
+        PUBLIC_METHODS,
+        true,
+        config.headers as Readonly<Record<string, string>> | undefined,
+      );
+      const bundlerRpc =
+        config.bundlerUrl === undefined
+          ? null
+          : owner.pool([url(config.bundlerUrl)], chainId, BUNDLER_METHODS);
+      function requireBundler(): RpcRequest {
+        if (!bundlerRpc) throw new OaathRpcError("oaath_rpc_bundler_unavailable");
+        return bundlerRpc;
+      }
+      const bundler: RpcRequest = async (...args) => requireBundler()(...args);
       const paymasterUrl = config.paymasterUrl === undefined ? null : url(config.paymasterUrl);
       const paymaster =
         paymasterUrl === null
@@ -507,6 +530,7 @@ export function createViemChainPorts(
         );
       }
       async function quote(request: Readonly<OaathQuoteRequest>) {
+        if (request.purpose === "estimate") requireBundler();
         const prepared = parsePreparedUserOperation(request.simulation.prepared);
         if (
           request.chainId !== chainId ||
@@ -594,21 +618,30 @@ export function createViemChainPorts(
         reads,
         observation,
         quote,
-        routes: Object.freeze([
-          Object.freeze({
-            kind: "erc4337-bundler" as const,
-            bundler: Object.freeze({
-              async probe(request: Readonly<OaathBundlerProbeRequest>) {
-                if (request.chainId !== chainId) return invalid();
-                const supported = await bundler("eth_supportedEntryPoints");
-                if (!Array.isArray(supported)) return evidence();
-                return { accepting: true, chainId, supportedEntryPoints: supported.map(address) };
-              },
-            }),
-          }),
-        ]),
+        routes: Object.freeze(
+          bundlerRpc === null
+            ? []
+            : [
+                Object.freeze({
+                  kind: "erc4337-bundler" as const,
+                  bundler: Object.freeze({
+                    async probe(request: Readonly<OaathBundlerProbeRequest>) {
+                      if (request.chainId !== chainId) return invalid();
+                      const supported = await bundler("eth_supportedEntryPoints");
+                      if (!Array.isArray(supported)) return evidence();
+                      return {
+                        accepting: true,
+                        chainId,
+                        supportedEntryPoints: supported.map(address),
+                      };
+                    },
+                  }),
+                }),
+              ],
+        ),
         submission: Object.freeze({
           async open(request: Parameters<OaathChainCapability["submission"]["open"]>[0]) {
+            requireBundler();
             const prepared = parsePreparedUserOperation(request.prepared);
             const signature = hex(request.signature);
             if (prepared.chainId !== chainId || request.route !== "erc4337-bundler")
