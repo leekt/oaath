@@ -73,6 +73,7 @@ describe("package boundary", () => {
       "prepareKernelPermissionRevocation",
       "prepareKernelUserOperation",
       "prepareUserOperation",
+      "readKernelPermissionStatus",
       "restoreKernelPermissionRevocation",
       "sessionOperator",
       "verifyKernelPermissionApproval",

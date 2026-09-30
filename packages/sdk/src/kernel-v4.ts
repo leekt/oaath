@@ -281,6 +281,8 @@ export interface KernelV4ReadClient {
   readonly call: (args: {
     to: `0x${string}`;
     data: `0x${string}`;
+    /** Present only when a read names its block. */
+    blockTag?: "latest" | "finalized";
   }) => Promise<{ data?: `0x${string}` | undefined }>;
 }
 

@@ -1,12 +1,13 @@
 import { type ChainBinding, type ChainRevocationEvidence, captureRecord } from "@oaath/protocol";
 import type { OperationObserverCapabilities } from "../../operation-observer.js";
+import type { KernelReads } from "../deployment/account.js";
 import { captureInput, inputInvalid } from "../internal.js";
 import {
   type KernelGrantApproval,
   kernelGrantApprovalNonce,
   parseVersionedKernelGrantApproval,
 } from "./approval.js";
-import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "./v33.js";
+import { type KernelV33PermissionApproval, OAATH_KERNEL_V33_APPROVAL_VERSION } from "./v33.js";
 import {
   kernelV33EffectivePermissionNonce,
   kernelV33PermissionStatus,
@@ -38,6 +39,37 @@ export interface VerifyKernelPermissionRevocationInput {
 const UNREADABLE = Object.freeze({ status: "unreadable" as const });
 const ACTIVE = Object.freeze({ status: "active" as const });
 const REPLAYABLE = Object.freeze({ status: "approval-replayable" as const });
+
+type KernelPermissionClass =
+  | Readonly<{ status: "installed" }>
+  | Readonly<{ status: "approval-replayable" }>
+  | Readonly<{ status: "revoked"; installNonce: string }>;
+
+/**
+ * The one status owner: `null` means installed; otherwise the observed enable/install
+ * nonce decides whether the approval can still install or its nonce is consumed.
+ */
+function classifyKernelPermission(
+  observed: bigint | null,
+  approval: Readonly<KernelGrantApproval>,
+): KernelPermissionClass {
+  if (observed === null) return { status: "installed" };
+  if (observed <= BigInt(kernelGrantApprovalNonce(approval)))
+    return { status: "approval-replayable" };
+  return { status: "revoked", installNonce: observed.toString(10) };
+}
+
+/** v3.3: the effective enable nonce when the configuration is removed; throws on contradiction. */
+function kernelV33ObservedNonce(
+  state: unknown,
+  approval: Readonly<KernelV33PermissionApproval>,
+): bigint | null {
+  const parsed = parseKernelV33PermissionState(state);
+  // Both are Kernel's uint32 validation nonce; there is no key namespace.
+  return kernelV33PermissionStatus(parsed, approval) === "absent"
+    ? BigInt(kernelV33EffectivePermissionNonce(parsed))
+    : null;
+}
 
 function blockFields(value: unknown) {
   return captureRecord(value, "revocation block", new WeakSet(), () => {
@@ -85,12 +117,10 @@ export async function observeKernelPermissionRevocation(input: {
     let observed: bigint | null = null;
     if (approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION) {
       if (binding.permissionId !== approval.permissionId) return UNREADABLE;
-      const state = parseKernelV33PermissionState(
+      observed = kernelV33ObservedNonce(
         await observation.read({ type: "kernel_v33_permission_state", ...binding, blockNumber }),
+        approval,
       );
-      // Both are Kernel's uint32 validation nonce; there is no key namespace.
-      if (kernelV33PermissionStatus(state, approval) === "absent")
-        observed = BigInt(kernelV33EffectivePermissionNonce(state));
     } else {
       const installed = await observation.read({
         type: "kernel_permission_installed",
@@ -122,8 +152,9 @@ export async function observeKernelPermissionRevocation(input: {
       }),
     );
     if (rebound?.number !== block.number || rebound.hash !== block.hash) return UNREADABLE;
-    if (observed === null) return ACTIVE;
-    if (observed <= expected) return REPLAYABLE;
+    const classified = classifyKernelPermission(observed, approval);
+    if (classified.status === "installed") return ACTIVE;
+    if (classified.status === "approval-replayable") return REPLAYABLE;
     return Object.freeze({
       status: "revoked" as const,
       evidence: Object.freeze({
@@ -134,7 +165,7 @@ export async function observeKernelPermissionRevocation(input: {
           blockHash: block.hash as `0x${string}`,
           observedAt: input.now(),
         }),
-        installNonce: observed.toString(10),
+        installNonce: classified.installNonce,
       }),
     });
   } catch {
@@ -186,4 +217,76 @@ export async function verifyKernelPermissionRevocation(
     observation: { read: (request) => reads.read(request) },
     now,
   });
+}
+
+/**
+ * One permission's status from plain account reads at a named block.
+ *
+ * - `installed`: the permission is live.
+ * - `approval-replayable`: absent, but the retained enable signature can still install it.
+ * - `revoked`: absent and its enable nonce is consumed.
+ * - `unreadable`: a read failed, or chain or state evidence was malformed or contradictory.
+ * - `unsupported`: this approval's Kernel version cannot be classified from plain reads.
+ */
+export type KernelPermissionStatus =
+  | Readonly<{ status: "installed" | "approval-replayable" | "unreadable" | "unsupported" }>
+  | Readonly<{ status: "revoked"; installNonce: string }>;
+
+export interface ReadKernelPermissionStatusInput {
+  /** The exact issued approval; its `version` selects the Kernel semantics. */
+  readonly approval: Readonly<KernelGrantApproval>;
+  readonly chainId: number;
+  /** Plain account reads, for example `createKernelReads(publicClient)`. */
+  readonly reads: Readonly<Pick<KernelReads, "read">>;
+  /** The named block every state read is answered at. */
+  readonly blockTag: "latest" | "finalized";
+}
+
+/**
+ * Reads one approval's permission status without an observation port. It
+ * classifies with the same owner as `verifyKernelPermissionRevocation`, but the
+ * answer is not pinned to one block hash: use that verifier for recorded
+ * revocation evidence. Kernel `0.4.0` is `unsupported`: its presence and
+ * install-nonce reads are separate calls that plain reads cannot pin together.
+ */
+export async function readKernelPermissionStatus(
+  value: Readonly<ReadKernelPermissionStatusInput>,
+): Promise<KernelPermissionStatus> {
+  const input = captureInput(value, "Kernel permission status", new WeakSet());
+  if (Object.keys(input).some((key) => !["approval", "chainId", "reads", "blockTag"].includes(key)))
+    return inputInvalid("Kernel permission status contains unknown fields");
+  const approval = parseVersionedKernelGrantApproval(input.approval);
+  const reads = input.reads as ReadKernelPermissionStatusInput["reads"];
+  const chainId = input.chainId;
+  const blockTag = input.blockTag;
+  if (
+    typeof chainId !== "number" ||
+    !Number.isSafeInteger(chainId) ||
+    chainId < 1 ||
+    typeof reads?.read !== "function" ||
+    (blockTag !== "latest" && blockTag !== "finalized")
+  )
+    return inputInvalid("Kernel permission status input is invalid");
+  if (approval.version !== OAATH_KERNEL_V33_APPROVAL_VERSION)
+    return Object.freeze({ status: "unsupported" as const });
+  try {
+    if ((await reads.read({ type: "chain_id", chainId })) !== chainId) return UNREADABLE;
+    return Object.freeze(
+      classifyKernelPermission(
+        kernelV33ObservedNonce(
+          await reads.read({
+            type: "kernel_v33_permission_state",
+            chainId,
+            account: approval.account,
+            permissionId: approval.permissionId,
+            blockTag,
+          }),
+          approval,
+        ),
+        approval,
+      ),
+    );
+  } catch {
+    return UNREADABLE;
+  }
 }

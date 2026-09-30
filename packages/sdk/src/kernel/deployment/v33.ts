@@ -84,6 +84,8 @@ export type KernelV33ReadRequest =
       chainId: number;
       account: `0x${string}`;
       permissionId: `0x${string}`;
+      /** Named block every call of this read is answered at; omitted is the client's default. */
+      blockTag?: "latest" | "finalized";
     }>
   | Readonly<{
       type:
@@ -273,7 +275,14 @@ export function createKernelV33Reads(client: KernelV4ReadClient): KernelV33Reads
         case "kernel_v33_permission_state":
           return readKernelV33PermissionState({
             permissionId: request.permissionId,
-            call: async (data) => (await call({ to: request.account, data })).data,
+            call: async (data) =>
+              (
+                await call({
+                  to: request.account,
+                  data,
+                  ...(request.blockTag === undefined ? {} : { blockTag: request.blockTag }),
+                })
+              ).data,
           });
         case "kernel_v33_permission_nonce": {
           if (!/^0x[0-9a-f]{8}$/u.test(request.permissionId))

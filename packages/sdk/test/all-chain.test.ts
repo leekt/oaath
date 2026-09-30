@@ -21,6 +21,7 @@ import {
   materializeKernelPermission,
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   ownerOperator,
+  readKernelPermissionStatus,
   sessionOperator,
 } from "../src/kernel.js";
 import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
@@ -384,6 +385,25 @@ describe("all-chain permission approval", () => {
         ownerAccount.address,
     ).toBe(true);
     expect(Object.isFrozen(approval)).toBe(true);
+  });
+
+  it("reports a Kernel 0.4.0 permission status from plain reads as unsupported", async () => {
+    const approval = await approveKernelPermissionAllChain({
+      owner: ownerKey,
+      account,
+      installNonce: "0",
+      packages: local.session.packages,
+    });
+    const requests: unknown[] = [];
+    expect(
+      await readKernelPermissionStatus({
+        approval,
+        chainId: 1,
+        blockTag: "finalized",
+        reads: { read: async (request) => requests.push(request) },
+      }),
+    ).toEqual({ status: "unsupported" });
+    expect(requests).toEqual([]);
   });
 
   it("fails closed on a hostile approval request", async () => {

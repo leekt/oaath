@@ -84,9 +84,14 @@ export type { KernelPermissionMaterialization } from "./kernel/permission/materi
 export { OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION } from "./kernel/permission/materialize.js";
 export type {
   KernelPermissionRevocationVerification,
+  KernelPermissionStatus,
+  ReadKernelPermissionStatusInput,
   VerifyKernelPermissionRevocationInput,
 } from "./kernel/permission/observe-revocation.js";
-export { verifyKernelPermissionRevocation } from "./kernel/permission/observe-revocation.js";
+export {
+  readKernelPermissionStatus,
+  verifyKernelPermissionRevocation,
+} from "./kernel/permission/observe-revocation.js";
 export type {
   KernelPermissionDecision,
   PreparedKernelPermissionApproval,

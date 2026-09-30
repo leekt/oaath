@@ -9,6 +9,7 @@ import {
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
+  readKernelPermissionStatus,
   sessionOperator,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
@@ -21,6 +22,53 @@ const empty = {
   permissionFlag: "0x0000",
   policies: [],
 };
+
+function v33Fixture() {
+  const account = "0x1111111111111111111111111111111111111111";
+  const runtime = createKernelRuntime({
+    deployment: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }),
+    reads: {
+      read: async () => {
+        throw new Error("unused");
+      },
+    },
+    operator: sessionOperator({
+      key: kernelKey({
+        account: { address: account, sign: async () => "0x" },
+        validator: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }).ecdsaValidator,
+      }),
+      policies: [
+        {
+          kind: "call",
+          permissions: [{ target: account, selector: "0x12345678", valueLimit: "0" }],
+        },
+      ],
+    }),
+  });
+  if (runtime.validation.kind !== "permission") throw new Error("missing permission");
+  const scope = {
+    chainScope: "all",
+    account,
+    nonce: "1",
+    permissionId: runtime.validation.permissionId,
+    packages: runtime.packages,
+  } as const;
+  const approval = {
+    ...scope,
+    version: OAATH_KERNEL_V33_APPROVAL_VERSION,
+    digest: hashTypedData(kernelV33PermissionEnableTypedData(scope)),
+    enableSignature: "0x01",
+  } as const;
+  const installed = {
+    currentNonce: "2",
+    validationNonce: "1",
+    hook: "0x0000000000000000000000000000000000000001",
+    signer: runtime.packages[runtime.packages.length - 1]!.module,
+    permissionFlag: "0x0002",
+    policies: runtime.packages.slice(0, -1).map((entry) => `0x0002${entry.module.slice(2)}`),
+  };
+  return { account, scope, approval, installed };
+}
 
 describe("v3.3 revocation state", () => {
   it("does not turn unreadable, contradictory, or wrapping nonce state into absence", () => {
@@ -37,49 +85,7 @@ describe("v3.3 revocation state", () => {
   });
 
   it("reports replayable, active, revoked and unreadable from one finalized block", async () => {
-    const account = "0x1111111111111111111111111111111111111111";
-    const runtime = createKernelRuntime({
-      deployment: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }),
-      reads: {
-        read: async () => {
-          throw new Error("unused");
-        },
-      },
-      operator: sessionOperator({
-        key: kernelKey({
-          account: { address: account, sign: async () => "0x" },
-          validator: kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" }).ecdsaValidator,
-        }),
-        policies: [
-          {
-            kind: "call",
-            permissions: [{ target: account, selector: "0x12345678", valueLimit: "0" }],
-          },
-        ],
-      }),
-    });
-    if (runtime.validation.kind !== "permission") throw new Error("missing permission");
-    const scope = {
-      chainScope: "all",
-      account,
-      nonce: "1",
-      permissionId: runtime.validation.permissionId,
-      packages: runtime.packages,
-    } as const;
-    const approval = {
-      ...scope,
-      version: OAATH_KERNEL_V33_APPROVAL_VERSION,
-      digest: hashTypedData(kernelV33PermissionEnableTypedData(scope)),
-      enableSignature: "0x01",
-    } as const;
-    const installed = {
-      currentNonce: "2",
-      validationNonce: "1",
-      hook: "0x0000000000000000000000000000000000000001",
-      signer: runtime.packages[runtime.packages.length - 1]!.module,
-      permissionFlag: "0x0002",
-      policies: runtime.packages.slice(0, -1).map((entry) => `0x0002${entry.module.slice(2)}`),
-    };
+    const { account, scope, approval, installed } = v33Fixture();
     const hash = `0x${"11".repeat(32)}` as const;
     let state: unknown = empty;
     let canonical = hash;
@@ -159,6 +165,63 @@ describe("v3.3 revocation state", () => {
       verifyKernelPermissionRevocation({
         approval: { ...approval, version: "oaath.unknown/v1" } as never,
         chainId: 143,
+        reads: { read: async () => 143 },
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+  });
+
+  it("reads status from plain reads at the named block, failing closed", async () => {
+    const { account, scope, approval, installed } = v33Fixture();
+    let state: unknown = empty;
+    let chain: unknown = 143;
+    const requests: unknown[] = [];
+    const status = (blockTag: "latest" | "finalized" = "finalized") =>
+      readKernelPermissionStatus({
+        approval,
+        chainId: 143,
+        blockTag,
+        reads: {
+          async read(request) {
+            requests.push(request);
+            if (request.type === "chain_id") return chain;
+            if (request.type === "kernel_v33_permission_state") {
+              if (state instanceof Error) throw state;
+              return state;
+            }
+            throw new Error("unexpected read");
+          },
+        },
+      });
+    expect(await status()).toEqual({ status: "approval-replayable" });
+    expect(requests.at(-1)).toEqual({
+      type: "kernel_v33_permission_state",
+      chainId: 143,
+      account,
+      permissionId: scope.permissionId,
+      blockTag: "finalized",
+    });
+    state = installed;
+    expect(await status("latest")).toEqual({ status: "installed" });
+    expect(requests.at(-1)).toMatchObject({ blockTag: "latest" });
+    state = { ...empty, currentNonce: "2", validationNonce: "1" };
+    expect(await status()).toEqual({ status: "revoked", installNonce: "2" });
+    for (const failure of [
+      new Error("rpc down"),
+      undefined,
+      { ...empty, currentNonce: "0" },
+      { ...installed, signer: `0x${"22".repeat(20)}` },
+    ]) {
+      state = failure;
+      expect(await status()).toEqual({ status: "unreadable" });
+    }
+    state = installed;
+    chain = 1;
+    expect(await status()).toEqual({ status: "unreadable" });
+    await expect(
+      readKernelPermissionStatus({
+        approval,
+        chainId: 143,
+        blockTag: "safe" as never,
         reads: { read: async () => 143 },
       }),
     ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
