@@ -964,14 +964,14 @@ describe("bounded canonical finality", () => {
     },
   );
 
-  it.each(["finalized-rebind", "inclusion-rebind", "finalized-behind", "wrong-chain"] as const)(
+  it.each(["finalized-rebind", "inclusion-rebind", "wrong-chain"] as const)(
     "leaves old receipt recovery unresolved after %s",
     async (fault) => {
       const finalized = { ...finalizedBlock, number: "0xf4240" };
       let inclusionReads = 0,
         chainReads = 0;
       const adapter = fixture({
-        finality: fault === "finalized-behind" ? { ...finalized, number: "0x13" } : finalized,
+        finality: finalized,
         mutate(request, value) {
           if (request.type === "canonical_block" && request.blockNumber === "1000000")
             return fault === "finalized-rebind"
@@ -1008,6 +1008,67 @@ describe("bounded canonical finality", () => {
 });
 
 describe("reference-only UserOperation observation", () => {
+  it("returns canonical inclusion before finality and rechecks after observer recreation", async () => {
+    const adapter = fixture({ finality: { ...finalizedBlock, number: "0x13" } });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const included = await observer.observeReference(referenceInput);
+    expect(included).toMatchObject({
+      status: "included",
+      reference,
+      receipt: { transactionHash: targetTransactionHash, blockHash: targetBlockHash },
+      block: target.block,
+    });
+    await observer.close();
+    const saved = JSON.parse(JSON.stringify(included.reference));
+    const recovered = createUserOperationObserver(fixture().capabilities);
+    expect(await recovered.observeReference({ ...referenceInput, reference: saved })).toMatchObject(
+      {
+        status: "finalized",
+        receipt: { blockHash: targetBlockHash },
+      },
+    );
+    await recovered.close();
+  });
+
+  it("does not report inclusion when its block changes during the finality read", async () => {
+    let reads = 0;
+    const adapter = fixture({
+      finality: { ...finalizedBlock, number: "0x13" },
+      mutate: (request, value) =>
+        request.type === "canonical_block" && ++reads > 1
+          ? { ...target.block, hash: replacementBlockHash }
+          : value,
+    });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({ status: "unreadable" });
+    await observer.close();
+  });
+
+  it.each([true, false])(
+    "only reports a drop for a finalized exact-nonce replacement (%s)",
+    async (finalized) => {
+      const adapter = fixture({
+        targetReceipt: null,
+        replacementCandidate: { userOperationHash: replacementHash },
+        ...(finalized ? {} : { finality: { ...finalizedBlock, number: "0x13" } }),
+      });
+      const observer = createUserOperationObserver(adapter.capabilities);
+      expect(await observer.observeReference(referenceInput)).toMatchObject(
+        finalized
+          ? {
+              status: "dropped",
+              reference,
+              replacement: {
+                reference: { ...reference, userOperationHash: replacementHash },
+                receipt: { outcome: "reverted" },
+              },
+            }
+          : { status: "pending", reference },
+      );
+      await observer.close();
+    },
+  );
+
   it("verifies the exact receipt without manufacturing a Grant or journal transition", async () => {
     const adapter = fixture();
     const observer = createUserOperationObserver(adapter.capabilities);
@@ -1041,7 +1102,22 @@ describe("reference-only UserOperation observation", () => {
     });
   });
 
-  it("missing evidence never seeks a replacement or releases another owner's lane", async () => {
+  it("does not drop on an unverified replacement nonce", async () => {
+    const adapter = fixture({
+      targetReceipt: null,
+      replacementCandidate: { userOperationHash: replacementHash },
+      replacementReceipt: { ...replacement.receipt, nonce: "0x8" },
+    });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    expect(await observer.observeReference(referenceInput)).toMatchObject({
+      status: "unreadable",
+      reason: "receipt_invalid",
+      reference,
+    });
+    await observer.close();
+  });
+
+  it("missing evidence with no replacement stays pending", async () => {
     const adapter = fixture({ targetReceipt: null });
     const observer = createUserOperationObserver(adapter.capabilities);
     expect(await observer.observeReference(referenceInput)).toMatchObject({
@@ -1052,6 +1128,7 @@ describe("reference-only UserOperation observation", () => {
     expect(adapter.requests.map((request) => request.type)).toEqual([
       "chain_id",
       "user_operation_receipt",
+      "replacement_candidate",
       "chain_id",
     ]);
     await observer.close();

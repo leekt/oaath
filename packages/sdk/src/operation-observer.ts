@@ -246,6 +246,22 @@ export type ObserveUserOperationResult =
       receipt: Readonly<VerifiedOperationReceiptEvidence> | null;
     }>
   | Readonly<{
+      status: "included";
+      reference: Readonly<UserOperationReference>;
+      receipt: Readonly<VerifiedOperationReceiptEvidence>;
+      block: Readonly<OperationObserverBlockEvidence>;
+    }>
+  | Readonly<{
+      /** Only a finalized replacement at this exact nonce proves a drop. */
+      status: "dropped";
+      reference: Readonly<UserOperationReference>;
+      replacement: Readonly<{
+        reference: Readonly<UserOperationReference>;
+        receipt: Readonly<VerifiedOperationReceiptEvidence>;
+        finality: Readonly<OperationFinality>;
+      }>;
+    }>
+  | Readonly<{
       status: "finalized";
       reference: Readonly<UserOperationReference>;
       receipt: Readonly<VerifiedOperationReceiptEvidence>;
@@ -763,6 +779,7 @@ async function readVerifiedInclusion(
 ): Promise<Readonly<{
   inclusion: Readonly<OperationInclusion>;
   receipt: Readonly<VerifiedOperationReceiptEvidence>;
+  block: Readonly<OperationObserverBlockEvidence>;
 }> | null> {
   const receiptValue = await read({
     type: "user_operation_receipt",
@@ -843,7 +860,7 @@ async function readVerifiedInclusion(
   ) {
     throw new EvidenceFailure("canonicality_unproven");
   }
-  return Object.freeze({ inclusion, receipt: verifiedReceipt });
+  return Object.freeze({ inclusion, receipt: verifiedReceipt, block: canonical });
 }
 
 async function readVerifiedFinality(
@@ -851,7 +868,7 @@ async function readVerifiedFinality(
   reference: UserOperationReference,
   inclusion: OperationInclusion,
   observedAt: number,
-): Promise<OperationFinality> {
+): Promise<OperationFinality | null> {
   try {
     const finalized = parseBlock(
       await read({ type: "finalized_block", chainId: reference.chainId }),
@@ -861,9 +878,6 @@ async function readVerifiedFinality(
     const finalizedNumberValue = parseQuantity(finalized.number, "finality_unproven");
     const finalizedNumber = decimal(finalizedNumberValue);
     const inclusionNumber = BigInt(inclusion.blockNumber);
-    if (finalizedNumberValue < inclusionNumber) {
-      throw new EvidenceFailure("finality_unproven");
-    }
 
     if (
       finalizedNumberValue === inclusionNumber + 1n &&
@@ -885,6 +899,12 @@ async function readVerifiedFinality(
       new WeakSet(),
       "finality_unproven",
     );
+    if (
+      reboundInclusion.hash !== inclusion.blockHash ||
+      reboundInclusion.number !== `0x${inclusionNumber.toString(16)}`
+    )
+      throw new EvidenceFailure("finality_unproven");
+    if (finalizedNumberValue < inclusionNumber) return null;
     const reboundFinalized = parseBlock(
       await read({
         type: "canonical_block",
@@ -897,8 +917,6 @@ async function readVerifiedFinality(
     if (
       reboundFinalized.hash !== finalized.hash ||
       reboundFinalized.number !== finalized.number ||
-      reboundInclusion.hash !== inclusion.blockHash ||
-      reboundInclusion.number !== `0x${BigInt(inclusion.blockNumber).toString(16)}` ||
       (finalizedNumber === inclusion.blockNumber && finalized.hash !== inclusion.blockHash)
     ) {
       throw new EvidenceFailure("finality_unproven");
@@ -912,6 +930,31 @@ async function readVerifiedFinality(
     if (error instanceof EvidenceFailure && error.reason === "finality_unproven") throw error;
     throw new EvidenceFailure("finality_unproven");
   }
+}
+
+async function readReplacementReference(
+  read: ObservationRead,
+  reference: UserOperationReference,
+): Promise<Readonly<UserOperationReference> | null> {
+  const value = await read({
+    type: "replacement_candidate",
+    chainId: reference.chainId,
+    entryPoint: reference.entryPoint,
+    account: reference.account,
+    nonce: reference.nonce,
+    excludedUserOperationHash: reference.userOperationHash,
+  });
+  if (value === null) return null;
+  const candidate = exact(value, ["userOperationHash"], "replacement candidate", new WeakSet());
+  const hash = parseHash(candidate.userOperationHash);
+  if (hash === reference.userOperationHash) throw new EvidenceFailure("receipt_invalid");
+  return Object.freeze({
+    chainId: reference.chainId,
+    entryPoint: reference.entryPoint,
+    account: reference.account,
+    nonce: reference.nonce,
+    userOperationHash: hash,
+  });
 }
 
 function captureReferenceInput(value: unknown): ObserveUserOperationInput {
@@ -993,10 +1036,34 @@ function createObserver(capabilityValue: unknown) {
         await assertChain();
         const verified = await readVerifiedInclusion(read, reference, observedAt, transactionHash);
         if (verified === null) {
+          const replacement = await readReplacementReference(read, reference);
+          if (replacement) {
+            const included = await readVerifiedInclusion(read, replacement, observedAt);
+            if (included) {
+              const finality = await readVerifiedFinality(
+                read,
+                replacement,
+                included.inclusion,
+                observedAt,
+              );
+              if (finality) {
+                await assertChain();
+                return Object.freeze({
+                  status: "dropped",
+                  reference,
+                  replacement: Object.freeze({
+                    reference: replacement,
+                    receipt: included.receipt,
+                    finality,
+                  }),
+                });
+              }
+            }
+          }
           await assertChain();
           return Object.freeze({ status: "pending", reason: "receipt_missing", reference });
         }
-        let finality: Readonly<OperationFinality>;
+        let finality: Readonly<OperationFinality> | null;
         try {
           finality = await readVerifiedFinality(read, reference, verified.inclusion, observedAt);
         } catch {
@@ -1009,6 +1076,13 @@ function createObserver(capabilityValue: unknown) {
           });
         }
         await assertChain();
+        if (finality === null)
+          return Object.freeze({
+            status: "included",
+            reference,
+            receipt: verified.receipt,
+            block: verified.block,
+          });
         return Object.freeze({
           status: "finalized",
           reference,
@@ -1178,36 +1252,13 @@ function createObserver(capabilityValue: unknown) {
         let replacement = false;
         let inclusion = await verifyInclusion(reference);
         if (inclusion === null) {
-          const candidateValue = await read({
-            type: "replacement_candidate",
-            chainId: operation.identity.chainId,
-            entryPoint: operation.identity.entryPoint,
-            account: operation.identity.account,
-            nonce: operation.identity.nonce,
-            excludedUserOperationHash: operation.identity.userOperationHash,
-          });
-          if (candidateValue === null) {
+          const candidate = await readReplacementReference(read, operation.identity);
+          if (candidate === null) {
             const superseded = await verifySupersession();
             if (superseded) return superseded;
             return weakPending(operation, "receipt_missing");
           }
-          const candidate = exact(
-            candidateValue,
-            ["userOperationHash"],
-            "replacement candidate",
-            new WeakSet(),
-          );
-          const candidateHash = parseHash(candidate.userOperationHash);
-          if (candidateHash === operation.identity.userOperationHash) {
-            throw new EvidenceFailure("receipt_invalid");
-          }
-          reference = Object.freeze({
-            chainId: operation.identity.chainId,
-            entryPoint: operation.identity.entryPoint,
-            account: operation.identity.account,
-            nonce: operation.identity.nonce,
-            userOperationHash: candidateHash,
-          });
+          reference = candidate;
           replacement = true;
           inclusion = await verifyInclusion(reference);
           if (inclusion === null) return weakPending(operation, "receipt_missing");
@@ -1228,9 +1279,10 @@ function createObserver(capabilityValue: unknown) {
                 });
         }
 
-        let finality: OperationFinality;
+        let finality: OperationFinality | null;
         try {
           finality = await verifyFinality(reference, inclusion);
+          if (finality === null) return weakUnreadable(includedOperation, "finality_unproven");
         } catch {
           return weakUnreadable(includedOperation, "finality_unproven");
         }
