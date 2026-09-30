@@ -17,6 +17,7 @@ import {
   prepareKernelV4UserOperation,
 } from "../kernel-v4.js";
 import {
+  type PreparedFactory,
   type PreparedUserOperation,
   parsePreparedUserOperation,
 } from "../prepared-user-operation.js";
@@ -200,7 +201,8 @@ export function createKernelRuntime(
       (install) => install.moduleType === 5 && install.module === OAATH_KERNEL_V4_VALIDITY_POLICY,
     );
   const validityPolicyProvenDescriptors = new WeakSet<object>();
-  const boundV33Accounts = new Set<string>();
+  // The only factory deployment each bound v3.3 sender's operations may carry.
+  const boundV33Accounts = new Map<string, Readonly<PreparedFactory> | null>();
 
   /**
    * Proves this authority's module carries code on the action chain. An owner's
@@ -285,16 +287,16 @@ export function createKernelRuntime(
   ): Promise<Readonly<KernelAccountDescriptor>> {
     const existing = exactInput(
       input,
-      Object.hasOwn(input ?? {}, "address") ? ["address"] : ["accountIndex", "initialPackages"],
+      Object.hasOwn(input ?? {}, "address")
+        ? ["address"]
+        : isV33
+          ? ["accountIndex"]
+          : ["accountIndex", "initialPackages"],
       "Kernel runtime account",
       new WeakSet(),
     );
     if (Object.hasOwn(existing, "address")) return bindExistingAccount(existing.address);
-    if (isV33)
-      return runtimeFail(
-        "kernel_runtime_deployment_mismatch",
-        "Kernel 0.3.3 accounts are bound by their existing address",
-      );
+    if (isV33) return bindDerivedV33Account(existing.accountIndex);
     await proveAuthorityModule();
     await provePinnedPolicies();
     // bindKernelV4Account owns exact capture and on-chain evidence for every
@@ -330,12 +332,58 @@ export function createKernelRuntime(
    * validator expose their owner onchain.
    */
   async function bindExistingAccount(address: unknown): Promise<Readonly<KernelAccountDescriptor>> {
+    return proveBoundAccount(
+      await bindKernelAccount({
+        chainId: deployment.chainId,
+        address: address as `0x${string}`,
+        reads: Object.freeze({ read: read as KernelReads["read"] }),
+        deployment,
+      }),
+    );
+  }
+
+  /**
+   * Derives this owner's own Kernel 0.3.3 account: the ECDSA key's address is
+   * the root owner, so the account can only be the one this runtime signs for.
+   * A deployed account is then proven exactly like an existing one.
+   */
+  async function bindDerivedV33Account(
+    accountIndex: unknown,
+  ): Promise<Readonly<KernelAccountDescriptor>> {
+    if (operator.authority !== "owner")
+      return runtimeFail(
+        "kernel_runtime_unsupported",
+        "Kernel 0.3.3 derives only an owner's account; sessions bind an existing address",
+      );
+    if (authorityModule !== ECDSA_VALIDATOR)
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Kernel account does not use this root validator",
+      );
     const descriptor = await bindKernelAccount({
       chainId: deployment.chainId,
-      address: address as `0x${string}`,
+      owner: operator.key.publicMaterial as `0x${string}`,
+      accountIndex: accountIndex as string,
       reads: Object.freeze({ read: read as KernelReads["read"] }),
       deployment,
     });
+    if (descriptor.state !== "counterfactual" || !("owner" in descriptor))
+      return proveBoundAccount(descriptor);
+    if (descriptor.owner !== operator.key.publicMaterial)
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Kernel account does not belong to this owner key",
+      );
+    boundV33Accounts.set(
+      descriptor.account,
+      Object.freeze({ address: descriptor.factory, data: descriptor.factoryData }),
+    );
+    return descriptor;
+  }
+
+  async function proveBoundAccount(
+    descriptor: Readonly<KernelAccountDescriptor>,
+  ): Promise<Readonly<KernelAccountDescriptor>> {
     if (operator.authority === "session") {
       await proveAuthorityModule();
       await provePinnedPolicies();
@@ -404,7 +452,7 @@ export function createKernelRuntime(
         );
       }
     }
-    if (isV33) boundV33Accounts.add(descriptor.account);
+    if (isV33) boundV33Accounts.set(descriptor.account, null);
     else if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
     return descriptor;
   }
@@ -473,10 +521,14 @@ export function createKernelRuntime(
         "Prepared UserOperation does not match this Kernel runtime",
       );
     }
+    const factory = operation.userOperation.factory;
+    const boundFactory = boundV33Accounts.get(operation.userOperation.sender);
     if (
       isV33 &&
-      (!boundV33Accounts.has(operation.userOperation.sender) ||
-        operation.userOperation.factory !== null)
+      (boundFactory === undefined ||
+        (boundFactory === null
+          ? factory !== null
+          : factory?.address !== boundFactory.address || factory.data !== boundFactory.data))
     ) {
       return runtimeFail(
         "kernel_runtime_binding_mismatch",

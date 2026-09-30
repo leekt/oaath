@@ -183,7 +183,10 @@ function encodeKernelV33Operation(
         calls: record.calls as KernelV33RuntimePrepareInput["calls"],
       }),
       ...gasFor(gas as unknown as KernelUserOperationGas),
-      factory: null,
+      factory:
+        account.state === "counterfactual"
+          ? { address: account.factory, data: account.factoryData }
+          : null,
       paymaster: (record.paymaster ?? null) as KernelV33RuntimePrepareInput["paymaster"] &
         (object | null),
     },

@@ -292,11 +292,15 @@ export interface KernelRuntime {
   readonly packages: readonly Readonly<KernelInstall>[];
   readonly dummySignature: `0x${string}`;
   /**
-   * Binds an account derived from initial packages (Kernel `0.4.0` only) or an
-   * existing account by address. An account of another deployment fails with
+   * Binds an account derived from initial packages (Kernel `0.4.0`), an owner
+   * runtime's own account at an index (Kernel `0.3.3`), or an existing account
+   * by address. An account of another deployment fails with
    * `kernel_runtime_deployment_mismatch`.
    */
   bindAccount(input: KernelRuntimeBindAccountInput): Promise<Readonly<KernelV4AccountDescriptor>>;
+  bindAccount(
+    input: Readonly<{ accountIndex: string }>,
+  ): Promise<Readonly<KernelAccountDescriptor>>;
   bindAccount(input: KernelRuntimeExistingAccountInput): Promise<Readonly<KernelAccountDescriptor>>;
   prepareOperation(
     input: KernelRuntimePrepareInput<KernelAccountDescriptor> | KernelV33RuntimePrepareInput,
@@ -321,16 +325,20 @@ export interface KernelRuntime {
   ) => Promise<`0x${string}`>;
 }
 
-/** Existing ECDSA-root Kernel 0.3.3 accounts require no initializer or factory index. */
+/** Kernel 0.3.3 runtimes bind existing accounts, or derive an ECDSA owner's own account. */
 export interface CreateKernelV33RuntimeInput {
   readonly gas?: Readonly<KernelGasPolicy>;
   readonly deployment: Readonly<KernelV33Deployment>;
   readonly operator: Readonly<OperatorProfile>;
   readonly reads: KernelV33Reads;
 }
-export interface KernelV33RuntimeBindAccountInput {
-  readonly address: `0x${string}`;
-}
+/**
+ * An existing account by address, or (owner runtimes only) the owner key's
+ * account at `accountIndex` through the deployment's MetaFactory route.
+ */
+export type KernelV33RuntimeBindAccountInput =
+  | Readonly<{ address: `0x${string}` }>
+  | Readonly<{ accountIndex: string }>;
 export interface KernelV33RuntimePrepareInput
   extends Omit<KernelRuntimePrepareInput, "account" | "validityTimeRange" | "mode"> {
   readonly account: Readonly<KernelV33AccountDescriptor>;

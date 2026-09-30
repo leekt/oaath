@@ -35,10 +35,13 @@ import { captureInput, exactCaptured, exactInput, inputInvalid, runtimeFail } fr
 import { exactKernelDeployment } from "../modules.js";
 import type { KernelDeployment } from "./profile.js";
 import {
+  bindDerivedKernelV33Account,
   bindKernelV33Account,
   createKernelV33Reads,
+  deriveKernelV33Account,
   type KernelV33AccountDescriptor,
   type KernelV33Deployment,
+  type KernelV33Derivation,
   type KernelV33ReadRequest,
   kernelV33Deployment,
 } from "./v33.js";
@@ -156,6 +159,7 @@ export function createKernelReads(client: KernelReadClient): Readonly<KernelRead
         case "kernel_account_entrypoint":
         case "kernel_account_root_validator":
         case "kernel_ecdsa_owner":
+        case "kernel_v33_factory_approval":
         case "kernel_v33_permission_nonce":
         case "kernel_v33_permission_state":
           return v33.read(request);
@@ -196,7 +200,52 @@ export interface BindDerivedKernelAccountInput extends BindKernelAccountCommon {
   readonly accountIndex: string;
 }
 
-export type BindKernelAccountInput = BindExistingKernelAccountInput | BindDerivedKernelAccountInput;
+/**
+ * A counterfactual or deployed Kernel `0.3.3` account derived from its ECDSA
+ * root owner and index through the deployment's MetaFactory route, at the
+ * address ZeroDev's SDK derives. The deployment is required.
+ */
+export interface BindEcdsaOwnerKernelAccountInput extends BindKernelAccountCommon {
+  readonly deployment: Readonly<KernelDeployment>;
+  readonly owner: `0x${string}`;
+  readonly accountIndex: string;
+}
+
+export type BindKernelAccountInput =
+  | BindExistingKernelAccountInput
+  | BindDerivedKernelAccountInput
+  | BindEcdsaOwnerKernelAccountInput;
+
+export interface DeriveKernelAccountInput {
+  /** Only Kernel `0.3.3` derives offline; Kernel `0.4.0` derives through factory reads. */
+  readonly deployment: Readonly<KernelDeployment>;
+  readonly owner: `0x${string}`;
+  readonly accountIndex: string;
+}
+
+/** The account address and the EntryPoint 0.7 `factory` / `factoryData` that deploy it. */
+export type KernelAccountDerivation = KernelV33Derivation;
+
+/**
+ * Offline derivation of an ECDSA-owned account through the deployment's
+ * MetaFactory route. It reads nothing and proves no chain state; binding does.
+ */
+export function deriveKernelAccount(
+  value: DeriveKernelAccountInput,
+): Readonly<KernelAccountDerivation> {
+  const record = exactInput(
+    value,
+    ["deployment", "owner", "accountIndex"],
+    "Kernel account derivation",
+    new WeakSet(),
+  );
+  if (exactKernelDeployment(record.deployment).kernelVersion !== "0.3.3")
+    return runtimeFail(
+      "kernel_runtime_unsupported",
+      "Only Kernel 0.3.3 accounts are derived offline from an owner",
+    );
+  return deriveKernelV33Account(record);
+}
 
 function deploymentMismatch(): never {
   return runtimeFail(
@@ -246,7 +295,8 @@ export async function detectKernelAccountDeployment(
 /**
  * Binds one Kernel account on one chain and proves it against its deployment.
  * It never creates an account, changes an owner or authorizes an operation, and
- * unavailable evidence never selects another version.
+ * unavailable evidence never selects another version. A counterfactual
+ * descriptor's operations carry its factory deployment.
  */
 export function bindKernelAccount(
   value: BindDerivedKernelAccountInput,
@@ -259,13 +309,18 @@ export async function bindKernelAccount(
 ): Promise<Readonly<KernelAccountDescriptor>> {
   const captured = captureInput(value, "Kernel account binding", new WeakSet());
   const derived = Object.hasOwn(captured, "initialPackages");
+  const ownerDerived = Object.hasOwn(captured, "owner");
   const record = exactCaptured(
     captured,
     [
       "chainId",
       "reads",
-      ...(derived ? ["initialPackages", "accountIndex"] : ["address"]),
-      ...(Object.hasOwn(captured, "deployment") ? ["deployment"] : []),
+      ...(derived
+        ? ["initialPackages", "accountIndex"]
+        : ownerDerived
+          ? ["owner", "accountIndex", "deployment"]
+          : ["address"]),
+      ...(!ownerDerived && Object.hasOwn(captured, "deployment") ? ["deployment"] : []),
     ],
     "Kernel account binding",
   );
@@ -277,6 +332,19 @@ export async function bindKernelAccount(
   const read = reads.read;
   if (typeof read !== "function") return inputInvalid("Kernel account read capability is invalid");
   const capability = Object.freeze({ read: read as KernelReads["read"] });
+  if (ownerDerived) {
+    if (expected?.kernelVersion !== "0.3.3")
+      return runtimeFail(
+        "kernel_runtime_unsupported",
+        "Only Kernel 0.3.3 accounts are derived from an owner",
+      );
+    return bindDerivedKernelV33Account({
+      chainId,
+      owner: record.owner as `0x${string}`,
+      accountIndex: record.accountIndex as string,
+      reads: capability,
+    });
+  }
   if (derived) {
     if (expected && expected.kernelVersion !== "0.4.0") return deploymentMismatch();
     return bindKernelV4Account({
