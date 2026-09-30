@@ -43,7 +43,10 @@ import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { webauthnKey } from "../src/kernel/key/webauthn.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
-import { verifyKernelPermissionApproval } from "../src/kernel/permission/approval.js";
+import {
+  bindKernelPermissionEnable,
+  verifyKernelPermissionApproval,
+} from "../src/kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
   approveKernelV33Permission,
@@ -1221,10 +1224,25 @@ function passkeySession() {
         "FailedOpWithRevert",
       );
       const walletApproval = await approveKernelV33Permission(approvalInput);
+      // Estimation before the session key signs: validation passes the owner
+      // approval and reaches the session signer, which rejects only the placeholder.
+      const enable = bindKernelPermissionEnable({
+        runtime: sessionRuntime,
+        account: sessionAccount,
+        approval: walletApproval,
+      });
+      const { runtime: _enableRuntime, account: _enableAccount, ...enableInput } = sessionInput;
+      const estimating = enable.prepareOperation(enableInput);
+      expect(await harness.rejectionOf(estimating, enable.simulationSignature)).toMatchObject({
+        errorName: "FailedOp",
+        args: [0n, "AA24 signature error"],
+      });
       const enabled = await materializeKernelV33Permission({
         ...sessionInput,
         approval: walletApproval,
       });
+      expect(enabled.prepared.userOperationHash).toBe(estimating.userOperationHash);
+      expect(await enable.signOperation(estimating)).toBe(enabled.signature);
       expect(enabled.prepared.userOperation.sender).toBe(address.toLowerCase());
       expect(enabled.prepared.userOperation.factory).toBeNull();
       expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");

@@ -22,6 +22,7 @@ import type { KernelDeployment } from "../deployment/profile.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";
 import type { KeyProfile } from "../types.js";
+import { ECDSA_DUMMY_SIGNATURE } from "./ecdsa.js";
 import { parsePublicCredential } from "./public-credential.js";
 import { webauthnDummySignature } from "./webauthn.js";
 
@@ -37,7 +38,7 @@ const WEBAUTHN_MATERIAL_PARAMETERS = [
 
 /** Fixed-width placeholders for gas estimation; this profile never signs. */
 const DUMMY: Readonly<Record<OwnerCredentialProfile["kind"], `0x${string}`>> = Object.freeze({
-  ecdsa: `0x${"11".repeat(32)}${"22".repeat(32)}1c`,
+  ecdsa: ECDSA_DUMMY_SIGNATURE,
   p256: `0x${"33".repeat(32)}${"44".repeat(32)}`,
   webauthn: webauthnDummySignature("https://example.invalid"),
 });
