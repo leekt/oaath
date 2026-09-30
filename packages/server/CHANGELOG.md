@@ -1,5 +1,22 @@
 # @oaath/server
 
+## 0.3.2
+
+### Patch Changes
+
+- a2cf1e0: Preserve typed UserOperation failure details through service responses using a closed versioned wire representation, without exposing provider causes.
+- 94116ac: Own shared UserOperation failure classification and wire capture in the protocol package so relay roots retain their SDK-free dependency boundary.
+- Updated dependencies [08604f3]
+- Updated dependencies [ee3371f]
+- Updated dependencies [b990767]
+- Updated dependencies [a7f02e6]
+- Updated dependencies [a2cf1e0]
+- Updated dependencies [94116ac]
+- Updated dependencies [d9fd974]
+- Updated dependencies [651e58d]
+  - @oaath/sdk@0.3.2
+  - @oaath/protocol@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

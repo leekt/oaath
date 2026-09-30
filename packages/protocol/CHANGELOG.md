@@ -1,5 +1,11 @@
 # @oaath/protocol
 
+## 0.3.2
+
+### Patch Changes
+
+- 94116ac: Own shared UserOperation failure classification and wire capture in the protocol package so relay roots retain their SDK-free dependency boundary.
+
 ## 0.3.1
 
 ### Patch Changes

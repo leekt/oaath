@@ -104,7 +104,7 @@ responsibility.
 | `oaath` | Node CLI: runtime readiness, deployment planning and deterministic deployment. |
 
 All five use one fixed `0.x.y` release group. The current source is versioned
-`0.3.1`, following the initial `0.1.0` proof of concept; no package becomes
+`0.3.2`, following the initial `0.1.0` proof of concept; no package becomes
 `1.0.0` during this program. Versioned source does not imply npm publication.
 
 [`native/ios`](native/ios/README.md) carries the experimental owner-phone
@@ -117,7 +117,7 @@ run the same check on macOS with `bun run test:phone`.
 ## Status
 
 The fixed package group is versioned for the next proof-of-concept release,
-`0.3.1`. `@oaath/protocol` owns the shared wire and
+`0.3.2`. `@oaath/protocol` owns the shared wire and
 durable contracts: grants, grant policies, identity profiles, the pure
 `Operation` aggregate, the permission protocol, and the exact hostile-input
 capture primitives. `@oaath/sdk` carries the runtime safety kernel on top of
