@@ -1098,6 +1098,65 @@ describe("Kernel key profiles", () => {
     expect(usePrecompiled).toBe(false);
   });
 
+  it.each(["http://localhost", "http://localhost:5173", "http://app.localhost:3000"])(
+    "signs for the secure-context origin %s",
+    async (localOrigin) => {
+      const key = kernelKey({
+        credential: webauthnCredential,
+        credentialId,
+        rpId: "localhost",
+        origin: localOrigin,
+        authenticate: async (request) => {
+          const clientDataJSON = JSON.stringify({
+            type: "webauthn.get",
+            challenge: request.challenge,
+            origin: localOrigin,
+            crossOrigin: false,
+          });
+          const authenticatorData = concat([
+            sha256(stringToBytes("localhost")),
+            "0x05",
+            "0x00000001",
+          ]);
+          const message = sha256(
+            concat([authenticatorData, sha256(stringToBytes(clientDataJSON))]),
+          );
+          const signature = p256.sign(hexToBytes(message), p256PrivateKey, {
+            lowS: true,
+            prehash: false,
+          });
+          return {
+            authenticatorData,
+            clientDataJSON,
+            responseTypeLocation: "1",
+            r: toHex(signature.r, { size: 32 }),
+            s: toHex(signature.s, { size: 32 }),
+          };
+        },
+      });
+      const hash = keccak256("0xdeadbeef");
+      expect(await key.verify(hash, await key.sign(hash))).toBe(true);
+    },
+  );
+
+  it.each([
+    "http://app.example",
+    "http://localhost.example",
+    "http://localhostx",
+    "http://127.0.0.1",
+    "https://localhost/path",
+  ])("rejects the insecure or non-origin %s", (badOrigin) => {
+    expect(() =>
+      kernelKey({
+        credential: webauthnCredential,
+        credentialId,
+        rpId: "localhost",
+        origin: badOrigin,
+        authenticate: webauthnAuthenticate(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+  });
+
   it("normalizes a high-s WebAuthn assertion", async () => {
     const key = kernelKey({
       credential: webauthnCredential,
