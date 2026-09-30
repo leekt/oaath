@@ -76,9 +76,10 @@ export class OaathClientError extends Error {
     message: string,
     source: string | null = null,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    options?: ErrorOptions,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
-    super(captured === null ? message : validationGasDiagnosticMessage(captured));
+    super(captured === null ? message : validationGasDiagnosticMessage(captured), options);
     this.name = "OaathClientError";
     this.code = code;
     this.source = source;
@@ -91,8 +92,9 @@ export function clientFail(
   message: string,
   source: string | null = null,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  options?: ErrorOptions,
 ): never {
-  throw new OaathClientError(code, message, source, diagnostic);
+  throw new OaathClientError(code, message, source, diagnostic, options);
 }
 
 export function clientFailure(code: OaathClientErrorCode): CaptureFailure {

@@ -86,12 +86,15 @@ describe("local wallet realm", () => {
   it("does not create a Grant after a rejected wallet prompt or sign again automatically", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { input, owner, chain } = fixture();
-    owner.signTypedData.mockRejectedValueOnce({ code: 4001 });
+    const rejection = { code: 4001, message: "User rejected" };
+    owner.signTypedData.mockRejectedValueOnce(rejection);
     const realm = createOAAth(input);
     const connection = await realm.connect();
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_decision_unavailable",
-    });
+    const error = await connection
+      .requestPermission(permissionInput())
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "oaath_client_decision_unavailable" });
+    expect((error as Error).cause).toBe(rejection);
     expect(await connection.resume()).toBeNull();
     expect(owner.signTypedData).toHaveBeenCalledTimes(1);
     expect(owner.signMessage).not.toHaveBeenCalled();

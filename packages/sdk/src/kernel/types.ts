@@ -54,8 +54,8 @@ export type KernelRuntimeErrorCode =
 export class OaathKernelRuntimeError extends Error {
   readonly code: KernelRuntimeErrorCode;
 
-  constructor(code: KernelRuntimeErrorCode, message: string) {
-    super(message);
+  constructor(code: KernelRuntimeErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "OaathKernelRuntimeError";
     this.code = code;
   }

@@ -89,8 +89,15 @@ export function createLocalPermissionAuthority(input: {
         ...typedData,
         ...(wallet.localWallet ? {} : { account: input.owner.publicMaterial as `0x${string}` }),
       })
-      .catch(() =>
-        clientFail("oaath_client_decision_unavailable", "local permission approval failed"),
+      .catch((error) =>
+        // The wallet's own failure (e.g. EIP-1193 4001) stays the cause, never the message.
+        clientFail(
+          "oaath_client_decision_unavailable",
+          "local permission approval failed",
+          null,
+          null,
+          { cause: error },
+        ),
       );
     if (typeof produced !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(produced))
       return clientFail("oaath_client_signing_failed", "local permission signature is invalid");

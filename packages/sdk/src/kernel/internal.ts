@@ -30,8 +30,12 @@ const CUSTOM_KEY_KIND = /^custom:[a-z0-9][a-z0-9-]{0,31}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 
-export function runtimeFail(code: KernelRuntimeErrorCode, message: string): never {
-  throw new OaathKernelRuntimeError(code, message);
+export function runtimeFail(
+  code: KernelRuntimeErrorCode,
+  message: string,
+  options?: ErrorOptions,
+): never {
+  throw new OaathKernelRuntimeError(code, message, options);
 }
 
 export function inputInvalid(message: string): never {
@@ -243,7 +247,11 @@ export function captureKeyProfile(value: unknown): Readonly<KeyProfile> {
   });
 }
 
-/** Invokes a caller-supplied signing capability without leaking provider prose. */
+/**
+ * Invokes a caller-supplied signing capability without leaking provider prose.
+ * The capability's own failure (for example an EIP-1193 user rejection) is kept
+ * as `cause`, never copied into the message.
+ */
 export async function invokeCapability(
   capability: (request: never) => unknown,
   request: unknown,
@@ -253,6 +261,6 @@ export async function invokeCapability(
     return await Reflect.apply(capability, undefined, [request]);
   } catch (error) {
     if (error instanceof OaathKernelRuntimeError) throw error;
-    return runtimeFail("kernel_runtime_signing_failed", message);
+    return runtimeFail("kernel_runtime_signing_failed", message, { cause: error });
   }
 }
