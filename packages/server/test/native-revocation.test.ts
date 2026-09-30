@@ -13,7 +13,7 @@ const golden = JSON.parse(
 );
 
 describe("native revocation consent", () => {
-  it.each(source.valid.map((_: unknown, index: number) => index))(
+  it.each(Array.from({ length: source.valid.length }, (_, index) => index))(
     "projects exact unsigned request %s for the Swift consumer",
     async (index) => {
       const { name: _name, ...operation } = source.valid[index];
