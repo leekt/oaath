@@ -48,7 +48,7 @@ globalThis.passkeySmoke = async () => {
   const signature = await key.sign(hash);
   assert(await key.verify(hash, signature), "enrolled key could not sign");
   try { await enrolWebAuthnCredential({ rpId: "example.test", userName: "operator", excludeCredentialIds: [enrolment.credentialId] }); throw new Error("duplicate accepted"); }
-  catch (error) { assert(error.code === "already-registered", "duplicate code lost"); }
+  catch (error) { assert(error.code === "already-registered", "duplicate code lost"); assert(error.cause instanceof DOMException && error.cause.name === "InvalidStateError", "browser cause lost"); assert(!Object.keys(error).includes("cause"), "cause became enumerable"); }
   try { await enrolWebAuthnCredential({ rpId: "other.example.test", userName: "operator" }); throw new Error("wrong RP accepted"); }
   catch (error) { assert(error.code === "rp-mismatch", "RP code lost"); }
   return { enrolled: true, signed: true, excluded: true, parentRp: true };
