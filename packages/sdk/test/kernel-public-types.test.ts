@@ -1,4 +1,8 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import type {
+  CreateKernelRuntimeInput as AnyVersionInput,
+  KernelRuntime as AnyVersionRuntime,
+} from "../src/kernel/types.js";
 import {
   type CreateKernelRuntimeInput,
   createKernelRuntime,
@@ -6,10 +10,6 @@ import {
   type KernelRuntime,
   kernelDeployment,
 } from "../src/kernel.js";
-import type {
-  CreateKernelRuntimeInput as AnyVersionInput,
-  KernelRuntime as AnyVersionRuntime,
-} from "../src/kernel/types.js";
 
 // Type-level proof: the public entry names each version's shapes through the
 // deployment's own `kernelVersion` discriminant, so consumers need no casts.
@@ -41,9 +41,9 @@ describe("version-selected public Kernel types", () => {
     expectTypeOf<
       NonNullable<Parameters<KernelRuntime<"0.3.3">["prepareOperation"]>[0]["mode"]>
     >().toEqualTypeOf<"standard" | "enable">();
-    expectTypeOf<
-      Awaited<ReturnType<KernelRuntime<"0.3.3">["bindAccount"]>>
-    >().toHaveProperty("rootValidator");
+    expectTypeOf<Awaited<ReturnType<KernelRuntime<"0.3.3">["bindAccount"]>>>().toHaveProperty(
+      "rootValidator",
+    );
     expectTypeOf(composeV33).toBeFunction();
     expectTypeOf(composeV4).toBeFunction();
   });
