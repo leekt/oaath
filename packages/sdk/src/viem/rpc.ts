@@ -13,6 +13,8 @@ import { entryPoint07Abi } from "viem/account-abstraction";
 
 export type OaathRpcErrorCode =
   | "oaath_rpc_config_invalid"
+  | "oaath_rpc_bundler_unavailable"
+  | "oaath_rpc_aborted"
   | "oaath_rpc_unavailable"
   | "oaath_rpc_rejected"
   | "oaath_rpc_wrong_chain"
@@ -156,6 +158,8 @@ export function quantity(value: unknown): bigint {
 }
 
 export interface ViemChainPortOptions {
+  /** Cancels this instance’s requests and retry waits; cancellation never permits resubmission. */
+  readonly signal?: AbortSignal;
   readonly retry?: Readonly<{ attempts: number; delayMs?: number }>;
   readonly timeoutMs?: number;
   /** Hard instance-lifetime budget across every chain, including chain checks and retries. */
@@ -173,7 +177,14 @@ export type RpcRequest = (
 
 /** One budget and concurrency owner shared by all pools in one configuration. */
 export function rpcOwner(input: ViemChainPortOptions) {
-  const options = record(input, ["retry", "timeoutMs", "maxRequests", "maxConcurrency", "fetch"]);
+  const options = record(input, [
+    "retry",
+    "timeoutMs",
+    "maxRequests",
+    "maxConcurrency",
+    "fetch",
+    "signal",
+  ]);
   const retry = options.retry === undefined ? {} : record(options.retry, ["attempts", "delayMs"]);
   const attempts = integer(retry.attempts, 3, 5);
   const delayMs = integer(retry.delayMs, 100, 5_000, 0);
@@ -183,23 +194,51 @@ export function rpcOwner(input: ViemChainPortOptions) {
   if (options.fetch !== undefined && typeof options.fetch !== "function") invalid();
   const fetcher = (options.fetch ?? globalThis.fetch) as (request: Request) => Promise<Response>;
   if (typeof fetcher !== "function") invalid();
+  const capturedSignal = options.signal;
+  if (capturedSignal !== undefined && !(capturedSignal instanceof AbortSignal)) return invalid();
+  const signal: AbortSignal | undefined = capturedSignal;
+  const aborted = () =>
+    new OaathRpcError("oaath_rpc_aborted", null, null, { cause: signal?.reason });
+  async function retryDelay() {
+    if (signal?.aborted) throw aborted();
+    if (delayMs === 0) return;
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+        reject(aborted());
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", cancel);
+        resolve();
+      }, delayMs);
+      signal?.addEventListener("abort", cancel, { once: true });
+    });
+  }
   let used = 0;
   let active = 0;
 
-  async function once(endpoint: string, method: string, params: readonly unknown[]) {
+  async function once(
+    endpoint: string,
+    method: string,
+    params: readonly unknown[],
+    headers: Headers,
+  ) {
+    if (signal?.aborted) throw aborted();
     if (used >= maxRequests) throw new OaathRpcError("oaath_rpc_budget_exhausted");
     if (active >= maxConcurrency) throw new OaathRpcError("oaath_rpc_concurrency_exceeded");
     const id = ++used;
     active += 1;
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel: (() => void) | undefined;
     try {
       return await Promise.race([
         (async () => {
           const response = await fetcher(
             new Request(endpoint, {
               method: "POST",
-              headers: { "content-type": "application/json" },
+              headers,
               body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
               signal: abort.signal,
               redirect: "error",
@@ -268,6 +307,12 @@ export function rpcOwner(input: ViemChainPortOptions) {
             abort.abort();
             reject(unavailable());
           }, timeoutMs);
+          cancel = () => {
+            abort.abort(signal?.reason);
+            reject(aborted());
+          };
+          if (signal?.aborted) cancel();
+          else signal?.addEventListener("abort", cancel, { once: true });
         }),
       ]);
     } catch (error) {
@@ -275,6 +320,7 @@ export function rpcOwner(input: ViemChainPortOptions) {
       throw unavailable(error);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      if (cancel) signal?.removeEventListener("abort", cancel);
       active -= 1;
     }
   }
@@ -285,7 +331,17 @@ export function rpcOwner(input: ViemChainPortOptions) {
       chainId: number,
       methods: readonly string[],
       verifyChain = true,
+      headerInput?: Readonly<Record<string, string>>,
     ): RpcRequest {
+      const captured = headerInput === undefined ? {} : record(headerInput);
+      if (Object.values(captured).some((value) => typeof value !== "string")) return invalid();
+      let headers: Headers;
+      try {
+        headers = new Headers(captured as Record<string, string>);
+      } catch {
+        return invalid();
+      }
+      headers.set("content-type", "application/json");
       const checked = new Set<string>();
       let preferred = 0;
       return async (method, params = [], retry = true) => {
@@ -297,11 +353,11 @@ export function rpcOwner(input: ViemChainPortOptions) {
           if (!endpoint) return invalid();
           try {
             if (verifyChain && method !== "eth_chainId" && !checked.has(endpoint)) {
-              if (quantity(await once(endpoint, "eth_chainId", [])) !== BigInt(chainId))
+              if (quantity(await once(endpoint, "eth_chainId", [], headers)) !== BigInt(chainId))
                 throw new OaathRpcError("oaath_rpc_wrong_chain");
               checked.add(endpoint);
             }
-            const result = await once(endpoint, method, params);
+            const result = await once(endpoint, method, params, headers);
             if (verifyChain && method === "eth_chainId" && quantity(result) !== BigInt(chainId))
               throw new OaathRpcError("oaath_rpc_wrong_chain");
             if (verifyChain && method === "eth_chainId") checked.add(endpoint);
@@ -332,7 +388,7 @@ export function rpcOwner(input: ViemChainPortOptions) {
               throw error;
             }
             checked.delete(endpoint);
-            if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+            await retryDelay();
           }
         }
       };
