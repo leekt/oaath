@@ -189,6 +189,8 @@ describe("package boundary", () => {
   it("exposes the provider and default chain ports on /viem", () => {
     expect(Object.keys(viem).sort()).toEqual([
       "OaathRpcError",
+      "OaathUserOperationError",
+      "classifyUserOperationError",
       "createViemChainPorts",
       "oaathProvider",
     ]);

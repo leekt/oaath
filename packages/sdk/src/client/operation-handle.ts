@@ -32,6 +32,7 @@ import type {
   OperationStartResult,
 } from "../operation-runner.js";
 import type { OperationStoreKey } from "../store.js";
+import type { OaathUserOperationError } from "../user-operation-error.js";
 import { clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 
 const MAX_ATTEMPTS = 16;
@@ -45,6 +46,8 @@ export type OaathOperationStatus =
   | "unreadable";
 
 export interface OaathOperationOutcome {
+  /** Ephemeral provider failure; never persisted or authority to resend. */
+  readonly failure?: Readonly<OaathUserOperationError>;
   /** Ephemeral display hint from this submission attempt; never retry authority. */
   readonly diagnostic?: Readonly<ValidationGasDiagnostic>;
   readonly status: OaathOperationStatus;
@@ -182,6 +185,7 @@ export function operationOutcome(
       ...base,
       reason: result.reason,
       ...(result.diagnostic === undefined ? {} : { diagnostic: result.diagnostic }),
+      ...(result.failure === undefined ? {} : { failure: result.failure }),
     });
   }
   if (operation.state === "finalized") {
@@ -229,6 +233,7 @@ export function createOperationHandle(
 ): Readonly<OaathOperationHandle> {
   let latest = operationOutcome(input.initial);
   const submissionDiagnostic = latest.diagnostic;
+  const submissionFailure = latest.failure;
   const identity: Readonly<OperationIdentity> = input.initial.record.value.identity;
   let current = input.initial.record.value;
   let closed = false;
@@ -255,9 +260,13 @@ export function createOperationHandle(
     const observed = operationOutcome(result);
     current = result.record.value;
     latest =
-      submissionDiagnostic !== undefined &&
+      (submissionDiagnostic !== undefined || submissionFailure !== undefined) &&
       (observed.status === "pending" || observed.status === "unreadable")
-        ? Object.freeze({ ...observed, diagnostic: submissionDiagnostic })
+        ? Object.freeze({
+            ...observed,
+            ...(submissionDiagnostic === undefined ? {} : { diagnostic: submissionDiagnostic }),
+            ...(submissionFailure === undefined ? {} : { failure: submissionFailure }),
+          })
         : observed;
     // Grant materialization is secondary bookkeeping. Its durable installing
     // marker remains retryable, but it can never replace this exact outcome.

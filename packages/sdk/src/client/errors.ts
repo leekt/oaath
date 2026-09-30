@@ -22,6 +22,7 @@ import {
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
+import { type OaathUserOperationError, readUserOperationFailure } from "../user-operation-error.js";
 
 export type OaathClientErrorCode =
   /** Application input is not a usable request. */
@@ -69,6 +70,7 @@ export class OaathClientError extends Error {
   readonly code: OaathClientErrorCode;
   /** The structured code of the owner that failed, never prose. */
   readonly source: string | null;
+  readonly failure: Readonly<OaathUserOperationError> | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
   constructor(
@@ -83,6 +85,7 @@ export class OaathClientError extends Error {
     this.name = "OaathClientError";
     this.code = code;
     this.source = source;
+    this.failure = readUserOperationFailure(options?.cause);
     this.diagnostic = captured;
   }
 }
@@ -187,7 +190,9 @@ export function mapClientFailure(error: unknown, fallbackMessage: string): never
   const { name, code } = structured(error);
   const diagnostic = readValidationGasDiagnostic(error);
   if (name === "OaathOperationRunnerError" && code !== null && code in RUNNER_CODES) {
-    clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
+    clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code, diagnostic, {
+      cause: error,
+    });
   }
   if (name === "OaathKernelRuntimeError" && code !== null && code in KERNEL_CODES) {
     // Forward the capability's own failure (e.g. EIP-1193 4001) so `error.cause.code` reads it directly.
@@ -211,5 +216,7 @@ export function mapClientFailure(error: unknown, fallbackMessage: string): never
       code,
     );
   }
-  clientFail(BY_NAME[name] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
+  clientFail(BY_NAME[name] ?? "oaath_client_internal", fallbackMessage, code, diagnostic, {
+    cause: error,
+  });
 }

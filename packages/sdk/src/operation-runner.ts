@@ -32,6 +32,11 @@ import {
   type OperationStoreKey,
   type OperationStoreRecord,
 } from "./store.js";
+import {
+  classifyUserOperationError,
+  type OaathUserOperationError,
+  readUserOperationFailure,
+} from "./user-operation-error.js";
 
 const MAX_GRANT_ID_LENGTH = 256;
 const HASH = /^0x[0-9a-f]{64}$/u;
@@ -49,15 +54,18 @@ export type OperationRunnerErrorCode =
 
 export class OaathOperationRunnerError extends Error {
   readonly code: OperationRunnerErrorCode;
+  readonly failure: Readonly<OaathUserOperationError> | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
   constructor(
     code: OperationRunnerErrorCode,
     message: string,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    options?: ErrorOptions,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
-    super(captured === null ? message : validationGasDiagnosticMessage(captured));
+    super(captured === null ? message : validationGasDiagnosticMessage(captured), options);
+    this.failure = readUserOperationFailure(options?.cause);
     this.name = "OaathOperationRunnerError";
     this.code = code;
     this.diagnostic = captured;
@@ -141,6 +149,7 @@ type OperationStartedResult = Readonly<{
 
 type OperationSubmissionUncertainResult = Readonly<{
   status: "submission_uncertain";
+  readonly failure?: Readonly<OaathUserOperationError>;
   readonly diagnostic?: Readonly<ValidationGasDiagnostic>;
   reason:
     | "session_unavailable"
@@ -1017,6 +1026,7 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
         "operation_runner_preparation_failed",
         "Operation preparation failed",
         readValidationGasDiagnostic(error),
+        { cause: error },
       );
     }
     let prepared: PreparedUserOperation;
@@ -1336,6 +1346,7 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
         status: "submission_uncertain",
         reason: "session_unavailable",
         ...(diagnostic === null ? {} : { diagnostic }),
+        failure: classifyUserOperationError({ stage: "send", error }),
         record,
       });
     }
@@ -1361,6 +1372,7 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
         status: "submission_uncertain",
         reason: "send_ambiguous",
         ...(diagnostic === null ? {} : { diagnostic }),
+        failure: classifyUserOperationError({ stage: "send", error }),
         record,
       });
     }

@@ -1,6 +1,7 @@
 import { decodeFunctionData, encodeErrorResult, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
+import { OaathClientError } from "../src/index.js";
 import { createViemChainPorts, oaathProvider } from "../src/viem.js";
 import {
   CALL_DATA,
@@ -76,6 +77,52 @@ function fixture(data: unknown = revert(), onSend = false) {
 }
 
 describe("AA23 empty validation revert diagnostic", () => {
+  it("preserves an injected paymaster refusal through the Grant boundary without signing", async () => {
+    const { chain, base } = fixture();
+    const sponsorship = chain.capability.sponsorship;
+    if (!sponsorship || sponsorship.kind !== "erc7677")
+      throw new Error("missing sponsorship fixture");
+    const cause = { code: -32501, message: "sponsorship policy denied" };
+    let requests = 0;
+    const realm = createRealm({
+      chain: {
+        ...chain,
+        capability: {
+          ...chain.capability,
+          sponsorship: {
+            ...sponsorship,
+            request: async () => {
+              requests++;
+              throw cause;
+            },
+          },
+        },
+      },
+    });
+    try {
+      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+      const error = await grant
+        .sendCalls({
+          ...(sendCallsInput() as object),
+          payer: {
+            kind: "paymaster-service",
+            url: sponsorship.url,
+            context: {},
+          },
+        } as never)
+        .catch((error) => error);
+      expect(error).toBeInstanceOf(OaathClientError);
+      expect(error).toMatchObject({
+        failure: { stage: "sponsor", code: "paymaster-policy", retryable: false },
+      });
+      expect((error as OaathClientError).failure?.cause).toBe(cause);
+      expect(requests).toBe(1);
+      expect(base.signatures).toHaveLength(0);
+      expect(base.sends).toHaveLength(0);
+    } finally {
+      await realm.oaath.close();
+    }
+  });
   it("reports conclusive account-validation rejection during explicit review estimation", async () => {
     const { chain, base, sent } = fixture();
     const realm = createRealm({ chain });
@@ -118,7 +165,7 @@ describe("AA23 empty validation revert diagnostic", () => {
   it.each([
     { name: "direct", create: createRealm },
     { name: "relay", create: createUrlRealm },
-  ])("reaches the $name Grant caller before signing", async ({ create }) => {
+  ])("reaches the $name Grant caller before signing", async ({ name, create }) => {
     const { chain, base } = fixture();
     const realm = create({ chain });
     try {
@@ -126,6 +173,16 @@ describe("AA23 empty validation revert diagnostic", () => {
       const error = await grant.sendCalls(sendCallsInput()).catch((error: unknown) => error);
       expect(error).toMatchObject({
         code: "oaath_client_preparation_failed",
+        ...(name === "direct"
+          ? {
+              failure: {
+                stage: "estimate",
+                code: "account-validation",
+                entryPointCode: "AA23",
+                retryable: false,
+              },
+            }
+          : {}),
         diagnostic,
         message: "likely validation out-of-gas (verificationGasLimit=2000000)",
       });
@@ -163,10 +220,17 @@ describe("AA23 empty validation revert diagnostic", () => {
     try {
       const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
       const operation = await grant.sendCalls(sendCallsInput());
-      expect(operation.outcome).toMatchObject({ status: "pending", diagnostic });
+      const failure = {
+        stage: "send",
+        code: "account-validation",
+        entryPointCode: "AA23",
+        retryable: false,
+      };
+      expect(operation.outcome).toMatchObject({ status: "pending", diagnostic, failure });
       expect(await operation.wait({ attempts: 1 })).toMatchObject({
         status: "pending",
         diagnostic,
+        failure,
       });
       await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
         code: "oaath_client_state_conflict",
@@ -203,6 +267,9 @@ describe("AA23 empty validation revert diagnostic", () => {
         code: -32603,
         message: "Internal error",
         data: { diagnostic },
+      });
+      expect(error).toMatchObject({
+        data: { failure: { stage: "estimate", code: "account-validation", retryable: false } },
       });
       expect(base.signatures.length).toBe(0);
     } finally {
