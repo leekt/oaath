@@ -35,6 +35,7 @@ import {
 } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { encodeKernelNonceKey, readKernelLaneSequence } from "../src/advanced.js";
 import { createOAAth } from "../src/index.js";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
@@ -1011,6 +1012,25 @@ function passkeySession() {
       expect(connectedSignature.length).toBe(132);
       expect(await harness.sendSigned(next, connectedSignature)).toBe("success");
       expect(await harness.client.getBalance({ address: target })).toBe(18n);
+      // The owner lane's next sequence comes from the EntryPoint through plain reads.
+      const laneKey = (nonceKey: string) =>
+        encodeKernelNonceKey({
+          deployment,
+          mode: "standard",
+          validation: runtime.validation,
+          nonceKey,
+        });
+      for (const [nonceKey, sequence] of [
+        ["0", "2"],
+        ["7", "0"],
+      ] as const)
+        expect(
+          await readKernelLaneSequence({
+            account: bound,
+            key: laneKey(nonceKey),
+            reads: createKernelReads(harness.client),
+          }),
+        ).toBe(sequence);
 
       const rpcUrl = chain.url;
       const receipts = new Map<string, unknown>();

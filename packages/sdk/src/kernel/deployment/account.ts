@@ -31,7 +31,15 @@ import {
   type PreparedUserOperation,
   parsePreparedUserOperation,
 } from "../../prepared-user-operation.js";
-import { captureInput, exactCaptured, exactInput, inputInvalid, runtimeFail } from "../internal.js";
+import {
+  captureInput,
+  exactCaptured,
+  exactInput,
+  inputCapability,
+  inputInvalid,
+  inputUint,
+  runtimeFail,
+} from "../internal.js";
 import { exactKernelDeployment } from "../modules.js";
 import type { KernelDeployment } from "./profile.js";
 import {
@@ -112,6 +120,51 @@ export function encodeKernelNonceKey(value: KernelNonceKeyInput): string {
   return deployment.kernelVersion === "0.3.3"
     ? encodeKernelV33NonceKey(key as Parameters<typeof encodeKernelV33NonceKey>[0])
     : encodeKernelV4NonceKey(key as Parameters<typeof encodeKernelV4NonceKey>[0]);
+}
+
+export interface ReadKernelLaneSequenceInput {
+  /** A bound account; its chain and EntryPoint select the read. */
+  readonly account: Readonly<KernelAccountDescriptor>;
+  /** Canonical decimal uint192 EntryPoint key from `encodeKernelNonceKey`. */
+  readonly key: string;
+  readonly reads: KernelReads;
+}
+
+/**
+ * The next EntryPoint sequence of one nonce lane (`getNonce(account, key)`'s
+ * low 64 bits) for `prepareOperation`'s `sequence`. An unavailable read fails
+ * with `kernel_runtime_read_unavailable`; a result for another key or a
+ * malformed one with `kernel_runtime_evidence_invalid`.
+ */
+export async function readKernelLaneSequence(value: ReadKernelLaneSequenceInput): Promise<string> {
+  const context = new WeakSet();
+  const record = exactInput(value, ["account", "key", "reads"], "Kernel lane sequence", context);
+  const account = record.account as Readonly<KernelAccountDescriptor>;
+  const key = inputUint(record.key, (1n << 192n) - 1n, "Kernel nonce key");
+  const read = inputCapability<KernelReads["read"]>(
+    exactInput(record.reads, ["read"], "Kernel lane sequence reads", context).read,
+    "Kernel lane sequence read",
+  );
+  let result: unknown;
+  try {
+    result = await read(
+      Object.freeze({
+        type: "entry_point_lane_nonce",
+        chainId: account.chainId,
+        entryPoint: account.entryPoint,
+        account: account.account,
+        key: key.toString(10),
+      }),
+    );
+  } catch {
+    return runtimeFail("kernel_runtime_read_unavailable", "EntryPoint nonce could not be read");
+  }
+  if (typeof result !== "string" || !/^(?:0|[1-9][0-9]{0,77})$/u.test(result))
+    return runtimeFail("kernel_runtime_evidence_invalid", "EntryPoint nonce is malformed");
+  const nonce = BigInt(result);
+  if (nonce >> 256n !== 0n || nonce >> 64n !== key)
+    return runtimeFail("kernel_runtime_evidence_invalid", "EntryPoint nonce names another key");
+  return (nonce & ((1n << 64n) - 1n)).toString(10);
 }
 
 export interface KernelOperationSigningHashInput {

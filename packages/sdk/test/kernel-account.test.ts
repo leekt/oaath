@@ -1,3 +1,4 @@
+import { readKernelLaneSequence } from "../src/advanced.js";
 /**
  * The version-agnostic Kernel account entry points: default deployment
  * selection, onchain detection of an existing account's deployment, and the one
@@ -322,4 +323,52 @@ describe("version-agnostic Kernel permission approval", () => {
       approveKernelPermission({ owner: key, runtime, account, nonce: "0" }),
     ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
   });
+});
+
+describe("EntryPoint lane sequence", () => {
+  const account = Object.freeze({
+    chainId: 143,
+    account: "0x1111111111111111111111111111111111111111" as const,
+    entryPoint: "0x0000000071727de22e5e9d8baf0edac6f37da032" as const,
+  }) as never;
+  const key = ((5n << 8n) | 7n).toString();
+  const reads = (result: () => Promise<unknown>) => ({
+    read: vi.fn<(request: unknown) => Promise<unknown>>(result),
+  });
+
+  it("reads the lane's low 64 bits after checking the returned key", async () => {
+    const capability = reads(async () => ((BigInt(key) << 64n) | 9n).toString());
+    await expect(readKernelLaneSequence({ account, key, reads: capability })).resolves.toBe("9");
+    expect(capability.read).toHaveBeenCalledWith({
+      type: "entry_point_lane_nonce",
+      chainId: 143,
+      entryPoint: "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      account: "0x1111111111111111111111111111111111111111",
+      key,
+    });
+  });
+
+  it.each([
+    [
+      "an unavailable read",
+      async () => {
+        throw new Error("rpc down");
+      },
+      "kernel_runtime_read_unavailable",
+    ],
+    [
+      "another key",
+      async () => ((BigInt(key) + 1n) << 64n).toString(),
+      "kernel_runtime_evidence_invalid",
+    ],
+    ["a malformed nonce", async () => "0x01", "kernel_runtime_evidence_invalid"],
+    ["no result", async () => undefined, "kernel_runtime_evidence_invalid"],
+  ] as [string, () => Promise<unknown>, string][])(
+    "fails closed on %s",
+    async (_label, result, code) => {
+      await expect(
+        readKernelLaneSequence({ account, key, reads: reads(result) }),
+      ).rejects.toMatchObject({ code });
+    },
+  );
 });

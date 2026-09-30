@@ -56,10 +56,12 @@ export type {
 export type {
   KernelNonceKeyInput,
   KernelOperationSigningHashInput,
+  ReadKernelLaneSequenceInput,
 } from "./kernel/deployment/account.js";
 export {
   encodeKernelNonceKey,
   kernelOperationSigningHash,
+  readKernelLaneSequence,
 } from "./kernel/deployment/account.js";
 export {
   OAATH_KERNEL_V4_VALIDITY_POLICY as OAATH_KERNEL_VALIDITY_POLICY,
