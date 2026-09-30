@@ -65,7 +65,8 @@ final class KernelRevocationOperationTests: XCTestCase {
             ("nonce", "0"), ("preVerificationGas", "1"),
             ("gasFees", "0x" + String(repeating: "11", count: 32)),
             ("accountGasLimits", "0x" + String(repeating: "22", count: 32)),
-            ("initCode", "0x" + String(repeating: "55", count: 20))
+            ("initCode", "0x" + String(repeating: "55", count: 20)),
+            ("paymasterAndData", "0x" + String(repeating: "55", count: 20) + String(repeating: "00", count: 32))
         ] {
             var entry = original
             var op = try XCTUnwrap(entry["operation"] as? [String: Any])
@@ -80,7 +81,7 @@ final class KernelRevocationOperationTests: XCTestCase {
         }
     }
 
-    func testRefusesNonRootNonceOtherAccountSponsorshipAndUnsupportedFactory() throws {
+    func testRefusesNonRootNonceOtherAccountAndUnsupportedFactory() throws {
         let fixture = try fixture()
         let install = try install(fixture)
         let original = try XCTUnwrap(entries(fixture, "valid").first)
@@ -97,6 +98,25 @@ final class KernelRevocationOperationTests: XCTestCase {
             entry["operation"] = op
             XCTAssertThrowsError(try derive(entry, install: install)) {
                 XCTAssertTrue($0 as? KernelRevocationOperationError == .invalidOperation)
+            }
+        }
+    }
+
+    func testRejectsTruncatedAndMalformedPaymasters() throws {
+        let fixture = try fixture()
+        let install = try install(fixture)
+        let original = try XCTUnwrap(entries(fixture, "valid").first)
+        for value in [
+            "0x1", "0xzz", "0x" + String(repeating: "55", count: 51),
+            "0x" + String(repeating: "00", count: 52),
+            "0x" + String(repeating: "55", count: 20) + String(repeating: "00", count: 65_517)
+        ] {
+            var entry = original
+            var op = try XCTUnwrap(entry["operation"] as? [String: Any])
+            op["paymasterAndData"] = value
+            entry["operation"] = op
+            XCTAssertThrowsError(try derive(entry, install: install)) {
+                XCTAssertEqual($0 as? KernelRevocationOperationError, .invalidOperation)
             }
         }
     }
@@ -140,7 +160,7 @@ final class KernelRevocationOperationTests: XCTestCase {
         let fixture = try fixture()
         let install = try install(fixture)
         let entries = try entries(fixture, "valid")
-        XCTAssertTrue(entries.count == 3)
+        XCTAssertTrue(entries.count == 5)
         for entry in entries {
             let first = try derive(entry, install: install)
             let recreated = try derive(entry, install: install)
