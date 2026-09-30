@@ -1,3 +1,4 @@
+import { isAddress } from "viem";
 import {
   type CaptureContext,
   captureRecord as captureExactRecord,
@@ -18,6 +19,7 @@ const LANE_ID = /^[A-Za-z0-9._:-]{1,128}$/u;
 
 export type OperationErrorCode =
   | "operation_input_invalid"
+  | "operation_address_checksum_invalid"
   | "operation_record_invalid"
   | "operation_transition_invalid"
   | "operation_identity_mismatch"
@@ -406,15 +408,30 @@ function parseLane(
   });
 }
 
-/** Capture the exact public identity required to verify one UserOperation. */
+/** Normalizes public reference addresses; persisted records still require canonical lowercase. */
+function referenceAddress(value: unknown, label: string, code: OperationErrorCode): `0x${string}` {
+  if (typeof value !== "string" || !isAddress(value, { strict: false }))
+    return invalid(code, `${label} must be a nonzero 20-byte address`);
+  if (!isAddress(value, { strict: true }))
+    return invalid("operation_address_checksum_invalid", `${label} has an invalid EIP-55 checksum`);
+  return address(value.toLowerCase(), label, code);
+}
+
+/** Capture the exact public identity, normalizing lowercase or valid EIP-55 addresses. */
 export function parseUserOperationReference(value: unknown): Readonly<UserOperationReference> {
-  return captureUserOperationReference(value, "operation_input_invalid", new WeakSet());
+  return captureUserOperationReference(
+    value,
+    "operation_input_invalid",
+    new WeakSet(),
+    referenceAddress,
+  );
 }
 
 function captureUserOperationReference(
   value: unknown,
   code: OperationErrorCode,
   context: CaptureContext,
+  captureAddress = address,
 ): Readonly<UserOperationReference> {
   const record = exactRecord(
     value,
@@ -425,8 +442,8 @@ function captureUserOperationReference(
   );
   return Object.freeze({
     chainId: safeInteger(record.chainId, "UserOperation reference chainId", code, 1),
-    entryPoint: address(record.entryPoint, "UserOperation reference entryPoint", code),
-    account: address(record.account, "UserOperation reference account", code),
+    entryPoint: captureAddress(record.entryPoint, "UserOperation reference entryPoint", code),
+    account: captureAddress(record.account, "UserOperation reference account", code),
     nonce: uint256(record.nonce, "UserOperation reference nonce", code),
     userOperationHash: hash(
       record.userOperationHash,

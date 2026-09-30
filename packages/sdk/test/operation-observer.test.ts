@@ -1008,6 +1008,39 @@ describe("bounded canonical finality", () => {
 });
 
 describe("reference-only UserOperation observation", () => {
+  it("normalizes reference checksums and refuses a bad checksum before reads", async () => {
+    const adapter = fixture({ targetReceipt: null });
+    const observer = createUserOperationObserver(adapter.capabilities);
+    const checked = {
+      ...reference,
+      entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+      account: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    } as const;
+    for (const field of ["entryPoint", "account"] as const) {
+      const value = checked[field];
+      const index = value.search(/[A-F]/u);
+      const invalid = value.slice(0, index) + value[index]!.toLowerCase() + value.slice(index + 1);
+      await expect(
+        observer.observeReference({
+          ...referenceInput,
+          reference: { ...checked, [field]: invalid },
+        }),
+      ).rejects.toMatchObject({ code: "operation_observer_address_checksum_invalid" });
+    }
+    expect(adapter.requests).toEqual([]);
+    expect(
+      await observer.observeReference({ ...referenceInput, reference: checked }),
+    ).toMatchObject({
+      status: "pending",
+      reference: {
+        ...checked,
+        entryPoint: checked.entryPoint.toLowerCase(),
+        account: checked.account.toLowerCase(),
+      },
+    });
+    await observer.close();
+  });
+
   it("returns canonical inclusion before finality and rechecks after observer recreation", async () => {
     const adapter = fixture({ finality: { ...finalizedBlock, number: "0x13" } });
     const observer = createUserOperationObserver(adapter.capabilities);
