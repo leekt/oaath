@@ -1,5 +1,48 @@
 # @oaath/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- 6597aab: License the OAAth-owned validity policy and its embedded bytecode under Apache-2.0. Declare the CC0 ERC-4337 ABI locally, removing the GPL source import without changing bytecode or deployment addresses.
+- cfe6f19: Kernel `0.3.3` ECDSA-owned accounts can be derived and activated without
+  ZeroDev's SDK. `deriveKernelAccount({ deployment, owner, accountIndex })`
+  returns the account address and the EntryPoint 0.7 `factory` / `factoryData`
+  of ZeroDev's MetaFactory route, byte for byte what ZeroDev's
+  `createKernelAccount` derives. `bindKernelAccount({ chainId, reads, deployment,
+owner, accountIndex })` and an owner runtime's `bindAccount({ accountIndex })`
+  bind that account: a deployed one exactly as an existing account, a
+  counterfactual one only after the pinned factory and MetaFactory code and the
+  factory approval are proven. Its first prepared operation carries the
+  MetaFactory deployment.
+- a229ab4: `@oaath/sdk/kernel` exports `kernelRuntimeReadiness({ chainId, reads })`,
+  which reports each OAAth runtime module (WebAuthn signer, RateLimit policy,
+  validity policy, P-256 verifier) as `present`, `missing`, `mismatch` (other
+  code occupies the address, so deploying cannot fix it) or `unreadable`, and
+  `prepareRuntimeModuleDeployment({ chainId, module })`, which returns the exact
+  CREATE2 deployer transaction `{ module, address, to, data, value,
+expectedRuntimeCodeHash }`. `oaath deploy-runtime` now sends these prepared
+  transactions instead of keeping its own copy.
+- 8f6b0e7: A session runtime now checks every call against the exact CallPolicy payload it installs, and refuses a call the chain would reject (an unnamed target or selector, a partial selector, or native value above the permission's limit) with the new `kernel_runtime_call_forbidden` code before any key is asked to sign. `prepareOperation`, `signOperation`, and `encodeVerifiedSignature` all refuse; client calls map the code to `oaath_client_scope_denied`.
+- Updated dependencies [6597aab]
+- Updated dependencies [cfe6f19]
+- Updated dependencies [91cf5fb]
+- Updated dependencies [08d4350]
+- Updated dependencies [0adee13]
+- Updated dependencies [6aa26c3]
+- Updated dependencies [0d7c164]
+- Updated dependencies [a229ab4]
+- Updated dependencies [8f6b0e7]
+- Updated dependencies [7084540]
+- Updated dependencies [ff14e39]
+- Updated dependencies [0fc7149]
+- Updated dependencies [b8d8ae7]
+- Updated dependencies [849c519]
+- Updated dependencies [9baf4bc]
+- Updated dependencies [e838a47]
+- Updated dependencies [250e66a]
+  - @oaath/sdk@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
