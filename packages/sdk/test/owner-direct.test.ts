@@ -3,7 +3,7 @@ import { createWalletClient, custom } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAAth } from "../src/index.js";
-import type { KernelV33ReadRequest } from "../src/kernel/deployment/v33.js";
+import type { KernelReadRequest } from "../src/kernel/deployment/account.js";
 import { kernelDeployment } from "../src/kernel.js";
 import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
@@ -29,7 +29,7 @@ function fixture(pending = false, lostReply = false) {
   const chain = {
     ...base.capability,
     reads: {
-      async read(request: KernelV33ReadRequest | KernelV4AccountReadRequest): Promise<unknown> {
+      async read(request: KernelReadRequest): Promise<unknown> {
         if (request.type === "code") return "0x6000";
         if (request.type === "kernel_account_implementation") return deployment.implementation;
         if (request.type === "kernel_account_version") return "kernel.advanced.v0.3.3";

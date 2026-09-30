@@ -27,6 +27,7 @@ import {
 import { observeKernelPermissionRevocation } from "../src/kernel/permission/observe-revocation.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
+  createKernelReads,
   createKernelRuntime,
   type EcdsaSignRequest,
   type KernelRuntime,
@@ -37,6 +38,7 @@ import {
   ownerOperator,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
+  readKernelPermissionStatus,
   restoreKernelPermissionRevocation,
   sessionOperator,
   verifyKernelPermissionRevocation,
@@ -518,6 +520,22 @@ async function bringUp(
         now: () => 100,
       }),
     ).toEqual(verified);
+    expect(
+      await readKernelPermissionStatus({
+        approval,
+        chainId: CHAIN_B,
+        blockTag: "finalized",
+        reads: createKernelReads(b.harness.client),
+      }),
+    ).toEqual({ status: "revoked", installNonce: (BigInt(installNonce) + 1n).toString() });
+    expect(
+      await readKernelPermissionStatus({
+        approval,
+        chainId: CHAIN_A,
+        blockTag: "latest",
+        reads: createKernelReads(a.harness.client),
+      }),
+    ).toEqual({ status: "installed" });
     const effectProof = verified.status === "revoked" ? verified.evidence : null;
     expect(effectProof?.installNonce).toBe((BigInt(installNonce) + 1n).toString(10));
     expect(effectProof?.permission).toMatchObject({
@@ -577,6 +595,14 @@ async function bringUp(
       installNonce: otherNonce,
       packages: otherRuntime.packages,
     });
+    expect(
+      await readKernelPermissionStatus({
+        approval: otherApproval,
+        chainId: CHAIN_B,
+        blockTag: "latest",
+        reads: createKernelReads(b.harness.client),
+      }),
+    ).toEqual({ status: "approval-replayable" });
     const other = await materializeKernelPermission({
       approval: otherApproval,
       runtime: otherRuntime,

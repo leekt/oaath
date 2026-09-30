@@ -226,10 +226,9 @@ export async function verifyKernelPermissionRevocation(
  * - `approval-replayable`: absent, but the retained enable signature can still install it.
  * - `revoked`: absent and its enable nonce is consumed.
  * - `unreadable`: a read failed, or chain or state evidence was malformed or contradictory.
- * - `unsupported`: this approval's Kernel version cannot be classified from plain reads.
  */
 export type KernelPermissionStatus =
-  | Readonly<{ status: "installed" | "approval-replayable" | "unreadable" | "unsupported" }>
+  | Readonly<{ status: "installed" | "approval-replayable" | "unreadable" }>
   | Readonly<{ status: "revoked"; installNonce: string }>;
 
 export interface ReadKernelPermissionStatusInput {
@@ -245,9 +244,9 @@ export interface ReadKernelPermissionStatusInput {
 /**
  * Reads one approval's permission status without an observation port. It
  * classifies with the same owner as `verifyKernelPermissionRevocation`, but the
- * answer is not pinned to one block hash: use that verifier for recorded
- * revocation evidence. Kernel `0.4.0` is `unsupported`: its presence and
- * install-nonce reads are separate calls that plain reads cannot pin together.
+ * answer is not retained revocation evidence: use that verifier to record it.
+ * Kernel `0.4.0` presence and install nonce are read at one resolved block and
+ * rebound by hash; a changing tag cannot combine evidence from different blocks.
  */
 export async function readKernelPermissionStatus(
   value: Readonly<ReadKernelPermissionStatusInput>,
@@ -267,10 +266,38 @@ export async function readKernelPermissionStatus(
     (blockTag !== "latest" && blockTag !== "finalized")
   )
     return inputInvalid("Kernel permission status input is invalid");
-  if (approval.version !== OAATH_KERNEL_V33_APPROVAL_VERSION)
-    return Object.freeze({ status: "unsupported" as const });
   try {
     if ((await reads.read({ type: "chain_id", chainId })) !== chainId) return UNREADABLE;
+    if (approval.version !== OAATH_KERNEL_V33_APPROVAL_VERSION) {
+      const signer = approval.packages.find((entry) => entry.moduleType === 6)?.module;
+      if (!signer) return UNREADABLE;
+      const state = blockFields(
+        await reads.read({
+          type: "kernel_v4_permission_state",
+          chainId,
+          account: approval.account,
+          signer,
+          permissionId: v4PermissionId(approval),
+          nonce: approval.installNonce,
+          blockTag,
+        }),
+      );
+      if (Object.keys(state).length !== 2 || typeof state.installed !== "boolean")
+        return UNREADABLE;
+      if (state.installed)
+        return state.installNonce === null
+          ? Object.freeze({ status: "installed" as const })
+          : UNREADABLE;
+      if (
+        typeof state.installNonce !== "string" ||
+        !/^(?:0|[1-9][0-9]{0,77})$/u.test(state.installNonce)
+      )
+        return UNREADABLE;
+      const nonce = BigInt(state.installNonce);
+      if (nonce >> 256n !== 0n || nonce >> 64n !== BigInt(approval.installNonce) >> 64n)
+        return UNREADABLE;
+      return Object.freeze(classifyKernelPermission(nonce, approval));
+    }
     return Object.freeze(
       classifyKernelPermission(
         kernelV33ObservedNonce(

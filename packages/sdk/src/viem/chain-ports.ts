@@ -18,16 +18,16 @@ import type {
   OaathQuoteRequest,
   OaathUsageRequest,
 } from "../client/grant-handle.js";
-import { createKernelReads, type KernelReads } from "../kernel/deployment/account.js";
+import {
+  createKernelReads,
+  type KernelReadClient,
+  type KernelReads,
+} from "../kernel/deployment/account.js";
 import { encodeKernelV33NonceKey } from "../kernel/deployment/v33-operation.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { resolvePolicyModule } from "../kernel/modules.js";
 import { readKernelV33PermissionState } from "../kernel/permission/v33-revocation.js";
-import {
-  encodeKernelV4InstallNonceRead,
-  encodeKernelV4NonceKey,
-  type KernelV4ReadClient,
-} from "../kernel-v4.js";
+import { encodeKernelV4InstallNonceRead, encodeKernelV4NonceKey } from "../kernel-v4.js";
 import type { OperationObserverReadRequest } from "../operation-observer.js";
 import {
   type PreparedUserOperation,
@@ -466,13 +466,27 @@ export function createViemChainPorts(
           { retryCount: 0 },
         ),
       });
-      const readClient: KernelV4ReadClient = {
+      const readClient: KernelReadClient = {
         getChainId: async () => Number(quantity(await publicRpc("eth_chainId"))),
         getCode: async ({ address }) => hex(await publicRpc("eth_getCode", [address, "latest"])),
         getStorageAt: async ({ address, slot }) =>
           hex(await publicRpc("eth_getStorageAt", [address, slot, "latest"])),
-        call: async ({ to, data }) => ({
-          data: hex(await publicRpc("eth_call", [{ to, data }, "latest"])),
+        getBlock: async ({ blockNumber, blockTag }) => {
+          const value = object(
+            await publicRpc("eth_getBlockByNumber", [
+              blockNumber === undefined ? blockTag : toHex(blockNumber),
+              false,
+            ]),
+          );
+          return { number: quantity(value.number), hash: hex(value.hash) };
+        },
+        call: async ({ to, data, blockNumber, blockTag }) => ({
+          data: hex(
+            await publicRpc("eth_call", [
+              { to, data },
+              blockNumber === undefined ? (blockTag ?? "latest") : toHex(blockNumber),
+            ]),
+          ),
         }),
       };
       const reads = createKernelReads(readClient);
