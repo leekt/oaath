@@ -10,6 +10,7 @@ import {
   type KernelAccountProfile,
 } from "@oaath/protocol";
 import { hashTypedData, recoverAddress } from "viem";
+import type { KernelCall } from "../../kernel-v4.js";
 import { kernelV4ReplayableInstallTypedData } from "../../kernel-v4.js";
 import type { PreparedUserOperation } from "../../prepared-user-operation.js";
 import type { KernelAccountDescriptor, KernelReads } from "../deployment/account.js";
@@ -18,10 +19,12 @@ import {
   captureInput,
   exactInput,
   inputAddress,
+  inputCapability,
   inputInvalid,
   isBytesOfLength,
   runtimeFail,
 } from "../internal.js";
+import { resolvePinnedSigner } from "../modules.js";
 import type {
   KernelRuntime,
   KernelRuntimePrepareInput,
@@ -55,6 +58,10 @@ import {
   OAATH_KERNEL_V33_APPROVAL_VERSION,
   parseKernelV33PermissionApproval,
 } from "./v33.js";
+import {
+  KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID,
+  kernelV33PermissionNonceAlignmentCalls,
+} from "./v33-revocation.js";
 
 export type KernelGrantApproval = KernelAllChainApproval | KernelV33PermissionApproval;
 
@@ -433,5 +440,81 @@ export function bindKernelPermissionEnable(
       } as never);
     },
     signOperation: (prepared: Readonly<PreparedUserOperation>) => bound.signOperation(prepared),
+  });
+}
+
+export interface KernelPermissionNonceAlignmentInput {
+  /** The session runtime for the chain being aligned. */
+  readonly runtime: Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
+  /** The account bound by that runtime. */
+  readonly account: Readonly<KernelAccountDescriptor>;
+  readonly reads: KernelReads;
+  /** The target enable nonce: the highest `kernelPermissionNonce` among the chains. */
+  readonly nonce: string;
+}
+
+/**
+ * The owner calls that align one chain's enable nonce for a session's
+ * not-yet-installed permission with `nonce`, so one approval can cover every
+ * chain. Execute them as one owner operation on that chain, then prepare the
+ * approval again. An aligned chain needs no calls. Kernel `0.4.0` approvals use
+ * a request-derived nonce that is equal on every chain, so they fail with
+ * `kernel_runtime_unsupported`. See `kernelV33PermissionNonceAlignmentCalls`
+ * for the effects on the account.
+ */
+export async function kernelPermissionNonceAlignmentCalls(
+  value: KernelPermissionNonceAlignmentInput,
+): Promise<readonly Readonly<KernelCall>[]> {
+  const context = new WeakSet();
+  const record = exactInput(
+    value,
+    ["runtime", "account", "reads", "nonce"],
+    "Kernel permission nonce alignment",
+    context,
+  );
+  const runtime = record.runtime as Readonly<KernelRuntime>;
+  if (!isV33(runtime))
+    return runtimeFail(
+      "kernel_runtime_unsupported",
+      "Kernel 0.4.0 approvals use one request-derived nonce on every chain",
+    );
+  const v33 = runtime as unknown as Readonly<KernelV33Runtime>;
+  const scope = kernelV33RuntimeScope(
+    v33,
+    record.account as Readonly<KernelV33AccountDescriptor>,
+    "1",
+  );
+  const read = inputCapability<KernelReads["read"]>(
+    exactInput(record.reads, ["read"], "Kernel permission nonce alignment reads", context).read,
+    "Kernel permission nonce alignment read",
+  );
+  const chainId = v33.deployment.chainId;
+  const signerModule = resolvePinnedSigner("ecdsa");
+  let state: unknown;
+  let alignmentState: unknown;
+  let signerCode: unknown;
+  try {
+    const stateOf = (permissionId: `0x${string}`) =>
+      read({ type: "kernel_v33_permission_state", chainId, account: scope.account, permissionId });
+    state = await stateOf(scope.permissionId);
+    alignmentState = await stateOf(KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID);
+    signerCode = await read({ type: "code", chainId, address: signerModule });
+  } catch {
+    return runtimeFail(
+      "kernel_runtime_read_unavailable",
+      "Kernel permission state could not be read",
+    );
+  }
+  if (typeof signerCode !== "string" || signerCode === "0x")
+    return runtimeFail(
+      "kernel_runtime_signer_unavailable",
+      "the nonce alignment signer module is not deployed on this chain",
+    );
+  return kernelV33PermissionNonceAlignmentCalls({
+    scope,
+    state: state as never,
+    alignmentState: alignmentState as never,
+    signerModule,
+    nonce: record.nonce as string,
   });
 }

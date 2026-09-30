@@ -65,6 +65,7 @@ describe("package boundary", () => {
       "kernelPermissionCapabilityHash",
       "kernelPermissionEnableTypedData",
       "kernelPermissionNonce",
+      "kernelPermissionNonceAlignmentCalls",
       "kernelRuntimeReadiness",
       "materializeKernelPermission",
       "ownerOperator",

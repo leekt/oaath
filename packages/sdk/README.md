@@ -293,7 +293,13 @@ permission on every chain; `requestHash` is used only by Kernel `0.4.0`, where i
 selects a fresh install key. Store the approval using its versioned
 representation and restore with `parseKernelPermissionApproval`. Each destination must have the same effective
 validation nonce; stale or mismatched state rejects rather than requesting another
-signature silently. The first operation enables and executes together; after confirmed installation, use the
+signature silently. When Kernel `0.3.3` chains differ, take the highest
+`kernelPermissionNonce` as the target and, on each lower chain, execute
+`kernelPermissionNonceAlignmentCalls({ runtime, account, reads, nonce })` as one
+owner operation. It installs and removes a throwaway permission that never
+validates, never raises `validNonceFrom`, and leaves installed permissions
+working; approvals signed for other permissions but not yet enabled on that
+chain need a new nonce. The first operation enables and executes together; after confirmed installation, use the
 same runtime's `prepareOperation` and `signOperation` in `standard` mode.
 `encodeKernelNonceKey({ deployment, mode, validation, nonceKey })` (from
 `@oaath/sdk/advanced`) derives the EntryPoint key for each mode; read that

@@ -6,12 +6,21 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   encodeFunctionResult,
+  keccak256,
   pad,
   parseAbi,
+  stringToHex,
   zeroAddress,
 } from "viem";
 import type { KernelCall } from "../../kernel-v4.js";
-import { exactInput, inputAddress, inputInvalid, inputUint, isBytes } from "../internal.js";
+import {
+  exactInput,
+  inputAddress,
+  inputInvalid,
+  inputUint,
+  isBytes,
+  runtimeFail,
+} from "../internal.js";
 import {
   type KernelV33PermissionApproval,
   kernelV33PermissionEnableTypedData,
@@ -161,7 +170,7 @@ export async function readKernelV33PermissionState(
 /** Absent means removed configuration, not merely a false generic module query. */
 export function kernelV33PermissionStatus(
   state: Readonly<KernelV33PermissionState>,
-  approval: Readonly<KernelV33PermissionApproval>,
+  approval: Readonly<Pick<KernelV33PermissionApproval, "packages">>,
 ): "installed" | "absent" {
   if (
     state.hook === zeroAddress &&
@@ -192,6 +201,50 @@ export function kernelV33EffectivePermissionNonce(
   ).toString();
 }
 
+type KernelV33PermissionScope = Omit<
+  KernelV33PermissionApproval,
+  "version" | "digest" | "enableSignature"
+>;
+
+/** Installs the permission at exactly `nonce`; the first half of consuming it. */
+function installCall(
+  scope: Readonly<KernelV33PermissionScope>,
+  nonce: bigint,
+): Readonly<KernelCall> {
+  const message = kernelV33PermissionEnableTypedData(scope).message;
+  return Object.freeze({
+    target: scope.account,
+    value: "0",
+    data: encodeFunctionData({
+      abi: ABI,
+      functionName: "installValidations",
+      args: [
+        [validationId(scope.permissionId)],
+        [{ nonce: Number(nonce), hook: NO_HOOK }],
+        [message.validatorData],
+        ["0x"],
+      ],
+    }),
+  });
+}
+
+/** Uninstall clears the permission and keeps its validation nonce. */
+function uninstallCall(scope: Readonly<KernelV33PermissionScope>): Readonly<KernelCall> {
+  return Object.freeze({
+    target: scope.account,
+    value: "0",
+    data: encodeFunctionData({
+      abi: ABI,
+      functionName: "uninstallValidation",
+      args: [
+        validationId(scope.permissionId),
+        encodeAbiParameters([{ type: "bytes[]" }], [scope.packages.map(() => "0x" as const)]),
+        "0x",
+      ],
+    }),
+  });
+}
+
 export function kernelV33PermissionRevocationCalls(
   value: Readonly<{
     approval: Readonly<KernelV33PermissionApproval>;
@@ -206,35 +259,120 @@ export function kernelV33PermissionRevocationCalls(
   if (nonce < BigInt(approval.nonce))
     return inputInvalid("Kernel v3.3 revocation nonce has not reached the approval");
   if (status === "absent" && nonce > BigInt(approval.nonce)) return Object.freeze([]);
-  const vId = validationId(approval.permissionId);
-  const calls: KernelCall[] = [];
-  if (status === "absent") {
-    // Consume just this permission's enable nonce. No application call and no
-    // global nonce invalidation occur between installation and removal.
-    const { version: _version, digest: _digest, enableSignature: _signature, ...scope } = approval;
-    const message = kernelV33PermissionEnableTypedData(scope).message;
-    calls.push({
-      target: approval.account,
-      value: "0",
-      data: encodeFunctionData({
-        abi: ABI,
-        functionName: "installValidations",
-        args: [[vId], [{ nonce: Number(nonce), hook: NO_HOOK }], [message.validatorData], ["0x"]],
-      }),
-    });
-  }
-  calls.push({
-    target: approval.account,
-    value: "0",
-    data: encodeFunctionData({
-      abi: ABI,
-      functionName: "uninstallValidation",
-      args: [
-        vId,
-        encodeAbiParameters([{ type: "bytes[]" }], [approval.packages.map(() => "0x" as const)]),
-        "0x",
-      ],
-    }),
+  const { version: _version, digest: _digest, enableSignature: _signature, ...scope } = approval;
+  // An absent permission consumes just its own enable nonce. No application
+  // call and no global nonce invalidation occur between installation and removal.
+  return Object.freeze(
+    status === "absent"
+      ? [installCall(scope, nonce), uninstallCall(scope)]
+      : [uninstallCall(scope)],
+  );
+}
+
+/** Bounds one alignment operation's gas; larger gaps take several operations. */
+export const KERNEL_V33_MAX_NONCE_ALIGNMENT_STEPS = 16;
+
+/**
+ * The throwaway permission alignment installs and removes: the reviewed ECDSA
+ * signer bound to an unspendable address, with no policies. Its signer module
+ * accepts a new install after each uninstall, which the permission being
+ * aligned cannot: its own policies refuse a second install, so it never serves
+ * as the vehicle.
+ */
+export const KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID = keccak256(
+  stringToHex("@oaath/sdk:kernel-v33-nonce-alignment"),
+).slice(0, 10) as `0x${string}`;
+const NONCE_ALIGNMENT_SIGNER_ADDRESS = "0x000000000000000000000000000000000000dead" as const;
+
+function alignmentValidatorData(signerModule: `0x${string}`): `0x${string}` {
+  return encodeAbiParameters(
+    [{ type: "bytes[]" }],
+    [[concat(["0x0002", signerModule, NONCE_ALIGNMENT_SIGNER_ADDRESS])]],
+  );
+}
+
+/**
+ * Owner calls that raise an absent permission's effective enable nonce to
+ * `nonce` on one chain, inside one atomic owner operation. Kernel advances its
+ * current nonce each time an already-used validation is installed again, so
+ * the throwaway permission is installed at every nonce up to the target and
+ * removed after each install; it is absent again when the operation ends and
+ * never validates anything. `validNonceFrom` never moves, so every installed
+ * permission keeps validating. Other permissions' approvals that are signed
+ * but not yet enabled on this chain need a new nonce afterwards. An installed
+ * permission, a nonce already past the target, or a throwaway permission that
+ * is not absent fails closed.
+ */
+export function kernelV33PermissionNonceAlignmentCalls(
+  value: Readonly<{
+    scope: Readonly<KernelV33PermissionScope>;
+    state: Readonly<KernelV33PermissionState>;
+    alignmentState: Readonly<KernelV33PermissionState>;
+    signerModule: `0x${string}`;
+    nonce: string;
+  }>,
+): readonly Readonly<KernelCall>[] {
+  const record = exactInput(
+    value,
+    ["scope", "state", "alignmentState", "signerModule", "nonce"],
+    "Kernel v3.3 nonce alignment",
+    new WeakSet(),
+  );
+  const scope = record.scope as Readonly<KernelV33PermissionScope>;
+  const state = parseKernelV33PermissionState(record.state);
+  const alignment = parseKernelV33PermissionState(record.alignmentState);
+  const signerModule = inputAddress(record.signerModule, "Kernel v3.3 alignment signer");
+  const target = inputUint(record.nonce, MAX_NONCE, "Kernel v3.3 target nonce");
+  if (scope.permissionId === KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID)
+    return inputInvalid("Kernel v3.3 permission ID is reserved for nonce alignment");
+  if (kernelV33PermissionStatus(state, scope) !== "absent")
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "Kernel v3.3 permission is already installed on this chain",
+    );
+  if (
+    alignment.currentNonce !== state.currentNonce ||
+    kernelV33PermissionStatus(alignment, { packages: [] }) !== "absent"
+  )
+    return runtimeFail(
+      "kernel_runtime_evidence_invalid",
+      "Kernel v3.3 nonce alignment permission state is contradictory",
+    );
+  const effective = BigInt(kernelV33EffectivePermissionNonce(state));
+  if (effective > target)
+    return runtimeFail(
+      "kernel_runtime_nonce_mismatch",
+      "Kernel v3.3 enable nonce is already past the alignment target",
+    );
+  if (effective === target) return Object.freeze([]);
+  // The first install bumps only if the throwaway permission already holds the
+  // current nonce; each later install bumps exactly once. The aligned
+  // permission never holds the final current nonce, so its enable nonce equals it.
+  const current = BigInt(state.currentNonce);
+  const first = BigInt(alignment.validationNonce) === current ? current + 1n : current;
+  if (target - first + 1n > BigInt(KERNEL_V33_MAX_NONCE_ALIGNMENT_STEPS))
+    return inputInvalid("Kernel v3.3 nonce alignment exceeds one operation's step bound");
+  const vId = validationId(KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID);
+  const validatorData = alignmentValidatorData(signerModule);
+  const uninstall = encodeFunctionData({
+    abi: ABI,
+    functionName: "uninstallValidation",
+    args: [vId, encodeAbiParameters([{ type: "bytes[]" }], [["0x"]]), "0x"],
   });
-  return Object.freeze(calls.map((call) => Object.freeze(call)));
+  const calls: Readonly<KernelCall>[] = [];
+  for (let nonce = first; nonce <= target; nonce++) {
+    calls.push(
+      Object.freeze({
+        target: scope.account,
+        value: "0",
+        data: encodeFunctionData({
+          abi: ABI,
+          functionName: "installValidations",
+          args: [[vId], [{ nonce: Number(nonce), hook: NO_HOOK }], [validatorData], ["0x"]],
+        }),
+      }),
+      Object.freeze({ target: scope.account, value: "0", data: uninstall }),
+    );
+  }
+  return Object.freeze(calls);
 }

@@ -4,7 +4,11 @@ import {
   kernelV33PermissionEnableTypedData,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
 } from "../src/kernel/permission/v33.js";
-import { parseKernelV33PermissionState } from "../src/kernel/permission/v33-revocation.js";
+import {
+  KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID,
+  kernelV33PermissionNonceAlignmentCalls,
+  parseKernelV33PermissionState,
+} from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
   kernelDeployment,
@@ -225,5 +229,57 @@ describe("v3.3 revocation state", () => {
         reads: { read: async () => 143 },
       }),
     ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+  });
+});
+
+describe("Kernel v3.3 nonce alignment calls", () => {
+  const absent = (currentNonce: string, validationNonce = "0") => ({
+    currentNonce,
+    validationNonce,
+    hook: "0x0000000000000000000000000000000000000000" as const,
+    signer: "0x0000000000000000000000000000000000000000" as const,
+    permissionFlag: "0x0000" as const,
+    policies: [],
+  });
+  const scope = {
+    chainScope: "all" as const,
+    account: "0x1111111111111111111111111111111111111111" as const,
+    nonce: "1",
+    permissionId: "0x12345678" as const,
+    packages: [
+      {
+        moduleType: 6,
+        module: "0x2222222222222222222222222222222222222222" as const,
+        moduleData: `0x${"00".repeat(32)}${"33".repeat(20)}` as `0x${string}`,
+      },
+    ],
+  };
+  const signerModule = "0x4444444444444444444444444444444444444444" as const;
+  const calls = (overrides: Record<string, unknown>) =>
+    kernelV33PermissionNonceAlignmentCalls({
+      scope,
+      state: absent("3"),
+      alignmentState: absent("3"),
+      signerModule,
+      nonce: "5",
+      ...overrides,
+    } as never);
+
+  it("installs the throwaway permission at every nonce up to the target", () => {
+    expect(calls({})).toHaveLength(6);
+    expect(calls({ alignmentState: absent("3", "3") })).toHaveLength(4);
+    expect(calls({ nonce: "3" })).toEqual([]);
+  });
+
+  it.each([
+    [{ nonce: "2" }, "kernel_runtime_nonce_mismatch"],
+    [{ alignmentState: absent("4") }, "kernel_runtime_evidence_invalid"],
+    [
+      { scope: { ...scope, permissionId: KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID } },
+      "kernel_runtime_input_invalid",
+    ],
+    [{ nonce: "40" }, "kernel_runtime_input_invalid"],
+  ] as const)("fails closed for %o", (overrides, code) => {
+    expect(() => calls(overrides)).toThrowError(expect.objectContaining({ code }));
   });
 });
