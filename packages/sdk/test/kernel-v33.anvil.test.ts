@@ -58,8 +58,10 @@ import {
   parseKernelV33PermissionState,
 } from "../src/kernel/permission/v33-revocation.js";
 import {
+  createKernelReads,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
+  readKernelPermissionStatus,
   restoreKernelPermissionRevocation,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
@@ -458,7 +460,7 @@ function passkeySession() {
     const verify = async (approval: Awaited<ReturnType<typeof approveKernelV33Permission>>) => {
       // Slots-in-epoch 1: mined blocks move the finalized tag past the last effect.
       await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
-      return (
+      const verified = (
         await verifyKernelPermissionRevocation({
           approval,
           chainId: 143,
@@ -466,6 +468,17 @@ function passkeySession() {
           now: () => 1,
         })
       ).status;
+      // Plain public-client reads at the finalized tag agree with the observation port.
+      for (const blockTag of ["finalized", "latest"] as const) {
+        const plain = await readKernelPermissionStatus({
+          approval,
+          chainId: 143,
+          reads: createKernelReads(harness.client),
+          blockTag,
+        });
+        expect(plain.status).toBe(verified === "active" ? "installed" : verified);
+      }
+      return verified;
     };
     const ownerKey = ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator });
     const owner = createKernelRuntime({
@@ -523,6 +536,19 @@ function passkeySession() {
       const enabled = await materializeKernelV33Permission(permission.input);
       expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
     }
+    // Before finality catches up, only the latest block shows the installation.
+    for (const [blockTag, status] of [
+      ["latest", "installed"],
+      ["finalized", "approval-replayable"],
+    ] as const)
+      expect(
+        await readKernelPermissionStatus({
+          approval: installed.approval,
+          chainId: 143,
+          reads: createKernelReads(harness.client),
+          blockTag,
+        }),
+      ).toEqual({ status });
     expect(await verify(installed.approval)).toBe("active");
     expect(await verify(unused.approval)).toBe("approval-replayable");
     for (const [sequence, permission] of [installed, unused].entries()) {

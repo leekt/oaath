@@ -75,6 +75,7 @@ describe("package boundary", () => {
       "prepareKernelUserOperation",
       "prepareRuntimeModuleDeployment",
       "prepareUserOperation",
+      "readKernelPermissionStatus",
       "restoreKernelPermissionRevocation",
       "sessionOperator",
       "signedKernelPermissionApproval",
