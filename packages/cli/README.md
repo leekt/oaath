@@ -46,14 +46,14 @@ npx @oaath/cli deploy-runtime --chain 143 --rpc https://rpc.monad.xyz
 ```
 
 The command requires an explicit RPC URL. The endpoint must report the requested
-chain and carry the exact EntryPoint 0.7 and singleton CREATE2 deployer runtimes.
+chain and carry the exact EntryPoint 0.7, singleton CREATE2 deployer, ZeroDev
+CallPolicy, operation-limit RateLimitPolicy, ECDSASigner and Daimo P-256 verifier runtimes.
 It deploys only missing core components: Kernel UUPS, the factory's immutable
-ECDSA implementation, factory, OAAth ValidityPolicy, CallPolicy, RateLimitPolicy,
-the fixed-window RateLimitPolicy for windowed operation limits
-and ECDSASigner, plus the passkey-session WebAuthnSigner and P-256 verifier. Every payload uses the canonical `0x4e59…956C` deployer and zero
+ECDSA implementation, factory, OAAth ValidityPolicy, the fixed-window
+RateLimitPolicy for windowed operation limits and the passkey-session WebAuthnSigner. Every payload uses the canonical `0x4e59…956C` deployer and zero
 salt; addresses are derived from the retained creation code and checked against
 SDK bindings. Existing code with a wrong hash or unreadable evidence stops the
-command. EntryPoint, the singleton deployer and the P-256 validator are not deployed.
+command. Externally owned prerequisites and the optional P-256 validator are not deployed.
 
 New transactions use the funded account named by `OAATH_DEPLOYER_PRIVATE_KEY`.
 Keys are never accepted as command-line arguments or saved to the journal.

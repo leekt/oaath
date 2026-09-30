@@ -18,6 +18,12 @@ import { Rpc } from "../src/rpc.js";
           expect(missing.components.find((row) => row.id === "entryPoint")?.status).toBe("missing");
           const harness = await createHarness(chain);
           await deployKernelStack(harness);
+          for (const prerequisite of [
+            harness.fixture.callPolicy,
+            harness.fixture.rateLimitPolicy,
+            harness.fixture.ecdsaSigner,
+          ])
+            await harness.deployCreate2(prerequisite.deploymentInput);
           for (const component of components(chainId)) {
             if (
               component.required &&
@@ -46,12 +52,13 @@ import { Rpc } from "../src/rpc.js";
             "webAuthnSigner",
           ]);
           const [first, second] = passkeyRows;
-          if (!first?.deploymentInput || !second?.deploymentInput) throw new Error("no input");
+          if (!first?.deploymentInput || second?.deploymentInput !== null)
+            throw new Error("incorrect ownership");
           await harness.deployCreate2(first.deploymentInput);
           const partial = await doctor(chainId, new Rpc(chain.url));
           expect(partial.ready).toBe(true);
           expect(partial.passkeySessionsReady).toBe(false);
-          await harness.deployCreate2(second.deploymentInput);
+          await harness.deployCreate2(harness.fixture.p256Verifier.deploymentInput);
           const passkey = await doctor(chainId, new Rpc(chain.url));
           expect(passkey.ready).toBe(true);
           expect(passkey.passkeySessionsReady).toBe(true);

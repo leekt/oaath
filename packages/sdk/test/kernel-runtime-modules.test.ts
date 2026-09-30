@@ -58,8 +58,19 @@ async function artifacts(): Promise<Record<KernelRuntimeModule, { input: Hex; ha
   };
 }
 
+const expected = await artifacts();
+const external: readonly KernelRuntimeModule[] = [
+  "p256_verifier",
+  "call_policy",
+  "operation_limit_policy",
+  "ecdsa_signer",
+];
 const address = (module: KernelRuntimeModule) =>
-  prepareRuntimeModuleDeployment({ chainId: CHAIN_ID, module }).address;
+  getCreate2Address({
+    from: kernelDeployment({ chainId: CHAIN_ID }).create2Deployer,
+    salt: sliceHex(expected[module].input, 0, 32),
+    bytecode: sliceHex(expected[module].input, 32),
+  }).toLowerCase();
 
 type Chain = Map<string, "pinned" | Hex | Error>;
 
@@ -80,10 +91,7 @@ async function statuses(chain: Chain) {
         if (value === "pinned") {
           if (request.type === "code") throw new Error("pinned code is never read");
           const module = MODULES.find((name) => address(name) === request.address);
-          return prepareRuntimeModuleDeployment({
-            chainId: CHAIN_ID,
-            module: module as KernelRuntimeModule,
-          }).expectedRuntimeCodeHash;
+          return expected[module as KernelRuntimeModule].hash;
         }
         if (request.type === "code") return value;
         return value === "0x" ? undefined : keccak256(value);
@@ -96,11 +104,12 @@ async function statuses(chain: Chain) {
 const allPinned = (): Chain => new Map(MODULES.map((module) => [address(module), "pinned"]));
 
 describe("OAAth runtime module deployment", () => {
-  it("prepares exactly the transaction oaath deploy-runtime sends for every module", async () => {
+  it("prepares exactly the transaction oaath deploy-runtime sends for OAAth-owned modules", async () => {
     const expected = await artifacts();
     const deployer = kernelDeployment({ chainId: CHAIN_ID }).create2Deployer;
-    for (const module of MODULES) {
+    for (const module of MODULES.filter((module) => !external.includes(module))) {
       const prepared = prepareRuntimeModuleDeployment({ chainId: CHAIN_ID, module });
+      if (!prepared) throw new Error("missing OAAth deployment");
       expect(prepared).toEqual({
         module,
         address: getCreate2Address({
@@ -116,6 +125,10 @@ describe("OAAth runtime module deployment", () => {
       expect(sliceHex(prepared.data, 0, 32)).toBe(`0x${"00".repeat(32)}`);
       expect(Object.isFrozen(prepared)).toBe(true);
     }
+  });
+
+  it.each(external)("offers no deployment transaction for external %s", (module) => {
+    expect(prepareRuntimeModuleDeployment({ chainId: CHAIN_ID, module })).toBeNull();
   });
 
   it("rejects an unknown module and an unsupported chain", () => {
@@ -196,6 +209,8 @@ describe("OAAth runtime module readiness", () => {
       },
     });
     expect(readiness.modules.map((row) => row.status)).toEqual(MODULES.map(() => "unreadable"));
-    expect(readiness.modules.every((row) => row.deployment === "oaath")).toBe(true);
+    expect(readiness.modules.map((row) => [row.module, row.deployment])).toEqual(
+      MODULES.map((module) => [module, external.includes(module) ? "external" : "oaath"]),
+    );
   });
 });

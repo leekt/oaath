@@ -13,7 +13,7 @@ import { Rpc, type RpcReader } from "../src/rpc.js";
 const suite =
   process.env.OAATH_REQUIRE_ANVIL === "1" || process.env.CI === "true" ? describe : describe.skip;
 suite("runtime deployment and recovery", () => {
-  it("requires EntryPoint, plans without a key, deploys only missing code and reruns without signing", async () => {
+  it("requires external prerequisites, plans without a key, deploys only missing code and reruns without signing", async () => {
     const chain = await startAnvil(143);
     const directory = await mkdtemp(join(tmpdir(), "oaath-deploy-proof-"));
     const journal = new DeploymentJournal(join(directory, "state.sqlite"));
@@ -55,10 +55,24 @@ suite("runtime deployment and recovery", () => {
           (row) => row.status,
         );
       expect(await statuses()).toEqual(Array.from({ length: 7 }, () => "missing"));
+      for (const prerequisite of [
+        harness.fixture.callPolicy,
+        harness.fixture.rateLimitPolicy,
+        harness.fixture.ecdsaSigner,
+        harness.fixture.p256Verifier,
+      ]) {
+        await expect(deployRuntime({ chainId: 143, rpc, journal, account })).rejects.toThrow(
+          "deployment_prerequisite_missing",
+        );
+        expect(keys).toBe(0);
+        expect(sends).toBe(0);
+        await harness.deployCreate2(prerequisite.deploymentInput);
+      }
       const plan = await deployRuntime({ chainId: 143, rpc, journal, account, dryRun: true });
       expect(plan.status).toBe("planned");
-      expect(plan.missing).toHaveLength(10);
-      expect(plan.missing).toEqual(expect.arrayContaining(["webAuthnSigner", "p256Verifier"]));
+      expect(plan.missing).toHaveLength(6);
+      expect(plan.missing).toEqual(expect.arrayContaining(["webAuthnSigner"]));
+      expect(plan.missing).not.toContain("p256Verifier");
       expect(keys).toBe(0);
       expect(sends).toBe(0);
       const deployed = await deployRuntime({
@@ -72,8 +86,8 @@ suite("runtime deployment and recovery", () => {
       expect(deployed.readiness.factoryBinding).toBe("verified");
       expect(deployed.readiness.passkeySessionsReady).toBe(true);
       expect(await statuses()).toEqual(Array.from({ length: 7 }, () => "present"));
-      expect(sends).toBe(10);
-      expect(keys).toBe(10);
+      expect(sends).toBe(6);
+      expect(keys).toBe(6);
       const again = await deployRuntime({
         chainId: 143,
         rpc: new Rpc(chain.url, { maxRequests: 256 }),
@@ -83,7 +97,7 @@ suite("runtime deployment and recovery", () => {
         },
       });
       expect(again.status).toBe("ready");
-      expect(sends).toBe(10);
+      expect(sends).toBe(6);
     } finally {
       journal.close();
       chain.stop();
@@ -99,6 +113,13 @@ suite("runtime deployment and recovery", () => {
     try {
       const harness = await createHarness(chain);
       await deployKernelStack(harness);
+      for (const prerequisite of [
+        harness.fixture.callPolicy,
+        harness.fixture.rateLimitPolicy,
+        harness.fixture.ecdsaSigner,
+        harness.fixture.p256Verifier,
+      ])
+        await harness.deployCreate2(prerequisite.deploymentInput);
       for (const component of components(143))
         if (
           (component.required || component.passkeySession) &&

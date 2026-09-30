@@ -34,7 +34,7 @@ function deploys(row: Readonly<{ required: boolean; passkeySession: boolean }>):
   return row.required || row.passkeySession;
 }
 
-function validateReadiness(report: DoctorReport): void {
+function validateReadiness(report: DoctorReport, manifest: readonly Component[]): void {
   if (
     report.error ||
     report.components.some(
@@ -42,7 +42,7 @@ function validateReadiness(report: DoctorReport): void {
     )
   )
     throw new DeploymentError("deployment_evidence_invalid");
-  for (const id of ["entryPoint", "create2Deployer"])
+  for (const { id } of manifest.filter((row) => deploys(row) && row.deploymentInput === null))
     if (report.components.find((row) => row.id === id)?.status !== "verified")
       throw new DeploymentError("deployment_prerequisite_missing");
   if (
@@ -172,7 +172,7 @@ export async function deployRuntime(input: {
   const manifest = components(chainId);
   const deployer = kernelDeployment({ chainId }).create2Deployer;
   let report = await doctor(chainId, rpc);
-  validateReadiness(report);
+  validateReadiness(report, manifest);
   const result = (
     status: DeploymentResult["status"],
     transactionHash: Hex | null = null,
@@ -293,7 +293,7 @@ export async function deployRuntime(input: {
     }
   }
   report = await doctor(chainId, rpc);
-  validateReadiness(report);
+  validateReadiness(report, manifest);
   if (!report.ready || !report.passkeySessionsReady)
     throw new DeploymentError("deployment_evidence_invalid");
   return result("ready");
