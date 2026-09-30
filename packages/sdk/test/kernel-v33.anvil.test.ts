@@ -45,6 +45,7 @@ import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import {
   bindKernelPermissionEnable,
+  kernelPermissionNonceAlignmentCalls,
   verifyKernelPermissionApproval,
 } from "../src/kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
@@ -442,6 +443,143 @@ function passkeySession() {
     },
     30_000,
   );
+
+  it("aligns an absent permission's enable nonce without disabling another permission", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const { harness, address, deployment } = await setupV33(143, ownerAccount);
+    for (const module of [harness.fixture.ecdsaSigner, harness.fixture.callPolicy])
+      await harness.deployModule(module);
+    const reads = createKernelV33Reads(harness.client);
+    const ownerKey = ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator });
+    const owner = createKernelRuntime({
+      deployment,
+      reads,
+      operator: ownerOperator({ key: ownerKey }),
+    });
+    const ownerAccountDescriptor = await owner.bindAccount({ address });
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const gas = {
+      callGasLimit: "2000000",
+      verificationGasLimit: "2000000",
+      preVerificationGas: "100000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    async function session() {
+      const runtime = createKernelRuntime({
+        deployment,
+        reads,
+        operator: sessionOperator({
+          key: ecdsaKey({
+            account: privateKeyToAccount(generatePrivateKey()),
+            validator: deployment.ecdsaValidator,
+          }),
+          policies: [
+            { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+          ],
+        }),
+      });
+      return { runtime, account: await runtime.bindAccount({ address }) };
+    }
+    const nonceOf = (value: Awaited<ReturnType<typeof session>>) =>
+      kernelV33PermissionInstallNonce({ ...value, reads });
+    const operation = (grantId: string) => ({
+      grantId,
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" as const }],
+      gas,
+    });
+    const survivor = await session();
+    const survivorApproval = await approveKernelV33Permission({
+      ...survivor,
+      owner: ownerKey,
+      nonce: await nonceOf(survivor),
+    });
+    const enabled = await materializeKernelV33Permission({
+      ...survivor,
+      ...operation("survivor"),
+      approval: survivorApproval,
+    });
+    expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+
+    // Another chain's higher nonce is the target; this chain is two behind.
+    const plainReads = createKernelReads(harness.client);
+    const aligned = await session();
+    const current = BigInt(await nonceOf(aligned));
+    const goal = (current + 2n).toString();
+    let ownerSequence = 0;
+    async function align(
+      value: Awaited<ReturnType<typeof session>>,
+      nonce: string,
+      length: number,
+    ) {
+      const calls = await kernelPermissionNonceAlignmentCalls({
+        ...value,
+        reads: plainReads,
+        nonce,
+      });
+      expect(calls).toHaveLength(length);
+      const alignment = owner.prepareOperation({
+        kind: "execution",
+        grantId: "nonce-alignment",
+        account: ownerAccountDescriptor,
+        nonceKey: "0",
+        sequence: String(ownerSequence++),
+        calls,
+        gas,
+      });
+      expect(await harness.sendSigned(alignment, await owner.signOperation(alignment))).toBe(
+        "success",
+      );
+      expect(await nonceOf(value)).toBe(nonce);
+      await expect(
+        kernelPermissionNonceAlignmentCalls({ ...value, reads: plainReads, nonce }),
+      ).resolves.toEqual([]);
+    }
+    // A fresh throwaway permission installs at the current nonce and twice more.
+    await align(aligned, goal, 6);
+    await expect(
+      kernelPermissionNonceAlignmentCalls({
+        ...aligned,
+        reads: plainReads,
+        nonce: current.toString(),
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_nonce_mismatch" });
+    await expect(
+      kernelPermissionNonceAlignmentCalls({ ...survivor, reads: plainReads, nonce: goal }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+
+    // The installed permission keeps validating: no global nonce invalidation.
+    const { runtime: survivorRuntime, account: survivorAccount } = survivor;
+    const next = survivorRuntime.prepareOperation({
+      kind: "execution",
+      account: survivorAccount,
+      ...operation("survivor"),
+    });
+    expect(await harness.sendSigned(next, await survivorRuntime.signOperation(next))).toBe(
+      "success",
+    );
+    // One approval at the aligned nonce now enables the permission here.
+    async function enable(value: Awaited<ReturnType<typeof session>>, nonce: string, id: string) {
+      const approval = await approveKernelV33Permission({ ...value, owner: ownerKey, nonce });
+      const materialized = await materializeKernelV33Permission({
+        ...value,
+        ...operation(id),
+        approval,
+      });
+      expect(await harness.sendSigned(materialized.prepared, materialized.signature)).toBe(
+        "success",
+      );
+    }
+    await enable(aligned, goal, "aligned");
+    // The throwaway permission now holds the current nonce: its first install bumps.
+    const another = await session();
+    const later = (BigInt(await nonceOf(another)) + 1n).toString();
+    await align(another, later, 2);
+    await enable(another, later, "another");
+    expect(await harness.client.getBalance({ address: target })).toBe(4n);
+  }, 30_000);
 
   it("revokes installed and unused approvals without disabling another permission", async () => {
     const ownerAccount = privateKeyToAccount(generatePrivateKey());
