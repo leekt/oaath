@@ -255,6 +255,15 @@ export type KernelV4AccountReadRequest =
       chainId: number;
       validator: `0x${string}`;
       account: `0x${string}`;
+    }>
+  | Readonly<{
+      /** EntryPoint 0.7 `getNonce(account, key)`: the key's full decimal uint256 nonce. */
+      type: "entry_point_lane_nonce";
+      chainId: number;
+      entryPoint: `0x${string}`;
+      account: `0x${string}`;
+      /** Canonical decimal uint192 key, as `encodeKernelNonceKey` returns. */
+      key: string;
     }>;
 
 export interface KernelV4AccountReadCapability {
@@ -770,6 +779,19 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
         const result = await client.call({ to: request.factory, data: request.calldata });
         if (!result.data) return undefined;
         return decodeAbiParameters([{ type: "address" }] as const, result.data)[0].toLowerCase();
+      }
+      if (request.type === "entry_point_lane_nonce") {
+        const result = await client.call({
+          to: request.entryPoint,
+          data: encodeKernelV4NonceRead({ account: request.account, key: request.key }),
+        });
+        if (!result.data) return undefined;
+        const parameters = [{ type: "uint256" }] as const;
+        const [nonce] = decodeAbiParameters(parameters, result.data);
+        // Noncanonical return data is contradictory evidence, not a nonce.
+        return encodeAbiParameters(parameters, [nonce]) === result.data.toLowerCase()
+          ? nonce.toString(10)
+          : undefined;
       }
       if (request.type === "kernel_p256_owner") {
         const result = await client.call({

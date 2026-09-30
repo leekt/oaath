@@ -131,6 +131,7 @@ describe("package boundary", () => {
       "kernelReplayableInstallDigest",
       "prepareSponsoredKernelOperation",
       "probeBundlerCapability",
+      "readKernelLaneSequence",
       "revokeEffect",
       "runOaathCleanup",
       "signOutEffect",
