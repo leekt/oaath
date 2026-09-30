@@ -104,13 +104,13 @@ export interface WebAuthnKeyInput {
   readonly authenticate: (request: WebAuthnAssertionRequest) => Promise<unknown>;
 }
 
-function base64UrlFromBytes(value: Uint8Array): string {
+export function base64UrlFromBytes(value: Uint8Array): string {
   let binary = "";
   for (const byte of value) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 }
 
-function bytesFromBase64Url(value: string): Uint8Array | undefined {
+export function bytesFromBase64Url(value: string): Uint8Array | undefined {
   try {
     const padded = value
       .replace(/-/gu, "+")
