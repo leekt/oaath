@@ -16,7 +16,7 @@ import {
   kernelV33Deployment,
 } from "../src/kernel/deployment/v33.js";
 import { kernelV33OperationSigningHash } from "../src/kernel/deployment/v33-operation.js";
-import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
+import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import {
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
@@ -455,7 +455,30 @@ describe("Kernel v3.3 session composition", () => {
       binding: { approval, owner: owner.address.toLowerCase() },
     });
 
+    // A connected wallet signs the raw digest with EIP-191, which Kernel v3.3's
+    // ECDSA validator accepts; the offline check must agree with the chain.
+    const walletApproval = await approveKernelV33Permission({
+      owner: ecdsaWalletKey({
+        wallet: { account: owner, signMessage: (request) => owner.signMessage(request) },
+        validator,
+      }),
+      runtime,
+      account: bound,
+      nonce: "1",
+    });
+    expect(walletApproval.enableSignature).not.toBe(approval.enableSignature);
+    expect(await verifyKernelPermissionApproval({ approval: walletApproval, expected })).toEqual({
+      status: "verified",
+      binding: { approval: walletApproval, owner: owner.address.toLowerCase() },
+    });
+
     const other = privateKeyToAccount(generatePrivateKey());
+    expect(
+      await verifyKernelPermissionApproval({
+        approval: walletApproval,
+        expected: { ...expected, owner: other.address },
+      }),
+    ).toEqual({ status: "mismatch", field: "enableSignature", reason: "wrong_signer" });
     const cases: [Record<string, unknown>, string, string][] = [
       [{ owner: other.address }, "enableSignature", "wrong_signer"],
       [{ account: validator }, "account", "different"],

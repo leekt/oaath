@@ -9,6 +9,7 @@
 import {
   concat,
   encodeAbiParameters,
+  hashMessage,
   hashTypedData,
   keccak256,
   pad,
@@ -301,9 +302,10 @@ export type KernelV33ApprovalMismatchReason =
   | "wrong_signer";
 
 /**
- * Offline v3.3 check: no reads, signer or submission. Owner recovery is raw
- * 65-byte ECDSA over the enable digest (what signTypedData produces); an
- * ERC-1271 or other contract root cannot be proven offline and never verifies.
+ * Offline v3.3 check: no reads, signer or submission. Owner recovery is
+ * 65-byte ECDSA over the enable digest or its EIP-191 hash, the two forms the
+ * v3.3 ECDSA validator accepts; an ERC-1271 or other contract root cannot be
+ * proven offline and never verifies.
  * Returns the recovered owner when every reviewed field matches.
  */
 export async function checkKernelV33PermissionApproval(
@@ -362,16 +364,19 @@ export async function checkKernelV33PermissionApproval(
         : "different",
     );
   if (size(approval.enableSignature) !== 65) return mismatch("enableSignature", "unrecoverable");
-  let recovered: `0x${string}`;
+  // Kernel v3.3's ECDSA validator accepts the raw digest (signTypedData) and
+  // its EIP-191 hash (a wallet's signMessage over the raw digest).
+  let recovered: readonly `0x${string}`[];
   try {
-    recovered = await recoverAddress({
-      hash: approval.digest,
-      signature: approval.enableSignature,
-    });
+    recovered = await Promise.all(
+      [approval.digest, hashMessage({ raw: approval.digest })].map((hash) =>
+        recoverAddress({ hash, signature: approval.enableSignature }),
+      ),
+    );
   } catch {
     return mismatch("enableSignature", "unrecoverable");
   }
-  return recovered.toLowerCase() === owner
+  return recovered.some((address) => address.toLowerCase() === owner)
     ? Object.freeze({ owner })
     : mismatch("enableSignature", "wrong_signer");
 }

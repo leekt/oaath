@@ -43,6 +43,7 @@ import { ecdsaKey, ecdsaWalletKey } from "../src/kernel/key/ecdsa.js";
 import { webauthnKey } from "../src/kernel/key/webauthn.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
+import { verifyKernelPermissionApproval } from "../src/kernel/permission/approval.js";
 import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
 import {
   approveKernelV33Permission,
@@ -1130,8 +1131,9 @@ function passkeySession() {
         reads: ports[0]!.reads,
       });
       expect(nonce).toBe("1");
+      // The connected wallet approves with personal_sign (EIP-191 over the digest).
       const approvalInput = {
-        owner: ecdsaKey({ account: owner, validator: deployment.ecdsaValidator }),
+        owner: ecdsaWalletKey({ wallet, validator: deployment.ecdsaValidator }),
         runtime: sessionRuntime,
         account: sessionAccount,
         nonce: nonce as string,
@@ -1158,14 +1160,32 @@ function passkeySession() {
       expect((await harness.rejectionOf(wrongNonce.prepared, wrongNonce.signature)).errorName).toBe(
         "FailedOpWithRevert",
       );
+      const walletApproval = await approveKernelV33Permission(approvalInput);
       const enabled = await materializeKernelV33Permission({
         ...sessionInput,
-        approval: await approveKernelV33Permission(approvalInput),
+        approval: walletApproval,
       });
       expect(enabled.prepared.userOperation.sender).toBe(address.toLowerCase());
       expect(enabled.prepared.userOperation.factory).toBeNull();
       expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");
       expect(await harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+      // The offline verifier accepts exactly what the chain accepted.
+      const sessionSigner = sessionRuntime.packages.at(-1)!;
+      expect(
+        await verifyKernelPermissionApproval({
+          approval: walletApproval,
+          expected: {
+            owner: owner.address,
+            account: address,
+            permissionId: sessionRuntime.validation.permissionId,
+            sessionKey: {
+              module: sessionSigner.module,
+              publicMaterial: sessionKey.publicMaterial,
+            },
+            packages: sessionRuntime.packages,
+          },
+        }),
+      ).toMatchObject({ status: "verified" });
       expect(
         await kernelV33PermissionInstallNonce({
           runtime: sessionRuntime,
