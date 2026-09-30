@@ -9,10 +9,18 @@ import {
   isKernelExistingAccountProfile,
   type KernelAccountProfile,
 } from "@oaath/protocol";
+import { hashTypedData, recoverAddress } from "viem";
 import { kernelV4ReplayableInstallTypedData } from "../../kernel-v4.js";
 import type { KernelAccountDescriptor, KernelReads } from "../deployment/account.js";
 import type { KernelV33AccountDescriptor } from "../deployment/v33.js";
-import { captureInput, exactInput, inputAddress, inputInvalid } from "../internal.js";
+import {
+  captureInput,
+  exactInput,
+  inputAddress,
+  inputInvalid,
+  isBytesOfLength,
+  runtimeFail,
+} from "../internal.js";
 import type {
   KernelRuntime,
   KernelRuntimePrepareInput,
@@ -60,39 +68,88 @@ export function parseKernelGrantApproval(
   return approval;
 }
 
+export interface SignedKernelPermissionApprovalInput
+  extends Omit<ApproveKernelPermissionInput, "owner"> {
+  /**
+   * The account's ECDSA root owner address, already proven onchain, for
+   * example by binding the account through `ownerOperator`.
+   */
+  readonly owner: `0x${string}`;
+  /** The typed data the wallet signed; it must hash as `kernelPermissionEnableTypedData`. */
+  readonly typedData: unknown;
+  /** The wallet's 65-byte `eth_signTypedData_v4` signature. */
+  readonly signature: unknown;
+}
+
 /**
- * Assembles the selected deployment's approval artifact from an owner signature
- * over `kernelPermissionEnableTypedData` for the same runtime, account and nonce.
- * The captured artifact recomputes its digest, so a signature over other typed
- * data is rejected rather than stored.
+ * Assembles the approval `approveKernelPermission` would produce from an owner
+ * signature taken elsewhere, such as a browser wallet's `eth_signTypedData_v4`.
+ * The typed data must hash to the runtime, account and nonce's enable digest
+ * (`kernel_runtime_binding_mismatch`), and the signature must recover to the
+ * owner (`kernel_runtime_signature_invalid`) before anything is returned.
  */
-export function signedKernelPermissionApproval(
-  value: Omit<ApproveKernelPermissionInput, "owner"> & {
-    readonly digest: `0x${string}`;
-    readonly enableSignature: `0x${string}`;
-  },
-): Readonly<KernelGrantApproval> {
-  const runtime = value.runtime;
+export async function signedKernelPermissionApproval(
+  value: SignedKernelPermissionApprovalInput,
+): Promise<Readonly<KernelGrantApproval>> {
+  const record = exactInput(
+    value,
+    ["runtime", "account", "nonce", "owner", "typedData", "signature"],
+    "Kernel signed permission approval",
+    new WeakSet(),
+  );
+  const owner = inputAddress(record.owner, "Kernel permission owner");
+  const runtime = record.runtime as Readonly<KernelRuntime>;
+  const account = record.account as ApproveKernelPermissionInput["account"];
+  const nonce = record.nonce as string;
+  const digest = hashTypedData(
+    kernelPermissionEnableTypedData({ runtime, account, nonce }) as Parameters<
+      typeof hashTypedData
+    >[0],
+  );
+  let signed: `0x${string}` | undefined;
+  try {
+    signed = hashTypedData(record.typedData as Parameters<typeof hashTypedData>[0]);
+  } catch {
+    signed = undefined;
+  }
+  if (signed !== digest)
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "signed typed data is not this permission's enable approval",
+    );
+  if (typeof record.signature !== "string" || !isBytesOfLength(record.signature.toLowerCase(), 65))
+    return runtimeFail("kernel_runtime_signature_invalid", "enable signature is invalid");
+  const enableSignature = record.signature.toLowerCase() as `0x${string}`;
+  let recovered: `0x${string}` | undefined;
+  try {
+    recovered = (
+      await recoverAddress({ hash: digest, signature: enableSignature })
+    ).toLowerCase() as `0x${string}`;
+  } catch {
+    recovered = undefined;
+  }
+  if (recovered !== owner)
+    return runtimeFail("kernel_runtime_signature_invalid", "enable signature is not the owner's");
   if (isV33(runtime)) {
     const scope = kernelV33RuntimeScope(
       runtime as unknown as Readonly<KernelV33Runtime>,
-      value.account as Readonly<KernelV33AccountDescriptor>,
-      value.nonce,
+      account as Readonly<KernelV33AccountDescriptor>,
+      nonce,
     );
     return parseKernelV33PermissionApproval({
       version: OAATH_KERNEL_V33_APPROVAL_VERSION,
       ...scope,
-      digest: value.digest,
-      enableSignature: value.enableSignature,
+      digest,
+      enableSignature,
     });
   }
   return parseKernelAllChainApproval({
     version: OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
-    account: accountAddress(value.account),
-    installNonce: value.nonce,
+    account: accountAddress(account),
+    installNonce: nonce,
     packages: sessionPackages(runtime),
-    digest: value.digest,
-    enableSignature: value.enableSignature,
+    digest,
+    enableSignature,
   });
 }
 
@@ -217,7 +274,7 @@ export interface ApproveKernelPermissionInput {
   /** The account's root owner credential; it signs exactly once. */
   readonly owner: Readonly<KeyProfile>;
   /** The session runtime whose permission packages the owner approves. */
-  readonly runtime: Readonly<KernelRuntime>;
+  readonly runtime: Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
   /**
    * The bound account. A derived Kernel `0.4.0` account may be given by its
    * CREATE2 address, since its approval never depends on a chain.
