@@ -56,6 +56,7 @@ describe("package boundary", () => {
       "compileKernelPermissionPolicy",
       "createKernelReads",
       "createKernelRuntime",
+      "deriveKernelAccount",
       "deriveOperationId",
       "diagnoseKernelCapability",
       "kernelAccountDeployment",

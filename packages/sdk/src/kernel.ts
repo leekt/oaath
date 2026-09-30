@@ -21,8 +21,11 @@ export { diagnoseKernelCapability } from "./kernel/capabilities.js";
 export { createKernelRuntime } from "./kernel/create-kernel-runtime.js";
 export type {
   BindDerivedKernelAccountInput,
+  BindEcdsaOwnerKernelAccountInput,
   BindExistingKernelAccountInput,
   BindKernelAccountInput,
+  DeriveKernelAccountInput,
+  KernelAccountDerivation,
   KernelAccountDescriptor,
   KernelDeploymentInput,
   KernelEntryPointVersion,
@@ -35,6 +38,7 @@ export type {
 export {
   bindKernelAccount,
   createKernelReads,
+  deriveKernelAccount,
   kernelAccountDeployment,
   kernelDeployment,
   prepareKernelUserOperation,
