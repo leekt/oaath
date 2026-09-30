@@ -212,5 +212,9 @@ path works, no happy-path blocker remains, applicable Tier 1 and Tier 2 evidence
 passed, and evidence limits are accurate. Non-blocking findings are filed as
 issues after merge and never hold a PoC PR open.
 
+During a multi-issue session goal, collect follow-up findings and file them only
+after the goal is met. Filing them mid-goal adds open issues to the goal and
+expands its scope.
+
 PR bodies stay concise: outcome, invariant owner, state model when applicable,
 smallest change, focused proof, and evidence limits.
