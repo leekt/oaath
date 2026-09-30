@@ -5,16 +5,18 @@ import {
   OAATH_KERNEL_V33_APPROVAL_VERSION,
 } from "../src/kernel/permission/v33.js";
 import {
-  KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID,
   kernelV33PermissionNonceAlignmentCalls,
+  NONCE_ALIGNMENT_PERMISSION_ID,
   parseKernelV33PermissionState,
 } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
+  pinnedSignerModule,
   readKernelPermissionStatus,
   sessionOperator,
+  verifyKernelPermissionNonceAlignmentCalls,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 
@@ -254,7 +256,7 @@ describe("Kernel v3.3 nonce alignment calls", () => {
       },
     ],
   };
-  const signerModule = "0x4444444444444444444444444444444444444444" as const;
+  const signerModule = pinnedSignerModule("ecdsa")!;
   const calls = (overrides: Record<string, unknown>) =>
     kernelV33PermissionNonceAlignmentCalls({
       scope,
@@ -271,11 +273,41 @@ describe("Kernel v3.3 nonce alignment calls", () => {
     expect(calls({ nonce: "3" })).toEqual([]);
   });
 
+  it("verifies exactly the generated calls, including an aligned no-op", () => {
+    for (const nonce of ["3", "4", "5", "18"]) {
+      expect(
+        verifyKernelPermissionNonceAlignmentCalls({
+          account: scope.account,
+          nonce,
+          calls: calls({ nonce }),
+        }),
+      ).toEqual({ status: "verified" });
+    }
+  });
+
+  it("rejects unrelated targets, value transfers, changed or incomplete calldata and nonce gaps", () => {
+    const valid = calls({});
+    const input = { account: scope.account, nonce: "5", calls: valid };
+    for (const invalid of [
+      { ...input, account: "0x2222222222222222222222222222222222222222" },
+      { ...input, nonce: "6" },
+      { ...input, nonce: "0" },
+      { ...input, calls: valid.slice(0, -1) },
+      { ...input, calls: [valid[0], ...valid] },
+      { ...input, calls: [valid[0], valid[1], ...valid.slice(-2)] },
+      { ...input, calls: [{ ...valid[0], value: "1" }, ...valid.slice(1)] },
+      { ...input, calls: [{ ...valid[0], data: `${valid[0]!.data}00` }, ...valid.slice(1)] },
+      { ...input, calls: calls({ signerModule: scope.account }) },
+      { ...input, extra: true },
+    ])
+      expect(verifyKernelPermissionNonceAlignmentCalls(invalid as never).status).toBe("mismatch");
+  });
+
   it.each([
     [{ nonce: "2" }, "kernel_runtime_nonce_mismatch"],
     [{ alignmentState: absent("4") }, "kernel_runtime_evidence_invalid"],
     [
-      { scope: { ...scope, permissionId: KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID } },
+      { scope: { ...scope, permissionId: NONCE_ALIGNMENT_PERMISSION_ID } },
       "kernel_runtime_input_invalid",
     ],
     [{ nonce: "40" }, "kernel_runtime_input_invalid"],

@@ -21,6 +21,7 @@ import {
   isBytes,
   runtimeFail,
 } from "../internal.js";
+import { resolvePinnedSigner } from "../modules.js";
 import {
   type KernelV33PermissionApproval,
   kernelV33PermissionEnableTypedData,
@@ -279,7 +280,7 @@ export const KERNEL_V33_MAX_NONCE_ALIGNMENT_STEPS = 16;
  * aligned cannot: its own policies refuse a second install, so it never serves
  * as the vehicle.
  */
-export const KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID = keccak256(
+export const NONCE_ALIGNMENT_PERMISSION_ID = keccak256(
   stringToHex("@oaath/sdk:kernel-v33-nonce-alignment"),
 ).slice(0, 10) as `0x${string}`;
 const NONCE_ALIGNMENT_SIGNER_ADDRESS = "0x000000000000000000000000000000000000dead" as const;
@@ -323,7 +324,7 @@ export function kernelV33PermissionNonceAlignmentCalls(
   const alignment = parseKernelV33PermissionState(record.alignmentState);
   const signerModule = inputAddress(record.signerModule, "Kernel v3.3 alignment signer");
   const target = inputUint(record.nonce, MAX_NONCE, "Kernel v3.3 target nonce");
-  if (scope.permissionId === KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID)
+  if (scope.permissionId === NONCE_ALIGNMENT_PERMISSION_ID)
     return inputInvalid("Kernel v3.3 permission ID is reserved for nonce alignment");
   if (kernelV33PermissionStatus(state, scope) !== "absent")
     return runtimeFail(
@@ -352,7 +353,16 @@ export function kernelV33PermissionNonceAlignmentCalls(
   const first = BigInt(alignment.validationNonce) === current ? current + 1n : current;
   if (target - first + 1n > BigInt(KERNEL_V33_MAX_NONCE_ALIGNMENT_STEPS))
     return inputInvalid("Kernel v3.3 nonce alignment exceeds one operation's step bound");
-  const vId = validationId(KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID);
+  return alignmentCalls(scope.account, signerModule, first, target);
+}
+
+function alignmentCalls(
+  account: `0x${string}`,
+  signerModule: `0x${string}`,
+  first: bigint,
+  target: bigint,
+): readonly Readonly<KernelCall>[] {
+  const vId = validationId(NONCE_ALIGNMENT_PERMISSION_ID);
   const validatorData = alignmentValidatorData(signerModule);
   const uninstall = encodeFunctionData({
     abi: ABI,
@@ -363,7 +373,7 @@ export function kernelV33PermissionNonceAlignmentCalls(
   for (let nonce = first; nonce <= target; nonce++) {
     calls.push(
       Object.freeze({
-        target: scope.account,
+        target: account,
         value: "0",
         data: encodeFunctionData({
           abi: ABI,
@@ -371,8 +381,73 @@ export function kernelV33PermissionNonceAlignmentCalls(
           args: [[vId], [{ nonce: Number(nonce), hook: NO_HOOK }], [validatorData], ["0x"]],
         }),
       }),
-      Object.freeze({ target: scope.account, value: "0", data: uninstall }),
+      Object.freeze({ target: account, value: "0", data: uninstall }),
     );
   }
   return Object.freeze(calls);
+}
+
+export interface VerifyKernelPermissionNonceAlignmentCallsInput {
+  readonly account: `0x${string}`;
+  readonly calls: readonly Readonly<KernelCall>[];
+  readonly nonce: string;
+}
+
+export type KernelPermissionNonceAlignmentVerification =
+  | Readonly<{ status: "verified" }>
+  | Readonly<{
+      status: "mismatch";
+      field: "input" | "nonce" | "calls" | "target" | "value" | "data";
+    }>;
+
+/**
+ * Verifies only the exact reserved-permission install/remove calls, never chain
+ * state or authority. Empty calls are a valid no-op, not proof of nonce alignment.
+ * Submit nonempty calls atomically as one owner operation; observe it before
+ * preparing an approval. No other permission or global invalidation is accepted.
+ */
+export function verifyKernelPermissionNonceAlignmentCalls(
+  value: VerifyKernelPermissionNonceAlignmentCallsInput,
+): KernelPermissionNonceAlignmentVerification {
+  const mismatch = (
+    field: Extract<KernelPermissionNonceAlignmentVerification, { status: "mismatch" }>["field"],
+  ): KernelPermissionNonceAlignmentVerification => Object.freeze({ status: "mismatch", field });
+  try {
+    const context = new WeakSet();
+    const record = exactInput(
+      value,
+      ["account", "calls", "nonce"],
+      "Kernel nonce alignment calls",
+      context,
+    );
+    const account = inputAddress(record.account, "Kernel nonce alignment account");
+    const nonce = inputUint(record.nonce, MAX_NONCE, "Kernel nonce alignment target");
+    if (nonce === 0n) return mismatch("nonce");
+    const calls = captureDenseArray(
+      record.calls,
+      "Kernel nonce alignment calls",
+      context,
+      inputInvalid,
+    );
+    if (calls.length % 2 !== 0 || calls.length > KERNEL_V33_MAX_NONCE_ALIGNMENT_STEPS * 2)
+      return mismatch("calls");
+    const first = nonce - BigInt(calls.length / 2) + 1n;
+    if (first < 1n) return mismatch("nonce");
+    const expected = alignmentCalls(account, resolvePinnedSigner("ecdsa"), first, nonce);
+    for (let index = 0; index < calls.length; index++) {
+      const call = exactInput(
+        calls[index],
+        ["target", "value", "data"],
+        "Kernel alignment call",
+        context,
+      );
+      if (inputAddress(call.target, "Kernel alignment target") !== account)
+        return mismatch("target");
+      if (call.value !== "0") return mismatch("value");
+      if (call.data !== expected[index]!.data) return mismatch("data");
+    }
+    return Object.freeze({ status: "verified" });
+  } catch {
+    return mismatch("input");
+  }
 }

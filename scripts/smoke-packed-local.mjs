@@ -12,12 +12,15 @@ import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
 import { createViemChainPorts } from "@oaath/sdk/viem";
-import { kernelDeployment } from "@oaath/sdk/kernel";
+import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
 import { createPublicClient, decodeEventLog, getCreate2Address, http } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 await assert.rejects(createLocalAnvilFixture({ chainIds: [] }), /local_fixture_chains_invalid/);
 await assert.rejects(createLocalAnvilFixture({ chainIds: [421614, 421614] }), /local_fixture_chains_invalid/);
 const fixture = await createLocalAnvilFixture({ chainIds: [421614, 11155111] });
+assert.match(NONCE_ALIGNMENT_PERMISSION_ID, /^0x[0-9a-f]{8}$/);
+assert.equal(verifyKernelPermissionNonceAlignmentCalls({ account: "0x4444444444444444444444444444444444444444", calls: [], nonce: "1" }).status, "verified");
+assert.equal(verifyKernelPermissionNonceAlignmentCalls({ account: "0x4444444444444444444444444444444444444444", calls: [{ target: "0x4444444444444444444444444444444444444444", data: "0x", value: "1" }], nonce: "1" }).status, "mismatch");
 try {
   assert.match(fixture.rpcUrl(421614), /^http:\\/\\/127\\.0\\.0\\.1:\\d+$/);
   const client = await fixture.openClient();
