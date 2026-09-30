@@ -21,6 +21,7 @@ import {
   hexToBytes,
   http,
   keccak256,
+  parseAbi,
   parseEther,
   sha256,
   stringToBytes,
@@ -64,10 +65,12 @@ import {
 } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelReads,
+  prepareExistingAccountPermissionApproval,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
   readKernelPermissionStatus,
   restoreKernelPermissionRevocation,
+  signedKernelPermissionApproval,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
@@ -442,6 +445,165 @@ function passkeySession() {
     },
     30_000,
   );
+
+  it("aligns divergent real chains for one existing-account approval and preserves a live permission", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const a = await setupV33(143, ownerAccount);
+    const b = await setupV33(480, ownerAccount);
+    expect(a.address).toBe(b.address);
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    const ownerKey = ecdsaKey({ account: ownerAccount, validator: a.deployment.ecdsaValidator });
+    const makeOperator = () =>
+      sessionOperator({
+        key: ecdsaKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: a.deployment.ecdsaValidator,
+        }),
+        policies: [
+          { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+        ],
+      });
+    const operator = makeOperator();
+    const survivorOperator = makeOperator();
+    const gas = {
+      callGasLimit: "2000000",
+      verificationGasLimit: "2000000",
+      preVerificationGas: "100000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    const operation = {
+      grantId: "two-chain-alignment",
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "1", data: "0x" as const }],
+      gas,
+    };
+    async function bind(stack: typeof a, session = operator) {
+      const reads = createKernelReads(stack.harness.client);
+      const runtime = createKernelRuntime({
+        deployment: stack.deployment,
+        reads,
+        operator: session,
+      });
+      return { runtime, account: await runtime.bindAccount({ address: stack.address }), reads };
+    }
+    for (const stack of [a, b])
+      for (const module of [stack.harness.fixture.ecdsaSigner, stack.harness.fixture.callPolicy])
+        await stack.harness.deployModule(module);
+    const lower = await bind(a);
+    const higher = await bind(b);
+    const nonceOf = (session: typeof lower) => kernelV33PermissionInstallNonce(session);
+    const ownerRuntime = (stack: typeof a) =>
+      createKernelRuntime({
+        deployment: stack.deployment,
+        reads: createKernelReads(stack.harness.client),
+        operator: ownerOperator({ key: ownerKey }),
+      });
+    async function sendOwner(
+      stack: typeof a,
+      calls: Parameters<ReturnType<typeof ownerRuntime>["prepareOperation"]>[0]["calls"],
+    ) {
+      const runtime = ownerRuntime(stack);
+      const prepared = runtime.prepareOperation({
+        ...operation,
+        kind: "execution",
+        account: await runtime.bindAccount({ address: stack.address }),
+        calls,
+      });
+      const signature = await runtime.signOperation(prepared);
+      expect(await stack.harness.sendSigned(prepared, signature)).toBe("success");
+    }
+    async function enable(stack: typeof a, session: typeof lower) {
+      const approval = await approveKernelV33Permission({
+        runtime: session.runtime,
+        account: session.account,
+        nonce: await nonceOf(session),
+        owner: ownerKey,
+      });
+      const enabled = await materializeKernelV33Permission({
+        runtime: session.runtime,
+        account: session.account,
+        ...operation,
+        approval,
+      });
+      expect(await stack.harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+      return approval;
+    }
+    const survivor = await bind(a, survivorOperator);
+    await enable(a, survivor);
+    // B has a real historical owner invalidation; A still has its unrelated
+    // installed permission. The alignment target is read from B, not invented.
+    await sendOwner(b, [
+      {
+        target: b.address,
+        value: "0",
+        data: encodeFunctionData({
+          abi: parseAbi(["function invalidateNonce(uint32 nonce)"]),
+          functionName: "invalidateNonce",
+          args: [2],
+        }),
+      },
+    ]);
+    const lowNonce = await nonceOf(lower);
+    const highNonce = await nonceOf(higher);
+    expect(BigInt(highNonce)).toBeGreaterThan(BigInt(lowNonce));
+    const input = {
+      account: a.address,
+      owner: ownerKey,
+      operator,
+      chains: [a, b].map((stack) => ({
+        chainId: stack.deployment.chainId,
+        reads: createKernelReads(stack.harness.client),
+      })),
+      requestHash: keccak256("0x3430"),
+    };
+    await expect(prepareExistingAccountPermissionApproval(input)).rejects.toMatchObject({
+      code: "kernel_runtime_nonce_mismatch",
+    });
+    const calls = await kernelPermissionNonceAlignmentCalls({ ...lower, nonce: highNonce });
+    expect(calls.length).toBeGreaterThan(0);
+    await sendOwner(a, calls);
+    expect(await nonceOf(lower)).toBe(highNonce);
+    const prepared = await prepareExistingAccountPermissionApproval(input);
+    expect(prepared.nonce).toBe(highNonce);
+    const sign = vi.fn(ownerAccount.signTypedData.bind(ownerAccount));
+    const approval = await signedKernelPermissionApproval({
+      runtime: prepared.runtime,
+      account: prepared.account,
+      nonce: prepared.nonce,
+      owner: ownerAccount.address,
+      typedData: prepared.typedData,
+      signature: await sign(prepared.typedData as never),
+    });
+    for (const [stack, session] of [
+      [a, lower],
+      [b, higher],
+    ] as const) {
+      const enabled = await materializeKernelV33Permission({
+        runtime: session.runtime,
+        account: session.account,
+        ...operation,
+        approval: parseKernelV33PermissionApproval(approval),
+      });
+      expect(await stack.harness.sendSigned(enabled.prepared, enabled.signature)).toBe("success");
+      expect(
+        await kernelPermissionNonceAlignmentCalls({ ...session, nonce: highNonce }).catch(
+          (error) => error.code,
+        ),
+      ).toBe("kernel_runtime_binding_mismatch");
+    }
+    expect(sign).toHaveBeenCalledTimes(1);
+    const next = survivor.runtime.prepareOperation({
+      ...operation,
+      kind: "execution",
+      account: survivor.account,
+    });
+    expect(await a.harness.sendSigned(next, await survivor.runtime.signOperation(next))).toBe(
+      "success",
+    );
+    expect(await a.harness.client.getBalance({ address: target })).toBe(3n);
+  }, 30_000);
 
   it("aligns an absent permission's enable nonce without disabling another permission", async () => {
     const ownerAccount = privateKeyToAccount(generatePrivateKey());
