@@ -1,8 +1,6 @@
 import {
   type KernelRuntimeModule,
   kernelDeployment,
-  pinnedPolicyModule,
-  pinnedSignerModule,
   prepareRuntimeModuleDeployment,
 } from "@oaath/sdk/kernel";
 import { getCreate2Address, type Hex, sliceHex } from "viem";
@@ -107,10 +105,10 @@ export function components(chainId: number): readonly Component[] {
       deployment.factory,
     ),
     deployable(...runtimeModule(chainId, "validityPolicy", "validity_policy")),
-    deployable("callPolicy", runtime.callPolicy, pinnedPolicyModule("call")),
-    deployable("rateLimitPolicy", runtime.rateLimitPolicy, pinnedPolicyModule("operation-limit")),
+    deployable(...runtimeModule(chainId, "callPolicy", "call_policy")),
+    deployable(...runtimeModule(chainId, "rateLimitPolicy", "operation_limit_policy")),
     deployable(...runtimeModule(chainId, "resettingRateLimitPolicy", "rate_limit_policy")),
-    deployable("ecdsaSigner", runtime.ecdsaSigner, pinnedSignerModule("ecdsa")),
+    deployable(...runtimeModule(chainId, "ecdsaSigner", "ecdsa_signer")),
     deployable(
       "p256Validator",
       runtime.p256Validator,
