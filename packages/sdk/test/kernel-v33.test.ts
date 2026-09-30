@@ -37,6 +37,7 @@ import {
   materializeKernelV33Permission,
   parseKernelV33PermissionApproval,
 } from "../src/kernel/permission/v33.js";
+import { kernelPermissionEnableTypedData, signedKernelPermissionApproval } from "../src/kernel.js";
 import {
   KERNEL_V4_ENTRY_POINT_V07,
   KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
@@ -233,8 +234,62 @@ describe("Kernel v3.3 session composition", () => {
       account: bound,
       nonce: "1",
     });
-    return { runtime, input, approval, sign, session };
+    return { runtime, input, approval, sign, session, owner };
   }
+
+  it("assembles the owner's approval from an external typed-data signature", async () => {
+    const { runtime, input, approval, owner } = await sessionFixture();
+    const scope = { runtime, account: input.account, nonce: "1" };
+    const typedData = kernelPermissionEnableTypedData(scope);
+    const signature = await owner.signTypedData(typedData as never);
+    const assembled = await signedKernelPermissionApproval({
+      ...scope,
+      owner: owner.address,
+      typedData,
+      signature,
+    });
+    // Byte-identical to the approval the owner key produces itself.
+    expect(assembled).toEqual(approval);
+    // A wallet round trip through JSON hashes the same.
+    await expect(
+      signedKernelPermissionApproval({
+        ...scope,
+        owner: owner.address,
+        typedData: JSON.parse(JSON.stringify(typedData)),
+        signature: signature.toUpperCase().replace("0X", "0x"),
+      }),
+    ).resolves.toEqual(approval);
+
+    const other = privateKeyToAccount(generatePrivateKey());
+    const otherTypedData = kernelPermissionEnableTypedData({ ...scope, nonce: "2" });
+    const cases: [Record<string, unknown>, string][] = [
+      [{ owner: other.address }, "kernel_runtime_signature_invalid"],
+      [
+        { signature: await other.signTypedData(typedData as never) },
+        "kernel_runtime_signature_invalid",
+      ],
+      [{ signature: "0xdead" }, "kernel_runtime_signature_invalid"],
+      [{ signature: `0x${"11".repeat(65)}` }, "kernel_runtime_signature_invalid"],
+      [
+        {
+          typedData: otherTypedData,
+          signature: await owner.signTypedData(otherTypedData as never),
+        },
+        "kernel_runtime_binding_mismatch",
+      ],
+      [{ typedData: { malformed: true } }, "kernel_runtime_binding_mismatch"],
+    ];
+    for (const [change, code] of cases)
+      await expect(
+        signedKernelPermissionApproval({
+          ...scope,
+          owner: owner.address,
+          typedData,
+          signature,
+          ...change,
+        } as never),
+      ).rejects.toMatchObject({ code });
+  });
 
   it("prepares enable without signing and refuses standard operations at the approval boundary", async () => {
     const { runtime, input, approval, sign } = await sessionFixture();

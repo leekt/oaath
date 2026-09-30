@@ -69,6 +69,7 @@ export type {
   KernelPermissionEnableTypedData,
   KernelPermissionNonceInput,
   MaterializeKernelPermissionInput,
+  SignedKernelPermissionApprovalInput,
 } from "./kernel/permission/approval.js";
 export {
   approveKernelPermission,
@@ -77,6 +78,7 @@ export {
   kernelPermissionNonce,
   materializeKernelPermission,
   parseVersionedKernelGrantApproval as parseKernelPermissionApproval,
+  signedKernelPermissionApproval,
   verifyKernelPermissionApproval,
 } from "./kernel/permission/approval.js";
 export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";

@@ -5,7 +5,7 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   type PermissionRequest,
 } from "@oaath/protocol";
-import { keccak256, recoverAddress, stringToHex } from "viem";
+import { keccak256, stringToHex } from "viem";
 import {
   approveKernelPermission,
   type KernelPermissionEnableTypedData,
@@ -66,7 +66,7 @@ export function createLocalPermissionAuthority(input: {
       session: input.session,
       chains: input.chains,
     });
-    const { typedData, digest } = approvalInput;
+    const { typedData } = approvalInput;
     await input
       .onApproval?.(
         structuredClone({ account: address, chainScope: "all", policy: request.policy, typedData }),
@@ -92,21 +92,16 @@ export function createLocalPermissionAuthority(input: {
       .catch(() =>
         clientFail("oaath_client_decision_unavailable", "local permission approval failed"),
       );
-    if (typeof produced !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(produced))
-      return clientFail("oaath_client_signing_failed", "local permission signature is invalid");
-    const signature = produced.toLowerCase() as `0x${string}`;
-    if (
-      (await recoverAddress({ hash: digest, signature })).toLowerCase() !==
-      input.owner.publicMaterial
-    )
-      return clientFail("oaath_client_signing_failed", "local permission signer changed");
+    // The root owner was proven onchain above; the assembler checks the digest
+    // and that the wallet's signature recovers to it.
     return signedKernelPermissionApproval({
       runtime: approvalInput.runtime,
       account: approvalInput.account,
       nonce: approvalInput.nonce,
-      digest,
-      enableSignature: signature,
-    });
+      owner: input.owner.publicMaterial as `0x${string}`,
+      typedData,
+      signature: produced,
+    }).catch((error) => mapClientFailure(error, "local permission signature is invalid"));
   }
   return Object.freeze({
     invalidation: Object.freeze({
