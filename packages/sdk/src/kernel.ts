@@ -98,11 +98,17 @@ export {
   verifyKernelPermissionRevocation,
 } from "./kernel/permission/observe-revocation.js";
 export type {
+  ExistingAccountApproval as KernelExistingAccountApproval,
+  ExistingAccountApprovalChain as KernelExistingAccountApprovalChain,
   KernelPermissionDecision,
   PreparedKernelPermissionApproval,
+  PrepareExistingAccountPermissionApprovalInput,
   PrepareKernelPermissionApprovalInput,
 } from "./kernel/permission/prepare-approval.js";
-export { prepareKernelPermissionApproval } from "./kernel/permission/prepare-approval.js";
+export {
+  prepareExistingAccountPermissionApproval,
+  prepareKernelPermissionApproval,
+} from "./kernel/permission/prepare-approval.js";
 export type {
   KernelPermissionRevocationPreparation,
   KernelRecordedRevocation,

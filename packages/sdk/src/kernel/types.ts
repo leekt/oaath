@@ -49,6 +49,8 @@ export type KernelRuntimeErrorCode =
   | "kernel_runtime_binding_mismatch"
   /** An explicit deployment disagrees with the account's own onchain deployment. */
   | "kernel_runtime_deployment_mismatch"
+  /** Chains that one approval must cover have different effective enable nonces. */
+  | "kernel_runtime_nonce_mismatch"
   /** The input's own version is valid but this stage does not implement it. */
   | "kernel_runtime_unsupported";
 
