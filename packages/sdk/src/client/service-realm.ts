@@ -35,6 +35,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
+import { parseUserOperationFailure } from "../user-operation-error.js";
 import { OaathRpcError } from "../viem/rpc.js";
 import type { OaathAuthorizationCapability } from "./connection.js";
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./errors.js";
@@ -221,12 +222,19 @@ async function fetchJson(
   if (!response.ok) {
     let diagnostic = null;
     let rejection = null;
+    let failure = null;
     try {
       const body = (await response.json()) as {
-        error?: { code?: unknown; diagnostic?: unknown; bundlerRejection?: unknown };
+        error?: {
+          code?: unknown;
+          diagnostic?: unknown;
+          bundlerRejection?: unknown;
+          failure?: unknown;
+        };
       };
       if (body.error?.code === "relay_chain_unavailable") {
         diagnostic = captureValidationGasDiagnostic(body.error.diagnostic);
+        failure = parseUserOperationFailure(body.error.failure);
         if (allowBundlerRejection && response.status === 503)
           rejection = captureBundlerRejection(body.error.bundlerRejection);
       }
@@ -234,12 +242,13 @@ async function fetchJson(
       /* Preserve the generic failure when the body is absent or unreadable. */
     }
     if (rejection !== null)
-      throw new OaathRpcError("oaath_rpc_rejected", rejection.code, diagnostic);
+      throw new OaathRpcError("oaath_rpc_rejected", rejection.code, diagnostic, { cause: failure });
     return clientFail(
       "oaath_client_issuer_rejected",
       `${label} answered ${response.status}`,
       null,
       diagnostic,
+      { cause: failure },
     );
   }
   try {

@@ -193,6 +193,8 @@ describe("package boundary", () => {
       "classifyUserOperationError",
       "createViemChainPorts",
       "oaathProvider",
+      "parseUserOperationFailure",
+      "serializeUserOperationFailure",
     ]);
   });
 

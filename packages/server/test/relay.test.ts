@@ -4,6 +4,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { classifyUserOperationError } from "@oaath/sdk/viem";
 import { describe, expect, it } from "vitest";
 import { OaathRelayError, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";
@@ -1042,6 +1043,39 @@ describe("URL-only service surface", () => {
       });
     },
   );
+
+  it("forwards closed UserOperation diagnostics without the provider cause", async () => {
+    const harness = createHarness(
+      bootstrapOptions({
+        chains: [
+          chainPort({
+            quote: async () => {
+              throw classifyUserOperationError({
+                stage: "estimate",
+                error: { message: "AA25 private-provider-detail" },
+              });
+            },
+          }),
+        ],
+      }),
+    );
+    const response = await harness.handler(
+      post("/chains/31337/quote", CLIENT_TOKEN, { request: {} }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "relay_chain_unavailable",
+        failure: {
+          version: "oaath.user-operation-failure/v1",
+          stage: "estimate",
+          code: "nonce",
+          entryPointCode: "AA25",
+          retryable: false,
+        },
+      },
+    });
+  });
 
   it("fails closed on unknown chains, ports, callers, and throwing ports", async () => {
     const throwing = chainPort({

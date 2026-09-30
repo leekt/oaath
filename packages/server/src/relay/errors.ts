@@ -14,6 +14,8 @@ import {
   type ValidationGasDiagnostic,
 } from "@oaath/protocol";
 
+import { serializeUserOperationFailure } from "@oaath/sdk/viem";
+
 export type RelayErrorCode =
   /** Wire input is missing, malformed, oversized, or contains unknown fields. */
   | "relay_request_invalid"
@@ -110,8 +112,9 @@ export class OaathRelayError extends Error {
     message: string,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
     bundlerRejection: Readonly<BundlerRejection> | null = null,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "OaathRelayError";
     this.code = code;
     this.diagnostic = captureValidationGasDiagnostic(diagnostic);
@@ -125,8 +128,9 @@ export function relayFailure(
   message: string,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
   bundlerRejection: Readonly<BundlerRejection> | null = null,
+  options?: ErrorOptions,
 ): never {
-  throw new OaathRelayError(code, message, diagnostic, bundlerRejection);
+  throw new OaathRelayError(code, message, diagnostic, bundlerRejection, options);
 }
 
 /** Any non-relay throw is an unreadable internal failure, never caller-visible detail. */
@@ -143,7 +147,9 @@ export function relayErrorResponse(
   code: RelayErrorCode,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
   bundlerRejection: Readonly<BundlerRejection> | null = null,
+  cause?: unknown,
 ): Response {
+  const failure = code === "relay_chain_unavailable" ? serializeUserOperationFailure(cause) : null;
   const captured =
     code === "relay_chain_unavailable" ? captureValidationGasDiagnostic(diagnostic) : null;
   const rejection =
@@ -153,6 +159,7 @@ export function relayErrorResponse(
       code,
       ...(captured === null ? {} : { diagnostic: captured }),
       ...(rejection === null ? {} : { bundlerRejection: rejection }),
+      ...(failure === null ? {} : { failure }),
     },
   });
 }

@@ -165,7 +165,7 @@ describe("AA23 empty validation revert diagnostic", () => {
   it.each([
     { name: "direct", create: createRealm },
     { name: "relay", create: createUrlRealm },
-  ])("reaches the $name Grant caller before signing", async ({ name, create }) => {
+  ])("reaches the $name Grant caller before signing", async ({ create }) => {
     const { chain, base } = fixture();
     const realm = create({ chain });
     try {
@@ -173,16 +173,12 @@ describe("AA23 empty validation revert diagnostic", () => {
       const error = await grant.sendCalls(sendCallsInput()).catch((error: unknown) => error);
       expect(error).toMatchObject({
         code: "oaath_client_preparation_failed",
-        ...(name === "direct"
-          ? {
-              failure: {
-                stage: "estimate",
-                code: "account-validation",
-                entryPointCode: "AA23",
-                retryable: false,
-              },
-            }
-          : {}),
+        failure: {
+          stage: "estimate",
+          code: "account-validation",
+          entryPointCode: "AA23",
+          retryable: false,
+        },
         diagnostic,
         message: "likely validation out-of-gas (verificationGasLimit=2000000)",
       });

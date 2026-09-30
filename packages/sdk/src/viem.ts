@@ -251,6 +251,9 @@ export {
   classifyUserOperationError,
   type EntryPointFailureCode,
   OaathUserOperationError,
+  parseUserOperationFailure,
+  serializeUserOperationFailure,
+  type UserOperationFailure,
   type UserOperationFailureCode,
   type UserOperationFailureStage,
 } from "./user-operation-error.js";
