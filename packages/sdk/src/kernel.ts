@@ -113,6 +113,19 @@ export type {
 } from "./kernel/permission/v33.js";
 export { OAATH_KERNEL_V33_APPROVAL_VERSION as OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION } from "./kernel/permission/v33.js";
 export type {
+  KernelRuntimeModule,
+  KernelRuntimeModuleDeployment,
+  KernelRuntimeModuleReadiness,
+  KernelRuntimeModuleStatus,
+  KernelRuntimeReadiness,
+  KernelRuntimeReadinessInput,
+  PrepareRuntimeModuleDeploymentInput,
+} from "./kernel/runtime-modules.js";
+export {
+  kernelRuntimeReadiness,
+  prepareRuntimeModuleDeployment,
+} from "./kernel/runtime-modules.js";
+export type {
   CompiledKernelPermissionPolicy,
   CreateKernelRuntimeInput,
   KernelBuiltInKeyKind,

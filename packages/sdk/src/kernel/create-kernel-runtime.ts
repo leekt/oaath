@@ -57,6 +57,7 @@ import {
   pinnedSignerModule,
   pinnedValidatorModule,
 } from "./modules.js";
+import { observeRuntimeModule } from "./runtime-modules.js";
 import type {
   CreateKernelRuntimeInput,
   CreateKernelV33RuntimeInput,
@@ -239,17 +240,13 @@ export function createKernelRuntime(
     // passkey session is unusable on a chain without that exact verifier.
     if (operator.authority !== "session" || authorityModule !== pinnedSignerModule("webauthn"))
       return;
-    let verifier: unknown;
-    try {
-      verifier = await read({
-        type: "runtime_code_hash",
-        chainId: deployment.chainId,
-        address: KERNEL_P256_VERIFIER,
-      });
-    } catch {
-      return runtimeFail(unavailable, "P-256 verifier code could not be read");
-    }
-    if (verifier !== KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH) {
+    const verifier = await observeRuntimeModule(
+      read as KernelReads["read"],
+      deployment.chainId,
+      KERNEL_P256_VERIFIER,
+      KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
+    );
+    if (verifier !== "present") {
       return runtimeFail(unavailable, "P-256 verifier is not deployed on this chain");
     }
   }
@@ -262,16 +259,13 @@ export function createKernelRuntime(
     ] as const) {
       if (!packages.some((install) => install.moduleType === 5 && install.module === address))
         continue;
-      let observed: unknown;
-      try {
-        observed = await read({ type: "runtime_code_hash", chainId: deployment.chainId, address });
-      } catch {
-        return runtimeFail(
-          "kernel_runtime_policy_unavailable",
-          "Kernel policy runtime code could not be read",
-        );
-      }
-      if (observed !== expected) {
+      const observed = await observeRuntimeModule(
+        read as KernelReads["read"],
+        deployment.chainId,
+        address,
+        expected,
+      );
+      if (observed !== "present") {
         return runtimeFail(
           "kernel_runtime_policy_unavailable",
           "Kernel policy runtime code does not match the pinned artifact",
