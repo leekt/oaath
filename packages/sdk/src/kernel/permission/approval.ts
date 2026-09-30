@@ -251,7 +251,7 @@ function accountAddress(account: unknown): `0x${string}` {
 
 export interface KernelPermissionNonceInput {
   /** The session runtime whose permission will be approved. */
-  readonly runtime: Readonly<KernelRuntime>;
+  readonly runtime: Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
   readonly account: Readonly<KernelAccountDescriptor>;
   readonly reads: KernelReads;
   /**
@@ -355,7 +355,7 @@ export interface MaterializeKernelPermissionInput
   extends Omit<KernelRuntimePrepareInput<KernelAccountDescriptor>, "kind" | "mode"> {
   readonly approval: Readonly<KernelGrantApproval>;
   /** The session runtime for the target chain, composed over that chain's deployment. */
-  readonly runtime: Readonly<KernelRuntime>;
+  readonly runtime: Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
 }
 
 /**

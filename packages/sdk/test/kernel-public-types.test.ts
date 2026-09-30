@@ -9,6 +9,8 @@ import {
   type KernelDeployment,
   type KernelRuntime,
   kernelDeployment,
+  kernelPermissionNonce,
+  materializeKernelPermission,
 } from "../src/kernel.js";
 
 // Type-level proof: the public entry names each version's shapes through the
@@ -57,5 +59,17 @@ describe("version-selected public Kernel types", () => {
     // @ts-expect-error a Kernel 0.4.0 deployment is not a Kernel 0.3.3 deployment
     const wrong: KernelDeployment<"0.3.3"> = kernelDeployment({ chainId: 143 });
     expect(wrong.kernelVersion).toBe("0.4.0");
+  });
+
+  it("accepts either selected runtime in permission nonce and materialization inputs", () => {
+    type NonceRuntime = Parameters<typeof kernelPermissionNonce>[0]["runtime"];
+    type MaterializeRuntime = Parameters<typeof materializeKernelPermission>[0]["runtime"];
+    expectTypeOf<KernelRuntime<"0.3.3">>().toExtend<NonceRuntime>();
+    expectTypeOf<KernelRuntime<"0.4.0">>().toExtend<NonceRuntime>();
+    expectTypeOf<KernelRuntime<"0.3.3">>().toExtend<MaterializeRuntime>();
+    expectTypeOf<KernelRuntime<"0.4.0">>().toExtend<MaterializeRuntime>();
+    // @ts-expect-error arbitrary objects are not composed runtimes
+    const invalid: NonceRuntime = { deployment: { kernelVersion: "0.3.3" } };
+    expect(invalid).toBeDefined();
   });
 });
