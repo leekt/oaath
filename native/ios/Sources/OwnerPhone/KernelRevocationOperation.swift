@@ -22,6 +22,21 @@ enum KernelRevocationEffect: String, Equatable, Sendable {
     case uninstallPermission = "uninstall-permission"
 }
 
+/// EntryPoint 0.7's captured paymaster prefix and opaque sponsor data.
+struct KernelRevocationPaymaster: Equatable, Sendable {
+    let address: String
+    let verificationGasLimit: String
+    let postOpGasLimit: String
+    let data: String
+
+    fileprivate init(_ bytes: [UInt8]) {
+        address = hexEncode(Data(bytes.prefix(20)))
+        verificationGasLimit = revocationDecimal(Array(bytes[20..<36]))
+        postOpGasLimit = revocationDecimal(Array(bytes[36..<52]))
+        data = hexEncode(Data(bytes.dropFirst(52)))
+    }
+}
+
 /// Cannot be constructed outside the derivation owner and cannot be passed to
 /// owner-key custody. Consent and paired-identity refinement are separate work.
 struct DerivedKernelRevocationOperation: Equatable, Sendable {
@@ -37,13 +52,14 @@ struct DerivedKernelRevocationOperation: Equatable, Sendable {
     let maxPriorityFeePerGas: String
     let maxFeePerGas: String
     let deploymentRequired: Bool
+    let paymaster: KernelRevocationPaymaster?
     var canonicalHex: String { hexEncode(digest) }
 
     fileprivate init(
         account: String, chainId: Int, entryPoint: String,
         effect: KernelRevocationEffect, digest: [UInt8], nonce: [UInt8],
         accountGasLimits: [UInt8], preVerificationGas: [UInt8], gasFees: [UInt8],
-        deploymentRequired: Bool
+        deploymentRequired: Bool, paymasterAndData: [UInt8]
     ) {
         self.account = account
         self.chainId = chainId
@@ -57,6 +73,7 @@ struct DerivedKernelRevocationOperation: Equatable, Sendable {
         self.maxPriorityFeePerGas = revocationDecimal(Array(gasFees.prefix(16)))
         self.maxFeePerGas = revocationDecimal(Array(gasFees.suffix(16)))
         self.deploymentRequired = deploymentRequired
+        self.paymaster = paymasterAndData.isEmpty ? nil : KernelRevocationPaymaster(paymasterAndData)
     }
 }
 
@@ -95,7 +112,9 @@ func deriveKernelRevocationOperation(
     let gasFees = try revocationBytes(op["gasFees"], count: 32)
     let entryPointBytes = try revocationAddress(entryPoint)
     let expectedBytes = try revocationBytes(expectedDigest, count: 32)
-    guard op["paymasterAndData"] as? String == "0x",
+    let paymasterAndData = try revocationBytes(op["paymasterAndData"])
+    guard paymasterAndData.isEmpty || (paymasterAndData.count >= 52 &&
+              paymasterAndData.prefix(20).contains(where: { $0 != 0 })),
           op["sender"] as? String == refinedInstall.account,
           nonce.prefix(22).allSatisfy({ $0 == 0 }), // root + uint16 namespace + uint64 sequence
           initCode.isEmpty || (initCode.count >= 20 &&
@@ -113,7 +132,7 @@ func deriveKernelRevocationOperation(
     // binds that hash to its address and the chain. No EIP-712 prefix or typehash.
     let packed = revocationAddressWord(sender) + nonce + revocationHash(initCode) +
         revocationHash(callData) + accountGasLimits + preVerificationGas + gasFees +
-        revocationHash([])
+        revocationHash(paymasterAndData)
     let digest = revocationHash(
         revocationHash(packed) + revocationAddressWord(entryPointBytes) + revocationWord(chainId))
     guard digest == expectedBytes else {
@@ -123,7 +142,7 @@ func deriveKernelRevocationOperation(
         account: refinedInstall.account, chainId: chainId, entryPoint: entryPoint,
         effect: effect, digest: digest, nonce: nonce, accountGasLimits: accountGasLimits,
         preVerificationGas: preVerificationGas, gasFees: gasFees,
-        deploymentRequired: !initCode.isEmpty)
+        deploymentRequired: !initCode.isEmpty, paymasterAndData: paymasterAndData)
 }
 
 private func revocationCallData(

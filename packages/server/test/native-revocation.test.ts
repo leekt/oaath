@@ -13,22 +13,25 @@ const golden = JSON.parse(
 );
 
 describe("native revocation consent", () => {
-  it.each([0, 1, 2])("projects exact unsigned request %s for the Swift consumer", async (index) => {
-    const { name: _name, ...operation } = source.valid[index];
-    const projection = await projectOwnerPhoneRevocation({
-      operationId: `revoke-${index}`,
-      ownerSubject: "fixture-owner",
-      expiresAt: 1_800_000_060_000,
-      request: {
-        version: "oaath.kernel-revocation-signing-request/v1",
-        kind: "kernel-revocation",
-        permissionRequest: source.permissionRequest,
-        install: source.installProjection.scope.request,
-        ...operation,
-      },
-    });
-    expect(projection).toEqual(golden[index]);
-    expect(projection.client.redirectUri).toBeNull();
-    expect(projection.scope.kind).toBe("kernel-revocation");
-  });
+  it.each(source.valid.map((_: unknown, index: number) => index))(
+    "projects exact unsigned request %s for the Swift consumer",
+    async (index) => {
+      const { name: _name, ...operation } = source.valid[index];
+      const projection = await projectOwnerPhoneRevocation({
+        operationId: `revoke-${index}`,
+        ownerSubject: "fixture-owner",
+        expiresAt: 1_800_000_060_000,
+        request: {
+          version: "oaath.kernel-revocation-signing-request/v1",
+          kind: "kernel-revocation",
+          permissionRequest: source.permissionRequest,
+          install: source.installProjection.scope.request,
+          ...operation,
+        },
+      });
+      expect(projection).toEqual(golden[index]);
+      expect(projection.client.redirectUri).toBeNull();
+      expect(projection.scope.kind).toBe("kernel-revocation");
+    },
+  );
 });

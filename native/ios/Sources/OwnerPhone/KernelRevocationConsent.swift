@@ -61,7 +61,7 @@ struct KernelRevocationConsentPresentation {
                 .init(id: "\(id).\($0.offset)", label: $0.element.0, value: $0.element.1)
             })
         }
-        sections = [
+        var sections = [
             section("permission", "Permission identified by the service", [
                 ("Workspace", scope.permission.context.workspaceId),
                 ("Workspace kind", scope.permission.context.workspaceKind.rawValue),
@@ -76,12 +76,21 @@ struct KernelRevocationConsentPresentation {
                 ("Account deployment", op.deploymentRequired ? "Included in this operation" : "Not requested"),
                 ("Operation nonce", op.nonce), ("Locally derived operation hash", op.canonicalHex)
             ]),
-            section("gas", "Self-funded operation gas bounds", [
+            section("gas", op.paymaster == nil ? "Self-funded operation gas bounds" : "Sponsored operation gas bounds", [
                 ("Verification gas limit", op.verificationGasLimit), ("Call gas limit", op.callGasLimit),
                 ("Pre-verification gas", op.preVerificationGas),
                 ("Maximum fee per gas (wei)", op.maxFeePerGas),
                 ("Maximum priority fee per gas (wei)", op.maxPriorityFeePerGas)
             ])
         ]
+        if let paymaster = op.paymaster {
+            sections.append(section("paymaster", "Paymaster", [
+                ("Paymaster", paymaster.address),
+                ("Paymaster verification gas limit", paymaster.verificationGasLimit),
+                ("Paymaster post-operation gas limit", paymaster.postOpGasLimit),
+                ("Paymaster data", paymaster.data)
+            ]))
+        }
+        self.sections = sections
     }
 }

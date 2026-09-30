@@ -39,7 +39,8 @@ private actor RevocationTransportProbe {
         case .submitRevocationDecision:
             bodies.append(try XCTUnwrap(call.body))
             if bodies.count == 1 { throw OwnerPhoneWireError.invalidField("decision") }
-            return Data(#"{"version":"oaath.native-revocation-decision/v1","operationId":"revoke-0","outcome":"approved","decidedAt":1800000000001,"settlement":"replayed"}"#.utf8)
+            let operationId = try OwnerPhoneRequestProjection.decode(projection).operationId
+            return Data(#"{"version":"oaath.native-revocation-decision/v1","operationId":"\#(operationId)","outcome":"approved","decidedAt":1800000000001,"settlement":"replayed"}"#.utf8)
         default: throw OwnerPhoneWireError.invalidField("wrong decision domain")
         }
     }
@@ -114,7 +115,7 @@ final class NativeRevocationConsentTests: XCTestCase {
     }
 
     func testBothRevocationEffectsProduceVerifiedP256Artifacts() throws {
-        for index in [0, 2] {
+        for index in [0, 2, 3, 4] {
             let probe = RevocationSignerProbe()
             let projection = try OwnerPhoneRequestProjection.decode(wire(index, key: probe.key))
             guard case let .kernelRevocation(scope) = projection.scope else {
@@ -153,6 +154,22 @@ final class NativeRevocationConsentTests: XCTestCase {
             XCTAssertEqual(values["Maximum fee per gas (wei)"], "2000000000")
             XCTAssertEqual(values["Maximum priority fee per gas (wei)"], "1000000000")
             XCTAssertEqual(values["Locally derived operation hash"], scope.operation.canonicalHex)
+        }
+    }
+
+    func testSponsoredConsentShowsTheCapturedPaymasterFields() throws {
+        for index in [3, 4] {
+            let projection = try OwnerPhoneRequestProjection.decode(wire(index))
+            guard case let .kernelRevocation(scope) = projection.scope else {
+                return XCTFail("expected sponsored revocation consent")
+            }
+            let sections = KernelRevocationConsentPresentation(scope: scope).sections
+            let values = Dictionary(uniqueKeysWithValues: sections.flatMap(\.facts).map { ($0.label, $0.value) })
+            XCTAssertEqual(values["Paymaster"], "0x" + String(repeating: "55", count: 20))
+            XCTAssertEqual(values["Paymaster verification gas limit"], "60000")
+            XCTAssertEqual(values["Paymaster post-operation gas limit"], "0")
+            XCTAssertEqual(values["Paymaster data"], index == 3 ? "0xabcd" : "0x")
+            XCTAssertFalse(sections.contains { $0.title.contains("Self-funded") })
         }
     }
 
@@ -203,12 +220,12 @@ final class NativeRevocationConsentTests: XCTestCase {
     @MainActor
     func testAmbiguousRevocationDecisionRetriesTheExactArtifactWithoutSigningAgain() async throws {
         let probe = RevocationSignerProbe()
-        let transport = RevocationTransportProbe(projection: try wire(key: probe.key))
+        let transport = RevocationTransportProbe(projection: try wire(3, key: probe.key))
         let model = ApprovalModel(
             relay: TransportRelayClient { try await transport.send($0) },
             kernelP256ApprovalBinding: try binding(probe), now: { 1_800_000_000_000 })
         model.setForeground(true)
-        await model.open(operationId: "revoke-0")
+        await model.open(operationId: "revoke-3")
         await model.approve()
         XCTAssertTrue(model.unresolvedNotice)
         await model.approve()
