@@ -30,7 +30,7 @@
     },
     "packages/cli": {
       "name": "@oaath/cli",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "bin": {
         "oaath": "./dist/cli.mjs",
       },
@@ -52,7 +52,7 @@
     },
     "packages/protocol": {
       "name": "@oaath/protocol",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "viem": "2.55.8",
@@ -64,7 +64,7 @@
     },
     "packages/sdk": {
       "name": "@oaath/sdk",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@oaath/protocol": "workspace:*",
@@ -80,7 +80,7 @@
     },
     "packages/server": {
       "name": "@oaath/server",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@noble/hashes": "2.2.0",
@@ -95,7 +95,7 @@
     },
     "packages/testing": {
       "name": "@oaath/testing",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@account-abstraction/contracts": "0.7.0",
         "@noble/curves": "1.9.1",

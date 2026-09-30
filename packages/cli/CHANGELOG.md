@@ -1,5 +1,20 @@
 # @oaath/cli
 
+## 0.3.2
+
+### Patch Changes
+
+- ee3371f: Include CallPolicy, the operation-limit policy, and ECDSA signer in runtime readiness. Every row declares deployment support, and all seven modules have pinned SDK deployment transactions shared with the CLI.
+- Updated dependencies [08604f3]
+- Updated dependencies [ee3371f]
+- Updated dependencies [b990767]
+- Updated dependencies [a7f02e6]
+- Updated dependencies [a2cf1e0]
+- Updated dependencies [94116ac]
+- Updated dependencies [d9fd974]
+- Updated dependencies [651e58d]
+  - @oaath/sdk@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

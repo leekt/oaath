@@ -1,5 +1,20 @@
 # @oaath/sdk
 
+## 0.3.2
+
+### Patch Changes
+
+- 08604f3: Add browser-native WebAuthn enrolment with an explicit RP ID, required user verification, typed failures, cancellation, and credential-hash-compatible operator profiles. Native WebAuthn Level 2 public-key extraction is required; no Node globals or custom CBOR parser are used.
+- ee3371f: Include CallPolicy, the operation-limit policy, and ECDSA signer in runtime readiness. Every row declares deployment support, and all seven modules have pinned SDK deployment transactions shared with the CLI.
+- b990767: Export the reserved nonce-alignment permission ID and verify exact alignment call batches with typed mismatch results.
+- a7f02e6: Report verified UserOperation inclusion with its receipt and block before finality. Recheck canonical inclusion before finalization and only report a drop for a verified finalized replacement at the same nonce.
+- a2cf1e0: Preserve typed UserOperation failure details through service responses using a closed versioned wire representation, without exposing provider causes.
+- 94116ac: Own shared UserOperation failure classification and wire capture in the protocol package so relay roots retain their SDK-free dependency boundary.
+- d9fd974: Accept version-selected Kernel 0.3.3 runtimes in permission nonce and materialization helpers without casts.
+- 651e58d: Classify bundler and paymaster failures with a closed stage, code, EntryPoint code and retryability. Expose typed failure details on RPC/client errors and pending submission outcomes, preserve original causes without copying provider text into messages, and export a classifier for caller-owned clients. Classification never authorizes resubmission.
+- Updated dependencies [94116ac]
+  - @oaath/protocol@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes

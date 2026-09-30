@@ -1,6 +1,6 @@
 {
   "name": "@oaath/server",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "OAAth deployable relay and PostgreSQL boundary.",
   "type": "module",
   "sideEffects": false,
