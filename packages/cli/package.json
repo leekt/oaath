@@ -1,6 +1,6 @@
 {
   "name": "@oaath/cli",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "OAAth runtime deployment and readiness commands.",
   "type": "module",
   "license": "Apache-2.0",

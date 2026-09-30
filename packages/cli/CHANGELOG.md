@@ -1,5 +1,17 @@
 # @oaath/cli
 
+## 0.3.3
+
+### Patch Changes
+
+- ef7875c: Mark ZeroDev CallPolicy, operation-limit policy, ECDSA signer and Daimo P-256 verifier as externally deployed. `prepareRuntimeModuleDeployment` returns null for these modules. The CLI requires their pinned runtimes before deploying OAAth-owned modules.
+- Updated dependencies [540788b]
+- Updated dependencies [760fdd2]
+- Updated dependencies [7d7e196]
+- Updated dependencies [c07ce18]
+- Updated dependencies [ef7875c]
+  - @oaath/sdk@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @oaath/protocol
 
+## 0.3.3
+
+### Patch Changes
+
+- 760fdd2: Accept and normalize valid EIP-55 addresses in public UserOperation references. Reject invalid checksums with a specific structured error before observation reads; persisted operation records remain canonical.
+
 ## 0.3.2
 
 ### Patch Changes

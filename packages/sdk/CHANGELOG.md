@@ -1,5 +1,17 @@
 # @oaath/sdk
 
+## 0.3.3
+
+### Patch Changes
+
+- 540788b: Allow authenticated public RPC headers and caller cancellation in createViemChainPorts. Bundlers are optional for read-only use; absent bundlers expose no submission route and fail explicitly without transport calls.
+- 760fdd2: Accept and normalize valid EIP-55 addresses in public UserOperation references. Reject invalid checksums with a specific structured error before observation reads; persisted operation records remain canonical.
+- 7d7e196: Preserve the original browser exception as a non-enumerable cause on typed WebAuthn enrolment failures without copying browser text into messages.
+- c07ce18: Export readUserOperationFailure from @oaath/sdk/viem so caller-owned clients can read typed failures directly.
+- ef7875c: Mark ZeroDev CallPolicy, operation-limit policy, ECDSA signer and Daimo P-256 verifier as externally deployed. `prepareRuntimeModuleDeployment` returns null for these modules. The CLI requires their pinned runtimes before deploying OAAth-owned modules.
+- Updated dependencies [760fdd2]
+  - @oaath/protocol@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes
