@@ -15,6 +15,36 @@ const config = {
 const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
 
 describe("default viem chain ports", () => {
+  it("pins plain v4 permission reads through the default RPC port", async () => {
+    const selectors: unknown[] = [];
+    const [chain] = createViemChainPorts(config, {
+      fetch: async (request) => {
+        const { id, method, params } = await request.json();
+        if (method === "eth_chainId") return rpc(id, "0x8f");
+        if (method === "eth_getBlockByNumber") {
+          selectors.push(params[0]);
+          return rpc(id, { number: "0x10", hash: `0x${"aa".repeat(32)}` });
+        }
+        expect(method).toBe("eth_call");
+        expect(params[1]).toBe("0x10");
+        return rpc(id, `0x${"00".repeat(32)}`);
+      },
+    });
+    if (!chain) throw new Error("missing chain");
+    expect(
+      await chain.reads.read({
+        type: "kernel_v4_permission_state",
+        chainId: 143,
+        blockTag: "finalized",
+        account: `0x${"11".repeat(20)}`,
+        signer: `0x${"22".repeat(20)}`,
+        permissionId: "0x12345678",
+        nonce: "0",
+      }),
+    ).toEqual({ installed: false, installNonce: "0" });
+    expect(selectors).toEqual(["finalized", "0x10"]);
+  });
+
   it.each([
     "success",
     "reverted-operation",

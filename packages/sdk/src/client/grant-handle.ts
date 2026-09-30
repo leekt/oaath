@@ -57,7 +57,7 @@ import {
   type KernelCapability,
   kernelKeyCapability,
 } from "../kernel/capabilities.js";
-import type { KernelV33ReadRequest } from "../kernel/deployment/v33.js";
+import type { KernelReadRequest } from "../kernel/deployment/account.js";
 import { captureKernelGasPolicy, type KernelGasPolicy } from "../kernel/gas-policy.js";
 import { credentialKeyIsReadOnly } from "../kernel/key/credential.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
@@ -87,7 +87,6 @@ import {
   encodeKernelPermissionUninstallCalls,
   type KernelCall,
   type KernelUserOperationGas,
-  type KernelV4AccountReadRequest,
   type KernelValidityTimeRange,
   kernelV4Deployment,
 } from "../kernel-v4.js";
@@ -461,7 +460,7 @@ export interface OaathChainCapability {
   readonly gas?: Readonly<KernelGasPolicy>;
   readonly chainId: number;
   readonly reads: {
-    readonly read: (request: KernelV4AccountReadRequest | KernelV33ReadRequest) => Promise<unknown>;
+    readonly read: (request: KernelReadRequest) => Promise<unknown>;
   };
   readonly observation: OperationObserverCapabilities;
   /**

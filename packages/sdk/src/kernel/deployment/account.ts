@@ -9,10 +9,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { decodeAbiParameters, encodeFunctionData, parseAbi } from "viem";
 import {
   bindKernelV4Account,
   bindKernelV4ExistingAccount,
   createKernelV4Reads,
+  encodeKernelV4InstallNonceRead,
   encodeKernelV4NonceKey,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
   type KernelInstall,
@@ -191,15 +193,91 @@ export function kernelOperationSigningHash(value: KernelOperationSigningHashInpu
     : parsePreparedUserOperation(record.operation).userOperationHash;
 }
 
-export type KernelReadRequest = KernelV4AccountReadRequest | KernelV33ReadRequest;
+export type KernelReadRequest =
+  | KernelV4AccountReadRequest
+  | KernelV33ReadRequest
+  | Readonly<{
+      /** Presence and install nonce from one block, rebound by hash before returning. */
+      type: "kernel_v4_permission_state";
+      chainId: number;
+      account: `0x${string}`;
+      signer: `0x${string}`;
+      permissionId: `0x${string}`;
+      nonce: string;
+      blockTag: "latest" | "finalized";
+    }>;
 
 /** One read capability every supported deployment's binding and operations use. */
 export interface KernelReads {
   readonly read: (request: KernelReadRequest) => Promise<unknown>;
 }
 
-/** Minimal viem-PublicClient-shaped surface: getChainId, getCode, getStorageAt, call. */
-export type KernelReadClient = KernelV4ReadClient;
+/** Public-client account reads, including block resolution for v4 permission status. */
+export interface KernelReadClient extends KernelV4ReadClient {
+  readonly getBlock: (
+    args:
+      | { blockTag: "latest" | "finalized"; blockNumber?: never }
+      | { blockNumber: bigint; blockTag?: never },
+  ) => Promise<{
+    number: bigint | null;
+    hash: `0x${string}` | null;
+  }>;
+  readonly call: (
+    args: {
+      to: `0x${string}`;
+      data: `0x${string}`;
+    } & (
+      | { blockTag?: "latest" | "finalized"; blockNumber?: never }
+      | { blockNumber: bigint; blockTag?: never }
+    ),
+  ) => Promise<{ data?: `0x${string}` | undefined }>;
+}
+
+const PERMISSION_VIEW_ABI = parseAbi([
+  "function isModuleInstalled(uint256 moduleTypeId, address module, bytes additionalContext) view returns (bool)",
+]);
+
+/** Capture both pieces at one height; a reorg or malformed RPC result is unreadable. */
+async function readV4PermissionState(
+  client: KernelReadClient,
+  request: Extract<KernelReadRequest, { type: "kernel_v4_permission_state" }>,
+) {
+  const { number, hash } = await client.getBlock({ blockTag: request.blockTag });
+  if (
+    typeof number !== "bigint" ||
+    number < 0n ||
+    typeof hash !== "string" ||
+    !/^0x[0-9a-f]{64}$/u.test(hash)
+  )
+    return undefined;
+  const call = async (data: `0x${string}`) => {
+    const result = await client.call({ to: request.account, data, blockNumber: number });
+    if (typeof result.data !== "string" || !/^0x[0-9a-f]{64}$/u.test(result.data))
+      throw new Error("Kernel permission state is unreadable");
+    return decodeAbiParameters([{ type: "uint256" }], result.data)[0];
+  };
+  const installed = await call(
+    encodeFunctionData({
+      abi: PERMISSION_VIEW_ABI,
+      functionName: "isModuleInstalled",
+      args: [6n, request.signer, request.permissionId],
+    }),
+  );
+  if (installed !== 0n && installed !== 1n) return undefined;
+  const installNonce =
+    installed === 1n
+      ? null
+      : (
+          await call(
+            encodeKernelV4InstallNonceRead({
+              key: (BigInt(request.nonce) >> 64n).toString(),
+            }),
+          )
+        ).toString();
+  const rebound = await client.getBlock({ blockNumber: number });
+  if (rebound.number !== number || rebound.hash !== hash) return undefined;
+  return Object.freeze({ installed: installed === 1n, installNonce });
+}
 
 /** Uses a public RPC client for account evidence; no bundler method is called. */
 export function createKernelReads(client: KernelReadClient): Readonly<KernelReads> {
@@ -208,6 +286,8 @@ export function createKernelReads(client: KernelReadClient): Readonly<KernelRead
   return Object.freeze({
     read(request: KernelReadRequest): Promise<unknown> {
       switch (request.type) {
+        case "kernel_v4_permission_state":
+          return readV4PermissionState(client, request);
         case "kernel_account_version":
         case "kernel_account_entrypoint":
         case "kernel_account_root_validator":

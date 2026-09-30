@@ -217,6 +217,7 @@ describe("version-agnostic Kernel account binding", () => {
   it("routes union reads to the owning version adapter", async () => {
     const call = vi.fn(async () => ({ data: `0x${root.slice(2).padEnd(64, "0")}` as const }));
     const client = {
+      getBlock: async () => ({ number: 1n, hash: `0x${"aa".repeat(32)}` as const }),
       getChainId: async () => chainId,
       getCode: async () => "0x6000" as const,
       getStorageAt: async () => `0x${"00".repeat(12)}${account.slice(2)}` as const,

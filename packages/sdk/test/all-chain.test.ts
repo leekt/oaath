@@ -1,7 +1,7 @@
 import { hashCanonicalEip712TypedData } from "@oaath/protocol";
 import { concat, encodeAbiParameters, hashTypedData, keccak256, recoverAddress, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 // Internal on purpose: requested-range authorization depends on the exact
 // deterministic policy runtime, while the public surface exposes its meaning.
 import {
@@ -15,6 +15,7 @@ import {
 } from "../src/kernel/permission/materialize.js";
 import { OaathKernelRuntimeError } from "../src/kernel/types.js";
 import {
+  createKernelReads,
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
@@ -387,23 +388,77 @@ describe("all-chain permission approval", () => {
     expect(Object.isFrozen(approval)).toBe(true);
   });
 
-  it("reports a Kernel 0.4.0 permission status from plain reads as unsupported", async () => {
+  it("pins v4 presence and nonce to one block and refuses contradictory evidence", async () => {
     const approval = await approveKernelPermissionAllChain({
       owner: ownerKey,
       account,
       installNonce: "0",
       packages: local.session.packages,
     });
-    const requests: unknown[] = [];
-    expect(
-      await readKernelPermissionStatus({
-        approval,
-        chainId: 1,
-        blockTag: "finalized",
-        reads: { read: async (request) => requests.push(request) },
-      }),
-    ).toEqual({ status: "unsupported" });
-    expect(requests).toEqual([]);
+    for (const mode of [
+      "replayable",
+      "installed",
+      "revoked",
+      "reorg",
+      "empty",
+      "foreign-key",
+      "bad-bool",
+      "foreign-chain",
+      "failure",
+    ] as const) {
+      const block = { number: 16n, hash: `0x${"aa".repeat(32)}` as const };
+      let blocks = 0;
+      let calls = 0;
+      const getBlock = vi.fn(async (input: { blockTag?: string; blockNumber?: bigint }) => {
+        blocks++;
+        if (blocks === 1) expect(input).toEqual({ blockTag: "finalized" });
+        else expect(input).toEqual({ blockNumber: 16n });
+        return mode === "reorg" && blocks > 1
+          ? { ...block, hash: `0x${"bb".repeat(32)}` as const }
+          : block;
+      });
+      const call = vi.fn(async (input: { blockNumber?: bigint; blockTag?: string }) => {
+        // A moving named tag would mix absent permission evidence with a later
+        // consumed nonce. Both RPCs must instead name the resolved height.
+        expect(input.blockNumber).toBe(16n);
+        expect(input.blockTag).toBeUndefined();
+        if (mode === "failure") throw new Error("unavailable");
+        calls++;
+        const value =
+          calls === 1
+            ? mode === "installed"
+              ? 1n
+              : mode === "bad-bool"
+                ? 2n
+                : 0n
+            : mode === "foreign-key"
+              ? 1n << 64n
+              : mode === "replayable"
+                ? 0n
+                : 1n;
+        return { data: mode === "empty" ? ("0x" as const) : toHex(value, { size: 32 }) };
+      });
+      const reads = createKernelReads({
+        getChainId: async () => (mode === "foreign-chain" ? 2 : 1),
+        getCode: async () => "0x",
+        getStorageAt: async () => "0x",
+        getBlock,
+        call,
+      });
+      expect(
+        await readKernelPermissionStatus({ approval, chainId: 1, blockTag: "finalized", reads }),
+      ).toEqual(
+        mode === "installed"
+          ? { status: "installed" }
+          : mode === "replayable"
+            ? { status: "approval-replayable" }
+            : mode === "revoked"
+              ? { status: "revoked", installNonce: "1" }
+              : { status: "unreadable" },
+      );
+      if (mode === "installed") expect(call).toHaveBeenCalledTimes(1);
+      if (mode === "foreign-chain") expect(getBlock).not.toHaveBeenCalled();
+    }
   });
 
   it("fails closed on a hostile approval request", async () => {
