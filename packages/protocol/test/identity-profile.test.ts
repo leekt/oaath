@@ -1,4 +1,9 @@
+import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
+import {
+  encodeOwnerCredentialProfile,
+  hashOwnerCredentialProfile,
+} from "../src/identity-profile.js";
 import {
   createKernelAccountActionInput,
   type KernelAccountProfile,
@@ -273,6 +278,39 @@ describe("identity profile codecs", () => {
       "fallback",
     ]) {
       expect(profileKeys.has(forbidden), `forbidden profile key: ${forbidden}`).toBe(false);
+    }
+  });
+
+  it("captures a checksummed ECDSA address in lowercase and rejects a bad checksum", () => {
+    const lowercase = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" as const;
+    const checksummed = getAddress(lowercase);
+    expect(checksummed).not.toBe(lowercase);
+
+    const owner = parseOwnerCredentialProfile({ ...ownerEcdsa, address: checksummed });
+    expect(owner).toEqual({ ...ownerEcdsa, address: lowercase });
+    expect(encodeOwnerCredentialProfile({ ...ownerEcdsa, address: checksummed })).toBe(
+      encodeOwnerCredentialProfile({ ...ownerEcdsa, address: lowercase }),
+    );
+    expect(hashOwnerCredentialProfile({ ...ownerEcdsa, address: checksummed })).toBe(
+      hashOwnerCredentialProfile({ ...ownerEcdsa, address: lowercase }),
+    );
+    expect(parseOperatorCredentialProfile({ ...operatorEcdsa, address: checksummed })).toEqual({
+      ...operatorEcdsa,
+      address: lowercase,
+    });
+
+    const badChecksum = `0x${checksummed.slice(2).replace(/[a-f]/u, (c) => c.toUpperCase())}`;
+    expect(badChecksum).not.toBe(checksummed);
+    expect(badChecksum.toLowerCase()).toBe(lowercase);
+    for (const address of [badChecksum, lowercase.toUpperCase().replace("0X", "0x")]) {
+      expectProfileError(
+        () => parseOwnerCredentialProfile({ ...ownerEcdsa, address }),
+        "owner_credential_profile_invalid",
+      );
+      expectProfileError(
+        () => parseOperatorCredentialProfile({ ...operatorEcdsa, address }),
+        "operator_credential_profile_invalid",
+      );
     }
   });
 
