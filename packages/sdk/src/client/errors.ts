@@ -188,7 +188,15 @@ export function mapClientFailure(error: unknown, fallbackMessage: string): never
     clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
   }
   if (name === "OaathKernelRuntimeError" && code !== null && code in KERNEL_CODES) {
-    clientFail(KERNEL_CODES[code] ?? "oaath_client_internal", fallbackMessage, code);
+    // Forward the capability's own failure (e.g. EIP-1193 4001) so `error.cause.code` reads it directly.
+    const cause = (error as Error).cause;
+    clientFail(
+      KERNEL_CODES[code] ?? "oaath_client_internal",
+      fallbackMessage,
+      code,
+      null,
+      cause === undefined ? undefined : { cause },
+    );
   }
   if (name === "OaathStoreError" && code !== null) {
     clientFail(
