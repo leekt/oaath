@@ -19,8 +19,14 @@ import {
 import { exactKernelDeployment } from "../modules.js";
 import type { KeyProfile } from "../types.js";
 
-/** 65-byte placeholder with a canonical low-s component; used for gas estimation only. */
-const DUMMY_SIGNATURE = `0x${"11".repeat(32)}${"22".repeat(32)}1c` as const;
+/**
+ * 65-byte gas-estimation placeholder: a low-s signature by the throwaway key 1
+ * over keccak256("@oaath/sdk:ecdsa-estimation-placeholder"). It recovers to a
+ * point for any hash, so an ECDSA signer module reports a signature failure
+ * instead of reverting, which bundler estimation requires.
+ */
+export const ECDSA_DUMMY_SIGNATURE =
+  "0xbd7f6486d7a311a9645e88253cee36b95471dc42c25ae24b2d4aa9ccd85e27592fbade657fafc728c0e950faa89c48ba749ea47049cf1938ddecc1dfa1d64dac1b" as const;
 
 export interface EcdsaSignRequest {
   readonly hash: `0x${string}`;
@@ -130,7 +136,7 @@ function profile(
     // duplication of the capture layer's check — this factory is publicly
     // exported, so direct callers need the guarantee too. Do not "clean it up".
     signerModule: null,
-    dummySignature: DUMMY_SIGNATURE,
+    dummySignature: ECDSA_DUMMY_SIGNATURE,
     async sign(hash: `0x${string}`): Promise<`0x${string}`> {
       const produced = await invokeCapability(
         sign,

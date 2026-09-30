@@ -64,8 +64,10 @@ export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
 export type {
   ApproveKernelPermissionInput,
+  BindKernelPermissionEnableInput,
   KernelGrantApproval as KernelPermissionApproval,
   KernelPermissionApprovalVerification,
+  KernelPermissionEnable,
   KernelPermissionEnableTypedData,
   KernelPermissionNonceInput,
   MaterializeKernelPermissionInput,
@@ -73,6 +75,7 @@ export type {
 } from "./kernel/permission/approval.js";
 export {
   approveKernelPermission,
+  bindKernelPermissionEnable,
   kernelGrantCapabilityHash as kernelPermissionCapabilityHash,
   kernelPermissionEnableTypedData,
   kernelPermissionNonce,

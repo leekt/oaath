@@ -11,6 +11,7 @@ import {
 } from "@oaath/protocol";
 import { hashTypedData, recoverAddress } from "viem";
 import { kernelV4ReplayableInstallTypedData } from "../../kernel-v4.js";
+import type { PreparedUserOperation } from "../../prepared-user-operation.js";
 import type { KernelAccountDescriptor, KernelReads } from "../deployment/account.js";
 import type { KernelV33AccountDescriptor } from "../deployment/v33.js";
 import {
@@ -30,6 +31,7 @@ import type {
 import { kernelPermissionInstallNonce } from "./install-nonce.js";
 import {
   approveKernelPermissionAllChain,
+  bindKernelPermissionApproval,
   type KernelAllChainApproval,
   type KernelPermissionMaterialization,
   kernelAllChainCapabilityHash,
@@ -39,6 +41,7 @@ import {
 } from "./materialize.js";
 import {
   approveKernelV33Permission,
+  bindKernelV33PermissionApproval,
   checkKernelV33PermissionApproval,
   type KernelV33ApprovalMismatchField,
   type KernelV33ApprovalMismatchReason,
@@ -359,4 +362,76 @@ export async function materializeKernelPermission(
   if (isV33(record.runtime as Readonly<KernelRuntime>))
     return materializeKernelV33Permission(record as never);
   return materializeKernelV4Permission(record as never);
+}
+
+export interface BindKernelPermissionEnableInput {
+  /** The session runtime for the target chain, composed over that chain's deployment. */
+  readonly runtime: Readonly<KernelRuntime> | Readonly<KernelV33Runtime>;
+  /** The account bound by that runtime on the target chain. */
+  readonly account: Readonly<KernelAccountDescriptor>;
+  readonly approval: Readonly<KernelGrantApproval>;
+}
+
+/** One chain's enable-mode first execution, before its session signature exists. */
+export interface KernelPermissionEnable {
+  /**
+   * The exact enable envelope around the session key's placeholder signature:
+   * the real owner approval, so validation reaches the session signer. For
+   * `eth_estimateUserOperationGas` only; it never validates onchain.
+   */
+  readonly simulationSignature: `0x${string}`;
+  /** Prepares the enable-mode execution; it signs nothing. */
+  prepareOperation(
+    input: Omit<MaterializeKernelPermissionInput, "approval" | "runtime" | "account">,
+  ): PreparedUserOperation;
+  /** The session key's one signature, wrapped in the enable envelope. */
+  signOperation(prepared: Readonly<PreparedUserOperation>): Promise<`0x${string}`>;
+}
+
+/**
+ * Binds an owner approval to one chain's session runtime so an enable-mode
+ * execution can be prepared and estimated before the session key is asked to
+ * sign: prepare with placeholder gas, estimate with `simulationSignature`,
+ * prepare again with the estimate, then `signOperation` once.
+ */
+export function bindKernelPermissionEnable(
+  value: BindKernelPermissionEnableInput,
+): Readonly<KernelPermissionEnable> {
+  const record = exactInput(
+    value,
+    ["runtime", "account", "approval"],
+    "Kernel permission enable",
+    new WeakSet(),
+  );
+  const runtime = record.runtime as Readonly<KernelRuntime>;
+  const account = record.account as Readonly<KernelAccountDescriptor>;
+  const address = accountAddress(account);
+  const approval = parseVersionedKernelGrantApproval(record.approval);
+  if (isV33(runtime) !== (approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION))
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "Kernel approval belongs to another Kernel version",
+    );
+  const bound =
+    approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION
+      ? bindKernelV33PermissionApproval({
+          runtime: runtime as unknown as Readonly<KernelV33Runtime>,
+          approval,
+          account: address,
+        })
+      : bindKernelPermissionApproval({ runtime, approval, account: address });
+  return Object.freeze({
+    simulationSignature: bound.dummySignature,
+    prepareOperation(
+      input: Omit<MaterializeKernelPermissionInput, "approval" | "runtime" | "account">,
+    ) {
+      const captured = captureInput(input, "Kernel permission enable operation", new WeakSet());
+      return bound.prepareOperation({
+        ...(captured as unknown as KernelRuntimePrepareInput),
+        kind: "execution",
+        account,
+      } as never);
+    },
+    signOperation: (prepared: Readonly<PreparedUserOperation>) => bound.signOperation(prepared),
+  });
 }

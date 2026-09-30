@@ -52,6 +52,7 @@ describe("package boundary", () => {
       "approveKernelPermission",
       "asViemUserOperation",
       "bindKernelAccount",
+      "bindKernelPermissionEnable",
       "compileKernelPermissionPolicy",
       "createKernelReads",
       "createKernelRuntime",
