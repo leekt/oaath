@@ -1,5 +1,29 @@
 # @oaath/protocol
 
+## 0.3.1
+
+### Patch Changes
+
+- c07566c: ECDSA owner and operator credential profiles (and existing Kernel account addresses) now accept a valid EIP-55 checksummed address and capture it in canonical lowercase, so canonical encodings and hashes match the lowercase spelling. Mixed-case addresses with an invalid checksum are still rejected.
+- cfe6f19: Kernel `0.3.3` ECDSA-owned accounts can be derived and activated without
+  ZeroDev's SDK. `deriveKernelAccount({ deployment, owner, accountIndex })`
+  returns the account address and the EntryPoint 0.7 `factory` / `factoryData`
+  of ZeroDev's MetaFactory route, byte for byte what ZeroDev's
+  `createKernelAccount` derives. `bindKernelAccount({ chainId, reads, deployment,
+owner, accountIndex })` and an owner runtime's `bindAccount({ accountIndex })`
+  bind that account: a deployed one exactly as an existing account, a
+  counterfactual one only after the pinned factory and MetaFactory code and the
+  factory approval are proven. Its first prepared operation carries the
+  MetaFactory deployment.
+- 8f6b0e7: A session runtime now checks every call against the exact CallPolicy payload it installs, and refuses a call the chain would reject (an unnamed target or selector, a partial selector, or native value above the permission's limit) with the new `kernel_runtime_call_forbidden` code before any key is asked to sign. `prepareOperation`, `signOperation`, and `encodeVerifiedSignature` all refuse; client calls map the code to `oaath_client_scope_denied`.
+- 0fc7149: `prepareKernelPermissionRevocation` accepts an optional caller-supplied EntryPoint 0.7
+  `paymaster` (`address`, `verificationGasLimit`, `postOpGasLimit`, `data`) for Kernel `0.3.3`
+  and `0.4.0`; it defaults to `null` (self-funded) and is part of the hashed operation identity.
+  The Kernel `0.3.3` record is now `oaath.kernel-permission-revocation/v2` with a top-level
+  `paymaster`; `v1` records are rejected and must be prepared again. The Kernel `0.4.0`
+  revocation signing request accepts a packed `paymasterAndData`, and restore reproduces the
+  exact sponsored operation.
+
 ## 0.3.0
 
 ### Minor Changes

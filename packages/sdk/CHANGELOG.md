@@ -1,5 +1,105 @@
 # @oaath/sdk
 
+## 0.3.1
+
+### Patch Changes
+
+- 6597aab: License the OAAth-owned validity policy and its embedded bytecode under Apache-2.0. Declare the CC0 ERC-4337 ABI locally, removing the GPL source import without changing bytecode or deployment addresses.
+- cfe6f19: Kernel `0.3.3` ECDSA-owned accounts can be derived and activated without
+  ZeroDev's SDK. `deriveKernelAccount({ deployment, owner, accountIndex })`
+  returns the account address and the EntryPoint 0.7 `factory` / `factoryData`
+  of ZeroDev's MetaFactory route, byte for byte what ZeroDev's
+  `createKernelAccount` derives. `bindKernelAccount({ chainId, reads, deployment,
+owner, accountIndex })` and an owner runtime's `bindAccount({ accountIndex })`
+  bind that account: a deployed one exactly as an existing account, a
+  counterfactual one only after the pinned factory and MetaFactory code and the
+  factory approval are proven. Its first prepared operation carries the
+  MetaFactory deployment.
+- 91cf5fb: `@oaath/sdk/kernel` exports `bindKernelPermissionEnable({ runtime, account,
+approval })`. It prepares a session's enable-mode first execution without
+  signing, and returns a `simulationSignature` for `eth_estimateUserOperationGas`:
+  the exact enable envelope around the session key's placeholder. After
+  estimating, `signOperation` asks the session key once. The ECDSA placeholder
+  signature is now a recoverable low-s signature, so an ECDSA signer module
+  reports a signature failure during estimation instead of reverting.
+- 08d4350: `createKernelReads` serves an `entry_point_lane_nonce` read (EntryPoint 0.7
+  `getNonce(account, key)`), and `@oaath/sdk/advanced` exports
+  `readKernelLaneSequence({ account, key, reads })` next to
+  `encodeKernelNonceKey`. It returns a nonce lane's next sequence for
+  `prepareOperation`. An unreadable result fails with
+  `kernel_runtime_read_unavailable`; a result for another key or a malformed one
+  fails with `kernel_runtime_evidence_invalid`.
+- 0adee13: `@oaath/sdk/kernel` exports `prepareExistingAccountPermissionApproval({
+account, owner, operator, chains, requestHash, kernelVersion? })`. For an
+  existing Kernel account it binds the account on every given chain, proves the
+  owner key is the onchain root owner on each one, and returns the one approval's
+  `nonce`, `typedData` and `digest`. It needs no `PermissionRequest`. Chains whose
+  effective enable nonces differ fail with the new
+  `kernel_runtime_nonce_mismatch` code.
+- 6aa26c3: `@oaath/sdk/kernel` exports `kernelPermissionNonceAlignmentCalls({ runtime,
+account, reads, nonce })`. It returns the owner calls that raise one chain's
+  Kernel 0.3.3 enable nonce for a not-yet-installed permission to a target, so
+  one approval covers chains whose nonces differed. The calls install and remove
+  a throwaway permission that never validates. They never raise
+  `validNonceFrom`, so installed permissions keep working.
+- 0d7c164: `readKernelPermissionStatus` on `@oaath/sdk/kernel` reads one approval's
+  permission status from plain `KernelReads` (for example `createKernelReads`) at
+  a named block, `latest` or `finalized`: `installed`, `approval-replayable`,
+  `revoked` or `unreadable`. It classifies with the same owner as
+  `verifyKernelPermissionRevocation`. Kernel `0.4.0` presence and install-nonce reads are pinned to one block and
+  rebound by hash. The `kernel_v33_permission_state` read accepts an optional
+  `blockTag`, which `createKernelReads` forwards to every `eth_call`.
+- a229ab4: `@oaath/sdk/kernel` exports `kernelRuntimeReadiness({ chainId, reads })`,
+  which reports each OAAth runtime module (WebAuthn signer, RateLimit policy,
+  validity policy, P-256 verifier) as `present`, `missing`, `mismatch` (other
+  code occupies the address, so deploying cannot fix it) or `unreadable`, and
+  `prepareRuntimeModuleDeployment({ chainId, module })`, which returns the exact
+  CREATE2 deployer transaction `{ module, address, to, data, value,
+expectedRuntimeCodeHash }`. `oaath deploy-runtime` now sends these prepared
+  transactions instead of keeping its own copy.
+- 8f6b0e7: A session runtime now checks every call against the exact CallPolicy payload it installs, and refuses a call the chain would reject (an unnamed target or selector, a partial selector, or native value above the permission's limit) with the new `kernel_runtime_call_forbidden` code before any key is asked to sign. `prepareOperation`, `signOperation`, and `encodeVerifiedSignature` all refuse; client calls map the code to `oaath_client_scope_denied`.
+- 7084540: `@oaath/sdk/kernel` exports `signedKernelPermissionApproval({ runtime, account,
+nonce, owner, typedData, signature })`. It assembles a Kernel permission
+  approval from an enable typed-data signature taken elsewhere, such as a browser
+  wallet's `eth_signTypedData_v4`. The typed data must hash to the permission's
+  enable digest (`kernel_runtime_binding_mismatch`), and the signature must
+  recover to the owner (`kernel_runtime_signature_invalid`). The approval entry
+  points also accept a Kernel 0.3.3 runtime without a cast.
+- ff14e39: A failed signing capability (wallet `signMessage`, `account.sign`, P-256, WebAuthn, or a wallet approval prompt) now keeps the wallet's own error as the standard `cause` on the thrown OAAth error, so callers can read an EIP-1193 code such as 4001 without OAAth copying provider text into its message. Error codes are unchanged.
+- 0fc7149: `prepareKernelPermissionRevocation` accepts an optional caller-supplied EntryPoint 0.7
+  `paymaster` (`address`, `verificationGasLimit`, `postOpGasLimit`, `data`) for Kernel `0.3.3`
+  and `0.4.0`; it defaults to `null` (self-funded) and is part of the hashed operation identity.
+  The Kernel `0.3.3` record is now `oaath.kernel-permission-revocation/v2` with a top-level
+  `paymaster`; `v1` records are rejected and must be prepared again. The Kernel `0.4.0`
+  revocation signing request accepts a packed `paymasterAndData`, and restore reproduces the
+  exact sponsored operation.
+- b8d8ae7: `verifyKernelPermissionApproval` accepts a Kernel v3.3 enable signature over
+  the EIP-191 hash of the digest, which is what `kernelKey({ wallet })`
+  produces with `personal_sign`, as well as the raw-digest `signTypedData`
+  form. These are the two forms Kernel v3.3's ECDSA validator accepts, so the
+  offline check agrees with the chain.
+- 849c519: Classify Kernel 0.4.0 permissions through plain KernelReads, pinning presence and nonce reads to one block and rejecting changed or contradictory evidence.
+- 9baf4bc: `@oaath/sdk/kernel`'s `KernelDeployment`, `KernelRuntime` and
+  `CreateKernelRuntimeInput` take an optional Kernel version argument, selected
+  by the deployment's own `kernelVersion` discriminant. For example,
+  `KernelRuntime<"0.3.3">` names the Kernel 0.3.3 runtime, with its v3.3
+  deployment fields, account descriptor and `enable` mode, and needs no cast.
+  With no argument, each type still covers either version. No export name
+  carries a version.
+- e838a47: `kernelKey` WebAuthn input accepts `http://localhost` and `http://*.localhost`
+  origins, with an optional port, alongside https. Browsers treat these as secure
+  contexts for WebAuthn, so local development and virtual-authenticator suites
+  can build and sign an OAAth session.
+- 250e66a: `kernelKey` WebAuthn signing input accepts the operator credential profile
+  (`oaath.operator-credential-profile/v1`) as well as the owner profile, as the
+  public `credential` input already does. The profile's role does not change the
+  key's public material or signing.
+- Updated dependencies [c07566c]
+- Updated dependencies [cfe6f19]
+- Updated dependencies [8f6b0e7]
+- Updated dependencies [0fc7149]
+  - @oaath/protocol@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

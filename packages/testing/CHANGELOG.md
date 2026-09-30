@@ -1,5 +1,43 @@
 # @oaath/testing
 
+## 0.3.1
+
+### Patch Changes
+
+- cfe6f19: Kernel `0.3.3` ECDSA-owned accounts can be derived and activated without
+  ZeroDev's SDK. `deriveKernelAccount({ deployment, owner, accountIndex })`
+  returns the account address and the EntryPoint 0.7 `factory` / `factoryData`
+  of ZeroDev's MetaFactory route, byte for byte what ZeroDev's
+  `createKernelAccount` derives. `bindKernelAccount({ chainId, reads, deployment,
+owner, accountIndex })` and an owner runtime's `bindAccount({ accountIndex })`
+  bind that account: a deployed one exactly as an existing account, a
+  counterfactual one only after the pinned factory and MetaFactory code and the
+  factory approval are proven. Its first prepared operation carries the
+  MetaFactory deployment.
+- 8f6b0e7: A session runtime now checks every call against the exact CallPolicy payload it installs, and refuses a call the chain would reject (an unnamed target or selector, a partial selector, or native value above the permission's limit) with the new `kernel_runtime_call_forbidden` code before any key is asked to sign. `prepareOperation`, `signOperation`, and `encodeVerifiedSignature` all refuse; client calls map the code to `oaath_client_scope_denied`.
+- Updated dependencies [6597aab]
+- Updated dependencies [c07566c]
+- Updated dependencies [cfe6f19]
+- Updated dependencies [91cf5fb]
+- Updated dependencies [08d4350]
+- Updated dependencies [0adee13]
+- Updated dependencies [6aa26c3]
+- Updated dependencies [0d7c164]
+- Updated dependencies [a229ab4]
+- Updated dependencies [8f6b0e7]
+- Updated dependencies [7084540]
+- Updated dependencies [ff14e39]
+- Updated dependencies [0fc7149]
+- Updated dependencies [6db1c58]
+- Updated dependencies [b8d8ae7]
+- Updated dependencies [849c519]
+- Updated dependencies [9baf4bc]
+- Updated dependencies [e838a47]
+- Updated dependencies [250e66a]
+  - @oaath/sdk@0.3.1
+  - @oaath/protocol@0.3.1
+  - @oaath/server@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
