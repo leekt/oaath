@@ -11,11 +11,12 @@ import type {
   KernelInstall,
   KernelUserOperationGas,
   KernelV4AccountDescriptor,
+  KernelV4AccountReadCapability,
   KernelValidation,
   KernelValidityTimeRange,
 } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
-import type { KernelAccountDescriptor, KernelReads } from "./deployment/account.js";
+import type { KernelAccountDescriptor, KernelReads, KernelVersion } from "./deployment/account.js";
 import type { KernelDeployment } from "./deployment/profile.js";
 import type {
   KernelV33AccountDescriptor,
@@ -345,3 +346,34 @@ export interface KernelV33Runtime
   ) => Promise<Readonly<KernelV33AccountDescriptor>>;
   readonly prepareOperation: (input: KernelV33RuntimePrepareInput) => PreparedUserOperation;
 }
+
+/** Kernel `0.4.0` composition input: a derived account needs the factory reads. */
+export interface CreateKernelV4RuntimeInput extends Omit<CreateKernelRuntimeInput, "reads"> {
+  readonly deployment: Readonly<KernelDeployment<"0.4.0">>;
+  readonly reads: KernelV4AccountReadCapability;
+}
+
+export interface KernelV4Runtime extends Omit<KernelRuntime, "deployment"> {
+  readonly deployment: Readonly<KernelDeployment<"0.4.0">>;
+}
+
+/**
+ * The public names select one Kernel version by the deployment's own
+ * `kernelVersion` discriminant, as `KernelRuntime<"0.3.3">`; with no argument
+ * they cover either version. No public name carries a version.
+ */
+export type SelectedKernelRuntime<Version extends KernelVersion = KernelVersion> = [
+  Version,
+] extends ["0.3.3"]
+  ? KernelV33Runtime
+  : [Version] extends ["0.4.0"]
+    ? KernelV4Runtime
+    : KernelRuntime;
+
+export type SelectedCreateKernelRuntimeInput<Version extends KernelVersion = KernelVersion> = [
+  Version,
+] extends ["0.3.3"]
+  ? CreateKernelV33RuntimeInput
+  : [Version] extends ["0.4.0"]
+    ? CreateKernelV4RuntimeInput
+    : CreateKernelRuntimeInput;

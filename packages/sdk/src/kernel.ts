@@ -114,7 +114,6 @@ export type {
 export { OAATH_KERNEL_V33_APPROVAL_VERSION as OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION } from "./kernel/permission/v33.js";
 export type {
   CompiledKernelPermissionPolicy,
-  CreateKernelRuntimeInput,
   KernelBuiltInKeyKind,
   KernelCall,
   KernelCallPolicyPermission,
@@ -127,7 +126,6 @@ export type {
   KernelOperatorAuthority,
   KernelPolicyProfile,
   KernelRateLimitPolicyProfile,
-  KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeErrorCode,
   KernelRuntimeExistingAccountInput,
@@ -138,6 +136,8 @@ export type {
   KernelValidityTimeRange,
   KeyProfile,
   OperatorProfile,
+  SelectedCreateKernelRuntimeInput as CreateKernelRuntimeInput,
+  SelectedKernelRuntime as KernelRuntime,
 } from "./kernel/types.js";
 export { OaathKernelRuntimeError } from "./kernel/types.js";
 export type {

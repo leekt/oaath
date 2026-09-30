@@ -59,12 +59,14 @@ import {
 } from "./modules.js";
 import type {
   CreateKernelRuntimeInput,
+  CreateKernelV4RuntimeInput,
   CreateKernelV33RuntimeInput,
   KernelRuntime,
   KernelRuntimeBindAccountInput,
   KernelRuntimeExistingAccountInput,
   KernelRuntimePrepareInput,
   KernelRuntimeValidationMode,
+  KernelV4Runtime,
   KernelV33Runtime,
   KernelV33RuntimePrepareInput,
   KeyProfile,
@@ -147,12 +149,7 @@ function captureOperator(value: unknown, context: CaptureContext): CapturedOpera
  * fails closed before any account address or operation identity exists.
  */
 export function createKernelRuntime(value: CreateKernelV33RuntimeInput): Readonly<KernelV33Runtime>;
-export function createKernelRuntime(value: {
-  readonly gas?: Readonly<KernelGasPolicy>;
-  readonly deployment: Readonly<KernelV4Deployment>;
-  readonly operator: Readonly<OperatorProfile>;
-  readonly reads: KernelV4AccountReadCapability;
-}): Readonly<KernelRuntime>;
+export function createKernelRuntime(value: CreateKernelV4RuntimeInput): Readonly<KernelV4Runtime>;
 export function createKernelRuntime(value: CreateKernelRuntimeInput): Readonly<KernelRuntime>;
 export function createKernelRuntime(
   value: unknown,
