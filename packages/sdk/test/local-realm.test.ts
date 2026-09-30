@@ -12,6 +12,7 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
 } from "../src/kernel/modules.js";
+import { kernelKey } from "../src/kernel.js";
 
 import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
@@ -86,15 +87,44 @@ describe("local wallet realm", () => {
   it("does not create a Grant after a rejected wallet prompt or sign again automatically", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { input, owner, chain } = fixture();
-    owner.signTypedData.mockRejectedValueOnce({ code: 4001 });
+    const rejection = { code: 4001, message: "User rejected" };
+    owner.signTypedData.mockRejectedValueOnce(rejection);
     const realm = createOAAth(input);
     const connection = await realm.connect();
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_decision_unavailable",
-    });
+    const error = await connection
+      .requestPermission(permissionInput())
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "oaath_client_decision_unavailable" });
+    expect((error as Error).cause).toBe(rejection);
     expect(await connection.resume()).toBeNull();
     expect(owner.signTypedData).toHaveBeenCalledTimes(1);
     expect(owner.signMessage).not.toHaveBeenCalled();
+    expect(chain.sends).toHaveLength(0);
+    await realm.close();
+  });
+
+  it("keeps an owner key's wallet rejection as cause through the client error", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, account, chain } = fixture();
+    const rejection = { code: 4001, message: "User rejected" };
+    const signMessage = vi.fn(async () => {
+      throw rejection;
+    });
+    const owner = kernelKey({
+      wallet: { account: { address: account.address }, signMessage },
+      validator: kernelV33Deployment(143).ecdsaValidator,
+    });
+    const realm = createOAAth({ ...input, approvals: { kind: "wallet" as const, owner } });
+    const connection = await realm.connect();
+    const error = await connection
+      .requestPermission(permissionInput())
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: "oaath_client_signing_failed",
+      source: "kernel_runtime_signing_failed",
+    });
+    expect((error as Error).cause).toBe(rejection);
+    expect(signMessage).toHaveBeenCalledTimes(1);
     expect(chain.sends).toHaveLength(0);
     await realm.close();
   });

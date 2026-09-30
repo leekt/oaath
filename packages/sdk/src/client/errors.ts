@@ -76,9 +76,10 @@ export class OaathClientError extends Error {
     message: string,
     source: string | null = null,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    options?: ErrorOptions,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
-    super(captured === null ? message : validationGasDiagnosticMessage(captured));
+    super(captured === null ? message : validationGasDiagnosticMessage(captured), options);
     this.name = "OaathClientError";
     this.code = code;
     this.source = source;
@@ -91,8 +92,9 @@ export function clientFail(
   message: string,
   source: string | null = null,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  options?: ErrorOptions,
 ): never {
-  throw new OaathClientError(code, message, source, diagnostic);
+  throw new OaathClientError(code, message, source, diagnostic, options);
 }
 
 export function clientFailure(code: OaathClientErrorCode): CaptureFailure {
@@ -186,7 +188,15 @@ export function mapClientFailure(error: unknown, fallbackMessage: string): never
     clientFail(RUNNER_CODES[code] ?? "oaath_client_internal", fallbackMessage, code, diagnostic);
   }
   if (name === "OaathKernelRuntimeError" && code !== null && code in KERNEL_CODES) {
-    clientFail(KERNEL_CODES[code] ?? "oaath_client_internal", fallbackMessage, code);
+    // Forward the capability's own failure (e.g. EIP-1193 4001) so `error.cause.code` reads it directly.
+    const cause = (error as Error).cause;
+    clientFail(
+      KERNEL_CODES[code] ?? "oaath_client_internal",
+      fallbackMessage,
+      code,
+      null,
+      cause === undefined ? undefined : { cause },
+    );
   }
   if (name === "OaathStoreError" && code !== null) {
     clientFail(

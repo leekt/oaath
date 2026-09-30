@@ -101,4 +101,26 @@ describe("connected-wallet ECDSA key", () => {
     });
     expect(requests).toBe(1);
   });
+
+  it.each(["wallet", "account"] as const)(
+    "keeps the %s EIP-1193 rejection as cause",
+    async (kind) => {
+      const { owner } = fixture();
+      const rejection = { code: 4001, message: "User rejected" };
+      const reject = async () => {
+        throw rejection;
+      };
+      const key =
+        kind === "wallet"
+          ? kernelKey({
+              wallet: { account: { address: owner.address }, signMessage: reject },
+              validator,
+            })
+          : kernelKey({ account: { ...owner, sign: reject }, validator });
+      const error = await key.sign(hash).catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: "kernel_runtime_signing_failed" });
+      expect((error as Error).cause).toBe(rejection);
+      expect((error as Error).message).not.toContain("User rejected");
+    },
+  );
 });
