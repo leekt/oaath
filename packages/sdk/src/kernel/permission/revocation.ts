@@ -20,6 +20,7 @@ import type {
   KernelV4AccountReadCapability,
 } from "../../kernel-v4.js";
 import {
+  type PreparedPaymaster,
   type PreparedUserOperation,
   parsePreparedUserOperation,
 } from "../../prepared-user-operation.js";
@@ -58,7 +59,7 @@ import {
 export type { KernelSigningRequestRevocation } from "./v4-revocation.js";
 
 export const OAATH_KERNEL_PERMISSION_REVOCATION_VERSION =
-  "oaath.kernel-permission-revocation/v1" as const;
+  "oaath.kernel-permission-revocation/v2" as const;
 
 export interface PrepareKernelPermissionRevocationInput {
   /** The exact issued Grant approval; its `version` selects the Kernel semantics. */
@@ -70,6 +71,11 @@ export interface PrepareKernelPermissionRevocationInput {
   readonly nonceKey: string;
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
+  /**
+   * Optional caller-supplied EntryPoint 0.7 sponsorship; defaults to null
+   * (self-funded). Its fields are part of the hashed operation identity.
+   */
+  readonly paymaster?: Readonly<PreparedPaymaster> | null;
   /**
    * The Grant's permission request, which names the owner credential and the
    * session permission. Required for a Kernel `0.4.0` approval, refused otherwise.
@@ -99,6 +105,8 @@ export interface KernelPermissionRevocationPreparation {
   readonly nonceKey: string;
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
+  /** The sponsorship the operation was prepared with; null when self-funded. */
+  readonly paymaster: Readonly<PreparedPaymaster> | null;
   /** The exact unsigned operation and its hash. */
   readonly prepared: Readonly<PreparedUserOperation>;
 }
@@ -171,7 +179,7 @@ function ownerRuntime(chainId: number, owner: Readonly<KeyProfile>, reads: Kerne
 /**
  * The one v3.3 composition: derive calls from the recorded state and prepare
  * the root operation through the owner runtime. A restore compares both with
- * the recording, so a changed approval, state, lane, gas or hash is rejected.
+ * the recording, so a changed approval, state, lane, gas, paymaster or hash is rejected.
  */
 async function compose(
   fields: Omit<KernelPermissionRevocationPreparation, "version" | "calls" | "prepared"> & {
@@ -180,7 +188,7 @@ async function compose(
   reads: KernelV33Reads,
   recorded: Pick<KernelPermissionRevocationPreparation, "calls" | "prepared"> | null,
 ): Promise<Readonly<KernelRecordedRevocation>> {
-  const { approval, owner, state, nonceKey, sequence, gas, chainId } = fields;
+  const { approval, owner, state, nonceKey, sequence, gas, paymaster, chainId } = fields;
   const deployment = kernelV33Deployment(chainId);
   const preparer = ownerRuntime(
     chainId,
@@ -206,6 +214,7 @@ async function compose(
     sequence,
     calls,
     gas,
+    paymaster,
   });
   if (
     recorded !== null &&
@@ -222,6 +231,8 @@ async function compose(
     nonceKey,
     sequence,
     gas,
+    // The runtime's exact capture, so the record carries the hashed sponsorship.
+    paymaster: prepared.userOperation.paymaster,
     prepared,
   });
   return Object.freeze({
@@ -265,9 +276,15 @@ export async function prepareKernelPermissionRevocation(
   value: Readonly<PrepareKernelPermissionRevocationInput>,
 ): Promise<Readonly<PreparedKernelPermissionRevocation>> {
   const input = captureInput(value, "Kernel revocation preparation", new WeakSet());
-  const optional = ["account", "kernelVersion", "entryPoint", "request", "effect"].filter((key) =>
-    Object.hasOwn(input, key),
-  );
+  const optional = [
+    "account",
+    "kernelVersion",
+    "entryPoint",
+    "request",
+    "effect",
+    "paymaster",
+  ].filter((key) => Object.hasOwn(input, key));
+  const paymaster = (input.paymaster ?? null) as Readonly<PreparedPaymaster> | null;
   exactCaptured(
     input,
     ["approval", "chainId", "reads", "nonceKey", "sequence", "gas", ...optional],
@@ -304,6 +321,7 @@ export async function prepareKernelPermissionRevocation(
       nonceKey: input.nonceKey,
       sequence: input.sequence,
       gas: input.gas as Readonly<KernelUserOperationGas>,
+      paymaster,
     });
   }
   if (input.request !== undefined || input.effect !== undefined)
@@ -338,6 +356,7 @@ export async function prepareKernelPermissionRevocation(
       nonceKey: input.nonceKey,
       sequence: input.sequence,
       gas: captureGas(input.gas),
+      paymaster,
       chainId,
     },
     reads,
@@ -385,7 +404,18 @@ export async function restoreKernelPermissionRevocation(
     return inputInvalid("Kernel revocation preparation restore requires reads");
   const record = exactInput(
     input.preparation,
-    ["version", "approval", "owner", "state", "calls", "nonceKey", "sequence", "gas", "prepared"],
+    [
+      "version",
+      "approval",
+      "owner",
+      "state",
+      "calls",
+      "nonceKey",
+      "sequence",
+      "gas",
+      "paymaster",
+      "prepared",
+    ],
     "Kernel revocation preparation record",
     new WeakSet(),
   );
@@ -403,6 +433,8 @@ export async function restoreKernelPermissionRevocation(
       nonceKey: record.nonceKey,
       sequence: record.sequence,
       gas: captureGas(record.gas),
+      // Re-preparing with the recorded sponsorship must reproduce the recorded hash.
+      paymaster: record.paymaster as Readonly<PreparedPaymaster> | null,
       chainId: prepared.chainId,
     },
     input.reads as KernelV33Reads,

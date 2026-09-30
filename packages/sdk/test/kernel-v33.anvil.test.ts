@@ -684,6 +684,40 @@ function passkeySession() {
       ).rejects.toMatchObject({ code });
     const restored = await restoreKernelPermissionRevocation({ preparation: saved, reads });
     expect(restored.prepared).toEqual(preparation.prepared);
+    expect(preparation.paymaster).toBeNull();
+    await expect(
+      restoreKernelPermissionRevocation({
+        preparation: { ...saved, version: "oaath.kernel-permission-revocation/v1" },
+        reads,
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
+
+    // A sponsored revocation binds the caller's paymaster into its identity.
+    const paymaster = {
+      address: `0x${"55".repeat(20)}`,
+      verificationGasLimit: "60000",
+      postOpGasLimit: "0",
+      data: "0xabcd",
+    } as const;
+    const sponsored = await prepareKernelPermissionRevocation({ ...input, paymaster });
+    expect(sponsored.paymaster).toEqual(paymaster);
+    expect(sponsored.prepared.userOperation.paymaster).toEqual(paymaster);
+    expect(sponsored.prepared.userOperationHash).not.toBe(preparation.prepared.userOperationHash);
+    const sponsoredSaved = JSON.parse(JSON.stringify(sponsored));
+    const sponsoredRestored = await restoreKernelPermissionRevocation({
+      preparation: sponsoredSaved,
+      reads,
+    });
+    expect(sponsoredRestored.prepared).toEqual(sponsored.prepared);
+    expect(sponsoredRestored.prepared.userOperation.paymaster).toEqual(paymaster);
+    for (const changed of [
+      { ...sponsoredSaved, paymaster: { ...paymaster, data: "0xabce" } },
+      { ...sponsoredSaved, paymaster: null },
+      { ...saved, paymaster },
+    ])
+      await expect(
+        restoreKernelPermissionRevocation({ preparation: changed, reads }),
+      ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
     await expect(
       restored.sign(
         ecdsaKey({

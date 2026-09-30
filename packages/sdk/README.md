@@ -665,10 +665,13 @@ configured-chain revocation.
 
 `prepareKernelPermissionRevocation` prepares one owner revocation for any
 supported Kernel version; the approval's `version` selects the semantics. For a
-Kernel `0.4.0` approval it prepares one self-funded P-256 owner operation from
+Kernel `0.4.0` approval it prepares one P-256 owner operation from
 the canonical permission `request` and its retained install approval. Supply
 the chain, root operation nonce, gas and the `effect` supported by chain
-evidence: `invalidate-install` or `uninstall-permission`. Retain its `prepared`
+evidence: `invalidate-install` or `uninstall-permission`. For either version an
+optional `paymaster` (EntryPoint 0.7 `address`, `verificationGasLimit`,
+`postOpGasLimit`, `data`) sponsors the operation; it defaults to `null`
+(self-funded) and is part of the hashed identity that restore reproduces. Retain its `prepared`
 operation and `signingRequest` before requesting owner consent, and recreate it
 with `restoreKernelPermissionRevocation({ preparation: signingRequest })`. The
 signing request binds the workspace, application, install scope, chain,

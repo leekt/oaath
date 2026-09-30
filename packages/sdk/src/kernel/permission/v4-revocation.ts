@@ -34,6 +34,7 @@ import {
 import {
   asViemUserOperation,
   OAATH_PREPARED_USER_OPERATION_VERSION,
+  type PreparedPaymaster,
   type PreparedUserOperation,
   parsePreparedUserOperation,
 } from "../../prepared-user-operation.js";
@@ -64,6 +65,8 @@ export interface PrepareKernelV4RevocationInput {
   readonly nonceKey: string;
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
+  /** Caller-supplied EntryPoint 0.7 sponsorship, or null for a self-funded operation. */
+  readonly paymaster: Readonly<PreparedPaymaster> | null;
 }
 
 export interface KernelSigningRequestRevocation {
@@ -76,7 +79,8 @@ export interface KernelSigningRequestRevocation {
 }
 
 /**
- * Prepares one self-funded P-256 owner operation from the canonical grant.
+ * Prepares one P-256 owner operation from the canonical grant, self-funded or
+ * sponsored by the caller's paymaster, which the operation hash binds.
  * The orchestrator supplies the chain evidence, root operation nonce and gas,
  * and retains this exact request before asking the owner. Expired application
  * permissions may still be revoked; current owner consent has its own lifetime.
@@ -86,7 +90,17 @@ export async function prepareKernelV4Revocation(
 ): Promise<Readonly<KernelSigningRequestRevocation>> {
   const input = exactInput(
     value,
-    ["request", "approval", "chainId", "reads", "effect", "nonceKey", "sequence", "gas"],
+    [
+      "request",
+      "approval",
+      "chainId",
+      "reads",
+      "effect",
+      "nonceKey",
+      "sequence",
+      "gas",
+      "paymaster",
+    ],
     "Kernel revocation preparation",
     new WeakSet(),
   );
@@ -164,6 +178,7 @@ export async function prepareKernelV4Revocation(
     sequence: input.sequence as string,
     calls,
     gas: input.gas as KernelUserOperationGas,
+    paymaster: input.paymaster as Readonly<PreparedPaymaster> | null,
   });
   const packed = toPackedUserOperation(asViemUserOperation(prepared.userOperation));
   const signingRequest = parseKernelRevocationSigningRequest({
@@ -251,7 +266,7 @@ export function restoreKernelV4Revocation(
       factory: operation.factory
         ? { address: operation.factory, data: operation.factoryData }
         : null,
-      paymaster: null,
+      paymaster: unpackPaymaster(signingRequest.operation.paymasterAndData),
     },
     userOperationHash: signingRequest.expectedDigest,
   });
@@ -259,6 +274,17 @@ export function restoreKernelV4Revocation(
     return inputInvalid("restored revocation has an unsupported EntryPoint");
   return restoredRevocation(signingRequest, prepared, owner);
 }
+/** EntryPoint 0.7 `paymaster(20) || verificationGasLimit(16) || postOpGasLimit(16) || data`. */
+function unpackPaymaster(packed: `0x${string}`): Readonly<PreparedPaymaster> | null {
+  if (packed === "0x") return null;
+  return Object.freeze({
+    address: `0x${packed.slice(2, 42)}` as `0x${string}`,
+    verificationGasLimit: BigInt(`0x${packed.slice(42, 74)}`).toString(10),
+    postOpGasLimit: BigInt(`0x${packed.slice(74, 106)}`).toString(10),
+    data: `0x${packed.slice(106)}` as `0x${string}`,
+  });
+}
+
 function restoredRevocation(
   signingRequest: Readonly<KernelRevocationSigningRequest>,
   prepared: Readonly<PreparedUserOperation>,
