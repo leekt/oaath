@@ -9,7 +9,13 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export type { ValidationGasDiagnostic } from "@oaath/protocol";
+export type {
+  EntryPointFailureCode,
+  OaathUserOperationError,
+  UserOperationFailureCode,
+  UserOperationFailureStage,
+  ValidationGasDiagnostic,
+} from "@oaath/protocol";
 export type { OaathCallsReviewContract } from "./client/calls-review.js";
 export { OAATH_CALLS_REVIEW_VERSION, parseOaathCallsReview } from "./client/calls-review.js";
 export type { OaathChainDescriptor } from "./client/chain-descriptors.js";
@@ -65,10 +71,3 @@ export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorshi
 export type { OaathStoreBackend, OaathStores } from "./client/stores.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";
-
-export type {
-  EntryPointFailureCode,
-  OaathUserOperationError,
-  UserOperationFailureCode,
-  UserOperationFailureStage,
-} from "./user-operation-error.js";

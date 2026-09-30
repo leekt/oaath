@@ -4,9 +4,11 @@ import {
   type CaptureContext,
   captureRecord,
   captureValidationGasDiagnostic,
+  classifyUserOperationError,
   createOperation,
   type ExactRecord,
   exactCapturedRecord,
+  type OaathUserOperationError,
   type Operation,
   type OperationIdentity,
   type OperationKind,
@@ -15,6 +17,7 @@ import {
   operationOccupiesLane,
   parseOperation,
   parseOperationSubmissionEvidence,
+  readUserOperationFailure,
   readValidationGasDiagnostic,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
@@ -32,11 +35,6 @@ import {
   type OperationStoreKey,
   type OperationStoreRecord,
 } from "./store.js";
-import {
-  classifyUserOperationError,
-  type OaathUserOperationError,
-  readUserOperationFailure,
-} from "./user-operation-error.js";
 
 const MAX_GRANT_ID_LENGTH = 256;
 const HASH = /^0x[0-9a-f]{64}$/u;

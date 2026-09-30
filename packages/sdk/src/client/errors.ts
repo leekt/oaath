@@ -18,11 +18,12 @@ import {
   captureValidationGasDiagnostic,
   type ExactRecord,
   exactCapturedRecord,
+  type OaathUserOperationError,
+  readUserOperationFailure,
   readValidationGasDiagnostic,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
-import { type OaathUserOperationError, readUserOperationFailure } from "../user-operation-error.js";
 
 export type OaathClientErrorCode =
   /** Application input is not a usable request. */

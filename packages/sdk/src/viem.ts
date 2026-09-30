@@ -256,4 +256,4 @@ export {
   type UserOperationFailure,
   type UserOperationFailureCode,
   type UserOperationFailureStage,
-} from "./user-operation-error.js";
+} from "@oaath/protocol";

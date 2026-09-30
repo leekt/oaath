@@ -2,16 +2,14 @@ import {
   captureDenseArray,
   captureRecord,
   captureValidationGasDiagnostic,
+  classifyUserOperationError,
+  type OaathUserOperationError,
+  type UserOperationFailureStage,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 import { decodeErrorResult, encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
-import {
-  classifyUserOperationError,
-  type OaathUserOperationError,
-  type UserOperationFailureStage,
-} from "../user-operation-error.js";
 
 export type OaathRpcErrorCode =
   | "oaath_rpc_config_invalid"

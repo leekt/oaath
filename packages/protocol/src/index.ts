@@ -306,6 +306,17 @@ export {
   parseCanonicalEip712TypedData,
   parseOwnerSigningRequest,
 } from "./signing-request.js";
+export {
+  classifyUserOperationError,
+  type EntryPointFailureCode,
+  OaathUserOperationError,
+  parseUserOperationFailure,
+  readUserOperationFailure,
+  serializeUserOperationFailure,
+  type UserOperationFailure,
+  type UserOperationFailureCode,
+  type UserOperationFailureStage,
+} from "./user-operation-error.js";
 export type { ValidationGasDiagnostic } from "./validation-diagnostic.js";
 export {
   captureValidationGasDiagnostic,

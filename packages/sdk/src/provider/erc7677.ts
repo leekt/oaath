@@ -12,6 +12,7 @@ import {
   type CaptureContext,
   captureDenseArray,
   captureRecord,
+  classifyUserOperationError,
   exactCapturedRecord,
   OAATH_ISSUER_VERSION,
   parseIssuerIdentity,
@@ -25,7 +26,6 @@ import {
 } from "../prepared-user-operation.js";
 import type { OaathKernelSponsorshipCapability } from "../routing/sponsorship.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "../routing/types.js";
-import { classifyUserOperationError } from "../user-operation-error.js";
 import {
   captureErc7677SponsorDisplayMetadata,
   type OaathErc7677SponsorDisplayMetadata,
