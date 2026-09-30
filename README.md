@@ -517,4 +517,8 @@ packages succeed. Every public package rebuilds its ignored `dist` during
 
 ## License
 
-Apache-2.0
+Apache-2.0, including the OAAth-owned validity policy source and its embedded
+SDK/CLI bytecode (owner decision for 0.3.1, #344). The policy declares the
+[CC0 ERC-4337 packed ABI](https://eips.ethereum.org/EIPS/eip-4337#entrypoint-interface)
+locally and imports no GPL implementation. Third-party contracts and their
+artifacts retain their upstream licenses.

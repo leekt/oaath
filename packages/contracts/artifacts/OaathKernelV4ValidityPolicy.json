@@ -2,7 +2,7 @@
   "version": "oaath.kernel-v4-validity-policy-artifact/v1",
   "contract": "OaathKernelV4ValidityPolicy",
   "source": "src/OaathKernelV4ValidityPolicy.sol",
-  "sourceKeccak256": "0x456d715deb15b25710c08246ee724df91b3c73d20b30a8e3712272788c93e2e0",
+  "sourceKeccak256": "0xbabf8fdb664b2e7fb6646b333ae6de672c61529e1aad69a0954a13acd58b7dfe",
   "foundryConfigKeccak256": "0x14688ff0ea3601d7d588271bba2583e401338698c6383bbc5c2203adc2a5a3f9",
   "compiler": {
     "foundry": "1.7.1",

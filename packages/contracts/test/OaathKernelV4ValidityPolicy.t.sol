@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.24;
 
-import {PackedUserOperation} from "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
-import {OaathKernelV4ValidityPolicy} from "../src/OaathKernelV4ValidityPolicy.sol";
+import {OaathKernelV4ValidityPolicy, PackedUserOperation} from "../src/OaathKernelV4ValidityPolicy.sol";
 
 contract PolicyAccount {
     function install(OaathKernelV4ValidityPolicy policy, bytes32 permissionId, uint48 validAfter, uint48 validUntil)
