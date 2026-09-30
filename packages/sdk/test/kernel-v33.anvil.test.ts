@@ -71,6 +71,7 @@ import {
   readKernelPermissionStatus,
   restoreKernelPermissionRevocation,
   signedKernelPermissionApproval,
+  verifyKernelPermissionNonceAlignmentCalls,
   verifyKernelPermissionRevocation,
 } from "../src/kernel.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
@@ -562,6 +563,13 @@ function passkeySession() {
       code: "kernel_runtime_nonce_mismatch",
     });
     const calls = await kernelPermissionNonceAlignmentCalls({ ...lower, nonce: highNonce });
+    expect(
+      verifyKernelPermissionNonceAlignmentCalls({
+        account: lower.account.account,
+        calls,
+        nonce: highNonce,
+      }),
+    ).toEqual({ status: "verified" });
     expect(calls.length).toBeGreaterThan(0);
     await sendOwner(a, calls);
     expect(await nonceOf(lower)).toBe(highNonce);

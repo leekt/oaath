@@ -59,8 +59,8 @@ import {
   parseKernelV33PermissionApproval,
 } from "./v33.js";
 import {
-  KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID,
   kernelV33PermissionNonceAlignmentCalls,
+  NONCE_ALIGNMENT_PERMISSION_ID,
 } from "./v33-revocation.js";
 
 export type KernelGrantApproval = KernelAllChainApproval | KernelV33PermissionApproval;
@@ -497,7 +497,7 @@ export async function kernelPermissionNonceAlignmentCalls(
     const stateOf = (permissionId: `0x${string}`) =>
       read({ type: "kernel_v33_permission_state", chainId, account: scope.account, permissionId });
     state = await stateOf(scope.permissionId);
-    alignmentState = await stateOf(KERNEL_V33_NONCE_ALIGNMENT_PERMISSION_ID);
+    alignmentState = await stateOf(NONCE_ALIGNMENT_PERMISSION_ID);
     signerCode = await read({ type: "code", chainId, address: signerModule });
   } catch {
     return runtimeFail(

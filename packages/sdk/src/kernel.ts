@@ -134,6 +134,12 @@ export type {
   KernelV33ExpectedPermission as KernelExpectedPermission,
 } from "./kernel/permission/v33.js";
 export { OAATH_KERNEL_V33_APPROVAL_VERSION as OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION } from "./kernel/permission/v33.js";
+export {
+  type KernelPermissionNonceAlignmentVerification,
+  NONCE_ALIGNMENT_PERMISSION_ID,
+  type VerifyKernelPermissionNonceAlignmentCallsInput,
+  verifyKernelPermissionNonceAlignmentCalls,
+} from "./kernel/permission/v33-revocation.js";
 export type {
   KernelRuntimeModule,
   KernelRuntimeModuleDeployment,
