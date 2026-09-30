@@ -63,9 +63,15 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
 `,
     "surface.ts": `
 import type { Oaath } from "@oaath/sdk";
+import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
 import { createLocalAnvilFixture, type LocalAnvilFixture } from "@oaath/testing/anvil";
 export const create: () => Promise<Readonly<LocalAnvilFixture>> = createLocalAnvilFixture;
 export function open(fixture: LocalAnvilFixture): Promise<Readonly<Oaath>> { return fixture.openClient(); }
+export function permissionInputs(runtime: KernelRuntime<"0.3.3"> | KernelRuntime<"0.4.0">) {
+  const nonce: Parameters<typeof kernelPermissionNonce>[0]["runtime"] = runtime;
+  const materialization: Parameters<typeof materializeKernelPermission>[0]["runtime"] = runtime;
+  return { nonce, materialization };
+}
 `,
   },
 });
