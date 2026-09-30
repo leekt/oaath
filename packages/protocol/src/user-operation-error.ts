@@ -59,11 +59,14 @@ export type EntryPointFailureCode = keyof typeof ENTRY_POINT_CODES;
 /** Ephemeral diagnostics only. Never grants fallback, lane release, or resubmission. */
 export class OaathUserOperationError extends Error {
   readonly retryable: boolean;
+  readonly stage: UserOperationFailureStage;
+  readonly code: UserOperationFailureCode;
+  readonly entryPointCode?: EntryPointFailureCode;
   constructor(
-    readonly stage: UserOperationFailureStage,
-    readonly code: UserOperationFailureCode,
+    stage: UserOperationFailureStage,
+    code: UserOperationFailureCode,
     cause: unknown,
-    readonly entryPointCode?: EntryPointFailureCode,
+    entryPointCode?: EntryPointFailureCode,
   ) {
     if (
       !STAGES.includes(stage) ||
@@ -72,6 +75,9 @@ export class OaathUserOperationError extends Error {
     )
       throw new TypeError("Invalid UserOperation failure classification");
     super(`UserOperation ${stage} failed: ${code}`, { cause });
+    this.stage = stage;
+    this.code = code;
+    if (entryPointCode !== undefined) this.entryPointCode = entryPointCode;
     minted.add(this);
     this.name = "OaathUserOperationError";
     // Only read-only work is positively safe to repeat. In particular, sponsor

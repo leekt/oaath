@@ -22,8 +22,10 @@ export type WebAuthnEnrolmentErrorCode =
 
 /** Contains only a closed code; native browser prose is never retained. */
 export class OaathWebAuthnEnrolmentError extends Error {
-  constructor(readonly code: WebAuthnEnrolmentErrorCode) {
+  readonly code: WebAuthnEnrolmentErrorCode;
+  constructor(code: WebAuthnEnrolmentErrorCode) {
     super(`WebAuthn enrolment failed: ${code}`);
+    this.code = code;
     this.name = "OaathWebAuthnEnrolmentError";
   }
 }
