@@ -1,5 +1,8 @@
 import { p256 } from "@noble/curves/nist.js";
-import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
+} from "@oaath/protocol";
 import {
   bytesToHex,
   concat,
@@ -1152,6 +1155,41 @@ describe("Kernel key profiles", () => {
         credentialId,
         rpId: "localhost",
         origin: badOrigin,
+        authenticate: webauthnAuthenticate(),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+  });
+
+  it("signs a WebAuthn session from the operator credential profile unchanged", async () => {
+    const operatorKey = kernelKey({
+      credential: { ...webauthnCredential, version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION },
+      credentialId,
+      rpId,
+      origin,
+      authenticate: webauthnAuthenticate(),
+    });
+    const ownerKey = keyProfiles.webauthn();
+    expect(operatorKey.publicMaterial).toBe(ownerKey.publicMaterial);
+    const policies = [
+      {
+        kind: "call" as const,
+        permissions: [{ target, selector: "0x00000000" as const, valueLimit: "0" }],
+      },
+    ];
+    expect(sessionOperator({ key: operatorKey, policies }).resolvePackages(deployment)).toEqual(
+      sessionOperator({ key: ownerKey, policies }).resolvePackages(deployment),
+    );
+    const hash = keccak256("0xdeadbeef");
+    expect(await operatorKey.verify(hash, await operatorKey.sign(hash))).toBe(true);
+  });
+
+  it("rejects a WebAuthn credential profile of an unknown version", () => {
+    expect(() =>
+      kernelKey({
+        credential: { ...webauthnCredential, version: "oaath.unknown-profile/v1" },
+        credentialId,
+        rpId,
+        origin,
         authenticate: webauthnAuthenticate(),
       }),
     ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
