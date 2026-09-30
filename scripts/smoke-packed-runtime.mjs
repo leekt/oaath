@@ -69,22 +69,32 @@ try {
     epReceipt = await rpc("eth_getTransactionReceipt", [epHash]);
   }
   if (epReceipt?.status !== "0x1") throw new Error("local EntryPoint prerequisite failed");
+  for (const input of ${JSON.stringify([runtime.callPolicy.deploymentInput, runtime.rateLimitPolicy.deploymentInput, runtime.ecdsaSigner.deploymentInput, runtime.p256Verifier.deploymentInput])}) {
+    const hash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 143 }).create2Deployer, data: input, gas: 10000000n });
+    let receipt = null;
+    for (let attempt = 0; attempt < 50 && receipt === null; attempt++) {
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 100));
+      receipt = await rpc("eth_getTransactionReceipt", [hash]);
+    }
+    if (receipt?.status !== "0x1") throw new Error("external module prerequisite failed");
+  }
   const args = ["deploy-runtime", "--chain", "143", "--rpc", url, "--journal", "./deployment.sqlite", "--json"];
   const cleanEnv = { ...process.env }; delete cleanEnv.OAATH_DEPLOYER_PRIVATE_KEY;
   const plan = JSON.parse((await exec(bin, [...args, "--dry-run"], { env: cleanEnv })).stdout);
-  if (plan.status !== "planned" || plan.missing.length !== 10) throw new Error("packed deployment plan incomplete");
+  if (plan.status !== "planned" || plan.missing.length !== 6) throw new Error("packed deployment plan incomplete");
   timer = setInterval(() => { if (miningPromise) return; miningPromise = rpc("anvil_mine", ["0x40"]).catch(() => { miningError = true; }).finally(() => { miningPromise = undefined; }); }, 200);
   const deployed = JSON.parse((await exec(bin, args, { env: { ...cleanEnv, OAATH_DEPLOYER_PRIVATE_KEY: key }, timeout: 60000 })).stdout);
   if (deployed.status !== "ready" || !deployed.readiness.ready || !deployed.readiness.passkeySessionsReady) throw new Error("packed deployment failed");
   const port = createViemChainPorts({ 143: { publicRpcUrls: [url], bundlerUrl: url } })[0];
   const modules = await kernelRuntimeReadiness({ chainId: 143, reads: port.reads });
-  if (modules.modules.length !== 7 || modules.modules.some(row => row.status !== "present" || row.deployment !== "oaath")) throw new Error("SDK readiness omitted a required module");
+  const external = ["call_policy", "operation_limit_policy", "ecdsa_signer", "p256_verifier"];
+  if (modules.modules.length !== 7 || modules.modules.some(row => row.status !== "present" || row.deployment !== (external.includes(row.module) ? "external" : "oaath"))) throw new Error("SDK readiness omitted a required module");
   await port.observation.close();
   const count = await rpc("eth_getTransactionCount", [account.address, "latest"]);
   const again = JSON.parse((await exec(bin, args, { env: cleanEnv })).stdout);
   if (again.status !== "ready" || count !== await rpc("eth_getTransactionCount", [account.address, "latest"])) throw new Error("packed rerun sent another transaction");
   if (miningError) throw new Error("local mining failed");
-  console.log("packed deploy-runtime: ten missing contracts (including passkey-session modules) deployed and verified; repeat invocation needs no key and sends nothing");
+  console.log("packed deploy-runtime: six missing contracts after external prerequisites deployed and verified; repeat invocation needs no key and sends nothing");
 } finally { clearInterval(timer); await miningPromise; child.kill("SIGTERM"); }
 `,
   },

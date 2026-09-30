@@ -13,7 +13,7 @@ export interface Component {
   readonly id: string;
   readonly address: Hex;
   readonly required: boolean;
-  /** Needed only by WebAuthn (passkey) sessions; deploy-runtime deploys it too. */
+  /** Needed only by WebAuthn (passkey) sessions. */
   readonly passkeySession: boolean;
   readonly runtimeCodeHash: Hex | null;
   readonly deploymentInput: Hex | null;
@@ -59,6 +59,7 @@ function deployableComponent(
 /** The SDK owns the OAAth runtime modules' deployment transactions. */
 function runtimeModule(chainId: number, id: string, module: KernelRuntimeModule, passkey = false) {
   const prepared = prepareRuntimeModuleDeployment({ chainId, module });
+  if (prepared === null) throw new Error(`External runtime module: ${module}`);
   return [
     id,
     { deploymentInput: prepared.data, runtimeCodeHash: prepared.expectedRuntimeCodeHash },
@@ -66,6 +67,22 @@ function runtimeModule(chainId: number, id: string, module: KernelRuntimeModule,
     !passkey,
     passkey,
   ] as const;
+}
+
+/** Externally owned module deployments are prerequisites, never CLI transactions. */
+function externalComponent(
+  id: string,
+  artifact: { expectedAddress: string; runtimeCodeHash: string },
+  passkey = false,
+): Component {
+  return {
+    id,
+    address: artifact.expectedAddress as Hex,
+    runtimeCodeHash: artifact.runtimeCodeHash as Hex,
+    required: !passkey,
+    passkeySession: passkey,
+    deploymentInput: null,
+  };
 }
 
 export function components(chainId: number): readonly Component[] {
@@ -105,10 +122,10 @@ export function components(chainId: number): readonly Component[] {
       deployment.factory,
     ),
     deployable(...runtimeModule(chainId, "validityPolicy", "validity_policy")),
-    deployable(...runtimeModule(chainId, "callPolicy", "call_policy")),
-    deployable(...runtimeModule(chainId, "rateLimitPolicy", "operation_limit_policy")),
+    externalComponent("callPolicy", runtime.callPolicy),
+    externalComponent("rateLimitPolicy", runtime.rateLimitPolicy),
     deployable(...runtimeModule(chainId, "resettingRateLimitPolicy", "rate_limit_policy")),
-    deployable(...runtimeModule(chainId, "ecdsaSigner", "ecdsa_signer")),
+    externalComponent("ecdsaSigner", runtime.ecdsaSigner),
     deployable(
       "p256Validator",
       runtime.p256Validator,
@@ -117,6 +134,6 @@ export function components(chainId: number): readonly Component[] {
     ),
     deployable(...runtimeModule(chainId, "webAuthnSigner", "webauthn_signer", true)),
     // The pinned WebAuthn signer always verifies through this singleton.
-    deployable(...runtimeModule(chainId, "p256Verifier", "p256_verifier", true)),
+    externalComponent("p256Verifier", runtime.p256Verifier, true),
   ];
 }
