@@ -19,6 +19,7 @@ import {
   createKernelRuntime,
   kernelDeployment,
   kernelKey,
+  kernelPermissionNonceAlignmentCalls,
   materializeKernelPermission,
   OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION,
   ownerOperator,
@@ -386,6 +387,22 @@ describe("all-chain permission approval", () => {
         ownerAccount.address,
     ).toBe(true);
     expect(Object.isFrozen(approval)).toBe(true);
+  });
+
+  it("rejects v4 nonce alignment before any read", async () => {
+    const read = vi.fn();
+    await expect(
+      kernelPermissionNonceAlignmentCalls({
+        runtime: local.session,
+        account: await local.session.bindAccount({
+          accountIndex: "0",
+          initialPackages: local.owner.packages,
+        }),
+        reads: { read },
+        nonce: "2",
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
+    expect(read).not.toHaveBeenCalled();
   });
 
   it("pins v4 presence and nonce to one block and refuses contradictory evidence", async () => {
