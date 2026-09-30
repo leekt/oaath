@@ -15,6 +15,9 @@ const MODULES: readonly KernelRuntimeModule[] = [
   "rate_limit_policy",
   "validity_policy",
   "p256_verifier",
+  "call_policy",
+  "operation_limit_policy",
+  "ecdsa_signer",
 ];
 
 async function json(path: string): Promise<Record<string, any>> {
@@ -27,6 +30,18 @@ async function artifacts(): Promise<Record<KernelRuntimeModule, { input: Hex; ha
   const validity = await json("../../contracts/artifacts/OaathKernelV4ValidityPolicy.json");
   const rateLimit = await json("./fixtures/kernel-rate-limit-deployment.json");
   return {
+    call_policy: {
+      input: runtime.callPolicy.deploymentInput,
+      hash: runtime.callPolicy.runtimeCodeHash,
+    },
+    operation_limit_policy: {
+      input: runtime.rateLimitPolicy.deploymentInput,
+      hash: runtime.rateLimitPolicy.runtimeCodeHash,
+    },
+    ecdsa_signer: {
+      input: runtime.ecdsaSigner.deploymentInput,
+      hash: runtime.ecdsaSigner.runtimeCodeHash,
+    },
     webauthn_signer: {
       input: runtime.webAuthnSigner.deploymentInput,
       hash: runtime.webAuthnSigner.runtimeCodeHash,
@@ -107,7 +122,7 @@ describe("OAAth runtime module deployment", () => {
     expect(() =>
       prepareRuntimeModuleDeployment({
         chainId: CHAIN_ID,
-        module: "call_policy" as KernelRuntimeModule,
+        module: "unknown" as KernelRuntimeModule,
       }),
     ).toThrow(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
     expect(() => prepareRuntimeModuleDeployment({ chainId: 0, module: "p256_verifier" })).toThrow(
@@ -117,12 +132,24 @@ describe("OAAth runtime module deployment", () => {
 });
 
 describe("OAAth runtime module readiness", () => {
+  it.each(MODULES)("does not report all-present with missing %s", async (module) => {
+    const chain = allPinned();
+    chain.set(address(module), "0x");
+    const result = await statuses(chain);
+    expect(result[module]).toBe("missing");
+    expect(Object.values(result).filter((status) => status === "present")).toHaveLength(
+      MODULES.length - 1,
+    );
+  });
   it("reports every module present when each carries its pinned runtime hash", async () => {
     expect(await statuses(allPinned())).toEqual({
       webauthn_signer: "present",
       rate_limit_policy: "present",
       validity_policy: "present",
       p256_verifier: "present",
+      call_policy: "present",
+      operation_limit_policy: "present",
+      ecdsa_signer: "present",
     });
   });
 
@@ -136,6 +163,9 @@ describe("OAAth runtime module readiness", () => {
       rate_limit_policy: "mismatch",
       validity_policy: "unreadable",
       p256_verifier: "present",
+      call_policy: "present",
+      operation_limit_policy: "present",
+      ecdsa_signer: "present",
     });
   });
 
@@ -165,11 +195,7 @@ describe("OAAth runtime module readiness", () => {
         read: async (request) => (request.type === "chain_id" ? 1 : "0x"),
       },
     });
-    expect(readiness.modules.map((row) => row.status)).toEqual([
-      "unreadable",
-      "unreadable",
-      "unreadable",
-      "unreadable",
-    ]);
+    expect(readiness.modules.map((row) => row.status)).toEqual(MODULES.map(() => "unreadable"));
+    expect(readiness.modules.every((row) => row.deployment === "oaath")).toBe(true);
   });
 });

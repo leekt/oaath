@@ -1,7 +1,7 @@
 /**
  * The OAAth runtime modules a chain must carry before OAAth grants can use it:
  * the WebAuthn permission signer, the fixed-window RateLimitPolicy, the OAAth
- * validity policy and the P-256 verifier the WebAuthn signer staticcalls. This
+ * validity policy, CallPolicy, operation limit, ECDSA signer, and P-256 verifier. This
  * file owns two facts about them: whether one is present on a chain
  * (observeRuntimeModule, shared with createKernelRuntime's session bind) and
  * the exact zero-salt CREATE2 transaction that deploys it (shared with
@@ -34,8 +34,13 @@ import {
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
+  resolvePinnedSigner,
+  resolvePolicyModule,
 } from "./modules.js";
 import {
+  CALL_POLICY_DEPLOYMENT_INPUT,
+  ECDSA_SIGNER_DEPLOYMENT_INPUT,
+  OPERATION_LIMIT_POLICY_DEPLOYMENT_INPUT,
   P256_VERIFIER_DEPLOYMENT_INPUT,
   RATE_LIMIT_POLICY_DEPLOYMENT_INPUT,
   VALIDITY_POLICY_DEPLOYMENT_INPUT,
@@ -46,7 +51,10 @@ export type KernelRuntimeModule =
   | "webauthn_signer"
   | "rate_limit_policy"
   | "validity_policy"
-  | "p256_verifier";
+  | "p256_verifier"
+  | "call_policy"
+  | "operation_limit_policy"
+  | "ecdsa_signer";
 
 export type KernelRuntimeModuleStatus = "present" | "missing" | "mismatch" | "unreadable";
 
@@ -54,6 +62,8 @@ export interface KernelRuntimeModuleReadiness {
   readonly module: KernelRuntimeModule;
   readonly address: `0x${string}`;
   readonly status: KernelRuntimeModuleStatus;
+  /** Whether OAAth supplies the deployment transaction; this is not source ownership. */
+  readonly deployment: "oaath" | "external";
 }
 
 export interface KernelRuntimeReadinessInput {
@@ -111,6 +121,21 @@ const RUNTIME_MODULES: Readonly<Record<KernelRuntimeModule, RuntimeModuleRow>> =
     address: KERNEL_P256_VERIFIER,
     runtimeCodeHash: KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
     deploymentInput: P256_VERIFIER_DEPLOYMENT_INPUT,
+  }),
+  call_policy: Object.freeze({
+    address: resolvePolicyModule("call"),
+    runtimeCodeHash: "0x99fc4b02bdbb9a5133728a2bfffb458bf8530b1b068d6d4334f69dcb454ace78",
+    deploymentInput: CALL_POLICY_DEPLOYMENT_INPUT,
+  }),
+  operation_limit_policy: Object.freeze({
+    address: resolvePolicyModule("operation-limit"),
+    runtimeCodeHash: "0xb4fffdb494637e8e5bfc15d6500202c252392b498e518668f896dc6da0221183",
+    deploymentInput: OPERATION_LIMIT_POLICY_DEPLOYMENT_INPUT,
+  }),
+  ecdsa_signer: Object.freeze({
+    address: resolvePinnedSigner("ecdsa"),
+    runtimeCodeHash: "0x510a0a1ab8b3f256a5c90b5fff51a9fd98656bd1c8a29fbd7857faa70c400ccd",
+    deploymentInput: ECDSA_SIGNER_DEPLOYMENT_INPUT,
   }),
 });
 
@@ -171,7 +196,7 @@ export async function kernelRuntimeReadiness(
       boundChain === chainId
         ? await observeRuntimeModule(read, chainId, row.address, row.runtimeCodeHash)
         : "unreadable";
-    modules.push(Object.freeze({ module, address: row.address, status }));
+    modules.push(Object.freeze({ module, address: row.address, status, deployment: "oaath" }));
   }
   return Object.freeze({ chainId, modules: Object.freeze(modules) });
 }
