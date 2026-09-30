@@ -54,7 +54,7 @@ suite("runtime deployment and recovery", () => {
         (await kernelRuntimeReadiness({ chainId: 143, reads: harness.reads })).modules.map(
           (row) => row.status,
         );
-      expect(await statuses()).toEqual(["missing", "missing", "missing", "missing"]);
+      expect(await statuses()).toEqual(Array.from({ length: 7 }, () => "missing"));
       const plan = await deployRuntime({ chainId: 143, rpc, journal, account, dryRun: true });
       expect(plan.status).toBe("planned");
       expect(plan.missing).toHaveLength(10);
@@ -71,7 +71,7 @@ suite("runtime deployment and recovery", () => {
       expect(deployed.status).toBe("ready");
       expect(deployed.readiness.factoryBinding).toBe("verified");
       expect(deployed.readiness.passkeySessionsReady).toBe(true);
-      expect(await statuses()).toEqual(["present", "present", "present", "present"]);
+      expect(await statuses()).toEqual(Array.from({ length: 7 }, () => "present"));
       expect(sends).toBe(10);
       expect(keys).toBe(10);
       const again = await deployRuntime({
