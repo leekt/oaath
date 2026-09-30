@@ -203,10 +203,11 @@ describe("WebAuthn enrolment", () => {
     ["TimeoutError", "timeout"],
     ["ConstraintError", "user-verification"],
   ])("maps %s without exposing browser prose", async (name, code) => {
+    const cause = new DOMException("untrusted-browser-prose", name);
     vi.stubGlobal("navigator", {
       credentials: {
         create: async () => {
-          throw new DOMException("untrusted-browser-prose", name);
+          throw cause;
         },
       },
     });
@@ -214,6 +215,9 @@ describe("WebAuthn enrolment", () => {
       (error) => error,
     );
     expect(error).toMatchObject({ code });
+    expect(error.cause).toBe(cause);
+    expect(JSON.stringify(error)).not.toContain("untrusted-browser-prose");
+    expect(Object.getOwnPropertyDescriptor(error, "cause")?.enumerable).toBe(false);
     expect(String(error)).not.toContain("untrusted-browser-prose");
   });
 
@@ -272,6 +276,7 @@ describe("WebAuthn enrolment", () => {
     }).catch((error) => error);
     controller.abort();
     expect(await result).toMatchObject({ code: "cancelled" });
+    expect((await result).cause).toBe(controller.signal.reason);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

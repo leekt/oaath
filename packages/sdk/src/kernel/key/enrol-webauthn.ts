@@ -20,11 +20,11 @@ export type WebAuthnEnrolmentErrorCode =
   | "already-registered"
   | "invalid-attestation";
 
-/** Contains only a closed code; native browser prose is never retained. */
+/** Closed code/message; the original browser error is a non-enumerable cause, never for logging. */
 export class OaathWebAuthnEnrolmentError extends Error {
   readonly code: WebAuthnEnrolmentErrorCode;
-  constructor(code: WebAuthnEnrolmentErrorCode) {
-    super(`WebAuthn enrolment failed: ${code}`);
+  constructor(code: WebAuthnEnrolmentErrorCode, options?: ErrorOptions) {
+    super(`WebAuthn enrolment failed: ${code}`, options);
     this.code = code;
     this.name = "OaathWebAuthnEnrolmentError";
   }
@@ -47,8 +47,8 @@ export interface EnrolledWebAuthnCredential {
   readonly publicKey: `0x${string}`;
 }
 
-function fail(code: WebAuthnEnrolmentErrorCode): never {
-  throw new OaathWebAuthnEnrolmentError(code);
+function fail(code: WebAuthnEnrolmentErrorCode, options?: ErrorOptions): never {
+  throw new OaathWebAuthnEnrolmentError(code, options);
 }
 
 function errorCode(error: unknown): WebAuthnEnrolmentErrorCode {
@@ -138,7 +138,9 @@ export async function enrolWebAuthnCredential(
   const externalSignal = input.signal;
   if (externalSignal !== undefined && !(externalSignal instanceof AbortSignal)) return invalid();
   if (externalSignal?.aborted)
-    return fail(errorCode(externalSignal.reason) === "timeout" ? "timeout" : "cancelled");
+    return fail(errorCode(externalSignal.reason) === "timeout" ? "timeout" : "cancelled", {
+      cause: externalSignal.reason,
+    });
   const controller = new AbortController();
   const abort = () => controller.abort(externalSignal?.reason);
   externalSignal?.addEventListener("abort", abort, { once: true });
@@ -166,7 +168,8 @@ export async function enrolWebAuthnCredential(
       },
       signal: controller.signal,
     })) as PublicKeyCredential | null;
-    if (controller.signal.aborted) return fail(timedOut ? "timeout" : "cancelled");
+    if (controller.signal.aborted)
+      return fail(timedOut ? "timeout" : "cancelled", { cause: controller.signal.reason });
     if (!credential || credential.type !== "public-key") return fail("invalid-attestation");
     const rawId = new Uint8Array(credential.rawId);
     const credentialId = base64UrlFromBytes(rawId);
@@ -217,9 +220,12 @@ export async function enrolWebAuthnCredential(
       publicKey,
       authenticatorIdHash: keccak256(rawId),
     }) as Readonly<WebAuthnOperatorCredentialProfile>;
-    if (controller.signal.aborted) return fail(timedOut ? "timeout" : "cancelled");
+    if (controller.signal.aborted)
+      return fail(timedOut ? "timeout" : "cancelled", { cause: controller.signal.reason });
     return Object.freeze({ profile, credentialId, publicKey });
   } catch (error) {
+    if (error instanceof OaathWebAuthnEnrolmentError && !timedOut && !externalSignal?.aborted)
+      throw error;
     return fail(
       timedOut
         ? "timeout"
@@ -228,6 +234,7 @@ export async function enrolWebAuthnCredential(
             ? "timeout"
             : "cancelled"
           : errorCode(error),
+      { cause: error instanceof OaathWebAuthnEnrolmentError ? error.cause : error },
     );
   } finally {
     clearTimeout(timer);
