@@ -12,20 +12,17 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import {
-  type CaptureContext,
-  captureRecord,
-  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-  type OperatorCredentialProfile,
-  type OwnerCredentialProfile,
-  parseOperatorCredentialProfile,
-  parseOwnerCredentialProfile,
+import type {
+  CaptureContext,
+  OperatorCredentialProfile,
+  OwnerCredentialProfile,
 } from "@oaath/protocol";
 import { encodeAbiParameters } from "viem";
 import type { KernelDeployment } from "../deployment/profile.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";
 import type { KeyProfile } from "../types.js";
+import { parsePublicCredential } from "./public-credential.js";
 import { webauthnDummySignature } from "./webauthn.js";
 
 const POINT_PARAMETERS = [
@@ -87,16 +84,7 @@ function publicMaterial(
 export function credentialKey(value: CredentialKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["credential", "validator"], "credential key", context);
-  const captured = captureRecord(record.credential, "public credential", context, inputInvalid);
-  let credential: Readonly<OwnerCredentialProfile | OperatorCredentialProfile>;
-  try {
-    credential =
-      captured.version === OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION
-        ? parseOperatorCredentialProfile(captured)
-        : parseOwnerCredentialProfile(captured);
-  } catch {
-    return inputInvalid("credential key requires a valid public credential profile");
-  }
+  const credential = parsePublicCredential(record.credential, context, "credential key");
   if (credential.kind !== "ecdsa" && record.validator !== null) {
     return inputInvalid("credential key validator does not match the credential kind");
   }

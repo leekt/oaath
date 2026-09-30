@@ -7,7 +7,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { p256 } from "@noble/curves/nist.js";
-import { type CaptureContext, parseOwnerCredentialProfile } from "@oaath/protocol";
+import type { CaptureContext } from "@oaath/protocol";
 import {
   concat,
   decodeAbiParameters,
@@ -31,6 +31,7 @@ import {
 } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";
 import type { KeyProfile } from "../types.js";
+import { parsePublicCredential } from "./public-credential.js";
 
 const BASE64URL = /^[A-Za-z0-9_-]{1,1024}$/u;
 const RP_ID = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
@@ -89,7 +90,10 @@ export interface WebAuthnAssertionRequest {
 }
 
 export interface WebAuthnKeyInput {
-  /** @oaath/protocol WebAuthn credential profile carrying the public key and authenticator hash. */
+  /**
+   * @oaath/protocol owner or operator WebAuthn credential profile carrying the
+   * public key and authenticator hash.
+   */
   readonly credential: unknown;
   /** base64url credential ID whose keccak256 must equal the profile authenticatorIdHash. */
   readonly credentialId: string;
@@ -133,7 +137,7 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
     "WebAuthn key",
     context,
   );
-  const credential = parseOwnerCredentialProfile(record.credential);
+  const credential = parsePublicCredential(record.credential, context, "WebAuthn key");
   if (credential.kind !== "webauthn") {
     return inputInvalid("WebAuthn key credential profile is not a WebAuthn credential");
   }
