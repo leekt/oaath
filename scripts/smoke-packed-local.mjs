@@ -11,11 +11,20 @@ const consumer = await createConsumer({
 import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createViemChainPorts, classifyUserOperationError } from "@oaath/sdk/viem";
 import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
 import { createPublicClient, decodeEventLog, getCreate2Address, http } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 await assert.rejects(createLocalAnvilFixture({ chainIds: [] }), /local_fixture_chains_invalid/);
+const providerCause = { code: -32500, message: "AA25 invalid account nonce" };
+const classified = classifyUserOperationError({ stage: "send", error: providerCause });
+assert.equal(classified.code, "nonce");
+assert.equal(classified.retryable, false);
+assert.equal(classified.cause, providerCause);
+const failed = createViemChainPorts({ 421614: { publicRpcUrls: ["https://fixture.test"], bundlerUrl: "https://fixture.test" } }, {
+  retry: { attempts: 1 }, fetch: async () => new Response(null, { status: 503 }),
+})[0];
+await assert.rejects(failed.observation.read({ type: "user_operation_receipt", chainId: 421614, userOperationHash: "0x" + "11".repeat(32) }), error => error.failure?.stage === "receipt" && error.failure.code === "transport");
 await assert.rejects(createLocalAnvilFixture({ chainIds: [421614, 421614] }), /local_fixture_chains_invalid/);
 const fixture = await createLocalAnvilFixture({ chainIds: [421614, 11155111] });
 assert.match(NONCE_ALIGNMENT_PERMISSION_ID, /^0x[0-9a-f]{8}$/);
@@ -90,6 +99,9 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
 import type { Oaath } from "@oaath/sdk";
 import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
 import type { ObserveUserOperationResult } from "@oaath/sdk/advanced";
+import { classifyUserOperationError } from "@oaath/sdk/viem";
+import type { UserOperationFailureCode } from "@oaath/sdk";
+export const classifiedCode: UserOperationFailureCode = classifyUserOperationError({ stage: "send", error: null }).code;
 export function inclusion(result: ObserveUserOperationResult) { return result.status === "included" ? result.block.hash : null; }
 import { createLocalAnvilFixture, type LocalAnvilFixture } from "@oaath/testing/anvil";
 export const create: () => Promise<Readonly<LocalAnvilFixture>> = createLocalAnvilFixture;

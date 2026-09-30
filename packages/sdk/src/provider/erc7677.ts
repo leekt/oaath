@@ -25,6 +25,7 @@ import {
 } from "../prepared-user-operation.js";
 import type { OaathKernelSponsorshipCapability } from "../routing/sponsorship.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "../routing/types.js";
+import { classifyUserOperationError } from "../user-operation-error.js";
 import {
   captureErc7677SponsorDisplayMetadata,
   type OaathErc7677SponsorDisplayMetadata,
@@ -436,8 +437,13 @@ async function invokeService(
 ): Promise<unknown> {
   try {
     return await Reflect.apply(request, undefined, [value]);
-  } catch {
-    return invalidEvidence("ERC-7677 paymaster service did not answer");
+  } catch (error) {
+    return routingFail(
+      "routing_sponsorship_invalid",
+      "ERC-7677 paymaster service did not answer",
+      null,
+      { cause: classifyUserOperationError({ stage: "sponsor", error }) },
+    );
   }
 }
 
@@ -452,6 +458,7 @@ async function invokeEstimator(
       "routing_sponsorship_invalid",
       "ERC-7677 gas estimator did not answer",
       readValidationGasDiagnostic(error),
+      { cause: classifyUserOperationError({ stage: "estimate", error }) },
     );
   }
 }

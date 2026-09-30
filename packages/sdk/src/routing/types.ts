@@ -27,6 +27,7 @@ import {
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
+import { type OaathUserOperationError, readUserOperationFailure } from "../user-operation-error.js";
 
 export type RoutingErrorCode =
   | "routing_input_invalid"
@@ -38,15 +39,18 @@ export type RoutingErrorCode =
 
 export class OaathRoutingError extends Error {
   readonly code: RoutingErrorCode;
+  readonly failure: Readonly<OaathUserOperationError> | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
 
   constructor(
     code: RoutingErrorCode,
     message: string,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    options?: ErrorOptions,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
-    super(captured === null ? message : validationGasDiagnosticMessage(captured));
+    super(captured === null ? message : validationGasDiagnosticMessage(captured), options);
+    this.failure = readUserOperationFailure(options?.cause);
     this.name = "OaathRoutingError";
     this.code = code;
     this.diagnostic = captured;
@@ -142,8 +146,9 @@ export function routingFail(
   code: RoutingErrorCode,
   message: string,
   diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+  options?: ErrorOptions,
 ): never {
-  throw new OaathRoutingError(code, message, diagnostic);
+  throw new OaathRoutingError(code, message, diagnostic, options);
 }
 
 export function inputInvalid(message: string): never {

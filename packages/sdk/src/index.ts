@@ -65,3 +65,10 @@ export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorshi
 export type { OaathStoreBackend, OaathStores } from "./client/stores.js";
 export type { Oaath } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";
+
+export type {
+  EntryPointFailureCode,
+  OaathUserOperationError,
+  UserOperationFailureCode,
+  UserOperationFailureStage,
+} from "./user-operation-error.js";

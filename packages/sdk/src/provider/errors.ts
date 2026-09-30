@@ -14,6 +14,7 @@ import {
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
 import { OaathClientError, type OaathClientErrorCode } from "../client/errors.js";
+import { type OaathUserOperationError, readUserOperationFailure } from "../user-operation-error.js";
 
 export const CONTRACT_CREATION_UNSUPPORTED = -32000;
 export const INVALID_PARAMS = -32602;
@@ -65,20 +66,27 @@ export const OAATH_PROVIDER_ERROR_MESSAGES = Object.freeze(PROVIDER_ERROR_MESSAG
 
 export class OaathProviderRpcError extends Error {
   readonly code: OaathProviderErrorCode;
-  readonly data?: Readonly<{ diagnostic: Readonly<ValidationGasDiagnostic>; message: string }>;
+  readonly data?: Readonly<{
+    diagnostic?: Readonly<ValidationGasDiagnostic>;
+    message?: string;
+    failure?: Readonly<OaathUserOperationError>;
+  }>;
 
   constructor(
     code: OaathProviderErrorCode,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    failure: Readonly<OaathUserOperationError> | null = null,
   ) {
-    super(OAATH_PROVIDER_ERROR_MESSAGES[code]);
+    super(OAATH_PROVIDER_ERROR_MESSAGES[code], failure === null ? undefined : { cause: failure });
     this.name = "OaathProviderRpcError";
     this.code = code;
     const captured = captureValidationGasDiagnostic(diagnostic);
-    if (captured !== null)
+    if (captured !== null || failure !== null)
       this.data = Object.freeze({
-        diagnostic: captured,
-        message: validationGasDiagnosticMessage(captured),
+        ...(captured === null
+          ? {}
+          : { diagnostic: captured, message: validationGasDiagnosticMessage(captured) }),
+        ...(failure === null ? {} : { failure }),
       });
   }
 }
@@ -126,7 +134,11 @@ export function mapProviderFailure(error: unknown, appOwnedInput = false): never
       return rpcFail(USER_REJECTED_REQUEST);
     }
   }
-  throw new OaathProviderRpcError(INTERNAL_ERROR, readValidationGasDiagnostic(error));
+  throw new OaathProviderRpcError(
+    INTERNAL_ERROR,
+    readValidationGasDiagnostic(error),
+    readUserOperationFailure(error),
+  );
 }
 
 /**

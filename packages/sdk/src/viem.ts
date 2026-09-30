@@ -246,3 +246,11 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
     },
   });
 }
+
+export {
+  classifyUserOperationError,
+  type EntryPointFailureCode,
+  OaathUserOperationError,
+  type UserOperationFailureCode,
+  type UserOperationFailureStage,
+} from "./user-operation-error.js";

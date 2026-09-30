@@ -7,6 +7,11 @@ import {
 } from "@oaath/protocol";
 import { decodeErrorResult, encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
+import {
+  classifyUserOperationError,
+  type OaathUserOperationError,
+  type UserOperationFailureStage,
+} from "../user-operation-error.js";
 
 export type OaathRpcErrorCode =
   | "oaath_rpc_config_invalid"
@@ -17,18 +22,20 @@ export type OaathRpcErrorCode =
   | "oaath_rpc_budget_exhausted"
   | "oaath_rpc_concurrency_exceeded";
 
-/** Contains no URL, provider prose, request body, signature, or raw error. */
+/** Public fields/message are sanitized. Original provider errors remain only in non-enumerable cause. */
 export class OaathRpcError extends Error {
   readonly code: OaathRpcErrorCode;
   readonly rpcCode: number | null;
+  readonly failure?: Readonly<OaathUserOperationError>;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
   constructor(
     code: OaathRpcErrorCode,
     rpcCode: number | null = null,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
+    options?: ErrorOptions,
   ) {
     const captured = captureValidationGasDiagnostic(diagnostic);
-    super(captured === null ? code : validationGasDiagnosticMessage(captured));
+    super(captured === null ? code : validationGasDiagnosticMessage(captured), options);
     this.name = "OaathRpcError";
     this.code = code;
     this.rpcCode = rpcCode;
@@ -90,8 +97,8 @@ function accountValidationReverted(data: unknown): boolean {
 }
 
 const transient = new WeakSet<OaathRpcError>();
-function unavailable(): OaathRpcError {
-  const error = new OaathRpcError("oaath_rpc_unavailable");
+function unavailable(cause?: unknown): OaathRpcError {
+  const error = new OaathRpcError("oaath_rpc_unavailable", null, null, { cause });
   transient.add(error);
   return error;
 }
@@ -203,11 +210,7 @@ export function rpcOwner(input: ViemChainPortOptions) {
           );
           if (response.status === 429 || response.status >= 500) {
             await response.body?.cancel();
-            throw unavailable();
-          }
-          if (!response.ok) {
-            await response.body?.cancel();
-            throw new OaathRpcError("oaath_rpc_rejected");
+            throw unavailable(response);
           }
           const reader = response.body?.getReader();
           if (!reader) throw unavailable();
@@ -229,6 +232,8 @@ export function rpcOwner(input: ViemChainPortOptions) {
           try {
             result = object(JSON.parse(text));
           } catch {
+            if (!response.ok)
+              throw new OaathRpcError("oaath_rpc_rejected", null, null, { cause: response });
             throw unavailable();
           }
           if (
@@ -245,6 +250,7 @@ export function rpcOwner(input: ViemChainPortOptions) {
               "oaath_rpc_rejected",
               error.code,
               error.code === -32500 ? validationDiagnostic(method, params, error.data) : null,
+              { cause: result.error },
             );
             if (
               method === "eth_estimateUserOperationGas" &&
@@ -255,6 +261,8 @@ export function rpcOwner(input: ViemChainPortOptions) {
             if ([-32005, -32016, 429].includes(error.code)) transient.add(failure);
             throw failure;
           }
+          if (!response.ok)
+            throw new OaathRpcError("oaath_rpc_rejected", null, null, { cause: response });
           return result.result;
         })(),
         new Promise<never>((_, reject) => {
@@ -266,7 +274,7 @@ export function rpcOwner(input: ViemChainPortOptions) {
       ]);
     } catch (error) {
       if (error instanceof OaathRpcError) throw error;
-      throw unavailable();
+      throw unavailable(error);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       active -= 1;
@@ -307,8 +315,24 @@ export function rpcOwner(input: ViemChainPortOptions) {
               attempt + 1 >= attempts ||
               !(error instanceof OaathRpcError) ||
               (!transient.has(error) && error.code !== "oaath_rpc_wrong_chain")
-            )
+            ) {
+              const stage: UserOperationFailureStage | undefined =
+                method === "eth_estimateUserOperationGas"
+                  ? "estimate"
+                  : method === "eth_sendUserOperation"
+                    ? "send"
+                    : method === "pm_getPaymasterStubData" || method === "pm_getPaymasterData"
+                      ? "sponsor"
+                      : method === "eth_getUserOperationReceipt"
+                        ? "receipt"
+                        : undefined;
+              if (stage && error instanceof OaathRpcError)
+                Object.defineProperty(error, "failure", {
+                  value: classifyUserOperationError({ stage, error }),
+                  enumerable: true,
+                });
               throw error;
+            }
             checked.delete(endpoint);
             if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
