@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.24;
 
-import {PackedUserOperation} from "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
+/// @dev ABI declaration from the CC0 ERC-4337 packed wire format, not an imported implementation.
+///      https://eips.ethereum.org/EIPS/eip-4337#entrypoint-interface
+struct PackedUserOperation {
+    address sender;
+    uint256 nonce;
+    bytes initCode;
+    bytes callData;
+    bytes32 accountGasLimits;
+    uint256 preVerificationGas;
+    bytes32 gasFees;
+    bytes paymasterAndData;
+    bytes signature;
+}
 
 /// @title OAAth Kernel v4 validity policy
 /// @notice Intersects one signed operation range with the immutable inclusive
