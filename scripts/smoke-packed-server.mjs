@@ -67,6 +67,7 @@ import {
   OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS,
   OAATH_RELAY_POSTGRES_SCHEMA_VERSION,
 } from "@oaath/server/postgres";
+import { classifyUserOperationError, parseUserOperationFailure } from "@oaath/sdk/viem";
 import pg from "pg";
 
 function fail(message) {
@@ -203,6 +204,12 @@ const callers = new Map([
 ]);
 
 const handler = createRelayHandler({
+  chains: [{
+    chainId: 31337, reads: async () => undefined, observation: async () => undefined,
+    bundler: async () => undefined, submission: async () => undefined,
+    quote: async () => { throw classifyUserOperationError({stage: "estimate", error: {message: "AA25 private-provider-detail"}}); },
+    usage: null, feePayer: null, staticPaymasterConfigurationHash: null,
+  }],
   ownerRouting: directory,
   store: createMemoryRelayStore(),
   authentication: {
@@ -243,6 +250,13 @@ async function ok(response, status, label) {
   }
   return response.json();
 }
+
+// A packed SDK failure crosses the packed server boundary as closed data only.
+const failureResponse = await handler(request("POST", "/chains/31337/quote", CLIENT_TOKEN, {request: {}}));
+const failureBody = await failureResponse.json();
+const parsedFailure = parseUserOperationFailure(failureBody.error?.failure);
+if (failureResponse.status !== 503 || parsedFailure?.stage !== "estimate" || parsedFailure.code !== "nonce" || parsedFailure.entryPointCode !== "AA25" || parsedFailure.retryable || parsedFailure.cause !== undefined) fail("typed relay failure was not preserved");
+if (JSON.stringify(failureBody).includes("private-provider-detail")) fail("relay exposed provider cause");
 
 // A captured personal request retains its account even after the selection changes.
 await directory.selectAccount(callers.get(CLIENT_TOKEN), { workspaceId: "team-1", accountId: "treasury" });

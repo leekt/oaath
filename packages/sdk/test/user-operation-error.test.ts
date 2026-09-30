@@ -2,7 +2,11 @@ import { encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { OaathRpcError, rpcOwner } from "../src/viem/rpc.js";
-import { classifyUserOperationError } from "../src/viem.js";
+import {
+  classifyUserOperationError,
+  parseUserOperationFailure,
+  serializeUserOperationFailure,
+} from "../src/viem.js";
 
 const stages = ["estimate", "sponsor", "send", "receipt"] as const;
 describe("UserOperation failure classification", () => {
@@ -172,5 +176,50 @@ describe("UserOperation failure classification", () => {
     expect(error.failure).toMatchObject({ stage: "send", code: "transport", retryable: false });
     expect(requests).toBe(1);
     expect(JSON.stringify(error)).not.toContain("transport-private-detail");
+  });
+});
+
+describe("UserOperation failure wire capture", () => {
+  const wire = {
+    version: "oaath.user-operation-failure/v1",
+    stage: "send",
+    code: "nonce",
+    entryPointCode: "AA25",
+    retryable: false,
+  } as const;
+  it("round trips closed diagnostics without provider causes", () => {
+    const error = classifyUserOperationError({
+      stage: "send",
+      error: { message: "AA25 private-detail" },
+    });
+    expect(serializeUserOperationFailure(new Error("wrapper", { cause: error }))).toEqual(wire);
+    const parsed = parseUserOperationFailure(JSON.parse(JSON.stringify(wire)));
+    expect(parsed).toMatchObject({
+      stage: "send",
+      code: "nonce",
+      entryPointCode: "AA25",
+      retryable: false,
+    });
+    expect(parsed?.cause).toBeUndefined();
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(serializeUserOperationFailure(parsed)).toEqual(wire);
+    expect(serializeUserOperationFailure({ ...error })).toBeNull();
+  });
+  it.each([
+    { ...wire, version: "unknown" },
+    { ...wire, retryable: true },
+    { ...wire, code: "transport" },
+    { ...wire, cause: "private-detail" },
+    { ...wire, message: "private-detail" },
+    { ...wire, entryPointCode: "AA99" },
+    { ...wire, stage: "unknown" },
+    {
+      ...wire,
+      get code() {
+        throw Error("getter must not run");
+      },
+    },
+  ])("rejects malformed or contradictory wire details", (value) => {
+    expect(parseUserOperationFailure(value)).toBeNull();
   });
 });

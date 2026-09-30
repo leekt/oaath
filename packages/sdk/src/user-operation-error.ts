@@ -214,3 +214,60 @@ export function classifyUserOperationError(
   else if (transport) code = "transport";
   return new OaathUserOperationError(stage, code, error, entryPointCode);
 }
+
+/** Versioned relay diagnostics; contains no provider text, request, or original cause. */
+export interface UserOperationFailure {
+  readonly version: "oaath.user-operation-failure/v1";
+  readonly stage: UserOperationFailureStage;
+  readonly code: UserOperationFailureCode;
+  readonly entryPointCode?: EntryPointFailureCode;
+  readonly retryable: boolean;
+}
+
+/** Serializes only classifications minted by this owner, including wrapped causes. */
+export function serializeUserOperationFailure(
+  error: unknown,
+): Readonly<UserOperationFailure> | null {
+  const failure = readUserOperationFailure(error);
+  if (!failure) return null;
+  return Object.freeze({
+    version: "oaath.user-operation-failure/v1",
+    stage: failure.stage,
+    code: failure.code,
+    ...(failure.entryPointCode === undefined ? {} : { entryPointCode: failure.entryPointCode }),
+    retryable: failure.retryable,
+  });
+}
+
+/** Exact wire capture. Reconstructs diagnostics only; the remote cause stays remote. */
+export function parseUserOperationFailure(
+  value: unknown,
+): Readonly<OaathUserOperationError> | null {
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const allowed = ["version", "stage", "code", "entryPointCode", "retryable"];
+    if (Reflect.ownKeys(value).some((key) => typeof key !== "string" || !allowed.includes(key)))
+      return null;
+    const version = own(value, "version");
+    const stage = own(value, "stage") as UserOperationFailureStage;
+    const code = own(value, "code") as UserOperationFailureCode;
+    const entryPointCode = own(value, "entryPointCode") as EntryPointFailureCode | undefined;
+    if (
+      version !== "oaath.user-operation-failure/v1" ||
+      !STAGES.includes(stage) ||
+      !FAILURE_CODES.includes(code)
+    )
+      return null;
+    if (
+      Object.hasOwn(value, "entryPointCode") &&
+      (entryPointCode === undefined ||
+        !Object.hasOwn(ENTRY_POINT_CODES, entryPointCode) ||
+        ENTRY_POINT_CODES[entryPointCode] !== code)
+    )
+      return null;
+    const captured = new OaathUserOperationError(stage, code, undefined, entryPointCode);
+    return own(value, "retryable") === captured.retryable ? captured : null;
+  } catch {
+    return null;
+  }
+}

@@ -1107,6 +1107,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
           "chain port did not answer",
           readValidationGasDiagnostic(error),
           name === "submission" ? readRpcBundlerRejection(error) : null,
+          { cause: error },
         );
       }
       // JSON cannot carry `undefined`, and several ports mean it ("no such
@@ -1264,6 +1265,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         relayErrorCode(error),
         readValidationGasDiagnostic(error),
         error instanceof OaathRelayError ? error.bundlerRejection : null,
+        error,
       );
     }
   };
