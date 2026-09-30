@@ -105,10 +105,11 @@ const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${stri
  * validator above while a raw P-256 session key does not exist; a session under a
  * P-256 owner uses an ECDSA session key, which is the iPhone flow's shape.
  */
+export const KERNEL_WEBAUTHN_SIGNER = "0x8b2df925aa16071fcdf0053768420e242935ac65" as const;
 const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
   Object.freeze({
     ecdsa: "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
-    webauthn: "0x8b2df925aa16071fcdf0053768420e242935ac65",
+    webauthn: KERNEL_WEBAUTHN_SIGNER,
   });
 
 /**
@@ -194,6 +195,14 @@ export const OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH =
 export const KERNEL_P256_VERIFIER = "0xc2b78104907f722dabac4c69f826a522b2754de4" as const;
 export const KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH =
   "0x3cd725b6ba67b40b7979190c41a015e82cf21e098eb61832ba623f8538bab7fc" as const;
+
+/**
+ * Runtime code hash of the pinned WebAuthn signer's deployment input, from
+ * contracts/artifacts/KernelV4Runtime.json. Module readiness requires this
+ * exact code at pinnedSignerModule("webauthn").
+ */
+export const KERNEL_WEBAUTHN_SIGNER_RUNTIME_CODE_HASH =
+  "0xb725f54a7cf2367e9ea39da15c3984dd30786699f21d4bf8f767c2e80b273d18" as const;
 
 /**
  * Policy modules bound per policy axis. CallPolicy enforces the call and value

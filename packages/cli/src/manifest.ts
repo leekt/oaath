@@ -1,16 +1,13 @@
 import {
+  type KernelRuntimeModule,
   kernelDeployment,
-  OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   pinnedPolicyModule,
   pinnedSignerModule,
+  prepareRuntimeModuleDeployment,
 } from "@oaath/sdk/kernel";
 import { getCreate2Address, type Hex, sliceHex } from "viem";
 import runtime from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
 import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json" with {
-  type: "json",
-};
-// The SDK owns this reproducible artifact and checks it against its pinned hash.
-import resettingRateLimit from "../../sdk/test/fixtures/kernel-rate-limit-deployment.json" with {
   type: "json",
 };
 
@@ -61,6 +58,18 @@ function deployableComponent(
   };
 }
 
+/** The SDK owns the OAAth runtime modules' deployment transactions. */
+function runtimeModule(chainId: number, id: string, module: KernelRuntimeModule, passkey = false) {
+  const prepared = prepareRuntimeModuleDeployment({ chainId, module });
+  return [
+    id,
+    { deploymentInput: prepared.data, runtimeCodeHash: prepared.expectedRuntimeCodeHash },
+    prepared.address,
+    !passkey,
+    passkey,
+  ] as const;
+}
+
 export function components(chainId: number): readonly Component[] {
   const deployment = kernelDeployment({ chainId });
   const implementationHash = deployment.implementationDeployment?.runtimeCodeHash;
@@ -97,14 +106,10 @@ export function components(chainId: number): readonly Component[] {
       { ...runtime.kernelFactory, runtimeCodeHash: deployment.factoryRuntimeCodeHash },
       deployment.factory,
     ),
-    deployable("validityPolicy", validity.deployment, pinnedPolicyModule("expiry")),
+    deployable(...runtimeModule(chainId, "validityPolicy", "validity_policy")),
     deployable("callPolicy", runtime.callPolicy, pinnedPolicyModule("call")),
     deployable("rateLimitPolicy", runtime.rateLimitPolicy, pinnedPolicyModule("operation-limit")),
-    deployable(
-      "resettingRateLimitPolicy",
-      { ...resettingRateLimit, runtimeCodeHash: OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH },
-      pinnedPolicyModule("rate-limit"),
-    ),
+    deployable(...runtimeModule(chainId, "resettingRateLimitPolicy", "rate_limit_policy")),
     deployable("ecdsaSigner", runtime.ecdsaSigner, pinnedSignerModule("ecdsa")),
     deployable(
       "p256Validator",
@@ -112,20 +117,8 @@ export function components(chainId: number): readonly Component[] {
       runtime.p256Validator.expectedAddress,
       false,
     ),
-    deployable(
-      "webAuthnSigner",
-      runtime.webAuthnSigner,
-      pinnedSignerModule("webauthn"),
-      false,
-      true,
-    ),
+    deployable(...runtimeModule(chainId, "webAuthnSigner", "webauthn_signer", true)),
     // The pinned WebAuthn signer always verifies through this singleton.
-    deployable(
-      "p256Verifier",
-      runtime.p256Verifier,
-      runtime.p256Verifier.expectedAddress,
-      false,
-      true,
-    ),
+    deployable(...runtimeModule(chainId, "p256Verifier", "p256_verifier", true)),
   ];
 }

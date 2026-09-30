@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { kernelRuntimeReadiness } from "@oaath/sdk/kernel";
 import { concat, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { createHarness, deployKernelStack, startAnvil } from "../../sdk/test/support/anvil.js";
@@ -49,6 +50,11 @@ suite("runtime deployment and recovery", () => {
       await harness.deployCreate2(
         concat([harness.fixture.entryPoint.deploymentSalt, entryPoint.bytecode]),
       );
+      const statuses = async () =>
+        (await kernelRuntimeReadiness({ chainId: 143, reads: harness.reads })).modules.map(
+          (row) => row.status,
+        );
+      expect(await statuses()).toEqual(["missing", "missing", "missing", "missing"]);
       const plan = await deployRuntime({ chainId: 143, rpc, journal, account, dryRun: true });
       expect(plan.status).toBe("planned");
       expect(plan.missing).toHaveLength(10);
@@ -65,6 +71,7 @@ suite("runtime deployment and recovery", () => {
       expect(deployed.status).toBe("ready");
       expect(deployed.readiness.factoryBinding).toBe("verified");
       expect(deployed.readiness.passkeySessionsReady).toBe(true);
+      expect(await statuses()).toEqual(["present", "present", "present", "present"]);
       expect(sends).toBe(10);
       expect(keys).toBe(10);
       const again = await deployRuntime({
