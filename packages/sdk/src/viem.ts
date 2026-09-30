@@ -252,6 +252,7 @@ export {
   type EntryPointFailureCode,
   OaathUserOperationError,
   parseUserOperationFailure,
+  readUserOperationFailure,
   serializeUserOperationFailure,
   type UserOperationFailure,
   type UserOperationFailureCode,

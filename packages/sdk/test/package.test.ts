@@ -194,6 +194,7 @@ describe("package boundary", () => {
       "createViemChainPorts",
       "oaathProvider",
       "parseUserOperationFailure",
+      "readUserOperationFailure",
       "serializeUserOperationFailure",
     ]);
   });
