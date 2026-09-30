@@ -8,6 +8,7 @@
 import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
 import {
   bindKernelV4Account,
+  decodeKernelV4Execution,
   encodeKernelV4NonceKey,
   type KernelInstall,
   type KernelV4AccountDescriptor,
@@ -57,7 +58,9 @@ import {
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedSignerModule,
   pinnedValidatorModule,
+  resolvePolicyModule,
 } from "./modules.js";
+import { kernelCallPolicyCheck } from "./permission/compile.js";
 import { observeRuntimeModule } from "./runtime-modules.js";
 import type {
   CreateKernelRuntimeInput,
@@ -193,6 +196,17 @@ export function createKernelRuntime(
   // asking the same question.
   const reachableModes: readonly KernelRuntimeValidationMode[] =
     validation.kind === "root" ? Object.freeze(["standard" as const]) : RUNTIME_MODES;
+  // A session checks every call against the exact CallPolicy payload it
+  // installs, so a call the chain would refuse fails before any key signs.
+  const callPolicy =
+    operator.authority === "session"
+      ? packages.find(
+          (install) => install.moduleType === 5 && install.module === resolvePolicyModule("call"),
+        )
+      : undefined;
+  const checkCalls = callPolicy
+    ? kernelCallPolicyCheck(`0x${callPolicy.moduleData.slice(66)}`)
+    : null;
   const hasValidityPolicy =
     operator.authority === "session" &&
     packages.some(
@@ -473,23 +487,35 @@ export function createKernelRuntime(
     // prepareKernelV4UserOperation owns exact capture of the account descriptor,
     // calls, gas, and nonce; this axis only binds the authority's validation.
     const mode = runtimeMode(input.mode);
-    return prepareKernelV4UserOperation({
-      kind: input.kind,
-      grantId: input.grantId,
-      account: account as KernelV4AccountDescriptor,
-      nonce: {
-        mode,
-        validation,
-        nonceKey: input.nonceKey,
-        sequence: input.sequence,
-      },
-      calls: input.calls,
-      gas: applyKernelGasPolicy(input.gas, mode, gasPolicy),
-      ...(requestsValidityRange
-        ? { validityTimeRange: (input as KernelRuntimePrepareInput).validityTimeRange }
-        : {}),
-      paymaster: input.paymaster ?? null,
-    });
+    return permittedCalls(
+      prepareKernelV4UserOperation({
+        kind: input.kind,
+        grantId: input.grantId,
+        account: account as KernelV4AccountDescriptor,
+        nonce: {
+          mode,
+          validation,
+          nonceKey: input.nonceKey,
+          sequence: input.sequence,
+        },
+        calls: input.calls,
+        gas: applyKernelGasPolicy(input.gas, mode, gasPolicy),
+        ...(requestsValidityRange
+          ? { validityTimeRange: (input as KernelRuntimePrepareInput).validityTimeRange }
+          : {}),
+        paymaster: input.paymaster ?? null,
+      }),
+    );
+  }
+
+  /**
+   * Decodes the exact execute calldata the key would sign and refuses it when
+   * the session's call policy forbids any call, so prepare, sign, and external
+   * signature encoding all refuse before a key is asked.
+   */
+  function permittedCalls(operation: PreparedUserOperation): PreparedUserOperation {
+    if (checkCalls) checkCalls(decodeKernelV4Execution(operation.userOperation.callData));
+    return operation;
   }
 
   function boundOperation(prepared: unknown): PreparedUserOperation {
@@ -563,7 +589,7 @@ export function createKernelRuntime(
         "Prepared UserOperation validation does not match this authority",
       );
     }
-    return operation;
+    return permittedCalls(operation);
   }
 
   async function signOperation(prepared: unknown): Promise<`0x${string}`> {

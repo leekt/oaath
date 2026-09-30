@@ -416,16 +416,14 @@ function passkeySession() {
           await harness.sendSigned(installed, await restoredRuntime.signOperation(installed)),
         ).toBe("success");
         expect(await harness.client.getBalance({ address: target })).toBe(6n);
-        const excessive = restoredRuntime.prepareOperation({
-          ...standardInput,
-          kind: "execution",
-          sequence: "1",
-          calls: [{ target, value: "6", data: "0x" }],
-        });
-        expect(
-          (await harness.rejectionOf(excessive, await restoredRuntime.signOperation(excessive)))
-            .errorName,
-        ).toBe("FailedOpWithRevert");
+        expect(() =>
+          restoredRuntime.prepareOperation({
+            ...standardInput,
+            kind: "execution",
+            sequence: "1",
+            calls: [{ target, value: "6", data: "0x" }],
+          }),
+        ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
         expect(await harness.client.getBalance({ address: target })).toBe(6n);
         const consumedApproval = await materializeKernelV33Permission({
           ...input,
@@ -1410,15 +1408,14 @@ function passkeySession() {
         }),
       ).toBe("2");
       const { runtime: _runtime, ...standardInput } = sessionInput;
-      const forbidden = sessionRuntime.prepareOperation({
-        ...standardInput,
-        kind: "execution",
-        calls: [{ target, value: "1", data: "0x" }],
-      });
-      expect(
-        (await harness.rejectionOf(forbidden, await sessionRuntime.signOperation(forbidden)))
-          .errorName,
-      ).toBe("FailedOpWithRevert");
+      // A call outside the installed scope is refused before any key signs.
+      expect(() =>
+        sessionRuntime.prepareOperation({
+          ...standardInput,
+          kind: "execution",
+          calls: [{ target, value: "1", data: "0x" }],
+        }),
+      ).toThrowError(expect.objectContaining({ code: "kernel_runtime_call_forbidden" }));
       const subsequent = sessionRuntime.prepareOperation({ ...standardInput, kind: "execution" });
       expect(
         await harness.sendSigned(subsequent, await sessionRuntime.signOperation(subsequent)),

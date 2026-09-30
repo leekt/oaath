@@ -22,7 +22,8 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import { concat, encodeAbiParameters, toHex } from "viem";
+import { concat, decodeAbiParameters, encodeAbiParameters, toHex } from "viem";
+import type { KernelCall } from "../../kernel-v4.js";
 import {
   captureInput,
   denseInput,
@@ -32,6 +33,7 @@ import {
   inputInvalid,
   inputSelector,
   inputUint,
+  runtimeFail,
 } from "../internal.js";
 import { resolvePolicyModule } from "../modules.js";
 import type {
@@ -113,6 +115,66 @@ function capturePermissions(
       });
     }),
   );
+}
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Decodes an installed CallPolicy payload into the exact check its
+ * checkUserOpPolicy performs, so a session refuses a forbidden call before any
+ * key is asked to sign. It mirrors zerodev-kernel-call-policy 0.0.4 for the
+ * single and batched calls Kernel executes: every call is looked up under
+ * CALLTYPE_SINGLE by (target, selector), where empty calldata is selector
+ * 0x00000000 and one to three bytes revert the selector slice; a miss retries
+ * the zero-address "any target" entry; the call's native value must not exceed
+ * that entry's valueLimit. No OAAth scope profile expresses argument rules, so
+ * a payload carrying them is refused here rather than checked differently from
+ * the chain.
+ */
+export function kernelCallPolicyCheck(
+  policyData: `0x${string}`,
+): (calls: readonly Readonly<KernelCall>[]) => void {
+  let permissions: ReturnType<typeof decodeAbiParameters<typeof PERMISSION_PARAMETERS>>[0];
+  try {
+    [permissions] = decodeAbiParameters(PERMISSION_PARAMETERS, policyData);
+  } catch {
+    return inputInvalid("Kernel call policy payload is invalid");
+  }
+  if (permissions.some((permission) => permission.rules.length > 0)) {
+    return inputInvalid("Kernel call policy argument rules are unsupported");
+  }
+  const limits = new Map<string, bigint>();
+  for (const permission of permissions) {
+    if (permission.callType !== CALLTYPE_SINGLE) continue;
+    const key = `${permission.target.toLowerCase()}${permission.selector.toLowerCase()}`;
+    // CallPolicy's onInstall rejects a duplicate permission hash, so the first
+    // entry is the only one the chain can hold.
+    if (!limits.has(key)) limits.set(key, permission.valueLimit);
+  }
+  return (calls) => {
+    for (const call of calls) {
+      const data = call.data.toLowerCase();
+      if (data.length > 2 && data.length < 10) {
+        return runtimeFail("kernel_runtime_call_forbidden", "Kernel call has no whole selector");
+      }
+      const selector = data === "0x" ? "0x00000000" : data.slice(0, 10);
+      const limit =
+        limits.get(`${call.target.toLowerCase()}${selector}`) ??
+        limits.get(`${ZERO_ADDRESS}${selector}`);
+      if (limit === undefined) {
+        return runtimeFail(
+          "kernel_runtime_call_forbidden",
+          "Kernel call is not permitted by the session call policy",
+        );
+      }
+      if (BigInt(call.value) > limit) {
+        return runtimeFail(
+          "kernel_runtime_call_forbidden",
+          "Kernel call value exceeds the session call policy limit",
+        );
+      }
+    }
+  };
 }
 
 /** Compiles one policy profile set into the packages its modules receive. */

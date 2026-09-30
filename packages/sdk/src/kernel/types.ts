@@ -51,6 +51,8 @@ export type KernelRuntimeErrorCode =
   | "kernel_runtime_deployment_mismatch"
   /** Chains that one approval must cover have different effective enable nonces. */
   | "kernel_runtime_nonce_mismatch"
+  /** A session operation names a call its installed call policy forbids. */
+  | "kernel_runtime_call_forbidden"
   /** The input's own version is valid but this stage does not implement it. */
   | "kernel_runtime_unsupported";
 
