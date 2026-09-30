@@ -9,6 +9,7 @@ import {
   exactCapturedRecord,
   type FinalizedOperation,
   type IncludedOperation,
+  OaathOperationError,
   type Operation,
   type OperationFinality,
   type OperationIdentity,
@@ -30,6 +31,7 @@ const MAX_TIMEOUT_MS = 60_000;
 
 export type OperationObserverErrorCode =
   | "operation_observer_input_invalid"
+  | "operation_observer_address_checksum_invalid"
   | "operation_observer_capability_invalid"
   | "operation_observer_closed"
   | "operation_observer_close_failed";
@@ -994,6 +996,11 @@ function captureReferenceInput(value: unknown): ObserveUserOperationInput {
     });
   } catch (error) {
     if (error instanceof OaathOperationObserverError) throw error;
+    if (error instanceof OaathOperationError && error.code === "operation_address_checksum_invalid")
+      throw new OaathOperationObserverError(
+        "operation_observer_address_checksum_invalid",
+        "UserOperation reference address has an invalid EIP-55 checksum",
+      );
     return failInput("UserOperation observation input is invalid");
   }
 }

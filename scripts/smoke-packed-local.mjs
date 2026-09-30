@@ -13,7 +13,7 @@ import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
 import { createViemChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/viem";
 import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
-import { createPublicClient, decodeEventLog, getCreate2Address, http } from "viem";
+import { createPublicClient, decodeEventLog, getAddress, getCreate2Address, http } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 await assert.rejects(createLocalAnvilFixture({ chainIds: [] }), /local_fixture_chains_invalid/);
 const providerCause = { code: -32500, message: "AA25 invalid account nonce" };
@@ -67,9 +67,10 @@ try {
     read: request => beforeFinality.read(request.type === "finalized_block" ? { type: "canonical_block", chainId: 421614, blockNumber: "0" } : request),
     close: beforeFinality.close,
   });
-  const observationInput = { reference, transactionHash: deployed.transactionHash, observedAt: Date.now(), timeoutMs: 10000 };
+  const observationInput = { reference: { ...reference, account: getAddress(reference.account), entryPoint: getAddress(reference.entryPoint) }, transactionHash: deployed.transactionHash, observedAt: Date.now(), timeoutMs: 10000 };
   const included = await observer.observeReference(observationInput);
   assert.equal(included.status, "included");
+  assert.deepEqual(included.reference, reference);
   assert.equal(included.block.hash, receipt.blockHash);
   await observer.close();
   const recoveredObserver = createUserOperationObserver(ports()[0].observation);

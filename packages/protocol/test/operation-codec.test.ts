@@ -674,3 +674,27 @@ it("captures a public UserOperation reference without journal or authority field
     expectOperationError(() => parseUserOperationReference(value), "operation_input_invalid");
   }
 });
+
+it("normalizes checksummed reference addresses and names invalid checksums", () => {
+  const reference = {
+    chainId: 1,
+    entryPoint: "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    account: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    nonce: "0",
+    userOperationHash: identity.userOperationHash,
+  };
+  expect(parseUserOperationReference(reference)).toEqual({
+    ...reference,
+    entryPoint: reference.entryPoint.toLowerCase(),
+    account: reference.account.toLowerCase(),
+  });
+  for (const field of ["entryPoint", "account"] as const) {
+    const value = reference[field];
+    const index = value.search(/[A-F]/u);
+    const invalid = value.slice(0, index) + value[index]!.toLowerCase() + value.slice(index + 1);
+    expectOperationError(
+      () => parseUserOperationReference({ ...reference, [field]: invalid }),
+      "operation_address_checksum_invalid",
+    );
+  }
+});
