@@ -35,8 +35,8 @@ import {
 } from "../src/kernel.js";
 import {
   encodeKernelV4NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../src/kernel-v4.js";
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
@@ -231,7 +231,7 @@ async function unrelatedOperation(
               },
             ],
             functionName: "upgradeToAndCall",
-            args: [KERNEL_V4_UUPS_IMPLEMENTATION_V07, "0x"],
+            args: [KERNEL_V4_UUPS_IMPLEMENTATION_V09, "0x"],
           }),
         },
       ]
@@ -300,7 +300,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
       if (receipt === null) return null;
       const raw = receipt.logs.find(
         (log) =>
-          lower(log.address) === KERNEL_V4_ENTRY_POINT_V07 &&
+          lower(log.address) === KERNEL_V4_ENTRY_POINT_V09 &&
           lower(log.topics[0] ?? "") === USER_OPERATION_EVENT &&
           lower(log.topics[1] ?? "") === userOperationHash,
       );
@@ -317,7 +317,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
       }>;
       return Object.freeze({
         userOperationHash,
-        entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+        entryPoint: KERNEL_V4_ENTRY_POINT_V09,
         sender: lower(args.sender),
         nonce: quantity(args.nonce),
         paymaster: lower(args.paymaster),
@@ -467,7 +467,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
               const transactionHash = await harness.wallet.sendTransaction({
                 account: harness.submitter,
                 chain: null,
-                to: KERNEL_V4_ENTRY_POINT_V07,
+                to: KERNEL_V4_ENTRY_POINT_V09,
                 data: encodeFunctionData({
                   abi: entryPoint07Abi,
                   functionName: "handleOps",
@@ -508,7 +508,7 @@ async function createLiveProviderChain(clock: SecondsClock): Promise<Readonly<Li
           }),
         );
         const nonce = await harness.client.readContract({
-          address: KERNEL_V4_ENTRY_POINT_V07,
+          address: KERNEL_V4_ENTRY_POINT_V09,
           abi: entryPoint07Abi,
           functionName: "getNonce",
           args: [request.account, key],
@@ -705,7 +705,7 @@ function durableStores(database: OaathDatabase) {
         outcome: "success",
       });
       const eventIndices = containing.logs.flatMap((log, index) =>
-        log.address === KERNEL_V4_ENTRY_POINT_V07 && log.topics[0] === USER_OPERATION_EVENT
+        log.address === KERNEL_V4_ENTRY_POINT_V09 && log.topics[0] === USER_OPERATION_EVENT
           ? [index]
           : [],
       );
@@ -724,7 +724,7 @@ function durableStores(database: OaathDatabase) {
       );
 
       const beforeExecutionIndex = containing.logs.findIndex(
-        (log) => log.address === KERNEL_V4_ENTRY_POINT_V07 && log.topics[0] === BEFORE_EXECUTION,
+        (log) => log.address === KERNEL_V4_ENTRY_POINT_V09 && log.topics[0] === BEFORE_EXECUTION,
       );
       expect(beforeExecutionIndex).toBeGreaterThanOrEqual(0);
       expect(beforeExecutionIndex).toBeLessThan(precedingIndex);

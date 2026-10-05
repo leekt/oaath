@@ -136,7 +136,7 @@
       "kernelVersion": "0.4.0",
       "factoryRoute": "kernel_factory",
       "entryPoint": {
-        "version": "0.7"
+        "version": "0.9"
       },
       "ownerCredential": {
         "version": "oaath.owner-credential-profile/v1",
@@ -175,7 +175,7 @@
       "name": "invalidate deployed",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -186,13 +186,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0xd6785108c0b5dcabae262d88d435bf948f89e96a772fda910f6e0ad07580af70"
+      "expectedDigest": "0x27a7ca318fa11451caa362776ae7fa2c3ee1689ab5ace009c1c26f8cd75445d2"
     },
     {
       "name": "invalidate counterfactual",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "0",
@@ -203,13 +203,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x33ffbd5d322311bc6c1e996ef48e521356841db866bc662007d1fa43477d9881"
+      "expectedDigest": "0x86de5936e0e33f7b8f486ecb77c0628b36e3023c58d7982ea532049fd7f21da4"
     },
     {
       "name": "uninstall reverse policies then signer",
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -220,13 +220,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x8ee541403f8e796f262abeb86d6fa0eb52c15a9fe6258d8090387577517e18ba"
+      "expectedDigest": "0x7ccfe5b7c3e8ab883b2d9b5fc4ba5cd8ce054e8ceb9c574bb015b65c87e33d45"
     },
     {
       "name": "sponsored-invalidate deployed",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -237,13 +237,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x55555555555555555555555555555555555555550000000000000000000000000000ea6000000000000000000000000000000000abcd"
       },
-      "expectedDigest": "0x8181f4c65e47f266339f41f31dfe924f049212d5e9da1ee1e6903b0c90235c4f"
+      "expectedDigest": "0x471cb43a5c1472e8a7acd8e5aecbf058c32db62e01f114c49a9539cb7cbf9f80"
     },
     {
       "name": "sponsored-uninstall reverse policies then signer",
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -254,7 +254,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x55555555555555555555555555555555555555550000000000000000000000000000ea6000000000000000000000000000000000"
       },
-      "expectedDigest": "0x80367673d52fa766f86376a44b6d16621a6be929027d7608240702380bdcfc33"
+      "expectedDigest": "0xc10ee41e17d591cde263b1e349adf5633856fed40864120673875b9cef1b5f4f"
     }
   ],
   "forbiddenCalls": [
@@ -262,7 +262,7 @@
       "name": "unrelated transfer",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -273,13 +273,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x789a6ff23f35b162a78b9bda496c8fb9419ff3cab8028bf5da10a21271505554"
+      "expectedDigest": "0x4e0cb769921b92580a9acca1747a9b8f683ed8527a4741d2c8afd8476d8d72ef"
     },
     {
       "name": "nonce not increased",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -290,13 +290,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x026a9d4c8c0f5b0086c6d3be71e716322187325c54d0c1efe010b9aab829725f"
+      "expectedDigest": "0xadefef4209c8bbcd981851b991897fab08d5a30cc87a8be2daa6baf5c413b533"
     },
     {
       "name": "wrong nonce key",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -307,13 +307,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x5920aa0f3fbe68f882586afba92e4942844d92e0b8617cad087a288ecbb1a28a"
+      "expectedDigest": "0xe2d8deae7efae88ea65f1f64dc4a958656eadde559bdaaaf6346aec60c96d795"
     },
     {
       "name": "signer removed first",
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -324,13 +324,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x61cda6e1de321d45128657515222ac3002d8fdb9dc4a9f7534101a442014fd22"
+      "expectedDigest": "0xdab45317268bbeae6d1f3e5640e87ef9e980fcbda022ccd2195603dce27c1f3c"
     },
     {
       "name": "policies in install order",
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -341,13 +341,13 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x27870f1693fccfa015ab67b35416b2c3bec5bb405aa584570c9e9fb03df058ca"
+      "expectedDigest": "0x0203b10253348b1f1fb92f0b9ca28e5fd6cc3ecb1eca12cd52403c28a83e7baf"
     },
     {
       "name": "one call in batch mode",
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -358,7 +358,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x9caf8707a384ffb6c4ec40fc6d3cfa82f59b6b945722307ffdbc0f78e3c778cc"
+      "expectedDigest": "0x91a3d8c5887391b8bffc5f78c883cf07e37186bc17101fce8fb18a7570858ac7"
     }
   ]
 }

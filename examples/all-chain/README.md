@@ -12,7 +12,7 @@ Kernel v4 stack takes roughly 20 seconds.
 
 ## The journey
 
-1. **Chain A comes up.** Anvil, EntryPoint 0.7, both Kernel v4 implementations, the
+1. **Chain A comes up.** Anvil, EntryPoint 0.9, both Kernel v4 implementations, the
    factory, the pinned policy and signer modules, and one ECDSA validator — every
    one of them CREATE2-derived. The session runtime binds a counterfactual account
    from the *owner's* initial packages.

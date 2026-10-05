@@ -2,6 +2,7 @@ import { hashCanonicalEip712TypedData } from "@oaath/protocol";
 import { concat, encodeAbiParameters, hashTypedData, keccak256, recoverAddress, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
+import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 // Internal on purpose: requested-range authorization depends on the exact
 // deterministic policy runtime, while the public surface exposes its meaning.
 import {
@@ -29,10 +30,9 @@ import {
 import type { KernelV4AccountReadRequest } from "../src/kernel-v4.js";
 import {
   encodeKernelV4NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
   type KernelInstall,
   kernelV4ReplayableInstallDigest,
   kernelV4ReplayableInstallTypedData,
@@ -62,12 +62,12 @@ function asHostile<T>(value: T): (input: never) => unknown {
 }
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
-  if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_V4_ENTRY_POINT_V09) return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
 
-  return KERNEL_V4_FACTORY_V07_CODE_HASH;
+  return KERNEL_V4_FACTORY_V09_CODE_HASH;
 }
 
 function reads(state: "counterfactual" | "deployed" = "counterfactual") {
@@ -81,10 +81,10 @@ function reads(state: "counterfactual" | "deployed" = "counterfactual") {
         return request.address === account && state === "counterfactual" ? "0x" : "0x01";
       }
       if (request.type === "kernel_factory_implementation") {
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
       }
       if (request.type === "kernel_factory_account") return account;
-      return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+      return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
     },
   };
 }

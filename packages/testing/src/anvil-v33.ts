@@ -1,6 +1,9 @@
 /** Deploy the real v3.3 account at the same address for each local fixture chain. */
+
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { encodeFunctionData, type Hex, parseAbi, zeroAddress, zeroHash } from "viem";
+import { concat, encodeFunctionData, type Hex, parseAbi, zeroAddress, zeroHash } from "viem";
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import type { deployKernelStack, startAnvil } from "./anvil-process.mjs";
 
@@ -10,6 +13,18 @@ export async function deployLocalV33Account(
   owner: Hex,
 ): Promise<Hex> {
   const deployment = kernelDeployment({ chainId: chain.chainId, kernelVersion: "0.3.3" });
+  const entryPoint = JSON.parse(
+    await readFile(createRequire(import.meta.url).resolve(v33.entryPoint.artifact), "utf8"),
+  );
+  const entryPointHash = await stack.wallet.sendTransaction({
+    account: stack.submitter,
+    chain: null,
+    to: deployment.create2Deployer,
+    data: concat([v33.entryPoint.deploymentSalt as Hex, entryPoint.bytecode as Hex]),
+    gas: 10_000_000n,
+  });
+  if ((await chain.client.waitForTransactionReceipt({ hash: entryPointHash })).status !== "success")
+    throw new Error("local_fixture_deployment_failed");
   for (const module of [v33.kernel, v33.factory, v33.ecdsaValidator]) {
     const hash = await stack.wallet.sendTransaction({
       account: stack.submitter,

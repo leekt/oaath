@@ -9,6 +9,7 @@ import {
   toHex,
 } from "viem";
 import { describe, expect, it } from "vitest";
+import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 import {
   bindKernelV4Account,
   createKernelV4Reads,
@@ -28,13 +29,12 @@ import {
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
   KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_EXECUTE_SELECTOR,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
   type KernelInstall,
   type KernelV4AccountReadRequest,
   kernelV4Deployment,
@@ -44,15 +44,15 @@ import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
 
 const validator = `0x${"22".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
-const factory = KERNEL_V4_FACTORY_V07;
+const factory = KERNEL_V4_FACTORY_V09;
 const account = `0x${"66".repeat(20)}` as const;
 const permissionId = "0xaabbccdd" as const;
 const selector = "0x12345678" as const;
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
-  if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_V4_ENTRY_POINT_V09) return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
 
-  return KERNEL_V4_FACTORY_V07_CODE_HASH;
+  return KERNEL_V4_FACTORY_V09_CODE_HASH;
 }
 
 const baseInstall: KernelInstall = Object.freeze({
@@ -151,18 +151,17 @@ describe("Kernel v4 deployment profile", () => {
     (chainId) => {
       const deployment = kernelV4Deployment(chainId);
       expect(deployment).toEqual({
-        profile: "kernel-v4-uups-entrypoint-v0.7",
+        profile: "kernel-v4-uups-entrypoint-v0.9",
         kernelVersion: "0.4.0",
         accountType: "uups",
         chainId,
         entryPoint: {
-          version: "0.7",
-          address: KERNEL_V4_ENTRY_POINT_V07,
-          runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+          version: "0.9",
+          address: KERNEL_V4_ENTRY_POINT_V09,
         },
-        implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-        factory: KERNEL_V4_FACTORY_V07,
-        factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+        implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+        factory: KERNEL_V4_FACTORY_V09,
+        factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V09_CODE_HASH,
         create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
       });
       expect(Object.isFrozen(deployment)).toBe(true);
@@ -428,10 +427,10 @@ describe("Kernel v4 account binding", () => {
         if (request.type === "runtime_code_hash") return runtimeCodeHash(request.address);
         if (request.type === "code") return request.address === account ? "0x" : "0x01";
         if (request.type === "kernel_factory_implementation") {
-          return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+          return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
         }
         if (request.type === "kernel_factory_account") return account;
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
       },
     };
     return {
@@ -444,11 +443,11 @@ describe("Kernel v4 account binding", () => {
     const { input, requests } = binding();
     const descriptor = await bindKernelV4Account(input);
     expect(descriptor).toEqual({
-      profile: "kernel-v4-uups-entrypoint-v0.7",
+      profile: "kernel-v4-uups-entrypoint-v0.9",
       state: "counterfactual",
       chainId: 421_614,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
-      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
+      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
       factory,
       account,
       accountIndex: "7",
@@ -465,7 +464,7 @@ describe("Kernel v4 account binding", () => {
     expect(Object.isFrozen(descriptor)).toBe(true);
     expect(requests.map((request) => request.type)).toEqual([
       "chain_id",
-      "runtime_code_hash",
+      "code",
       "code",
       "runtime_code_hash",
       "code",
@@ -478,7 +477,7 @@ describe("Kernel v4 account binding", () => {
   it("accepts deployed state only after proving the account proxy implementation", async () => {
     const { input, requests } = binding({
       code: "0x01",
-      kernel_account_implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+      kernel_account_implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
     });
     await expect(bindKernelV4Account(input)).resolves.toMatchObject({ state: "deployed" });
     expect(requests.at(-1)?.type).toBe("kernel_account_implementation");
@@ -492,7 +491,7 @@ describe("Kernel v4 account binding", () => {
       expect(descriptor).toMatchObject({ state: "counterfactual", chainId, account });
       expect(requests.map((request) => request.type)).toEqual([
         "chain_id",
-        "runtime_code_hash",
+        "code",
         "code",
         "runtime_code_hash",
         "code",
@@ -502,7 +501,7 @@ describe("Kernel v4 account binding", () => {
       ]);
       expect(
         requests.filter((request) => request.type === "runtime_code_hash").map((r) => r.address),
-      ).toEqual([KERNEL_V4_ENTRY_POINT_V07, factory]);
+      ).toEqual([factory]);
     },
   );
 
@@ -574,10 +573,10 @@ describe("Kernel v4 prepared UserOperation", () => {
           return request.address === account && state === "counterfactual" ? "0x" : "0x01";
         }
         if (request.type === "kernel_factory_implementation") {
-          return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+          return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
         }
         if (request.type === "kernel_factory_account") return account;
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
       },
     };
     return bindKernelV4Account({
@@ -602,7 +601,7 @@ describe("Kernel v4 prepared UserOperation", () => {
       kind: "execution",
       grantId: "kernel-v4-grant",
       chainId: 421_614,
-      entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+      entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
       userOperation: {
         sender: account,
         nonce: "0",
@@ -1011,7 +1010,7 @@ describe("Kernel v4 read and submission adapters", () => {
   it("adapts one viem-style client into all six read request types", async () => {
     const chainId = 421_614 as const;
     const code = "0xdeadbeef" as const;
-    const implementation = KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+    const implementation = KERNEL_V4_UUPS_IMPLEMENTATION_V09;
     const slots: string[] = [];
     const reads = createKernelV4Reads({
       getChainId: async () => chainId,

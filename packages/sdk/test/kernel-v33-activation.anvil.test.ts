@@ -12,10 +12,10 @@ import { entryPoint07Abi } from "viem/account-abstraction";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
+import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { bindKernelAccount, createKernelReads, deriveKernelAccount } from "../src/kernel.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
 import { type AnvilChain, createHarness, startAnvil } from "./support/anvil.js";
 import { deployKernelV33Contracts, deployKernelV33MetaFactory } from "./support/kernel-v33.js";
 
@@ -86,7 +86,7 @@ const gas = {
         method: "eth_call",
         params: [
           {
-            to: KERNEL_V4_ENTRY_POINT_V07,
+            to: KERNEL_ENTRY_POINT_V07.address,
             data: encodeFunctionData({
               abi: entryPoint07Abi,
               functionName: "getSenderAddress",

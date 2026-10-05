@@ -45,7 +45,7 @@ export function directoryDocument(): ServiceDirectoryDocument {
     accountIndex: "0",
     kernelVersion: "0.4.0" as const,
     factoryRoute: "kernel_factory" as const,
-    entryPoint: { version: "0.7" as const },
+    entryPoint: { version: "0.9" as const },
     ownerCredential: {
       version: "oaath.owner-credential-profile/v1" as const,
       kind: "ecdsa" as const,

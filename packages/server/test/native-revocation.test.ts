@@ -22,7 +22,7 @@ describe("native revocation consent", () => {
         ownerSubject: "fixture-owner",
         expiresAt: 1_800_000_060_000,
         request: {
-          version: "oaath.kernel-revocation-signing-request/v1",
+          version: "oaath.kernel-revocation-signing-request/v2",
           kind: "kernel-revocation",
           permissionRequest: source.permissionRequest,
           install: source.installProjection.scope.request,

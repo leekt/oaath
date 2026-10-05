@@ -1,4 +1,5 @@
 import { readKernelLaneSequence } from "../src/advanced.js";
+import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 /**
  * The version-agnostic Kernel account entry points: default deployment
  * selection, onchain detection of an existing account's deployment, and the one
@@ -24,11 +25,10 @@ import {
 } from "../src/kernel.js";
 import {
   encodeKernelV4NonceKey,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../src/kernel-v4.js";
 
 const chainId = 143;
@@ -47,17 +47,17 @@ function reads(implementation: string) {
         case "code":
           return "0x6000";
         case "runtime_code_hash":
-          return request.address === KERNEL_V4_FACTORY_V07
-            ? KERNEL_V4_FACTORY_V07_CODE_HASH
-            : KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+          return request.address === KERNEL_V4_FACTORY_V09
+            ? KERNEL_V4_FACTORY_V09_CODE_HASH
+            : KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
         case "kernel_factory_implementation":
-          return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+          return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
         case "kernel_account_implementation":
           return implementation;
         case "kernel_account_version":
           return "kernel.advanced.v0.3.3";
         case "kernel_account_entrypoint":
-          return KERNEL_V4_ENTRY_POINT_V07;
+          return KERNEL_ENTRY_POINT_V07.address;
         case "kernel_account_root_validator":
         case "kernel_v4_account_root":
           return root;
@@ -70,10 +70,21 @@ function reads(implementation: string) {
 }
 
 describe("version-agnostic Kernel deployment selection", () => {
+  it("binds Kernel v4 to EntryPoint 0.9 and rejects the previous EntryPoint", () => {
+    expect(kernelDeployment({ chainId })).toMatchObject({
+      entryPoint: { version: "0.9", address: "0x433709009b8330fda32311df1c2afa402ed8d009" },
+      implementation: "0x6250926dd0309d9deaaeb4a2c413da5f3c4de37a",
+      factory: "0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d",
+    });
+    expect(() =>
+      kernelDeployment({ chainId, kernelVersion: "0.4.0", entryPoint: "0.7" }),
+    ).toThrow();
+  });
+
   it("defaults every omitted setting and checks every given one", () => {
     const current = kernelDeployment({ chainId });
-    expect(current).toMatchObject({ kernelVersion: "0.4.0", entryPoint: { version: "0.7" } });
-    expect(kernelDeployment({ chainId, kernelVersion: "0.4.0", entryPoint: "0.7" })).toBe(current);
+    expect(current).toMatchObject({ kernelVersion: "0.4.0", entryPoint: { version: "0.9" } });
+    expect(kernelDeployment({ chainId, kernelVersion: "0.4.0", entryPoint: "0.9" })).toBe(current);
     expect(kernelDeployment({ chainId, kernelVersion: "0.3.3" }).kernelVersion).toBe("0.3.3");
     for (const input of [
       { chainId, kernelVersion: "0.3.2" },
@@ -127,7 +138,7 @@ describe("version-agnostic Kernel nonce key", () => {
 describe("version-agnostic Kernel account binding", () => {
   it.each([
     [v33Implementation, "0.3.3", "kernel-v3.3-entrypoint-v0.7"],
-    [KERNEL_V4_UUPS_IMPLEMENTATION_V07, "0.4.0", "kernel-v4-uups-entrypoint-v0.7"],
+    [KERNEL_V4_UUPS_IMPLEMENTATION_V09, "0.4.0", "kernel-v4-uups-entrypoint-v0.9"],
   ] as const)(
     "detects the deployment of an account running %s",
     async (implementation, version, profile) => {
@@ -150,7 +161,7 @@ describe("version-agnostic Kernel account binding", () => {
 
   it.each([
     [v33Implementation, "0.4.0"],
-    [KERNEL_V4_UUPS_IMPLEMENTATION_V07, "0.3.3"],
+    [KERNEL_V4_UUPS_IMPLEMENTATION_V09, "0.3.3"],
   ] as const)(
     "refuses an account running %s under an explicit %s deployment",
     async (implementation, other) => {
@@ -169,7 +180,7 @@ describe("version-agnostic Kernel account binding", () => {
   );
 
   it("refuses a derived account or another chain under a mismatching deployment", async () => {
-    const evidence = reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07);
+    const evidence = reads(KERNEL_V4_UUPS_IMPLEMENTATION_V09);
     const mismatch = { code: "kernel_runtime_deployment_mismatch" };
     await expect(
       bindKernelAccount({
@@ -204,7 +215,7 @@ describe("version-agnostic Kernel account binding", () => {
   });
 
   it("refuses an existing Kernel v4 account whose root validation is absent", async () => {
-    const evidence = reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07);
+    const evidence = reads(KERNEL_V4_UUPS_IMPLEMENTATION_V09);
     const original = evidence.read.getMockImplementation()!;
     evidence.read.mockImplementation(async (request) =>
       request.type === "kernel_v4_account_root" ? `0x01${"00".repeat(20)}` : original(request),
@@ -254,7 +265,7 @@ describe("version-agnostic Kernel UserOperation preparation", () => {
     },
   };
 
-  it.each([v33Implementation, KERNEL_V4_UUPS_IMPLEMENTATION_V07])(
+  it.each([v33Implementation, KERNEL_V4_UUPS_IMPLEMENTATION_V09])(
     "prepares an existing %s account with no factory",
     async (implementation) => {
       const bound = await bindKernelAccount({
@@ -265,7 +276,10 @@ describe("version-agnostic Kernel UserOperation preparation", () => {
       const prepared = prepareKernelUserOperation({ ...operation, account: bound });
       expect(prepared).toMatchObject({
         chainId,
-        entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+        entryPoint:
+          implementation === v33Implementation
+            ? { version: "0.7", address: KERNEL_ENTRY_POINT_V07.address }
+            : { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
         userOperation: { sender: account, factory: null },
       });
     },
@@ -305,7 +319,7 @@ describe("version-agnostic Kernel permission approval", () => {
   it("approves the session packages of the runtime's own deployment", async () => {
     const runtime = createKernelRuntime({
       deployment: kernelDeployment({ chainId }),
-      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07).reads,
+      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V09).reads,
       operator: sessionOperator({ key, policies }),
     });
     const approval = await approveKernelPermission({ owner: key, runtime, account, nonce: "0" });
@@ -317,7 +331,7 @@ describe("version-agnostic Kernel permission approval", () => {
   it("refuses to approve an owner runtime, which installs no permission", async () => {
     const runtime = createKernelRuntime({
       deployment: kernelDeployment({ chainId }),
-      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V07).reads,
+      reads: reads(KERNEL_V4_UUPS_IMPLEMENTATION_V09).reads,
       operator: ownerOperator({ key }),
     });
     await expect(

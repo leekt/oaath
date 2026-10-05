@@ -278,7 +278,7 @@ const hash = await wallet.sendTransaction({ account, to, value, data, chain: nul
 
 ## Kernel runtime
 
-The Grant workflow uses Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.7`.
+The Grant workflow uses Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.9`.
 Existing ECDSA-root Kernel `0.3.3` accounts support
 `createOAAth({ chains, account }).account(address).owner(walletClient).sendCalls(...)`.
 It prompts once, creates no Grant, and uses the existing address with no enable
@@ -295,7 +295,7 @@ The v4 runtime pins [Kernel PR #152](https://github.com/zerodevapp/kernel/pull/1
 merged at `c960b42d2ed4adb0d5328f6e762962debdf8e57a`. The upstream PR identifies
 its production sources and compiler configuration as identical to the audited
 revision; the audit report's publication remains upstream work. OAAth builds
-that source with its pinned Solidity 0.8.33 profile and EntryPoint **0.7**
+that source with its pinned Solidity 0.8.33 profile and EntryPoint **0.9**
 constructor binding. Local integration tests prove that EntryPoint path.
 
 Validator install data now contains only packed selectors; signer install data
@@ -306,8 +306,8 @@ Prior v4 deployments and grants are unsupported and require fresh setup; existin
 Kernel 0.3.3 accounts keep their separate deployment profile.
 
 The deployment profile has the same CREATE2 addresses on every chain.
-`bindKernelAccount` checks EntryPoint and factory runtime hashes and the factory's
-implementation binding. Every chain requires code at the canonical implementation
+`bindKernelAccount` checks the factory runtime hash and the factory's
+implementation binding. Every chain requires code at the canonical EntryPoint and implementation
 address; Kernel's chain-dependent runtime hash is not checked. There is no
 per-chain implementation hash table. These checks do not claim that the new
 contracts have already been deployed on any public chain.
@@ -347,8 +347,8 @@ for fresh evidence; production deployment writes remain deferred.
 
 `@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
 enable-signature, UUPS factory, and ERC-7579 execution encodings. The current
-EntryPoint 0.7 factory is `0x6c92b0204cc5ab96ebe7d6894c0f7f408ab3ad29`; its
-UUPS implementation is `0x811d8c1d514021cf7f22aaca0107ab25acd9f70b`.
+EntryPoint 0.9 factory is `0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d`; its
+UUPS implementation is `0x6250926dd0309d9deaaeb4a2c413da5f3c4de37a`.
 
 Credential kinds are pluggable through one interface. `kernelKey({ kind?, ... })`
 returns the reviewed ECDSA, P-256 or WebAuthn `KeyProfile`, choosing the signing
@@ -462,7 +462,7 @@ bun run typecheck
 bun run test
 bun run build
 bun run lint
-bun run --filter @oaath/sdk test:anvil # explicit local Kernel v4 / EntryPoint 0.7 proof
+bun run --filter @oaath/sdk test:anvil # explicit local Kernel v4 / EntryPoint 0.9 proof
 ```
 
 Automated tests must not contact paid or shared RPC services. Contract and

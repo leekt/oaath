@@ -9,8 +9,8 @@ import {
   type KernelDeployment,
   type KernelRuntime,
   kernelDeployment,
-  kernelPermissionNonce,
-  materializeKernelPermission,
+  type kernelPermissionNonce,
+  type materializeKernelPermission,
 } from "../src/kernel.js";
 
 // Type-level proof: the public entry names each version's shapes through the

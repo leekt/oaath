@@ -95,7 +95,7 @@ export function components(chainId: number): readonly Component[] {
       address: deployment.entryPoint.address,
       required: true,
       passkeySession: false,
-      runtimeCodeHash: deployment.entryPoint.runtimeCodeHash,
+      runtimeCodeHash: null,
       deploymentInput: null,
     },
     {

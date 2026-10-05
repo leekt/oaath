@@ -621,14 +621,14 @@ public struct OwnerPhoneRequestProjection: Equatable, Sendable {
         guard factoryRoute == "kernel_factory" || factoryRoute == "meta_factory" else {
             throw OwnerPhoneWireError.invalidField("factoryRoute")
         }
-        guard object["entryPointVersion"] as? String == "0.7" else {
+        guard object["entryPointVersion"] as? String == "0.9" else {
             throw OwnerPhoneWireError.invalidField("entryPointVersion")
         }
         return OwnerPhoneAccountIdentity(
             accountIndex: try Wire.decimalUint(object["accountIndex"], label: "accountIndex"),
             kernelVersion: "0.4.0",
             factoryRoute: factoryRoute ?? "kernel_factory",
-            entryPointVersion: "0.7",
+            entryPointVersion: "0.9",
             ownerCredential: try decodeCredential(
                 object["ownerCredential"], label: "ownerCredential")
         )

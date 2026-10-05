@@ -319,7 +319,7 @@ chain-bound approval records are rejected and must be recreated.
 
 Custom issuer configurations can execute a v3.3 Grant using an account profile
 with version `oaath.kernel-existing-account-profile/v3`, `kernelVersion: "0.3.3"`,
-the existing `address`, EntryPoint version `0.7`, and its current ECDSA
+the existing `address`, EntryPoint version `0.7` (Kernel `0.3.3`) or `0.9` (Kernel v4), and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
 decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission
 packages must be derived from the exact approved policy and session credential.
@@ -444,7 +444,7 @@ matching retained record, never permission to retry a send.
 `operation.execution()` reobserves that exact operation and returns immutable
 finalized grant ID, sender, ordered calls, transaction/block identity, and success or
 revert outcome. It checks the receipt and derives calls from the containing
-EntryPoint v0.7 transaction by recomputing the operation hash, then decoding the
+EntryPoint v0.7/v0.9 transaction by recomputing the operation hash, then decoding the
 supported atomic Kernel execution. These are top-level requested calls; a
 `reverted` outcome means their effects did not persist. Pending, dropped,
 unreadable, mismatched, and unsupported evidence fails with a structured
@@ -675,7 +675,7 @@ Kernel `0.4.0` approval it prepares one P-256 owner operation from
 the canonical permission `request` and its retained install approval. Supply
 the chain, root operation nonce, gas and the `effect` supported by chain
 evidence: `invalidate-install` or `uninstall-permission`. For either version an
-optional `paymaster` (EntryPoint 0.7 `address`, `verificationGasLimit`,
+optional `paymaster` (EntryPoint 0.9 `address`, `verificationGasLimit`,
 `postOpGasLimit`, `data`) sponsors the operation; it defaults to `null`
 (self-funded) and is part of the hashed identity that restore reproduces. Retain its `prepared`
 operation and `signingRequest` before requesting owner consent, and recreate it

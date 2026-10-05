@@ -55,7 +55,7 @@ export const APPROVABLE_PERMISSION_SCOPE = JSON.stringify({
     accountIndex: "7",
     kernelVersion: "0.4.0",
     factoryRoute: "meta_factory",
-    entryPoint: { version: "0.7" },
+    entryPoint: { version: "0.9" },
     ownerCredential: {
       version: "oaath.owner-credential-profile/v1",
       kind: "ecdsa",

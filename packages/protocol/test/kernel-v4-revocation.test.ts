@@ -29,7 +29,7 @@ const fixture = JSON.parse(
 
 function request({ name: _name, ...entry }: Entry) {
   return {
-    version: "oaath.kernel-revocation-signing-request/v1",
+    version: "oaath.kernel-revocation-signing-request/v2",
     kind: "kernel-revocation",
     permissionRequest: fixture.permissionRequest,
     install: fixture.installProjection.scope.request,
@@ -50,12 +50,12 @@ describe("unsigned revocation fixture shared with the native phone", () => {
       nonce: BigInt(operation.nonce),
       preVerificationGas: BigInt(operation.preVerificationGas),
       signature: "0x",
-    }) as unknown as UserOperation<"0.7">;
+    }) as unknown as UserOperation<"0.9">;
     expect(
       getUserOperationHash({
         chainId: entry.chainId,
         entryPointAddress: entry.entryPoint,
-        entryPointVersion: "0.7",
+        entryPointVersion: "0.9",
         userOperation,
       }),
     ).toBe(entry.expectedDigest);

@@ -37,7 +37,7 @@ extension OwnerPhoneRequestProjection {
                     accountIndex: "7",
                     kernelVersion: "0.4.0",
                     factoryRoute: "meta_factory",
-                    entryPointVersion: "0.7",
+                    entryPointVersion: "0.9",
                     ownerCredential: .ecdsa(
                         address: "0x" + String(repeating: "33", count: 20))
                 ),
@@ -79,5 +79,5 @@ extension OwnerPhoneScope {
 
 /// One exact configured chain for native approval/pairing tests.
 let configuredTestChains = try! OwnerPhoneKernelChains(entryPoints: [
-    31337: "0x0000000071727de22e5e9d8baf0edac6f37da032"
+    31337: "0x433709009b8330fda32311df1c2afa402ed8d009"
 ])

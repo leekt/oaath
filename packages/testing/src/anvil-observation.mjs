@@ -1,5 +1,4 @@
 import { encodeKernelInstallNonceRead } from "@oaath/sdk/advanced";
-import { kernelDeployment } from "@oaath/sdk/kernel";
 import { decodeEventLog, encodeFunctionData, toEventSelector, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 
@@ -29,8 +28,7 @@ const logEvidence = (log) => ({
 });
 
 /** Rebuild the local receipt from chain evidence; no process-local transaction cache. */
-export async function readLocalOperationReceipt(chain, userOperationHash) {
-  const entryPoint = kernelDeployment({ chainId: chain.chainId }).entryPoint.address;
+export async function readLocalOperationReceipt(chain, entryPoint, userOperationHash) {
   const logs = await chain.rpc("eth_getLogs", [
     {
       address: entryPoint,
@@ -92,12 +90,12 @@ export async function readLocalPermissionInstalled(chain, request) {
   return null;
 }
 
-export function createLocalAnvilObservation(chain) {
+export function createLocalAnvilObservation(chain, entryPoint) {
   return {
     async read(request) {
       if (request.type === "chain_id") return chain.chainId;
       if (request.type === "user_operation_receipt") {
-        return readLocalOperationReceipt(chain, request.userOperationHash);
+        return readLocalOperationReceipt(chain, entryPoint, request.userOperationHash);
       }
       if (request.type === "transaction_receipt") {
         const receipt = await chain.rpc("eth_getTransactionReceipt", [request.transactionHash]);

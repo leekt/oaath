@@ -6,7 +6,7 @@ import XCTest
 
 final class PairingChainTests: XCTestCase {
     private let account = "0x" + String(repeating: "66", count: 20)
-    private let entryPoint = "0x0000000071727de22e5e9d8baf0edac6f37da032"
+    private let entryPoint = "0x433709009b8330fda32311df1c2afa402ed8d009"
 
     private func response(_ chains: String, account: String? = nil) -> Data {
         let account = account ?? self.account

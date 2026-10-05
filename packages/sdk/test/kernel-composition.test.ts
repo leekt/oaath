@@ -20,6 +20,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { mapClientFailure } from "../src/client/errors.js";
+import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 // Internal on purpose: a consumer reads this fact through
 // diagnoseKernelCapability, so the pinned validator stays off the public surface.
 import {
@@ -50,12 +51,11 @@ import {
   encodeKernelV4PolicyData,
   encodeKernelV4SignerData,
   encodeKernelV4ValidatorData,
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+  KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_EXECUTE_SELECTOR,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
   prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
 
@@ -107,13 +107,13 @@ function base64Url(value: Uint8Array): string {
 }
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
-  if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_V4_ENTRY_POINT_V09) return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
   if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
 
-  return KERNEL_V4_FACTORY_V07_CODE_HASH;
+  return KERNEL_V4_FACTORY_V09_CODE_HASH;
 }
 
 /**
@@ -131,10 +131,10 @@ function reads(state: "counterfactual" | "deployed" = "counterfactual", codeless
         return request.address === account && state === "counterfactual" ? "0x" : "0x01";
       }
       if (request.type === "kernel_factory_implementation") {
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
       }
       if (request.type === "kernel_factory_account") return account;
-      return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+      return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
     },
   };
 }
@@ -930,7 +930,7 @@ describe("Consumer-authored key profiles", () => {
             !deployed &&
             request.type === "runtime_code_hash" &&
             request.address === KERNEL_P256_VERIFIER
-              ? Promise.resolve(KERNEL_V4_FACTORY_V07_CODE_HASH)
+              ? Promise.resolve(KERNEL_V4_FACTORY_V09_CODE_HASH)
               : deployedReads.read(request),
         },
       });

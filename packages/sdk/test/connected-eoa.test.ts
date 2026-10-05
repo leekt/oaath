@@ -3,7 +3,7 @@ import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction
 import { describe, expect, it, vi } from "vitest";
 import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/connected-eoa.js";
 import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
 import { OaathRpcError } from "../src/viem.js";
 
@@ -13,7 +13,7 @@ const prepared = prepareUserOperation({
   kind: "execution",
   grantId: "fallback",
   chainId: 143,
-  entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+  entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
   userOperation: {
     sender: address,
     nonce: "7",
@@ -60,7 +60,7 @@ function fixture(
         ];
         expect(transaction).toMatchObject({
           from: address,
-          to: KERNEL_V4_ENTRY_POINT_V07,
+          to: KERNEL_V4_ENTRY_POINT_V09,
           value: "0x0",
           chainId: "0x8f",
         });
@@ -132,7 +132,7 @@ describe("connected EOA fallback", () => {
         await session.submit();
         expect(localSend).toHaveBeenCalledTimes(1);
         expect(localSend).toHaveBeenCalledWith(
-          expect.objectContaining({ to: KERNEL_V4_ENTRY_POINT_V07, value: 0n }),
+          expect.objectContaining({ to: KERNEL_V4_ENTRY_POINT_V09, value: 0n }),
         );
         expect(rpc).toHaveBeenCalledTimes(1);
       } else {

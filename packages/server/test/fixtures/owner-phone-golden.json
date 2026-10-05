@@ -29,7 +29,7 @@
           "accountIndex": "7",
           "kernelVersion": "0.4.0",
           "factoryRoute": "meta_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "ecdsa",
             "address": "0x3333333333333333333333333333333333333333"

@@ -35,7 +35,7 @@ import {
 import { hashOwnerSigningRequest } from "./signing-request.js";
 
 export const OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION =
-  "oaath.kernel-revocation-signing-request/v1" as const;
+  "oaath.kernel-revocation-signing-request/v2" as const;
 const ERROR_CODE = "signing_request_invalid" as const;
 const fail = protocolFailure(ERROR_CODE);
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -54,7 +54,7 @@ const MODULE_DATA = [
 export type KernelRevocationEffect = "invalidate-install" | "uninstall-permission";
 type Call = Readonly<{ target: Hex; value: string; data: Hex }>;
 
-/** EntryPoint 0.7's packed unsigned operation, with decimal integers for JSON. */
+/** EntryPoint 0.9's packed unsigned operation, with decimal integers for JSON. */
 export interface KernelRevocationOperation {
   readonly sender: Hex;
   readonly nonce: string;
@@ -64,7 +64,7 @@ export interface KernelRevocationOperation {
   readonly preVerificationGas: string;
   readonly gasFees: Hex;
   /**
-   * `0x` for a self-funded revocation, otherwise EntryPoint 0.7's packed
+   * `0x` for a self-funded revocation, otherwise EntryPoint 0.9's packed
    * `paymaster(20) || verificationGasLimit(16) || postOpGasLimit(16) || data`.
    */
   readonly paymasterAndData: Hex;
@@ -78,7 +78,7 @@ export interface KernelRevocationSigningRequest {
   readonly install: Readonly<KernelReplayableInstallOwnerSigningRequest>;
   readonly effect: KernelRevocationEffect;
   readonly chainId: number;
-  /** EntryPoint 0.7 address, part of the digest the phone independently derives. */
+  /** EntryPoint 0.9 address, part of the digest the phone independently derives. */
   readonly entryPoint: Hex;
   readonly operation: Readonly<KernelRevocationOperation>;
   readonly expectedDigest: Hex;
@@ -239,7 +239,7 @@ function revocationCallData(
 }
 
 /**
- * Captures one closed, self-funded Kernel 0.4.0 / EntryPoint 0.7 revocation.
+ * Captures one closed, self-funded Kernel 0.4.0 / EntryPoint 0.9 revocation.
  * Checks call meaning and digest. The owner device still binds its paired
  * account/key, current review and configured chain before releasing a signature.
  */
@@ -338,13 +338,13 @@ export function parseKernelRevocationSigningRequest(
       nonce: BigInt(operation.nonce),
       preVerificationGas: BigInt(operation.preVerificationGas),
       signature: "0x",
-    }) as unknown as UserOperation<"0.7">;
+    }) as unknown as UserOperation<"0.9">;
     if (
       expectedDigest !==
       getUserOperationHash({
         chainId: record.chainId,
         entryPointAddress: entryPoint,
-        entryPointVersion: "0.7",
+        entryPointVersion: "0.9",
         userOperation,
       })
     )

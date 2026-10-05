@@ -16,7 +16,7 @@ import {
   createKernelV4Reads,
   encodeKernelV4InstallNonceRead,
   encodeKernelV4NonceKey,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
   type KernelInstall,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadRequest,
@@ -68,7 +68,7 @@ export interface KernelDeploymentInput {
   readonly chainId: number;
   /** Defaults to the current Kernel release, `"0.4.0"`. */
   readonly kernelVersion?: KernelVersion;
-  /** Defaults to the only EntryPoint every supported Kernel version uses, `"0.7"`. */
+  /** Defaults to `"0.9"` for Kernel v4 and `"0.7"` for Kernel 0.3.3. */
   readonly entryPoint?: KernelEntryPointVersion;
 }
 
@@ -356,7 +356,7 @@ export interface DeriveKernelAccountInput {
   readonly accountIndex: string;
 }
 
-/** The account address and the EntryPoint 0.7 `factory` / `factoryData` that deploy it. */
+/** The account address and the EntryPoint `factory` / `factoryData` that deploy it. */
 export type KernelAccountDerivation = KernelV33Derivation;
 
 /**
@@ -405,7 +405,7 @@ async function detectKernelVersion(
     );
   }
   if (implementation === kernelV33Deployment(chainId).implementation) return "0.3.3";
-  if (implementation === KERNEL_V4_UUPS_IMPLEMENTATION_V07) return "0.4.0";
+  if (implementation === KERNEL_V4_UUPS_IMPLEMENTATION_V09) return "0.4.0";
   return runtimeFail(
     "kernel_runtime_binding_mismatch",
     "Kernel account implementation is not a supported Kernel deployment",

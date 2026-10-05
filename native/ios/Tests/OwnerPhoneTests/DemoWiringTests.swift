@@ -191,7 +191,7 @@ private actor DeferredHTTP: DemoHTTP {
 }
 
 private func pairingResponse(_ credential: String, account: String = "0x" + String(repeating: "66", count: 20)) -> Data {
-    Data(#"{"version":"oaath.phone-pairing/v1","deviceCredential":"\#(credential)","account":"\#(account)","chains":[{"chainId":31337,"entryPoint":"0x0000000071727de22e5e9d8baf0edac6f37da032"}]}"#.utf8)
+    Data(#"{"version":"oaath.phone-pairing/v1","deviceCredential":"\#(credential)","account":"\#(account)","chains":[{"chainId":31337,"entryPoint":"0x433709009b8330fda32311df1c2afa402ed8d009"}]}"#.utf8)
 }
 
 private func inboxResponse(
@@ -1201,7 +1201,7 @@ final class DemoPairingIdentityTests: XCTestCase {
             credential: pairingA.credential,
             account: "0x" + String(repeating: "66", count: 20),
             chains: OwnerPhoneKernelChains(entryPoints: [
-                421614: "0x0000000071727de22e5e9d8baf0edac6f37da032"
+                421614: "0x433709009b8330fda32311df1c2afa402ed8d009"
             ]),
             ownerPublicMaterial: fakeOwnerPublicMaterial)
         let store = InMemoryPairingStore(result: .stored(pairingA))

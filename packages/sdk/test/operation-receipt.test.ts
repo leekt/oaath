@@ -27,7 +27,7 @@ import {
 import type { OperationObserveResult, OperationRunner } from "../src/operation-runner.js";
 import { OAATH_OPERATION_STORE_RECORD_VERSION } from "../src/store.js";
 
-const ENTRY_POINT = `0x${"11".repeat(20)}` as const;
+const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032" as const;
 const ACCOUNT = `0x${"22".repeat(20)}` as const;
 const TARGET = `0x${"33".repeat(20)}` as const;
 const NESTED_TARGET = `0x${"34".repeat(20)}` as const;

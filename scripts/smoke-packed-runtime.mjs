@@ -6,7 +6,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 const consumer = await createConsumer({
   label: "runtime-cli",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "@oaath/cli"],
-  dependencies: { "@account-abstraction/contracts": "0.7.0", viem: "2.55.8" },
+  dependencies: { viem: "2.55.8" },
   files: {
     "run.mjs": `
 import { execFile, spawn } from "node:child_process";
@@ -59,9 +59,8 @@ try {
   const key = generatePrivateKey();
   const account = privateKeyToAccount(key);
   await rpc("anvil_setBalance", [account.address, "0x" + parseEther("100").toString(16)]);
-  const artifact = JSON.parse(await readFile(createRequire(import.meta.url).resolve("@account-abstraction/contracts/artifacts/EntryPoint.json"), "utf8"));
   const wallet = createWalletClient({ account, transport: http(url, { retryCount: 0 }) });
-  const epHash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 421614 }).create2Deployer, data: concat([${JSON.stringify(runtime.entryPoint.deploymentSalt)}, artifact.bytecode]), gas: 10000000n });
+  const epHash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 421614 }).create2Deployer, data: ${JSON.stringify(runtime.entryPoint.deploymentInput)}, gas: 10000000n });
   // Anvil can answer sendTransaction before its automined block lands; poll the receipt, bounded.
   let epReceipt = null;
   for (let attempt = 0; attempt < 50 && epReceipt === null; attempt++) {

@@ -1,6 +1,6 @@
 # @oaath/cli
 
-Node CLI for the canonical Kernel v4 / EntryPoint 0.7 runtime. The package
+Node CLI for the canonical Kernel v4 / EntryPoint 0.9 runtime. The package
 installs the `oaath` command and belongs to the same fixed release group as
 `@oaath/sdk`.
 
@@ -46,7 +46,7 @@ npx @oaath/cli deploy-runtime --chain 143 --rpc https://rpc.monad.xyz
 ```
 
 The command requires an explicit RPC URL. The endpoint must report the requested
-chain and carry the exact EntryPoint 0.7, singleton CREATE2 deployer, ZeroDev
+chain and carry the exact EntryPoint 0.9, singleton CREATE2 deployer, ZeroDev
 CallPolicy, operation-limit RateLimitPolicy, ECDSASigner and Daimo P-256 verifier runtimes.
 It deploys only missing core components: Kernel UUPS, the factory's immutable
 ECDSA implementation, factory, OAAth ValidityPolicy, the fixed-window

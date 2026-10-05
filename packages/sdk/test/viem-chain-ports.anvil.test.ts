@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { createUserOperationObserver, type OaathUsageRequest } from "../src/advanced.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createOAAth, type Oaath } from "../src/index.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+import { kernelDeployment } from "../src/kernel.js";
 
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
@@ -58,6 +58,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
       async (version, mode) => {
         const local = await startAnvil(CHAIN_ID, "prague", 1);
         const harness = await createHarness(local);
+        const deployment = kernelDeployment({ chainId: CHAIN_ID, kernelVersion: version });
         const clock = createClock(Math.floor(Date.now() / 1000));
         let realm:
           | { oaath: Readonly<Oaath>; relay: ReturnType<typeof createRealm>["relay"] | null }
@@ -124,7 +125,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             let result: unknown;
             if (rpc.method === "eth_chainId") result = toHex(CHAIN_ID);
             else if (rpc.method === "eth_supportedEntryPoints")
-              result = [KERNEL_V4_ENTRY_POINT_V07];
+              result = [deployment.entryPoint.address];
             else if (rpc.method === "eth_getUserOperationReceipt")
               result = receipts.get(String(rpc.params[0])) ?? null;
             else if (rpc.method === "eth_estimateUserOperationGas") {
@@ -149,18 +150,18 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                 preVerificationGas: BigInt(wire.preVerificationGas!),
                 maxFeePerGas: BigInt(wire.maxFeePerGas!),
                 maxPriorityFeePerGas: BigInt(wire.maxPriorityFeePerGas!),
-              } as UserOperation<"0.7">;
+              } as UserOperation<"0.9">;
               const hash = getUserOperationHash({
                 userOperation: operation,
-                entryPointAddress: KERNEL_V4_ENTRY_POINT_V07,
-                entryPointVersion: "0.7",
+                entryPointAddress: deployment.entryPoint.address,
+                entryPointVersion: deployment.entryPoint.version,
                 chainId: CHAIN_ID,
               });
               references.set(
                 hash,
                 Object.freeze({
                   chainId: CHAIN_ID,
-                  entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+                  entryPoint: deployment.entryPoint.address,
                   account: operation.sender.toLowerCase() as `0x${string}`,
                   nonce: String(operation.nonce),
                   userOperationHash: hash,
@@ -169,7 +170,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               const transactionHash = await harness.wallet.sendTransaction({
                 account: harness.submitter,
                 chain: null,
-                to: KERNEL_V4_ENTRY_POINT_V07,
+                to: deployment.entryPoint.address,
                 gas: 8_000_000n,
                 data: encodeFunctionData({
                   abi: entryPoint07Abi,
@@ -199,7 +200,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
               expect(event.args.success).toBe(true);
               receipts.set(hash, {
                 userOpHash: hash,
-                entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+                entryPoint: deployment.entryPoint.address,
                 sender: operation.sender,
                 nonce: toHex(operation.nonce),
                 actualGasCost: toHex(event.args.actualGasCost),

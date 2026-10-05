@@ -21,6 +21,7 @@ async function readV33Fixture() {
     await readFile(new URL("../fixtures/kernel-v33-deployments.json", import.meta.url), "utf8"),
   ) as {
     version: string;
+    entryPoint: { artifact: string; deploymentSalt: Hex };
     kernel: Module;
     factory: Module;
     ecdsaValidator: Module;
@@ -60,13 +61,11 @@ export async function deployKernelV33Contracts(
   const fixture = await readV33Fixture();
   const entryPoint = JSON.parse(
     await readFile(
-      new URL(`../../node_modules/${harness.fixture.entryPoint.artifact}`, import.meta.url),
+      new URL(`../../node_modules/${fixture.entryPoint.artifact}`, import.meta.url),
       "utf8",
     ),
   ) as { bytecode: Hex };
-  await harness.deployCreate2(
-    concat([harness.fixture.entryPoint.deploymentSalt, entryPoint.bytecode]),
-  );
+  await harness.deployCreate2(concat([fixture.entryPoint.deploymentSalt, entryPoint.bytecode]));
   for (const module of [fixture.kernel, fixture.factory, fixture.ecdsaValidator]) {
     expectCreate2(module);
     await harness.deployCreate2(module.deploymentInput);

@@ -336,13 +336,13 @@ describe("Kernel 0.4.0 owner revocation preparation", () => {
     const expectedDigest = getUserOperationHash({
       chainId: prepared.signingRequest.chainId,
       entryPointAddress: prepared.signingRequest.entryPoint,
-      entryPointVersion: "0.7",
+      entryPointVersion: "0.9",
       userOperation: toUserOperation({
         ...operation,
         nonce: BigInt(operation.nonce),
         preVerificationGas: BigInt(operation.preVerificationGas),
         signature: "0x",
-      }) as unknown as UserOperation<"0.7">,
+      }) as unknown as UserOperation<"0.9">,
     });
     expect(expectedDigest === prepared.signingRequest.expectedDigest).toBe(false);
     expect(() =>

@@ -9,9 +9,9 @@ import {
 import type { KernelRuntimePrepareInput } from "../src/kernel.js";
 import { prepareUserOperation } from "../src/kernel.js";
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../src/kernel-v4.js";
 import {
   createErc7677SponsorshipCapability,
@@ -31,12 +31,12 @@ function operation(): KernelRuntimePrepareInput {
     kind: "execution",
     grantId: "erc7677-operation",
     account: {
-      profile: "kernel-v4-uups-entrypoint-v0.7",
+      profile: "kernel-v4-uups-entrypoint-v0.9",
       state: "counterfactual",
       chainId: 421_614,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
-      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-      factory: KERNEL_V4_FACTORY_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
+      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+      factory: KERNEL_V4_FACTORY_V09,
       account: ACCOUNT,
       accountIndex: "0",
       initialPackages: [],
@@ -66,7 +66,7 @@ function runtime(preparations: KernelRuntimePrepareInput[]): OaathKernelSponsors
         kind: input.kind,
         grantId: input.grantId,
         chainId: input.account.chainId,
-        entryPoint: { version: "0.7", address: input.account.entryPoint },
+        entryPoint: { version: "0.9", address: input.account.entryPoint },
         userOperation: {
           sender: input.account.account,
           nonce: input.sequence,
@@ -121,7 +121,7 @@ describe("ERC-7677 sponsorship adapter", () => {
             expect(request.params[0]).toEqual({
               sender: ACCOUNT,
               nonce: "0x7",
-              factory: KERNEL_V4_FACTORY_V07,
+              factory: KERNEL_V4_FACTORY_V09,
               factoryData: "0x1234",
               callData: "0xabcdef",
               callGasLimit: "0x1",
@@ -138,7 +138,7 @@ describe("ERC-7677 sponsorship adapter", () => {
           expect(request.params[0]).toEqual({
             sender: ACCOUNT,
             nonce: "0x7",
-            factory: KERNEL_V4_FACTORY_V07,
+            factory: KERNEL_V4_FACTORY_V09,
             factoryData: "0x1234",
             callData: "0xabcdef",
             callGasLimit: "0x64",
@@ -162,7 +162,7 @@ describe("ERC-7677 sponsorship adapter", () => {
           expect(request.userOperation).toEqual({
             sender: ACCOUNT,
             nonce: "0x7",
-            factory: KERNEL_V4_FACTORY_V07,
+            factory: KERNEL_V4_FACTORY_V09,
             factoryData: "0x1234",
             callData: "0xabcdef",
             callGasLimit: "0x1",
@@ -197,7 +197,7 @@ describe("ERC-7677 sponsorship adapter", () => {
     expect(serviceRequests).toHaveLength(2);
     expect(estimatorRequests).toHaveLength(1);
     for (const request of serviceRequests) {
-      expect(request.params[1]).toBe(KERNEL_V4_ENTRY_POINT_V07);
+      expect(request.params[1]).toBe(KERNEL_V4_ENTRY_POINT_V09);
       expect(request.params[2]).toBe("0x66eee");
       expect(request.params[3]).toEqual({ policyId: "policy-a", nested: { tier: 1 } });
       expect(Object.isFrozen(request.params[3])).toBe(true);
@@ -217,11 +217,11 @@ describe("ERC-7677 sponsorship adapter", () => {
       kind: "execution",
       grantId: "erc7677-operation",
       chainId: 421_614,
-      entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+      entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
       userOperation: {
         sender: ACCOUNT,
         nonce: "7",
-        factory: { address: KERNEL_V4_FACTORY_V07, data: "0x1234" },
+        factory: { address: KERNEL_V4_FACTORY_V09, data: "0x1234" },
         callData: "0xabcdef",
         callGasLimit: "100",
         verificationGasLimit: "200",

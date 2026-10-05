@@ -15,6 +15,7 @@ import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import {
   bindKernelV33Account,
   createKernelV33Reads,
+  KERNEL_ENTRY_POINT_V07,
   kernelV33Deployment,
 } from "../src/kernel/deployment/v33.js";
 import { kernelV33OperationSigningHash } from "../src/kernel/deployment/v33-operation.js";
@@ -45,11 +46,7 @@ import {
   prepareExistingAccountPermissionApproval,
   signedKernelPermissionApproval,
 } from "../src/kernel.js";
-import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_IMPLEMENTATION_SLOT,
-} from "../src/kernel-v4.js";
+import { KERNEL_V4_IMPLEMENTATION_SLOT } from "../src/kernel-v4.js";
 import { deriveOperationId, prepareUserOperation } from "../src/prepared-user-operation.js";
 
 const account = "0xc3a56de6dfc1dcef5113927ec09513918e8c44aa";
@@ -70,7 +67,7 @@ function fixture() {
     ],
     [
       encodeFunctionData({ abi, functionName: "entrypoint" }),
-      encodeAbiParameters([{ type: "address" }], [KERNEL_V4_ENTRY_POINT_V07]),
+      encodeAbiParameters([{ type: "address" }], [KERNEL_ENTRY_POINT_V07.address]),
     ],
     [
       encodeFunctionData({ abi, functionName: "rootValidator" }),
@@ -84,13 +81,13 @@ function fixture() {
       case "code":
         return "0x6000";
       case "runtime_code_hash":
-        return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+        return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
       case "kernel_account_implementation":
         return implementation;
       case "kernel_account_version":
         return "kernel.advanced.v0.3.3";
       case "kernel_account_entrypoint":
-        return KERNEL_V4_ENTRY_POINT_V07;
+        return KERNEL_ENTRY_POINT_V07.address;
       case "kernel_account_root_validator":
         return root;
       default:
@@ -118,7 +115,7 @@ describe("existing Kernel v3.3 account binding", () => {
       state: "deployed",
       chainId: 143,
       account,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+      entryPoint: KERNEL_ENTRY_POINT_V07.address,
       implementation,
       rootValidator: root,
     });
@@ -188,7 +185,7 @@ describe("existing Kernel v3.3 account binding", () => {
       "kernel.advanced.v0.3.3",
     );
     expect(await reads.read({ type: "kernel_account_entrypoint", chainId: 143, account })).toBe(
-      KERNEL_V4_ENTRY_POINT_V07,
+      KERNEL_ENTRY_POINT_V07.address,
     );
     expect(await reads.read({ type: "kernel_account_root_validator", chainId: 143, account })).toBe(
       root,
@@ -342,6 +339,7 @@ describe("Kernel v3.3 session composition", () => {
         ...profile,
         version: "oaath.kernel-account-profile/v1",
         kernelVersion: "0.4.0",
+        entryPoint: { version: "0.9" },
         accountIndex: "0",
         factoryRoute: "kernel_factory",
       }),

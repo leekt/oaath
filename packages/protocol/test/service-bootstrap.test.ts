@@ -38,7 +38,7 @@ function document(): Record<string, unknown> {
       accountIndex: "0",
       kernelVersion: "0.4.0",
       factoryRoute: "kernel_factory",
-      entryPoint: { version: "0.7" },
+      entryPoint: { version: "0.9" },
       ownerCredential: {
         version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
         kind: "ecdsa",

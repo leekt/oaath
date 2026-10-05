@@ -271,7 +271,7 @@ export interface KernelRuntimePrepareInput<Account = KernelV4AccountDescriptor> 
    */
   readonly mode?: KernelRuntimeValidationMode;
   /**
-   * Optional EntryPoint 0.7 paymaster sponsorship; defaults to null
+   * Optional EntryPoint paymaster sponsorship; defaults to null
    * (self-funded). The fields are part of the hashed operation identity.
    */
   readonly paymaster?: Readonly<PreparedPaymaster> | null;

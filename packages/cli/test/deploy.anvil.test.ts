@@ -41,15 +41,7 @@ suite("runtime deployment and recovery", () => {
         "deployment_prerequisite_missing",
       );
       expect(keys).toBe(0);
-      const entryPoint = JSON.parse(
-        await readFile(
-          join(process.cwd(), "node_modules", harness.fixture.entryPoint.artifact),
-          "utf8",
-        ),
-      ) as { bytecode: Hex };
-      await harness.deployCreate2(
-        concat([harness.fixture.entryPoint.deploymentSalt, entryPoint.bytecode]),
-      );
+      await harness.deployCreate2(harness.fixture.entryPoint.deploymentInput);
       const statuses = async () =>
         (await kernelRuntimeReadiness({ chainId: 143, reads: harness.reads })).modules.map(
           (row) => row.status,
