@@ -31,7 +31,7 @@ import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from ".
  * the address and the runtime code hash derive from it offline.
  *
  * Interface, checked against Kernel v4's own IERC7579Modules at the commit the
- * deployment profile pins (zerodevapp/kernel f2a84a332ec5a722e7e95a0d64601905c3c87fe9):
+ * deployment profile pins (zerodevapp/kernel c960b42d2ed4adb0d5328f6e762962debdf8e57a):
  *
  * - `onInstall(bytes)` decodes `(uint256 x, uint256 y)`, exactly the public
  *   material kernel/key/p256.ts publishes, and rejects an off-curve point.
@@ -214,7 +214,7 @@ export const KERNEL_WEBAUTHN_SIGNER_RUNTIME_CODE_HASH =
  * the failure mode is not obvious from the ABI: a permission carrying two policy
  * packages installed correctly — `validationInfo(vId)` read
  * `policies = [CallPolicy, OaathKernelV4ValidityPolicy]`, `signer =
- * ECDSASigner`, hook = the no-hook sentinel — yet its first operation was
+ * ECDSASigner`, no scoped execution hook — yet its first operation was
  * rejected with EntryPoint
  * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, Kernel's
  * `InvalidSignature()`, because `ValidationManager._validateUserOpPermission`

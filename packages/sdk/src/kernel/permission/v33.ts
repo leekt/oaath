@@ -89,7 +89,6 @@ function captureScope(record: Record<string, unknown>): Readonly<KernelV33Permis
         (last
           ? encodeKernelV4SignerData({
               permissionId,
-              hook: "none",
               selectors: [KERNEL_V4_EXECUTE_SELECTOR],
             })
           : permissionId)

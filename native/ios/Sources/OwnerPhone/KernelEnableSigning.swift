@@ -470,7 +470,7 @@ private func validateKernelPackages(_ values: [CanonicalEIP712Value]) -> Bool {
         guard case let .object(package) = value,
               Set(package.keys) == ["moduleType", "module", "moduleData", "internalData"],
               case let .string(moduleType)? = package["moduleType"],
-              ["1", "2", "3", "4", "5", "6"].contains(moduleType),
+              ["1", "2", "3", "5", "6", "11"].contains(moduleType),
               case let .string(module)? = package["module"],
               isNonzeroAddress(module),
               case let .string(moduleData)? = package["moduleData"],

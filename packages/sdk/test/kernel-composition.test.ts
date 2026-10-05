@@ -113,9 +113,9 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    const pinned = deployment.implementationDeployment;
+    const pinned = deployment.implementationRuntimeCodeHash;
     if (!pinned) throw new Error("the composition chain must carry pinned evidence");
-    return pinned.runtimeCodeHash;
+    return pinned;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
@@ -346,7 +346,7 @@ describe("Kernel composition matrix", () => {
             moduleType: 1,
             module: authorityModule,
             moduleData: key.publicMaterial,
-            internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+            internalData: encodeKernelV4ValidatorData({ selectors: [] }),
           },
         ]);
         return;
@@ -380,7 +380,6 @@ describe("Kernel composition matrix", () => {
           moduleData: concat([paddedId, key.publicMaterial]),
           internalData: encodeKernelV4SignerData({
             permissionId: validation.permissionId,
-            hook: "none",
             selectors: [KERNEL_V4_EXECUTE_SELECTOR],
           }),
         },
@@ -520,7 +519,7 @@ describe("Kernel composition matrix", () => {
             moduleType: 1,
             module: `0x${"77".repeat(20)}`,
             moduleData: ecdsaAccount.address.toLowerCase() as `0x${string}`,
-            internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+            internalData: encodeKernelV4ValidatorData({ selectors: [] }),
           },
         ],
       }),
@@ -794,7 +793,7 @@ describe("Consumer-authored key profiles", () => {
             moduleType: 1,
             module: validator,
             moduleData: ecdsaAccount.address.toLowerCase(),
-            internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+            internalData: encodeKernelV4ValidatorData({ selectors: [] }),
           },
         ]);
         return;

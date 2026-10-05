@@ -41,7 +41,7 @@ export const KERNEL_INSTALL_COMPONENTS = Object.freeze([
   Object.freeze({ name: "internalData", type: "bytes" }),
 ] as const);
 
-export type KernelModuleType = 1 | 2 | 3 | 4 | 5 | 6;
+export type KernelModuleType = 1 | 2 | 3 | 5 | 6 | 11;
 
 export interface KernelInstall {
   readonly moduleType: KernelModuleType;
@@ -159,8 +159,7 @@ function captureInstall(
   if (
     typeof record.moduleType !== "number" ||
     !Number.isSafeInteger(record.moduleType) ||
-    record.moduleType < 1 ||
-    record.moduleType > 6
+    ![1, 2, 3, 5, 6, 11].includes(record.moduleType)
   ) {
     return fail("Kernel enable module type is unsupported");
   }

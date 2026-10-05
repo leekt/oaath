@@ -87,7 +87,7 @@ function externalComponent(
 
 export function components(chainId: number): readonly Component[] {
   const deployment = kernelDeployment({ chainId });
-  const implementationHash = deployment.implementationDeployment?.runtimeCodeHash;
+  const implementationHash = deployment.implementationRuntimeCodeHash;
   const deployable = (...args: DeployableArgs) =>
     deployableComponent(deployment.create2Deployer, ...args);
   return [

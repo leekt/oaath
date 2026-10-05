@@ -64,7 +64,7 @@ function expectInvalid(value: unknown): void {
 
 function numericPackages() {
   return GOLDEN.typedData.message.packages.map((install) => ({
-    moduleType: Number(install.moduleType) as 1 | 2 | 3 | 4 | 5 | 6,
+    moduleType: Number(install.moduleType) as 1 | 2 | 3 | 5 | 6 | 11,
     module: install.module,
     moduleData: install.moduleData,
     internalData: install.internalData,
@@ -78,6 +78,19 @@ function rehash(request: GoldenKernelEnableRequest): void {
 }
 
 describe("Kernel v4 replayable-install signing profile", () => {
+  it("accepts scoped execution hooks and rejects the retired generic hook type", () => {
+    const hook = {
+      moduleType: 11,
+      module: "0x1111111111111111111111111111111111111111",
+      moduleData: "0x",
+      internalData: "0x",
+    };
+    expect(parseKernelInstallPackages([hook])[0]?.moduleType).toBe(11);
+    expect(() => parseKernelInstallPackages([{ ...hook, moduleType: 4 }])).toThrowError(
+      expect.objectContaining({ code: "signing_request_invalid" }),
+    );
+  });
+
   it("builds and recognizes the accepted chainless Kernel 0.4.0 install value", () => {
     const typedData = createKernelReplayableInstallTypedData({
       account: GOLDEN.signer.account,

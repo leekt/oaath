@@ -291,15 +291,36 @@ Wallet approvals need no phone or relay. Explicit Grant `signer: "auto"` prefers
 available owner for the atomic call bundle; execution review identifies that
 choice and its wider authority before signing.
 
-The v4 runtime is open over chains: every address in the
-deployment profile is the same CREATE2 canonical address on every chain, so
-any EVM chain carrying the canonical Kernel v4 deployment resolves, and
-`bindKernelAccount` proves the actual capability from read evidence before
-any account depends on it — EntryPoint and factory runtime code hashes are
-pinned globally, and the implementation is proven by its per-chain pinned
-runtime hash where one has been reviewed (Arbitrum Sepolia, Ethereum Sepolia,
-Robinhood Chain Testnet) or by nonempty code at the canonical CREATE2 address
-elsewhere; a chain missing the deployment fails closed at bind.
+The v4 runtime pins [Kernel PR #152](https://github.com/zerodevapp/kernel/pull/152),
+merged at `c960b42d2ed4adb0d5328f6e762962debdf8e57a`. The upstream PR identifies
+its production sources and compiler configuration as identical to the audited
+revision; the audit report's publication remains upstream work. OAAth builds
+that source with its pinned Solidity 0.8.33 profile and EntryPoint **0.7**
+constructor binding. Local integration tests prove that EntryPoint path.
+
+Validator install data now contains only packed selectors; signer install data
+contains the permission ID followed by selectors. The old inline `hook` encoder
+argument and generic module type 4 are rejected; scoped execution hooks use
+module type 11. The constructor, runtime artifacts and CREATE2 addresses change.
+Prior v4 deployments and grants are unsupported and require fresh setup; existing
+Kernel 0.3.3 accounts keep their separate deployment profile.
+
+The deployment profile has the same CREATE2 addresses on every chain.
+`bindKernelAccount` checks EntryPoint and factory runtime hashes and the factory's
+implementation binding. `implementationRuntimeCodeHash` contains locally
+reproduced build evidence for chain IDs 421614, 11155111 and 46630; it replaces
+old public deployment receipts. Other chains require code at the canonical
+implementation address. These checks do not claim that the new contracts have
+already been deployed on any public chain.
+
+To reproduce the retained artifacts from a clean checkout of the pinned Kernel
+revision (including its committed dependencies):
+
+```sh
+bun run --filter @oaath/contracts kernel:check /path/to/kernel
+# Update artifacts after an intentional pin change:
+# bun run --filter @oaath/contracts kernel:generate /path/to/kernel
+```
 
 Check the runtime before integrating a chain:
 
@@ -321,31 +342,14 @@ missing deterministic core set, and retains an attempt journal before broadcast.
 See the CLI instructions for the funded-wallet environment variable and recovery;
 an uncertain transaction is observed, never automatically resent.
 
-Production readiness snapshot: **2026-09-29 KST / 2026-09-28 16:04 UTC**.
-These are read-only observations at the listed blocks, not deployment writes.
-`verified` means the pinned runtime hash matches; `missing` means empty code.
-
-| Chain / public RPC | Block | Kernel v4 | Factory | ValidityPolicy | CallPolicy | RateLimitPolicy | ECDSASigner |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| [Monad 143](https://rpc.monad.xyz) | 108794023 | missing | missing | missing | verified | missing | verified |
-| [World 480](https://worldchain-mainnet.g.alchemy.com/public) | 35637905 | missing | missing | missing | verified | verified | verified |
-| [MegaETH 4326](https://mainnet.megaeth.com/rpc) | 27814440 | missing | missing | missing | verified | verified | verified |
-| [Tempo 4217](https://rpc.mainnet.tempo.xyz) | 41666362 | missing | missing | missing | verified | missing | verified |
-| [Robinhood 4663](https://rpc.mainnet.chain.robinhood.com) | 74926543 | missing | missing | missing | verified | verified | verified |
-| [Arc 5042](https://rpc.mainnet.arc.io) | 23223959 | missing | missing | missing | verified | verified | verified |
-
-All six verified EntryPoint 0.7 and the canonical CREATE2 deployer. All six
-lack the factory's immutable ECDSA implementation as well as the UUPS
-implementation shown above. Optional P-256 validator and WebAuthn signer are
-missing on all six; the P-256 verifier is verified. **None is runtime-ready.**
-Re-run `doctor` for current evidence. Production deployment writes remain deferred.
+Public runtime readiness has not been rechecked for this contract revision.
+The previous six-chain snapshot described the retired artifacts. Run `doctor`
+for fresh evidence; production deployment writes remain deferred.
 
 `@oaath/sdk` owns the native Kernel v4 `Install[]`, validation nonce,
-enable-signature, UUPS factory, and ERC-7579 execution encodings. The v0.7
-KernelFactory at `0xE65C6a17bDB14070977b4AB70f1E7d9cDf441d53` is part of the
-deployment profile and is accepted only after its `UUPS()` binding and the
-EntryPoint, implementation, and factory runtime code hashes, plus the resulting
-account implementation, match that profile.
+enable-signature, UUPS factory, and ERC-7579 execution encodings. The current
+EntryPoint 0.7 factory is `0x6c92b0204cc5ab96ebe7d6894c0f7f408ab3ad29`; its
+UUPS implementation is `0x811d8c1d514021cf7f22aaca0107ab25acd9f70b`.
 
 Credential kinds are pluggable through one interface. `kernelKey({ kind?, ... })`
 returns the reviewed ECDSA, P-256 or WebAuthn `KeyProfile`, choosing the signing

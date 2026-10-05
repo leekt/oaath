@@ -43,7 +43,6 @@ import {
 import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
 
 const validator = `0x${"22".repeat(20)}` as const;
-const hook = `0x${"33".repeat(20)}` as const;
 const target = `0x${"44".repeat(20)}` as const;
 const factory = KERNEL_V4_FACTORY_V07;
 const account = `0x${"66".repeat(20)}` as const;
@@ -53,9 +52,9 @@ const selector = "0x12345678" as const;
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    const pinned = kernelV4Deployment(421_614).implementationDeployment;
+    const pinned = kernelV4Deployment(421_614).implementationRuntimeCodeHash;
     if (!pinned) throw new Error("chain 421614 must carry pinned evidence");
-    return pinned.runtimeCodeHash;
+    return pinned;
   }
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
@@ -64,7 +63,7 @@ const baseInstall: KernelInstall = Object.freeze({
   moduleType: 1,
   module: validator,
   moduleData: "0x1234",
-  internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+  internalData: encodeKernelV4ValidatorData({ selectors: [] }),
 });
 const installs = Object.freeze([baseInstall]) satisfies readonly KernelInstall[];
 
@@ -152,24 +151,12 @@ const asHostile = <R>(fn: (value: never) => R) => fn as (value: unknown) => R;
 
 describe("Kernel v4 deployment profile", () => {
   it.each([
-    [
-      421_614,
-      "0xa63c36c76b536b1c11d75c68ac5ca15d4ce2c09a40e90ab29ff6601b4bdb0d33",
-      "0xd0c42b1ed1738560c1b243fd9e5fc04b2eb5aa1be9962ac7f1f61696f9e6902b",
-    ],
-    [
-      11_155_111,
-      "0x54528619ceafbcc656a7d0f7b637213f38d2fbe013a0e2909cfa3fef6dca7cc0",
-      "0xb1f85627093213ec87a1484b6af7192651f4dbd6c5f9e9c0aff22e332c5ddb01",
-    ],
-    [
-      46_630,
-      "0xf662be20e4e8d3b0fcfb7bd08845ea89b45977d82aa315cb78530f013f4f2782",
-      "0xaef18d8059fa2474272125891050e2e755f45db00c2668b45b7062b2a9579be0",
-    ],
+    [421_614, "0x53a2f66b9cb1642384fda637298117b3ea43bed101c4500dea5e224adf8f6ae0"],
+    [11_155_111, "0x2792a527a1ecca52bbc6a6d9edaacf2108c9fecea231891a38d048ec236076df"],
+    [46_630, "0xfd615dd63a7309716dd7cada3f5b74af53f3a94b58996551e74dc623e90ee337"],
   ] as const)(
     "binds chain %i to the pinned UUPS / EntryPoint 0.7 profile",
-    (chainId, transactionHash, runtimeCodeHash) => {
+    (chainId, runtimeCodeHash) => {
       const deployment = kernelV4Deployment(chainId);
       expect(deployment).toEqual({
         profile: "kernel-v4-uups-entrypoint-v0.7",
@@ -185,15 +172,10 @@ describe("Kernel v4 deployment profile", () => {
         factory: KERNEL_V4_FACTORY_V07,
         factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
         create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-        implementationDeployment: {
-          deployer: KERNEL_V4_CREATE2_DEPLOYER,
-          transactionHash,
-          runtimeCodeHash,
-        },
+        implementationRuntimeCodeHash: runtimeCodeHash,
       });
       expect(Object.isFrozen(deployment)).toBe(true);
       expect(Object.isFrozen(deployment.entryPoint)).toBe(true);
-      expect(Object.isFrozen(deployment.implementationDeployment)).toBe(true);
     },
   );
 
@@ -215,7 +197,7 @@ describe("Kernel v4 deployment profile", () => {
         factory: KERNEL_V4_FACTORY_V07,
         factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
         create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-        implementationDeployment: null,
+        implementationRuntimeCodeHash: null,
       });
       expect(Object.isFrozen(deployment)).toBe(true);
       // One owned instance per chain keeps the composition identity gate exact.
@@ -237,14 +219,21 @@ describe("Kernel v4 deployment profile", () => {
 });
 
 describe("Kernel v4 module and account codecs", () => {
+  it("rejects retired inline hook configuration before encoding an install", () => {
+    expect(() =>
+      asHostile(encodeKernelV4ValidatorData)({ hook: "none", selectors: [selector] }),
+    ).toThrow();
+    expect(() =>
+      asHostile(encodeKernelV4SignerData)({ permissionId, hook: "none", selectors: [selector] }),
+    ).toThrow();
+  });
+
   it("encodes native validator, policy, and signer internal data", () => {
-    expect(encodeKernelV4ValidatorData({ hook: "none", selectors: [selector] })).toBe(
-      `0x${"00".repeat(19)}01${selector.slice(2)}`,
-    );
-    expect(encodeKernelV4ValidatorData({ hook, selectors: [] })).toBe(hook);
+    expect(encodeKernelV4ValidatorData({ selectors: [selector] })).toBe(selector);
+    expect(encodeKernelV4ValidatorData({ selectors: [] })).toBe("0x");
     expect(encodeKernelV4PolicyData(permissionId)).toBe(permissionId);
-    expect(encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] })).toBe(
-      `${permissionId}${"00".repeat(19)}01${selector.slice(2)}`,
+    expect(encodeKernelV4SignerData({ permissionId, selectors: [selector] })).toBe(
+      `${permissionId}${selector.slice(2)}`,
     );
   });
 
@@ -270,7 +259,7 @@ describe("Kernel v4 module and account codecs", () => {
         moduleType: 1n,
         module: validator,
         moduleData: "0x1234",
-        internalData: `0x${"00".repeat(19)}01`,
+        internalData: "0x",
       },
     ]);
   });
@@ -342,7 +331,7 @@ describe("Kernel v4 module and account codecs", () => {
         {
           ...installs[0],
           moduleType: 6,
-          internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [] }),
+          internalData: encodeKernelV4SignerData({ permissionId, selectors: [] }),
         },
       ],
     ],
@@ -351,12 +340,12 @@ describe("Kernel v4 module and account codecs", () => {
         {
           ...installs[0],
           moduleType: 6,
-          internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [] }),
+          internalData: encodeKernelV4SignerData({ permissionId, selectors: [] }),
         },
         {
           ...installs[0],
           moduleType: 6,
-          internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [] }),
+          internalData: encodeKernelV4SignerData({ permissionId, selectors: [] }),
         },
       ],
     ],
@@ -378,7 +367,7 @@ describe("Kernel v4 module and account codecs", () => {
     const signer: KernelInstall = {
       ...baseInstall,
       moduleType: 6,
-      internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
+      internalData: encodeKernelV4SignerData({ permissionId, selectors: [selector] }),
     };
     expect(encodeKernelV4InstallModules([policy, signer])).toMatch(/^0x/u);
   });
@@ -397,7 +386,7 @@ describe("Kernel v4 module and account codecs", () => {
       moduleType: 6,
       module: `0x${"88".repeat(20)}`,
       moduleData: concat([permissionPrefix, "0x99"]),
-      internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [selector] }),
+      internalData: encodeKernelV4SignerData({ permissionId, selectors: [selector] }),
     };
     const calls = encodeKernelPermissionUninstallCalls({
       account,
@@ -443,7 +432,7 @@ describe("Kernel v4 module and account codecs", () => {
           moduleType: 6,
           module: validator,
           moduleData: concat([pad(permissionId, { size: 32, dir: "right" }), "0x99"]),
-          internalData: encodeKernelV4SignerData({ permissionId, hook: "none", selectors: [] }),
+          internalData: encodeKernelV4SignerData({ permissionId, selectors: [] }),
         },
       ],
       "must carry the permission prefix",
@@ -569,6 +558,10 @@ describe("Kernel v4 account binding", () => {
 
   it.each([
     ["wrong chain", { chain_id: 1 }],
+    [
+      "retired v4 implementation",
+      { code: "0x01", kernel_account_implementation: "0x3c504000d05c1e28687f70fca40a76f7ddda9952" },
+    ],
     ["wrong runtime code", { runtime_code_hash: `0x${"ff".repeat(32)}` }],
     ["missing required module code", { code: "0x" }],
     ["wrong factory implementation", { kernel_factory_implementation: target }],

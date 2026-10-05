@@ -57,9 +57,9 @@ const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"33".repeat(32)}`);
 
 function pinnedRuntimeCodeHash(chain: number): `0x${string}` {
-  const pinned = kernelDeployment({ chainId: chain }).implementationDeployment;
+  const pinned = kernelDeployment({ chainId: chain }).implementationRuntimeCodeHash;
   if (!pinned) throw new Error("an open chain must verify implementation by code, not hash");
-  return pinned.runtimeCodeHash;
+  return pinned;
 }
 
 /** Forces a hostile value past the compiler without weakening the source types. */

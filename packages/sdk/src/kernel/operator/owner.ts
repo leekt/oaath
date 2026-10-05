@@ -42,7 +42,7 @@ export function ownerOperator(value: OwnerOperatorInput): Readonly<OperatorProfi
           moduleType: 1 as const,
           module: key.resolveValidator(exactKernelDeployment(deployment)),
           moduleData: key.publicMaterial,
-          internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+          internalData: encodeKernelV4ValidatorData({ selectors: [] }),
         }),
       ]),
   });

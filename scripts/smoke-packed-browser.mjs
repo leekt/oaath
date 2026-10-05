@@ -323,7 +323,7 @@ async function accountRead(request) {
     }
     if (request.address === deployment.factory) return deployment.factoryRuntimeCodeHash;
     if (request.address === deployment.implementation) {
-      return deployment.implementationDeployment.runtimeCodeHash;
+      return deployment.implementationRuntimeCodeHash;
     }
   }
   if (request.type === "kernel_factory_implementation") {
