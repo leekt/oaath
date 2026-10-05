@@ -112,11 +112,7 @@ function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
-  if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    const pinned = deployment.implementationRuntimeCodeHash;
-    if (!pinned) throw new Error("the composition chain must carry pinned evidence");
-    return pinned;
-  }
+
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 

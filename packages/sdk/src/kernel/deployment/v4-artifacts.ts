@@ -5,9 +5,3 @@ export const KERNEL_V4_UUPS_IMPLEMENTATION_V07 =
 export const KERNEL_V4_FACTORY_V07 = "0x6c92b0204cc5ab96ebe7d6894c0f7f408ab3ad29" as const;
 export const KERNEL_V4_FACTORY_V07_CODE_HASH =
   "0xb802c68a1ae357178d56502bc6482ddc369c40accf02e8d7b00aa33837775281" as const;
-export const KERNEL_V4_IMPLEMENTATION_CODE_HASHES: Readonly<Record<number, `0x${string}`>> =
-  Object.freeze({
-    "46630": "0xfd615dd63a7309716dd7cada3f5b74af53f3a94b58996551e74dc623e90ee337",
-    "421614": "0x53a2f66b9cb1642384fda637298117b3ea43bed101c4500dea5e224adf8f6ae0",
-    "11155111": "0x2792a527a1ecca52bbc6a6d9edaacf2108c9fecea231891a38d048ec236076df",
-  });

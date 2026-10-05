@@ -307,11 +307,10 @@ Kernel 0.3.3 accounts keep their separate deployment profile.
 
 The deployment profile has the same CREATE2 addresses on every chain.
 `bindKernelAccount` checks EntryPoint and factory runtime hashes and the factory's
-implementation binding. `implementationRuntimeCodeHash` contains locally
-reproduced build evidence for chain IDs 421614, 11155111 and 46630; it replaces
-old public deployment receipts. Other chains require code at the canonical
-implementation address. These checks do not claim that the new contracts have
-already been deployed on any public chain.
+implementation binding. Every chain requires code at the canonical implementation
+address; Kernel's chain-dependent runtime hash is not checked. There is no
+per-chain implementation hash table. These checks do not claim that the new
+contracts have already been deployed on any public chain.
 
 To reproduce the retained artifacts from a clean checkout of the pinned Kernel
 revision (including its committed dependencies):

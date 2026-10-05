@@ -56,30 +56,17 @@ const gas = Object.freeze({
 const ownerAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const sessionAccount = privateKeyToAccount(`0x${"33".repeat(32)}`);
 
-function pinnedRuntimeCodeHash(chain: number): `0x${string}` {
-  const pinned = kernelDeployment({ chainId: chain }).implementationRuntimeCodeHash;
-  if (!pinned) throw new Error("an open chain must verify implementation by code, not hash");
-  return pinned;
-}
-
 /** Forces a hostile value past the compiler without weakening the source types. */
 function asHostile<T>(value: T): (input: never) => unknown {
   return value as unknown as (input: never) => unknown;
 }
 
-function runtimeCodeHash(
-  address: `0x${string}`,
-  chain: typeof chainId | typeof otherChainId,
-): `0x${string}` {
+function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
-  if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    // Requesting the implementation hash on the open chain is itself a bug:
-    // binding must verify it by code presence there, so the fake fails loudly.
-    return pinnedRuntimeCodeHash(chain);
-  }
+
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
@@ -88,10 +75,7 @@ function reads(state: "counterfactual" | "deployed" = "counterfactual") {
     async read(request: KernelV4AccountReadRequest): Promise<unknown> {
       if (request.type === "chain_id") return request.chainId;
       if (request.type === "runtime_code_hash") {
-        return runtimeCodeHash(
-          request.address,
-          request.chainId === chainId ? chainId : otherChainId,
-        );
+        return runtimeCodeHash(request.address);
       }
       if (request.type === "code") {
         return request.address === account && state === "counterfactual" ? "0x" : "0x01";

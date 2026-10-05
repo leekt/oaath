@@ -322,9 +322,7 @@ async function accountRead(request) {
       return OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH;
     }
     if (request.address === deployment.factory) return deployment.factoryRuntimeCodeHash;
-    if (request.address === deployment.implementation) {
-      return deployment.implementationRuntimeCodeHash;
-    }
+
   }
   if (request.type === "kernel_factory_implementation") {
     return deployment.implementation;

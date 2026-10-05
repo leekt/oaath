@@ -6,11 +6,10 @@
  *
  * Every address here is chain-independent. These modules are deployed through the
  * CREATE2 deployer at KERNEL_V4_CREATE2_DEPLOYER with a zero salt, so one address
- * holds on every supported chain and no module is keyed per chain. Per-chain facts
- * stay where the evidence genuinely differs: the deployment profile's runtime code
- * hashes in kernel-v4.ts (Kernel caches block.chainid in its immutables, so one
- * address carries different runtime code per chain) and the code-presence reads
- * bindKernelV4Account performs on the action chain.
+ * holds on every supported chain and no module is keyed per chain. Kernel's
+ * implementation caches block.chainid in its immutables, so bindKernelV4Account
+ * proves its canonical CREATE2 code presence and factory binding on the action
+ * chain instead of comparing the implementation's chain-dependent runtime hash.
  *
  * @author taek <leekt216@gmail.com>
  */

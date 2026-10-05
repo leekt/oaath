@@ -35,7 +35,6 @@ import {
 import {
   KERNEL_V4_FACTORY_V07,
   KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_IMPLEMENTATION_CODE_HASHES,
   KERNEL_V4_UUPS_IMPLEMENTATION_V07,
 } from "./kernel/deployment/v4-artifacts.js";
 
@@ -109,13 +108,6 @@ export interface KernelV4Deployment {
   readonly factoryRuntimeCodeHash: typeof KERNEL_V4_FACTORY_V07_CODE_HASH;
   /** The canonical CREATE2 deployer every address above is derived through. */
   readonly create2Deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
-  /**
-   * Runtime hash reproduced from the pinned source on local Anvil, or null on
-   * an open chain. This is build evidence, not a public deployment receipt.
-   * Kernel caches chain ID in its immutables. Without a local hash, binding
-   * proves code at the canonical CREATE2 address and the hash-pinned factory.
-   */
-  readonly implementationRuntimeCodeHash: `0x${string}` | null;
 }
 
 export type { KernelInstall };
@@ -618,7 +610,6 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
     factory: KERNEL_V4_FACTORY_V07,
     factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
     create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-    implementationRuntimeCodeHash: KERNEL_V4_IMPLEMENTATION_CODE_HASHES[chainId] ?? null,
   });
   OPEN_DEPLOYMENTS.set(chainId, created);
   return created;
@@ -793,31 +784,17 @@ async function proveDeploymentCode(
     KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
     "Kernel v4 EntryPoint runtime code",
   );
-  if (deployment.implementationRuntimeCodeHash) {
-    evidenceCodeHash(
-      await readEvidence(read, {
-        type: "runtime_code_hash",
-        chainId: deployment.chainId,
-        address: deployment.implementation,
-      }),
-      deployment.implementationRuntimeCodeHash,
-      "Kernel v4 implementation runtime code",
-    );
-  } else {
-    // No per-chain pin exists on an open chain: Kernel's chainid immutables
-    // make the runtime code hash chain-specific. The CREATE2 address itself
-    // commits to the exact reviewed init code, so nonempty code here — plus
-    // the hash-pinned factory reporting this address as its implementation
-    // below — is the deployment proof. Empty code still fails closed.
-    evidenceCode(
-      await readEvidence(read, {
-        type: "code",
-        chainId: deployment.chainId,
-        address: deployment.implementation,
-      }),
-      "Kernel v4 implementation code",
-    );
-  }
+  // Kernel caches chain ID in its immutables, so its runtime hash varies by
+  // chain. The canonical CREATE2 address commits to the reviewed init code;
+  // require code here and prove the factory's implementation binding below.
+  evidenceCode(
+    await readEvidence(read, {
+      type: "code",
+      chainId: deployment.chainId,
+      address: deployment.implementation,
+    }),
+    "Kernel v4 implementation code",
+  );
   evidenceCodeHash(
     await readEvidence(read, {
       type: "runtime_code_hash",
