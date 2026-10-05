@@ -136,7 +136,7 @@ export function createFakeChain(chainId) {
               return OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH;
             }
             return request.address === deployment.implementation
-              ? deployment.implementationDeployment.runtimeCodeHash
+              ? deployment.implementationRuntimeCodeHash
               : deployment.factoryRuntimeCodeHash;
           }
           if (request.type === "kernel_factory_account") return ACCOUNT;
