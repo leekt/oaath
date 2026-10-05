@@ -12,7 +12,7 @@ transactions, code consumption, and HTTP responses belong to `@oaath/server`.
 `KernelAccountProfile` distinguishes derived Kernel v4 accounts from existing
 accounts. The latter use `oaath.kernel-existing-account-profile/v3` with the
 detected `kernelVersion` (`"0.3.3"` or `"0.4.0"`), an
-`address`, EntryPoint `0.7`, and an ECDSA `ownerCredential`
+`address`, EntryPoint `0.7` for Kernel `0.3.3` or `0.9` for Kernel `0.4.0`, and an ECDSA `ownerCredential`
 (or, on `"0.4.0"`, a raw P-256 one); a WebAuthn owner, factory indices and
 routes are rejected. Permission hashes and Grant identity bind that existing
 address and owner. Parsing the profile does not prove deployment or ownership;
@@ -30,7 +30,7 @@ error fields without inspecting prose or accessors. Relays may forward this
 evidence for a failed submission; HTTP errors alone never prove non-acceptance.
 
 `parseKernelRevocationSigningRequest` captures the Kernel 0.4.0 / EntryPoint
-0.7 owner-phone revocation profile, self-funded (`paymasterAndData: "0x"`) or
+0.9 owner-phone revocation profile, self-funded (`paymasterAndData: "0x"`) or
 sponsored by a packed paymaster the digest covers. Its packed operation must
 contain only the declared install-nonce invalidation or permission-uninstall calls.
 `hashKernelRevocationSigningRequest` binds review metadata and the chain-bound

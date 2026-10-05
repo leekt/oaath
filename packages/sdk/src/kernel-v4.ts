@@ -33,15 +33,17 @@ import {
   toHex,
 } from "viem";
 import {
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "./kernel/deployment/v4-artifacts.js";
 
 export {
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "./kernel/deployment/v4-artifacts.js";
 
 import { type KernelRuntimeErrorCode, OaathKernelRuntimeError } from "./kernel/types.js";
@@ -63,10 +65,7 @@ const MAX_UINT256 = (1n << 256n) - 1n;
 const BOUND_ACCOUNTS = new WeakSet<object>();
 const VALIDITY_TIME_RANGE_MODE_SELECTOR = "0x1ba8f415" as const;
 
-export const KERNEL_V4_ENTRY_POINT_V07 = "0x0000000071727de22e5e9d8baf0edac6f37da032" as const;
 export const KERNEL_V4_CREATE2_DEPLOYER = "0x4e59b44847b379578588920ca78fbf26c0b4956c" as const;
-export const KERNEL_V4_ENTRY_POINT_V07_CODE_HASH =
-  "0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58" as const;
 /** ERC-1967 implementation storage slot read by kernel_account_implementation. */
 export const KERNEL_V4_IMPLEMENTATION_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
@@ -94,18 +93,17 @@ export type KernelV4ValidationMode =
   | "enable-all-replayable";
 
 export interface KernelV4Deployment {
-  readonly profile: "kernel-v4-uups-entrypoint-v0.7";
+  readonly profile: "kernel-v4-uups-entrypoint-v0.9";
   readonly kernelVersion: "0.4.0";
   readonly accountType: "uups";
   readonly chainId: number;
   readonly entryPoint: Readonly<{
-    version: "0.7";
-    address: typeof KERNEL_V4_ENTRY_POINT_V07;
-    runtimeCodeHash: typeof KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+    version: "0.9";
+    address: typeof KERNEL_V4_ENTRY_POINT_V09;
   }>;
-  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
-  readonly factory: typeof KERNEL_V4_FACTORY_V07;
-  readonly factoryRuntimeCodeHash: typeof KERNEL_V4_FACTORY_V07_CODE_HASH;
+  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V09;
+  readonly factory: typeof KERNEL_V4_FACTORY_V09;
+  readonly factoryRuntimeCodeHash: typeof KERNEL_V4_FACTORY_V09_CODE_HASH;
   /** The canonical CREATE2 deployer every address above is derived through. */
   readonly create2Deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
 }
@@ -174,7 +172,7 @@ export interface KernelV4UserOperationInput {
   /** Optional request-time attenuation enforced by the installed OAAth validity policy. */
   readonly validityTimeRange?: Readonly<KernelValidityTimeRange>;
   /**
-   * Optional EntryPoint 0.7 paymaster sponsorship. Absent or null prepares a
+   * Optional EntryPoint 0.9 paymaster sponsorship. Absent or null prepares a
    * self-funded operation. The fields are hashed into the operation identity,
    * so sponsorship can never be attached or swapped after preparation.
    */
@@ -246,7 +244,7 @@ export type KernelV4AccountReadRequest =
       account: `0x${string}`;
     }>
   | Readonly<{
-      /** EntryPoint 0.7 `getNonce(account, key)`: the key's full decimal uint256 nonce. */
+      /** EntryPoint 0.9 `getNonce(account, key)`: the key's full decimal uint256 nonce. */
       type: "entry_point_lane_nonce";
       chainId: number;
       entryPoint: `0x${string}`;
@@ -285,12 +283,12 @@ export interface KernelV4ReadClient {
 }
 
 export interface KernelV4AccountDescriptor {
-  readonly profile: "kernel-v4-uups-entrypoint-v0.7";
+  readonly profile: "kernel-v4-uups-entrypoint-v0.9";
   readonly state: "counterfactual" | "deployed";
   readonly chainId: number;
-  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V07;
-  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
-  readonly factory: typeof KERNEL_V4_FACTORY_V07;
+  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V09;
+  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V09;
+  readonly factory: typeof KERNEL_V4_FACTORY_V09;
   readonly account: `0x${string}`;
   readonly accountIndex: string;
   readonly initialPackages: readonly Readonly<KernelInstall>[];
@@ -304,22 +302,20 @@ export interface KernelV4AccountDescriptor {
  * it records is the account's current root, read onchain.
  */
 export interface KernelV4ExistingAccountDescriptor {
-  readonly profile: "kernel-v4-uups-entrypoint-v0.7";
+  readonly profile: "kernel-v4-uups-entrypoint-v0.9";
   readonly state: "deployed";
   readonly chainId: number;
-  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V07;
-  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V09;
+  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V09;
   readonly account: `0x${string}`;
   /** Current root ValidationId: `0x01 || validator` or `0x02 || permissionId || 0`. */
   readonly rootValidator: `0x${string}`;
 }
 
-export const KERNEL_ENTRY_POINT_V07 = Object.freeze({
-  version: "0.7" as const,
-  address: KERNEL_V4_ENTRY_POINT_V07,
-  runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
+const ENTRY_POINT = Object.freeze({
+  version: "0.9" as const,
+  address: KERNEL_V4_ENTRY_POINT_V09,
 });
-const ENTRY_POINT = KERNEL_ENTRY_POINT_V07;
 
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
@@ -601,14 +597,14 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
   const open = OPEN_DEPLOYMENTS.get(chainId);
   if (open) return open;
   const created: Readonly<KernelV4Deployment> = Object.freeze({
-    profile: "kernel-v4-uups-entrypoint-v0.7",
+    profile: "kernel-v4-uups-entrypoint-v0.9",
     kernelVersion: "0.4.0",
     accountType: "uups",
     chainId,
     entryPoint: ENTRY_POINT,
-    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-    factory: KERNEL_V4_FACTORY_V07,
-    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
+    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+    factory: KERNEL_V4_FACTORY_V09,
+    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V09_CODE_HASH,
     create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
   });
   OPEN_DEPLOYMENTS.set(chainId, created);
@@ -775,14 +771,15 @@ async function proveDeploymentCode(
     return evidenceInvalid("Kernel v4 chain evidence does not match the deployment profile");
   }
 
-  evidenceCodeHash(
+  // EntryPoint caches the EIP-712 chain domain in immutable runtime bytes.
+  // Its canonical CREATE2 address commits to the reviewed creation code.
+  evidenceCode(
     await readEvidence(read, {
-      type: "runtime_code_hash",
+      type: "code",
       chainId: deployment.chainId,
       address: deployment.entryPoint.address,
     }),
-    KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-    "Kernel v4 EntryPoint runtime code",
+    "Kernel v4 EntryPoint code",
   );
   // Kernel caches chain ID in its immutables, so its runtime hash varies by
   // chain. The canonical CREATE2 address commits to the reviewed init code;
@@ -801,7 +798,7 @@ async function proveDeploymentCode(
       chainId: deployment.chainId,
       address: factory,
     }),
-    KERNEL_V4_FACTORY_V07_CODE_HASH,
+    KERNEL_V4_FACTORY_V09_CODE_HASH,
     "Kernel v4 factory runtime code",
   );
 }
@@ -1058,7 +1055,7 @@ function captureAccountDescriptor(
 }
 
 /**
- * Builds and hashes one immutable EntryPoint 0.7 UserOperation from a proven
+ * Builds and hashes one immutable EntryPoint 0.9 UserOperation from a proven
  * Kernel v4 account descriptor and the native v4 nonce/execution codecs.
  */
 export function prepareKernelV4UserOperation(
@@ -1122,7 +1119,7 @@ export function prepareKernelV4UserOperation(
     kind: record.kind,
     grantId: record.grantId,
     chainId: account.chainId,
-    entryPoint: { version: "0.7", address: account.entryPoint },
+    entryPoint: { version: "0.9", address: account.entryPoint },
     userOperation: {
       sender: account.account,
       nonce,
@@ -1266,7 +1263,7 @@ function captureNonceKey(
   return Object.freeze({ value: hexToBigInt(key).toString(10), validationType: validation.type });
 }
 
-/** Returns the canonical decimal uint192 key accepted by EntryPoint 0.7 getNonce. */
+/** Returns the canonical decimal uint192 key accepted by EntryPoint 0.9 getNonce. */
 export function encodeKernelV4NonceKey(value: KernelV4NonceKeyInput): string {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["mode", "validation", "nonceKey"], "Kernel nonce key", context);
@@ -1278,7 +1275,7 @@ export function isKernelV4EnableNonce(nonce: string): boolean {
   return BigInt(nonce) >> 248n === BigInt(VALIDATION_MODES["enable-replayable"]);
 }
 
-/** Encodes EntryPoint 0.7 getNonce(sender, key) calldata for the canonical nonce key. */
+/** Encodes EntryPoint 0.9 getNonce(sender, key) calldata for the canonical nonce key. */
 export function encodeKernelV4NonceRead(value: KernelV4NonceReadInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["account", "key"], "Kernel nonce read", context);

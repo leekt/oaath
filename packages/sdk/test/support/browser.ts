@@ -1,3 +1,4 @@
+import { KERNEL_ENTRY_POINT_V07 } from "../../src/kernel/deployment/v33.js";
 /**
  * Browser-client harness.
  *
@@ -67,10 +68,9 @@ import {
   sessionOperator,
 } from "../../src/kernel.js";
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-  KERNEL_V4_FACTORY_V07_CODE_HASH,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../../src/kernel-v4.js";
 import {
   createMemoryCleanupStore,
@@ -132,7 +132,7 @@ export const accountProfile = Object.freeze({
   accountIndex: "0",
   kernelVersion: "0.4.0" as const,
   factoryRoute: "kernel_factory" as const,
-  entryPoint: Object.freeze({ version: "0.7" as const }),
+  entryPoint: Object.freeze({ version: "0.9" as const }),
   ownerCredential,
 });
 
@@ -502,13 +502,13 @@ function word(value: bigint): string {
 }
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
-  if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+  if (address === KERNEL_ENTRY_POINT_V07.address) return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
   if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
 
-  return KERNEL_V4_FACTORY_V07_CODE_HASH;
+  return KERNEL_V4_FACTORY_V09_CODE_HASH;
 }
 
 export interface ChainFixtureOptions {
@@ -688,10 +688,10 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
         }
         if (request.type === "code") return request.address === account ? "0x" : "0x01";
         if (request.type === "kernel_factory_implementation") {
-          return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+          return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
         }
         if (request.type === "kernel_factory_account") return account;
-        return KERNEL_V4_UUPS_IMPLEMENTATION_V07;
+        return KERNEL_V4_UUPS_IMPLEMENTATION_V09;
       },
     }),
     observation: Object.freeze({

@@ -24,10 +24,10 @@ import {
   encodeKernelV4InstallModules,
   encodeKernelV4ValidatorData,
   KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_EXECUTE_SELECTOR,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../src/kernel-v4.js";
 
 import { readFixture } from "./support/anvil.js";
@@ -108,17 +108,14 @@ afterAll(() => {
   it("deploys through the canonical factory and executes the exact prepared operation", async () => {
     const fixture = await readFixture();
     expect(fixture).toMatchObject({
-      version: "oaath.kernel-v4-runtime-artifacts/v2",
-      entryPoint: { packageVersion: "0.7.0" },
+      version: "oaath.kernel-v4-runtime-artifacts/v3",
+      entryPoint: { version: "0.9" },
       ecdsaValidator: {
         repository: "https://github.com/zerodevapp/kernel",
         source: "test/mock/ECDSAValidator.sol",
       },
     });
 
-    const entryPointArtifact = JSON.parse(
-      await readFile(join(process.cwd(), "node_modules", fixture.entryPoint.artifact), "utf8"),
-    ) as { bytecode: Hex };
     const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
     const submitter = privateKeyToAccount(generatePrivateKey());
     const wallet = createWalletClient({
@@ -140,15 +137,15 @@ afterAll(() => {
       });
       expect((await client.waitForTransactionReceipt({ hash })).status).toBe("success");
     };
-    await deployCreate2(concat([fixture.entryPoint.deploymentSalt, entryPointArtifact.bytecode]));
+    await deployCreate2(fixture.entryPoint.deploymentInput);
     await deployCreate2(fixture.kernelUups.deploymentInput);
     await deployCreate2(fixture.kernelImmutableEcdsa.deploymentInput);
     await deployCreate2(fixture.kernelFactory.deploymentInput);
 
     for (const deployed of [
-      KERNEL_V4_ENTRY_POINT_V07,
-      KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-      KERNEL_V4_FACTORY_V07,
+      KERNEL_V4_ENTRY_POINT_V09,
+      KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+      KERNEL_V4_FACTORY_V09,
     ]) {
       expect(await client.getCode({ address: deployed })).toMatch(/^0x[0-9a-f]{2,}$/u);
     }
@@ -177,7 +174,7 @@ afterAll(() => {
       },
     ];
     const accountRead = await client.call({
-      to: KERNEL_V4_FACTORY_V07,
+      to: KERNEL_V4_FACTORY_V09,
       data: encodeKernelV4FactoryAddressRead({ initialPackages: packages, accountIndex: "0" }),
     });
     if (!accountRead.data) throw new Error("counterfactual address is unavailable");
@@ -200,7 +197,7 @@ afterAll(() => {
     expect(descriptor).toMatchObject({
       state: "counterfactual",
       account,
-      factory: KERNEL_V4_FACTORY_V07,
+      factory: KERNEL_V4_FACTORY_V09,
     });
 
     const target = lower(privateKeyToAccount(generatePrivateKey()).address);
@@ -241,7 +238,7 @@ afterAll(() => {
       const handleOpsHash = await wallet.sendTransaction({
         account: submitter,
         chain: null,
-        to: KERNEL_V4_ENTRY_POINT_V07,
+        to: KERNEL_V4_ENTRY_POINT_V09,
         data: encodeFunctionData({
           abi: entryPoint07Abi,
           functionName: "handleOps",
@@ -262,7 +259,7 @@ afterAll(() => {
     expect((await client.getBalance({ address: target })) - balanceBefore).toBe(12_345n);
     expect(
       await client.readContract({
-        address: KERNEL_V4_ENTRY_POINT_V07,
+        address: KERNEL_V4_ENTRY_POINT_V09,
         abi: entryPointReads,
         functionName: "getNonce",
         args: [account, 0n],

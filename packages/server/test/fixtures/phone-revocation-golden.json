@@ -11,7 +11,7 @@
     "scope": {
       "kind": "kernel-revocation",
       "decision": "approve-or-reject",
-      "requestHash": "0x56660b358dd08bc206a2808db02427be46fad1645230ac6a5d6134736f304c95",
+      "requestHash": "0x30534105755bcb013658825833914c9b45d264cd61596b2d9c37375660d5c354",
       "permission": {
         "kind": "permission-request",
         "decision": "approve-or-reject",
@@ -31,7 +31,7 @@
           "accountIndex": "0",
           "kernelVersion": "0.4.0",
           "factoryRoute": "kernel_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "p256",
             "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
@@ -164,7 +164,7 @@
       },
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -175,7 +175,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0xd6785108c0b5dcabae262d88d435bf948f89e96a772fda910f6e0ad07580af70"
+      "expectedDigest": "0x27a7ca318fa11451caa362776ae7fa2c3ee1689ab5ace009c1c26f8cd75445d2"
     }
   },
   {
@@ -190,7 +190,7 @@
     "scope": {
       "kind": "kernel-revocation",
       "decision": "approve-or-reject",
-      "requestHash": "0x97ce88196e5e3cdfad8d9bd3d1b35e19e93963a88aa85cc2714296958fbaf608",
+      "requestHash": "0x5dd5125b666eb06cb8ff796e64dc1b1ea59c36b2e4bbc0c25906b133fa689e2c",
       "permission": {
         "kind": "permission-request",
         "decision": "approve-or-reject",
@@ -210,7 +210,7 @@
           "accountIndex": "0",
           "kernelVersion": "0.4.0",
           "factoryRoute": "kernel_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "p256",
             "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
@@ -343,7 +343,7 @@
       },
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "0",
@@ -354,7 +354,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x33ffbd5d322311bc6c1e996ef48e521356841db866bc662007d1fa43477d9881"
+      "expectedDigest": "0x86de5936e0e33f7b8f486ecb77c0628b36e3023c58d7982ea532049fd7f21da4"
     }
   },
   {
@@ -369,7 +369,7 @@
     "scope": {
       "kind": "kernel-revocation",
       "decision": "approve-or-reject",
-      "requestHash": "0x941bed56a155669c61f1dbb72fc2c30c1c29ab8feef9e6f3358f38c44cd2c424",
+      "requestHash": "0x2269713d2412650cf608e3dc155682663750ecc37de9206f447253406b5d357e",
       "permission": {
         "kind": "permission-request",
         "decision": "approve-or-reject",
@@ -389,7 +389,7 @@
           "accountIndex": "0",
           "kernelVersion": "0.4.0",
           "factoryRoute": "kernel_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "p256",
             "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
@@ -522,7 +522,7 @@
       },
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -533,7 +533,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x"
       },
-      "expectedDigest": "0x8ee541403f8e796f262abeb86d6fa0eb52c15a9fe6258d8090387577517e18ba"
+      "expectedDigest": "0x7ccfe5b7c3e8ab883b2d9b5fc4ba5cd8ce054e8ceb9c574bb015b65c87e33d45"
     }
   },
   {
@@ -548,7 +548,7 @@
     "scope": {
       "kind": "kernel-revocation",
       "decision": "approve-or-reject",
-      "requestHash": "0x410a4332b739c4e48c0edc861de53940ac57d71219106d320464ccc2f6aefe12",
+      "requestHash": "0x64e7a3def9f3180c028cc8ba7887aaa7b5984e81ab060bb8f8e98ffafda4e47b",
       "permission": {
         "kind": "permission-request",
         "decision": "approve-or-reject",
@@ -568,7 +568,7 @@
           "accountIndex": "0",
           "kernelVersion": "0.4.0",
           "factoryRoute": "kernel_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "p256",
             "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
@@ -701,7 +701,7 @@
       },
       "effect": "invalidate-install",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -712,7 +712,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x55555555555555555555555555555555555555550000000000000000000000000000ea6000000000000000000000000000000000abcd"
       },
-      "expectedDigest": "0x8181f4c65e47f266339f41f31dfe924f049212d5e9da1ee1e6903b0c90235c4f"
+      "expectedDigest": "0x471cb43a5c1472e8a7acd8e5aecbf058c32db62e01f114c49a9539cb7cbf9f80"
     }
   },
   {
@@ -727,7 +727,7 @@
     "scope": {
       "kind": "kernel-revocation",
       "decision": "approve-or-reject",
-      "requestHash": "0x722d5420982b518fa6f56c22fc79c2fd5b07ed60cfead12562a8b441a2bca921",
+      "requestHash": "0xdc15f736422999082021c4ad9801a462d2fc5f241aa127acd2c2b19e1d12884c",
       "permission": {
         "kind": "permission-request",
         "decision": "approve-or-reject",
@@ -747,7 +747,7 @@
           "accountIndex": "0",
           "kernelVersion": "0.4.0",
           "factoryRoute": "kernel_factory",
-          "entryPointVersion": "0.7",
+          "entryPointVersion": "0.9",
           "ownerCredential": {
             "kind": "p256",
             "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
@@ -880,7 +880,7 @@
       },
       "effect": "uninstall-permission",
       "chainId": 31337,
-      "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+      "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
       "operation": {
         "sender": "0x6666666666666666666666666666666666666666",
         "nonce": "1208925819614629174706175",
@@ -891,7 +891,7 @@
         "gasFees": "0x0000000000000000000000003b9aca0000000000000000000000000077359400",
         "paymasterAndData": "0x55555555555555555555555555555555555555550000000000000000000000000000ea6000000000000000000000000000000000"
       },
-      "expectedDigest": "0x80367673d52fa766f86376a44b6d16621a6be929027d7608240702380bdcfc33"
+      "expectedDigest": "0xc10ee41e17d591cde263b1e349adf5633856fed40864120673875b9cef1b5f4f"
     }
   }
 ]

@@ -248,7 +248,7 @@ describe("experimental owner-phone projection", () => {
         accountIndex: "7",
         kernelVersion: "0.4.0",
         factoryRoute: "meta_factory",
-        entryPointVersion: "0.7",
+        entryPointVersion: "0.9",
         ownerCredential: { kind: "ecdsa", address: `0x${"33".repeat(20)}` },
       },
       operatorCredential: { kind: "ecdsa", address: `0x${"44".repeat(20)}` },

@@ -42,8 +42,13 @@ function validateReadiness(report: DoctorReport, manifest: readonly Component[])
     )
   )
     throw new DeploymentError("deployment_evidence_invalid");
-  for (const { id } of manifest.filter((row) => deploys(row) && row.deploymentInput === null))
-    if (report.components.find((row) => row.id === id)?.status !== "verified")
+  for (const { id, runtimeCodeHash } of manifest.filter(
+    (row) => deploys(row) && row.deploymentInput === null,
+  ))
+    if (
+      report.components.find((row) => row.id === id)?.status !==
+      (runtimeCodeHash === null ? "present" : "verified")
+    )
       throw new DeploymentError("deployment_prerequisite_missing");
   if (
     report.components.find((row) => row.id === "kernelFactory")?.status === "verified" &&

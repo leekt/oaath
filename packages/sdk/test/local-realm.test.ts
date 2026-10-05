@@ -5,7 +5,7 @@ import { bytesToHex, hashTypedData, keccak256 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAAth, type OaathWalletApprovalReview } from "../src/index.js";
-import { kernelV33Deployment } from "../src/kernel/deployment/v33.js";
+import { KERNEL_ENTRY_POINT_V07, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import {
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
@@ -14,7 +14,6 @@ import {
 } from "../src/kernel/modules.js";
 import { kernelKey } from "../src/kernel.js";
 
-import { KERNEL_V4_ENTRY_POINT_V07_CODE_HASH } from "../src/kernel-v4.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { CALL_DATA, createChainFixture, permissionInput, TARGET } from "./support/browser.js";
 
@@ -38,7 +37,7 @@ function fixture(verifier = false) {
           return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
         return request.address === OAATH_KERNEL_V4_VALIDITY_POLICY
           ? OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH
-          : KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+          : KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
       case "kernel_account_implementation":
         return deployment.implementation;
       case "kernel_account_version":

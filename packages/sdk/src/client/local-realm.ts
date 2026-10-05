@@ -187,7 +187,7 @@ export function createLocalRealm(
       kind: "kernel",
       kernelVersion,
       address,
-      entryPoint: { version: "0.7" },
+      entryPoint: { version: kernelVersion === "0.4.0" ? "0.9" : "0.7" },
       ownerCredential,
     });
   }

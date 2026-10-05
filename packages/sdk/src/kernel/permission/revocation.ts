@@ -72,7 +72,7 @@ export interface PrepareKernelPermissionRevocationInput {
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
   /**
-   * Optional caller-supplied EntryPoint 0.7 sponsorship; defaults to null
+   * Optional caller-supplied EntryPoint sponsorship; defaults to null
    * (self-funded). Its fields are part of the hashed operation identity.
    */
   readonly paymaster?: Readonly<PreparedPaymaster> | null;

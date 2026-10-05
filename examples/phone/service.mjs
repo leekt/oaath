@@ -351,7 +351,7 @@ export async function startPhoneService({
         accountIndex: "0",
         kernelVersion: "0.4.0",
         factoryRoute: "kernel_factory",
-        entryPoint: { version: "0.7" },
+        entryPoint: { version: "0.9" },
         ownerCredential: credential,
       };
       const descriptor = await bindPhoneAccount(account);

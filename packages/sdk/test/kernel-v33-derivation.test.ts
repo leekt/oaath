@@ -14,15 +14,12 @@ import {
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
-import { kernelV33Deployment } from "../src/kernel/deployment/v33.js";
+import { KERNEL_ENTRY_POINT_V07, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
 import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import { bindKernelAccount, deriveKernelAccount, kernelDeployment } from "../src/kernel.js";
-import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
-} from "../src/kernel-v4.js";
+import {} from "../src/kernel-v4.js";
 import { prepareUserOperation } from "../src/prepared-user-operation.js";
 
 /**
@@ -146,7 +143,7 @@ function routeReads(owner: Hex, accountIndex = "0") {
         return request.address === derived.address ? "0x" : "0x6000";
       case "runtime_code_hash":
         if (request.address === deployment.entryPoint.address)
-          return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
+          return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
         if (request.address === deployment.factory) return deployment.factoryRuntimeCodeHash;
         if (request.address === deployment.metaFactory)
           return deployment.metaFactoryRuntimeCodeHash;
@@ -182,7 +179,7 @@ describe("counterfactual Kernel 0.3.3 binding", () => {
       state: "counterfactual",
       chainId: 143,
       account: derived.address,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+      entryPoint: KERNEL_ENTRY_POINT_V07.address,
       implementation: deployment.implementation,
       rootValidator: `0x01${deployment.ecdsaValidator.slice(2)}`,
       owner,
@@ -290,7 +287,10 @@ describe("counterfactual Kernel 0.3.3 activation through the runtime", () => {
       gas,
     };
     const operation = runtime.prepareOperation(input);
-    expect(operation.entryPoint).toEqual({ version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 });
+    expect(operation.entryPoint).toEqual({
+      version: "0.7",
+      address: KERNEL_ENTRY_POINT_V07.address,
+    });
     expect(operation.userOperation).toMatchObject({
       sender: derived.address,
       factory: { address: deployment.metaFactory, data: derived.factoryData },

@@ -4,9 +4,9 @@ import { type OaathRoutingError, prepareSponsoredKernelOperation } from "../src/
 import type { KernelRuntimePrepareInput, PreparedPaymaster } from "../src/kernel.js";
 import { prepareUserOperation } from "../src/kernel.js";
 import {
-  KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_FACTORY_V07,
-  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
+  KERNEL_V4_FACTORY_V09,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../src/kernel-v4.js";
 
 const ACCOUNT = `0x${"11".repeat(20)}` as const;
@@ -19,12 +19,12 @@ function operation(): KernelRuntimePrepareInput {
     kind: "execution",
     grantId: "sponsored-operation",
     account: {
-      profile: "kernel-v4-uups-entrypoint-v0.7",
+      profile: "kernel-v4-uups-entrypoint-v0.9",
       state: "deployed",
       chainId: 421_614,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
-      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-      factory: KERNEL_V4_FACTORY_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
+      implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+      factory: KERNEL_V4_FACTORY_V09,
       account: ACCOUNT,
       accountIndex: "0",
       initialPackages: [],
@@ -53,7 +53,7 @@ function runtime(): OaathKernelSponsorshipRuntime {
         kind: input.kind,
         grantId: input.grantId,
         chainId: input.account.chainId,
-        entryPoint: { version: "0.7", address: input.account.entryPoint },
+        entryPoint: { version: "0.9", address: input.account.entryPoint },
         userOperation: {
           sender: input.account.account,
           nonce: input.sequence,

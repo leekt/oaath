@@ -1,4 +1,5 @@
 import { createOperation } from "@oaath/protocol";
+import { entryPoint09Address } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import {
   deriveOperationId,
@@ -79,6 +80,20 @@ function mutableUserOperation(input: Record<string, unknown>): Record<string, un
 }
 
 describe("prepared UserOperation identity", () => {
+  it("preserves EntryPoint 0.9 on reload and rejects hashes using 0.7 rules", () => {
+    const input = preparationInput();
+    input.entryPoint = { version: "0.9", address: entryPoint09Address.toLowerCase() };
+    const prepared = prepareUserOperation(input);
+    expect(parsePreparedUserOperation(clone(prepared))).toEqual(prepared);
+    const legacy = prepareUserOperation({
+      ...input,
+      entryPoint: { ...prepared.entryPoint, version: "0.7" },
+    });
+    expect(prepared.userOperationHash).not.toBe(legacy.userOperationHash);
+    expectRecordInvalid({ ...prepared, userOperationHash: legacy.userOperationHash });
+    expectRecordInvalid({ ...legacy, userOperationHash: prepared.userOperationHash });
+  });
+
   it("matches the accepted EntryPoint 0.7 hash vector and derives the full Operation identity", () => {
     const prepared = prepareUserOperation(preparationInput());
 

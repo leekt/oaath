@@ -1,5 +1,5 @@
 /**
- Pure Kernel 0.4.0 / EntryPoint 0.7 revocation operation derivation.
+ Pure Kernel 0.4.0 / EntryPoint 0.9 revocation operation derivation.
 
  Reuses the captured replayable-install scope, reconstructs its one exact
  removal effect, and hashes the packed operation locally. This is semantic
@@ -22,7 +22,7 @@ enum KernelRevocationEffect: String, Equatable, Sendable {
     case uninstallPermission = "uninstall-permission"
 }
 
-/// EntryPoint 0.7's captured paymaster prefix and opaque sponsor data.
+/// EntryPoint 0.9's captured paymaster prefix and opaque sponsor data.
 struct KernelRevocationPaymaster: Equatable, Sendable {
     let address: String
     let verificationGasLimit: String
@@ -128,13 +128,14 @@ func deriveKernelRevocationOperation(
     guard callData == expectedCallData else {
         throw KernelRevocationOperationError.callMismatch
     }
-    // EntryPoint 0.7 hashes the eight packed fields without a signature, then
-    // binds that hash to its address and the chain. No EIP-712 prefix or typehash.
-    let packed = revocationAddressWord(sender) + nonce + revocationHash(initCode) +
+    let typeHash = revocationHash(Array("PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData)".utf8))
+    let packed = typeHash + revocationAddressWord(sender) + nonce + revocationHash(initCode) +
         revocationHash(callData) + accountGasLimits + preVerificationGas + gasFees +
         revocationHash(paymasterAndData)
-    let digest = revocationHash(
-        revocationHash(packed) + revocationAddressWord(entryPointBytes) + revocationWord(chainId))
+    let domainType = revocationHash(Array("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)".utf8))
+    let domain = revocationHash(domainType + revocationHash(Array("ERC4337".utf8)) +
+        revocationHash(Array("1".utf8)) + revocationWord(chainId) + revocationAddressWord(entryPointBytes))
+    let digest = revocationHash([0x19, 0x01] + domain + revocationHash(packed))
     guard digest == expectedBytes else {
         throw KernelRevocationOperationError.digestMismatch
     }

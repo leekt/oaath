@@ -73,7 +73,7 @@ export interface KernelDerivedAccountProfile {
   readonly accountIndex: string;
   readonly kernelVersion: "0.4.0";
   readonly factoryRoute: "kernel_factory" | "meta_factory";
-  readonly entryPoint: Readonly<{ version: "0.7" }>;
+  readonly entryPoint: Readonly<{ version: "0.9" }>;
   readonly ownerCredential: Readonly<OwnerCredentialProfile>;
 }
 
@@ -85,7 +85,7 @@ export interface KernelExistingAccountProfile {
   readonly kernelVersion: KernelExistingAccountVersion;
   /** Existing account address, identical on each chain where the account is bound. */
   readonly address: `0x${string}`;
-  readonly entryPoint: Readonly<{ version: "0.7" }>;
+  readonly entryPoint: Readonly<{ version: "0.7" | "0.9" }>;
   /**
    * A root owner the account's root validator exposes onchain: ECDSA on either
    * version, or raw P-256 through the pinned validator on Kernel `0.4.0`. No
@@ -111,14 +111,14 @@ export type KernelAccountActionInput =
       readonly accountIndex: string;
       readonly kernelVersion: "0.4.0";
       readonly factoryRoute: KernelDerivedAccountProfile["factoryRoute"];
-      readonly entryPointVersion: "0.7";
+      readonly entryPointVersion: "0.9";
       readonly ownerCredential: Readonly<OwnerCredentialProfile>;
     }
   | {
       readonly chainId: number;
       readonly kernelVersion: KernelExistingAccountVersion;
       readonly address: `0x${string}`;
-      readonly entryPointVersion: "0.7";
+      readonly entryPointVersion: "0.7" | "0.9";
       readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile | P256OwnerCredentialProfile>;
     };
 
@@ -325,7 +325,9 @@ export function captureKernelAccountProfile(
     context,
     fail,
   );
-  if (entryPoint.version !== "0.7") return fail("Kernel account EntryPoint is unsupported");
+  const entryPointVersion = record.kernelVersion === "0.4.0" ? "0.9" : "0.7";
+  if (entryPoint.version !== entryPointVersion)
+    return fail("Kernel account EntryPoint is unsupported");
   const ownerCredential = captureOwnerCredentialProfile(record.ownerCredential, context, fail);
   if (existing) {
     // Only a root owner the account's validator exposes is provable onchain.
@@ -339,7 +341,7 @@ export function captureKernelAccountProfile(
       kind: "kernel",
       kernelVersion: record.kernelVersion as KernelExistingAccountVersion,
       address: address(record.address, "Kernel existing account address", fail),
-      entryPoint: Object.freeze({ version: "0.7" }),
+      entryPoint: Object.freeze({ version: entryPointVersion }),
       ownerCredential,
     });
   }
@@ -349,7 +351,7 @@ export function captureKernelAccountProfile(
     accountIndex: accountIndex(record.accountIndex, fail),
     kernelVersion: "0.4.0",
     factoryRoute: record.factoryRoute as KernelDerivedAccountProfile["factoryRoute"],
-    entryPoint: Object.freeze({ version: "0.7" }),
+    entryPoint: Object.freeze({ version: "0.9" }),
     ownerCredential,
   });
 }

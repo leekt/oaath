@@ -94,7 +94,7 @@ final class NativeRevocationConsentTests: XCTestCase {
         let probe = RevocationSignerProbe()
         let projection = try OwnerPhoneRequestProjection.decode(wire(key: probe.key))
         for chains in [
-            try OwnerPhoneKernelChains(entryPoints: [1: "0x0000000071727de22e5e9d8baf0edac6f37da032"]),
+            try OwnerPhoneKernelChains(entryPoints: [1: "0x433709009b8330fda32311df1c2afa402ed8d009"]),
             try OwnerPhoneKernelChains(entryPoints: [31337: account])
         ] {
             XCTAssertThrowsError(try binding(probe, chains: chains).makeArtifact(

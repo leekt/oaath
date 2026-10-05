@@ -35,7 +35,7 @@ func decodeKernelRevocationScope(_ object: [String: Any]) throws -> OwnerPhoneKe
           permission.account.ownerCredential == request.signer.ownerCredential.credential,
           permission.account.kernelVersion == "0.4.0",
           permission.account.factoryRoute == "kernel_factory",
-          permission.account.entryPointVersion == "0.7",
+          permission.account.entryPointVersion == "0.9",
           let keyBytes = decodeLowercaseEIP712Hex(publicKey, exactBytes: 65),
           let operation = object["operation"]
     else { throw OwnerPhoneWireError.invalidField("revocation binding") }
@@ -72,7 +72,7 @@ struct KernelRevocationConsentPresentation {
             ]),
             section("effect", "Operation verified by this phone", [
                 ("Effect", op.effect == .invalidateInstall ? "Prevent this approval from installing" : "Remove the installed permission"),
-                ("Chain", String(op.chainId)), ("Account", op.account), ("EntryPoint 0.7", op.entryPoint),
+                ("Chain", String(op.chainId)), ("Account", op.account), ("EntryPoint 0.9", op.entryPoint),
                 ("Account deployment", op.deploymentRequired ? "Included in this operation" : "Not requested"),
                 ("Operation nonce", op.nonce), ("Locally derived operation hash", op.canonicalHex)
             ]),

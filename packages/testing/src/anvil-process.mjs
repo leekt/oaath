@@ -16,7 +16,6 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { encodeHandleOps } from "@oaath/sdk/advanced";
 import { createKernelReads, kernelDeployment } from "@oaath/sdk/kernel";
@@ -138,7 +137,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
 }
 
 /**
- * Deploys EntryPoint 0.7, both Kernel v4 implementations, the factory, the pinned
+ * Deploys EntryPoint 0.9, both Kernel v4 implementations, the factory, the pinned
  * policy and signer modules, and one ECDSA validator, and returns the funded
  * submitter every direct `EntryPoint.handleOps` submission uses.
  * @returns {Promise<{
@@ -152,9 +151,6 @@ export async function startAnvil(chainId, hardfork = "prague") {
  */
 export async function deployKernelStack(chain, { p256 = false } = {}) {
   const deployer = kernelDeployment({ chainId: chain.chainId }).create2Deployer;
-  const entryPoint = JSON.parse(
-    await readFile(createRequire(import.meta.url).resolve(fixture.entryPoint.artifact), "utf8"),
-  );
   const submitter = privateKeyToAccount(`0x${"c0ffee".padEnd(64, "0")}`);
   /** @type {import("viem").WalletClient} */
   const wallet = createWalletClient({
@@ -176,7 +172,7 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
     if (receipt.status !== "success") throw new Error("a CREATE2 deployment reverted");
   };
 
-  await deploy(concat([fixture.entryPoint.deploymentSalt, entryPoint.bytecode]));
+  await deploy(fixture.entryPoint.deploymentInput);
   for (const input of [fixture.kernelUups, fixture.kernelImmutableEcdsa, fixture.kernelFactory]) {
     await deploy(input.deploymentInput);
   }

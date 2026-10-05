@@ -41,7 +41,7 @@ import {
   type KernelRuntime,
   type PreparedUserOperation,
 } from "../../src/kernel.js";
-import { KERNEL_V4_CREATE2_DEPLOYER, KERNEL_V4_ENTRY_POINT_V07 } from "../../src/kernel-v4.js";
+import { KERNEL_V4_CREATE2_DEPLOYER, KERNEL_V4_ENTRY_POINT_V09 } from "../../src/kernel-v4.js";
 
 export interface ModuleFixture {
   repository: string;
@@ -71,7 +71,7 @@ export interface VerifierFixture {
 }
 
 export interface DeploymentFixture {
-  entryPoint: { deploymentSalt: Hex; artifact: string };
+  entryPoint: { deploymentInput: Hex };
   kernelUups: { deploymentInput: Hex };
   kernelImmutableEcdsa: { deploymentInput: Hex };
   kernelFactory: { deploymentInput: Hex };
@@ -332,14 +332,14 @@ export async function createHarness(chain: AnvilChain): Promise<KernelHarness> {
     const hash = await wallet.sendTransaction({
       account: submitter,
       chain: null,
-      to: KERNEL_V4_ENTRY_POINT_V07,
+      to: prepared.entryPoint.address,
       data: handleOpsCalldata(prepared, signature),
       gas: 8_000_000n,
     });
     const receipt = await client.waitForTransactionReceipt({ hash });
     if (receipt.status === "reverted") return "reverted";
     for (const log of receipt.logs) {
-      if (lower(log.address) !== lower(KERNEL_V4_ENTRY_POINT_V07)) continue;
+      if (lower(log.address) !== lower(prepared.entryPoint.address)) continue;
       try {
         const decoded = decodeEventLog({
           abi: entryPoint07Abi,
@@ -375,7 +375,7 @@ export async function createHarness(chain: AnvilChain): Promise<KernelHarness> {
         params: [
           {
             from: submitter.address,
-            to: KERNEL_V4_ENTRY_POINT_V07,
+            to: prepared.entryPoint.address,
             data: handleOpsCalldata(prepared, signature),
             gas: quantity(8_000_000n),
           },
@@ -416,18 +416,10 @@ export async function createHarness(chain: AnvilChain): Promise<KernelHarness> {
   });
 }
 
-/** Deploys EntryPoint 0.7, the Kernel v4 implementations, and the factory. */
+/** Deploys EntryPoint 0.9, the Kernel v4 implementations, and the factory. */
 export async function deployKernelStack(harness: KernelHarness): Promise<void> {
-  const entryPointArtifact = JSON.parse(
-    await readFile(
-      join(process.cwd(), "node_modules", harness.fixture.entryPoint.artifact),
-      "utf8",
-    ),
-  ) as { bytecode: Hex };
-  if (!(await harness.client.getCode({ address: KERNEL_V4_ENTRY_POINT_V07 }))) {
-    await harness.deployCreate2(
-      concat([harness.fixture.entryPoint.deploymentSalt, entryPointArtifact.bytecode]),
-    );
+  if (!(await harness.client.getCode({ address: KERNEL_V4_ENTRY_POINT_V09 }))) {
+    await harness.deployCreate2(harness.fixture.entryPoint.deploymentInput);
     await harness.deployCreate2(harness.fixture.kernelUups.deploymentInput);
     await harness.deployCreate2(harness.fixture.kernelImmutableEcdsa.deploymentInput);
     await harness.deployCreate2(harness.fixture.kernelFactory.deploymentInput);

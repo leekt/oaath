@@ -247,7 +247,7 @@ try {
     accountIndex: "0",
     kernelVersion: "0.4.0",
     factoryRoute: "kernel_factory",
-    entryPoint: Object.freeze({ version: "0.7" }),
+    entryPoint: Object.freeze({ version: "0.9" }),
     ownerCredential: Object.freeze({
       version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
       kind: "ecdsa",

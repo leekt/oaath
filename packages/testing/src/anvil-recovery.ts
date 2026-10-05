@@ -1,6 +1,6 @@
 import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability } from "@oaath/sdk/advanced";
-import { createKernelReads, kernelKey } from "@oaath/sdk/kernel";
+import { createKernelReads, kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { createPublicClient, http } from "viem";
@@ -135,24 +135,30 @@ export async function openLocalAnvilRecoveryClient(
             }
           },
         },
-        observation: createLocalAnvilObservation({
-          chainId: chain.chainId,
-          async rpc(method: string, params: unknown[]) {
-            try {
-              const response = await fetch(chain.rpcUrl, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-                signal: AbortSignal.timeout(5000),
-              });
-              const body = await response.json();
-              if (!response.ok || body.error || !("result" in body)) throw new Error();
-              return body.result;
-            } catch {
-              throw new Error("local_fixture_observation_unavailable");
-            }
+        observation: createLocalAnvilObservation(
+          {
+            chainId: chain.chainId,
+            async rpc(method: string, params: unknown[]) {
+              try {
+                const response = await fetch(chain.rpcUrl, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+                  signal: AbortSignal.timeout(5000),
+                });
+                const body = await response.json();
+                if (!response.ok || body.error || !("result" in body)) throw new Error();
+                return body.result;
+              } catch {
+                throw new Error("local_fixture_observation_unavailable");
+              }
+            },
           },
-        }),
+          kernelDeployment({
+            chainId: chain.chainId,
+            kernelVersion: recovery.existingAccount === null ? "0.4.0" : "0.3.3",
+          }).entryPoint.address,
+        ),
         routes: [
           { kind: "erc4337-bundler", bundler: { probe: unavailable } },
           { kind: "erc4337-handleops", feePayer: chain.feePayer },

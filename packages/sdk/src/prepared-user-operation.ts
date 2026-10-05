@@ -37,7 +37,7 @@ export class OaathPreparedUserOperationError extends Error {
 }
 
 export interface PreparedEntryPoint {
-  readonly version: "0.7";
+  readonly version: "0.7" | "0.9";
   readonly address: `0x${string}`;
 }
 
@@ -48,9 +48,9 @@ export interface PreparedFactory {
 
 export interface PreparedPaymaster {
   readonly address: `0x${string}`;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly verificationGasLimit: string;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly postOpGasLimit: string;
   readonly data: `0x${string}`;
 }
@@ -61,15 +61,15 @@ export interface UnsignedUserOperationV07 {
   readonly nonce: string;
   /** Exact Kernel call bytes. The Kernel adapter owns encoding reviewed logical calls into this field. */
   readonly callData: `0x${string}`;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly callGasLimit: string;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly verificationGasLimit: string;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly preVerificationGas: string;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly maxFeePerGas: string;
-  /** Canonical decimal uint120 string accepted by EntryPoint 0.7. */
+  /** Canonical decimal uint120 string accepted by EntryPoint 0.7 and 0.9. */
   readonly maxPriorityFeePerGas: string;
   readonly factory: Readonly<PreparedFactory> | null;
   readonly paymaster: Readonly<PreparedPaymaster> | null;
@@ -238,7 +238,7 @@ function parseEntryPoint(
   context: CaptureContext,
 ): Readonly<PreparedEntryPoint> {
   const record = exactRecord(value, ["version", "address"], "prepared EntryPoint", code, context);
-  if (record.version !== "0.7") {
+  if (record.version !== "0.7" && record.version !== "0.9") {
     return invalid(code, "prepared EntryPoint version is unsupported");
   }
   return Object.freeze({
@@ -372,7 +372,7 @@ function parseUnsignedUserOperation(
 }
 
 /**
- * Maps one prepared unsigned UserOperation into viem's flat v0.7 shape with an
+ * Maps one prepared unsigned UserOperation into the common EntryPoint 0.7/0.9 unpacked shape with an
  * empty signature, ready for signing and toPackedUserOperation submission.
  */
 export function asViemUserOperation(value: UnsignedUserOperationV07): UserOperation<"0.7"> {

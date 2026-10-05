@@ -48,13 +48,18 @@ export async function createAnvilChain(chainId, options = {}) {
     const stack = await deployKernelStack(chain, { p256 });
     const existingAccount =
       existingOwner === null ? null : await deployLocalV33Account(chain, stack, existingOwner);
+    const deployment = kernelDeployment({
+      chainId,
+      kernelVersion: existingAccount === null ? "0.4.0" : "0.3.3",
+    });
     // Use only the public read port here; this fixture owns submission below.
     const reads = createViemChainPorts({
       [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: chain.url },
     })[0].reads;
     const feePayerBalance = await chain.client.getBalance({ address: stack.submitter.address });
     const sends = [];
-    const userOperationReceipt = (hash) => readLocalOperationReceipt(chain, hash);
+    const userOperationReceipt = (hash) =>
+      readLocalOperationReceipt(chain, deployment.entryPoint.address, hash);
     const permissionInstalled = (request) => readLocalPermissionInstalled(chain, request);
 
     async function nonceQuote(request) {
@@ -63,20 +68,20 @@ export async function createAnvilChain(chainId, options = {}) {
       const key =
         existingAccount === null
           ? encodeKernelNonceKey({
-              deployment: kernelDeployment({ chainId }),
+              deployment,
               mode: request.mode,
               validation: request.validation,
               nonceKey,
             })
           : encodeKernelNonceKey({
-              deployment: kernelDeployment({ chainId, kernelVersion: "0.3.3" }),
+              deployment,
               mode: request.mode === "enable-replayable" ? "enable" : "standard",
               validation: request.validation,
               nonceKey,
             });
       const raw = await chain.rpc("eth_call", [
         {
-          to: kernelDeployment({ chainId }).entryPoint.address,
+          to: deployment.entryPoint.address,
           data: encodeKernelNonceRead({ account: request.account, key }),
         },
         "latest",
@@ -131,7 +136,7 @@ export async function createAnvilChain(chainId, options = {}) {
       capability: {
         chainId,
         reads,
-        observation: createLocalAnvilObservation(chain),
+        observation: createLocalAnvilObservation(chain, deployment.entryPoint.address),
         // The bundler + handleOps-fallback configuration. A devnet runs no
         // bundler: its probe reports `absent`, a fact rather than a failure,
         // and that is what authorizes the handleOps route after it.

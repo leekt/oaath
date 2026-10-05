@@ -42,7 +42,7 @@ import {
   encodeKernelPermissionUninstallCalls,
   encodeKernelV4InstallModules,
   KERNEL_V4_CREATE2_DEPLOYER,
-  KERNEL_V4_ENTRY_POINT_V07,
+  KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_EXECUTE_USER_OP_SELECTOR,
   prepareKernelV4UserOperation,
 } from "../src/kernel-v4.js";
@@ -681,7 +681,7 @@ async function createHarness() {
     expect(
       fallbackReceipt.logs.some(
         (log) =>
-          lower(log.address) === KERNEL_V4_ENTRY_POINT_V07 &&
+          lower(log.address) === KERNEL_V4_ENTRY_POINT_V09 &&
           log.topics[1] === fallback.userOperationHash,
       ),
     ).toBe(true);

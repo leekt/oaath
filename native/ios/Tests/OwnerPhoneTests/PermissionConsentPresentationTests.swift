@@ -37,7 +37,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
                 accountIndex: "7",
                 kernelVersion: "0.4.0",
                 factoryRoute: "meta_factory",
-                entryPointVersion: "0.7",
+                entryPointVersion: "0.9",
                 ownerCredential: owner),
             operatorCredential: operatorCredential,
             sessionSigner: sessionSigner,
@@ -187,7 +187,7 @@ final class PermissionConsentPresentationTests: XCTestCase {
         XCTAssertEqual(values["account.accountIndex"], .text("7"))
         XCTAssertEqual(values["account.kernelVersion"], .text("0.4.0"))
         XCTAssertEqual(values["account.factoryRoute"], .text("meta_factory"))
-        XCTAssertEqual(values["account.entryPointVersion"], .text("0.7"))
+        XCTAssertEqual(values["account.entryPointVersion"], .text("0.9"))
         XCTAssertEqual(values["account.ownerCredential.kind"], .text("WebAuthn"))
         XCTAssertEqual(values["account.ownerCredential.publicKey"], .text(ownerPublicKey))
         XCTAssertEqual(

@@ -107,7 +107,7 @@ export async function createLocalOwnerAnvilFixture(
   }
   try {
     const stack = await deployKernelStack(chain, { p256: p256Owner });
-    const deployment = kernelDeployment({ chainId });
+    const deployment = kernelDeployment({ chainId, kernelVersion: input.kernelVersion ?? "0.3.3" });
     const deployment33 = kernelDeployment({ chainId, kernelVersion: "0.3.3" });
     const owner = privateKeyToAccount(generatePrivateKey());
     const p256Secret = p256.utils.randomPrivateKey();
@@ -257,7 +257,11 @@ export async function createLocalOwnerAnvilFixture(
           preVerificationGas: toHex(100_000),
         };
       } else if (method === "eth_getUserOperationReceipt") {
-        const receipt = await readLocalOperationReceipt(chain, params[0]);
+        const receipt = await readLocalOperationReceipt(
+          chain,
+          deployment.entryPoint.address,
+          params[0],
+        );
         result =
           receipt === null
             ? null
@@ -317,7 +321,7 @@ export async function createLocalOwnerAnvilFixture(
         result = getUserOperationHash({
           userOperation: operation,
           entryPointAddress: deployment.entryPoint.address,
-          entryPointVersion: "0.7",
+          entryPointVersion: deployment.entryPoint.version,
           chainId,
         });
       } else throw new Error("local_fixture_bundler_method_invalid");

@@ -72,7 +72,7 @@ const request: PermissionRequest & { readonly logicalAccount: KernelDerivedAccou
     accountIndex: "7",
     kernelVersion: "0.4.0",
     factoryRoute: "meta_factory",
-    entryPoint: { version: "0.7" },
+    entryPoint: { version: "0.9" },
     ownerCredential: {
       version: "oaath.owner-credential-profile/v1",
       kind: "ecdsa",
@@ -339,7 +339,7 @@ describe("PermissionRequest current codec", () => {
     expect(hashPermissionRequest(clone(request))).toBe(hashPermissionRequest(request));
     expect(encodePermissionRequest(request)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashPermissionRequest(request)).toBe(
-      "0x080f565ce3e31a112be05ce03f36c5ef8979ff6036d62d7a7ff62ccb95c68655",
+      "0xa0cffdba51d5fc72073c8b8fd767e71b7940001fef2eebcc583387b4f676eb22",
     );
     expect(
       hashPermissionRequest({ ...clone(request), requestId: "permission-request-2" }),
@@ -544,10 +544,10 @@ describe("PermissionDecision current codec", () => {
       expect(hashPermissionDecision(clone(parsed))).toBe(hashPermissionDecision(parsed));
     }
     expect(hashPermissionDecision(approve())).toBe(
-      "0x538e0b265403442eb091cbcd3cac2377b9bf11491a3c3bbbe13747db5ad93fd8",
+      "0xaa3b3f5a0635e1f65e38f6f393ca6a9893f324b72e5ce30284552064842751e2",
     );
     expect(hashPermissionDecision(reject())).toBe(
-      "0x8dc19bd5cf3973ed8a0e1847b20726fcd3eaf2a2c84023ca374a545e1a3b819e",
+      "0x9baa855a59faaa53a4d307b02cfd89b64af585e0a41c64e93de2b56715cd65d6",
     );
     expect(hashPermissionDecision(approve({ capabilityHash: `0x${"66".repeat(32)}` }))).not.toBe(
       hashPermissionDecision(approve()),

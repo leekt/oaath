@@ -15,7 +15,7 @@ const PUBLIC_RPCS: Readonly<Record<number, string>> = {
 const HELP = `Usage: oaath doctor --chain <id> [--rpc <url>] [--json]
        oaath deploy-runtime --chain <id> --rpc <url> [--dry-run] [--journal <path>] [--json]
 
-Checks the Kernel v4 / EntryPoint 0.7 ECDSA session module set.
+Checks the Kernel v4 / EntryPoint 0.9 ECDSA session module set.
 Owner validators remain application-selected. Passkey (WebAuthn) session
 readiness, the WebAuthn signer and P-256 verifier with pinned hashes, is reported
 separately and never gates the exit code. No wallet or transaction is used.

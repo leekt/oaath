@@ -65,7 +65,7 @@ export interface PrepareKernelV4RevocationInput {
   readonly nonceKey: string;
   readonly sequence: string;
   readonly gas: Readonly<KernelUserOperationGas>;
-  /** Caller-supplied EntryPoint 0.7 sponsorship, or null for a self-funded operation. */
+  /** Caller-supplied EntryPoint 0.9 sponsorship, or null for a self-funded operation. */
   readonly paymaster: Readonly<PreparedPaymaster> | null;
 }
 
@@ -247,13 +247,13 @@ export function restoreKernelV4Revocation(
     nonce: BigInt(signingRequest.operation.nonce),
     preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
     signature: "0x",
-  }) as unknown as UserOperation<"0.7">;
+  }) as unknown as UserOperation<"0.9">;
   const prepared = parsePreparedUserOperation({
     version: OAATH_PREPARED_USER_OPERATION_VERSION,
     kind: "revocation",
     grantId: signingRequest.permissionRequest.requestId,
     chainId: signingRequest.chainId,
-    entryPoint: { version: "0.7", address: signingRequest.entryPoint },
+    entryPoint: { version: "0.9", address: signingRequest.entryPoint },
     userOperation: {
       sender: operation.sender,
       nonce: operation.nonce.toString(10),
@@ -274,7 +274,7 @@ export function restoreKernelV4Revocation(
     return inputInvalid("restored revocation has an unsupported EntryPoint");
   return restoredRevocation(signingRequest, prepared, owner);
 }
-/** EntryPoint 0.7 `paymaster(20) || verificationGasLimit(16) || postOpGasLimit(16) || data`. */
+/** EntryPoint 0.9 `paymaster(20) || verificationGasLimit(16) || postOpGasLimit(16) || data`. */
 function unpackPaymaster(packed: `0x${string}`): Readonly<PreparedPaymaster> | null {
   if (packed === "0x") return null;
   return Object.freeze({

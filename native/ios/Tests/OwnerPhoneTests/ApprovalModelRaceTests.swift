@@ -367,7 +367,7 @@ final class ApprovalModelRaceTests: XCTestCase {
             context: base.context, application: base.application,
             account: OwnerPhoneAccountIdentity(
                 accountIndex: "0", kernelVersion: "0.4.0", factoryRoute: "kernel_factory",
-                entryPointVersion: "0.7", ownerCredential: request.signer.ownerCredential.credential),
+                entryPointVersion: "0.9", ownerCredential: request.signer.ownerCredential.credential),
             operatorCredential: base.operatorCredential, sessionSigner: nil,
             chainScope: base.chainScope, calls: base.calls,
             requestedAt: base.requestedAt, expiresAt: base.expiresAt,

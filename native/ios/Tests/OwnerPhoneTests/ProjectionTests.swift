@@ -85,7 +85,7 @@ final class ProjectionTests: XCTestCase {
             "accountIndex": "7",
             "kernelVersion": "0.4.0",
             "factoryRoute": "meta_factory",
-            "entryPointVersion": "0.7",
+            "entryPointVersion": "0.9",
             "ownerCredential": [
                 "kind": "ecdsa",
                 "address": "0x" + String(repeating: "33", count: 20)
@@ -231,7 +231,7 @@ final class ProjectionTests: XCTestCase {
                 accountIndex: "7",
                 kernelVersion: "0.4.0",
                 factoryRoute: "meta_factory",
-                entryPointVersion: "0.7",
+                entryPointVersion: "0.9",
                 ownerCredential: .ecdsa(address: "0x" + String(repeating: "33", count: 20))
             ),
             operatorCredential: .ecdsa(address: "0x" + String(repeating: "44", count: 20)),
@@ -591,7 +591,7 @@ final class ProjectionTests: XCTestCase {
                 "accountIndex": "7",
                 "kernelVersion": "0.4.0",
                 "factoryRoute": "meta_factory",
-                "entryPointVersion": "0.7",
+                "entryPointVersion": "0.9",
                 "ownerCredential": ["kind": "quantum", "address": "0x"]
             ]]) { _, new in new },
             // extra call field

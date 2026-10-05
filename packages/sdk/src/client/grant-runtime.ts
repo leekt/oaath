@@ -141,7 +141,7 @@ export function createGrantKernelRuntime(
     return Object.freeze({
       ...execution,
       prepareOperation(value: GrantKernelPrepareInput) {
-        if (value.account.profile !== "kernel-v4-uups-entrypoint-v0.7") return mismatch();
+        if (value.account.profile !== "kernel-v4-uups-entrypoint-v0.9") return mismatch();
         return execution.prepareOperation({ ...value, account: value.account });
       },
     });

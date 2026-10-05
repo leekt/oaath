@@ -19,7 +19,7 @@ import {
   probeBundlerCapability,
 } from "../src/advanced.js";
 import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { supportsBundlerSponsorship } from "../src/routing/decide.js";
 
 const chainId = 421_614;
@@ -41,7 +41,7 @@ function prepared(overrides: Record<string, unknown> = {}) {
     kind: "execution",
     grantId: "routing-test",
     chainId,
-    entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+    entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
     userOperation: {
       sender: account,
       nonce: "7",
@@ -440,7 +440,7 @@ describe("routing capabilities", () => {
 describe("bundler classification", () => {
   const request: Readonly<OaathBundlerProbeRequest> = Object.freeze({
     chainId,
-    entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+    entryPoint: KERNEL_V4_ENTRY_POINT_V09,
   });
 
   it("classifies a healthy compatible bundler as available", () => {
@@ -449,7 +449,7 @@ describe("bundler classification", () => {
         {
           accepting: true,
           chainId,
-          supportedEntryPoints: [getAddress(KERNEL_V4_ENTRY_POINT_V07)],
+          supportedEntryPoints: [getAddress(KERNEL_V4_ENTRY_POINT_V09)],
         },
         request,
       ),
@@ -459,7 +459,7 @@ describe("bundler classification", () => {
   it("classifies conclusive self-reported unavailability as absent", () => {
     expect(
       classifyBundlerProbe(
-        { accepting: false, chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V07] },
+        { accepting: false, chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V09] },
         request,
       ),
     ).toBe("absent");
@@ -468,7 +468,7 @@ describe("bundler classification", () => {
   it("classifies a foreign chain or unsupported EntryPoint as unsupported", () => {
     expect(
       classifyBundlerProbe(
-        { accepting: true, chainId: 1, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V07] },
+        { accepting: true, chainId: 1, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V09] },
         request,
       ),
     ).toBe("unsupported");
@@ -487,15 +487,15 @@ describe("bundler classification", () => {
       "ok",
       [],
       { accepting: true, chainId },
-      { accepting: true, chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V07], extra: 1 },
-      { accepting: "true", chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V07] },
-      { accepting: true, chainId: "421614", supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V07] },
-      { accepting: true, chainId, supportedEntryPoints: KERNEL_V4_ENTRY_POINT_V07 },
+      { accepting: true, chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V09], extra: 1 },
+      { accepting: "true", chainId, supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V09] },
+      { accepting: true, chainId: "421614", supportedEntryPoints: [KERNEL_V4_ENTRY_POINT_V09] },
+      { accepting: true, chainId, supportedEntryPoints: KERNEL_V4_ENTRY_POINT_V09 },
       { accepting: true, chainId, supportedEntryPoints: [null] },
       {
         accepting: true,
         chainId,
-        supportedEntryPoints: Array.from({ length: 33 }, () => KERNEL_V4_ENTRY_POINT_V07),
+        supportedEntryPoints: Array.from({ length: 33 }, () => KERNEL_V4_ENTRY_POINT_V09),
       },
       // A malformed field never downgrades to the conclusive `absent` fact.
       { accepting: false, chainId, supportedEntryPoints: [null] },
@@ -511,7 +511,7 @@ describe("bundler classification", () => {
         { accepting: true, chainId, supportedEntryPoints: [] },
         {
           chainId: 0,
-          entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+          entryPoint: KERNEL_V4_ENTRY_POINT_V09,
         },
       ),
     ).toThrowError(expect.objectContaining({ code: "routing_input_invalid" }));
@@ -541,7 +541,7 @@ describe("bundler classification", () => {
   });
 
   it("classifies a throwing, hanging, or hostile probe capability as unreadable", async () => {
-    const request2 = { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 };
+    const request2 = { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 };
     await expect(
       probeBundlerCapability({
         capability: {
@@ -579,7 +579,7 @@ describe("bundler classification", () => {
             supportedEntryPoints: [probeRequest.entryPoint],
           }),
         },
-        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
         timeoutMs: 1_000,
       }),
     ).resolves.toBe("available");
@@ -589,28 +589,28 @@ describe("bundler classification", () => {
     await expect(
       probeBundlerCapability({
         capability: { probe: "send" as never },
-        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
         timeoutMs: 50,
       }),
     ).rejects.toMatchObject({ code: "routing_capability_invalid" });
     await expect(
       probeBundlerCapability({
         capability: { probe: async () => ({}), extra: 1 } as never,
-        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
         timeoutMs: 50,
       }),
     ).rejects.toMatchObject({ code: "routing_capability_invalid" });
     await expect(
       probeBundlerCapability({
         capability: { probe: async () => ({}) },
-        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
         timeoutMs: 0,
       }),
     ).rejects.toMatchObject({ code: "routing_input_invalid" });
     await expect(
       probeBundlerCapability({
         capability: { probe: async () => ({}) },
-        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        request: { chainId, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
         timeoutMs: 60_001,
       }),
     ).rejects.toMatchObject({ code: "routing_input_invalid" });
@@ -631,7 +631,7 @@ describe("EntryPoint 0.7 prefund", () => {
     const totalGas = 3_000_000n + 900_000n + 150_000n;
     expect(prefund).toEqual({
       chainId,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
       account,
       userOperationHash: operation.userOperationHash,
       totalGas: totalGas.toString(10),
@@ -689,7 +689,7 @@ describe("handleOps fee payer requirement", () => {
     expect(requirement).toEqual({
       status: "funded",
       chainId,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
       account,
       userOperationHash: operation.userOperationHash,
       feePayer: feePayerAddress,
@@ -753,7 +753,7 @@ describe("handleOps encoding", () => {
     expect(call.userOperationHash).toBe(operation.userOperationHash);
     expect(call).toEqual({
       chainId,
-      entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+      entryPoint: KERNEL_V4_ENTRY_POINT_V09,
       account,
       userOperationHash: operation.userOperationHash,
       beneficiary,

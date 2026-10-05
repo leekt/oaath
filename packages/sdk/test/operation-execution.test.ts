@@ -7,7 +7,7 @@ import {
   type UserOperation,
 } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
-import { encodeKernelV4Execution, KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+import { encodeKernelV4Execution, KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { verifyOperationExecutionEvidence } from "../src/operation-execution.js";
 
 const account = `0x${"11".repeat(20)}` as const;
@@ -27,7 +27,7 @@ const inclusion: Readonly<OperationInclusion> = Object.freeze({
 });
 
 function fixture(callData: Hex = encodeKernelV4Execution({ calls }), aggregated = false) {
-  const operation: UserOperation<"0.7"> = {
+  const operation: UserOperation<"0.9"> = {
     sender: account,
     nonce: 7n,
     callData,
@@ -42,14 +42,14 @@ function fixture(callData: Hex = encodeKernelV4Execution({ calls }), aggregated 
     kind: "execution",
     grantId: "execution-evidence",
     chainId: 31337,
-    entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+    entryPoint: KERNEL_V4_ENTRY_POINT_V09,
     account,
     nonce: "7",
     requestHash: null,
     userOperationHash: getUserOperationHash({
       chainId: 31337,
-      entryPointAddress: KERNEL_V4_ENTRY_POINT_V07,
-      entryPointVersion: "0.7",
+      entryPointAddress: KERNEL_V4_ENTRY_POINT_V09,
+      entryPointVersion: "0.9",
       userOperation: operation,
     }),
   };
@@ -69,7 +69,7 @@ function fixture(callData: Hex = encodeKernelV4Execution({ calls }), aggregated 
       });
   const transaction = {
     hash: transactionHash,
-    to: KERNEL_V4_ENTRY_POINT_V07,
+    to: KERNEL_V4_ENTRY_POINT_V09,
     blockNumber: "0x14",
     blockHash,
     input: data,

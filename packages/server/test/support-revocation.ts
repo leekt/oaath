@@ -96,7 +96,7 @@ export async function setupRevocation(store: RelayStore) {
   );
   const { name: _name, ...operation } = source.valid[0];
   const signingRequest = parseKernelRevocationSigningRequest({
-    version: "oaath.kernel-revocation-signing-request/v1",
+    version: "oaath.kernel-revocation-signing-request/v2",
     kind: "kernel-revocation",
     permissionRequest,
     install: {

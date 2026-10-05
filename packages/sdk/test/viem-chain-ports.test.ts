@@ -2,7 +2,7 @@ import { encodeAbiParameters, encodeEventTopics, zeroAddress } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { prepareUserOperation } from "../src/kernel.js";
-import { KERNEL_V4_ENTRY_POINT_V07 } from "../src/kernel-v4.js";
+import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { createViemChainPorts } from "../src/viem.js";
 
 const config = {
@@ -62,7 +62,7 @@ describe("default viem chain ports", () => {
       const blockHash = `0x${"33".repeat(32)}` as const;
       const sender = `0x${"44".repeat(20)}` as const;
       const event = {
-        address: scenario === "wrong-entrypoint" ? sender : KERNEL_V4_ENTRY_POINT_V07,
+        address: scenario === "wrong-entrypoint" ? sender : KERNEL_V4_ENTRY_POINT_V09,
         topics: encodeEventTopics({
           abi: entryPoint07Abi,
           eventName: "UserOperationEvent",
@@ -98,14 +98,14 @@ describe("default viem chain ports", () => {
         type: "user_operation_receipt",
         chainId: 143,
         userOperationHash: hash,
-        transaction: { hash: transactionHash, entryPoint: KERNEL_V4_ENTRY_POINT_V07 },
+        transaction: { hash: transactionHash, entryPoint: KERNEL_V4_ENTRY_POINT_V09 },
       });
       if (scenario === "duplicate" || scenario === "wrong-transaction") {
         await expect(result).rejects.toMatchObject({ code: "oaath_rpc_evidence_invalid" });
       } else if (scenario === "success" || scenario === "reverted-operation") {
         await expect(result).resolves.toEqual({
           userOperationHash: hash,
-          entryPoint: KERNEL_V4_ENTRY_POINT_V07,
+          entryPoint: KERNEL_V4_ENTRY_POINT_V09,
           sender,
           nonce: "0x7",
           paymaster: zeroAddress,
@@ -175,7 +175,7 @@ describe("default viem chain ports", () => {
         kind: "execution",
         grantId: "test",
         chainId: 143,
-        entryPoint: { version: "0.7", address: KERNEL_V4_ENTRY_POINT_V07 },
+        entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
         userOperation: {
           sender: "0x1111111111111111111111111111111111111111",
           nonce: "0",
@@ -243,7 +243,7 @@ describe("default viem chain ports", () => {
             maxFeePerGas: "0x1",
             maxPriorityFeePerGas: "0x1",
           },
-          KERNEL_V4_ENTRY_POINT_V07,
+          KERNEL_V4_ENTRY_POINT_V09,
           "0x8f",
           {},
         ],

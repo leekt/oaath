@@ -16,10 +16,7 @@ import {
   zeroAddress,
 } from "viem";
 import {
-  KERNEL_ENTRY_POINT_V07,
   KERNEL_V4_CREATE2_DEPLOYER,
-  type KERNEL_V4_ENTRY_POINT_V07,
-  KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
   KERNEL_V4_IMPLEMENTATION_SLOT,
   type KernelV4ReadClient,
 } from "../../kernel-v4.js";
@@ -33,6 +30,12 @@ import {
   runtimeFail,
 } from "../internal.js";
 import { readKernelV33PermissionState } from "../permission/v33-revocation.js";
+
+export const KERNEL_ENTRY_POINT_V07 = Object.freeze({
+  version: "0.7" as const,
+  address: "0x0000000071727de22e5e9d8baf0edac6f37da032" as const,
+  runtimeCodeHash: "0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58" as const,
+});
 
 // ZeroDev SDK constants at cd7c05b53b6ae6bede7dfefe9e59fbddfadf0c0a.
 // Contract ABI: zerodevapp/kernel v3.3, cd697c7e21715d015e0643af22310a99aa17433b.
@@ -149,7 +152,7 @@ interface KernelV33AccountCommon {
   readonly version: "0.3.3";
   readonly chainId: number;
   readonly account: `0x${string}`;
-  readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V07;
+  readonly entryPoint: typeof KERNEL_ENTRY_POINT_V07.address;
   readonly implementation: typeof IMPLEMENTATION;
 }
 
@@ -279,7 +282,7 @@ async function proveEntryPointAndImplementation(
       type: "runtime_code_hash",
       chainId,
       address: deployment.entryPoint.address,
-    })) !== KERNEL_V4_ENTRY_POINT_V07_CODE_HASH
+    })) !== KERNEL_ENTRY_POINT_V07.runtimeCodeHash
   ) {
     mismatch("Kernel v3.3 EntryPoint runtime code does not match");
   }

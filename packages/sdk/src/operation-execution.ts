@@ -11,6 +11,8 @@ import {
   toUserOperation,
   type UserOperation,
 } from "viem/account-abstraction";
+import { KERNEL_V4_ENTRY_POINT_V09 } from "./kernel/deployment/v4-artifacts.js";
+import { KERNEL_ENTRY_POINT_V07 } from "./kernel/deployment/v33.js";
 import { decodeKernelV4Execution, type KernelCall } from "./kernel-v4.js";
 
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
@@ -47,6 +49,12 @@ export function verifyOperationExecutionEvidence(
     !BYTES.test(transaction.input)
   )
     return invalid();
+  const entryPointVersion =
+    identity.entryPoint === KERNEL_ENTRY_POINT_V07.address
+      ? "0.7"
+      : identity.entryPoint === KERNEL_V4_ENTRY_POINT_V09
+        ? "0.9"
+        : invalid();
   const decoded = decodeFunctionData({ abi: entryPoint07Abi, data: transaction.input as Hex });
   const operations =
     decoded.functionName === "handleOps"
@@ -67,7 +75,7 @@ export function verifyOperationExecutionEvidence(
     const hash = getUserOperationHash({
       chainId: identity.chainId,
       entryPointAddress: identity.entryPoint,
-      entryPointVersion: "0.7",
+      entryPointVersion,
       userOperation: operation,
     });
     if (hash !== identity.userOperationHash) continue;

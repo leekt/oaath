@@ -60,7 +60,7 @@ const accountProfile: KernelAccountProfile = {
   accountIndex: "7",
   kernelVersion: "0.4.0",
   factoryRoute: "meta_factory",
-  entryPoint: { version: "0.7" },
+  entryPoint: { version: "0.9" },
   ownerCredential: ownerP256,
 };
 
@@ -134,7 +134,7 @@ describe("identity profile codecs", () => {
       kind: "kernel",
       kernelVersion: "0.4.0",
       address: `0x${"55".repeat(20)}`,
-      entryPoint: { version: "0.7" },
+      entryPoint: { version: "0.9" },
       ownerCredential: ownerEcdsa,
     };
     const parsed = parseKernelAccountProfile(existing);
@@ -146,7 +146,11 @@ describe("identity profile codecs", () => {
     expect(
       sameKernelAccountProfile(
         parsed,
-        parseKernelAccountProfile({ ...existing, kernelVersion: "0.3.3" }),
+        parseKernelAccountProfile({
+          ...existing,
+          kernelVersion: "0.3.3",
+          entryPoint: { version: "0.7" },
+        }),
       ),
     ).toBe(false);
     // A derived v4 profile never accepts an address in place of its index.
@@ -161,7 +165,7 @@ describe("identity profile codecs", () => {
       kind: "kernel",
       kernelVersion: "0.4.0",
       address: `0x${"55".repeat(20)}`,
-      entryPoint: { version: "0.7" },
+      entryPoint: { version: "0.9" },
       ownerCredential: ownerP256,
     };
     const parsed = parseKernelAccountProfile(existing);
@@ -258,7 +262,7 @@ describe("identity profile codecs", () => {
       accountIndex: "7",
       kernelVersion: "0.4.0",
       factoryRoute: "meta_factory",
-      entryPointVersion: "0.7",
+      entryPointVersion: "0.9",
       ownerCredential: ownerP256,
     });
     expect(later).toEqual({ ...first, chainId: 137 });
