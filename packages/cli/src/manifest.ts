@@ -87,7 +87,6 @@ function externalComponent(
 
 export function components(chainId: number): readonly Component[] {
   const deployment = kernelDeployment({ chainId });
-  const implementationHash = deployment.implementationDeployment?.runtimeCodeHash;
   const deployable = (...args: DeployableArgs) =>
     deployableComponent(deployment.create2Deployer, ...args);
   return [
@@ -107,14 +106,7 @@ export function components(chainId: number): readonly Component[] {
       runtimeCodeHash: validity.deployment.deployerRuntimeCodeHash as Hex,
       deploymentInput: null,
     },
-    deployable(
-      "kernelUups",
-      {
-        ...runtime.kernelUups,
-        ...(implementationHash ? { runtimeCodeHash: implementationHash } : {}),
-      },
-      deployment.implementation,
-    ),
+    deployable("kernelUups", runtime.kernelUups, deployment.implementation),
     deployable("kernelImmutableEcdsa", runtime.kernelImmutableEcdsa, null),
     deployable(
       "kernelFactory",

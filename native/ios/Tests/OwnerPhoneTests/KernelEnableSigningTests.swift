@@ -250,6 +250,37 @@ final class KernelEnableSigningTests: XCTestCase {
             for: digest.cryptoKitDigest))
     }
 
+    func testScopedExecutionHookPackageCanBeApproved() throws {
+        let harness = try makeHarness()
+        let request = try kernelRequest(harness.review)
+        guard case var .array(packages)? = request.typedData.message["packages"] else {
+            return XCTFail("missing install packages")
+        }
+        packages.append(.object([
+            "moduleType": .string("11"),
+            "module": .string("0x" + String(repeating: "33", count: 20)),
+            "moduleData": .string("0x"),
+            "internalData": .string("0x000212345678" + String(repeating: "00", count: 16))
+        ]))
+        var message = request.typedData.message
+        message["packages"] = .array(packages)
+        let typedData = cloneTypedData(request.typedData, message: message)
+        let digest = try deriveEIP712Digest(from: typedData)
+        let review = replacingRequest(harness.review, with: cloneRequest(
+            request, typedData: typedData, expectedDigest: digest.canonicalHex))
+        var signerCalls = 0
+        _ = try makeKernelOwnerSigningArtifact(
+            review: review,
+            now: signingTestNow,
+            pairedIdentity: harness.pairedIdentity,
+            chains: configuredTestChains
+        ) { verified in
+            signerCalls += 1
+            return try harness.key.signature(for: verified.cryptoKitDigest).derRepresentation
+        }
+        XCTAssertTrue(signerCalls == 1)
+    }
+
     func testEveryContradictoryReviewFailsBeforeSignerAndArtifact() throws {
         let harness = try makeHarness()
         let request = try kernelRequest(harness.review)
@@ -745,6 +776,7 @@ private func invalidPackageTypedData(
         replacing([]),
         replacing(Array(repeating: original[0], count: 257)),
         firstPackage { $0["moduleType"] = .string("7") },
+        firstPackage { $0["moduleType"] = .string("4") },
         firstPackage { $0["module"] = .string("0x" + String(repeating: "00", count: 20)) },
         firstPackage { $0["moduleData"] = .string("0xAB") },
         replacing([original[1], original[0]])

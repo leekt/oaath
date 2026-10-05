@@ -35,9 +35,7 @@ import { Rpc } from "../src/rpc.js";
           const ready = await doctor(chainId, new Rpc(chain.url));
           expect(ready.ready).toBe(true);
           expect(ready.factoryBinding).toBe("verified");
-          expect(ready.components.find((row) => row.id === "kernelUups")?.status).toBe(
-            chainId === 143 ? "present" : "verified",
-          );
+          expect(ready.components.find((row) => row.id === "kernelUups")?.status).toBe("present");
           expect(ready.components.find((row) => row.id === "validityPolicy")?.status).toBe(
             "verified",
           );

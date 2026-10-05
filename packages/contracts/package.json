@@ -9,6 +9,8 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "kernel:generate": "node scripts/kernel-artifact.mjs --write",
+    "kernel:check": "node scripts/kernel-artifact.mjs --check",
     "artifact:check": "forge build && node scripts/artifact.mjs --check",
     "artifact:generate": "forge build && node scripts/artifact.mjs --write",
     "build": "forge build && node scripts/artifact.mjs --check",

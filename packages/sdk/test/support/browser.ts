@@ -501,17 +501,13 @@ function word(value: bigint): string {
   return value.toString(16).padStart(64, "0");
 }
 
-function runtimeCodeHash(address: `0x${string}`, selectedDeployment = deployment): `0x${string}` {
+function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V07) return KERNEL_V4_ENTRY_POINT_V07_CODE_HASH;
   if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
   }
-  if (address === KERNEL_V4_UUPS_IMPLEMENTATION_V07) {
-    const pinned = selectedDeployment.implementationDeployment;
-    if (!pinned) throw new Error("the fixture chain must carry pinned evidence");
-    return pinned.runtimeCodeHash;
-  }
+
   return KERNEL_V4_FACTORY_V07_CODE_HASH;
 }
 
@@ -573,7 +569,6 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
   const sends: Readonly<PreparedUserOperation>[] = [];
   const signatures: string[] = [];
   const chainId = options.chainId ?? CHAIN_ID;
-  const selectedDeployment = kernelDeployment({ chainId });
   const account = options.account ?? ACCOUNT;
   const fixture = {
     sends,
@@ -689,7 +684,7 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
       async read(request: Parameters<OaathChainCapability["reads"]["read"]>[0]): Promise<unknown> {
         if (request.type === "chain_id") return request.chainId;
         if (request.type === "runtime_code_hash") {
-          return runtimeCodeHash(request.address, selectedDeployment);
+          return runtimeCodeHash(request.address);
         }
         if (request.type === "code") return request.address === account ? "0x" : "0x01";
         if (request.type === "kernel_factory_implementation") {

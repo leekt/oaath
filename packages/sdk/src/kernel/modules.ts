@@ -6,11 +6,10 @@
  *
  * Every address here is chain-independent. These modules are deployed through the
  * CREATE2 deployer at KERNEL_V4_CREATE2_DEPLOYER with a zero salt, so one address
- * holds on every supported chain and no module is keyed per chain. Per-chain facts
- * stay where the evidence genuinely differs: the deployment profile's runtime code
- * hashes in kernel-v4.ts (Kernel caches block.chainid in its immutables, so one
- * address carries different runtime code per chain) and the code-presence reads
- * bindKernelV4Account performs on the action chain.
+ * holds on every supported chain and no module is keyed per chain. Kernel's
+ * implementation caches block.chainid in its immutables, so bindKernelV4Account
+ * proves its canonical CREATE2 code presence and factory binding on the action
+ * chain instead of comparing the implementation's chain-dependent runtime hash.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -31,7 +30,7 @@ import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from ".
  * the address and the runtime code hash derive from it offline.
  *
  * Interface, checked against Kernel v4's own IERC7579Modules at the commit the
- * deployment profile pins (zerodevapp/kernel f2a84a332ec5a722e7e95a0d64601905c3c87fe9):
+ * deployment profile pins (zerodevapp/kernel c960b42d2ed4adb0d5328f6e762962debdf8e57a):
  *
  * - `onInstall(bytes)` decodes `(uint256 x, uint256 y)`, exactly the public
  *   material kernel/key/p256.ts publishes, and rejects an off-curve point.
@@ -214,7 +213,7 @@ export const KERNEL_WEBAUTHN_SIGNER_RUNTIME_CODE_HASH =
  * the failure mode is not obvious from the ABI: a permission carrying two policy
  * packages installed correctly — `validationInfo(vId)` read
  * `policies = [CallPolicy, OaathKernelV4ValidityPolicy]`, `signer =
- * ECDSASigner`, hook = the no-hook sentinel — yet its first operation was
+ * ECDSASigner`, no scoped execution hook — yet its first operation was
  * rejected with EntryPoint
  * `FailedOpWithRevert(0, "AA23 reverted", 0x8baa579f)`, Kernel's
  * `InvalidSignature()`, because `ValidationManager._validateUserOpPermission`

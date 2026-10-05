@@ -21,8 +21,8 @@ five seconds per request and 60 seconds total. There are no retries or fallbacks
 
 Each row is `verified` (pinned runtime hash), `present` (code at the canonical
 CREATE2 address), `missing`, `mismatch` or `unreadable`. Kernel implementation
-code contains chain-specific immutables: known-chain hashes are checked where
-available; other chains report `present`, consistently with SDK binding. The
+code contains chain-specific immutables, so every chain reports `present` for
+code at the canonical implementation address, consistently with SDK binding. The
 hash-pinned factory must also return the canonical implementation from `UUPS()`.
 An unreadable endpoint is never reported as an absent contract.
 

@@ -32,6 +32,18 @@ import {
   type TypedData,
   toHex,
 } from "viem";
+import {
+  KERNEL_V4_FACTORY_V07,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+} from "./kernel/deployment/v4-artifacts.js";
+
+export {
+  KERNEL_V4_FACTORY_V07,
+  KERNEL_V4_FACTORY_V07_CODE_HASH,
+  KERNEL_V4_UUPS_IMPLEMENTATION_V07,
+} from "./kernel/deployment/v4-artifacts.js";
+
 import { type KernelRuntimeErrorCode, OaathKernelRuntimeError } from "./kernel/types.js";
 import {
   type PreparedPaymaster,
@@ -44,7 +56,6 @@ const BYTES4 = /^0x[0-9a-f]{8}$/u;
 const BYTES32 = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
-const NO_HOOK = `0x${"00".repeat(19)}01` as const;
 const MAX_UINT16 = (1n << 16n) - 1n;
 const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT64 = (1n << 64n) - 1n;
@@ -53,14 +64,9 @@ const BOUND_ACCOUNTS = new WeakSet<object>();
 const VALIDITY_TIME_RANGE_MODE_SELECTOR = "0x1ba8f415" as const;
 
 export const KERNEL_V4_ENTRY_POINT_V07 = "0x0000000071727de22e5e9d8baf0edac6f37da032" as const;
-export const KERNEL_V4_UUPS_IMPLEMENTATION_V07 =
-  "0x3c504000d05c1e28687f70fca40a76f7ddda9952" as const;
-export const KERNEL_V4_FACTORY_V07 = "0xe65c6a17bdb14070977b4ab70f1e7d9cdf441d53" as const;
 export const KERNEL_V4_CREATE2_DEPLOYER = "0x4e59b44847b379578588920ca78fbf26c0b4956c" as const;
 export const KERNEL_V4_ENTRY_POINT_V07_CODE_HASH =
   "0x8db5ff695839d655407cc8490bb7a5d82337a86a6b39c3f0258aa6c3b582fc58" as const;
-export const KERNEL_V4_FACTORY_V07_CODE_HASH =
-  "0xac398027b5068558aaf4fb5c986a6ae397e891d0c6e8d8181881385648ff629f" as const;
 /** ERC-1967 implementation storage slot read by kernel_account_implementation. */
 export const KERNEL_V4_IMPLEMENTATION_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
@@ -102,22 +108,6 @@ export interface KernelV4Deployment {
   readonly factoryRuntimeCodeHash: typeof KERNEL_V4_FACTORY_V07_CODE_HASH;
   /** The canonical CREATE2 deployer every address above is derived through. */
   readonly create2Deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
-  /**
-   * Per-chain reviewed deployment evidence, or null on an open chain. Every
-   * address above is the same CREATE2 canonical address on every chain, but
-   * Kernel caches `block.chainid` in its immutables, so the implementation's
-   * runtime code hash is genuinely per chain and cannot be pinned in advance.
-   * With a pin, binding compares the observed implementation runtime code hash
-   * exactly; without one, binding relies on the EVM's own CREATE2 commitment —
-   * the canonical implementation address commits to the exact reviewed init
-   * code, so nonempty code at that address plus the hash-pinned factory
-   * reporting it as its UUPS implementation proves the reviewed deployment.
-   */
-  readonly implementationDeployment: Readonly<{
-    deployer: typeof KERNEL_V4_CREATE2_DEPLOYER;
-    transactionHash: `0x${string}`;
-    runtimeCodeHash: `0x${string}`;
-  }> | null;
 }
 
 export type { KernelInstall };
@@ -142,7 +132,6 @@ export type KernelValidation =
   | Readonly<{ kind: "permission"; permissionId: `0x${string}` }>;
 
 export interface KernelV4ModuleDataInput {
-  readonly hook: "none" | `0x${string}`;
   readonly selectors: readonly `0x${string}`[];
 }
 
@@ -331,63 +320,6 @@ export const KERNEL_ENTRY_POINT_V07 = Object.freeze({
   runtimeCodeHash: KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
 });
 const ENTRY_POINT = KERNEL_ENTRY_POINT_V07;
-
-const implementationDeployment = (transactionHash: `0x${string}`, runtimeCodeHash: `0x${string}`) =>
-  Object.freeze({ deployer: KERNEL_V4_CREATE2_DEPLOYER, transactionHash, runtimeCodeHash });
-
-/**
- * Chains with reviewed per-chain deployment evidence. This table pins extra
- * proof; it is deliberately not an allowlist — every other chain resolves the
- * same canonical CREATE2 profile through `kernelV4Deployment` and is verified
- * at bind time from read evidence instead.
- */
-const PINNED_DEPLOYMENTS: Readonly<Record<number, KernelV4Deployment>> = Object.freeze({
-  46630: Object.freeze({
-    profile: "kernel-v4-uups-entrypoint-v0.7",
-    kernelVersion: "0.4.0",
-    accountType: "uups",
-    chainId: 46_630,
-    entryPoint: ENTRY_POINT,
-    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-    factory: KERNEL_V4_FACTORY_V07,
-    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
-    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-    implementationDeployment: implementationDeployment(
-      "0xf662be20e4e8d3b0fcfb7bd08845ea89b45977d82aa315cb78530f013f4f2782",
-      "0xaef18d8059fa2474272125891050e2e755f45db00c2668b45b7062b2a9579be0",
-    ),
-  }),
-  421614: Object.freeze({
-    profile: "kernel-v4-uups-entrypoint-v0.7",
-    kernelVersion: "0.4.0",
-    accountType: "uups",
-    chainId: 421_614,
-    entryPoint: ENTRY_POINT,
-    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-    factory: KERNEL_V4_FACTORY_V07,
-    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
-    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-    implementationDeployment: implementationDeployment(
-      "0xa63c36c76b536b1c11d75c68ac5ca15d4ce2c09a40e90ab29ff6601b4bdb0d33",
-      "0xd0c42b1ed1738560c1b243fd9e5fc04b2eb5aa1be9962ac7f1f61696f9e6902b",
-    ),
-  }),
-  11155111: Object.freeze({
-    profile: "kernel-v4-uups-entrypoint-v0.7",
-    kernelVersion: "0.4.0",
-    accountType: "uups",
-    chainId: 11_155_111,
-    entryPoint: ENTRY_POINT,
-    implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V07,
-    factory: KERNEL_V4_FACTORY_V07,
-    factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
-    create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-    implementationDeployment: implementationDeployment(
-      "0x54528619ceafbcc656a7d0f7b637213f38d2fbe013a0e2909cfa3fef6dca7cc0",
-      "0xb1f85627093213ec87a1484b6af7192651f4dbd6c5f9e9c0aff22e332c5ddb01",
-    ),
-  }),
-});
 
 const INSTALL_ARRAY_PARAMETER = {
   name: "packages",
@@ -666,8 +598,6 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return kernelError("kernel_runtime_chain_unsupported", "Kernel v4 chain is unsupported");
   }
-  const pinned = PINNED_DEPLOYMENTS[chainId];
-  if (pinned) return pinned;
   const open = OPEN_DEPLOYMENTS.get(chainId);
   if (open) return open;
   const created: Readonly<KernelV4Deployment> = Object.freeze({
@@ -680,18 +610,16 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
     factory: KERNEL_V4_FACTORY_V07,
     factoryRuntimeCodeHash: KERNEL_V4_FACTORY_V07_CODE_HASH,
     create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
-    implementationDeployment: null,
   });
   OPEN_DEPLOYMENTS.set(chainId, created);
   return created;
 }
 
-/** Encodes Kernel v4 validator internalData: hook followed by allowed selectors. */
+/** Encodes Kernel v4 validator internalData: packed allowed selectors. */
 export function encodeKernelV4ValidatorData(value: KernelV4ModuleDataInput): Hex {
   const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["hook", "selectors"], "Kernel validator data", context);
-  const hook = record.hook === "none" ? NO_HOOK : address(record.hook, "Kernel validator hook");
-  return concat([hook, ...captureSelectors(record.selectors, context)]);
+  const record = exact(value, ["selectors"], "Kernel validator data", context);
+  return concat(["0x", ...captureSelectors(record.selectors, context)]);
 }
 
 /** Encodes Kernel v4 policy internalData. */
@@ -699,14 +627,12 @@ export function encodeKernelV4PolicyData(permissionId: `0x${string}`): Hex {
   return bytes4(permissionId, "Kernel permission ID");
 }
 
-/** Encodes Kernel v4 signer internalData: permission ID, hook, then allowed selectors. */
+/** Encodes Kernel v4 signer internalData: permission ID followed by packed allowed selectors. */
 export function encodeKernelV4SignerData(value: KernelV4SignerDataInput): Hex {
   const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["permissionId", "hook", "selectors"], "Kernel signer data", context);
-  const hook = record.hook === "none" ? NO_HOOK : address(record.hook, "Kernel signer hook");
+  const record = exact(value, ["permissionId", "selectors"], "Kernel signer data", context);
   return concat([
     bytes4(record.permissionId, "Kernel permission ID"),
-    hook,
     ...captureSelectors(record.selectors, context),
   ]);
 }
@@ -858,31 +784,17 @@ async function proveDeploymentCode(
     KERNEL_V4_ENTRY_POINT_V07_CODE_HASH,
     "Kernel v4 EntryPoint runtime code",
   );
-  if (deployment.implementationDeployment) {
-    evidenceCodeHash(
-      await readEvidence(read, {
-        type: "runtime_code_hash",
-        chainId: deployment.chainId,
-        address: deployment.implementation,
-      }),
-      deployment.implementationDeployment.runtimeCodeHash,
-      "Kernel v4 implementation runtime code",
-    );
-  } else {
-    // No per-chain pin exists on an open chain: Kernel's chainid immutables
-    // make the runtime code hash chain-specific. The CREATE2 address itself
-    // commits to the exact reviewed init code, so nonempty code here — plus
-    // the hash-pinned factory reporting this address as its implementation
-    // below — is the deployment proof. Empty code still fails closed.
-    evidenceCode(
-      await readEvidence(read, {
-        type: "code",
-        chainId: deployment.chainId,
-        address: deployment.implementation,
-      }),
-      "Kernel v4 implementation code",
-    );
-  }
+  // Kernel caches chain ID in its immutables, so its runtime hash varies by
+  // chain. The canonical CREATE2 address commits to the reviewed init code;
+  // require code here and prove the factory's implementation binding below.
+  evidenceCode(
+    await readEvidence(read, {
+      type: "code",
+      chainId: deployment.chainId,
+      address: deployment.implementation,
+    }),
+    "Kernel v4 implementation code",
+  );
   evidenceCodeHash(
     await readEvidence(read, {
       type: "runtime_code_hash",

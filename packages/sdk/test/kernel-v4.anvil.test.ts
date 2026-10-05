@@ -108,7 +108,7 @@ afterAll(() => {
   it("deploys through the canonical factory and executes the exact prepared operation", async () => {
     const fixture = await readFixture();
     expect(fixture).toMatchObject({
-      version: "oaath.kernel-v4-runtime-artifacts/v1",
+      version: "oaath.kernel-v4-runtime-artifacts/v2",
       entryPoint: { packageVersion: "0.7.0" },
       ecdsaValidator: {
         repository: "https://github.com/zerodevapp/kernel",
@@ -173,7 +173,7 @@ afterAll(() => {
         moduleType: 1 as const,
         module: validator,
         moduleData: lower(operator.address),
-        internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+        internalData: encodeKernelV4ValidatorData({ selectors: [] }),
       },
     ];
     const accountRead = await client.call({
@@ -299,7 +299,6 @@ afterAll(() => {
               module: nonRootValidator,
               moduleData: lower(nonRootOperator.address),
               internalData: encodeKernelV4ValidatorData({
-                hook: "none",
                 selectors: [executeSelector],
               }),
             },
@@ -307,7 +306,7 @@ afterAll(() => {
               moduleType: 1,
               module: blockedValidator,
               moduleData: lower(blockedOperator.address),
-              internalData: encodeKernelV4ValidatorData({ hook: "none", selectors: [] }),
+              internalData: encodeKernelV4ValidatorData({ selectors: [] }),
             },
           ]),
         },

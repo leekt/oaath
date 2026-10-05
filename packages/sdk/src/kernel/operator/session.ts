@@ -126,7 +126,6 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
           moduleData: concat([paddedPermissionId, key.publicMaterial]),
           internalData: encodeKernelV4SignerData({
             permissionId,
-            hook: "none",
             selectors: [KERNEL_V4_EXECUTE_SELECTOR],
           }),
         }),
