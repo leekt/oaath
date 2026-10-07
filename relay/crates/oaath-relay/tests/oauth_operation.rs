@@ -118,7 +118,7 @@ async fn root_account(h: &Harness, root: &Root) -> (String, String, Value) {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

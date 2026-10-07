@@ -301,7 +301,7 @@ async fn refuses_another_key_another_fingerprint_another_session_and_stale_state
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

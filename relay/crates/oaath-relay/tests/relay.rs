@@ -76,7 +76,7 @@ async fn approved_code(h: &Harness, client_id: &str) -> String {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -290,7 +290,7 @@ async fn projects_an_unavailable_kms_an_unreadable_clock_and_invalid_options() {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -370,6 +370,7 @@ ambiguous_transaction! {
     insert_account_signer(r: &registry::AccountSignerRecord) -> RelayResult<bool>;
     lock_account(id: &str) -> RelayResult<Option<registry::AccountRecord>>;
     lock_account_by_address(address: &str) -> RelayResult<Option<registry::AccountRecord>>;
+    lock_account_by_creation_key(root: &str, key: &str) -> RelayResult<Option<registry::AccountRecord>>;
     list_account_signers(id: &str) -> RelayResult<Vec<(registry::SignerRecord, registry::AccountSignerRecord)>>;
     delete_account_signers(account: &str, signer: &str) -> RelayResult<bool>;
     set_account_signer_status(account: &str, signer: &str, status: registry::MembershipStatus, at: u64) -> RelayResult<bool>;

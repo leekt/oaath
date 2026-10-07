@@ -178,6 +178,7 @@ async function startPortal() {
       return rpcUpstream;
     },
     RPC_LIMIT: { limit: async () => ({ success: true }) },
+    WRITE_LIMIT: { limit: async () => ({ success: true }) },
     ASSETS: {
       async fetch(request) {
         const path = new URL(request.url).pathname;

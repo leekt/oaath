@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 use crate::authorization::challenge::random_identifier;
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
-use crate::records::canonical_str;
+use crate::records::{canonical_identifier, exact_record};
 use crate::registry::{
     ACCOUNT_RECORD_VERSION, ACCOUNT_SIGNER_RECORD_VERSION, AccountRecord, AccountSignerRecord,
     MembershipRole, MembershipStatus, SIGNER_RECORD_VERSION, SignerRecord, derive_account_address,
@@ -213,26 +213,29 @@ pub struct CreatedAccount {
 /// Derives the root signer's next counterfactual account (the smallest unused
 /// index) and records it with its root membership in one transaction.
 /// `session` is the request's proven signer; only it may be the root.
+///
+/// `creation_key` is the root's idempotency key for this creation: a retry
+/// after a lost reply sends the same key and answers the account it created,
+/// never a second one.
 pub async fn create_account(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     body: &Map<String, Value>,
     session: &str,
 ) -> RelayResult<CreatedAccount> {
-    if body.len() != 1 {
-        return Err(INVALID);
-    }
-    let root_signer_id = body
-        .get("root_signer_id")
-        .and_then(Value::as_str)
-        .ok_or(INVALID)?;
-    canonical_str(root_signer_id, INVALID)?;
+    exact_record(
+        &Value::Object(body.clone()),
+        &["root_signer_id", "creation_key"],
+        INVALID,
+    )?;
+    let root_signer_id = canonical_identifier(body.get("root_signer_id"), INVALID)?;
+    let creation_key = canonical_identifier(body.get("creation_key"), INVALID)?;
     if root_signer_id != session {
         return Err(RelayErrorCode::Forbidden);
     }
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;
-    let result = create(&mut *transaction, root_signer_id, now).await;
+    let result = create(&mut *transaction, root_signer_id, creation_key, now).await;
     let account = settle(transaction, result).await?;
     Ok(CreatedAccount {
         profile: account_profile_json(&account)?,
@@ -244,13 +247,21 @@ pub async fn create_account(
 async fn create(
     transaction: &mut dyn RelayTransaction,
     root_signer_id: &str,
+    creation_key: &str,
     now: u64,
 ) -> RelayResult<AccountRecord> {
-    // The signer row lock serializes index allocation for this root.
+    // The signer row lock serializes creation for this root, so a key is
+    // either already recorded or recorded here, once.
     let signer = transaction
         .lock_signer(root_signer_id)
         .await?
         .ok_or(RelayErrorCode::NotFound)?;
+    if let Some(existing) = transaction
+        .lock_account_by_creation_key(root_signer_id, creation_key)
+        .await?
+    {
+        return Ok(existing);
+    }
     let used: Vec<u64> = transaction
         .list_signer_accounts(root_signer_id)
         .await?
@@ -275,6 +286,7 @@ async fn create(
             .ok_or(RelayErrorCode::Internal)?,
         root_signer_id: root_signer_id.to_owned(),
         account_index: Some(account_index),
+        creation_key: Some(creation_key.to_owned()),
         owner_validator,
         profile: profile.to_json().to_string(),
         created_at: now,

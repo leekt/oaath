@@ -130,10 +130,13 @@ pub fn schema_statements() -> Vec<String> {
     address text NOT NULL UNIQUE,
     root_signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
     account_index bigint CHECK (account_index >= 0 AND account_index <= {max}),
+    creation_key text,
     owner_validator text,
     profile text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
-    UNIQUE (root_signer_id, account_index)
+    UNIQUE (root_signer_id, account_index),
+    UNIQUE (root_signer_id, creation_key),
+    CHECK ((account_index IS NULL) = (creation_key IS NULL))
   )"
         ),
         format!(
@@ -452,12 +455,13 @@ fn signer_record(row: &PgRow) -> RelayResult<SignerRecord> {
     )?)
 }
 
-const ACCOUNT_FIELDS: [(&str, &str, bool); 8] = [
+const ACCOUNT_FIELDS: [(&str, &str, bool); 9] = [
     ("version", "account_version", false),
     ("accountId", "account_id", false),
     ("address", "address", false),
     ("rootSignerId", "root_signer_id", false),
     ("accountIndex", "account_index", true),
+    ("creationKey", "creation_key", false),
     ("ownerValidator", "owner_validator", false),
     ("profile", "profile", false),
     ("createdAt", "account_created_at", true),
@@ -612,7 +616,8 @@ fn session_record(row: &PgRow) -> RelayResult<PortalSessionRecord> {
 }
 
 const ACCOUNT_COLUMNS: &str = "record_version AS account_version, account_id, address, \
-     root_signer_id, account_index, owner_validator, profile, created_at AS account_created_at";
+     root_signer_id, account_index, creation_key, owner_validator, profile, \
+     created_at AS account_created_at";
 
 type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
 
@@ -947,7 +952,7 @@ impl RelayTransaction for PostgresTransaction {
         let rows = sqlx::query(
             "SELECT account.record_version AS account_version, account.account_id, \
              account.address, account.root_signer_id, account.account_index, \
-             account.owner_validator, account.profile, \
+             account.creation_key, account.owner_validator, account.profile, \
              account.created_at AS account_created_at, \
              membership.record_version AS membership_version, membership.signer_id, \
              membership.role, membership.request_id, membership.link_id, \
@@ -971,7 +976,8 @@ impl RelayTransaction for PostgresTransaction {
             sqlx::query(
                 "INSERT INTO oaath_account_v1 (\
                  account_id, record_version, address, root_signer_id, account_index, \
-                 owner_validator, profile, created_at) SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
+                 creation_key, owner_validator, profile, created_at) \
+                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9 \
                  WHERE EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
                  ON CONFLICT DO NOTHING",
             )
@@ -980,6 +986,7 @@ impl RelayTransaction for PostgresTransaction {
             .bind(&record.address)
             .bind(&record.root_signer_id)
             .bind(record.account_index.map(bigint))
+            .bind(&record.creation_key)
             .bind(&record.owner_validator)
             .bind(&record.profile)
             .bind(bigint(record.created_at)),
@@ -1021,6 +1028,22 @@ impl RelayTransaction for PostgresTransaction {
         self.first(sqlx::query(&sql).bind(account_id), |row| {
             AccountRecord::parse(&columns(row, &ACCOUNT_FIELDS)?)
         })
+        .await
+    }
+
+    async fn lock_account_by_creation_key(
+        &mut self,
+        root_signer_id: &str,
+        creation_key: &str,
+    ) -> RelayResult<Option<AccountRecord>> {
+        let sql = format!(
+            "SELECT {ACCOUNT_COLUMNS} FROM oaath_account_v1 \
+             WHERE root_signer_id = $1 AND creation_key = $2 FOR UPDATE"
+        );
+        self.first(
+            sqlx::query(&sql).bind(root_signer_id).bind(creation_key),
+            |row| AccountRecord::parse(&columns(row, &ACCOUNT_FIELDS)?),
+        )
         .await
     }
 
