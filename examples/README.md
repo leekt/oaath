@@ -1,14 +1,11 @@
 # OAAth examples
 
-The [phone service](phone) is the reference workflow: personal or team operation,
-one owner phone, bounded jobs on configured chains, and onchain revocation.
-The other examples demonstrate individual capabilities.
+Each example demonstrates one capability.
 
 | Example | Shows |
 | --- | --- |
 | [browser/](browser) | connect → one all-chain grant → execute → revoke |
 | [server/](server) | Fetch relay over `node:http`, PostgreSQL, auth and KMS ports |
-| [phone/](phone) | personal/team service, canonical phone consent, two-chain jobs, recovery and revocation |
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
 | [oauth-login/](oauth-login) | Login with OAAth from a static page through the live portal |
 | [oauth-grant-demo/](oauth-grant-demo) | live Arbitrum Sepolia: portal-approved Grant, then one enable-mode covered call (opt-in) |
@@ -18,7 +15,6 @@ bun install
 bun run examples:check                                   # from the repo root
 bun run --filter @oaath/examples example:browser         # one at a time
 bun run --filter @oaath/examples example:server
-bun run --filter @oaath/examples example:phone           # pairs with native/ios/Demo
 bun run --filter @oaath/examples example:all-chain       # needs Anvil
 bun run --filter @oaath/examples example:oauth-login     # open http://localhost:5174
 ```
@@ -28,13 +24,9 @@ bun run --filter @oaath/examples example:oauth-login     # open http://localhost
 registration). It must run on `http://localhost`, a redirect origin the issuer
 accepts for development.
 
-`phone` and `all-chain` require Anvil from
-[Foundry](https://getfoundry.sh). The check skips these chain examples when Anvil
-is absent. `browser` uses injected chain facts by default and a real local chain
-with `OAATH_REQUIRE_ANVIL=1`. `phone` waits for a real iPhone by default;
-`OAATH_PHONE_SIMULATE=1` drives personal and team workflows across two local
-chains with a P-256 fixture. Optional APNs configuration may live in a gitignored
-`examples/.env`; the real environment wins.
+`all-chain` requires Anvil from [Foundry](https://getfoundry.sh); the check skips
+it when Anvil is absent. `browser` uses injected chain facts by default and a real
+local chain with `OAATH_REQUIRE_ANVIL=1`.
 
 ## Rules these examples follow
 
@@ -52,8 +44,7 @@ them. An adopter installs the built packages and needs none of it.
 
 ## Evidence
 
-`bun run examples:check` runs locally. CI separately runs the phone service workflow
-and the native phone suite. Workspace examples demonstrate composition; packed
+`bun run examples:check` runs locally. Workspace examples demonstrate composition; packed
 smokes own evidence about published artifacts:
 
 ```sh

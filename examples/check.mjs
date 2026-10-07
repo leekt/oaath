@@ -33,47 +33,20 @@ const examples = [
 ];
 
 if (anvilAvailable()) {
-  examples.push({
-    // Simulate mode drives the phone's half over HTTP: no Apple contact, no
-    // LAN binding, and the APNS_*/APPLE_* opt-ins are never read as a gate.
-    label: "phone",
-    script: "phone/run.mjs",
-    env: { OAATH_PHONE_SIMULATE: "1", OAATH_PORT: "0" },
-  });
   examples.push({ label: "all-chain", script: "all-chain/run.mjs", env: {} });
 } else {
-  console.log("examples:check: skipping phone and all-chain, Anvil is not installed");
+  console.log("examples:check: skipping all-chain, Anvil is not installed");
 }
 
 const failures = [];
-const phoneUnits = spawnSync(
-  "node",
-  ["--import", HOOK, "--test", "phone/demo-routes.test.mjs", "phone/browser.test.mjs"],
-  {
-    cwd: HERE,
-    stdio: "inherit",
-    env: process.env,
-  },
-);
-if (phoneUnits.status !== 0) failures.push("phone-unit");
 
 for (const example of examples) {
   console.log(`\n=== ${example.label} ===`);
-  const captured = example.label === "phone";
   const result = spawnSync("node", ["--import", HOOK, example.script], {
     cwd: HERE,
-    stdio: captured ? "pipe" : "inherit",
-    encoding: captured ? "utf8" : undefined,
+    stdio: "inherit",
     env: { ...process.env, ...example.env },
   });
-  if (captured) {
-    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-    process.stdout.write(output);
-    if (/oaath-demo:\/\/pair|pairing link|[?&]code=/u.test(output)) {
-      console.error("phone: captured simulation output leaked pairing material");
-      failures.push("phone-secret-output");
-    }
-  }
   if (result.status !== 0) failures.push(example.label);
 }
 

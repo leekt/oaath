@@ -166,12 +166,6 @@ h1:focus {
   background: linear-gradient(var(--ink), var(--ink)) 50% 60% / 55% 2px no-repeat;
 }
 
-.badge-phone {
-  border-radius: 0.6rem;
-  width: 1.6rem;
-  margin: 0 0.32rem;
-}
-
 .badge-account {
   background: var(--accent);
   border-color: var(--accent);

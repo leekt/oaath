@@ -182,17 +182,6 @@ export function SignerStep({
               </li>
             ))
           )}
-          <li>
-            <button type="button" className="choice" disabled aria-describedby="phone-soon">
-              <span className="badge badge-phone" aria-hidden="true" />
-              <span className="choice-text">
-                <span className="choice-title">Phone</span>
-                <span className="choice-detail" id="phone-soon">
-                  Coming soon
-                </span>
-              </span>
-            </button>
-          </li>
         </ul>
       )}
       {busy && (

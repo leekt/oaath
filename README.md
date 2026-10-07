@@ -124,14 +124,6 @@ carries the concrete SQLite test stores and is never a production dependency.
 `@oaath/server` carries the durable authorization relay, its PostgreSQL store,
 and the experimental phone and APNs preview surfaces.
 
-The [phone service workflow](examples/phone/README.md) proves personal and team
-account selection, approval by a simulated P-256 owner phone, bounded application jobs,
-saved-operation recovery, and revocation across two configured local chains.
-Its PostgreSQL scenario recreates the service and pools while retaining the
-external chain backends; pending consent and submitted operation evidence
-survive without another send. Swift host tests separately prove native consent
-and signing. These gates do not prove a physical-device or hosted deployment.
-
 The product model and this PoC workflow are implemented. Further decomposition
 of the client, separating the wallet-RPC layer used by the extension, and native
 release packaging remain follow-ups. They do not require a rewrite of the
@@ -188,9 +180,7 @@ existing grants. The directory also resolves each permission request to the
 registered account's owner device, checking its explicit context and account
 profile rather than the current selection preference. After deployment-authenticated
 pairing, `enrollOwnerDevice` registers a phone and its new P-256 accounts in one
-directory write. The [reference phone service](examples/phone) uses this directory,
-canonical native permission approval, and the URL SDK for personal/team jobs,
-saved-operation recovery and revocation across two configured local chains.
+directory write.
 Account selection UI remains deployment-owned.
 
 ```ts
@@ -419,18 +409,17 @@ shape for signing and submission.
 
 ## Examples
 
-Four runnable, narrated examples live in [examples/](examples). They import the
+Runnable, narrated examples live in [examples/](examples). They import the
 published specifiers only.
 
 | Example | Shows |
 | --- | --- |
 | `examples/browser` | connect → one all-chain grant → execute → revoke, against injected chain facts or a real local chain |
 | `examples/server` | the Fetch relay over `node:http`, PostgreSQL, and the auth and KMS ports a deployment owns |
-| `examples/phone` | pair a real iPhone ([native/ios/Demo](native/ios/Demo)), APNs push, full consent screen, approve, one-time code delivery |
 | `examples/all-chain` | one owner approval, chain B introduced afterwards, the same signature materialized on it |
 
 ```sh
-bun run examples:check # all four; skips all-chain when Anvil is absent
+bun run examples:check # every example; skips all-chain when Anvil is absent
 ```
 
 They are documentation, not release evidence, and are deliberately not a CI gate;
