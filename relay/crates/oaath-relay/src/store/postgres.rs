@@ -18,13 +18,14 @@ use sqlx::{Postgres, Row, Transaction};
 
 use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::oauth::records::{OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v6";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v7";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -33,13 +34,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v6 (
+        "CREATE TABLE oaath_relay_schema_v7 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v6 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v7 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -162,6 +163,29 @@ pub fn schema_statements() -> Vec<String> {
         "CREATE UNIQUE INDEX oaath_account_signer_root_v1 ON oaath_account_signer_v1 (account_id)
     WHERE role = 'root'"
             .to_owned(),
+        format!(
+            "CREATE TABLE oauth_client_v1 (
+    client_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    client_name text NOT NULL,
+    redirect_uris text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oauth_par_v1 (
+    par_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    client_id text NOT NULL REFERENCES oauth_client_v1 (client_id),
+    redirect_uri text NOT NULL,
+    code_challenge text NOT NULL,
+    state text,
+    nonce text,
+    scope text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max})
+  )"
+        ),
     ]
 }
 
@@ -377,6 +401,45 @@ fn membership_row(row: &PgRow) -> RelayResult<(AccountRecord, AccountSignerRecor
         AccountSignerRecord::parse(&columns(row, &MEMBERSHIP_FIELDS)?)?,
     ))
 }
+
+fn client_record(row: &PgRow) -> RelayResult<OAuthClientRecord> {
+    let mut record = columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("clientId", "client_id", false),
+            ("clientName", "client_name", false),
+            ("createdAt", "created_at", true),
+        ],
+    )?;
+    let uris: String = row
+        .try_get("redirect_uris")
+        .map_err(|_| RelayErrorCode::RecordUnreadable)?;
+    record["redirectUris"] =
+        serde_json::from_str(&uris).map_err(|_| RelayErrorCode::RecordUnreadable)?;
+    OAuthClientRecord::parse(&record)
+}
+
+fn par_record(row: &PgRow) -> RelayResult<ParRecord> {
+    ParRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("parId", "par_id", false),
+            ("clientId", "client_id", false),
+            ("redirectUri", "redirect_uri", false),
+            ("codeChallenge", "code_challenge", false),
+            ("state", "state", false),
+            ("nonce", "nonce", false),
+            ("scope", "scope", false),
+            ("createdAt", "created_at", true),
+            ("expiresAt", "expires_at", true),
+        ],
+    )?)
+}
+
+const ACCOUNT_COLUMNS: &str = "record_version AS account_version, account_id, address, \
+     root_signer_id, account_index, owner_validator, profile, created_at AS account_created_at";
 
 type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
 
@@ -768,6 +831,87 @@ impl RelayTransaction for PostgresTransaction {
             .bind(record.role.as_str())
             .bind(&record.request_id)
             .bind(bigint(record.created_at)),
+        )
+        .await
+    }
+
+    async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>> {
+        let sql = format!(
+            "SELECT {ACCOUNT_COLUMNS} FROM oaath_account_v1 WHERE account_id = $1 FOR UPDATE"
+        );
+        self.first(sqlx::query(&sql).bind(account_id), |row| {
+            AccountRecord::parse(&columns(row, &ACCOUNT_FIELDS)?)
+        })
+        .await
+    }
+
+    async fn lock_oauth_client(
+        &mut self,
+        client_id: &str,
+    ) -> RelayResult<Option<OAuthClientRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT client_id, record_version, client_name, redirect_uris, created_at \
+                 FROM oauth_client_v1 WHERE client_id = $1 FOR UPDATE",
+            )
+            .bind(client_id),
+            client_record,
+        )
+        .await
+    }
+
+    async fn insert_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        let uris =
+            serde_json::to_string(&record.redirect_uris).map_err(|_| RelayErrorCode::Internal)?;
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oauth_client_v1 (\
+                 client_id, record_version, client_name, redirect_uris, created_at\
+                 ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.client_id)
+            .bind(record.version)
+            .bind(&record.client_name)
+            .bind(uris)
+            .bind(bigint(record.created_at)),
+        )
+        .await
+    }
+
+    async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT par_id, record_version, client_id, redirect_uri, code_challenge, state, \
+                 nonce, scope, created_at, expires_at FROM oauth_par_v1 \
+                 WHERE par_id = $1 FOR UPDATE",
+            )
+            .bind(par_id),
+            par_record,
+        )
+        .await
+    }
+
+    async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool> {
+        // An unknown client inserts nothing instead of aborting.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oauth_par_v1 (\
+                 par_id, record_version, client_id, redirect_uri, code_challenge, state, nonce, \
+                 scope, created_at, expires_at) \
+                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 \
+                 WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.par_id)
+            .bind(record.version)
+            .bind(&record.client_id)
+            .bind(&record.redirect_uri)
+            .bind(&record.code_challenge)
+            .bind(&record.state)
+            .bind(&record.nonce)
+            .bind(&record.scope)
+            .bind(bigint(record.created_at))
+            .bind(bigint(record.expires_at)),
         )
         .await
     }

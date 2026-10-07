@@ -24,3 +24,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 async-trait = "0.1"
 aes-gcm = "0.10"
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto", "use_pem"] }
+p256 = { workspace = true, features = ["pkcs8", "pem"] }
+url = "2"

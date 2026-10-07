@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::oauth::records::{OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
@@ -33,6 +34,8 @@ struct Tables {
     signers: HashMap<String, Value>,
     accounts: HashMap<String, Value>,
     memberships: Vec<Value>,
+    oauth_clients: HashMap<String, Value>,
+    pars: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -387,6 +390,44 @@ impl RelayTransaction for MemoryTransaction {
         }
         self.staged.memberships.push(to_value(record));
         Ok(true)
+    }
+
+    async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>> {
+        read(&self.staged.accounts, account_id, AccountRecord::parse)
+    }
+
+    async fn lock_oauth_client(
+        &mut self,
+        client_id: &str,
+    ) -> RelayResult<Option<OAuthClientRecord>> {
+        read(
+            &self.staged.oauth_clients,
+            client_id,
+            OAuthClientRecord::parse,
+        )
+    }
+
+    async fn insert_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        Ok(insert(
+            &mut self.staged.oauth_clients,
+            &record.client_id,
+            to_value(record),
+        ))
+    }
+
+    async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {
+        read(&self.staged.pars, par_id, ParRecord::parse)
+    }
+
+    async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool> {
+        if !self.staged.oauth_clients.contains_key(&record.client_id) {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.pars,
+            &record.par_id,
+            to_value(record),
+        ))
     }
 
     async fn commit(self: Box<Self>) -> RelayResult<()> {

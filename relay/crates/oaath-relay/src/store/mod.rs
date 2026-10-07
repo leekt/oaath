@@ -29,6 +29,7 @@ pub mod postgres;
 use async_trait::async_trait;
 
 use crate::error::RelayResult;
+use crate::oauth::records::{OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
@@ -127,6 +128,18 @@ pub trait RelayTransaction: Send {
     /// `false` for an unknown account or signer, a second root, or a repeated
     /// (account, signer, request) row.
     async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool>;
+
+    async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>>;
+
+    async fn lock_oauth_client(
+        &mut self,
+        client_id: &str,
+    ) -> RelayResult<Option<OAuthClientRecord>>;
+    /// `false` when the client identifier already exists.
+    async fn insert_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool>;
+    async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>>;
+    /// `false` when the identifier exists or the client is unknown.
+    async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool>;
 
     /// `relay_state_ambiguous` when the outcome cannot be proven.
     async fn commit(self: Box<Self>) -> RelayResult<()>;

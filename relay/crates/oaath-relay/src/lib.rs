@@ -14,6 +14,7 @@ pub mod display;
 pub mod error;
 pub mod handler;
 pub mod kms;
+pub mod oauth;
 pub mod portal;
 pub mod records;
 pub mod registry;

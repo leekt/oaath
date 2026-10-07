@@ -100,7 +100,7 @@ beforeAll(async () => {
       calls.push({ method: request.method ?? "GET", path: url.pathname, body });
       const result = await stubRelay(url.pathname, request.method ?? "GET", body);
       return result === null
-        ? json(response, 404, { error: "not_found", error_code: "relay_not_found" })
+        ? json(response, 404, { error: { code: "relay_not_found" } })
         : json(response, 200, result);
     }
     if (url.pathname.startsWith("/dapp/")) {
@@ -209,7 +209,7 @@ describe("portal in Chrome", () => {
         body: {
           signer_id: "signer-wallet",
           account_id: "account-signer-wallet",
-          outcome: "approve",
+          outcome: "approved",
         },
       },
     ]);

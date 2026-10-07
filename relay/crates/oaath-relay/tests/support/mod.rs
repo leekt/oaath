@@ -24,11 +24,26 @@ use oaath_relay::authorization::request::RelayOwnerRouting;
 use oaath_relay::clock::RelayClock;
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::kms::{KmsUnavailable, RelayKms};
+use oaath_relay::oauth::OAuthConfiguration;
+use oaath_relay::oauth::id_token::IdTokenKey;
 use oaath_relay::records::AuthorizationOwnerRoute;
 use oaath_relay::store::RelayStore;
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::{Relay, RelayOptions};
 use serde_json::{Value, json};
+
+pub const ISSUER: &str = "https://oaath.test";
+pub const ID_TOKEN_KID: &str = "test-key-1";
+
+/// A fixed P-256 test key as PKCS#8 PEM.
+pub fn id_token_pem() -> String {
+    use p256::pkcs8::EncodePrivateKey;
+    p256::SecretKey::from_slice(&[7u8; 32])
+        .unwrap()
+        .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
+        .unwrap()
+        .to_string()
+}
 
 pub const REDIRECT_URI: &str = "https://app.example/callback";
 /// 43 unreserved characters: the RFC 7636 minimum.
@@ -426,6 +441,10 @@ pub fn options(
         code_ttl_ms: None,
         max_body_bytes: None,
         bootstrap: None,
+        oauth: Some(OAuthConfiguration {
+            issuer: ISSUER.to_owned(),
+            key: IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &id_token_pem()).unwrap(),
+        }),
     }
 }
 

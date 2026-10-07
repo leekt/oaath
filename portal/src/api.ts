@@ -11,7 +11,8 @@ import type { KernelAccountProfile, OwnerCredentialProfile } from "@oaath/protoc
 
 /** RFC 6749 error body with the relay's structured code. */
 export interface PortalErrorBody {
-  readonly error: string;
+  /** `/portal/*` answers the relay envelope `{error: {code}}`. */
+  readonly error: string | { readonly code?: string };
   readonly error_description?: string;
   readonly error_code?: string;
 }
@@ -62,11 +63,14 @@ export interface CreateAccountResponse {
 }
 
 /** `POST /portal/transactions/{id}/decision`: the login outcome. */
-export interface DecisionRequest {
-  readonly signer_id: string;
-  readonly account_id: string;
-  readonly outcome: "approve" | "reject";
-}
+export type DecisionRequest =
+  | {
+      readonly outcome: "approved";
+      readonly signer_id: string;
+      readonly account_id: string;
+    }
+  /** The redirect then carries `error=access_denied`. */
+  | { readonly outcome: "cancelled" };
 /** Also the shape of `GET /portal/transactions/{id}/redirect`. */
 export interface RedirectResponse {
   readonly redirect: string;
@@ -111,7 +115,9 @@ async function call<Response>(path: string, init?: { method: "POST"; body: unkno
   const body = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
     const error = body as Partial<PortalErrorBody> | null;
-    throw new PortalApiError(response.status, error?.error_code ?? error?.error ?? "unknown");
+    const code =
+      typeof error?.error === "object" ? error.error.code : (error?.error_code ?? error?.error);
+    throw new PortalApiError(response.status, code ?? "unknown");
   }
   return body as Response;
 }

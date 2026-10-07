@@ -98,7 +98,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
     const body = { signer_id: signer.signer_id, account_id: account.account_id } as const;
     try {
       const { redirect } = await portalApi
-        .decide(transactionId, { ...body, outcome: "approve" })
+        .decide(transactionId, { ...body, outcome: "approved" })
         // A lost reply or an already-recorded decision recovers the sealed redirect.
         .catch(() => portalApi.redirect(transactionId));
       location.assign(redirect);
