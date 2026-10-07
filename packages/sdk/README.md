@@ -122,6 +122,17 @@ and is a member of the account; login is identity, never authority. Failures are
 `oaath_client_identity_invalid`. The client is registered once with
 `POST {issuer}/oauth/clients`; see `examples/oauth-login`.
 
+`requestOwnerOperationApproval({ issuer, clientId, redirectUri, request })` asks
+the account root to approve one owner operation in the same popup (or through
+`launch`, as for Grants). `request` is
+the exact unsigned request from `prepareOwnerOperation` (`@oaath/sdk/kernel`).
+The returned signed operation must be for that same request, and
+`verifyOwnerOperation` checks the account binding and the root's signature (a
+WebAuthn root asserts for the issuer's relying party). It resolves to
+`{ signed, entryPoint, userOperation }`, ready for the caller's own
+`eth_sendUserOperation`; OAAth never submits. A signed operation for another
+request fails with `oaath_client_state_conflict` (`oauth_operation_mismatch`).
+
 Portal-approved Grants (`createOAAth({ chains, approvals: { kind: "oauth", issuer,
 clientId, redirectUri } })`) open the same popup from `requestPermission`. Where no
 popup can open, as in an extension service worker, `approvals.launch(url)`

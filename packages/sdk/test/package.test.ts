@@ -23,6 +23,7 @@ describe("package boundary", () => {
       "createOAAth",
       "loginWithOAAth",
       "parseOaathCallsReview",
+      "requestOwnerOperationApproval",
     ]);
   });
 
