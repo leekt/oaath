@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
-import { captureDcaTerms, hashDcaSlot } from "@oaath/protocol";
 import { executeKeyed } from "@oaath/sdk/headless";
-import { decodeEventLog } from "viem";
+import { decodeEventLog } from "cetane/utils";
+import { captureDcaTerms, hashDcaSlot } from "../../protocol/dca.js";
 import { openGrant } from "./authority.js";
 import { budget, encode, executor } from "./chain.js";
 import { now, plan, pool } from "./store.js";
@@ -11,7 +11,7 @@ export async function claim() {
 	try {
 		await c.query("BEGIN");
 		const { rows } = await c.query(
-			"SELECT r.plan_id,r.slot FROM dca_runs r WHERE r.status IN ('reserved','observing','unresolved') AND r.next_observe_at<=$1 AND r.lease_until<=$1 ORDER BY r.next_observe_at,r.plan_id LIMIT 1 FOR UPDATE SKIP LOCKED",
+			"SELECT r.plan_id,r.slot FROM automation_runs r WHERE r.status IN ('reserved','observing','unresolved') AND r.next_observe_at<=$1 AND r.lease_until<=$1 ORDER BY r.next_observe_at,r.plan_id LIMIT 1 FOR UPDATE SKIP LOCKED",
 			[now()],
 		);
 		if (!rows[0]) {
@@ -19,7 +19,7 @@ export async function claim() {
 			return null;
 		}
 		const result = await c.query(
-			"UPDATE dca_runs SET generation=generation+1,lease_until=$3 WHERE plan_id=$1 AND slot=$2 RETURNING *",
+			"UPDATE automation_runs SET generation=generation+1,lease_until=$3 WHERE plan_id=$1 AND slot=$2 RETURNING *",
 			[rows[0].plan_id, rows[0].slot, now() + 60],
 		);
 		await c.query("COMMIT");
@@ -33,7 +33,7 @@ export async function claim() {
 }
 async function update(run: any, sql: string, args: unknown[] = []) {
 	return pool.query(
-		`UPDATE dca_runs SET ${sql} WHERE plan_id=$1 AND slot=$2 AND generation=$3`,
+		`UPDATE automation_runs SET ${sql} WHERE plan_id=$1 AND slot=$2 AND generation=$3`,
 		[run.plan_id, run.slot, run.generation, ...args],
 	);
 }
@@ -79,7 +79,7 @@ export async function reconcile(run: any) {
 				read: async () => {
 					const row = (
 						await pool.query(
-							"SELECT * FROM dca_runs WHERE plan_id=$1 AND slot=$2",
+							"SELECT * FROM automation_runs WHERE plan_id=$1 AND slot=$2",
 							[p.id, run.slot],
 						)
 					).rows[0];
@@ -100,7 +100,7 @@ export async function reconcile(run: any) {
 							await c.query("BEGIN");
 							const latest = (
 								await c.query(
-									"SELECT status,revision FROM dca_plans WHERE id=$1 FOR UPDATE",
+									"SELECT status,revision FROM automation_plans WHERE id=$1 FOR UPDATE",
 									[p.id],
 								)
 							).rows[0];
@@ -111,7 +111,7 @@ export async function reconcile(run: any) {
 							)
 								throw new Error("admission_closed");
 							const result = await c.query(
-								"UPDATE dca_runs SET operation=$4 WHERE plan_id=$1 AND slot=$2 AND generation=$3 AND operation IS NULL AND digest=$5 AND lease_until>$6",
+								"UPDATE automation_runs SET operation=$4 WHERE plan_id=$1 AND slot=$2 AND generation=$3 AND operation IS NULL AND digest=$5 AND lease_until>$6",
 								[
 									p.id,
 									run.slot,
@@ -136,7 +136,7 @@ export async function reconcile(run: any) {
 						if (r.rowCount !== 1) throw new Error("stale_claim");
 						const current = (
 							await pool.query(
-								"SELECT operation FROM dca_runs WHERE plan_id=$1 AND slot=$2",
+								"SELECT operation FROM automation_runs WHERE plan_id=$1 AND slot=$2",
 								[p.id, run.slot],
 							)
 						).rows[0];

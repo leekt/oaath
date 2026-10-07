@@ -13,3 +13,12 @@ test("budget exhaustion defers until the next explicit window", () => {
 	budget.take();
 	expect(budget.snapshot().used).toBe(1);
 });
+
+test("batched method admission is all or nothing", () => {
+	const budget = new RpcBudget(3, 100, () => 0);
+	budget.take(2);
+	expect(() => budget.take(2)).toThrow("rpc_budget_exhausted");
+	expect(budget.snapshot().used).toBe(2);
+	budget.take();
+	expect(budget.snapshot().used).toBe(3);
+});

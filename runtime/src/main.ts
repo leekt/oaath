@@ -6,7 +6,7 @@ import { budget, stats } from "./chain.js";
 import { init, pool } from "./store.js";
 import { worker } from "./worker.js";
 
-const token = process.env.DCA_RUNTIME_TOKEN;
+const token = process.env.AUTOMATION_RUNTIME_TOKEN;
 if (!token) throw new Error("runtime_token_required");
 await init();
 const controller = new AbortController();
@@ -62,7 +62,7 @@ const server = createServer(async (req, res) => {
 await new Promise<void>((resolve, reject) => {
 	server.once("error", reject);
 	server.listen(
-		Number(process.env.DCA_RUNTIME_PORT ?? 4318),
+		Number(process.env.AUTOMATION_RUNTIME_PORT ?? 4318),
 		"127.0.0.1",
 		resolve,
 	);

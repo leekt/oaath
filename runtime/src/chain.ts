@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+import type { Address, Hex } from "cetane";
 import { http } from "cetane";
 import { decodeFunctionResult, encodeFunctionData } from "cetane/utils";
-import type { Address, Hex } from "viem";
 import { RpcBudget } from "./budget.js";
-export const config = JSON.parse(readFileSync(process.env.DCA_CONFIG!, "utf8"));
+export const config = JSON.parse(
+	readFileSync(process.env.AUTOMATION_CONFIG!, "utf8"),
+);
 export const factory = JSON.parse(
 	readFileSync(
 		new URL("../../vendor/DcaFactory.json", import.meta.url),
@@ -39,12 +41,12 @@ export async function read(
 	const result = await rpc("eth_call", [{ to: address, data }, block]);
 	return decodeFunctionResult({ abi, functionName, data: result } as never);
 }
-let chainPorts: ReturnType<typeof createViemChainPorts>[number] | undefined;
+let chainPorts: ReturnType<typeof createCetaneChainPorts>[number] | undefined;
 let portsWindow = -1;
 export function ports() {
 	if (!chainPorts || portsWindow !== budget.windowId) {
 		portsWindow = budget.windowId;
-		chainPorts = createViemChainPorts(config.chainDescriptors, {
+		chainPorts = createCetaneChainPorts(config.chainDescriptors, {
 			maxRequests: 20000,
 			maxConcurrency: 16,
 			retry: { attempts: 2, delayMs: 100 },

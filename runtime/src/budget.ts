@@ -13,13 +13,15 @@ export class RpcBudget {
 	get retryAt() {
 		return (this.windowId + 1) * this.windowMs;
 	}
-	take() {
+	take(count = 1) {
+		if (!Number.isSafeInteger(count) || count < 1)
+			throw new Error("rpc_budget_count_invalid");
 		if (this.window !== this.windowId) {
 			this.window = this.windowId;
 			this.used = 0;
 		}
-		if (this.used >= this.limit) throw new Error("rpc_budget_exhausted");
-		this.used++;
+		if (this.used + count > this.limit) throw new Error("rpc_budget_exhausted");
+		this.used += count;
 	}
 	snapshot() {
 		return {

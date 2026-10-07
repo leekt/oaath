@@ -1,7 +1,4 @@
 import {
-	captureDcaTerms,
-	DCA_TERMS_FIELDS,
-	hashDcaTerms,
 	hashPermissionRequest,
 	OAATH_GRANT_POLICY_VERSION,
 	OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
@@ -26,7 +23,12 @@ import {
 	sessionOperator,
 	signedKernelPermissionApproval,
 } from "@oaath/sdk/kernel";
-import { hashTypedData, recoverTypedDataAddress } from "viem";
+import { hashTypedData, recoverAddress } from "cetane/utils";
+import {
+	captureDcaTerms,
+	DCA_TERMS_FIELDS,
+	hashDcaTerms,
+} from "../../protocol/dca.js";
 import {
 	config,
 	encode,
@@ -130,12 +132,12 @@ export async function authorize(id: string) {
 			await read(config.factory, factory.abi, "predict", [values]),
 		).toLowerCase();
 		const bindingInput: OaathBindingInput = {
-			issuer: "https://dca.oaath.local",
+			issuer: "https://automation.oaath.local",
 			applicationId: p.app_id,
-			applicationName: "Managed DCA",
+			applicationName: "Automation",
 			clientId: p.app_id,
-			origin: "https://dca.oaath.local",
-			redirectUri: "https://dca.oaath.local/callback",
+			origin: "https://automation.oaath.local",
+			redirectUri: "https://automation.oaath.local/callback",
 			deviceId: id.slice(2),
 			userHandle: p.account,
 			context: {
@@ -190,7 +192,7 @@ export async function authorize(id: string) {
 			expiresAt: terms.endAt,
 			sessionSigner: {
 				mode: "oaath_hosted",
-				providerId: "dca-sealed-postgres-v1",
+				providerId: `automation-${p.key_scope}-v1`,
 			},
 		});
 		const consent = {
@@ -206,6 +208,7 @@ export async function authorize(id: string) {
 					{ name: "permissionHash", type: "bytes32" },
 					{ name: "signer", type: "address" },
 					{ name: "custody", type: "string" },
+					{ name: "keyScope", type: "string" },
 					{ name: "maxFeePerGas", type: "uint256" },
 					{ name: "maxGasCost", type: "uint256" },
 					{ name: "serviceFee", type: "uint256" },
@@ -217,6 +220,7 @@ export async function authorize(id: string) {
 				permissionHash: hashPermissionRequest(request),
 				signer: m.account.address.toLowerCase(),
 				custody: "oaath_hosted",
+				keyScope: p.key_scope,
 				maxFeePerGas: config.maxFeePerGas,
 				maxGasCost: config.maxGasCost,
 				serviceFee: "0",
@@ -249,7 +253,7 @@ export async function authorize(id: string) {
 		auth = await getRecord(id, "authorization");
 	}
 	await pool.query(
-		"UPDATE dca_plans SET status='awaiting_consent',revision=revision+1,executor=$2,signer=$3,commitment=$4,fee_terms=$5 WHERE id=$1 AND status='draft'",
+		"UPDATE automation_plans SET status='awaiting_consent',revision=revision+1,executor=$2,signer=$3,commitment=$4,fee_terms=$5 WHERE id=$1 AND status='draft'",
 		[id, auth.executor, m.account.address.toLowerCase(), auth.commitment, fees],
 	);
 	const a = await authority(id);
@@ -262,6 +266,7 @@ export async function authorize(id: string) {
 		review: {
 			commitment: auth.commitment,
 			custody: "oaath_hosted",
+			keyScope: p.key_scope,
 			terms,
 			fees,
 			permission: a.prepared.typedData,
@@ -273,6 +278,8 @@ export async function authorize(id: string) {
 export function publicPlan(p: any) {
 	return {
 		id: p.id,
+		recipe: p.recipe,
+		keyScope: p.key_scope,
 		status: p.status,
 		terms: p.terms,
 		commitment: p.commitment,
@@ -316,8 +323,8 @@ export async function approve(id: string, input: any) {
 		hashDcaTerms(a.terms) !== a.auth.consent.message.termsHash
 	)
 		throw new Error("consent_mismatch");
-	const owner = await recoverTypedDataAddress({
-		...a.auth.consent,
+	const owner = await recoverAddress({
+		hash: hashTypedData(a.auth.consent),
 		signature: input.consentSignature,
 	});
 	if (owner.toLowerCase() !== a.auth.owner) throw new Error("consent_invalid");
@@ -359,7 +366,9 @@ export async function activate(id: string) {
 		!auth ||
 		!decision ||
 		decision.commitment !== p.commitment ||
-		hashDcaTerms(p.terms) !== auth.consent.message.termsHash
+		hashDcaTerms(p.terms) !== auth.consent.message.termsHash ||
+		auth.consent.message.keyScope !== p.key_scope ||
+		auth.consent.message.signer !== p.signer
 	)
 		throw new Error("activation_forbidden");
 	assertRuntime(p, auth);
@@ -369,7 +378,7 @@ export async function activate(id: string) {
 		const setup = { ...(await verifySetup(p)), deployment };
 		await verifyGrantAuthority(id);
 		await pool.query(
-			"UPDATE dca_plans SET status='authorized',revision=revision+1,setup=$2,diagnostic=NULL WHERE id=$1 AND status='awaiting_consent' AND commitment=$3",
+			"UPDATE automation_plans SET status='authorized',revision=revision+1,setup=$2,diagnostic=NULL WHERE id=$1 AND status='awaiting_consent' AND commitment=$3",
 			[id, setup, auth.commitment],
 		);
 		if ((await plan(id)).status !== "authorized")
@@ -377,12 +386,12 @@ export async function activate(id: string) {
 		const grant = await openGrant(id);
 		await grant.close();
 		await pool.query(
-			"UPDATE dca_plans SET status='active',revision=revision+1 WHERE id=$1 AND status='authorized' AND commitment=$2 AND (terms->>'endAt')::bigint>$3",
+			"UPDATE automation_plans SET status='active',revision=revision+1 WHERE id=$1 AND status='authorized' AND commitment=$2 AND (terms->>'endAt')::bigint>$3",
 			[id, auth.commitment, now()],
 		);
 	} catch {
 		await pool.query(
-			"UPDATE dca_plans SET diagnostic='setup_confirmation_pending' WHERE id=$1 AND status IN ('awaiting_consent','authorized')",
+			"UPDATE automation_plans SET diagnostic='setup_confirmation_pending' WHERE id=$1 AND status IN ('awaiting_consent','authorized')",
 			[id],
 		);
 	}
@@ -395,7 +404,7 @@ export async function activate(id: string) {
 export async function activationWorker(signal: AbortSignal) {
 	while (!signal.aborted) {
 		const row = await pool.query(
-			"UPDATE dca_plans SET next_setup_at=$1 WHERE id=(SELECT p.id FROM dca_plans p WHERE status IN ('awaiting_consent','authorized') AND next_setup_at<=$2 AND EXISTS(SELECT 1 FROM dca_runtime_records r WHERE r.plan_id=p.id AND r.kind='decision') ORDER BY next_setup_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id",
+			"UPDATE automation_plans SET next_setup_at=$1 WHERE id=(SELECT p.id FROM automation_plans p WHERE status IN ('awaiting_consent','authorized') AND next_setup_at<=$2 AND EXISTS(SELECT 1 FROM automation_runtime_records r WHERE r.plan_id=p.id AND r.kind='decision') ORDER BY next_setup_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id",
 			[now() + 60, now()],
 		);
 		if (row.rows[0]) {
@@ -403,7 +412,7 @@ export async function activationWorker(signal: AbortSignal) {
 				await activate(row.rows[0].id);
 			} catch {
 				await pool.query(
-					"UPDATE dca_plans SET diagnostic='activation_evidence_unavailable' WHERE id=$1",
+					"UPDATE automation_plans SET diagnostic='activation_evidence_unavailable' WHERE id=$1",
 					[row.rows[0].id],
 				);
 			}
@@ -444,6 +453,8 @@ export async function openGrant(
 		!decision ||
 		decision.commitment !== p.commitment ||
 		hashDcaTerms(p.terms) !== auth.consent.message.termsHash ||
+		auth.consent.message.keyScope !== p.key_scope ||
+		auth.consent.message.signer !== p.signer ||
 		m.account.address.toLowerCase() !== p.signer
 	)
 		throw new Error("authority_mismatch");
@@ -522,7 +533,7 @@ export async function resume(id: string) {
 	await g.close();
 	if (!active) throw new Error("grant_inactive");
 	await pool.query(
-		"UPDATE dca_plans SET status='active',revision=revision+1 WHERE id=$1 AND status='paused' AND revision=$2",
+		"UPDATE automation_plans SET status='active',revision=revision+1 WHERE id=$1 AND status='paused' AND revision=$2",
 		[id, p.revision],
 	);
 	return { status: (await plan(id)).status };

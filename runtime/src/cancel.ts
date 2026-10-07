@@ -21,7 +21,7 @@ export async function cancel(id: string) {
 	const auth = await getRecord(id, "authorization");
 	if (!auth) {
 		await pool.query(
-			"UPDATE dca_plans SET status='cancelled',revision=revision+1,cancellation=$2 WHERE id=$1 AND status='cancelling'",
+			"UPDATE automation_plans SET status='cancelled',revision=revision+1,cancellation=$2 WHERE id=$1 AND status='cancelling'",
 			[id, { status: "confirmed", reason: "no_authority_issued" }],
 		);
 		return { status: "cancelled" };
@@ -129,7 +129,7 @@ export async function cancel(id: string) {
 		blockNumber: block.number,
 	};
 	await pool.query(
-		"UPDATE dca_plans SET status=CASE WHEN $2 THEN 'cancelled' ELSE status END,revision=revision+1,cancellation=$3 WHERE id=$1 AND status='cancelling'",
+		"UPDATE automation_plans SET status=CASE WHEN $2 THEN 'cancelled' ELSE status END,revision=revision+1,cancellation=$3 WHERE id=$1 AND status='cancelling'",
 		[id, complete, cancellation],
 	);
 	return { status: complete ? "cancelled" : "pending", cancellation };
@@ -139,7 +139,7 @@ export async function cancel(id: string) {
 export async function cancellationWorker(signal: AbortSignal) {
 	while (!signal.aborted) {
 		const row = await pool.query(
-			"UPDATE dca_plans SET next_cleanup_at=$1 WHERE id=(SELECT id FROM dca_plans WHERE status='cancelling' AND next_cleanup_at<=$2 ORDER BY next_cleanup_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id",
+			"UPDATE automation_plans SET next_cleanup_at=$1 WHERE id=(SELECT id FROM automation_plans WHERE status='cancelling' AND next_cleanup_at<=$2 ORDER BY next_cleanup_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id",
 			[now() + 60, now()],
 		);
 		if (row.rows[0]) {
@@ -147,7 +147,7 @@ export async function cancellationWorker(signal: AbortSignal) {
 				await cancel(row.rows[0].id);
 			} catch {
 				await pool.query(
-					"UPDATE dca_plans SET diagnostic='cancellation_reconciliation_pending' WHERE id=$1",
+					"UPDATE automation_plans SET diagnostic='cancellation_reconciliation_pending' WHERE id=$1",
 					[row.rows[0].id],
 				);
 			}

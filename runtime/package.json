@@ -1,5 +1,5 @@
 {
-  "name": "dca-runtime",
+  "name": "automation-runtime",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -8,11 +8,10 @@
   },
   "dependencies": {
     "pg": "8.22.0",
-    "viem": "2.55.8",
-    "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-1406da2477f4.tgz",
-    "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-16fbc4c9ab0e.tgz",
-    "@oaath/server": "file:../vendor/oaath-server-0.3.4-10f356759d1c.tgz",
-    "cetane": "file:../vendor/cetane-0.0.2-f0b99e13f1e8.tgz",
-    "moesi": "file:../vendor/moesi-0.15.2-1a7235ae9f2d.tgz"
+    "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
+    "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+    "@oaath/server": "file:../vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
+    "cetane": "file:../vendor/cetane-0.0.2-44d836698a8c.tgz",
+    "moesi": "file:../vendor/moesi-0.15.2-dbee82a83ae6.tgz"
   }
 }
