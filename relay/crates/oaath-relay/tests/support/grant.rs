@@ -7,7 +7,7 @@ use k256::ecdsa::SigningKey;
 use oaath_relay::grant::approval::capability_hash;
 use serde_json::{Value, json};
 
-use super::{CLOCK_SECONDS, ISSUER};
+use super::{CLOCK_SECONDS, Harness, ISSUER, cookie_of, portal_call};
 
 pub fn root_key() -> SigningKey {
     SigningKey::from_slice(&[0x11; 32]).unwrap()
@@ -82,10 +82,7 @@ impl Root {
     }
 
     pub fn sign(&self, digest: B256) -> Vec<u8> {
-        use alloy_sol_types::SolValue;
-        use base64::Engine;
         use p256::ecdsa::signature::hazmat::PrehashSigner;
-        use sha2::{Digest, Sha256};
         let p256_sign = |key: &p256::ecdsa::SigningKey, prehash: &[u8]| {
             let signature: p256::ecdsa::Signature = key.sign_prehash(prehash).unwrap();
             signature.normalize_s().unwrap_or(signature)
@@ -96,37 +93,104 @@ impl Root {
                 [signature.to_bytes().to_vec(), vec![27 + recovery.to_byte()]].concat()
             }
             Root::P256(key) => p256_sign(key, &digest.0).to_bytes().to_vec(),
-            Root::WebAuthn(key, _) => {
-                let authenticator_data = [
-                    Sha256::digest(b"oaath.test").to_vec(),
-                    vec![0x05, 0, 0, 0, 1],
-                ]
-                .concat();
-                let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest.0);
-                let client_data = format!(
-                    r#"{{"type":"webauthn.get","challenge":"{challenge}","origin":"{ISSUER}","crossOrigin":false}}"#
-                );
-                let message = Sha256::digest(
-                    [
-                        authenticator_data.clone(),
-                        Sha256::digest(client_data.as_bytes()).to_vec(),
-                    ]
-                    .concat(),
-                );
-                let signature = p256_sign(key, &message);
-                let (r, s) = signature.split_bytes();
-                (
-                    alloy_primitives::Bytes::from(authenticator_data),
-                    client_data,
-                    alloy_primitives::U256::from(1),
-                    alloy_primitives::U256::from_be_slice(&r),
-                    alloy_primitives::U256::from_be_slice(&s),
-                    false,
-                )
-                    .abi_encode_params()
-            }
+            Root::WebAuthn(key, _) => webauthn_assertion(key, digest, "oaath.test", ISSUER),
         }
     }
+
+    /// The sign-in proof for an issued challenge: a `personal_sign` of the
+    /// SIWE message, or the key's signature over the nonce bytes.
+    pub fn prove(&self, challenge: &Value) -> String {
+        let signature = match self {
+            Root::Ecdsa(key) => {
+                let message = challenge["message"].as_str().unwrap();
+                let hash = alloy_primitives::eip191_hash_message(message.as_bytes());
+                let (signature, recovery) = key.sign_prehash_recoverable(&hash.0).unwrap();
+                [signature.to_bytes().to_vec(), vec![27 + recovery.to_byte()]].concat()
+            }
+            _ => self.sign(challenge["nonce"].as_str().unwrap().parse().unwrap()),
+        };
+        format!("0x{}", hex::encode(signature))
+    }
+}
+
+/// Registers `root`, signs in through the wire, and answers its signer id and
+/// session `Cookie` header value.
+pub async fn sign_in(h: &Harness, root: &Root) -> (String, String) {
+    let registered = h
+        .send(portal_call(
+            "POST",
+            "/portal/signers",
+            None,
+            Some(json!({ "profile": root.profile() })),
+        ))
+        .await;
+    let signer_id = registered.ok(200)["signer_id"].as_str().unwrap().to_owned();
+    let challenge = h
+        .send(portal_call(
+            "POST",
+            "/portal/sessions/challenge",
+            None,
+            Some(json!({ "signer_id": signer_id })),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let reply = h
+        .send(portal_call(
+            "POST",
+            "/portal/sessions",
+            None,
+            Some(json!({
+                "signer_id": signer_id,
+                "nonce": challenge["nonce"],
+                "signature": root.prove(&challenge),
+            })),
+        ))
+        .await;
+    reply.ok(200);
+    (signer_id, cookie_of(&reply))
+}
+
+/// The reviewed validator's ABI assertion envelope over `digest` (the WebAuthn
+/// challenge), with user presence and verification, for `rp_id` and `origin`.
+pub fn webauthn_assertion(
+    key: &p256::ecdsa::SigningKey,
+    digest: B256,
+    rp_id: &str,
+    origin: &str,
+) -> Vec<u8> {
+    use alloy_sol_types::SolValue;
+    use base64::Engine;
+    use p256::ecdsa::signature::hazmat::PrehashSigner;
+    use sha2::{Digest, Sha256};
+    let authenticator_data = [
+        Sha256::digest(rp_id.as_bytes()).to_vec(),
+        vec![0x05, 0, 0, 0, 1],
+    ]
+    .concat();
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest.0);
+    let client_data = format!(
+        r#"{{"type":"webauthn.get","challenge":"{challenge}","origin":"{origin}","crossOrigin":false}}"#
+    );
+    let message = Sha256::digest(
+        [
+            authenticator_data.clone(),
+            Sha256::digest(client_data.as_bytes()).to_vec(),
+        ]
+        .concat(),
+    );
+    let signature: p256::ecdsa::Signature = key.sign_prehash(&message).unwrap();
+    let signature = signature.normalize_s().unwrap_or(signature);
+    let (r, s) = signature.split_bytes();
+    (
+        alloy_primitives::Bytes::from(authenticator_data),
+        client_data,
+        alloy_primitives::U256::from(1),
+        alloy_primitives::U256::from_be_slice(&r),
+        alloy_primitives::U256::from_be_slice(&s),
+        false,
+    )
+        .abi_encode_params()
 }
 
 /// The SDK-shaped approval artifact for a prepared grant, signed by `root`.

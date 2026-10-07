@@ -20,6 +20,9 @@
 //! GET  /portal/signers/{signerId}/accounts           portal  signer's accounts
 //! GET  /portal/signers/by-credential/{credentialId}  portal  recognise a passkey
 //! POST /portal/accounts                              portal  derive and record account
+//! POST /portal/sessions/challenge                    portal  sign-in challenge
+//! POST /portal/sessions                              portal  prove a signer, set cookie
+//! DELETE /portal/sessions                            portal  sign out, clear cookie
 //! ```
 //!
 //! Later stages: `/grants/{grantId}/revocations/{chainId}`, `/chains/...`,
@@ -69,6 +72,7 @@ use crate::portal::{
 use crate::records::{
     bounded_text, canonical_identifier, canonical_str, is_lowercase_hash, limits,
 };
+use crate::session::{cleared_session_cookie, issue_challenge, session_cookie, sign_in, sign_out};
 use crate::store::RelayStore;
 
 const DEFAULT_REQUEST_TTL_MS: u64 = 300_000;
@@ -126,17 +130,24 @@ fn duration(value: Option<u64>, fallback: u64, maximum: u64) -> RelayResult<u64>
 pub struct RelayReply {
     status: u16,
     body: Vec<u8>,
+    /// Only a portal session route sets a cookie.
+    set_cookie: Option<String>,
 }
 
 fn reply(status: u16, body: &impl Serialize) -> RelayResult<RelayReply> {
     let body = serde_json::to_vec(body).map_err(|_| RelayErrorCode::Internal)?;
-    Ok(RelayReply { status, body })
+    Ok(RelayReply {
+        status,
+        body,
+        set_cookie: None,
+    })
 }
 
 fn failure(code: RelayErrorCode) -> RelayReply {
     RelayReply {
         status: code.status(),
         body: serde_json::to_vec(&json!({ "error": { "code": code } })).unwrap_or_default(),
+        set_cookie: None,
     }
 }
 
@@ -150,6 +161,12 @@ fn http_response(reply: RelayReply) -> Response {
         HeaderValue::from_static("application/json; charset=utf-8"),
     );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Some(cookie) = reply
+        .set_cookie
+        .and_then(|cookie| HeaderValue::from_str(&cookie).ok())
+    {
+        headers.insert(header::SET_COOKIE, cookie);
+    }
     response
 }
 
@@ -296,6 +313,7 @@ impl Relay {
                     RelayReply {
                         status: failure.status,
                         body: serde_json::to_vec(&failure.body()).unwrap_or_default(),
+                        set_cookie: None,
                     }
                 }
             };
@@ -422,6 +440,31 @@ impl Relay {
             assert_same_origin(headers)?;
             let store = self.store.as_ref();
             let clock = self.clock.as_ref();
+            if group == Some("sessions") && (count == 2 || count == 3) {
+                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                match third {
+                    None if method == Method::DELETE => {
+                        sign_out(store, clock, headers).await?;
+                        let mut reply = reply(200, &json!({}))?;
+                        reply.set_cookie = Some(cleared_session_cookie());
+                        return Ok(reply);
+                    }
+                    None => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let started = sign_in(store, clock, issuer, &body).await?;
+                        let mut reply = reply(200, &started.signed_in)?;
+                        reply.set_cookie = Some(session_cookie(&started.token));
+                        return Ok(reply);
+                    }
+                    Some("challenge") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        return reply(200, &issue_challenge(store, clock, issuer, &body).await?);
+                    }
+                    Some(_) => return Err(RelayErrorCode::NotFound),
+                }
+            }
             if count == 2 && group == Some("signers") {
                 require_method(method, &Method::POST)?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;

@@ -19,6 +19,7 @@ pub mod oauth;
 pub mod portal;
 pub mod records;
 pub mod registry;
+pub mod session;
 pub mod store;
 
 pub use error::{RelayErrorCode, RelayResult};
