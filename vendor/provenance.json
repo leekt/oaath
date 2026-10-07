@@ -36,15 +36,6 @@
     "sha256": "c9779c85670a9a1036f8195ec6b0b8e1891b5de1ece678748b66ca9113113e86"
   },
   {
-    "name": "moesi",
-    "version": "0.15.2",
-    "file": "moesi-0.15.2-dbee82a83ae6.tgz",
-    "commit": "0ef5be66459a2d1e3d2fc54bafba979e79c2eb8e",
-    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sourceState": "clean commit",
-    "sha256": "dbee82a83ae6ebcbf0678298bb38b14b4e9df74560875fa61a1782efa14dbe64"
-  },
-  {
     "name": "cetane",
     "version": "0.0.3",
     "file": "cetane-0.0.3-4b88678ca31d.tgz",
@@ -52,5 +43,14 @@
     "tarball": "https://registry.npmjs.org/cetane/-/cetane-0.0.3.tgz",
     "integrity": "sha512-avf5S7D8pijen6Ni0zdPJe8pfvqAzrpQ6hve/hrxeapisrwkyKnslmwxjAZPFq5ttnDHj5wXslSmQ/H9A17DLA==",
     "sha256": "4b88678ca31d8631aacada353cd814f11912b2149a6f53688999bfffe3f8e411"
+  },
+  {
+    "name": "moesi",
+    "version": "0.15.3",
+    "file": "moesi-0.15.3-82ee3d11a05d.tgz",
+    "sourceState": "npm registry release",
+    "tarball": "https://registry.npmjs.org/moesi/-/moesi-0.15.3.tgz",
+    "integrity": "sha512-xVRnWlbvT6qF0wbc4lIEUYGikZHtmK/3eImf2a428EvFTPn3uyCEfSCl/hc0AUM4TbVUNGqic03hD9HGTgc88Q==",
+    "sha256": "82ee3d11a05d887c6fa5c1d5563df729ae803509012650b916cc8f65caa96dcd"
   }
 ]

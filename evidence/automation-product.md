@@ -89,7 +89,8 @@ and [checksums](../vendor/checksums.json) identify the current retained bytes.
 after the original acceptance proofs above. OAAth's
 isolated `automation-foundation` branch is `d81beeb`; eleven focused patches are
 retained in [upstream/](../upstream/README.md). Cetane 0.0.3 is installed from npm;
-Moesi remains the clean committed source `0ef5be6`. Sibling checkout changes were not imported.
+Moesi 0.15.3 is also installed from npm. See the focused
+[Moesi update proof](moesi-0.15.3.md). Sibling checkout changes were not imported.
 
 The schema and API are current unreleased definitions, without compatibility
 aliases or a data-migration layer. Public-chain configuration, production KMS,

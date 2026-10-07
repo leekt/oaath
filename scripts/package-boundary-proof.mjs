@@ -8,6 +8,9 @@ const visited = new Set(),
 const cetaneVersion = JSON.parse(readFileSync("vendor/provenance.json")).find(
 	(p) => p.name === "cetane",
 ).version;
+const moesiVersion = JSON.parse(readFileSync("vendor/provenance.json")).find(
+	(p) => p.name === "moesi",
+).version;
 function visit(name, from) {
 	let parent = dirname(from instanceof URL ? fileURLToPath(from) : from);
 	let dir;
@@ -26,6 +29,7 @@ function visit(name, from) {
 	visited.add(dir);
 	const p = JSON.parse(readFileSync(join(dir, "package.json")));
 	if (p.name === "cetane") assert.equal(p.version, cetaneVersion);
+	if (p.name === "moesi") assert.equal(p.version, moesiVersion);
 	names.add(p.name);
 	for (const dependency of Object.keys(p.dependencies ?? {}))
 		visit(dependency, join(dir, "package.json"));
@@ -61,6 +65,7 @@ writeFileSync(
 		{
 			publicExports: Object.keys(r),
 			cetaneVersion,
+			moesiVersion,
 			productionViemDependencies: 0,
 			productionDependencyNames: [...names].sort(),
 		},

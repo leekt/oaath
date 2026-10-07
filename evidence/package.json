@@ -4,6 +4,7 @@
     "createAutomation"
   ],
   "cetaneVersion": "0.0.3",
+  "moesiVersion": "0.15.3",
   "productionViemDependencies": 0,
   "productionDependencyNames": [
     "@noble/curves",

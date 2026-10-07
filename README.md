@@ -46,8 +46,9 @@ authority without deleting its shared key.
 The private worker belongs to the API deployment, not a third public product.
 There is one Operation state machine and no additional nonce allocator. Runtime
 code and packed OAAth production dependencies do not use viem; fixture and parity
-tests may use it as an independent oracle. Exact local tarballs are retained in
-`vendor/`, with hashes and source commits in `vendor/provenance.json`.
+tests may use it as an independent oracle. Cetane 0.0.3 and Moesi 0.15.3 are installed from npm; OAAth uses exact local
+tarballs. Archives, hashes, registry integrity and source commits are retained
+in `vendor/` and `vendor/provenance.json`.
 
 This is unreleased: the repository has one current schema and API, with no
 compatibility or data-migration layer. Unsupported recipes fail closed. Adding

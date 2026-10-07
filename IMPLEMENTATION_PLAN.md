@@ -35,8 +35,8 @@ Upstream ownership:
 - OAAth local branch `automation-foundation` contains keyed headless execution,
   scoped signer persistence and its Cetane runtime adapter. Focused commits and
   exported patches stay separate from the original checkout's RPC dedup work.
-- Cetane's existing committed primitives satisfy hashing, ABI, receipt and key
-  needs. Moesi's committed finalized observer and admission callback satisfy
+- Cetane's published primitives satisfy hashing, ABI, receipt and key
+  needs. Moesi's published finalized observer and admission callback satisfy
   observation needs; this product consumes them rather than copying adapters.
 - Issues: oaath#385, oaath#386, cetane#7, moesi#89, moesi#90. See upstream/README.md.
 

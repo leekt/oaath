@@ -20,7 +20,7 @@ export async function verifyDeployment() {
 	const plan = await moesi.plan({
 		chains: [config.chainId],
 		manifest: {
-			version: "moesi.manifest/v6",
+			version: "moesi.manifest/v7",
 			contracts: [
 				{
 					kind: "external",

@@ -1,6 +1,7 @@
 # Upstream ownership and reproducible prerequisites
 
-The product consumes Cetane 0.0.3 from npm and exact local OAAth/Moesi tarballs. No sibling's uncommitted
+The product consumes Cetane 0.0.3 and Moesi 0.15.3 from npm, plus exact local
+OAAth tarballs. No sibling's uncommitted
 work is imported. The original OAAth checkout and its RPC dedup change remain
 untouched. DCA codec/contracts belong in this repository; the old DCA-specific
 upstream patches are replaced by the authority/operation/custody series here.
@@ -23,15 +24,15 @@ Use a different path/branch if the working tree already exists. The OAAth prereq
 | OAAth | Stable scoped signer registry, sealed custody, PostgreSQL atomic creation/recovery | [#386](https://github.com/leekt/oaath/issues/386) |
 | OAAth | Durable keyed execution over existing Grant publication owner | First patch in this series |
 | Cetane | Key generation/address, ABI, typed data, operation hash, receipt codecs | [#7](https://github.com/leekt/cetane/issues/7), [npm 0.0.3](https://www.npmjs.com/package/cetane/v/0.0.3) |
-| Moesi | Finalized/safe snapshots and shared per-method admission | [#89](https://github.com/leekt/moesi/issues/89), [#90](https://github.com/leekt/moesi/issues/90), committed source `0ef5be6` |
+| Moesi | Finalized/safe snapshots and shared per-method admission | [#89](https://github.com/leekt/moesi/issues/89), [#90](https://github.com/leekt/moesi/issues/90), [npm 0.15.3](https://www.npmjs.com/package/moesi/v/0.15.3) |
 
 Cetane and Moesi already contain those capabilities; no duplicate product-owned
 observer or cryptographic library is introduced. Rebuild with
-`scripts/pack-dependencies.mjs` after preparing the OAAth/Moesi source worktrees
-and building `recipes/dca/contracts`. Cetane is downloaded from npm, checked
+`scripts/pack-dependencies.mjs` after preparing the OAAth source worktree
+and building `recipes/dca/contracts`. Cetane and Moesi are downloaded from npm, checked
 against registry integrity and retained with SHA-256 provenance. The product
-and packed consumer install its exact registry version; other prerequisites
-use file overrides. No Cetane source checkout is required.
+and packed consumer install exact registry versions; other prerequisites
+use file overrides. No Cetane or Moesi source checkout is required.
 
 The eleventh patch removes OAAth's temporary source-artifact override now that
 Cetane 0.0.3 is published. Package contents are byte-for-byte identical to the
