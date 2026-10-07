@@ -16,7 +16,6 @@ interface DcaRouter {
         address tokenOut;
         uint24 fee;
         address recipient;
-        uint256 deadline;
         uint256 amountIn;
         uint256 amountOutMinimum;
         uint160 sqrtPriceLimitX96;
@@ -165,7 +164,7 @@ contract DcaExecutor {
         amountOut = DcaRouter(router)
             .exactInputSingle(
                 DcaRouter.ExactInputSingleParams(
-                    sellToken, buyToken, poolFee, recipient, scheduled + graceSeconds - 1, amountIn, minimum, 0
+                    sellToken, buyToken, poolFee, recipient, amountIn, minimum, 0
                 )
             );
         IERC20(sellToken).forceApprove(router, 0);

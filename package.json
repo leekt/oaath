@@ -39,9 +39,10 @@
     "viem": "2.55.8"
   },
   "dependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@uniswap/swap-router-contracts": "1.1.0",
     "@uniswap/v3-core": "1.0.1",
-    "@uniswap/v3-periphery": "1.4.4",
-    "@openzeppelin/contracts": "5.4.0"
+    "@uniswap/v3-periphery": "1.4.4"
   },
   "overrides": {
     "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",

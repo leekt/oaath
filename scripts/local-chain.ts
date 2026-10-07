@@ -75,17 +75,22 @@ const v3 = artifact(
 	"node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json",
 );
 const routerA = artifact(
-	"node_modules/@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json",
+	"node_modules/@uniswap/swap-router-contracts/artifacts/contracts/SwapRouter02.sol/SwapRouter02.json",
 );
 const managerA = artifact(
 	"node_modules/@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json",
 );
-const swapFactory = await deploy(v3),
-	router = await deploy(routerA, [swapFactory, buyToken]);
+const swapFactory = await deploy(v3);
 const manager = await deploy(managerA, [
 	swapFactory,
 	buyToken,
 	"0x0000000000000000000000000000000000000000",
+]);
+const router = await deploy(routerA, [
+	"0x0000000000000000000000000000000000000000",
+	swapFactory,
+	manager,
+	buyToken,
 ]);
 for (const [address, amount] of [
 	[sellToken, 2_000_000n * 10n ** 6n],
@@ -186,6 +191,7 @@ const config = {
 	maxFeePerGas: "100000000000",
 	maxGasCost: "10000000000000000",
 	origin: "http://leekt-macmini.tail45c85e.ts.net:4317",
+	consentOrigin: "https://automation.oaath.local",
 };
 writeFileSync(
 	new URL(".local/deployment.json", root),

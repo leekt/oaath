@@ -1,8 +1,8 @@
 {
-  "DcaExecutor.json": "747bc41a2d03fbbce54f216e73476f83e794d153bd9d05a7c6d8a62ebbd41394",
-  "DcaFactory.json": "03980109731812a6ee3c49d978c320ff248b2d1907196c04030a96f0c2c2b314",
-  "FixtureFeed.json": "aa19dff118666ee5ac7a4644b26bceaabc2a928e0abd9af6fd037c9ddcb04efd",
-  "FixtureToken.json": "bdc3c665bc81573cd3024f5bb50d215d012a296fc1537b5acc39bea38eec8a4c",
+  "DcaExecutor.json": "6a36e1a5df70a6fcae57051af8b1519e446948fc90a51471776c329ad035a656",
+  "DcaFactory.json": "d8440562fbfa993570f89af89cd4b9b9066118cee18963ca2edefc863eee5add",
+  "FixtureFeed.json": "5d90522826359e1842b2dce150d30fc027aa1b13909f75a510ea6a7772b930eb",
+  "FixtureToken.json": "ec393cc144a8b99b621deb1d304ecb7e0c7f93df26b961bc1f9de7797520b68e",
   "cetane-0.0.3-4b88678ca31d.tgz": "4b88678ca31d8631aacada353cd814f11912b2149a6f53688999bfffe3f8e411",
   "moesi-0.15.3-82ee3d11a05d.tgz": "82ee3d11a05d887c6fa5c1d5563df729ae803509012650b916cc8f65caa96dcd",
   "oaath-automation-0.1.0-cc28d7a6c277.tgz": "cc28d7a6c277baf42cef397b15c54d6630fcc19adb23403e8c307e9f12bca6e7",
