@@ -11,10 +11,12 @@
 //!                        account creation allocates the next index, so a retry
 //!                        after an unproven commit may create a second account
 //! transitions            none -> signer; none -> account + root membership in one
-//!                        transaction; permission memberships arrive with a
-//!                        verified grant decision (a later stage)
-//! forbidden              a second root; a root carrying a grant; a membership on
-//!                        an unknown account or signer
+//!                        transaction; a permission membership arrives with a
+//!                        verified grant decision or a root-approved link
+//!                        (`link.rs`); the root removes a permission membership
+//! forbidden              a second root; a root carrying a grant or a link; a
+//!                        permission membership with neither or both; a
+//!                        membership on an unknown account or signer
 //! crash/reload           every write commits in one transaction
 //! ```
 //!
@@ -35,7 +37,7 @@ use crate::records::{canonical_identifier, exact_record, timestamp};
 
 pub const SIGNER_RECORD_VERSION: &str = "oaath.signer-record/v1";
 pub const ACCOUNT_RECORD_VERSION: &str = "oaath.account-record/v1";
-pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v1";
+pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v2";
 
 const UNREADABLE: RelayErrorCode = RelayErrorCode::RecordUnreadable;
 
@@ -219,7 +221,8 @@ impl AccountRecord {
 pub enum MembershipRole {
     /// The account's single policy-free root validator.
     Root,
-    /// A policy-bound signer installed by a root-signed enable.
+    /// A signer the root admitted: login-only through a link approval, or
+    /// policy-bound through a root-signed enable.
     Permission,
 }
 
@@ -232,8 +235,9 @@ impl MembershipRole {
     }
 }
 
-/// One account ↔ signer index row. A root never carries a grant; a
-/// permission membership always points at the grant that approved it.
+/// One account ↔ signer index row. A root carries no evidence; a permission
+/// membership points at exactly one approval: the grant (`request_id`) or the
+/// link (`link_id`) its root signed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountSignerRecord {
@@ -242,6 +246,7 @@ pub struct AccountSignerRecord {
     pub signer_id: String,
     pub role: MembershipRole,
     pub request_id: Option<String>,
+    pub link_id: Option<String>,
     pub created_at: u64,
 }
 
@@ -255,6 +260,7 @@ impl AccountSignerRecord {
                 "signerId",
                 "role",
                 "requestId",
+                "linkId",
                 "createdAt",
             ],
             UNREADABLE,
@@ -265,11 +271,14 @@ impl AccountSignerRecord {
             Some("permission") => MembershipRole::Permission,
             _ => return Err(UNREADABLE),
         };
-        let request_id = match r.get("requestId") {
-            Some(Value::Null) => None,
-            other => Some(identifier(other)?),
+        let optional = |key| match r.get(key) {
+            Some(Value::Null) => Ok(None),
+            other => identifier(other).map(Some),
         };
-        if (role == MembershipRole::Root) != request_id.is_none() {
+        let request_id = optional("requestId")?;
+        let link_id = optional("linkId")?;
+        let evidence = usize::from(request_id.is_some()) + usize::from(link_id.is_some());
+        if evidence != usize::from(role == MembershipRole::Permission) {
             return Err(UNREADABLE);
         }
         Ok(Self {
@@ -278,6 +287,7 @@ impl AccountSignerRecord {
             signer_id: identifier(r.get("signerId"))?,
             role,
             request_id,
+            link_id,
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         })
     }

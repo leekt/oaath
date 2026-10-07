@@ -282,6 +282,7 @@ async fn create(
         signer_id: root_signer_id.to_owned(),
         role: MembershipRole::Root,
         request_id: None,
+        link_id: None,
         created_at: now,
     };
     if !transaction.insert_account(&account).await?

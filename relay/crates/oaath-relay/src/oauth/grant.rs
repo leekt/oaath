@@ -198,6 +198,7 @@ pub async fn decide_grant(
                 signer_id: dapp_signer_id,
                 role: MembershipRole::Permission,
                 request_id: Some(par.par_id.clone()),
+                link_id: None,
                 created_at: decided_at,
             })
             .await?;
@@ -347,6 +348,31 @@ async fn read_grant(
         decision: Some(decision),
         enable: Some(enable),
     })
+}
+
+/// An approved, not yet invalidated grant's client and capability hash, for
+/// invalidation by its account's root; `None` otherwise.
+pub(crate) async fn granted_capability(
+    transaction: &mut dyn RelayTransaction,
+    kms: &dyn RelayKms,
+    grant_id: &str,
+) -> RelayResult<Option<(String, String)>> {
+    let view = read_grant(transaction, kms, grant_id).await?;
+    if view.status != "approved" {
+        return Ok(None);
+    }
+    let client_id = transaction
+        .lock_authorization_request(grant_id)
+        .await?
+        .ok_or(RelayErrorCode::RecordUnreadable)?
+        .client_id;
+    let capability_hash = view
+        .decision
+        .as_ref()
+        .and_then(|decision| decision.get("capabilityHash"))
+        .and_then(Value::as_str)
+        .ok_or(RelayErrorCode::RecordUnreadable)?;
+    Ok(Some((client_id, capability_hash.to_owned())))
 }
 
 /// `GET /oauth/grants/{id}` with the grant's own bearer token.

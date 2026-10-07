@@ -45,7 +45,7 @@ pub async fn record_capability_invalidation(
     })
 }
 
-async fn invalidate(
+pub(crate) async fn invalidate(
     transaction: &mut dyn RelayTransaction,
     clock: &dyn RelayClock,
     caller: &RelayCaller,

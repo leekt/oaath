@@ -15,6 +15,7 @@ pub mod error;
 pub mod grant;
 pub mod handler;
 pub mod kms;
+pub mod link;
 pub mod oauth;
 pub mod portal;
 pub mod records;
