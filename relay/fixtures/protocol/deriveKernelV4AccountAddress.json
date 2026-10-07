@@ -812,7 +812,7 @@
     "fn": "deriveKernelV4AccountAddress",
     "input": {
       "account": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -836,7 +836,7 @@
     "fn": "deriveKernelV4AccountAddress",
     "input": {
       "account": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x6666666666666666666666666666666666666666",

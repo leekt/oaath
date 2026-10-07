@@ -11,7 +11,7 @@ import {
 import type { OaathContextStore } from "@oaath/sdk/persistence";
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
-const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v3";
+const SQLITE_SCHEMA_VERSION = "oaath.sqlite-test-store/v1";
 
 const METADATA_SCHEMA = `
   CREATE TABLE oaath_test_store_schema_v1 (

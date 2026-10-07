@@ -23,7 +23,7 @@ pub fn address_of(key: &SigningKey) -> String {
 
 pub fn policy(value_limit: &str) -> Value {
     json!({
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
             { "target": format!("0x{}", "aa".repeat(20)), "selector": "0xa9059cbb", "valueLimit": "0", "argumentEquals": [] },
             { "target": format!("0x{}", "bb".repeat(20)), "selector": "0x12345678", "valueLimit": value_limit, "argumentEquals": [] },

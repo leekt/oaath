@@ -8,7 +8,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -17,7 +17,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -30,7 +30,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -45,7 +45,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -54,7 +54,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -67,7 +67,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -76,7 +76,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -89,7 +89,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -98,7 +98,7 @@
   {
     "name": "revision -0",
     "fn": "parseVerifyGrantRevisionInput",
-    "inputText": "{\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3\"}",
     "expect": {
       "error": "grant_reference_invalid"
     }
@@ -106,7 +106,7 @@
   {
     "name": "revision 1.0",
     "fn": "parseVerifyGrantRevisionInput",
-    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3\"}",
     "expect": {
       "ok": {
         "grantId": "grant-1",
@@ -114,14 +114,14 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
   {
     "name": "revision 1e0",
     "fn": "parseVerifyGrantRevisionInput",
-    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3\"}",
     "expect": {
       "ok": {
         "grantId": "grant-1",
@@ -129,7 +129,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -142,7 +142,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -157,7 +157,7 @@
       "subject": "A-z_0.9~",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -166,7 +166,7 @@
         "subject": "A-z_0.9~",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -179,7 +179,7 @@
       "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -188,7 +188,7 @@
         "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -201,7 +201,7 @@
       "subject": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -216,7 +216,7 @@
       "subject": "a b",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -231,7 +231,7 @@
       "subject": "a/b",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -246,7 +246,7 @@
       "subject": "café",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -261,7 +261,7 @@
       "subject": "",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -276,7 +276,7 @@
       "subject": "subject-1",
       "clientId": "A-z_0.9~",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -285,7 +285,7 @@
         "subject": "subject-1",
         "clientId": "A-z_0.9~",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -298,7 +298,7 @@
       "subject": "subject-1",
       "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -307,7 +307,7 @@
         "subject": "subject-1",
         "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -320,7 +320,7 @@
       "subject": "subject-1",
       "clientId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -335,7 +335,7 @@
       "subject": "subject-1",
       "clientId": "a b",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -350,7 +350,7 @@
       "subject": "subject-1",
       "clientId": "a/b",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -365,7 +365,7 @@
       "subject": "subject-1",
       "clientId": "café",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -380,7 +380,7 @@
       "subject": "subject-1",
       "clientId": "",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -395,7 +395,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "A-z_0.9~",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -404,7 +404,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "A-z_0.9~",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -417,7 +417,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -426,7 +426,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -439,7 +439,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -454,7 +454,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "a b",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -469,7 +469,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "a/b",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -484,7 +484,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "café",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -499,7 +499,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -514,7 +514,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -523,7 +523,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -536,7 +536,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -551,7 +551,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -560,7 +560,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -573,7 +573,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -582,7 +582,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -595,7 +595,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -610,7 +610,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -619,7 +619,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -631,7 +631,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -646,7 +646,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -661,7 +661,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -676,7 +676,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -685,7 +685,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -698,7 +698,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -713,7 +713,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -728,7 +728,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -742,7 +742,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -757,7 +757,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -772,7 +772,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -787,7 +787,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -802,7 +802,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -817,7 +817,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -831,7 +831,7 @@
       "revision": 1,
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -846,7 +846,7 @@
       "subject": null,
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -861,7 +861,7 @@
       "subject": 1,
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -876,7 +876,7 @@
       "subject": "x",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -885,7 +885,7 @@
         "subject": "x",
         "clientId": "client-1",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -898,7 +898,7 @@
       "subject": [],
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -913,7 +913,7 @@
       "subject": {},
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -928,7 +928,7 @@
       "subject": true,
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -942,7 +942,7 @@
       "revision": 1,
       "subject": "subject-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -957,7 +957,7 @@
       "subject": "subject-1",
       "clientId": null,
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -972,7 +972,7 @@
       "subject": "subject-1",
       "clientId": 1,
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -987,7 +987,7 @@
       "subject": "subject-1",
       "clientId": "x",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -996,7 +996,7 @@
         "subject": "subject-1",
         "clientId": "x",
         "organizationAudience": "org.example",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -1009,7 +1009,7 @@
       "subject": "subject-1",
       "clientId": [],
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1024,7 +1024,7 @@
       "subject": "subject-1",
       "clientId": {},
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1039,7 +1039,7 @@
       "subject": "subject-1",
       "clientId": true,
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1053,7 +1053,7 @@
       "revision": 1,
       "subject": "subject-1",
       "clientId": "client-1",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1068,7 +1068,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": null,
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1083,7 +1083,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": 1,
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1098,7 +1098,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "x",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "ok": {
@@ -1107,7 +1107,7 @@
         "subject": "subject-1",
         "clientId": "client-1",
         "organizationAudience": "x",
-        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+        "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
       }
     }
   },
@@ -1120,7 +1120,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": [],
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1135,7 +1135,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": {},
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1150,7 +1150,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": true,
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1269,7 +1269,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888",
+      "requiredCallsDigest": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3",
       "unexpected": true
     },
     "expect": {

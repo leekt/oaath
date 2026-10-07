@@ -91,7 +91,7 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
 describe("identity profile codecs", () => {
   it("captures an existing v3.3 address without factory derivation and keeps its owner bound", () => {
     const existing = {
-      version: "oaath.kernel-existing-account-profile/v3",
+      version: "oaath.kernel-existing-account-profile/v1",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: `0x${"55".repeat(20)}`,
@@ -123,14 +123,14 @@ describe("identity profile codecs", () => {
       { ...existing, accountIndex: "0" },
       { ...existing, factoryRoute: "kernel_factory" },
       { ...existing, ownerCredential: ownerP256 },
-      { ...existing, version: "oaath.kernel-existing-account-profile/v1" },
+      { ...existing, version: "oaath.kernel-existing-account-profile/v0" },
     ])
       expect(() => parseKernelAccountProfile(altered)).toThrow();
   });
 
   it("captures an existing v4 address as a distinct identity from the same v3.3 address", () => {
     const existing = {
-      version: "oaath.kernel-existing-account-profile/v3",
+      version: "oaath.kernel-existing-account-profile/v1",
       kind: "kernel",
       kernelVersion: "0.4.0",
       address: `0x${"55".repeat(20)}`,
@@ -163,7 +163,7 @@ describe("identity profile codecs", () => {
     "admits a P-256-based root owner only on an existing v4 account: $kind",
     (ownerCredential) => {
       const existing = {
-        version: "oaath.kernel-existing-account-profile/v3",
+        version: "oaath.kernel-existing-account-profile/v1",
         kind: "kernel",
         kernelVersion: "0.4.0",
         address: `0x${"55".repeat(20)}`,

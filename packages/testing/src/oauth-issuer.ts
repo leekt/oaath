@@ -56,7 +56,7 @@ export async function createLocalOAuthIssuer(
     const redirectUri = par.form.get("redirect_uri") ?? "";
     const requestedAt = Math.floor(par.createdAt / 1000);
     const request = {
-      version: "oaath.permission-request/v2",
+      version: "oaath.permission-request/v1",
       requestId: parId,
       context: {
         version: "oaath.workspace-account-context/v1",

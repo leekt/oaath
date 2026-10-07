@@ -454,8 +454,8 @@ describe("PreparedCallStore", () => {
   });
 
   it("rejects invalid validity evidence and every v2 durable shape", async () => {
-    expect(OAATH_PREPARED_CALL_CONTEXT_VERSION).toBe("oaath.prepared-call-context/v3");
-    expect(OAATH_PREPARED_CALL_STORE_RECORD_VERSION).toBe("oaath.prepared-call-store-record/v3");
+    expect(OAATH_PREPARED_CALL_CONTEXT_VERSION).toBe("oaath.prepared-call-context/v1");
+    expect(OAATH_PREPARED_CALL_STORE_RECORD_VERSION).toBe("oaath.prepared-call-store-record/v1");
     const adapter = new MemoryPreparedCallAdapter();
     const store = new PreparedCallStore(adapter.adapter);
     const missingRange = reservation();

@@ -15,7 +15,7 @@ export const OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION =
   "oaath.operator-credential-profile/v1" as const;
 export const OAATH_KERNEL_ACCOUNT_PROFILE_VERSION = "oaath.kernel-account-profile/v1" as const;
 export const OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION =
-  "oaath.kernel-existing-account-profile/v3" as const;
+  "oaath.kernel-existing-account-profile/v1" as const;
 const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
   "@oaath/protocol:owner-credential-profile" as const;
 

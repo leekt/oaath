@@ -20,7 +20,7 @@ export type ProtocolContractErrorCode =
   | "subject_binding_invalid"
   | "authorization_code_verifier_mismatch"
   | "grant_reference_invalid"
-  | "service_bootstrap_invalid"
+  | "workspace_account_context_invalid"
   | "signing_request_invalid";
 
 /** Raised by the shared protocol contract owners. */

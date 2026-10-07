@@ -9,7 +9,7 @@ import {
   exactRecord,
 } from "./internal/exact-record.js";
 
-export const OAATH_GRANT_POLICY_VERSION = "oaath.grant-policy/v2" as const;
+export const OAATH_GRANT_POLICY_VERSION = "oaath.grant-policy/v1" as const;
 export const OAATH_GRANT_POLICY_USAGE_VERSION = "oaath.grant-policy-usage/v1" as const;
 export const OAATH_GRANT_POLICY_HASH_DOMAIN = "@oaath/protocol:grant-policy" as const;
 export const OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN = "@oaath/protocol:grant-policy-calls" as const;

@@ -32,7 +32,7 @@ import {
   type WorkspaceAccountContext,
 } from "./workspace-account-context.js";
 
-export const OAATH_PERMISSION_REQUEST_VERSION = "oaath.permission-request/v2" as const;
+export const OAATH_PERMISSION_REQUEST_VERSION = "oaath.permission-request/v1" as const;
 export const OAATH_PERMISSION_DECISION_VERSION = "oaath.permission-decision/v1" as const;
 export const OAATH_PERMISSION_REQUEST_HASH_DOMAIN = "@oaath/protocol:permission-request" as const;
 export const OAATH_PERMISSION_DECISION_HASH_DOMAIN = "@oaath/protocol:permission-decision" as const;

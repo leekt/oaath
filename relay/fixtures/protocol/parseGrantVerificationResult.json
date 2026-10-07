@@ -12,7 +12,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     },
     "expect": {
@@ -26,7 +26,7 @@
           "clientId": "client-1",
           "organizationAudience": "org.example",
           "state": "active",
-          "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+          "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
         }
       }
     }
@@ -44,7 +44,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     },
     "expect": {
@@ -64,7 +64,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       },
       "code": "grant_pending"
     },
@@ -383,7 +383,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     },
     "expect": {

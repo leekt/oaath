@@ -3,7 +3,7 @@
     "name": "two calls with argument equality",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -35,14 +35,14 @@
       }
     },
     "expect": {
-      "ok": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "ok": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     }
   },
   {
     "name": "indefinite validUntil",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -74,14 +74,14 @@
       }
     },
     "expect": {
-      "ok": "0x865eed4781170612f90fcc782a35636ebbda39b2b01c2915ccf2acf90b146949"
+      "ok": "0xc493e9c9b1e03ede1c3dfdd2bd1d297c04a39e11f897cae4ad03165ff93a6df5"
     }
   },
   {
     "name": "windowed limit",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -113,14 +113,14 @@
       }
     },
     "expect": {
-      "ok": "0x7b00d2aee2d44f7902e84ed7f849f34b48e3e89bec6f4cc15c2535c9b02b880c"
+      "ok": "0xceaf7014d4efa39f637a5e5e612128a1d9718902eb0fa1451ac824e07170b94f"
     }
   },
   {
     "name": "max uint256 valueLimit",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -152,14 +152,14 @@
       }
     },
     "expect": {
-      "ok": "0x5d4b17f1271e5651483f3151f6a4e1b858b6534d19d0137bb5f8290d90b79a4a"
+      "ok": "0xa9db5361e403e5a9d9ddffba7ab4231ceeb5e223ee3b7e8f6775579b55779926"
     }
   },
   {
     "name": "argument index at maximum",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -191,14 +191,14 @@
       }
     },
     "expect": {
-      "ok": "0x982b91977569b9a6312835302f8d5b18dde752701aa6b3cbb578c96c8d0f10e7"
+      "ok": "0xa4912ba29369876bd344be0a8a820837361649b5255b5d3418b91e3037d7ad24"
     }
   },
   {
     "name": "validAfter equals validUntil",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -230,22 +230,22 @@
       }
     },
     "expect": {
-      "ok": "0x90737f395cdc09847cc22d7df9fe9d87a927e6cd91a3ed0ae08a33bc30ddd696"
+      "ok": "0x94f253b30b9b6937f9f0334598f7bf4351b4f2fecd711a79cacd41a845e52f63"
     }
   },
   {
     "name": "validAfter written 1.0e2",
     "fn": "hashGrantPolicy",
-    "inputText": "{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":1.0e2,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}}",
+    "inputText": "{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":1.0e2,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}}",
     "expect": {
-      "ok": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "ok": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     }
   },
   {
     "name": "empty calls",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [],
       "validAfter": 100,
       "validUntil": 190,
@@ -261,7 +261,7 @@
   {
     "name": "validUntil -0",
     "fn": "hashGrantPolicy",
-    "inputText": "{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":-0,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}}",
+    "inputText": "{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":-0,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}}",
     "expect": {
       "error": "grant_policy_invalid"
     }
@@ -308,7 +308,7 @@
     "name": "policy: drop root.calls",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "validAfter": 100,
       "validUntil": 190,
       "perChainOperationLimit": {
@@ -324,7 +324,7 @@
     "name": "policy: drop root.validAfter",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -362,7 +362,7 @@
     "name": "policy: drop root.validUntil",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -400,7 +400,7 @@
     "name": "policy: drop root.perChainOperationLimit",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",
@@ -435,7 +435,7 @@
     "name": "policy: unknown key at root",
     "fn": "hashGrantPolicy",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",

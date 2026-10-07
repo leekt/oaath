@@ -87,7 +87,7 @@ const GRANT_DETAIL = {
     address: `0x${"d1".repeat(20)}`,
   },
   policy: {
-    version: "oaath.grant-policy/v2",
+    version: "oaath.grant-policy/v1",
     calls: [
       {
         target: `0x${"aa".repeat(20)}`,
@@ -131,7 +131,7 @@ const SIWE_MESSAGE = "oaath sign-in message";
 
 function grantPreparation(account: PortalAccount): PrepareGrantResponse {
   const request = parsePermissionRequest({
-    version: "oaath.permission-request/v2",
+    version: "oaath.permission-request/v1",
     requestId: "par-grant",
     context: {
       version: "oaath.workspace-account-context/v1",

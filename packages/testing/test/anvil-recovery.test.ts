@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { captureLocalAnvilRecovery } from "../src/anvil-recovery.js";
 
 const descriptor = {
-  version: "oaath.local-anvil-recovery/v2",
+  version: "oaath.local-anvil-recovery/v1",
   existingAccount: null,
   owner: `0x${"11".repeat(20)}`,
   session: `0x${"22".repeat(20)}`,

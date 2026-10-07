@@ -541,7 +541,7 @@ async function pushGrant(page: Page): Promise<PushedGrant> {
           address: `0x${"d1".repeat(20)}`,
         },
         policy: {
-          version: "oaath.grant-policy/v2",
+          version: "oaath.grant-policy/v1",
           calls: [
             {
               target: `0x${"aa".repeat(20)}`,

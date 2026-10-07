@@ -3,7 +3,7 @@
     "name": "permission request scope",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -11,7 +11,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -47,7 +47,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -89,7 +89,7 @@
     "name": "permission request with stored id",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -97,7 +97,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -133,7 +133,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -175,7 +175,7 @@
     "name": "permission request with other embedded id",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"embedded\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"embedded\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -183,7 +183,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -219,7 +219,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -261,7 +261,7 @@
     "name": "permission request under another request id",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "other-request"
     },
     "expect": {
@@ -269,7 +269,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "other-request",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -305,7 +305,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -347,7 +347,7 @@
     "name": "permission request invalid request id",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": " padded"
     },
     "expect": {
@@ -361,7 +361,7 @@
     "name": "permission request invalid policy",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -375,7 +375,7 @@
     "name": "permission request existing account",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-existing-account-profile/v3\",\"kind\":\"kernel\",\"kernelVersion\":\"0.3.3\",\"address\":\"0x6666666666666666666666666666666666666666\",\"entryPoint\":{\"version\":\"0.7\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-existing-account-profile/v1\",\"kind\":\"kernel\",\"kernelVersion\":\"0.3.3\",\"address\":\"0x6666666666666666666666666666666666666666\",\"entryPoint\":{\"version\":\"0.7\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -383,7 +383,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -399,7 +399,7 @@
           },
           "chainScope": "all",
           "logicalAccount": {
-            "version": "oaath.kernel-existing-account-profile/v3",
+            "version": "oaath.kernel-existing-account-profile/v1",
             "kind": "kernel",
             "kernelVersion": "0.3.3",
             "address": "0x6666666666666666666666666666666666666666",
@@ -418,7 +418,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -460,7 +460,7 @@
     "name": "permission request existing webauthn account",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-existing-account-profile/v3\",\"kind\":\"kernel\",\"kernelVersion\":\"0.4.0\",\"address\":\"0x6666666666666666666666666666666666666666\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"webauthn\",\"publicKey\":\"0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5\",\"authenticatorIdHash\":\"0x2222222222222222222222222222222222222222222222222222222222222222\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-existing-account-profile/v1\",\"kind\":\"kernel\",\"kernelVersion\":\"0.4.0\",\"address\":\"0x6666666666666666666666666666666666666666\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"webauthn\",\"publicKey\":\"0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5\",\"authenticatorIdHash\":\"0x2222222222222222222222222222222222222222222222222222222222222222\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -468,7 +468,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -484,7 +484,7 @@
           },
           "chainScope": "all",
           "logicalAccount": {
-            "version": "oaath.kernel-existing-account-profile/v3",
+            "version": "oaath.kernel-existing-account-profile/v1",
             "kind": "kernel",
             "kernelVersion": "0.4.0",
             "address": "0x6666666666666666666666666666666666666666",
@@ -504,7 +504,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1089,7 +1089,7 @@
     "name": "pretty printed permission request",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\n  \"version\": \"oaath.permission-request/v2\",\n  \"context\": {\n    \"version\": \"oaath.workspace-account-context/v1\",\n    \"workspaceId\": \"personal-1\",\n    \"workspaceKind\": \"personal\",\n    \"accountId\": \"account-1\"\n  },\n  \"application\": {\n    \"applicationId\": \"oaath-tests\",\n    \"clientId\": \"permission-protocol\",\n    \"origin\": \"https://request.example\",\n    \"deviceId\": \"request-device\"\n  },\n  \"chainScope\": \"all\",\n  \"logicalAccount\": {\n    \"version\": \"oaath.kernel-account-profile/v1\",\n    \"kind\": \"kernel\",\n    \"accountIndex\": \"7\",\n    \"kernelVersion\": \"0.4.0\",\n    \"factoryRoute\": \"meta_factory\",\n    \"entryPoint\": {\n      \"version\": \"0.9\"\n    },\n    \"ownerCredential\": {\n      \"version\": \"oaath.owner-credential-profile/v1\",\n      \"kind\": \"ecdsa\",\n      \"address\": \"0x1111111111111111111111111111111111111111\"\n    }\n  },\n  \"operatorCredential\": {\n    \"version\": \"oaath.operator-credential-profile/v1\",\n    \"kind\": \"ecdsa\",\n    \"address\": \"0x4444444444444444444444444444444444444444\"\n  },\n  \"policy\": {\n    \"version\": \"oaath.grant-policy/v2\",\n    \"calls\": [\n      {\n        \"target\": \"0x1111111111111111111111111111111111111111\",\n        \"selector\": \"0x12345678\",\n        \"valueLimit\": \"100\",\n        \"argumentEquals\": [\n          {\n            \"index\": 0,\n            \"value\": \"0x3333333333333333333333333333333333333333333333333333333333333333\"\n          },\n          {\n            \"index\": 2,\n            \"value\": \"0x4444444444444444444444444444444444444444444444444444444444444444\"\n          }\n        ]\n      },\n      {\n        \"target\": \"0x2222222222222222222222222222222222222222\",\n        \"selector\": \"0xabcdef01\",\n        \"valueLimit\": \"0\",\n        \"argumentEquals\": []\n      }\n    ],\n    \"validAfter\": 100,\n    \"validUntil\": 190,\n    \"perChainOperationLimit\": {\n      \"count\": 10,\n      \"intervalSeconds\": null\n    }\n  },\n  \"requestedAt\": 100,\n  \"expiresAt\": 200,\n  \"sessionSigner\": null\n}",
+      "requestedScope": "{\n  \"version\": \"oaath.permission-request/v1\",\n  \"context\": {\n    \"version\": \"oaath.workspace-account-context/v1\",\n    \"workspaceId\": \"personal-1\",\n    \"workspaceKind\": \"personal\",\n    \"accountId\": \"account-1\"\n  },\n  \"application\": {\n    \"applicationId\": \"oaath-tests\",\n    \"clientId\": \"permission-protocol\",\n    \"origin\": \"https://request.example\",\n    \"deviceId\": \"request-device\"\n  },\n  \"chainScope\": \"all\",\n  \"logicalAccount\": {\n    \"version\": \"oaath.kernel-account-profile/v1\",\n    \"kind\": \"kernel\",\n    \"accountIndex\": \"7\",\n    \"kernelVersion\": \"0.4.0\",\n    \"factoryRoute\": \"meta_factory\",\n    \"entryPoint\": {\n      \"version\": \"0.9\"\n    },\n    \"ownerCredential\": {\n      \"version\": \"oaath.owner-credential-profile/v1\",\n      \"kind\": \"ecdsa\",\n      \"address\": \"0x1111111111111111111111111111111111111111\"\n    }\n  },\n  \"operatorCredential\": {\n    \"version\": \"oaath.operator-credential-profile/v1\",\n    \"kind\": \"ecdsa\",\n    \"address\": \"0x4444444444444444444444444444444444444444\"\n  },\n  \"policy\": {\n    \"version\": \"oaath.grant-policy/v1\",\n    \"calls\": [\n      {\n        \"target\": \"0x1111111111111111111111111111111111111111\",\n        \"selector\": \"0x12345678\",\n        \"valueLimit\": \"100\",\n        \"argumentEquals\": [\n          {\n            \"index\": 0,\n            \"value\": \"0x3333333333333333333333333333333333333333333333333333333333333333\"\n          },\n          {\n            \"index\": 2,\n            \"value\": \"0x4444444444444444444444444444444444444444444444444444444444444444\"\n          }\n        ]\n      },\n      {\n        \"target\": \"0x2222222222222222222222222222222222222222\",\n        \"selector\": \"0xabcdef01\",\n        \"valueLimit\": \"0\",\n        \"argumentEquals\": []\n      }\n    ],\n    \"validAfter\": 100,\n    \"validUntil\": 190,\n    \"perChainOperationLimit\": {\n      \"count\": 10,\n      \"intervalSeconds\": null\n    }\n  },\n  \"requestedAt\": 100,\n  \"expiresAt\": 200,\n  \"sessionSigner\": null\n}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1097,7 +1097,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -1133,7 +1133,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1175,7 +1175,7 @@
     "name": "scope quoted -0 in a string",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"said \\\"-0\\\" twice -0\"},\"expiresAt\":200}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"said \\\"-0\\\" twice -0\"},\"expiresAt\":200}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1183,7 +1183,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -1219,7 +1219,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1264,7 +1264,7 @@
     "name": "scope string ending in a backslash before -0",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"kms\\\\\"},\"expiresAt\":-0}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"kms\\\\\"},\"expiresAt\":-0}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1278,7 +1278,7 @@
     "name": "scope string ending in a backslash",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"kms\\\\\"},\"expiresAt\":200}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"kms\\\\\"},\"expiresAt\":200}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1286,7 +1286,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -1322,7 +1322,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1367,7 +1367,7 @@
     "name": "scope escaped quote then -0",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"a\\\\\\\"-0\"},\"expiresAt\":200}",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"sessionSigner\":{\"mode\":\"application_backend\",\"providerId\":\"a\\\\\\\"-0\"},\"expiresAt\":200}",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1375,7 +1375,7 @@
         "kind": "permission-request",
         "decision": "approve-or-reject",
         "request": {
-          "version": "oaath.permission-request/v2",
+          "version": "oaath.permission-request/v1",
           "requestId": "permission-request-1",
           "context": {
             "version": "oaath.workspace-account-context/v1",
@@ -1411,7 +1411,7 @@
             "address": "0x4444444444444444444444444444444444444444"
           },
           "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1498,7 +1498,7 @@
     "name": "scope array of request",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "[{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}]",
+      "requestedScope": "[{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}]",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1582,7 +1582,7 @@
     "name": "scope truncated",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null",
       "requestId": "permission-request-1"
     },
     "expect": {
@@ -1596,7 +1596,7 @@
     "name": "scope trailing garbage",
     "fn": "classifyStoredAuthorizationScope",
     "input": {
-      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}]",
+      "requestedScope": "{\"version\":\"oaath.permission-request/v1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}]",
       "requestId": "permission-request-1"
     },
     "expect": {

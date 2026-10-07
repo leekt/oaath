@@ -33,7 +33,7 @@ for (const vector of fixture.vectors) {
 assert.equal(deriveCodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
 const checked = "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826";
 const policy = (target) => ({
-  version: "oaath.grant-policy/v2", calls: [{ target, selector: "0x12345678", valueLimit: "1", argumentEquals: [] }],
+  version: "oaath.grant-policy/v1", calls: [{ target, selector: "0x12345678", valueLimit: "1", argumentEquals: [] }],
   validAfter: 0, validUntil: null, perChainOperationLimit: { count: 1, intervalSeconds: null },
 });
 for (const address of [checked, "0x" + checked.slice(2).toUpperCase()]) {

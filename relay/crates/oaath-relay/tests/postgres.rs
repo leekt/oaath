@@ -520,7 +520,7 @@ async fn keeps_a_grant_transaction_preparable_across_a_restart() {
             "address": format!("0x{}", "44".repeat(20)),
         },
         "policy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [{
                 "target": format!("0x{}", "aa".repeat(20)),
                 "selector": "0xa9059cbb",

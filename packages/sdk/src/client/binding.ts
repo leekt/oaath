@@ -36,7 +36,7 @@ import {
 import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
 
-export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v2" as const;
+export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v1" as const;
 export const OAATH_BINDING_HASH_DOMAIN = "@oaath/sdk:client-realm-binding" as const;
 
 export interface OaathBindingInput {
