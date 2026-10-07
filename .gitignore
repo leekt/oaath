@@ -6,3 +6,6 @@ dist/
 *.log
 artifacts/
 consumer/dist/
+recipes/dca/contracts/out/
+recipes/dca/contracts/cache/
+.impeccable/review/
