@@ -1,7 +1,9 @@
 /**
  * The demo page: request a Grant through the OAAth portal, fund the
  * counterfactual account, then send one covered call that deploys the account,
- * enables the permission and executes, and observe it to finality.
+ * enables the permission and executes, and observe it to finality. A member's
+ * request waits for the account root: "Check approval" redeems it, one token
+ * request per click.
  *
  * Every chain request goes through this page's own server (`/rpc/*`), which
  * holds the endpoints, the request budget and the time cap.
@@ -125,10 +127,28 @@ async function observe(operation) {
   );
 }
 
+/** A Grant, or a request still waiting for the account root. */
+async function settle(result) {
+  if (result?.state === "pending") {
+    $("redeem").hidden = false;
+    show("pending", `Waiting for the account owner to approve request ${result.requestId}.`);
+    return;
+  }
+  $("redeem").hidden = true;
+  grant = result;
+  show("granted", `Grant ${grant.state}`);
+  await showAccount();
+}
+
 try {
-  grant = await connection.resume();
+  // A request journaled before a reload is redeemed once; otherwise resume.
+  const redeemed = await connection.redeemPending();
+  if (redeemed) await settle(redeemed);
+  else {
+    grant = await connection.resume();
+    if (grant) await showAccount();
+  }
   if (grant) {
-    await showAccount();
     const id = localStorage.getItem(operationKey);
     const operation = id ? await grant.getOperation({ chain: chainId, id }) : null;
     if (operation) {
@@ -144,18 +164,28 @@ $("grant").disabled = false;
 $("grant").addEventListener("click", async () => {
   $("grant").disabled = true;
   try {
-    grant = await connection.requestPermission({
-      chainScope: "all",
-      permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
-      expiresIn: 3_600,
-      perChainOperationLimit: 2,
-    });
-    show("granted", `Grant ${grant.state}`);
-    await showAccount();
+    await settle(
+      await connection.requestPermission({
+        chainScope: "all",
+        permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
+        expiresIn: 3_600,
+        perChainOperationLimit: 2,
+      }),
+    );
   } catch (error) {
     failed(error);
   }
   $("grant").disabled = false;
+});
+
+$("redeem").addEventListener("click", async () => {
+  $("redeem").disabled = true;
+  try {
+    await settle(await connection.redeemPending());
+  } catch (error) {
+    failed(error);
+  }
+  $("redeem").disabled = false;
 });
 
 $("balance").addEventListener("click", async () => {
