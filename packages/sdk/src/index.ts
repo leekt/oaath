@@ -26,7 +26,6 @@ export type {
 } from "./client/connected-eoa.js";
 export type {
   OaathConnection,
-  OaathPendingPermissionResult,
   OaathPermissionCallInput,
   OaathPermissionInput,
   OaathRequestPermissionInput,
@@ -75,9 +74,8 @@ export type {
   OaathOwnerOptions,
   OaathOwnerStores,
 } from "./client/owner-realm.js";
-export type { OaathServiceApprovals, OaathServiceOptions } from "./client/service-realm.js";
 export type { OaathSession, OaathSessionCustody } from "./client/session-credential.js";
 export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";
 export type { OaathStoreBackend, OaathStores } from "./client/stores.js";
-export type { Oaath } from "./create-oaath.js";
+export type { Oaath, OaathPermissionApproval } from "./create-oaath.js";
 export { createOAAth } from "./create-oaath.js";

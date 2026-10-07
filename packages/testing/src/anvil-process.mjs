@@ -15,7 +15,6 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { encodeHandleOps } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";

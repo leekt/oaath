@@ -44,29 +44,18 @@ import {
 } from "./client/binding.js";
 import { withDefaultChainPorts } from "./client/chain-descriptors.js";
 import {
-  captureAuthorizationCapability,
-  captureIssuerCapability,
   createConnection,
   forwardApprovedPermission,
   type LocalPermissionAuthorization,
-  type OaathAuthorizationCapability,
   type OaathConnection,
-  type OaathIssuerCapability,
 } from "./client/connection.js";
-import {
-  clientCapability,
-  clientFail,
-  clientFailure,
-  exactClientRecord,
-  mapClientFailure,
-} from "./client/errors.js";
+import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./client/errors.js";
 import {
   captureChainCapability,
   grantProviderPort,
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
-  type OaathOwnerRevocationCapability,
 } from "./client/grant-handle.js";
 import { requireApprovedKeyBinding } from "./client/key-credential.js";
 import {
@@ -80,11 +69,6 @@ import {
   type OaathOwnerClient,
   type OaathOwnerOptions,
 } from "./client/owner-realm.js";
-import {
-  createServiceRealm,
-  type OaathServiceOptions,
-  type RemoteSessionCustody,
-} from "./client/service-realm.js";
 import { captureStoreConfiguration } from "./client/store-configuration.js";
 import { isBuiltInKeyKind, isCustomKeyKind, KEY_PROFILE_KEYS } from "./kernel/internal.js";
 import type { KeyProfile } from "./kernel/types.js";
@@ -122,12 +106,21 @@ export interface OaathSigningConfiguration {
   readonly session: Readonly<KeyProfile>;
 }
 
+/**
+ * The owner's decision for exactly one reviewed permission request: the
+ * canonical protocol decision with its replayable install approval. The SDK
+ * verifies everything it returns; it is trusted for nothing.
+ */
+export type OaathPermissionApproval = LocalPermissionAuthorization;
+
+/**
+ * The injected composition: a deployment that owns its own approval path
+ * (and deterministic tests) supplies the binding, the approval, and every port.
+ * The wallet and OAuth realms build the same composition internally.
+ */
 export interface OaathConfiguration {
-  /** Use the service's phone queue for owner revocation instead of a local owner signer. */
-  readonly ownerRevocations?: Readonly<OaathOwnerRevocationCapability> | null;
   readonly binding: Readonly<OaathBindingInput>;
-  readonly issuer: Readonly<OaathIssuerCapability>;
-  readonly authorization: Readonly<OaathAuthorizationCapability>;
+  readonly approve: OaathPermissionApproval;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
   readonly stores: Readonly<OaathStoreConfiguration>;
   readonly chains: readonly Readonly<OaathChainCapability>[];
@@ -154,8 +147,6 @@ export interface Oaath {
 
 const CONFIGURATION_KEYS: readonly string[] = Object.freeze([
   "binding",
-  "issuer",
-  "authorization",
   "invalidation",
   "stores",
   "chains",
@@ -243,23 +234,20 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * const chains = { 143: { publicRpcUrls: [rpcUrl], bundlerUrl } };         // default Cetane ports
  * createOAAth({ chains, account });                                        // owner-only execution
  * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });  // wallet-approved Grants
- * createOAAth({ approvals: { kind: "service", url } });                    // service-approved Grants
  * createOAAth({ chains, approvals: { kind: "oauth", issuer, clientId, redirectUri } }); // portal-approved
  * ```
  *
  * Omitting `approvals` gives owner-only execution from an existing Kernel
  * account with a connected wallet; no Grant exists. Wallet approvals add
- * durable wallet-approved sessions for that account without a service or
- * phone. Service approvals take the account and chains from the service,
- * whose owner phone approves. `stores` names a backend, `{ kind: "indexeddb" }`
- * by default or `{ kind: "memory" }` for tests and non-browser development,
- * plus optional per-store adapters such as a PostgreSQL Operation journal.
- * IndexedDB never silently falls back to memory. A configuration carrying
- * `binding` is the injected composition for deterministic tests and custom
- * deployments.
+ * durable wallet-approved sessions for that account. OAuth approvals have the
+ * account root approve in the issuer's portal. `stores` names a backend,
+ * `{ kind: "indexeddb" }` by default or `{ kind: "memory" }` for tests and
+ * non-browser development, plus optional per-store adapters such as a
+ * PostgreSQL Operation journal. IndexedDB never silently falls back to memory.
+ * A configuration carrying `binding` is the injected composition, whose
+ * `approve` supplies the owner's decision.
  */
 export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
-export function createOAAth(options: OaathServiceOptions): Readonly<Oaath>;
 export function createOAAth(options: OaathOAuthOptions): Readonly<Oaath>;
 export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
 export function createOAAth(configuration: OaathConfiguration): Readonly<Oaath>;
@@ -270,10 +258,14 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
-  const configuration = withDefaultChainPorts(value, record);
   if (Object.hasOwn(record, "binding")) {
-    return composeInjectedRealm(configuration, { localAuthorization: null, remoteCustody: null });
+    const { approve, ...composition } = record;
+    return composeInjectedRealm(
+      composition,
+      clientCapability<OaathPermissionApproval>(approve, "OAAth approval"),
+    );
   }
+  const configuration = withDefaultChainPorts(value, record);
   if (record.approvals === undefined) return createOwnerRealm(configuration);
   const approvals = captureRecord(
     record.approvals,
@@ -281,79 +273,27 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
     new WeakSet(),
     clientFailure("oaath_client_input_invalid"),
   );
-  if (approvals.kind === "wallet") {
-    return createLocalRealm(configuration, (inner, localAuthorization) =>
-      composeInjectedRealm(inner, { localAuthorization, remoteCustody: null }),
-    );
-  }
-  if (approvals.kind === "oauth") {
-    return createOAuthRealm(configuration, (inner, localAuthorization) =>
-      composeInjectedRealm(inner, { localAuthorization, remoteCustody: null }),
-    );
-  }
-  if (approvals.kind === "service") {
-    return createServiceRealm(configuration, (inner, remoteCustody) =>
-      composeInjectedRealm(inner, { localAuthorization: null, remoteCustody }),
-    );
-  }
+  if (approvals.kind === "wallet") return createLocalRealm(configuration, composeInjectedRealm);
+  if (approvals.kind === "oauth") return createOAuthRealm(configuration, composeInjectedRealm);
   return clientFail("oaath_client_input_invalid", "OAAth approvals kind is unsupported");
 }
 
 /**
- * Facts only the approval realms supply: wallet approval replaces the issuer,
- * and remote session custody is the service bootstrap's declaration, never an
- * application option.
+ * Composes a realm from one approval source: the owner's decision for each
+ * reviewed request. Every approval realm and the injected configuration use it.
  */
-export interface RealmComposition {
-  readonly localAuthorization: LocalPermissionAuthorization | null;
-  readonly remoteCustody: Readonly<RemoteSessionCustody> | null;
-}
-
-/** Internal: composes a realm from an approval source; tests reach it directly. */
-export function composeInjectedRealm(
+function composeInjectedRealm(
   configuration: unknown,
-  { localAuthorization, remoteCustody }: Readonly<RealmComposition>,
+  approve: LocalPermissionAuthorization,
 ): Readonly<Oaath> {
   const context: CaptureContext = new WeakSet();
-  const optionalKeys =
-    typeof configuration === "object" && configuration !== null
-      ? ["ownerRevocations"].filter((key) => Object.hasOwn(configuration, key))
-      : [];
   const record = exactClientRecord(
     configuration,
-    [
-      ...CONFIGURATION_KEYS.filter(
-        (key) => !localAuthorization || (key !== "issuer" && key !== "authorization"),
-      ),
-      ...optionalKeys,
-    ],
+    CONFIGURATION_KEYS,
     "OAAth configuration",
     context,
   );
-  const ownerRevocations =
-    record.ownerRevocations === undefined || record.ownerRevocations === null
-      ? null
-      : storePort<Readonly<OaathOwnerRevocationCapability>>(
-          record.ownerRevocations,
-          ["request"],
-          "owner revocation",
-          context,
-        );
   const binding = captureOaathBinding(record.binding);
-  const issuer = localAuthorization ? null : captureIssuerCapability(record.issuer);
-  if (issuer !== null && issuer.url !== binding.issuer.url) {
-    clientFail(
-      "oaath_client_capability_invalid",
-      "the issuer transport does not serve the bound issuer",
-    );
-  }
-  const authority = localAuthorization
-    ? { kind: "local" as const, approve: localAuthorization }
-    : {
-        kind: "issuer" as const,
-        issuer: issuer!,
-        authorization: captureAuthorizationCapability(record.authorization),
-      };
   const invalidation = storePort<Readonly<OaathCapabilityInvalidationCapability>>(
     record.invalidation,
     ["invalidateCapability"],
@@ -429,8 +369,6 @@ export function composeInjectedRealm(
       close: async () => undefined,
     }),
     context: Object.freeze({
-      compareAndSwapPending: (value: Parameters<OaathContextStore["compareAndSwapPending"]>[0]) =>
-        stores.context.compareAndSwapPending(value),
       read: (bindingId: Parameters<OaathContextStore["read"]>[0]) => stores.context.read(bindingId),
       write: (value: Parameters<OaathContextStore["write"]>[0]) => stores.context.write(value),
       clear: (bindingId: Parameters<OaathContextStore["clear"]>[0]) =>
@@ -443,7 +381,7 @@ export function composeInjectedRealm(
     if (closeRequested || closed) clientFail("oaath_client_closed", "OAAth realm is closed");
     const inner = createConnection({
       binding,
-      authority,
+      approve,
       grants: new GrantStore(connectionStores.grants),
       operations: connectionStores.operations,
       walletCallBundles: new WalletCallBundleStore(connectionStores.walletCallBundles),
@@ -454,8 +392,6 @@ export function composeInjectedRealm(
       ownerKey,
       sessionKey,
       invalidation,
-      ownerRevocations,
-      sessionSigner: remoteCustody,
       now,
     });
     const connection = Object.freeze({
@@ -554,17 +490,7 @@ export function composeInjectedRealm(
       const effects: OaathCleanupEffect[] = [
         ...(revokeRequired ? [revokeEffect(grant)] : []),
         signOutEffect(async () => {
-          const open = [...connections];
-          if (open.length > 0) {
-            for (const connection of open) await connection.signOut();
-          } else {
-            // Closing connections releases resources, not issuer authentication.
-            try {
-              await issuer?.signOut?.();
-            } catch (error) {
-              return mapClientFailure(error, "issuer sign-out failed");
-            }
-          }
+          for (const connection of [...connections]) await connection.signOut();
         }),
         forgetLocalEffect({
           keys: stores.keys,

@@ -490,11 +490,6 @@ export interface OaathCapabilityInvalidationCapability {
   ) => Promise<unknown>;
 }
 
-/** Requests durable phone custody through the service; it never proves onchain completion. */
-export interface OaathOwnerRevocationCapability {
-  readonly request: (input: Readonly<{ grantId: string; chainId: number }>) => Promise<void>;
-}
-
 export interface OaathGrantHandle {
   readonly state: GrantState;
   readonly expiresAt: number;
@@ -651,7 +646,6 @@ export interface CreateGrantHandleInput {
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
-  readonly ownerRevocations: Readonly<OaathOwnerRevocationCapability> | null;
   readonly now: () => number;
 }
 
@@ -4158,7 +4152,7 @@ export function createGrantHandle(
         await observing.close().catch(() => undefined);
       }
     }
-    if (value === null && retryPositivelySafe && input.ownerRevocations === null) {
+    if (value === null && retryPositivelySafe) {
       let result: OperationRunResult | null = null;
       try {
         const chain = chainCapability(chainId);
@@ -4301,8 +4295,7 @@ export function createGrantHandle(
   /** Unused v3.3 approvals still need a journaled, owner-authorized nonce consumption. */
   async function revokeUnusedV33Approval(binding: Readonly<ChainBinding>): Promise<void> {
     const approval = input.installApproval;
-    if (approval?.version !== OAATH_KERNEL_V33_APPROVAL_VERSION || input.ownerRevocations !== null)
-      return;
+    if (approval?.version !== OAATH_KERNEL_V33_APPROVAL_VERSION) return;
     const snapshot = await refresh();
     const materialization = snapshot.value.materializations.find(
       (entry) => entry.chainId === binding.chainId,
@@ -4469,7 +4462,6 @@ export function createGrantHandle(
         "oaath_client_state_conflict",
         "revocation scope contradicts its install approval",
       );
-    const requestFailures: unknown[] = [];
     for (const binding of grant.revocation.targets) {
       if (grant.revocation?.evidence.some((entry) => entry.permission.chainId === binding.chainId))
         continue;
@@ -4509,19 +4501,7 @@ export function createGrantHandle(
           }),
         );
       }
-      if (evidence === null) {
-        if (input.ownerRevocations) {
-          try {
-            await input.ownerRevocations.request({
-              grantId: grant.identity.grantId,
-              chainId: binding.chainId,
-            });
-          } catch (error) {
-            requestFailures.push(error);
-          }
-        }
-        continue;
-      }
+      if (evidence === null) continue;
       snapshot = await commit(
         snapshot,
         transition(grant, {
@@ -4532,8 +4512,6 @@ export function createGrantHandle(
       );
       grant = snapshot.value;
     }
-    if (requestFailures.length > 0)
-      return mapClientFailure(requestFailures[0], "owner revocation request failed");
     if (
       grant.revocation === null ||
       grant.revocation.evidence.length !== grant.revocation.targets.length ||

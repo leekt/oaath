@@ -9,7 +9,6 @@ import {
   CHAIN_ID,
   createChainFixture,
   createRealm,
-  createUrlRealm,
   permissionInput,
   SESSION_PUBLIC_KEY,
   sendCallsInput,
@@ -47,10 +46,7 @@ function capturedChain() {
 }
 
 describe("runtime-owned chain port context", () => {
-  it.each([
-    { mode: "direct", create: createRealm },
-    { mode: "relay", create: createUrlRealm },
-  ])(
+  it.each([{ mode: "direct", create: createRealm }])(
     "supplies usage identity and first-enable / installed simulation through $mode ports",
     async ({ create }) => {
       const { chain, base, quotes, usage } = capturedChain();

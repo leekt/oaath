@@ -38,7 +38,6 @@ import {
   createChainFixture,
   createMemoryStores,
   createRealm,
-  ISSUER_URL,
   permissionInput,
   sendCallsInput,
   signingProfiles,
@@ -49,8 +48,7 @@ import {
 function baseConfiguration(): Record<string, unknown> {
   return {
     binding: bindingInput,
-    issuer: { url: ISSUER_URL, fetch: async () => new Response("{}"), signOut: null },
-    authorization: { authorize: async () => ({ code: "x" }) },
+    approve: async () => ({}),
     invalidation: { invalidateCapability: async () => ({}) },
     stores: createMemoryStores(),
     chains: [createChainFixture().capability],
@@ -152,36 +150,9 @@ describe("hostile input at the client boundary", () => {
     );
   });
 
-  it("refuses an issuer transport that does not serve the bound issuer", () => {
-    expectClientError(
-      () =>
-        createOAAth({
-          ...baseConfiguration(),
-          issuer: {
-            url: "https://other.example",
-            fetch: async () => new Response(),
-            signOut: null,
-          },
-        }),
-      "oaath_client_capability_invalid",
-    );
-    for (const url of ["http://issuer.example", "https://issuer.example/", 7, null]) {
-      expectClientError(
-        () =>
-          createOAAth({
-            ...baseConfiguration(),
-            issuer: { url, fetch: async () => new Response(), signOut: null },
-          }),
-        "oaath_client_capability_invalid",
-      );
-    }
-  });
-
   it("refuses malformed capabilities, stores, chains, keys, and clocks", () => {
     const { walletCallBundles: _retiredOptionalStore, ...oldStores } = createMemoryStores();
     const cases: readonly Record<string, unknown>[] = [
-      { authorization: { authorize: "no" } },
-      { authorization: { authorize: async () => ({}), extra: 1 } },
       { invalidation: {} },
       { stores: oldStores },
       { stores: { ...createMemoryStores(), keys: { store: 1 } } },

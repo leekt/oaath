@@ -4,7 +4,6 @@ Each example demonstrates one capability.
 
 | Example | Shows |
 | --- | --- |
-| [browser/](browser) | connect → one all-chain grant → execute → revoke |
 | [server/](server) | Fetch relay over `node:http`, PostgreSQL, auth and KMS ports |
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
 | [oauth-login/](oauth-login) | Login with OAAth from a static page through the live portal |
@@ -13,7 +12,6 @@ Each example demonstrates one capability.
 ```sh
 bun install
 bun run examples:check                                   # from the repo root
-bun run --filter @oaath/examples example:browser         # one at a time
 bun run --filter @oaath/examples example:server
 bun run --filter @oaath/examples example:all-chain       # needs Anvil
 bun run --filter @oaath/examples example:oauth-login     # open http://localhost:5174
@@ -25,8 +23,7 @@ registration). It must run on `http://localhost`, a redirect origin the issuer
 accepts for development.
 
 `all-chain` requires Anvil from [Foundry](https://getfoundry.sh); the check skips
-it when Anvil is absent. `browser` uses injected chain facts by default and a real
-local chain with `OAATH_REQUIRE_ANVIL=1`.
+it when Anvil is absent.
 
 ## Rules these examples follow
 
@@ -49,7 +46,6 @@ smokes own evidence about published artifacts:
 
 ```sh
 bun run check:public-surface
-bun run smoke:browser    # packed tarball consumer, golden path, realm recreation
 bun run smoke:extension  # packed MV3 extension, worker death, durable status recovery
 bun run smoke:server     # packed tarball consumer, relay round-trip, ./postgres
 bun run smoke:all-chain  # two local Anvil chains, one replayable owner approval

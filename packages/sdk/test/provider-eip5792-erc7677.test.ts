@@ -24,8 +24,6 @@ import {
   type ChainFixture,
   createChainFixture,
   createRealm,
-  createUrlRealm,
-  ISSUER_URL,
   permissionInput,
   TARGET,
   withBundler,
@@ -375,137 +373,12 @@ describe("wallet_sendCalls ERC-7677 orchestration", () => {
     });
     await unavailable.connection.close();
   });
-
-  it("uses only the authenticated same-service proxy and observes after realm recreation", async () => {
-    const stages: string[] = [];
-    const base = createChainFixture({
-      sponsorship: Object.freeze({
-        kind: "erc7677" as const,
-        url: SERVICE_URL,
-        async request() {
-          throw new Error("the synthetic chain never owns paymaster HTTP");
-        },
-        async estimate() {
-          stages.push("estimate");
-          return {
-            callGasLimit: "100",
-            verificationGasLimit: "200",
-            preVerificationGas: "30",
-            paymasterVerificationGasLimit: "50",
-          };
-        },
-      }),
-    });
-    const first = createUrlRealm({
-      chain: base,
-      paymasterService: {
-        providerId: "paymaster-primary",
-        requestTimeoutMs: 1_000,
-        provider: {
-          async getPaymasterStubData() {
-            stages.push("stub");
-            return {
-              sponsor: SPONSOR,
-              paymaster: PAYMASTER,
-              paymasterData: "0x01020304",
-              paymasterPostOpGasLimit: "0x3c",
-            };
-          },
-          async getPaymasterData() {
-            stages.push("final");
-            return { paymaster: PAYMASTER, paymasterData: "0x01020305" };
-          },
-        },
-      },
-    });
-    const connection = await first.oaath.connect();
-    const grant = await connection.requestPermission(permissionInput());
-    const account = await grant.account(CHAIN_ID);
-    const provider = oaathProvider({ grant, chain: CHAIN_ID });
-
-    await providerError(
-      provider.request({
-        method: "wallet_sendCalls",
-        params: [
-          bundle(account, "url-foreign", {
-            url: FOREIGN_URL,
-            context: { policyId: "attacker-selected" },
-          }),
-        ],
-      }),
-      5700,
-    );
-    expect(first.fetched.some((entry) => entry.includes("attacker.example"))).toBe(false);
-    expect(stages).toEqual([]);
-    expect(base.sends).toHaveLength(0);
-
-    await expect(
-      provider.request({
-        method: "wallet_sendCalls",
-        params: [
-          bundle(account, "url-sponsored", {
-            url: `${ISSUER_URL}/chains/${CHAIN_ID}/paymaster`,
-            context: { policyId: "same-service" },
-          }),
-        ],
-      }),
-    ).resolves.toEqual({
-      id: "url-sponsored",
-      capabilities: RESULT_CAPABILITIES,
-    });
-    expect(stages).toEqual(["stub", "estimate", "final"]);
-    expect(first.fetched.filter((entry) => entry.endsWith("/paymaster/stub-data"))).toHaveLength(1);
-    expect(first.fetched.filter((entry) => entry.endsWith("/paymaster/data"))).toHaveLength(1);
-    expect(first.fetched.filter((entry) => entry.endsWith("/bundler"))).toHaveLength(2);
-    expect(base.sends).toHaveLength(1);
-    const exactHash = base.sends[0]?.userOperationHash;
-    await connection.close();
-
-    const second = createUrlRealm({
-      chain: base,
-      stores: first.stores,
-      clock: first.clock,
-      relay: first.relay,
-    });
-    const reconnected = await second.oaath.connect();
-    const resumed = await reconnected.resume();
-    if (resumed === null) throw new Error("expected the sponsored Grant to resume");
-    const presented: unknown[] = [];
-    const resumedProvider = oaathProvider({
-      grant: resumed,
-      chain: CHAIN_ID,
-      showCallsStatus(status) {
-        presented.push(status);
-      },
-    });
-    const status = await resumedProvider.request({
-      method: "wallet_getCallsStatus",
-      params: ["url-sponsored"],
-    });
-    expect(status).toMatchObject({
-      id: "url-sponsored",
-      status: 200,
-      capabilities: RESULT_CAPABILITIES,
-    });
-    await expect(
-      resumedProvider.request({ method: "wallet_showCallsStatus", params: ["url-sponsored"] }),
-    ).resolves.toBeUndefined();
-    expect(presented).toEqual([status]);
-    expect(stages).toEqual(["stub", "estimate", "final"]);
-    expect(base.signatures).toHaveLength(1);
-    expect(base.sends).toHaveLength(1);
-    expect(base.sends[0]?.userOperationHash).toBe(exactHash);
-    await reconnected.close();
-  });
 });
 
 describe("plain sendCalls ERC-7677", () => {
-  it.each([
-    { name: "direct", create: createRealm },
-    { name: "relay", create: createUrlRealm },
-  ])(
+  it.each([{ name: "direct", create: createRealm }])(
     "sponsors $name Grant calls before signing and preserves the enable floor",
-    async ({ name, create }) => {
+    async ({ create }) => {
       const base = createChainFixture();
       const registered = registeredService();
       const chain = replaceChain(base, {
@@ -517,20 +390,7 @@ describe("plain sendCalls ERC-7677", () => {
           method,
           params: (request as { params: Erc7677PaymasterServiceRequest["params"] }).params,
         });
-      const realm =
-        name === "relay"
-          ? createUrlRealm({
-              chain,
-              paymasterService: {
-                providerId: "plain-sponsor",
-                requestTimeoutMs: 1000,
-                provider: {
-                  getPaymasterStubData: (request) => invoke("pm_getPaymasterStubData", request),
-                  getPaymasterData: (request) => invoke("pm_getPaymasterData", request),
-                },
-              },
-            })
-          : create({ chain });
+      const realm = create({ chain });
       try {
         const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
         const request = {
