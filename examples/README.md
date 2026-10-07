@@ -10,6 +10,7 @@ The other examples demonstrate individual capabilities.
 | [server/](server) | Fetch relay over `node:http`, PostgreSQL, auth and KMS ports |
 | [phone/](phone) | personal/team service, canonical phone consent, two-chain jobs, recovery and revocation |
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
+| [oauth-login/](oauth-login) | Login with OAAth from a static page through the live portal |
 
 ```sh
 bun install
@@ -18,7 +19,13 @@ bun run --filter @oaath/examples example:browser         # one at a time
 bun run --filter @oaath/examples example:server
 bun run --filter @oaath/examples example:phone           # pairs with native/ios/Demo
 bun run --filter @oaath/examples example:all-chain       # needs Anvil
+bun run --filter @oaath/examples example:oauth-login     # open http://localhost:5174
 ```
+
+`oauth-login` signs in against `https://oaath.taek.tech` by default
+(`OAATH_ISSUER` overrides it, `OAATH_CLIENT_ID` skips the one-time client
+registration). It must run on `http://localhost`, a redirect origin the issuer
+accepts for development.
 
 `phone` and `all-chain` require Anvil from
 [Foundry](https://getfoundry.sh). The check skips these chain examples when Anvil

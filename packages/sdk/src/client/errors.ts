@@ -64,6 +64,18 @@ export type OaathClientErrorCode =
   | "oaath_client_submission_uncertain"
   /** Observation could not conclude; retry observation, never submission. */
   | "oaath_client_observation_unavailable"
+  /** The user cancelled sign-in (OAuth `access_denied`) or closed its window. */
+  | "oaath_client_access_denied"
+  /** The browser blocked the sign-in popup; call login from a user gesture. */
+  | "oaath_client_popup_blocked"
+  /** Sign-in did not finish in time. */
+  | "oaath_client_login_timeout"
+  /** The authorization response names another issuer (RFC 9207). */
+  | "oaath_client_issuer_mismatch"
+  /** The authorization response belongs to another login. */
+  | "oaath_client_state_mismatch"
+  /** The id_token failed signature, issuer, audience, nonce, or claim checks. */
+  | "oaath_client_identity_invalid"
   /** An internal invariant failed; nothing about authority may be inferred. */
   | "oaath_client_internal";
 

@@ -1,6 +1,7 @@
 /**
- * The adopter surface: one constructor, the lifecycle handles it returns, and
- * the one closed error vocabulary. Everything else — Kernel primitives,
+ * The adopter surface: one constructor, the lifecycle handles it returns,
+ * Login with OAAth (an identity step that needs none of the constructor's
+ * configuration), and the one closed error vocabulary. Everything else — Kernel primitives,
  * custom-deployment ports, persistence adapters, deterministic test stores —
  * lives behind an explicit subpath (`@oaath/sdk/kernel`, `/advanced`,
  * `/persistence`, `/testing`) so the default import teaches exactly one
@@ -49,6 +50,8 @@ export type {
   OaathWalletApprovals,
   OaathWalletOptions,
 } from "./client/local-realm.js";
+export type { OaathLogin, OaathLoginOptions, OaathLoginSigner } from "./client/oauth-login.js";
+export { completeOAAthLogin, loginWithOAAth } from "./client/oauth-login.js";
 export type {
   OaathOperationExecution,
   OaathOperationHandle,

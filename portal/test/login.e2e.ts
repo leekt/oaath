@@ -6,13 +6,15 @@
  *   throwaway ES256 key;
  * - the real portal Worker module, run in Node in front of the built SPA and
  *   bound to that relay (the Workers VPC binding becomes a loopback fetch);
- * - headless Chrome driving a dapp page on another origin through dynamic
- *   client registration, PAR, the portal popup, and the code exchange.
+ * - the examples/oauth-login dapp on another origin, whose page calls the
+ *   SDK's `loginWithOAAth` and whose redirect page runs `completeOAAthLogin`;
+ * - headless Chrome clicking through the SDK's popup.
  *
- * The id_token is verified against `/oauth/jwks` with `jose`.
+ * The SDK verifies the id_token; the test verifies it again against
+ * `/oauth/jwks` with `jose`.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -26,10 +28,12 @@ import worker, { type Env, ORIGIN } from "../worker/index.js";
 const DIST = fileURLToPath(new URL("../dist", import.meta.url));
 const RELAY_DIR = fileURLToPath(new URL("../../relay", import.meta.url));
 const WALLET_ADDRESS = `0x${"5a".repeat(20)}`;
+const EXAMPLE = fileURLToPath(new URL("../../examples/oauth-login/server.mjs", import.meta.url));
 
 let browser: Browser;
 let relay: ReturnType<typeof spawn> | undefined;
 const servers: Server[] = [];
+const closers: (() => Promise<void>)[] = [];
 let portal: string;
 let dapp: string;
 let relayBase: string;
@@ -164,92 +168,22 @@ async function startPortal() {
   return `http://localhost:${port}`;
 }
 
-/** A dapp on a different origin: one page and its callback. */
+/** The examples/oauth-login dapp, on another origin than the portal. */
 async function startDapp() {
-  const port = await listen((request, response) => {
-    response.writeHead(200, { "content-type": "text/html" });
-    response.end(
-      `<!doctype html><title>${request.url?.startsWith("/callback") ? "callback" : "dapp"}</title>`,
-    );
-  });
-  return `http://127.0.0.1:${port}`;
+  const { startOAuthLoginExample } = (await import(EXAMPLE)) as {
+    startOAuthLoginExample(input: {
+      issuer: string;
+      host: string;
+      port: number;
+    }): Promise<{ url: string; close(): Promise<void> }>;
+  };
+  const example = await startOAuthLoginExample({ issuer: portal, host: "127.0.0.1", port: 0 });
+  closers.push(example.close);
+  return example.url;
 }
 
-interface Pushed {
-  readonly clientId: string;
-  readonly requestUri: string;
-  readonly verifier: string;
-  readonly state: string;
-  readonly nonce: string;
-}
-
-/** Registers a client (once) and pushes one authorization request from the dapp page. */
-async function pushRequest(page: Page, clientId?: string): Promise<Pushed> {
-  const verifier = randomBytes(32).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  return page.evaluate(
-    async (input) => {
-      let id = input.clientId;
-      if (!id) {
-        const registered = await fetch(`${input.portal}/oauth/clients`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            client_name: "E2E Dapp",
-            redirect_uris: [`${location.origin}/callback`],
-          }),
-        });
-        if (registered.status !== 201 && registered.status !== 200)
-          throw new Error(`register ${registered.status}`);
-        id = ((await registered.json()) as { client_id: string }).client_id;
-      }
-      const state = crypto.randomUUID();
-      const nonce = crypto.randomUUID();
-      const pushed = await fetch(`${input.portal}/oauth/par`, {
-        method: "POST",
-        body: new URLSearchParams({
-          client_id: id,
-          redirect_uri: `${location.origin}/callback`,
-          response_type: "code",
-          code_challenge: input.challenge,
-          code_challenge_method: "S256",
-          scope: "openid",
-          state,
-          nonce,
-        }),
-      });
-      if (pushed.status !== 201) throw new Error(`par ${pushed.status}`);
-      const { request_uri } = (await pushed.json()) as { request_uri: string };
-      return { clientId: id, requestUri: request_uri, verifier: input.verifier, state, nonce };
-    },
-    { portal, challenge, verifier, clientId: clientId ?? null },
-  );
-}
-
-/** The dapp's token request: a cross-origin form POST answered through CORS. */
-function exchange(page: Page, pushed: Pushed, code: string) {
-  return page.evaluate(
-    async (input) => {
-      const response = await fetch(`${input.portal}/oauth/token`, {
-        method: "POST",
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          client_id: input.clientId,
-          code: input.code,
-          code_verifier: input.verifier,
-          redirect_uri: `${location.origin}/callback`,
-        }),
-      });
-      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
-    },
-    { portal, clientId: pushed.clientId, verifier: pushed.verifier, code },
-  );
-}
-
-/** The portal popup with an EIP-6963 wallet that answers eth_requestAccounts only. */
-async function openPortal(pushed: Pushed) {
-  const page = await browser.newPage();
-  await page.setViewport({ width: 390, height: 844 });
+/** An EIP-6963 wallet in every document of `page` that answers eth_requestAccounts only. */
+async function installWallet(page: Page) {
   await page.evaluateOnNewDocument((address: string) => {
     const methods: string[] = [];
     Object.assign(window, { walletMethods: methods });
@@ -271,15 +205,77 @@ async function openPortal(pushed: Pushed) {
       ),
     );
   }, WALLET_ADDRESS);
-  const query = new URLSearchParams({ client_id: pushed.clientId, request_uri: pushed.requestUri });
-  await page.goto(`${portal}/authorize?${query}`);
-  await page.waitForSelector("#signer-heading");
-  return page;
 }
 
 async function click(page: Page, selector: string) {
   const element = await page.waitForSelector(selector);
   await element?.click();
+}
+
+/** Opens the example dapp, ready to log in (its client is registered on load). */
+async function openDapp() {
+  const page = await browser.newPage();
+  // The dapp's PAR waits until the popup is instrumented; it is delayed, never altered.
+  let release = () => {};
+  const instrumented = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.setRequestInterception(true);
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/oauth/par")
+      void instrumented.then(() => request.continue());
+    else void request.continue();
+  });
+  await page.goto(`${dapp}/`);
+  await page.waitForSelector("#login:not([disabled])");
+  return { page, release };
+}
+
+/**
+ * Clicks "Login with OAAth" and returns the SDK's popup once the fixture wallet
+ * is installed in it. `rewrite` may replace the dapp callback URL the portal
+ * redirects to, standing in for a hostile or confused authorization response.
+ */
+async function startLogin(
+  dappPage: Awaited<ReturnType<typeof openDapp>>,
+  rewrite?: (callback: URL) => URL,
+) {
+  const opened = browser.waitForTarget((target) => target.opener() === dappPage.page.target());
+  await click(dappPage.page, "#login");
+  const popup = await (await opened).page();
+  if (!popup) throw new Error("no login popup");
+  await popup.setViewport({ width: 390, height: 844 });
+  await installWallet(popup);
+  if (rewrite) {
+    let rewritten = false;
+    await popup.setRequestInterception(true);
+    popup.on("request", (request) => {
+      const url = new URL(request.url());
+      if (!rewritten && url.origin === dapp && url.pathname === "/callback") {
+        rewritten = true;
+        return void request.respond({
+          status: 302,
+          headers: { location: rewrite(url).toString() },
+        });
+      }
+      void request.continue();
+    });
+  }
+  dappPage.release();
+  await popup.waitForSelector("#signer-heading");
+  return popup;
+}
+
+/** The dapp's login outcome: "signed-in" or the OaathClientError code. */
+async function outcome(page: Page) {
+  const result = await page.waitForSelector("#result[data-outcome]");
+  return result?.evaluate((node) => (node as HTMLElement).dataset.outcome);
+}
+
+/** Chooses the remembered wallet signer and its first account. */
+async function signInWithRememberedWallet(popup: Page) {
+  await click(popup, "::-p-text(E2E Wallet)");
+  await click(popup, "button[aria-label^='Smart account 0x']");
 }
 
 beforeAll(async () => {
@@ -307,17 +303,13 @@ afterAll(async () => {
   await browser?.close();
   relay?.kill("SIGTERM");
   await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+  await Promise.all(closers.map((close) => close()));
 });
 
-describe("Login with OAAth against the real relay", () => {
-  let first: Pushed;
-
-  it("logs in with a wallet signer and a new account, and issues a verifiable id_token", async () => {
-    const dappPage = await browser.newPage();
-    await dappPage.goto(`${dapp}/`);
-    first = await pushRequest(dappPage);
-
-    const popup = await openPortal(first);
+describe("Login with OAAth from the SDK against the real relay", () => {
+  it("logs in with a wallet signer and a new account, and returns a verifiable id_token", async () => {
+    const dappPage = await openDapp();
+    const popup = await startLogin(dappPage);
     expect(await popup.$eval("#signer-heading", (node) => node.textContent)).toBe("Sign in with…");
     await click(popup, "::-p-text(Add signer)");
     await click(popup, "::-p-text(E2E Wallet)");
@@ -330,57 +322,61 @@ describe("Login with OAAth against the real relay", () => {
     expect(
       await popup.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods),
     ).toEqual(["eth_requestAccounts"]);
-    await Promise.all([popup.waitForNavigation(), account?.click()]);
+    await account?.click();
 
-    const callback = new URL(popup.url());
-    expect(callback.origin + callback.pathname).toBe(`${dapp}/callback`);
-    expect(callback.searchParams.get("state")).toBe(first.state);
-    expect(callback.searchParams.get("iss")).toBe(portal);
-    const code = callback.searchParams.get("code");
-    if (!code) throw new Error("no authorization code");
-
-    const token = await exchange(dappPage, first, code);
-    expect(token.status).toBe(200);
-    const jwks = createRemoteJWKSet(new URL(`${portal}/oauth/jwks`));
-    const { payload, protectedHeader } = await jwtVerify(String(token.body.id_token), jwks, {
-      issuer: portal,
-      audience: first.clientId,
-      algorithms: ["ES256"],
+    expect(await outcome(dappPage.page)).toBe("signed-in");
+    const login: Record<string, unknown> = await dappPage.page.evaluate(() => {
+      const value = (window as unknown as { oaathLogin: Record<string, unknown> }).oaathLogin;
+      const clientKey = Object.keys(localStorage).find((key) =>
+        key.startsWith("oaath-example-client:"),
+      );
+      return { ...value, clientId: clientKey ? localStorage.getItem(clientKey) : null };
     });
-    expect(protectedHeader.kid).toBe(idTokenKid);
-    expect(payload.sub).toBe(shown);
-    expect(payload.nonce).toBe(first.nonce);
-    expect(payload.verified).toBe(false);
-    expect(payload.signer).toMatchObject({
+    expect(login.account).toBe(shown);
+    expect(login.verified).toBe(false);
+    expect(login.signer).toMatchObject({
       kind: "ecdsa",
       profile: { kind: "ecdsa", address: WALLET_ADDRESS },
     });
-    expect(payload.oaath_account).toMatchObject({ kind: "kernel", kernelVersion: "0.4.0" });
-
-    const replay = await exchange(dappPage, first, code);
-    expect(replay.status).toBe(400);
-    expect(replay.body.error).toBe("invalid_grant");
-    await popup.close();
-    await dappPage.close();
+    // Independent of the SDK's own check: the token verifies against the JWKS.
+    const { payload, protectedHeader } = await jwtVerify(
+      String(login.idToken),
+      createRemoteJWKSet(new URL(`${portal}/oauth/jwks`)),
+      { issuer: portal, audience: String(login.clientId), algorithms: ["ES256"] },
+    );
+    expect(protectedHeader.kid).toBe(idTokenKid);
+    expect(payload.sub).toBe(shown);
+    expect(payload.verified).toBe(false);
+    await dappPage.page.close();
   });
 
-  it("returns access_denied when the user cancels", async () => {
-    const dappPage = await browser.newPage();
-    await dappPage.goto(`${dapp}/`);
-    const pushed = await pushRequest(dappPage, first.clientId);
-    const popup = await openPortal(pushed);
-    // The wallet signer from the first login is remembered in this browser.
-    await popup.waitForSelector("::-p-text(E2E Wallet)");
-    await Promise.all([
-      popup.waitForNavigation(),
-      click(popup, "::-p-text(Cancel and return to the app)"),
-    ]);
-    const callback = new URL(popup.url());
-    expect(callback.origin + callback.pathname).toBe(`${dapp}/callback`);
-    expect(callback.searchParams.get("error")).toBe("access_denied");
-    expect(callback.searchParams.get("state")).toBe(pushed.state);
-    expect(callback.searchParams.get("code")).toBeNull();
-    await popup.close();
-    await dappPage.close();
+  it("reports access_denied when the user cancels", async () => {
+    const dappPage = await openDapp();
+    const popup = await startLogin(dappPage);
+    await click(popup, "::-p-text(Cancel and return to the app)");
+    expect(await outcome(dappPage.page)).toBe("oaath_client_access_denied");
+    await dappPage.page.close();
+  });
+
+  it("refuses an authorization response with another login's state", async () => {
+    const dappPage = await openDapp();
+    const popup = await startLogin(dappPage, (callback) => {
+      callback.searchParams.set("state", "another-login");
+      return callback;
+    });
+    await signInWithRememberedWallet(popup);
+    expect(await outcome(dappPage.page)).toBe("oaath_client_state_mismatch");
+    await dappPage.page.close();
+  });
+
+  it("refuses an authorization response from another issuer (RFC 9207)", async () => {
+    const dappPage = await openDapp();
+    const popup = await startLogin(dappPage, (callback) => {
+      callback.searchParams.set("iss", "https://issuer.example");
+      return callback;
+    });
+    await signInWithRememberedWallet(popup);
+    expect(await outcome(dappPage.page)).toBe("oaath_client_issuer_mismatch");
+    await dappPage.page.close();
   });
 });

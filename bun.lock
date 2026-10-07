@@ -73,6 +73,7 @@
         "@noble/hashes": "1.8.0",
         "@oaath/protocol": "workspace:*",
         "cetane": "0.0.4",
+        "jose": "6.2.12",
       },
       "devDependencies": {
         "@account-abstraction/contracts": "0.7.0",

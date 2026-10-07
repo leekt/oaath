@@ -137,6 +137,24 @@ The SDK captures them in lowercase before hashing or persistence. Invalid mixed-
 checksums fail before signing; wallet RPC failures use `-32602` with the field and
 reason in `error.data.address` and a readable diagnostic in `error.data.message`.
 
+## Login with OAAth
+
+`loginWithOAAth({ issuer, clientId, redirectUri })` signs the user in through the
+issuer's portal popup with OpenID Connect: PAR with PKCE (`scope=openid`), the
+`/authorize` popup, the code exchange, and an ES256 id_token verified against
+`{issuer}/oauth/jwks` (issuer, audience = `clientId`, nonce). Call it directly
+from a click handler: the popup opens before anything is awaited. The page at
+`redirectUri` (on the same origin) calls `completeOAAthLogin()`, which posts the
+response to the opener on that origin only; `state` and the RFC 9207 `iss` are
+checked before the code is redeemed. It resolves to
+`{ account, accountProfile, signer, verified: false, idToken }`: the account and
+signer the user chose. Login carries no signature, so it is identity, never
+authority. Failures are `OaathClientError` codes: `oaath_client_access_denied`
+(cancelled or closed), `oaath_client_popup_blocked`, `oaath_client_login_timeout`,
+`oaath_client_issuer_mismatch`, `oaath_client_state_mismatch`, and
+`oaath_client_identity_invalid`. The client is registered once with
+`POST {issuer}/oauth/clients`; see `examples/oauth-login`.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The
