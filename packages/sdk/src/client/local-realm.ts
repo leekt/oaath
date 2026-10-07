@@ -144,7 +144,7 @@ export function createLocalRealm(
     });
   })();
   const ownerCredential = deriveOwnerCredentialProfile(ownerKey);
-  if (ownerCredential === null || ownerCredential.kind === "webauthn") return ownerKeyUnsupported();
+  if (ownerCredential === null) return ownerKeyUnsupported();
   const entries = captureDenseArray(config.chains, "local chains", context, fail);
   if (entries.length < 1 || entries.length > 32) return fail("local mode requires 1 to 32 chains");
   const chains = Object.freeze(entries.map(captureChainCapability));

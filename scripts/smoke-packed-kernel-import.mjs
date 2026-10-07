@@ -13,6 +13,7 @@ const consumer = await createConsumer({
     "run.mjs": `
 import assert from "node:assert/strict";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
+import { createOAAth } from "@oaath/sdk";
 import { createKernelRuntime, kernelDeployment, kernelAccountDeployment, ownerOperator, kernelKey, sessionOperator, approveKernelPermission, materializeKernelPermission, kernelPermissionNonce, readKernelModules } from "@oaath/sdk/kernel";
 import { createPublicClient, createWalletClient, http } from "cetane";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
@@ -137,6 +138,20 @@ try {
   assert.equal(rejected, true);
   assert.equal(await reader.getBalance({ address: target }), 135n);
   assert.equal(assertions, 3);
+  // The default application path also accepts this owner. Return to its default
+  // reviewed implementation so the caller need not inject a custom deployment.
+  await send(passkeyRuntime, passkeyAccount, "5", [{ target: fixture.address, value: "0", data: encodeFunctionData({
+    abi: parseAbi(["function upgradeToAndCall(address implementation, bytes data)"]), functionName: "upgradeToAndCall", args: [base.implementation, "0x"],
+  }) }]);
+  const app = createOAAth({ approvals: { kind: "wallet", owner: passkey }, account: fixture.address,
+    chains: fixture.createChainPorts(), origin, stores: { kind: "memory" } });
+  try {
+    const grant = await (await app.connect()).requestPermission({ chainScope: "all", expiresIn: 3600, perChainOperationLimit: 3,
+      permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "1" }] }] });
+    const sent = await grant.sendCalls({ chain: 143, calls: [{ target, value: "1", data: "0x12345678" }] });
+    assert.equal((await sent.wait({ attempts: 3 })).status, "finalized");
+    assert.equal(await reader.getBalance({ address: target }), 136n);
+  } finally { await app.close(); }
   console.log("packed Kernel import: reviewed implementation; WebAuthn root rotation/import, owner execution, session approval/materialization and revocation; unsupported root and wrong code refused before signing");
 } finally { await ports?.observation.close(); await fixture.close(); }
 `,

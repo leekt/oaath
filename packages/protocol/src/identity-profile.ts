@@ -89,10 +89,9 @@ export interface KernelExistingAccountProfile {
   readonly entryPoint: Readonly<{ version: "0.7" | "0.9" }>;
   /**
    * A root owner the account's root validator exposes onchain: ECDSA on either
-   * version, or raw P-256 through the pinned validator on Kernel `0.4.0`. No
-   * WebAuthn root validator is pinned.
+   * version, or raw P-256 / WebAuthn through the reviewed validators on Kernel `0.4.0`.
    */
-  readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile | P256OwnerCredentialProfile>;
+  readonly ownerCredential: Readonly<OwnerCredentialProfile>;
 }
 
 export type KernelExistingAccountVersion = "0.3.3" | "0.4.0";
@@ -120,7 +119,7 @@ export type KernelAccountActionInput =
       readonly kernelVersion: KernelExistingAccountVersion;
       readonly address: `0x${string}`;
       readonly entryPointVersion: "0.7" | "0.9";
-      readonly ownerCredential: Readonly<EcdsaOwnerCredentialProfile | P256OwnerCredentialProfile>;
+      readonly ownerCredential: Readonly<OwnerCredentialProfile>;
     };
 
 export type IdentityProfileErrorCode =
@@ -332,10 +331,7 @@ export function captureKernelAccountProfile(
   const ownerCredential = captureOwnerCredentialProfile(record.ownerCredential, context, fail);
   if (existing) {
     // Only a root owner the account's validator exposes is provable onchain.
-    if (
-      ownerCredential.kind === "webauthn" ||
-      (ownerCredential.kind === "p256" && record.kernelVersion !== "0.4.0")
-    )
+    if (ownerCredential.kind !== "ecdsa" && record.kernelVersion !== "0.4.0")
       return fail("Kernel existing account owner kind is unsupported");
     return Object.freeze({
       version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
