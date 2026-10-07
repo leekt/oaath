@@ -1,0 +1,18 @@
+# Automation integration contract
+Product: Rust API + TypeScript SDK. React creator included. DCA is recipe dca.v1.
+Start: sdk/README.md. HTTP schema: api/openapi.json. Example: examples/dca/.
+Backend: createAutomationServer({baseUrl,token:APPLICATION_API_KEY}).
+- createSession({userId,account}) from your authenticated user/account; returns token,expiresAt.
+- configureSigning({keyScope:"user"|"application"}); default user. Onchain signing keys, not API keys.
+Browser: createAutomation({baseUrl,token:SESSION_TOKEN}); never send the application key.
+Wallet: createWalletOwner({provider:EIP1193,chains:OAAthDescriptors}); browser IndexedDB required.
+UI: <AutomationCreator client={client} owner={owner}/>; import @oaath/automation/styles.css.
+Keep instances stable. owner.close() on unmount. Refresh expired sessions via your backend.
+Custom UI: create({recipe:"dca.v1",amount:"25",opportunities:30,maxSlippageBps:50,idempotencyKey}).
+authorize(id) returns exact review; display it, obtain explicit consent, owner.approve(review), submitApproval(id,evidence).
+get/list/listRuns/pause/resume/cancel. Cancellation can require owner.cancel(plan); wait for confirmed status.
+One chain/pair/route from config. Fixed daily slots; missed/failed slots skip. Fees separate.
+Each plan has separate consent/Grant/executor even when its signer is shared.
+Changed inputs under a creation key conflict. Unknown replies never permit a resend.
+Status/history are retained projections, not fresh onchain evidence. refresh queues bounded reconciliation.
+No YAML, generated workflow code, viem, LLM runtime, custom scheduler or nonce management needed to integrate.

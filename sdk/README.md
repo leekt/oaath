@@ -1,66 +1,76 @@
-# @oaath/dca
+# @oaath/automation
 
-The HTTP-only TypeScript SDK for the Rust DCA API. The root has no runtime
-dependencies and never polls the chain. The optional `/approval` entry supplies
-owner consent orchestration. Neither entry holds a session signing key.
+Two integration points: your authenticated backend issues a session; your React
+page renders the supplied creator. End users choose terms and approve with their
+wallet. DCA (`dca.v1`) is the first supported recipe.
 
 ```ts
-import { createDca } from "@oaath/dca";
-import { createOwnerApproval } from "@oaath/dca/approval";
-
-const dca = createDca({
-  baseUrl: apiUrl,
-  token: () => applicationAccessToken,
-  approve: createOwnerApproval({
-    journal: durableApprovalJournal,
-    confirm: showExactTermsAndSetupCalls,
-    signTypedData: value => wallet.signTypedData(value),
-    executeSetup: async (calls, review) => {
-      const operation = await ownerClient
-        .account(review.terms.account).owner(wallet)
-        .sendCalls({ chain: review.terms.chainId, calls });
-      return { operationId: operation.id };
-    },
-  }),
-});
-const plan = await dca.create({
-  account, chainId, sell: { token: USDC, amount: "25" },
-  buy: { token: WETH }, intervalSeconds: 86400,
-  maxRuns: 30, maxSlippageBps: 50, idempotencyKey: customerPlanId,
-});
-await dca.authorize(plan.id); // pending until setup is confirmed; service activates
-const status = await dca.get(plan.id);
-const { runs } = await dca.listRuns(plan.id);
-await dca.pause(plan.id);
-await dca.resume(plan.id);
-const cancellation = await dca.cancel(plan.id);
+// Backend only. Derive both values from YOUR authenticated customer/account.
+import { createAutomationServer } from "@oaath/automation/server";
+const automation = createAutomationServer({ baseUrl: API_URL, token: API_KEY });
+// Optional application setting, default "user". This is onchain signing custody.
+await automation.configureSigning({ keyScope: "user" }); // or "application"
+return automation.createSession({ userId: customer.id, account: customer.account });
 ```
 
-`maxRuns` counts scheduled opportunities. Missed and finalized-failed purchases
-are never made up. Review includes exact normalized base units, UTC start/end,
-900-second admission grace, price feeds and freshness, minimum-output rule,
-account recipient, service-held signer custody, zero service fee, account-paid
-gas ceilings, executor setup and bounded token approval. Show **all** fields
-and setup calls before `confirm` returns true. Test consumers auto-confirm
-only their owned fixture wallet; a real application must obtain owner review.
+```tsx
+// Browser. Memoize client/owner for the lifetime of the mounted integration.
+import { createAutomation } from "@oaath/automation";
+import { createWalletOwner } from "@oaath/automation/wallet";
+import { AutomationCreator } from "@oaath/automation/react";
+import "@oaath/automation/styles.css";
 
-The supplied approval flow uses your existing OAAth owner client/wallet.
-`ApprovalJournal` requires durable atomic compare-and-swap. A recorded setup
-attempt is never automatically repeated, even after a lost reply. The service
-checks finalized setup directly; subsequent `authorize`/`submitApproval` calls
-can submit retained consent. Missing evidence remains pending. If execution
-never began but the journal cannot prove that, cancel and obtain fresh consent
-for a new plan. Keep the owner client's durable operation store as well.
+const session = await fetch("/your/authenticated/automation-session", {
+  method: "POST",
+}).then(r => r.json());
+const client = createAutomation({ baseUrl: API_URL, token: session.token });
+const owner = createWalletOwner({ provider: connectedEip1193Wallet, chains });
+// chains: your existing OAAth public RPC/bundler descriptors for the configured chain.
+// Account must already be a supported Kernel account owned by this wallet.
+<AutomationCreator client={client} owner={owner} />;
+// When the integration unmounts: await owner.close().
+```
 
-Cancellation can remain `cancelling`. Review `cancellation.calls` and submit
-those calls through the same owner client. The service observes executor stop,
-zero allowance and Grant revocation. Already submitted purchases remain visible.
-Pause only controls service scheduling. An expired/completed plan can still be
-cancelled to close remaining onchain authority.
+Sessions last one hour and are bound to application, user and account. Refresh
+through your authenticated backend. A token callback can provide a refreshed
+session token. Never accept unauthenticated user/account claims or expose the
+application API credential. Per-user keys are scoped by stable customer ID,
+not account address; application keys never cross applications.
 
-Use application credentials in trusted application code. A browser integration
-needs application-provided authenticated access; do not distribute a shared
-server bearer token. `fetch`, token provider and timeout are injectable. HTTP
-mutations are not automatically retried. `DcaError.code` is sanitized;
-`request_outcome_unknown` requires reading retained status. Reusing the same
-creation key with the same canonical inputs recovers the original plan.
+For a custom UI, the same small HTTP client exposes:
+
+```ts
+const plan = await client.create({
+  recipe: "dca.v1", amount: "25", opportunities: 30,
+  maxSlippageBps: 50, idempotencyKey: stableCustomerRequestId,
+});
+const authorization = await client.authorize(plan.id); // review, no automatic signing
+// Display the exact review, then obtain an explicit owner action:
+if (authorization.review) {
+  const evidence = await owner.approve(authorization.review);
+  await client.submitApproval(plan.id, evidence); // active or setup pending
+}
+await client.get(plan.id);
+await client.listRuns(plan.id);
+await client.pause(plan.id);
+await client.resume(plan.id);
+const stopped = await client.cancel(plan.id); // stops admission immediately
+if (stopped.cancellation?.status === "owner_action_required") {
+  // Explain and confirm the onchain cancellation, then:
+  await owner.cancel(stopped);
+}
+```
+
+`opportunities` counts scheduled slots, not completed purchases. `/config`
+returns the pinned pair, chain, daily interval, grace and fees. Amounts are
+normalized before consent. A changed plan needs new consent. Reuse creation's
+idempotency key only for identical inputs, including user and key scope.
+
+The browser root is HTTP-only. React is an optional peer for `/react`; OAAth is
+an optional peer for `/wallet`. IndexedDB stores owner action intents before
+submission. Lost replies never trigger a second send. A pending operation stays
+pending until independently observed; reopening a page does not rotate keys.
+
+For other wallet hosts use `/approval` and `/cancellation` with an atomic durable
+journal and the existing OAAth owner sendCalls path. `approve()` assumes the
+calling UI has shown and explicitly accepted the complete owner review.

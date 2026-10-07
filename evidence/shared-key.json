@@ -1,0 +1,8 @@
+{
+  "sameSigner": true,
+  "separateConsent": true,
+  "separateExecutors": true,
+  "crossUserDenied": true,
+  "cancelOnePreservesOther": true,
+  "otherPurchaseFinalized": true
+}
