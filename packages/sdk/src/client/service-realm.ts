@@ -28,6 +28,7 @@ import {
   captureBundlerRejection,
   captureRecord,
   captureValidationGasDiagnostic,
+  parseOperatorCredentialProfile,
   parseServiceBootstrap,
   parseUserOperationFailure,
   type ServiceBootstrap,
@@ -45,8 +46,11 @@ type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" 
 
 import { deriveOperatorCredentialProfile } from "./key-credential.js";
 import {
+  loadRemoteServiceSession,
   loadServiceSession,
   type PersistedServiceSession,
+  type ServiceSessionInput,
+  saveRemoteServiceSession,
   saveServiceSession,
   serviceSessionKeyId,
 } from "./service-session.js";
@@ -488,11 +492,25 @@ function deviceIdentity(): string {
 async function remoteSessionKey(
   input: Readonly<ServiceRealmInput>,
   transport: (request: Request) => Promise<Response>,
-  deviceId: string,
-): Promise<Readonly<{ key: Readonly<KeyProfile>; credential: Readonly<Record<string, unknown>> }>> {
+  continuity: Readonly<ServiceSessionInput>,
+  providerId: string,
+): Promise<Readonly<SuppliedSession>> {
+  const session =
+    (await loadRemoteServiceSession(continuity)) ??
+    Object.freeze({ deviceId: deviceIdentity(), providerId, credential: null });
+  if (session.providerId !== providerId)
+    return clientFail("oaath_client_capability_invalid", "remote session provider changed");
+  // Persist the intent before creation, then the public credential before consent.
+  if (session.credential === null) await saveRemoteServiceSession(continuity, session);
+  const { deviceId } = session;
   const served = await fetchJson(
     transport,
-    jsonRequest(`${input.url}/session-signers`, { deviceId }),
+    jsonRequest(
+      `${input.url}/session-signers`,
+      session.credential === null
+        ? { deviceId, intent: "create" }
+        : { deviceId, intent: "recover", operatorCredential: session.credential },
+    ),
     "session signer credential",
   );
   const record = exactClientRecord(
@@ -502,28 +520,38 @@ async function remoteSessionKey(
     new WeakSet(),
     "oaath_client_capability_invalid",
   );
-  const credential = record.operatorCredential as Record<string, unknown> | null;
+  const credential = (() => {
+    try {
+      return parseOperatorCredentialProfile(record.operatorCredential);
+    } catch {
+      return clientFail(
+        "oaath_client_capability_invalid",
+        "the service served an unusable session signer credential",
+      );
+    }
+  })();
   if (
-    !credential ||
     credential.kind !== "ecdsa" ||
-    typeof credential.address !== "string" ||
-    !/^0x[0-9a-f]{40}$/u.test(credential.address)
+    (session.credential !== null && session.credential.address !== credential.address)
   ) {
-    return clientFail(
-      "oaath_client_capability_invalid",
-      "the service served an unusable session signer credential",
-    );
+    return clientFail("oaath_client_capability_invalid", "remote session credential changed");
   }
-  const address = credential.address as `0x${string}`;
+  if (session.credential === null)
+    await saveRemoteServiceSession(continuity, { ...session, credential });
+  const address = credential.address;
   return Object.freeze({
-    credential: Object.freeze({ ...credential }),
-    key: ecdsaKey({
+    deviceId,
+    sessionKey: ecdsaKey({
       account: {
         address,
         sign: async ({ hash }: { readonly hash: `0x${string}` }) => {
           const answer = await fetchJson(
             transport,
-            jsonRequest(`${input.url}/session-signers/signatures`, { deviceId, hash }),
+            jsonRequest(`${input.url}/session-signers/signatures`, {
+              deviceId,
+              hash,
+              operatorCredential: credential,
+            }),
             "session signer signature",
           );
           return (answer as { readonly signature?: unknown } | null)?.signature;
@@ -560,19 +588,14 @@ async function composeConfiguration(
   // a caller-supplied session under remote custody.
   const supplied = "sessionKey" in session;
   const deviceId = session.deviceId;
-  const remote =
-    bootstrap.sessionSigner.mode === "frontend"
-      ? null
-      : await remoteSessionKey(input, transport, deviceId);
   const sessionKey =
-    remote?.key ??
-    ("sessionKey" in session
+    "sessionKey" in session
       ? session.sessionKey
       : ecdsaKey({
           account: privateKeyToAccount(session.privateKey),
           validator: SESSION_VALIDATOR_PLACEHOLDER,
-        }));
-  const operatorCredential = remote?.credential ?? deriveOperatorCredentialProfile(sessionKey);
+        });
+  const operatorCredential = deriveOperatorCredentialProfile(sessionKey);
   return {
     binding: {
       issuer: input.url,
@@ -713,13 +736,20 @@ export function createServiceRealm<Realm extends object>(
       const { stores } = defaultStoreOwner;
       // Continuity, never authority: a persisted session keeps the device
       // identity and the operator key stable across reloads so `resume()`
-      // finds a Grant this realm can still sign for. Anything unreadable
-      // starts fresh, and a save failure runs this realm ephemeral rather
-      // than refusing it — the approval flow re-establishes authority either
-      // way.
+      // finds a Grant this realm can still sign for. Remote custody requires
+      // retained public continuity; only locally generated frontend sessions
+      // may start fresh when their wrapping key is unavailable.
       const origin = localOrigin(input);
-      const session = input.session ?? (await ownSession(stores, origin, selectedBootstrap));
       const declared = selectedBootstrap.sessionSigner;
+      const session =
+        declared.mode === "frontend"
+          ? (input.session ?? (await ownSession(stores, origin, selectedBootstrap)))
+          : await remoteSessionKey(
+              input,
+              transport,
+              { stores, url: input.url, origin, bootstrap: selectedBootstrap },
+              declared.providerId!,
+            );
       inner = compose(
         await composeConfiguration(input, transport, selectedBootstrap, stores, session),
         // The owner approves the custody model with the scope: remote custody

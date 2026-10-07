@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { OaathRelayError, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";
 import { createKmsSessionSignerProvider } from "../src/session-signer/kms-provider.js";
+import { createMemorySessionSignerRegistry } from "../src/session-signer/registry.js";
 import type { RelayStore, RelayTransaction } from "../src/store/interface.js";
 import { createMemoryRelayStore } from "../src/store/memory.js";
 import {
@@ -850,7 +851,11 @@ describe("URL-only service surface", () => {
   });
 
   it("serves hosted session-signer custody: one credential per identity, signatures on exact hashes", async () => {
-    const provider = createKmsSessionSignerProvider({ kms: createTestKms() });
+    const provider = createKmsSessionSignerProvider({
+      providerId: "kms-primary",
+      registry: createMemorySessionSignerRegistry(),
+      kms: createTestKms(),
+    });
     const harness = createHarness(
       bootstrapOptions({
         sessionSigner: { mode: "oaath_hosted", providerId: "kms-primary", provider },
@@ -867,20 +872,26 @@ describe("URL-only service surface", () => {
     // One identity, one credential — idempotent across calls (the rotation
     // invariant: nothing can swap the public key under an existing approval).
     const first = await expectOk<Record<string, unknown>>(
-      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      await harness.handler(
+        post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1", intent: "create" }),
+      ),
       200,
     );
     const credential = first.operatorCredential as Record<string, unknown>;
     expect(credential).toMatchObject({ kind: "ecdsa" });
     expect(credential.address).toMatch(/^0x[0-9a-f]{40}$/u);
     const again = await expectOk<Record<string, unknown>>(
-      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      await harness.handler(
+        post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1", intent: "create" }),
+      ),
       200,
     );
     expect(again.operatorCredential).toEqual(credential);
     // A different device is a different identity and a different key.
     const other = await expectOk<Record<string, unknown>>(
-      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-2" })),
+      await harness.handler(
+        post("/session-signers", CLIENT_TOKEN, { deviceId: "device-2", intent: "create" }),
+      ),
       200,
     );
     expect((other.operatorCredential as Record<string, unknown>).address).not.toBe(
@@ -891,7 +902,11 @@ describe("URL-only service surface", () => {
     const hash = `0x${"7a".repeat(32)}`;
     const signed = await expectOk<Record<string, unknown>>(
       await harness.handler(
-        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-1", hash }),
+        post("/session-signers/signatures", CLIENT_TOKEN, {
+          deviceId: "device-1",
+          hash,
+          operatorCredential: credential,
+        }),
       ),
       200,
     );
@@ -901,23 +916,35 @@ describe("URL-only service surface", () => {
     // an unauthenticated caller are refused.
     await expectFailure(
       await harness.handler(
-        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-1", hash: "0x01" }),
+        post("/session-signers/signatures", CLIENT_TOKEN, {
+          deviceId: "device-1",
+          hash: "0x01",
+          operatorCredential: credential,
+        }),
       ),
       "relay_request_invalid",
     );
     await expectFailure(
-      await harness.handler(post("/session-signers", OWNER_TOKEN, { deviceId: "device-1" })),
+      await harness.handler(
+        post("/session-signers", OWNER_TOKEN, { deviceId: "device-1", intent: "create" }),
+      ),
       "relay_forbidden",
     );
     await expectFailure(
-      await harness.handler(post("/session-signers", "wrong-token", { deviceId: "device-1" })),
+      await harness.handler(
+        post("/session-signers", "wrong-token", { deviceId: "device-1", intent: "create" }),
+      ),
       "relay_unauthenticated",
     );
     // Signing never creates a key: an identity that never fetched its
     // credential holds no approval that could authorize a signature.
     await expectFailure(
       await harness.handler(
-        post("/session-signers/signatures", CLIENT_TOKEN, { deviceId: "device-3", hash }),
+        post("/session-signers/signatures", CLIENT_TOKEN, {
+          deviceId: "device-3",
+          hash,
+          operatorCredential: credential,
+        }),
       ),
       "relay_internal",
     );
@@ -926,7 +953,9 @@ describe("URL-only service surface", () => {
   it("serves no session-signer routes when the deployment declared no custody", async () => {
     const harness = createHarness(bootstrapOptions());
     await expectFailure(
-      await harness.handler(post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1" })),
+      await harness.handler(
+        post("/session-signers", CLIENT_TOKEN, { deviceId: "device-1", intent: "create" }),
+      ),
       "relay_not_found",
     );
   });

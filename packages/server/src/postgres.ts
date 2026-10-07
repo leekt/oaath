@@ -16,6 +16,10 @@ export {
   createPostgresOwnerDeviceCredentialStore,
 } from "./native/authentication-postgres.js";
 export {
+  createPostgresSessionSignerRegistry,
+  createPostgresSessionSignerSchema,
+} from "./session-signer/postgres.js";
+export {
   createPostgresOperationSchema,
   createPostgresOperationStoreAdapter,
 } from "./store/postgres/operation.js";

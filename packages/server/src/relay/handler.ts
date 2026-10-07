@@ -48,6 +48,7 @@ import {
   captureRecord,
   exactCapturedRecord,
   OAATH_SERVICE_BOOTSTRAP_VERSION,
+  parseOperatorCredentialProfile,
   parseServiceBootstrap,
   readRpcBundlerRejection,
   readValidationGasDiagnostic,
@@ -500,7 +501,7 @@ function captureOptions(value: unknown): CapturedOptions {
       providerId: custody.providerId,
       provider: requirePort<RelaySessionSignerProvider>(
         custody.provider,
-        ["credential", "sign"],
+        ["createCredential", "credential", "sign"],
         "session signer provider",
       ),
     });
@@ -908,15 +909,26 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       if (segments.length === 1) {
         requireMethod(request, "POST");
         const caller = await authenticate(request, "client", "session-signers.credential");
-        const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), ["deviceId"]);
+        const body = await bodyRecord(request, captured.maxBodyBytes);
+        if (body.intent !== "create" && body.intent !== "recover")
+          return relayFailure(INVALID, "session signer intent is invalid");
+        exactBody(
+          body,
+          body.intent === "create"
+            ? ["deviceId", "intent"]
+            : ["deviceId", "intent", "operatorCredential"],
+        );
+        const expected =
+          body.intent === "recover" ? sessionSignerCredential(body.operatorCredential) : null;
         const deviceId = boundedText(body.deviceId, 256, "session signer deviceId", INVALID);
         let credential: unknown;
         try {
-          credential = await custody.provider.credential({
-            clientId: caller.clientId,
-            subject: caller.subject,
-            deviceId,
-          });
+          const identity = { clientId: caller.clientId, subject: caller.subject, deviceId };
+          credential =
+            expected === null
+              ? await custody.provider.createCredential(identity)
+              : await custody.provider.credential({ ...identity, expectedCredential: expected });
+          credential = sessionSignerCredential(credential);
         } catch {
           return relayFailure("relay_internal", "session signer provider did not answer");
         }
@@ -928,7 +940,9 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         const body = exactBody(await bodyRecord(request, captured.maxBodyBytes), [
           "deviceId",
           "hash",
+          "operatorCredential",
         ]);
+        const expectedCredential = sessionSignerCredential(body.operatorCredential);
         const deviceId = boundedText(body.deviceId, 256, "session signer deviceId", INVALID);
         // One exact 32-byte hash; the provider signs an identity, never a
         // message it interprets.
@@ -942,6 +956,7 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
             subject: caller.subject,
             deviceId,
             hash: body.hash as `0x${string}`,
+            expectedCredential,
           });
         } catch {
           return relayFailure("relay_internal", "session signer provider did not answer");
@@ -1269,4 +1284,14 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
       );
     }
   };
+}
+
+function sessionSignerCredential(value: unknown) {
+  try {
+    const credential = parseOperatorCredentialProfile(value);
+    if (credential.kind !== "ecdsa") throw new Error();
+    return credential;
+  } catch {
+    return relayFailure("relay_request_invalid", "session signer credential is invalid");
+  }
 }

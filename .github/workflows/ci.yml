@@ -94,6 +94,12 @@ jobs:
       - run: xvfb-run --auto-servernum bun run smoke:extension
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+      - run: bun run smoke:session-signer
+        timeout-minutes: 2
+        env:
+          OAATH_REQUIRE_POSTGRES: "1"
+          OAATH_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/postgres
+          PGPASSWORD: oaath-ci-only
       - run: bun run smoke:server
       # Its own step, so a two-chain materialization failure names itself instead
       # of hiding inside the single-chain anvil suites above.
