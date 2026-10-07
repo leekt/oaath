@@ -31,6 +31,8 @@ export interface OAuthPortalOptions {
   /** The root's factory-derived account; any address when nothing is executed. */
   readonly account?: `0x${string}`;
   readonly root?: Readonly<{ credential: object; key: Readonly<KeyProfile> }>;
+  /** The root's signed owner operation for a PAR's `oaath_operation` request. */
+  readonly signOperation?: (request: unknown) => Promise<unknown>;
   /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
   readonly accounts?: unknown;
 }
@@ -107,6 +109,16 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       return { code: "code-1", state: par.get("state")!, iss: ISSUER };
     }
     const [detail] = JSON.parse(details);
+    if (detail.type === "oaath_operation") {
+      const signed = await options.signOperation?.(detail.request);
+      token = {
+        id_token: await signIn(par.get("nonce")),
+        token_type: "Bearer",
+        scope: "openid",
+        authorization_details: [{ type: "oaath_operation", signed }],
+      };
+      return { code: "code-1", state: par.get("state")!, iss: ISSUER };
+    }
     const requestedAt = Math.floor(Date.now() / 1000);
     // The relay's compose.
     const request: Record<string, unknown> = {

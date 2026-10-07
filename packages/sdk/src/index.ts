@@ -72,6 +72,8 @@ export type {
   OaathOperationReceipt,
   OaathOperationStatus,
 } from "./client/operation-handle.js";
+export type { OaathOwnerOperationApprovalOptions } from "./client/owner-operation-approval.js";
+export { requestOwnerOperationApproval } from "./client/owner-operation-approval.js";
 export type {
   OaathOwnerAccount,
   OaathOwnerCallsReview,
