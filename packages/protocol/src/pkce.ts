@@ -4,7 +4,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { sha256, stringToBytes } from "viem";
+import { sha256 } from "@noble/hashes/sha256";
 import { protocolFailure } from "./errors.js";
 import type { CaptureFailure } from "./internal/exact-record.js";
 
@@ -34,5 +34,5 @@ export function deriveCodeChallenge(
   if (typeof codeVerifier !== "string" || !CODE_VERIFIER.test(codeVerifier)) {
     return fail("PKCE code verifier must be 43 to 128 unreserved characters");
   }
-  return base64UrlDigest(sha256(stringToBytes(codeVerifier), "bytes"));
+  return base64UrlDigest(sha256(new TextEncoder().encode(codeVerifier)));
 }

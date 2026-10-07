@@ -8,7 +8,8 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { encodeAbiParameters, type Hex, hashTypedData, keccak256, type TypedData } from "viem";
+import type { Hex } from "cetane";
+import { encodeAbiParameters, hashTypedData, keccak256 } from "cetane/utils";
 import { capturedByProtocol, type ProtocolContractErrorCode, protocolFailure } from "./errors.js";
 import {
   captureOwnerCredentialProfile,
@@ -571,12 +572,7 @@ export function parseCanonicalEip712TypedData(value: unknown): Readonly<Canonica
 }
 
 function hashCapturedTypedData(value: CanonicalEip712TypedData): Hex {
-  return hashTypedData({
-    types: value.types as TypedData,
-    primaryType: value.primaryType,
-    domain: value.domain as never,
-    message: value.message as never,
-  });
+  return hashTypedData(value);
 }
 
 export function hashCanonicalEip712TypedData(value: unknown): Hex {

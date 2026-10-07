@@ -14,3 +14,6 @@ packages/contracts/out/
 # Environment files carry credentials — never commit any of them
 .env
 .env.*
+
+# Exact local package consumed until Cetane is released.
+!vendor/cetane-0.0.2-9862f7c.tgz

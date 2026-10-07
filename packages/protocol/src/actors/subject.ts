@@ -9,7 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { encodeAbiParameters, keccak256 } from "viem";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { capturedByProtocol, protocolFailure } from "../errors.js";
 import {
   type ClientId,

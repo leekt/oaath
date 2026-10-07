@@ -1,4 +1,5 @@
-import { encodeAbiParameters, type Hex, keccak256 } from "viem";
+import type { Hex } from "cetane";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import {
   type ApplicationBinding,
   advanceGrant,

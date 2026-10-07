@@ -37,3 +37,8 @@ contain only the declared install-nonce invalidation or permission-uninstall cal
 operation into the returned owner artifact. The owner device still verifies its
 paired account, current consent and configured chain before signing. This is
 separate from generic owner-signing requests; raw digests remain reject-only.
+
+Ethereum encoding and hashing use the exact Cetane tarball pinned in this repository.
+`entryPointAbi` owns the shared packed-operation ABI for EntryPoint 0.7 and 0.9.
+Run `bun run smoke:protocol` from the repository root to verify packed protocol
+vectors without viem installed. Viem is a development-only reference oracle.

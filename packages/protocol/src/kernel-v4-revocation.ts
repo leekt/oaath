@@ -4,20 +4,16 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import type { Hex } from "cetane";
+import { getSigningHash, toUserOperation } from "cetane/execution/erc4337";
 import {
-  concat,
+  concatHex,
   encodeAbiParameters,
   encodeFunctionData,
-  type Hex,
   keccak256,
   parseAbi,
   toHex,
-} from "viem";
-import {
-  getUserOperationHash,
-  toUserOperation,
-  type UserOperation,
-} from "viem/account-abstraction";
+} from "cetane/utils";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import { hashOwnerCredentialProfile } from "./identity-profile.js";
 import { exactRecord } from "./internal/exact-record.js";
@@ -217,7 +213,7 @@ function revocationCallData(
         });
   const single = calls.length === 1 ? calls[0] : undefined;
   const executionData = single
-    ? concat([single.target, toHex(0n, { size: 32 }), single.data])
+    ? concatHex([single.target, toHex(0n, { size: 32 }), single.data])
     : encodeAbiParameters(
         [
           {
@@ -331,23 +327,16 @@ export function parseKernelRevocationSigningRequest(
       return fail("Kernel revocation contains calls outside its effect");
     const entryPoint = address(record.entryPoint, "Kernel revocation EntryPoint");
     const expectedDigest = bytes(record.expectedDigest, "Kernel revocation digest", 32);
-    // viem delegates packed conversion to ox; its current declaration retains
-    // the input shape although the implementation returns the unpacked fields.
-    const userOperation = toUserOperation({
-      ...operation,
-      nonce: BigInt(operation.nonce),
-      preVerificationGas: BigInt(operation.preVerificationGas),
-      signature: "0x",
-    }) as unknown as UserOperation<"0.9">;
-    if (
-      expectedDigest !==
-      getUserOperationHash({
-        chainId: record.chainId,
-        entryPointAddress: entryPoint,
-        entryPointVersion: "0.9",
-        userOperation,
-      })
-    )
+    const userOperation = toUserOperation(
+      {
+        ...operation,
+        nonce: BigInt(operation.nonce),
+        preVerificationGas: BigInt(operation.preVerificationGas),
+        signature: "0x",
+      },
+      "0.9",
+    );
+    if (expectedDigest !== getSigningHash(userOperation, record.chainId, entryPoint, "0.9"))
       return fail("Kernel revocation digest contradicts its operation");
     return Object.freeze({
       version: OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,

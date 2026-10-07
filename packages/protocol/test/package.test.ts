@@ -69,6 +69,7 @@ describe("package boundary", () => {
       "encodeOwnerSigningRequest",
       "encodePermissionDecision",
       "encodePermissionRequest",
+      "entryPointAbi",
       "evaluateGrantPolicyCoverage",
       "exactCapturedRecord",
       "exactRecord",
