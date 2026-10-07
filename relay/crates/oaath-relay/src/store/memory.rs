@@ -19,6 +19,7 @@ use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
+use crate::policy::PolicyTemplateRecord;
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
@@ -44,6 +45,7 @@ struct Tables {
     portal_challenges: HashMap<String, Value>,
     portal_sessions: HashMap<String, Value>,
     link_requests: HashMap<String, Value>,
+    policy_templates: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -522,6 +524,7 @@ impl RelayTransaction for MemoryTransaction {
         link_id: &str,
         outcome: LinkOutcome,
         approval_signature: Option<&str>,
+        grant_id: Option<&str>,
         decided_at: u64,
     ) -> RelayResult<bool> {
         let Some(mut record) = self.lock_link_request(link_id).await? else {
@@ -533,11 +536,67 @@ impl RelayTransaction for MemoryTransaction {
         record.outcome = Some(outcome);
         record.decided_at = Some(decided_at);
         record.approval_signature = approval_signature.map(str::to_owned);
+        record.grant_id = grant_id.map(str::to_owned);
         // The record parser owns the outcome/signature invariant.
         let value = to_value(&record);
         LinkRequestRecord::parse(&value)?;
         self.staged.link_requests.insert(link_id.to_owned(), value);
         Ok(true)
+    }
+
+    async fn list_policy_templates(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PolicyTemplateRecord>> {
+        let mut templates = Vec::new();
+        for value in self.staged.policy_templates.values() {
+            let template = PolicyTemplateRecord::parse(value)?;
+            if template.account_id == account_id {
+                templates.push(template);
+            }
+        }
+        templates
+            .sort_by(|a, b| (a.created_at, &a.template_id).cmp(&(b.created_at, &b.template_id)));
+        Ok(templates)
+    }
+
+    async fn lock_policy_template(
+        &mut self,
+        template_id: &str,
+    ) -> RelayResult<Option<PolicyTemplateRecord>> {
+        read(
+            &self.staged.policy_templates,
+            template_id,
+            PolicyTemplateRecord::parse,
+        )
+    }
+
+    async fn insert_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool> {
+        if !self.staged.accounts.contains_key(&record.account_id) {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.policy_templates,
+            &record.template_id,
+            to_value(record),
+        ))
+    }
+
+    async fn update_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool> {
+        let Some(stored) = self.lock_policy_template(&record.template_id).await? else {
+            return Ok(false);
+        };
+        if stored.account_id != record.account_id {
+            return Ok(false);
+        }
+        self.staged
+            .policy_templates
+            .insert(record.template_id.clone(), to_value(record));
+        Ok(true)
+    }
+
+    async fn delete_policy_template(&mut self, template_id: &str) -> RelayResult<bool> {
+        Ok(self.staged.policy_templates.remove(template_id).is_some())
     }
 
     async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool> {

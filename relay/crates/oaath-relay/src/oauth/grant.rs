@@ -309,7 +309,7 @@ pub struct GrantView {
     pub enable: Option<Value>,
 }
 
-async fn read_grant(
+pub(crate) async fn read_grant(
     transaction: &mut dyn RelayTransaction,
     kms: &dyn RelayKms,
     grant_id: &str,

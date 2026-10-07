@@ -122,6 +122,11 @@ fn policy_packages(policy: &GrantPolicy) -> RelayResult<Vec<(&'static str, Vec<u
     Ok(packages)
 }
 
+/// Refuses a policy the SDK cannot compile into reviewed Kernel packages.
+pub fn check_policy(policy: &GrantPolicy) -> RelayResult<()> {
+    policy_packages(policy).map(|_| ())
+}
+
 /// The operator credential's pinned permission signer, key kind, and public
 /// material, as the SDK's `credentialKey` publishes them.
 fn signer(operator: &OperatorCredentialProfile) -> (&'static str, &'static str, Vec<u8>) {

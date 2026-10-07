@@ -32,6 +32,7 @@ use async_trait::async_trait;
 use crate::error::RelayResult;
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
+use crate::policy::PolicyTemplateRecord;
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
@@ -172,8 +173,24 @@ pub trait RelayTransaction: Send {
         link_id: &str,
         outcome: LinkOutcome,
         approval_signature: Option<&str>,
+        grant_id: Option<&str>,
         decided_at: u64,
     ) -> RelayResult<bool>;
+
+    /// The account's templates, in creation order.
+    async fn list_policy_templates(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PolicyTemplateRecord>>;
+    async fn lock_policy_template(
+        &mut self,
+        template_id: &str,
+    ) -> RelayResult<Option<PolicyTemplateRecord>>;
+    /// `false` when the identifier exists or the account is unknown.
+    async fn insert_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool>;
+    /// Replaces the stored template of the same id and account.
+    async fn update_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool>;
+    async fn delete_policy_template(&mut self, template_id: &str) -> RelayResult<bool>;
     /// `true` only when this call set `removed_at` on the approved link.
     async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool>;
 

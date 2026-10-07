@@ -20,6 +20,7 @@ use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
+use crate::policy::PolicyTemplateRecord;
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
@@ -27,7 +28,7 @@ use crate::records::{
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v12";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v13";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -36,13 +37,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v12 (
+        "CREATE TABLE oaath_relay_schema_v13 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v12 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v13 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -70,7 +71,7 @@ pub fn schema_statements() -> Vec<String> {
     decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= {max}),
     code_ref text,
     code_expires_at bigint CHECK (code_expires_at >= 0 AND code_expires_at <= {max}),
-    CHECK ((outcome = 'approved') = (code_ref IS NOT NULL)),
+    CHECK (code_ref IS NULL OR outcome = 'approved'),
     CHECK ((code_ref IS NULL) = (code_expires_at IS NULL))
   )"
         ),
@@ -151,7 +152,7 @@ pub fn schema_statements() -> Vec<String> {
   )"
         ),
         format!(
-            "CREATE TABLE oaath_link_request_v1 (
+            "CREATE TABLE oaath_link_request_v2 (
     link_id text PRIMARY KEY,
     record_version text NOT NULL,
     account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
@@ -162,9 +163,13 @@ pub fn schema_statements() -> Vec<String> {
     outcome text CHECK (outcome IN ('approved', 'rejected')),
     decided_at bigint CHECK (decided_at >= 0 AND decided_at <= {max}),
     approval_signature text,
+    grant_id text,
     removed_at bigint CHECK (removed_at >= 0 AND removed_at <= {max}),
     CHECK ((outcome IS NULL) = (decided_at IS NULL)),
-    CHECK ((outcome IS NOT DISTINCT FROM 'approved') = (approval_signature IS NOT NULL)),
+    CHECK ((outcome IS NOT DISTINCT FROM 'approved')
+      = ((approval_signature IS NOT NULL) <> (grant_id IS NOT NULL))),
+    CHECK (approval_signature IS NULL OR grant_id IS NULL),
+    CHECK (grant_id IS NULL OR grant_id = link_id),
     CHECK (removed_at IS NULL OR outcome = 'approved')
   )"
         ),
@@ -175,7 +180,7 @@ pub fn schema_statements() -> Vec<String> {
     record_version text NOT NULL,
     role text NOT NULL CHECK (role IN ('root', 'permission')),
     request_id text REFERENCES oaath_relay_authorization_request_v2 (request_id),
-    link_id text REFERENCES oaath_link_request_v1 (link_id),
+    link_id text REFERENCES oaath_link_request_v2 (link_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     CHECK ((role = 'root') = (request_id IS NULL AND link_id IS NULL)),
     CHECK (request_id IS NULL OR link_id IS NULL),
@@ -248,6 +253,18 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
     signed_out_at bigint CHECK (signed_out_at >= created_at AND signed_out_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_policy_template_v1 (
+    template_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
+    name text NOT NULL,
+    policy text NOT NULL,
+    lifetime_seconds bigint NOT NULL CHECK (lifetime_seconds > 0 AND lifetime_seconds <= {max}),
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    updated_at bigint NOT NULL CHECK (updated_at >= created_at AND updated_at <= {max})
   )"
         ),
     ]
@@ -471,8 +488,26 @@ const SIGNER_FIELDS: [(&str, &str, bool); 5] = [
     ("createdAt", "signer_created_at", true),
 ];
 
+const TEMPLATE_COLUMNS: &str = "template_id, record_version, account_id, name, policy, lifetime_seconds, created_at, updated_at";
+
+fn template_record(row: &PgRow) -> RelayResult<PolicyTemplateRecord> {
+    PolicyTemplateRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("templateId", "template_id", false),
+            ("accountId", "account_id", false),
+            ("name", "name", false),
+            ("policy", "policy", false),
+            ("lifetimeSeconds", "lifetime_seconds", true),
+            ("createdAt", "created_at", true),
+            ("updatedAt", "updated_at", true),
+        ],
+    )?)
+}
+
 const LINK_COLUMNS: &str = "link_id, record_version, account_id, signer_id, label, created_at, \
-     expires_at, outcome, decided_at, approval_signature, removed_at";
+     expires_at, outcome, decided_at, approval_signature, grant_id, removed_at";
 
 fn link_record(row: &PgRow) -> RelayResult<LinkRequestRecord> {
     LinkRequestRecord::parse(&columns(
@@ -488,6 +523,7 @@ fn link_record(row: &PgRow) -> RelayResult<LinkRequestRecord> {
             ("outcome", "outcome", false),
             ("decidedAt", "decided_at", true),
             ("approvalSignature", "approval_signature", false),
+            ("grantId", "grant_id", false),
             ("removedAt", "removed_at", true),
         ],
     )?)
@@ -1084,7 +1120,7 @@ impl RelayTransaction for PostgresTransaction {
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {
         let sql = format!(
-            "SELECT {LINK_COLUMNS} FROM oaath_link_request_v1 WHERE link_id = $1 FOR UPDATE"
+            "SELECT {LINK_COLUMNS} FROM oaath_link_request_v2 WHERE link_id = $1 FOR UPDATE"
         );
         self.first(sqlx::query(&sql).bind(link_id), link_record)
             .await
@@ -1093,8 +1129,8 @@ impl RelayTransaction for PostgresTransaction {
     async fn insert_link_request(&mut self, record: &LinkRequestRecord) -> RelayResult<bool> {
         // An unknown account or signer inserts nothing instead of aborting.
         let sql = format!(
-            "INSERT INTO oaath_link_request_v1 ({LINK_COLUMNS}) \
-             SELECT $1, $2, $3, $4, $5, $6, $7, NULL, NULL, NULL, NULL \
+            "INSERT INTO oaath_link_request_v2 ({LINK_COLUMNS}) \
+             SELECT $1, $2, $3, $4, $5, $6, $7, NULL, NULL, NULL, NULL, NULL \
              WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $3) \
              AND EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
              ON CONFLICT DO NOTHING"
@@ -1117,6 +1153,7 @@ impl RelayTransaction for PostgresTransaction {
         link_id: &str,
         outcome: LinkOutcome,
         approval_signature: Option<&str>,
+        grant_id: Option<&str>,
         decided_at: u64,
     ) -> RelayResult<bool> {
         let outcome = match outcome {
@@ -1126,14 +1163,90 @@ impl RelayTransaction for PostgresTransaction {
         // One-shot: the guard makes a second decision affect zero rows.
         self.applied(
             sqlx::query(
-                "UPDATE oaath_link_request_v1 \
-                 SET outcome = $2, approval_signature = $3, decided_at = $4 \
+                "UPDATE oaath_link_request_v2 \
+                 SET outcome = $2, approval_signature = $3, grant_id = $4, decided_at = $5 \
                  WHERE link_id = $1 AND outcome IS NULL",
             )
             .bind(link_id)
             .bind(outcome)
             .bind(approval_signature)
+            .bind(grant_id)
             .bind(bigint(decided_at)),
+        )
+        .await
+    }
+
+    async fn list_policy_templates(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PolicyTemplateRecord>> {
+        let sql = format!(
+            "SELECT {TEMPLATE_COLUMNS} FROM oaath_policy_template_v1 WHERE account_id = $1 \
+             ORDER BY created_at, template_id COLLATE \"C\""
+        );
+        let rows = sqlx::query(&sql)
+            .bind(account_id)
+            .fetch_all(&mut *self.transaction)
+            .await
+            .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        rows.iter().map(template_record).collect()
+    }
+
+    async fn lock_policy_template(
+        &mut self,
+        template_id: &str,
+    ) -> RelayResult<Option<PolicyTemplateRecord>> {
+        let sql = format!(
+            "SELECT {TEMPLATE_COLUMNS} FROM oaath_policy_template_v1 \
+             WHERE template_id = $1 FOR UPDATE"
+        );
+        self.first(sqlx::query(&sql).bind(template_id), template_record)
+            .await
+    }
+
+    async fn insert_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool> {
+        // An unknown account inserts nothing instead of aborting.
+        let sql = format!(
+            "INSERT INTO oaath_policy_template_v1 ({TEMPLATE_COLUMNS}) \
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
+             WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $3) \
+             ON CONFLICT DO NOTHING"
+        );
+        self.applied(
+            sqlx::query(&sql)
+                .bind(&record.template_id)
+                .bind(record.version)
+                .bind(&record.account_id)
+                .bind(&record.name)
+                .bind(&record.policy)
+                .bind(bigint(record.lifetime_seconds))
+                .bind(bigint(record.created_at))
+                .bind(bigint(record.updated_at)),
+        )
+        .await
+    }
+
+    async fn update_policy_template(&mut self, record: &PolicyTemplateRecord) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query(
+                "UPDATE oaath_policy_template_v1 \
+                 SET name = $3, policy = $4, lifetime_seconds = $5, updated_at = $6 \
+                 WHERE template_id = $1 AND account_id = $2",
+            )
+            .bind(&record.template_id)
+            .bind(&record.account_id)
+            .bind(&record.name)
+            .bind(&record.policy)
+            .bind(bigint(record.lifetime_seconds))
+            .bind(bigint(record.updated_at)),
+        )
+        .await
+    }
+
+    async fn delete_policy_template(&mut self, template_id: &str) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query("DELETE FROM oaath_policy_template_v1 WHERE template_id = $1")
+                .bind(template_id),
         )
         .await
     }
@@ -1141,7 +1254,7 @@ impl RelayTransaction for PostgresTransaction {
     async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool> {
         self.applied(
             sqlx::query(
-                "UPDATE oaath_link_request_v1 SET removed_at = $2 \
+                "UPDATE oaath_link_request_v2 SET removed_at = $2 \
                  WHERE link_id = $1 AND outcome = 'approved' AND removed_at IS NULL",
             )
             .bind(link_id)
