@@ -35,6 +35,9 @@ pub enum ErrorCode {
     PermissionArtifactNotApproved,
     /// The relay's own rejection of a Kernel owner-signing artifact.
     RelayRequestInvalid,
+    /// An owner operation names another EntryPoint, account, or factory
+    /// deployment than its profile derives (the SDK's `verifyOwnerOperation` code).
+    KernelRuntimeBindingMismatch,
 }
 
 impl ErrorCode {
@@ -61,6 +64,7 @@ impl ErrorCode {
             Self::PermissionArtifactJsonInvalid => "permission_artifact_json_invalid",
             Self::PermissionArtifactNotApproved => "permission_artifact_not_approved",
             Self::RelayRequestInvalid => "relay_request_invalid",
+            Self::KernelRuntimeBindingMismatch => "kernel_runtime_binding_mismatch",
         }
     }
 }

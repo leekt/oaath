@@ -84,6 +84,7 @@ describe("package boundary", () => {
       "prepareKernelPermissionApproval",
       "prepareKernelPermissionRevocation",
       "prepareKernelUserOperation",
+      "prepareOwnerOperation",
       "prepareRuntimeModuleDeployment",
       "prepareUserOperation",
       "readKernelModules",
@@ -94,6 +95,7 @@ describe("package boundary", () => {
       "verifyKernelPermissionApproval",
       "verifyKernelPermissionNonceAlignmentCalls",
       "verifyKernelPermissionRevocation",
+      "verifyOwnerOperation",
     ]);
   });
 

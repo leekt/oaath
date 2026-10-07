@@ -39,7 +39,7 @@ fn owner_validator(value: &str) -> ProtocolResult<Address> {
 
 /// The root validator and the public material it installs, byte-identical to
 /// the SDK owner operator's package for the credential.
-fn root_package(
+pub(crate) fn root_package(
     owner: &OwnerCredentialProfile,
     validator: Option<&str>,
 ) -> ProtocolResult<(Address, Vec<u8>)> {

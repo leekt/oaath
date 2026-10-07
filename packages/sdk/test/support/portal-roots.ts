@@ -118,6 +118,11 @@ function webauthnRoot(label: string): PortalRoot {
   };
 }
 
+/** The private scalar behind `portalRoot(kind, label)`, for fixtures that re-sign variants. */
+export function portalSecret(kind: PortalRootKind, label = "root"): Uint8Array {
+  return scalar(`${kind}:${label}`);
+}
+
 /** The account's root of `kind`; another `label` is a different key of that kind. */
 export function portalRoot(kind: PortalRootKind, label = "root"): PortalRoot {
   const name = `${kind}:${label}`;

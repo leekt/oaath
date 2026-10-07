@@ -82,6 +82,16 @@ export {
 } from "./kernel/modules.js";
 export type { OwnerOperatorInput } from "./kernel/operator/owner.js";
 export { ownerOperator } from "./kernel/operator/owner.js";
+export type {
+  OwnerOperationRelyingParty,
+  PreparedOwnerOperation,
+  PrepareOwnerOperationInput,
+  VerifiedOwnerOperation,
+} from "./kernel/operator/owner-operation.js";
+export {
+  prepareOwnerOperation,
+  verifyOwnerOperation,
+} from "./kernel/operator/owner-operation.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
 export { sessionOperator } from "./kernel/operator/session.js";
 export type {

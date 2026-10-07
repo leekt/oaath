@@ -27,6 +27,7 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
+  getCreate2Address,
   hashTypedData,
   keccak256,
   padHex,
@@ -743,6 +744,48 @@ export function encodeKernelV4FactoryDeploy(value: KernelV4AccountInput): Hex {
     functionName: "deploy",
     args: [installTuples(packages), uint(record.accountIndex, MAX_UINT256, "Kernel account index")],
   });
+}
+
+/** Solady `LibClone.initCodeHashERC1967` of the factory's UUPS implementation. */
+const KERNEL_V4_ACCOUNT_INIT_CODE_HASH = keccak256(
+  concatHex([
+    "0x603d3d8160223d3973",
+    KERNEL_V4_UUPS_IMPLEMENTATION_V09,
+    "0x60095155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3",
+  ]),
+);
+
+/**
+ * The address `KernelFactory.getAddress` returns for an account whose only
+ * initial package is its policy-free root validator, derived offline. The Rust
+ * protocol crate derives the same address; both replay the Anvil-proven
+ * `deriveKernelV4AccountAddress` fixtures.
+ */
+export function deriveKernelV4RootAccountAddress(value: KernelV4AccountInput): `0x${string}` {
+  const context: CaptureContext = new WeakSet();
+  const record = exact(value, ["initialPackages", "accountIndex"], "Kernel account", context);
+  const [root, ...rest] = captureInitialPackages(record.initialPackages, context);
+  if (!root || rest.length > 0 || root.moduleType !== 1 || root.internalData !== "0x")
+    return fail("offline derivation requires exactly one policy-free root validator");
+  const index = uint(record.accountIndex, MAX_UINT256, "Kernel account index");
+  const salt = keccak256(
+    concatHex([
+      toHex(index, { size: 32 }),
+      keccak256(
+        concatHex([
+          toHex(1n, { size: 32 }),
+          padHex(root.module, { size: 32 }),
+          keccak256(root.moduleData),
+          keccak256("0x"),
+        ]),
+      ),
+    ]),
+  );
+  return getCreate2Address({
+    from: KERNEL_V4_FACTORY_V09,
+    salt,
+    bytecodeHash: KERNEL_V4_ACCOUNT_INIT_CODE_HASH,
+  }).toLowerCase() as `0x${string}`;
 }
 
 /**

@@ -6,18 +6,12 @@
  */
 import type { Hex } from "cetane";
 import { getSigningHash, toUserOperation } from "cetane/execution/erc4337";
-import {
-  concatHex,
-  encodeAbiParameters,
-  encodeFunctionData,
-  keccak256,
-  parseAbi,
-  toHex,
-} from "cetane/utils";
+import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi } from "cetane/utils";
 import { captureAddress } from "./address.js";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import { hashOwnerCredentialProfile } from "./identity-profile.js";
 import { exactRecord } from "./internal/exact-record.js";
+import { encodeKernelExecution } from "./internal/kernel-execution.js";
 import {
   type KernelInstall,
   type KernelReplayableInstallOwnerSigningRequest,
@@ -41,7 +35,6 @@ const MAX_UINT120 = (1n << 120n) - 1n;
 const ABI = parseAbi([
   "function setNonce(uint192 nonceKey, uint64 seq)",
   "function uninstallModule(uint256 moduleType, address module, bytes initData) payable",
-  "function execute(bytes32 mode, bytes executionData) payable",
 ]);
 const MODULE_DATA = [
   { name: "installData", type: "bytes" },
@@ -206,27 +199,7 @@ function revocationCallData(
             moduleType: Number(entry.moduleType) as KernelInstall["moduleType"],
           })),
         });
-  const single = calls.length === 1 ? calls[0] : undefined;
-  const executionData = single
-    ? concatHex([single.target, toHex(0n, { size: 32 }), single.data])
-    : encodeAbiParameters(
-        [
-          {
-            type: "tuple[]",
-            components: [
-              { name: "to", type: "address" },
-              { name: "value", type: "uint256" },
-              { name: "data", type: "bytes" },
-            ],
-          },
-        ],
-        [calls.map((call) => ({ to: call.target, value: 0n, data: call.data }))],
-      );
-  return encodeFunctionData({
-    abi: ABI,
-    functionName: "execute",
-    args: [single ? `0x${"00".repeat(32)}` : `0x01${"00".repeat(31)}`, executionData],
-  });
+  return encodeKernelExecution(calls);
 }
 
 /**

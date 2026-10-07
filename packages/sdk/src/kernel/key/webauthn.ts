@@ -127,50 +127,13 @@ function matchesAt(source: Uint8Array, expected: Uint8Array, offset: number): bo
   return expected.every((byte, index) => source[offset + index] === byte);
 }
 
-export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
-  const context: CaptureContext = new WeakSet();
-  const record = exactInput(
-    value,
-    ["credential", "credentialId", "rpId", "origin", "authenticate"],
-    "WebAuthn key",
-    context,
-  );
-  const credential = parsePublicCredential(record.credential, context, "WebAuthn key");
-  if (credential.kind !== "webauthn") {
-    return inputInvalid("WebAuthn key credential profile is not a WebAuthn credential");
-  }
-  if (typeof record.credentialId !== "string" || !BASE64URL.test(record.credentialId)) {
-    return inputInvalid("WebAuthn key credential ID is invalid");
-  }
-  const credentialBytes = bytesFromBase64Url(record.credentialId);
-  if (
-    !credentialBytes ||
-    credentialBytes.length === 0 ||
-    base64UrlFromBytes(credentialBytes) !== record.credentialId
-  ) {
-    return inputInvalid("WebAuthn key credential ID is not canonical base64url");
-  }
-  if (keccak256(toHex(credentialBytes)) !== credential.authenticatorIdHash) {
-    return inputInvalid("WebAuthn key credential ID does not match the credential profile");
-  }
-  if (
-    typeof record.rpId !== "string" ||
-    !RP_ID.test(record.rpId) ||
-    record.rpId.includes("..") ||
-    typeof record.origin !== "string" ||
-    !ORIGIN.test(record.origin)
-  ) {
-    return inputInvalid("WebAuthn key relying-party binding is invalid");
-  }
-  const rpId = record.rpId;
-  const origin = record.origin;
-  const credentialId = record.credentialId;
+/** Verifies normalized Kernel WebAuthn signature bytes for one credential and relying party. */
+function assertionVerifier(
+  publicKey: `0x${string}`,
+  rpId: string,
+  origin: string,
+): (hash: `0x${string}`, signature: `0x${string}`) => Promise<boolean> {
   const rpIdHash = toHex(sha256(new TextEncoder().encode(rpId)));
-  const publicKey = credential.publicKey;
-  const authenticate = inputCapability<WebAuthnKeyInput["authenticate"]>(
-    record.authenticate,
-    "WebAuthn key authenticator capability",
-  );
 
   function verifyAssertion(
     hash: `0x${string}`,
@@ -261,6 +224,82 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
       s,
     );
   }
+
+  return verify;
+}
+
+function relyingParty(rpId: unknown, origin: unknown): Readonly<{ rpId: string; origin: string }> {
+  if (
+    typeof rpId !== "string" ||
+    !RP_ID.test(rpId) ||
+    rpId.includes("..") ||
+    typeof origin !== "string" ||
+    !ORIGIN.test(origin)
+  ) {
+    return inputInvalid("WebAuthn key relying-party binding is invalid");
+  }
+  return Object.freeze({ rpId, origin });
+}
+
+export interface WebAuthnVerifierInput {
+  /** @oaath/protocol owner or operator WebAuthn credential profile. */
+  readonly credential: unknown;
+  readonly rpId: string;
+  readonly origin: string;
+}
+
+/**
+ * The same local verification `webauthnKey` applies, for a holder of only the
+ * public credential and its relying party: no credential ID, no authenticator.
+ */
+export function webauthnVerifier(
+  value: WebAuthnVerifierInput,
+): (hash: `0x${string}`, signature: `0x${string}`) => Promise<boolean> {
+  const context: CaptureContext = new WeakSet();
+  const record = exactInput(value, ["credential", "rpId", "origin"], "WebAuthn verifier", context);
+  const credential = parsePublicCredential(record.credential, context, "WebAuthn verifier");
+  if (credential.kind !== "webauthn") {
+    return inputInvalid("WebAuthn verifier credential profile is not a WebAuthn credential");
+  }
+  const bound = relyingParty(record.rpId, record.origin);
+  return assertionVerifier(credential.publicKey, bound.rpId, bound.origin);
+}
+
+export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
+  const context: CaptureContext = new WeakSet();
+  const record = exactInput(
+    value,
+    ["credential", "credentialId", "rpId", "origin", "authenticate"],
+    "WebAuthn key",
+    context,
+  );
+  const credential = parsePublicCredential(record.credential, context, "WebAuthn key");
+  if (credential.kind !== "webauthn") {
+    return inputInvalid("WebAuthn key credential profile is not a WebAuthn credential");
+  }
+  if (typeof record.credentialId !== "string" || !BASE64URL.test(record.credentialId)) {
+    return inputInvalid("WebAuthn key credential ID is invalid");
+  }
+  const credentialBytes = bytesFromBase64Url(record.credentialId);
+  if (
+    !credentialBytes ||
+    credentialBytes.length === 0 ||
+    base64UrlFromBytes(credentialBytes) !== record.credentialId
+  ) {
+    return inputInvalid("WebAuthn key credential ID is not canonical base64url");
+  }
+  if (keccak256(toHex(credentialBytes)) !== credential.authenticatorIdHash) {
+    return inputInvalid("WebAuthn key credential ID does not match the credential profile");
+  }
+  const { rpId, origin } = relyingParty(record.rpId, record.origin);
+  const credentialId = record.credentialId;
+  const publicKey = credential.publicKey;
+  const authenticate = inputCapability<WebAuthnKeyInput["authenticate"]>(
+    record.authenticate,
+    "WebAuthn key authenticator capability",
+  );
+
+  const verify = assertionVerifier(publicKey, rpId, origin);
 
   return Object.freeze({
     kind: "webauthn" as const,

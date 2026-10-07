@@ -233,6 +233,20 @@ export {
   parseOperationSubmissionEvidence,
   parseUserOperationReference,
 } from "./operation.js";
+export type {
+  OwnerOperationCall,
+  OwnerOperationRequest,
+  OwnerUserOperation,
+  SignedOwnerOperation,
+} from "./owner-operation.js";
+export {
+  MAX_OWNER_OPERATION_CALLS,
+  OAATH_OWNER_OPERATION_REQUEST_VERSION,
+  OAATH_SIGNED_OWNER_OPERATION_VERSION,
+  ownerUserOperationForCetane,
+  parseOwnerOperationRequest,
+  parseSignedOwnerOperation,
+} from "./owner-operation.js";
 export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
 export {
   OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
