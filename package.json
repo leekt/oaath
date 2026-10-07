@@ -1,0 +1,45 @@
+{
+  "name": "dogfood-dca",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "sdk",
+    "runtime"
+  ],
+  "scripts": {
+    "build": "bun run --workspaces build",
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun run lint && bun run test && bun run build",
+    "dev": "bun scripts/dev.ts",
+    "lint": "biome check runtime/src sdk/src scripts tests --diagnostic-level=error",
+    "proof:pack": "bun scripts/pack-consumer.mjs",
+    "proof:purchase": "bun scripts/proof.ts",
+    "proof:recovery": "bun scripts/recovery-proof.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-1406da2477f4.tgz",
+    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-16fbc4c9ab0e.tgz",
+    "@oaath/testing": "file:vendor/oaath-testing-0.3.4-1633afc54e02.tgz",
+    "@types/node": "22.13.0",
+    "@types/pg": "8.15.5",
+    "cetane": "file:vendor/cetane-0.0.2-f0b99e13f1e8.tgz",
+    "pg": "8.22.0",
+    "typescript": "7.0.2",
+    "viem": "2.55.8"
+  },
+  "dependencies": {
+    "@uniswap/v3-core": "1.0.1",
+    "@uniswap/v3-periphery": "1.4.4",
+    "@openzeppelin/contracts": "5.4.0"
+  },
+  "overrides": {
+    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-1406da2477f4.tgz",
+    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-16fbc4c9ab0e.tgz",
+    "@oaath/server": "file:vendor/oaath-server-0.3.4-10f356759d1c.tgz",
+    "@oaath/testing": "file:vendor/oaath-testing-0.3.4-1633afc54e02.tgz"
+  }
+}
