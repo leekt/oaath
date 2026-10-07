@@ -1,11 +1,19 @@
 /**
  * The dapp page: one "Login with OAAth" button. The client is registered with
  * the issuer once per browser (or configured), before any click, so the login
- * popup opens directly inside the user's gesture.
+ * popup opens directly inside the user's gesture. With chains and a permission
+ * configured, "Request permission" asks the account for a Grant the same way,
+ * and a reload resumes it.
  */
-import { loginWithOAAth } from "@oaath/sdk";
+import { createOAAth, loginWithOAAth } from "@oaath/sdk";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 
-const { issuer, clientId: configuredClientId } = await (await fetch("/config.json")).json();
+const {
+  issuer,
+  clientId: configuredClientId,
+  chains,
+  permission,
+} = await (await fetch("/config.json")).json();
 const redirectUri = `${location.origin}/callback`;
 const button = document.querySelector("#login");
 const result = document.querySelector("#result");
@@ -49,3 +57,36 @@ button.addEventListener("click", async () => {
   }
   button.disabled = false;
 });
+
+if (chains && permission) {
+  const grantButton = document.querySelector("#grant");
+  const oaath = createOAAth({
+    chains: createCetaneChainPorts(chains),
+    approvals: { kind: "oauth", issuer, clientId: client, redirectUri },
+  });
+  const connection = await oaath.connect();
+  const show = (outcome, grant) => {
+    result.dataset.outcome = outcome;
+    result.textContent = JSON.stringify(
+      { state: grant.state, account: oaath.binding.context.accountId },
+      null,
+      2,
+    );
+    window.oaathGrant = { state: grant.state, binding: oaath.binding };
+  };
+  const resumed = await connection.resume();
+  if (resumed) show("resumed", resumed);
+  grantButton.hidden = false;
+  grantButton.addEventListener("click", async () => {
+    grantButton.disabled = true;
+    delete result.dataset.outcome;
+    result.textContent = "";
+    try {
+      show("granted", await connection.requestPermission(permission));
+    } catch (error) {
+      result.dataset.outcome = error.code ?? "error";
+      result.textContent = `${error.code ?? "error"}: ${error.message}`;
+    }
+    grantButton.disabled = false;
+  });
+}
