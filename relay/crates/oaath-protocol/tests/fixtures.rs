@@ -18,6 +18,7 @@ use oaath_protocol::identity::{
     hash_owner_credential_profile, parse_kernel_account_profile, parse_operator_credential_profile,
     parse_owner_credential_profile,
 };
+use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use oaath_protocol::kernel_install::parse_kernel_replayable_install_owner_signing_request;
 use oaath_protocol::owner_signing::{
     parse_owner_signing_artifact, serialize_owner_signing_artifact,
@@ -48,6 +49,13 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
             parse_operator_credential_profile(input).map(|p| p.to_json())
         }
         "parseKernelAccountProfile" => parse_kernel_account_profile(input).map(|p| p.to_json()),
+        "deriveKernelV4AccountAddress" => {
+            let account = parse_kernel_account_profile(&input["account"])?;
+            string(derive_kernel_v4_account_address(
+                &account,
+                input["ownerValidator"].as_str(),
+            ))
+        }
         "parseGrantPolicy" => parse_grant_policy(input).map(|p| p.to_json()),
         "hashGrantPolicy" => string(hash_grant_policy(input)),
         "hashGrantPolicyCalls" => string(hash_grant_policy_calls(input)),

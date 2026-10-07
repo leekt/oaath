@@ -15,6 +15,10 @@ pub enum ErrorCode {
     OwnerCredentialProfileInvalid,
     OperatorCredentialProfileInvalid,
     KernelAccountProfileInvalid,
+    /// The account profile names no factory-derived Kernel 0.4.0 account, or
+    /// the owner validator does not match the owner kind. Rust-owned: the SDK
+    /// refuses the same inputs before reading the factory.
+    KernelAccountDerivationInvalid,
     GrantPolicyInvalid,
     GrantPolicyAttenuationInputInvalid,
     PermissionRequestInvalid,
@@ -45,6 +49,7 @@ impl ErrorCode {
             Self::OwnerCredentialProfileInvalid => "owner_credential_profile_invalid",
             Self::OperatorCredentialProfileInvalid => "operator_credential_profile_invalid",
             Self::KernelAccountProfileInvalid => "kernel_account_profile_invalid",
+            Self::KernelAccountDerivationInvalid => "kernel_account_derivation_invalid",
             Self::GrantPolicyInvalid => "grant_policy_invalid",
             Self::GrantPolicyAttenuationInputInvalid => "grant_policy_attenuation_input_invalid",
             Self::PermissionRequestInvalid => "permission_request_invalid",

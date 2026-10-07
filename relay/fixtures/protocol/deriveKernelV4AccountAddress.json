@@ -1,0 +1,908 @@
+[
+  {
+    "name": "ecdsa index 0",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0xeb2dc0d0240f5b277d99b4816bace8db1fbf25b5"
+    }
+  },
+  {
+    "name": "p256 index 0",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x3fe98b594b4e4b50f28f9b5d924ad7c5b323d354"
+    }
+  },
+  {
+    "name": "webauthn index 0",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x2ea14db12c709020be80aaa30bd78fd7f4e44aff"
+    }
+  },
+  {
+    "name": "ecdsa index 1",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "1",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0xe5ffd602b324719c92884df85543728edca72265"
+    }
+  },
+  {
+    "name": "p256 index 1",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "1",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x4d710f35988fd35b29187508efae9ffc8907f901"
+    }
+  },
+  {
+    "name": "webauthn index 1",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "1",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x80985f23d6c15372fa412bd92ed5aa2068c5c470"
+    }
+  },
+  {
+    "name": "ecdsa index 7",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0x6769bf0a4e611bf02ef448bd946ae41aa56a67b7"
+    }
+  },
+  {
+    "name": "p256 index 7",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x4b262624573a60d1ca8cd1bc599060a165a4ea91"
+    }
+  },
+  {
+    "name": "webauthn index 7",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x28d789d488a3f98f979116a4be698faa22890a1d"
+    }
+  },
+  {
+    "name": "ecdsa index 4294967296",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "4294967296",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0xc437af0fc7571aad20a0261466c72463f8f75b39"
+    }
+  },
+  {
+    "name": "p256 index 4294967296",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "4294967296",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x7986ce535a8dad6bea23e4e19da7636bce09a8c7"
+    }
+  },
+  {
+    "name": "webauthn index 4294967296",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "4294967296",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x2448e1811706d99f749970825aa374a1ff508c1a"
+    }
+  },
+  {
+    "name": "ecdsa index 115792089237316195423570985008687907853269984665640564039457584007913129639935",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0xb0dd53deb997aabb331e40f4a274aa8daaddf161"
+    }
+  },
+  {
+    "name": "p256 index 115792089237316195423570985008687907853269984665640564039457584007913129639935",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x54afc6aa846ca0e3a5cbc3e6502c2b945bbd69a8"
+    }
+  },
+  {
+    "name": "webauthn index 115792089237316195423570985008687907853269984665640564039457584007913129639935",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0x87185549f327dea3bb25c57e2a614621ebd032a6"
+    }
+  },
+  {
+    "name": "ecdsa other owner",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0xabababababababababababababababababababab"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0x3f91d564f4dae3c2caecf4e61350b12dd6a75c49"
+    }
+  },
+  {
+    "name": "ecdsa other validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x2222222222222222222222222222222222222222"
+    },
+    "expect": {
+      "ok": "0x1b905b9397d2b976849f4661818ef5c12789adbd"
+    }
+  },
+  {
+    "name": "ecdsa checksummed validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x52908400098527886E0F7030069857D2E4169EE7"
+    },
+    "expect": {
+      "ok": "0xeb8a10807276a5eca2a6ff327fe458f1ed28d07d"
+    }
+  },
+  {
+    "name": "ecdsa checksummed owner",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x52908400098527886E0F7030069857D2E4169EE7"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "ok": "0x3212a2512f9aec07a6ba898a2f6bc43592dff6f2"
+    }
+  },
+  {
+    "name": "p256 other key",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x04724162db6b9e3f3dd5ae4eff2c7caa1580dc7550cb1dcc5c24bffc5ee4763079ffd42dc09f37a25cfca26d302163564673ab5c2f378910820ab336b93db76f26"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0xb3fee885b1b8876a3a1a2089711736ca35fc57d8"
+    }
+  },
+  {
+    "name": "webauthn other authenticator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0xb12f22e3eda1dccaea0fcf5fdbeca15b9d0606c4"
+    }
+  },
+  {
+    "name": "webauthn same key as p256",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "ok": "0xa159d5e1805a040e54190cb9f74f38157a2dcdd9"
+    }
+  },
+  {
+    "name": "ecdsa without validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "ecdsa zero validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x0000000000000000000000000000000000000000"
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "ecdsa short validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x22222222222222222222222222222222222222"
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "p256 with validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "webauthn with validator",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "meta factory route",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "index above uint256",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "index negative",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "-1",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "index leading zero",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "01",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "index number",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": 0,
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing 0.4.0 p256",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "ownerValidator": null
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "existing 0.3.3 ecdsa",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "error": "kernel_account_derivation_invalid"
+    }
+  },
+  {
+    "name": "kernel 0.3.3 derived",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.3.3",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "unsupported owner kind",
+    "fn": "deriveKernelV4AccountAddress",
+    "input": {
+      "account": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "weighted-ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "ownerValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  }
+]
