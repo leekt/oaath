@@ -4,7 +4,6 @@ Each example demonstrates one capability.
 
 | Example | Shows |
 | --- | --- |
-| [server/](server) | Fetch relay over `node:http`, PostgreSQL, auth and KMS ports |
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
 | [oauth-login/](oauth-login) | Login with OAAth from a static page through the live portal |
 | [oauth-grant-demo/](oauth-grant-demo) | live Arbitrum Sepolia: portal-approved Grant, then one enable-mode covered call (opt-in) |
@@ -12,7 +11,6 @@ Each example demonstrates one capability.
 ```sh
 bun install
 bun run examples:check                                   # from the repo root
-bun run --filter @oaath/examples example:server
 bun run --filter @oaath/examples example:all-chain       # needs Anvil
 bun run --filter @oaath/examples example:oauth-login     # open http://localhost:5174
 ```
@@ -27,8 +25,8 @@ it when Anvil is absent.
 
 ## Rules these examples follow
 
-- They import `@oaath/protocol`, `@oaath/sdk`, and `@oaath/server` by their
-  published specifiers only. No `src` path or internal module. Ephemeral demos
+- They import `@oaath/protocol` and `@oaath/sdk` by their published
+  specifiers only. No `src` path or internal module. Ephemeral demos
   use the exported in-memory adapters.
 - Every deployment-owned capability is injected and visible in the example
   itself: there is no preset system and no hidden network default to hide behind.
@@ -47,7 +45,6 @@ smokes own evidence about published artifacts:
 ```sh
 bun run check:public-surface
 bun run smoke:extension  # packed MV3 extension, worker death, durable status recovery
-bun run smoke:server     # packed tarball consumer, relay round-trip, ./postgres
 bun run smoke:all-chain  # two local Anvil chains, one replayable owner approval
 ```
 

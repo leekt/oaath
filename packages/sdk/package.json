@@ -89,7 +89,6 @@
   },
   "devDependencies": {
     "@account-abstraction/contracts": "0.7.0",
-    "@oaath/server": "workspace:*",
     "@oaath/testing": "workspace:*",
     "@types/node": "22.13.0",
     "fake-indexeddb": "6.2.5",

@@ -86,11 +86,10 @@ responsibility.
 | --- | --- |
 | `@oaath/protocol` | IO-free wire, durable contracts, and Kernel v4 signing profiles. |
 | `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
-| `@oaath/server` | Deployable relay and PostgreSQL boundary. |
 | `@oaath/testing` | Deterministic fixtures and clean-consumer harnesses. |
 | `oaath` | Node CLI: runtime readiness, deployment planning and deterministic deployment. |
 
-All five use one fixed `0.x.y` release group. The current source is versioned
+All four use one fixed `0.x.y` release group. The current source is versioned
 `0.3.4`, following the initial `0.1.0` proof of concept; no package becomes
 `1.0.0` during this program. Versioned source does not imply npm publication.
 
@@ -108,7 +107,7 @@ records submission before an external send, and advances only from stronger
 evidence. Missing receipts, timeouts, and unreadable observations never
 authorize another submission or prove an operation dropped. `@oaath/testing`
 carries the concrete SQLite test stores and is never a production dependency.
-`@oaath/server` carries the durable authorization relay and its PostgreSQL store.
+The Rust relay in `relay/` carries the durable authorization state.
 
 The product model and this PoC workflow are implemented. Further decomposition
 of the client, separating the wallet-RPC layer used by the extension, and native
@@ -281,7 +280,6 @@ published specifiers only.
 
 | Example | Shows |
 | --- | --- |
-| `examples/server` | the Fetch relay over `node:http`, PostgreSQL, and the auth and KMS ports a deployment owns |
 | `examples/all-chain` | one owner approval, chain B introduced afterwards, the same signature materialized on it |
 
 ```sh
@@ -326,11 +324,10 @@ workspace:
 ```sh
 bun run check:public-surface # no node:/pg leakage into a browser graph; one-way deps
 bun run smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
-bun run smoke:server         # packed server, relay round-trip, ./postgres under node
 bun run smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
-The extension and server smokes build, pack, and `npm install` the
+The extension smoke builds, packs, and `npm install`s the
 tarballs into a throwaway consumer outside the workspace, so nothing resolves
 through a workspace link and no `src` path is reachable. `smoke:extension`
 loads the actual example artifact in headful Chrome, kills its MV3 worker, and

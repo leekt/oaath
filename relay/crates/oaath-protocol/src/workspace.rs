@@ -1,5 +1,5 @@
 //! The workspace account context a permission request names
-//! (`service-bootstrap.ts`'s `parseWorkspaceAccountContext`).
+//! (`workspace-account-context.ts`).
 
 use serde_json::{Value, json};
 

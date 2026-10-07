@@ -282,24 +282,6 @@ export {
 } from "./permission-protocol.js";
 export { deriveCodeChallenge } from "./pkce.js";
 export type {
-  ServiceAccount,
-  ServiceBootstrap,
-  ServiceBootstrapApplication,
-  ServiceBootstrapChain,
-  ServiceBootstrapPaymasterService,
-  ServiceBootstrapSessionSigner,
-  ServiceBootstrapSessionSignerMode,
-  WorkspaceAccountContext,
-} from "./service-bootstrap.js";
-export {
-  captureServiceAccount,
-  captureServiceBootstrap,
-  OAATH_SERVICE_BOOTSTRAP_VERSION,
-  OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,
-  parseServiceBootstrap,
-  parseWorkspaceAccountContext,
-} from "./service-bootstrap.js";
-export type {
   CanonicalEip712Array,
   CanonicalEip712Field,
   CanonicalEip712Object,
@@ -340,3 +322,8 @@ export {
   readValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "./validation-diagnostic.js";
+export type { WorkspaceAccountContext } from "./workspace-account-context.js";
+export {
+  OAATH_WORKSPACE_ACCOUNT_CONTEXT_VERSION,
+  parseWorkspaceAccountContext,
+} from "./workspace-account-context.js";

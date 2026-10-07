@@ -22,7 +22,6 @@ use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use oaath_protocol::kernel_install::parse_kernel_replayable_install_owner_signing_request;
 use oaath_protocol::owner_signing::{
     parse_owner_signing_artifact, serialize_owner_signing_artifact,
-    verify_kernel_v4_replayable_install_owner_signing_artifact,
 };
 use oaath_protocol::permission::{
     PermissionDecision, hash_permission_decision, hash_permission_request,
@@ -96,15 +95,6 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
         }
         "parseOwnerSigningArtifact" => parse_owner_signing_artifact(input).map(|a| a.to_json()),
         "serializeOwnerSigningArtifact" => string(serialize_owner_signing_artifact(input)),
-        "verifyKernelV4ReplayableInstallOwnerSigningArtifact" => {
-            // The relay maps every request or artifact failure to one code.
-            let request = parse_kernel_replayable_install_owner_signing_request(&input["request"])
-                .map_err(|_| ProtocolError::new(ErrorCode::RelayRequestInvalid))?;
-            string(verify_kernel_v4_replayable_install_owner_signing_artifact(
-                &request,
-                text(&input["artifactPlaintext"]),
-            ))
-        }
         "classifyStoredAuthorizationScope" => Ok(classify_stored_authorization_scope(
             text(&input["requestedScope"]),
             text(&input["requestId"]),

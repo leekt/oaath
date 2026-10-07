@@ -1,14 +1,12 @@
 /**
  * A KeyProfile from an approved public credential alone, with no signer.
  *
- * In the service-bootstrapped browser path the application never holds an
- * owner signer: root signing happens on the owner device and arrives through
- * the authorization protocol. The realm still needs the owner's *identity* —
+ * In the OAuth browser path the application never holds an owner signer: root
+ * signing happens at the issuer and arrives through the authorization
+ * protocol. The realm still needs the owner's *identity* —
  * to derive and bind the Kernel account and to prove the #77 credential
  * binding — so this profile carries exactly the public material the approved
  * credential states and refuses to sign anything.
- * The owner service also uses it to derive permission packages from an
- * operator's reviewed public credential, without owning the application key.
  *
  * @author taek <leekt216@gmail.com>
  */

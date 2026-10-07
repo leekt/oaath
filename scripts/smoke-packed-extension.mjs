@@ -483,8 +483,7 @@ let consumer;
 try {
   consumer = await createConsumer({
     label: "chromium-extension",
-    // @oaath/testing still depends on @oaath/server until B3.
-    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
+    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"],
     dependencies: {
       esbuild: "0.28.1",
       "puppeteer-core": "25.5.0",

@@ -36,7 +36,7 @@ interface GoldenKernelEnableRequest {
 const GOLDEN = (
   JSON.parse(
     readFileSync(
-      new URL("../../server/test/fixtures/owner-phone-golden.json", import.meta.url),
+      new URL("../../../scripts/fixtures/owner-signing-golden.json", import.meta.url),
       "utf8",
     ),
   ) as {

@@ -20,8 +20,9 @@
  */
 import {
   type EcdsaOperatorCredentialProfile,
+  type KernelAccountProfile,
   parseOperatorCredentialProfile,
-  type ServiceBootstrap,
+  type WorkspaceAccountContext,
 } from "@oaath/protocol";
 import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { requireNonExtractableKey } from "../persistence/interfaces.js";
@@ -45,9 +46,13 @@ interface ServiceSessionStores {
   };
 }
 
-type SessionContext = Pick<ServiceBootstrap, "account" | "context" | "userHandle"> & {
-  readonly application: Pick<ServiceBootstrap["application"], "applicationId" | "clientId">;
-};
+/** The caller, application, and selected account one durable session belongs to. */
+interface SessionContext {
+  readonly context: Readonly<WorkspaceAccountContext>;
+  readonly application: Readonly<{ applicationId: string; clientId: string }>;
+  readonly userHandle: string;
+  readonly account: Readonly<KernelAccountProfile>;
+}
 
 export interface ServiceSessionInput {
   readonly stores: ServiceSessionStores;

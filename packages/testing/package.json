@@ -57,7 +57,6 @@
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
-    "@oaath/server": "workspace:*",
     "fake-indexeddb": "6.2.5",
     "jose": "6.2.12",
     "cetane": "0.0.4"

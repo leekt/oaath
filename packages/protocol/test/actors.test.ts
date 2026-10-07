@@ -251,3 +251,25 @@ describe("pairwise subject binding", () => {
     );
   });
 });
+
+describe("loopback development URLs", () => {
+  it.each(["http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"])(
+    "accepts %s as a canonical issuer",
+    (url) => {
+      expect(parseIssuerIdentity({ version: "oaath.issuer/v1", url }).url).toBe(url);
+    },
+  );
+
+  it("still refuses plaintext http on every non-loopback host", () => {
+    for (const url of [
+      "http://issuer.example",
+      "http://192.168.1.10:8787",
+      "http://localhost.evil.example",
+      "http://[::2]:8787",
+    ]) {
+      expect(() => parseIssuerIdentity({ version: "oaath.issuer/v1", url })).toThrowError(
+        expect.objectContaining({ code: "issuer_invalid" }),
+      );
+    }
+  });
+});
