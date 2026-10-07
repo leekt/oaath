@@ -1,0 +1,4237 @@
+[
+  {
+    "name": "approve at relay time",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "approve with install approval",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}"
+      }
+    }
+  },
+  {
+    "name": "approve with null install approval",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}"
+      }
+    }
+  },
+  {
+    "name": "relay time floors to decision second",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120999
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "relay time before decision",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 119999
+    },
+    "expect": {
+      "error": "permission_artifact_not_approved"
+    }
+  },
+  {
+    "name": "relay time long after",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 9000000000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decidedAt equals requestedAt",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 100,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decidedAt before requestedAt",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":99,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_stale"
+    }
+  },
+  {
+    "name": "decidedAt at expiresAt",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":200,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 300000
+    },
+    "expect": {
+      "error": "permission_decision_stale"
+    }
+  },
+  {
+    "name": "decidedAt after policy validUntil",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":191,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 300000
+    },
+    "expect": {
+      "error": "permission_decision_stale"
+    }
+  },
+  {
+    "name": "decidedAt after narrowed validUntil",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":110,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_stale"
+    }
+  },
+  {
+    "name": "decidedAt at narrowed validUntil",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 120,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decidedAt 1.2e2",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decidedAt -0",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "decidedAt -0 overwritten by duplicate",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decidedAt 120 overwritten by -0",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "install approval holding -0",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}"
+      }
+    }
+  },
+  {
+    "name": "reject decision",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_not_approved"
+    }
+  },
+  {
+    "name": "other requestId",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-2\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_binding_mismatch"
+    }
+  },
+  {
+    "name": "other requestHash",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x6666666666666666666666666666666666666666666666666666666666666666\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_binding_mismatch"
+    }
+  },
+  {
+    "name": "widened value limit",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"101\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_policy_widening"
+    }
+  },
+  {
+    "name": "widened validUntil",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":195,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_policy_widening"
+    }
+  },
+  {
+    "name": "narrowed calls",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "narrowed count",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 1,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "changed window",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":60}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_policy_widening"
+    }
+  },
+  {
+    "name": "invalid decision",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "unknown key",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"note\":\"x\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "duplicate kind last wins approve",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "duplicate kind last wins reject",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "surrounding whitespace",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n"
+      }
+    }
+  },
+  {
+    "name": "escaped key",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "plaintext empty",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext truncated",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext trailing comma",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext trailing garbage",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}x",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext leading BOM",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "﻿{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext single quotes",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{'kind':'approve'}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_artifact_json_invalid"
+    }
+  },
+  {
+    "name": "plaintext null",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "null",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "plaintext array",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "[{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}]",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "plaintext string",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "\"{\\\"version\\\":\\\"oaath.permission-decision/v1\\\",\\\"kind\\\":\\\"approve\\\",\\\"requestId\\\":\\\"permission-request-1\\\",\\\"requestHash\\\":\\\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\\\",\\\"decidedAt\\\":120,\\\"approvedPolicy\\\":{\\\"version\\\":\\\"oaath.grant-policy/v2\\\",\\\"calls\\\":[{\\\"target\\\":\\\"0x1111111111111111111111111111111111111111\\\",\\\"selector\\\":\\\"0x12345678\\\",\\\"valueLimit\\\":\\\"100\\\",\\\"argumentEquals\\\":[{\\\"index\\\":0,\\\"value\\\":\\\"0x3333333333333333333333333333333333333333333333333333333333333333\\\"},{\\\"index\\\":2,\\\"value\\\":\\\"0x4444444444444444444444444444444444444444444444444444444444444444\\\"}]},{\\\"target\\\":\\\"0x2222222222222222222222222222222222222222\\\",\\\"selector\\\":\\\"0xabcdef01\\\",\\\"valueLimit\\\":\\\"0\\\",\\\"argumentEquals\\\":[]}],\\\"validAfter\\\":100,\\\"validUntil\\\":190,\\\"perChainOperationLimit\\\":{\\\"count\\\":10,\\\"intervalSeconds\\\":null}},\\\"capabilityHash\\\":\\\"0x5555555555555555555555555555555555555555555555555555555555555555\\\"}\"",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "plaintext number",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "120",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "existing account request",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-existing-account-profile/v3",
+          "kind": "kernel",
+          "kernelVersion": "0.3.3",
+          "address": "0x6666666666666666666666666666666666666666",
+          "entryPoint": {
+            "version": "0.7"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x04724162db6b9e3f3dd5ae4eff2c7caa1580dc7550cb1dcc5c24bffc5ee4763079ffd42dc09f37a25cfca26d302163564673ab5c2f378910820ab336b93db76f26",
+          "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "ok": {
+        "permission": {
+          "version": "oaath.permission-decision/v1",
+          "kind": "approve",
+          "requestId": "permission-request-1",
+          "requestHash": "0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd",
+          "decidedAt": 120,
+          "approvedPolicy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+      }
+    }
+  },
+  {
+    "name": "decision for another request",
+    "fn": "parseApprovedPermission",
+    "input": {
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-existing-account-profile/v3",
+          "kind": "kernel",
+          "kernelVersion": "0.3.3",
+          "address": "0x6666666666666666666666666666666666666666",
+          "entryPoint": {
+            "version": "0.7"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x04724162db6b9e3f3dd5ae4eff2c7caa1580dc7550cb1dcc5c24bffc5ee4763079ffd42dc09f37a25cfca26d302163564673ab5c2f378910820ab336b93db76f26",
+          "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "relayDecidedAt": 120000
+    },
+    "expect": {
+      "error": "permission_decision_binding_mismatch"
+    }
+  }
+]

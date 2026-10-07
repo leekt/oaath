@@ -38,6 +38,7 @@
     "smoke:calls-review": "node scripts/smoke-packed-calls-review.mjs",
     "smoke": "bun run smoke:browser && bun run smoke:server && bun run smoke:all-chain",
     "examples:check": "node examples/check.mjs",
+    "fixtures:protocol": "bun scripts/export-protocol-fixtures.mjs",
     "changeset": "changeset",
     "release:status": "changeset status",
     "release:version": "changeset version && bun install --lockfile-only",

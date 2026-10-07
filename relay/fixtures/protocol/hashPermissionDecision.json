@@ -1,0 +1,266 @@
+[
+  {
+    "name": "approve",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "approve",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120,
+      "approvedPolicy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "expect": {
+      "ok": "0x88d09a9859db2d345aa558e61d8fd43fdbe35ff4ca09b3755d9fe5798f781a93"
+    }
+  },
+  {
+    "name": "reject",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "reject",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120
+    },
+    "expect": {
+      "ok": "0x342bf90987ff21bcd91366273d9d0e7cf78852c8de520560786cf4186bc715e8"
+    }
+  },
+  {
+    "name": "approve narrowed policy",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "approve",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120,
+      "approvedPolicy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "expect": {
+      "ok": "0xac4729f986b5787b900f1896b01c0c7ba84d95f1bf7448012562c07c9dbc0547"
+    }
+  },
+  {
+    "name": "approve zero requestHash",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "approve",
+      "requestId": "permission-request-1",
+      "requestHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "decidedAt": 120,
+      "approvedPolicy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "expect": {
+      "ok": "0x7d6a50ea8957a402014ede218b23b210d84444d13435f84931e5ee4855797ed2"
+    }
+  },
+  {
+    "name": "approve zero capabilityHash",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "approve",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120,
+      "approvedPolicy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "capabilityHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "reject decidedAt 1e2",
+    "fn": "hashPermissionDecision",
+    "inputText": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":1e2}",
+    "expect": {
+      "ok": "0xab36cb55733324c129058410db33cd694dc986de335ef39b5b6dd94605d05b12"
+    }
+  },
+  {
+    "name": "reject decidedAt -0",
+    "fn": "hashPermissionDecision",
+    "inputText": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0}",
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "reject with approve fields",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "reject",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120,
+      "approvedPolicy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  },
+  {
+    "name": "approve without approve fields",
+    "fn": "hashPermissionDecision",
+    "input": {
+      "version": "oaath.permission-decision/v1",
+      "kind": "approve",
+      "requestId": "permission-request-1",
+      "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+      "decidedAt": 120
+    },
+    "expect": {
+      "error": "permission_decision_invalid"
+    }
+  }
+]
