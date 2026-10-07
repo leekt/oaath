@@ -22,8 +22,8 @@ pub mod owner_signing;
 pub mod permission;
 pub mod pkce;
 pub mod scope;
-pub mod service_bootstrap;
 pub mod signing_request;
 mod web_url;
+pub mod workspace;
 
 pub use error::{ErrorCode, ProtocolError, ProtocolResult};

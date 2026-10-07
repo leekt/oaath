@@ -17,10 +17,10 @@ use crate::identity::{
     capture_operator_credential, hex_hash,
 };
 use crate::ids::canonical_identifier;
-use crate::service_bootstrap::{
+use crate::web_url::http_origin;
+use crate::workspace::{
     WORKSPACE_ACCOUNT_CONTEXT_VERSION, WorkspaceAccountContext, capture_workspace_account_context,
 };
-use crate::web_url::http_origin;
 
 pub const PERMISSION_REQUEST_VERSION: &str = "oaath.permission-request/v2";
 pub const PERMISSION_DECISION_VERSION: &str = "oaath.permission-decision/v1";
