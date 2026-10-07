@@ -321,6 +321,18 @@ const OPERATOR_WEBAUTHN = {
 const MIXED_ADDRESS = "0x52908400098527886e0f7030069857d2e4169ee7";
 
 function addressCases(fn, label, base, path) {
+  const mixed = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+  record(fn, `${label}: mixed EIP-55`, set(base, path, checksum(mixed)));
+  record(
+    fn,
+    `${label}: single-case uppercase`,
+    set(base, path, `0x${mixed.slice(2).toUpperCase()}`),
+  );
+  record(
+    fn,
+    `${label}: incorrect mixed checksum`,
+    set(base, path, checksum(mixed).replace("E", "e")),
+  );
   record(fn, `${label}: EIP-55 checksummed`, set(base, path, checksum(MIXED_ADDRESS)));
   record(fn, `${label}: lowercase mixed-hex`, set(base, path, MIXED_ADDRESS));
   record(
@@ -643,6 +655,11 @@ for (const fn of ["parseGrantPolicy", "hashGrantPolicy"]) {
   );
   record(fn, "target zero", set(POLICY, ["calls", 0, "target"], ZERO_ADDRESS));
   record(fn, "target checksummed", set(POLICY, ["calls", 0, "target"], checksum(MIXED_ADDRESS)));
+  addressCases(fn, "single-call target", { ...POLICY, calls: [POLICY.calls[0]] }, [
+    "calls",
+    0,
+    "target",
+  ]);
   record(fn, "selector zero", set(POLICY, ["calls", 0, "selector"], "0x00000000"));
   record(fn, "selector uppercase", set(POLICY, ["calls", 0, "selector"], "0xABCDEF01"));
   record(fn, "selector 3 bytes", set(POLICY, ["calls", 0, "selector"], "0x123456"));

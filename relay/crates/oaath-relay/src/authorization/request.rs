@@ -31,6 +31,21 @@ pub trait RelayOwnerRouting: Send + Sync {
     ) -> RelayResult<Option<AuthorizationOwnerRoute>>;
 }
 
+/// Assigns no approving device, refusing every request with `relay_forbidden`.
+pub struct NoOwnerRouting;
+
+#[async_trait]
+impl RelayOwnerRouting for NoOwnerRouting {
+    async fn resolve_owner(
+        &self,
+        _caller: &RelayCaller,
+        _request_id: &str,
+        _requested_scope: &str,
+    ) -> RelayResult<Option<AuthorizationOwnerRoute>> {
+        Ok(None)
+    }
+}
+
 /// DEV ONLY: every request routes to one configured device and subject.
 pub struct StaticOwnerRouting(pub AuthorizationOwnerRoute);
 

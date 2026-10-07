@@ -817,6 +817,95 @@
     }
   },
   {
+    "name": "existing address: mixed EIP-55",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing address: single-case uppercase",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing address: incorrect mixed checksum",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0xABcdeFABcdEFabcdEfAbCdefabcdeFABcDEFabCD",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
     "name": "existing address: EIP-55 checksummed",
     "fn": "parseKernelAccountProfile",
     "input": {

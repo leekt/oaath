@@ -294,9 +294,9 @@ describe("owner signing request", () => {
     const extraStructField = clone(eip712Request());
     Object.assign(extraStructField.typedData.message.from, { extra: "no" });
     cases.push(extraStructField);
-    const uppercaseAddress = clone(eip712Request());
-    uppercaseAddress.typedData.message.from.wallet = "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826";
-    cases.push(uppercaseAddress);
+    const wrongChecksum = clone(eip712Request());
+    wrongChecksum.typedData.message.from.wallet = "0xCd2a3d9F938E13CD947Ec05AbC7FE734Df8DD826";
+    cases.push(wrongChecksum);
 
     const fixedMismatch = clone(eip712Request());
     fieldAt(fixedMismatch.typedData.types.Mail, 2).type = "bytes2";

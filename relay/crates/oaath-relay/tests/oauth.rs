@@ -249,7 +249,8 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
         .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
         .unwrap();
     let other =
-        oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(ID_TOKEN_KID, &other_pem).unwrap();
+        oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &other_pem)
+            .unwrap();
     let other: JwkSet = serde_json::from_value(other.jwks().clone()).unwrap();
     let other = DecodingKey::from_jwk(&other.keys[0]).unwrap();
     assert!(decode::<Value>(id_token, &other, &validation).is_err());
@@ -471,4 +472,47 @@ async fn refuses_malformed_registrations_and_pushed_requests() {
         "invalid_request",
         E::RequestInvalid,
     );
+}
+
+#[tokio::test]
+async fn composes_the_production_relay_without_a_dev_config() {
+    use std::sync::Arc;
+    let kms = TestKms::new(KmsMode::Reversible);
+    let clock = TestClock::new();
+    let store: Arc<dyn oaath_relay::store::RelayStore> =
+        Arc::new(oaath_relay::store::memory::MemoryRelayStore::new());
+    let options = oaath_relay::config::compose(
+        store.clone(),
+        kms.clone(),
+        clock.clone(),
+        Some(oaath_relay::oauth::OAuthConfiguration {
+            issuer: ISSUER.to_owned(),
+            key: oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(None, &id_token_pem())
+                .unwrap(),
+        }),
+        None,
+    );
+    let h = Harness {
+        relay: Arc::new(oaath_relay::Relay::new(options).unwrap()),
+        store,
+        clock,
+        kms,
+    };
+    // The legacy, caller-authenticated routes refuse with 401.
+    for request in [
+        post(
+            "/authorization/requests",
+            Some(CLIENT_TOKEN),
+            Some(json!({})),
+        ),
+        get("/authorization/requests/some-id", Some(OWNER_TOKEN)),
+        get("/bootstrap", Some(CLIENT_TOKEN)),
+        post("/grants/verify", Some(CLIENT_TOKEN), Some(json!({}))),
+        post("/invalidations", Some(CLIENT_TOKEN), Some(json!({}))),
+    ] {
+        h.send(request).await.failure(E::Unauthenticated);
+    }
+    // The login flow needs no caller.
+    let (client_id, _, _, _, code) = approved_code(&h).await;
+    token(&h, &client_id, &code, CODE_VERIFIER).await.ok(200);
 }

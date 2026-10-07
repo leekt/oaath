@@ -1,3 +1,4 @@
+import { captureAddress } from "./address.js";
 /**
  * Exact Kernel v4 replayable-install signing profile.
  *
@@ -9,7 +10,6 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { getAddress } from "cetane/utils";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import {
   type CaptureContext,
@@ -27,10 +27,8 @@ import {
 } from "./signing-request.js";
 
 const ERROR_CODE = "signing_request_invalid" as const;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]*)$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_PACKAGES = 256;
 
@@ -112,16 +110,7 @@ export interface KernelReplayableInstallOwnerSigningRequest extends Eip712OwnerS
 }
 
 function address(value: unknown, label: string, fail: CaptureFailure): `0x${string}` {
-  if (typeof value !== "string") return fail(`${label} must be a nonzero address`);
-  try {
-    const canonical = getAddress(value).toLowerCase() as `0x${string}`;
-    if (!ADDRESS.test(canonical) || canonical === ZERO_ADDRESS) {
-      return fail(`${label} must be a nonzero address`);
-    }
-    return canonical;
-  } catch {
-    return fail(`${label} must be a nonzero address`);
-  }
+  return captureAddress(value, label, fail);
 }
 
 function decimalUint(value: unknown, label: string, fail: CaptureFailure): string {

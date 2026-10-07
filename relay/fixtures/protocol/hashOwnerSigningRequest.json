@@ -2830,14 +2830,14 @@
           "value": "0x52908400098527886E0F7030069857D2E4169EE7"
         }
       },
-      "expectedDigest": "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
+      "expectedDigest": "0x37c72b9cd0603659da7888b8a9dfd47d261dc9440e155e907f25d616923fc737",
       "replay": {
         "nonce": "0",
         "deadline": null
       }
     },
     "expect": {
-      "error": "signing_request_invalid"
+      "ok": "0x79cad8a0b2a9d6b8d6a5860e08848bcd4fca7a893749775a22787b45bf099b8e"
     }
   },
   {

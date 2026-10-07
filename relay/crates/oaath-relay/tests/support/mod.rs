@@ -443,7 +443,7 @@ pub fn options(
         bootstrap: None,
         oauth: Some(OAuthConfiguration {
             issuer: ISSUER.to_owned(),
-            key: IdTokenKey::from_pkcs8_pem(ID_TOKEN_KID, &id_token_pem()).unwrap(),
+            key: IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &id_token_pem()).unwrap(),
         }),
     }
 }

@@ -43,6 +43,7 @@ describe("package boundary", () => {
       "advanceOperation",
       "applyPermissionDecision",
       "applyVerifiedOperationObservation",
+      "captureAddress",
       "captureBundlerRejection",
       "captureCanonicalEip712TypedData",
       "captureClientBinding",

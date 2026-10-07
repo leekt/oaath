@@ -1,6 +1,7 @@
 import { p256 } from "@noble/curves/nist.js";
 import type { Hex } from "cetane";
-import { encodeAbiParameters, isAddress, keccak256 } from "cetane/utils";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
+import { captureAddress } from "./address.js";
 import {
   type CaptureContext,
   type CaptureFailure,
@@ -21,7 +22,6 @@ const OAATH_OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN =
 const HASH = /^0x[0-9a-f]{64}$/u;
 const P256_PUBLIC_KEY = /^0x04[0-9a-f]{128}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 export type OwnerCredentialKind = "ecdsa" | "p256" | "webauthn";
@@ -144,12 +144,7 @@ function invalid(code: IdentityProfileErrorCode, message: string): never {
 
 /** Accepts a lowercase or valid EIP-55 address and captures it in canonical lowercase. */
 function address(value: unknown, label: string, fail: CaptureFailure): `0x${string}` {
-  if (typeof value !== "string" || !isAddress(value, { strict: true })) {
-    return fail(`${label} must be a lowercase or EIP-55 checksummed address`);
-  }
-  const lowercase = value.toLowerCase() as `0x${string}`;
-  if (lowercase === ZERO_ADDRESS) return fail(`${label} must be nonzero`);
-  return lowercase;
+  return captureAddress(value, label, fail);
 }
 
 function hash(value: unknown, label: string, fail: CaptureFailure): `0x${string}` {
@@ -358,7 +353,8 @@ export function parseOwnerCredentialProfile(value: unknown): Readonly<OwnerCrede
     return captureOwnerCredentialProfile(value, new WeakSet(), (message) =>
       invalid("owner_credential_profile_invalid", message),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathIdentityProfileError) throw error;
     return invalid(
       "owner_credential_profile_invalid",
       "owner credential profile could not be captured safely",
@@ -419,7 +415,8 @@ export function parseOperatorCredentialProfile(
     return captureOperatorCredentialProfile(value, new WeakSet(), (message) =>
       invalid("operator_credential_profile_invalid", message),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathIdentityProfileError) throw error;
     return invalid(
       "operator_credential_profile_invalid",
       "operator credential profile could not be captured safely",
@@ -432,7 +429,8 @@ export function parseKernelAccountProfile(value: unknown): Readonly<KernelAccoun
     return captureKernelAccountProfile(value, new WeakSet(), (message) =>
       invalid("kernel_account_profile_invalid", message),
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathIdentityProfileError) throw error;
     return invalid(
       "kernel_account_profile_invalid",
       "Kernel account profile could not be captured safely",
@@ -469,7 +467,8 @@ export function createKernelAccountActionInput(
       entryPointVersion: profile.entryPoint.version,
       ownerCredential: profile.ownerCredential,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathIdentityProfileError) throw error;
     return invalid(
       "kernel_account_action_input_invalid",
       "Kernel account action input could not be captured safely",

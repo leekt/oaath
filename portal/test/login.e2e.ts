@@ -1,7 +1,9 @@
 /**
  * Login with OAAth end to end, with no stub on the authorization path:
  *
- * - the real Rust relay binary (memory store, a throwaway ES256 key);
+ * - the real Rust relay binary, configured as production runs it (no
+ *   OAATH_CONFIG, kid from the key thumbprint) with the memory store and a
+ *   throwaway ES256 key;
  * - the real portal Worker module, run in Node in front of the built SPA and
  *   bound to that relay (the Workers VPC binding becomes a loopback fetch);
  * - headless Chrome driving a dapp page on another origin through dynamic
@@ -16,7 +18,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import worker, { type Env, ORIGIN } from "../worker/index.js";
@@ -31,6 +33,8 @@ const servers: Server[] = [];
 let portal: string;
 let dapp: string;
 let relayBase: string;
+/** The production default kid: the id_token key's RFC 7638 thumbprint. */
+let idTokenKid: string;
 
 async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void) {
   const server = createServer(handler);
@@ -71,16 +75,9 @@ async function startRelay(issuer: string) {
   });
   if (build.status !== 0) throw new Error("cargo build -p oaath-relay failed");
   const work = await mkdtemp(join(tmpdir(), "oaath-portal-e2e-"));
-  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
   await writeFile(join(work, "id-token.pem"), privateKey.export({ type: "pkcs8", format: "pem" }));
-  // The DEV config the relay still requires; the login path reads none of it.
-  await writeFile(
-    join(work, "config.json"),
-    JSON.stringify({
-      tokens: {},
-      ownerRoute: { ownerDeviceId: "e2e-device", ownerSubject: "e2e-owner" },
-    }),
-  );
+  idTokenKid = await calculateJwkThumbprint(publicKey.export({ format: "jwk" }) as JWK);
   const port = await freePort();
   relay = spawn(join(RELAY_DIR, "target/debug/oaath-relay"), [], {
     stdio: ["ignore", "ignore", "inherit"],
@@ -89,10 +86,8 @@ async function startRelay(issuer: string) {
       RUST_LOG: "warn",
       OAATH_LISTEN: `127.0.0.1:${port}`,
       OAATH_KMS_KEY: randomBytes(32).toString("hex"),
-      OAATH_CONFIG: join(work, "config.json"),
       OAATH_ISSUER: issuer,
       OAATH_ID_TOKEN_KEY: join(work, "id-token.pem"),
-      OAATH_ID_TOKEN_KID: "e2e",
     },
   });
   const base = `http://127.0.0.1:${port}`;
@@ -352,7 +347,7 @@ describe("Login with OAAth against the real relay", () => {
       audience: first.clientId,
       algorithms: ["ES256"],
     });
-    expect(protectedHeader.kid).toBe("e2e");
+    expect(protectedHeader.kid).toBe(idTokenKid);
     expect(payload.sub).toBe(shown);
     expect(payload.nonce).toBe(first.nonce);
     expect(payload.verified).toBe(false);

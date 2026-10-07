@@ -1,5 +1,6 @@
 import type { Hex } from "cetane";
 import { encodeAbiParameters, keccak256 } from "cetane/utils";
+import { captureAddress } from "./address.js";
 import {
   type CaptureContext,
   captureDenseArray,
@@ -13,13 +14,11 @@ export const OAATH_GRANT_POLICY_USAGE_VERSION = "oaath.grant-policy-usage/v1" as
 export const OAATH_GRANT_POLICY_HASH_DOMAIN = "@oaath/protocol:grant-policy" as const;
 export const OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN = "@oaath/protocol:grant-policy-calls" as const;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const SELECTOR = /^0x[0-9a-f]{8}$/u;
 const WORD = /^0x[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const ZERO_SELECTOR = "0x00000000";
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_UINT48 = 2 ** 48 - 1;
@@ -206,10 +205,7 @@ function uint256(value: unknown, label: string, code: GrantPolicyErrorCode): str
 }
 
 function address(value: unknown, label: string, code: GrantPolicyErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return invalid(code, `${label} must be a nonzero lowercase address`);
-  }
-  return value as `0x${string}`;
+  return captureAddress(value, label, (message) => invalid(code, message));
 }
 
 function selector(value: unknown, label: string, code: GrantPolicyErrorCode): `0x${string}` {

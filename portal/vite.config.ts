@@ -11,6 +11,7 @@ export default defineConfig({
     // The relay end-to-end builds and runs the Rust relay: `test:e2e` only.
     include: process.env.OAATH_PORTAL_E2E ? ["test/**/*.e2e.ts"] : ["test/**/*.test.ts"],
     testTimeout: 60_000,
-    hookTimeout: 180_000,
+    // Chrome cold starts on shared CI runners exceed the 10 s hook default.
+    hookTimeout: 60_000,
   },
 });

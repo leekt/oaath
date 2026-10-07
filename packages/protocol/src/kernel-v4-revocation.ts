@@ -14,6 +14,7 @@ import {
   parseAbi,
   toHex,
 } from "cetane/utils";
+import { captureAddress } from "./address.js";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import { hashOwnerCredentialProfile } from "./identity-profile.js";
 import { exactRecord } from "./internal/exact-record.js";
@@ -81,13 +82,7 @@ export interface KernelRevocationSigningRequest {
 }
 
 function address(value: unknown, label: string): Hex {
-  if (
-    typeof value !== "string" ||
-    !/^0x[0-9a-f]{40}$/u.test(value) ||
-    value === `0x${"00".repeat(20)}`
-  )
-    return fail(`${label} is invalid`);
-  return value as Hex;
+  return captureAddress(value, label, fail);
 }
 
 function bytes(value: unknown, label: string, size?: number): Hex {
