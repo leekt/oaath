@@ -19,6 +19,7 @@ import {
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
   type OperatorCredentialProfile,
+  type PermissionRequest,
   parseGrantPolicy,
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
@@ -41,6 +42,7 @@ import type {
   OaathSubmissionRoute,
 } from "../../src/advanced.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
+import { composeInjectedRealm } from "../../src/create-oaath.js";
 import { createOAAth, type Oaath, type OaathServiceOptions } from "../../src/index.js";
 import {
   KERNEL_P256_VERIFIER,
@@ -1004,19 +1006,17 @@ export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
 
 export interface RealmOptions {
   readonly clock?: SecondsClock;
-  readonly relay?: (request: Request) => Promise<Response>;
   readonly stores?: RealmStores;
   readonly chain?: ChainFixture;
   readonly chains?: readonly ChainFixture[];
   readonly binding?: unknown;
   readonly owner?: OwnerDecision;
-  /** Replaces only the claimed wire artifact, after a valid relay approval. */
+  /** Replaces the owner's approval artifact before the SDK applies it. */
   readonly claimedArtifact?: (decision: Record<string, unknown>) => unknown;
   /** ECDSA validator deployed by a real local chain fixture. */
   readonly validator?: `0x${string}`;
   /** Overrides the signing keys, e.g. with keys the binding never approved. */
   readonly signing?: ReturnType<typeof signingProfiles>;
-  readonly issuerSignOut?: (() => Promise<unknown>) | null;
   readonly invalidate?: (
     request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
   ) => Promise<unknown>;
@@ -1025,89 +1025,97 @@ export interface RealmOptions {
 export interface Realm {
   readonly oaath: Readonly<Oaath>;
   readonly clock: SecondsClock;
-  readonly relay: (request: Request) => Promise<Response>;
   readonly stores: CompleteRealmStores;
   readonly chain: ChainFixture;
+  /** Request ids the owner approved, in order. */
   readonly ownerCalls: readonly string[];
-  readonly signOutCalls: () => number;
   readonly invalidations: () => number;
 }
 
-/** Composes one realm: real relay, memory stores, and the synthetic chain. */
+/**
+ * The owner's approval as an owner device produces it: the replayable install
+ * for the reviewed request, signed by the owner key, as the canonical decision.
+ */
+export function createOwnerApproval(
+  clock: SecondsClock,
+  options: OwnerDecision = {},
+  reads: OaathChainCapability["reads"] = createChainFixture().capability.reads,
+  validator: `0x${string}` = VALIDATOR,
+) {
+  const calls: string[] = [];
+  return {
+    calls,
+    async approve(request: Readonly<PermissionRequest>): Promise<Record<string, unknown>> {
+      calls.push(request.requestId);
+      const installApproval = await ownerInstallApproval(
+        reads,
+        request.policy,
+        request.operatorCredential,
+        options.operatorKey,
+        validator,
+        request.logicalAccount,
+      );
+      return {
+        version: OAATH_PERMISSION_DECISION_VERSION,
+        kind: "approve",
+        requestId: request.requestId,
+        requestHash: hashPermissionRequest(request),
+        decidedAt: clock.now(),
+        approvedPolicy: request.policy,
+        capabilityHash: kernelGrantCapabilityHash(installApproval),
+        installApproval,
+      };
+    },
+  };
+}
+
+/** Composes one realm: the owner's in-process approval, memory stores, and the synthetic chain. */
 export function createRealm(options: RealmOptions = {}): Realm {
   const clock = options.clock ?? createClock();
-  const relay = options.relay ?? createRelay(clock);
   const stores = completeRealmStores(options.stores ?? createMemoryStores());
   const chain = options.chain ?? options.chains?.[0] ?? createChainFixture();
   const chains = options.chains ?? [chain];
   const validator = options.validator ?? VALIDATOR;
-  const owner = createOwnerAuthorization(
-    relay,
-    clock,
-    options.owner ?? {},
-    chain.capability.reads,
-    validator,
-  );
-  let signOuts = 0;
+  const owner = createOwnerApproval(clock, options.owner ?? {}, chain.capability.reads, validator);
   let invalidations = 0;
 
-  const oaath = createOAAth({
-    binding: (options.binding ?? bindingInput) as typeof bindingInput,
-    issuer: {
-      url: ISSUER_URL,
-      fetch: async (request: Request) => {
-        const response = await relay(authorized(request, CLIENT_TOKEN));
-        if (
-          !options.claimedArtifact ||
-          !response.ok ||
-          !new URL(request.url).pathname.endsWith("/claim")
-        )
-          return response;
-        const claimed = await response.json();
-        return new Response(
-          JSON.stringify({
-            ...claimed,
-            artifact: JSON.stringify(options.claimedArtifact(JSON.parse(claimed.artifact))),
-          }),
-          { status: response.status, headers: response.headers },
-        );
+  const oaath = composeInjectedRealm(
+    {
+      binding: (options.binding ?? bindingInput) as typeof bindingInput,
+      invalidation: {
+        invalidateCapability: async (
+          request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
+        ) => {
+          invalidations += 1;
+          if (options.invalidate) return options.invalidate(request);
+          // Admission evidence; chain effect reads must still prove revocation.
+          return {
+            evidenceHash: keccak256(stringToBytes(`invalidated:${request.grantId}`)),
+            invalidatedAt: clock.now(),
+          };
+        },
       },
-      signOut:
-        options.issuerSignOut === undefined
-          ? async () => {
-              signOuts += 1;
-            }
-          : options.issuerSignOut,
+      stores,
+      chains: chains.map((entry) => entry.capability),
+      signing: options.signing ?? signingProfiles(validator),
+      localKeyIds: ["session-key"],
+      now: clock.now,
     },
-    authorization: owner.capability,
-    invalidation: {
-      invalidateCapability: async (
-        request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
-      ) => {
-        invalidations += 1;
-        if (options.invalidate) return options.invalidate(request);
-        // Service admission evidence; chain effect reads must still prove revocation.
-        return {
-          evidenceHash: keccak256(stringToBytes(`invalidated:${request.grantId}`)),
-          invalidatedAt: clock.now(),
-        };
+    {
+      localAuthorization: async (request) => {
+        const decision = await owner.approve(request);
+        return options.claimedArtifact ? options.claimedArtifact(decision) : decision;
       },
+      remoteCustody: null,
     },
-    stores,
-    chains: chains.map((entry) => entry.capability),
-    signing: options.signing ?? signingProfiles(validator),
-    localKeyIds: ["session-key"],
-    now: clock.now,
-  });
+  );
 
   return {
     oaath,
     clock,
-    relay,
     stores,
     chain,
     ownerCalls: owner.calls,
-    signOutCalls: () => signOuts,
     invalidations: () => invalidations,
   };
 }

@@ -304,12 +304,13 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
  * and remote session custody is the service bootstrap's declaration, never an
  * application option.
  */
-interface RealmComposition {
+export interface RealmComposition {
   readonly localAuthorization: LocalPermissionAuthorization | null;
   readonly remoteCustody: Readonly<RemoteSessionCustody> | null;
 }
 
-function composeInjectedRealm(
+/** Internal: composes a realm from an approval source; tests reach it directly. */
+export function composeInjectedRealm(
   configuration: unknown,
   { localAuthorization, remoteCustody }: Readonly<RealmComposition>,
 ): Readonly<Oaath> {

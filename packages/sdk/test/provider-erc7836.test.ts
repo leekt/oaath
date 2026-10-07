@@ -343,7 +343,7 @@ describe("experimental wallet prepared calls", () => {
     first.database.close();
 
     const second = await indexedDbPreparedRealmStores(factory);
-    const after = createRealm({ stores: second.stores, clock, relay: before.relay, chain });
+    const after = createRealm({ stores: second.stores, clock, chain });
     const secondConnection = await after.oaath.connect();
     const secondGrant = await secondConnection.resume();
     if (secondGrant === null) throw new Error("expected the Grant to resume");
@@ -563,7 +563,6 @@ describe("experimental wallet prepared calls", () => {
       stores: second.stores,
       clock,
       chain,
-      relay: before.relay,
       binding: { ...bindingInput, operatorCredential: credential.operatorCredential },
       owner: { operatorKey: secondSessionKey },
       signing: { owner: secondSigning.owner, session: secondSessionKey },
@@ -908,7 +907,6 @@ describe("experimental wallet prepared calls", () => {
     const before = createRealm({
       stores: first.stores,
       clock,
-      relay,
       chain,
       signing: countingSigningProfiles(),
     });
@@ -985,7 +983,6 @@ describe("experimental wallet prepared calls", () => {
     const after = createRealm({
       stores: second.stores,
       clock,
-      relay,
       chain,
       signing: countingSigningProfiles(),
     });

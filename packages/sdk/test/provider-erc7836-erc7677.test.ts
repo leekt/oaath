@@ -301,7 +301,6 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const after = createRealm({
       stores: secondStores.stores,
       clock,
-      relay: before.relay,
       chain: replaceChain(base, { sponsorship: poisonService }),
     });
     const secondConnection = await after.oaath.connect();
@@ -355,7 +354,6 @@ describe("wallet prepared-call ERC-7677 sponsorship", () => {
     const recreated = createRealm({
       stores: thirdStores.stores,
       clock,
-      relay: before.relay,
       chain: replaceChain(base, { sponsorship: poisonService }),
     });
     const thirdConnection = await recreated.oaath.connect();

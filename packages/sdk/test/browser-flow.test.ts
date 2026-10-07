@@ -17,7 +17,6 @@ import {
   createClock,
   createMemoryStores,
   createRealm,
-  createRelay,
   operatorCredential,
   permissionInput,
   sendCallsInput,
@@ -148,7 +147,6 @@ describe("browser golden path", () => {
     const recreatedStores = createMemoryStores();
     const second = createRealm({
       clock: first.clock,
-      relay: first.relay,
       stores: {
         ...recreatedStores,
         context: {
@@ -177,54 +175,6 @@ describe("browser golden path", () => {
     expect(first.chain.sends).toHaveLength(0);
     expect(second.chain.sends).toHaveLength(0);
     await second.oaath.close();
-  });
-
-  it("aborts a claim wait on close and retains its uncertain one-time outcome", async () => {
-    const clock = createClock();
-    const relay = createRelay(clock);
-    let enterClaim!: () => void;
-    let releaseClaim!: () => void;
-    const claimEntered = new Promise<void>((resolve) => {
-      enterClaim = resolve;
-    });
-    const claimReleased = new Promise<void>((resolve) => {
-      releaseClaim = resolve;
-    });
-    const realm = createRealm({
-      clock,
-      relay: async (request) => {
-        const response = await relay(request);
-        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/claim")) {
-          enterClaim();
-          await claimReleased;
-        }
-        return response;
-      },
-    });
-    const connection = await realm.oaath.connect();
-    const requesting = connection
-      .requestPermission(permissionInput())
-      .catch((error: unknown) => error);
-    await claimEntered;
-    let closeSettled = false;
-    const closing = connection.close().then(() => {
-      closeSettled = true;
-    });
-    await Promise.resolve();
-    expect(closeSettled).toBe(false);
-
-    releaseClaim();
-    expect(await requesting).toMatchObject({ code: "oaath_client_closed" });
-    await closing;
-
-    // Closing one Connection leaves the journal readable by a sibling.
-    const sibling = await realm.oaath.connect();
-    expect(await sibling.resumePendingPermission()).toMatchObject({
-      status: "approved",
-      grant: null,
-      recovery: "uncertain",
-    });
-    await realm.oaath.close();
   });
 
   it("refuses to return a resumed Grant after its Connection closes", async () => {
@@ -612,7 +562,6 @@ describe("browser golden path", () => {
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     await connection.signOut();
-    expect(realm.signOutCalls()).toBe(1);
     await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
       code: "oaath_client_signed_out",
     });

@@ -34,7 +34,6 @@ import {
   createChainFixture,
   createClock,
   createRealm,
-  createRelay,
   permissionInput,
   type RealmStores,
   sendCallsInput,
@@ -143,12 +142,11 @@ describe("IndexedDB realm recreation", () => {
   it("restores an active Grant, its journal, and key custody after full recreation", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
 
     const first = await openRealmDatabase(factory);
     const firstStores = storesFor(first);
     await firstStores.keys.store({ keyId: "session-key", key: await nonExtractableKey() });
-    const before = createRealm({ clock, relay, stores: firstStores });
+    const before = createRealm({ clock, stores: firstStores });
     const connection = await before.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const operation = await grant.sendCalls(sendCallsInput());
@@ -170,7 +168,6 @@ describe("IndexedDB realm recreation", () => {
     const secondStores = storesFor(second);
     const after = createRealm({
       clock,
-      relay,
       stores: secondStores,
       // The account already executed twice, so its on-chain sequence advanced.
       chain: createChainFixture({ startSequence: 2 }),
@@ -210,13 +207,12 @@ describe("IndexedDB realm recreation", () => {
   it("resumes a revoking Grant and completes its chain revocation after reload", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
 
     // First life: pair and execute, then revoke against a chain that offers no
     // submission route — the capability dies but the installed permission
     // cannot be removed, so the Grant stays durably revoking.
     const first = await openRealmDatabase(factory);
-    const before = createRealm({ clock, relay, stores: storesFor(first) });
+    const before = createRealm({ clock, stores: storesFor(first) });
     const connection = await before.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
@@ -227,7 +223,6 @@ describe("IndexedDB realm recreation", () => {
     const second = await openRealmDatabase(factory);
     const routeless = createRealm({
       clock,
-      relay,
       stores: storesFor(second),
       chain: createChainFixture({ startSequence: 1, bundler: "absent" }),
     });
@@ -243,7 +238,6 @@ describe("IndexedDB realm recreation", () => {
     const third = await openRealmDatabase(factory);
     const recovered = createRealm({
       clock,
-      relay,
       stores: storesFor(third),
       chain: createChainFixture({
         startSequence: 1,
@@ -265,10 +259,9 @@ describe("IndexedDB realm recreation", () => {
   it("fails a compare-and-swap closed when another realm already advanced the record", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
     const database = await openRealmDatabase(factory);
     const stores = storesFor(database);
-    const realm = createRealm({ clock, relay, stores });
+    const realm = createRealm({ clock, stores });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const operation = await grant.sendCalls(sendCallsInput());
@@ -575,10 +568,9 @@ describe("IndexedDB realm recreation", () => {
   it("refuses a persisted client context whose approved policy widens the request", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
     const database = await openRealmDatabase(factory);
     const stores = storesFor(database);
-    const realm = createRealm({ clock, relay, stores });
+    const realm = createRealm({ clock, stores });
     const connection = await realm.oaath.connect();
     await connection.requestPermission(permissionInput());
     await connection.close();
@@ -600,7 +592,7 @@ describe("IndexedDB realm recreation", () => {
       );
     });
 
-    const next = createRealm({ clock, relay, stores: storesFor(database) });
+    const next = createRealm({ clock, stores: storesFor(database) });
     await expect((await next.oaath.connect()).resume()).rejects.toMatchObject({
       name: "OaathClientError",
       source: "persistence_record_invalid",

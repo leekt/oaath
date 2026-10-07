@@ -78,7 +78,6 @@ describe("cleanup coordinator", () => {
       if (anotherOpen) await realm.oaath.connect();
       const result = await realm.oaath.disconnect(null);
       expect(result.unfinished).toEqual([]);
-      expect(realm.signOutCalls()).toBe(1);
     },
   );
 
@@ -224,15 +223,8 @@ describe("cleanup coordinator", () => {
     // This realm holds the owner's signing capability, so revoke removed the
     // installed chain permission with an owner-signed operation and completed.
     expect(grant.state).toBe("revoked");
-    expect(realm.signOutCalls()).toBe(1);
-    expect(tracked.deletedKeys).toEqual([
-      expect.stringMatching(/^pending-[a-z0-9-]{36}$/u),
-      "session-key",
-    ]);
-    expect(tracked.clearedContexts).toEqual([
-      expect.stringMatching(/^0x[0-9a-f]{64}$/u),
-      realm.oaath.binding.bindingId,
-    ]);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
+    expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);
     // `close` released every store the realm owned.
     expect(tracked.closed.sort()).toEqual([
       "context",
@@ -262,14 +254,8 @@ describe("cleanup coordinator", () => {
     expect(result.completed).toEqual(["signOut", "forgetLocal", "close"]);
     expect(realm.invalidations()).toBe(0);
     expect(realm.chain.sends).toHaveLength(0);
-    expect(tracked.deletedKeys).toEqual([
-      expect.stringMatching(/^pending-[a-z0-9-]{36}$/u),
-      "session-key",
-    ]);
-    expect(tracked.clearedContexts).toEqual([
-      expect.stringMatching(/^0x[0-9a-f]{64}$/u),
-      realm.oaath.binding.bindingId,
-    ]);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
+    expect(tracked.clearedContexts).toEqual([realm.oaath.binding.bindingId]);
     expect(tracked.closed).toHaveLength(6);
   });
 
@@ -299,10 +285,7 @@ describe("cleanup coordinator", () => {
     expect(result.completed).toEqual(["revoke", "signOut", "forgetLocal", "close"]);
     expect(stale.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
-    expect(tracked.deletedKeys).toEqual([
-      expect.stringMatching(/^pending-[a-z0-9-]{36}$/u),
-      "session-key",
-    ]);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
     expect(tracked.closed).toHaveLength(6);
   });
 
@@ -530,38 +513,6 @@ describe("cleanup coordinator", () => {
     ]);
   });
 
-  it("forgets local state but retains resources needed to retry signOut", async () => {
-    const tracked = trackedStores();
-    const realm = createRealm({
-      stores: tracked.stores,
-      chain: createChainFixture({
-        permissionInstalled: () => false,
-        installNonce: (nonce) => (BigInt(nonce) + 1n).toString(10),
-      }),
-      issuerSignOut: async () => {
-        throw new Error("relay sign-out failed");
-      },
-    });
-    const connection = await realm.oaath.connect();
-    const grant = await connection.requestPermission(permissionInput());
-    await tracked.stores.keys.store({ keyId: "session-key", key: await nonExtractable() });
-    const failure = await realm.oaath.disconnect(grant).catch((error: unknown) => error);
-    expect(failure).toMatchObject({
-      name: "OaathCleanupError",
-      unfinished: ["signOut", "close"],
-    });
-    // No chain ever materialized, so revocation completes outright.
-    expect(grant.state).toBe("revoked");
-    expect(tracked.deletedKeys).toEqual([
-      expect.stringMatching(/^pending-[a-z0-9-]{36}$/u),
-      "session-key",
-    ]);
-    expect(tracked.closed).toHaveLength(0);
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_signed_out",
-    });
-  });
-
   it("retains revocation dependencies until exact retry completes", async () => {
     let crashOnRemoval = false;
     const chain = createChainFixture({ crashOnSend: () => crashOnRemoval });
@@ -590,10 +541,7 @@ describe("cleanup coordinator", () => {
     expect(retried.unfinished).toEqual([]);
     expect(grant.state).toBe("revoked");
     expect(chain.sends).toHaveLength(2);
-    expect(tracked.deletedKeys).toEqual([
-      expect.stringMatching(/^pending-[a-z0-9-]{36}$/u),
-      "session-key",
-    ]);
+    expect(tracked.deletedKeys).toEqual(["session-key"]);
     expect(tracked.closed).toHaveLength(6);
   });
 

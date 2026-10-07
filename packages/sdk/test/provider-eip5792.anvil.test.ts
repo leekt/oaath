@@ -822,7 +822,6 @@ function durableStores(database: OaathDatabase) {
         chain: live.chain,
         validator: live.validator,
         stores: durableStores(database),
-        relay: realm.relay,
       });
       closeRealm = async () => restoredRealm.oaath.close();
       const restoredConnection = await restoredRealm.oaath.connect();

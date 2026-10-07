@@ -25,7 +25,6 @@ import {
   createChainFixture,
   createClock,
   createRealm,
-  createRelay,
   permissionInput,
   type RealmStores,
   sendCallsInput,
@@ -60,13 +59,12 @@ describe("send/return crash recovery", () => {
   it("does not resubmit after a crash and finalizes the same identity", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
     let crash = true;
     // One transport across both realms, so its send count is the whole history.
     const chain = createChainFixture({ crashOnSend: () => crash });
 
     const first = await realmStores(factory);
-    const before = createRealm({ clock, relay, stores: first.stores, chain });
+    const before = createRealm({ clock, stores: first.stores, chain });
     const connection = await before.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const crashed = await grant.sendCalls(sendCallsInput());
@@ -95,7 +93,7 @@ describe("send/return crash recovery", () => {
     crash = false;
 
     const second = await realmStores(factory);
-    const after = createRealm({ clock, relay, stores: second.stores, chain });
+    const after = createRealm({ clock, stores: second.stores, chain });
     const restored = await (await after.oaath.connect()).resume();
     if (!restored) throw new Error("expected the Grant to resume");
 
@@ -123,13 +121,12 @@ describe("send/return crash recovery", () => {
   it("recovers an accepted revocation after full recreation without resubmission", async () => {
     const factory = new IDBFactory();
     const clock = createClock();
-    const relay = createRelay(clock);
     let crash = false;
     // One transport across both realms, so its send count is the whole history.
     const chain = createChainFixture({ crashOnSend: () => crash });
 
     const first = await realmStores(factory);
-    const before = createRealm({ clock, relay, stores: first.stores, chain });
+    const before = createRealm({ clock, stores: first.stores, chain });
     const connection = await before.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     expect((await (await grant.sendCalls(sendCallsInput())).wait()).status).toBe("finalized");
@@ -162,7 +159,7 @@ describe("send/return crash recovery", () => {
     crash = false;
 
     const second = await realmStores(factory);
-    const after = createRealm({ clock, relay, stores: second.stores, chain });
+    const after = createRealm({ clock, stores: second.stores, chain });
     const secondConnection = await after.oaath.connect();
     const restored = await secondConnection.resume();
     if (!restored) throw new Error("expected the revoking Grant to resume");
