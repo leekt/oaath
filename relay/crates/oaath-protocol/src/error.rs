@@ -15,8 +15,8 @@ pub enum ErrorCode {
     OwnerCredentialProfileInvalid,
     OperatorCredentialProfileInvalid,
     KernelAccountProfileInvalid,
-    /// The account profile names no factory-derived Kernel 0.4.0 account, or
-    /// the owner validator does not match the owner kind. Rust-owned: the SDK
+    /// The derived profile uses the meta-factory route, or the owner validator
+    /// does not match the owner kind. Rust-owned: the SDK
     /// refuses the same inputs before reading the factory.
     KernelAccountDerivationInvalid,
     GrantPolicyInvalid,
