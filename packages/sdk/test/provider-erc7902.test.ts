@@ -161,7 +161,7 @@ describe("ERC-7902 static paymaster capture", () => {
       alias,
       { ...configuration(), optional: "true" },
       { ...configuration(), paymaster: `0x${"00".repeat(20)}` },
-      { ...configuration(), paymaster: `0x${"AA".repeat(20)}` },
+      { ...configuration(), paymaster: `0xaA${"aa".repeat(19)}` },
       { ...configuration(), paymaster: "0x33" },
       { ...configuration(), paymasterData: "0x0" },
       { ...configuration(), paymasterData: "0xDEAD" },

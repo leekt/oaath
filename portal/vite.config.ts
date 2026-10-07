@@ -8,7 +8,8 @@ export default defineConfig({
   build: { outDir: "dist", assetsDir: "assets", sourcemap: false },
   test: {
     name: "@oaath/portal",
-    include: ["test/**/*.test.ts"],
+    // The relay end-to-end builds and runs the Rust relay: `test:e2e` only.
+    include: process.env.OAATH_PORTAL_E2E ? ["test/**/*.e2e.ts"] : ["test/**/*.test.ts"],
     testTimeout: 60_000,
     // Chrome cold starts on shared CI runners exceed the 10 s hook default.
     hookTimeout: 60_000,

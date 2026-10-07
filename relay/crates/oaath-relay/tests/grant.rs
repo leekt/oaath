@@ -181,3 +181,61 @@ fn verifies_root_signatures_exactly_as_the_sdk_keys() {
         );
     }
 }
+
+/// The SDK's own `prepareKernelPermissionApproval` on Anvil, for each portal
+/// root kind (`relay/fixtures/kernel-approval`): the relay derives the same
+/// signing request for the same account, and admits exactly the approvals the
+/// SDK's checks accept.
+#[test]
+fn agrees_with_the_sdks_anvil_prepared_portal_root_approvals() {
+    let path = format!(
+        "{}/../../fixtures/kernel-approval/portal-root-approvals.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let fixtures: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let webauthn = &fixtures["webauthn"];
+    let relying_party = RelyingParty {
+        rp_id: webauthn["rpId"].as_str().unwrap(),
+        origin: webauthn["origin"].as_str().unwrap(),
+    };
+    let mut valid = 0;
+    for case in fixtures["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let request = parse_permission_request(&case["request"]).unwrap();
+        let account = case["signingRequest"]["signer"]["account"]
+            .as_str()
+            .unwrap();
+        // The registry's offline address is the account the SDK bound on chain.
+        assert_eq!(
+            oaath_relay::registry::derive_account_address(
+                &request.logical_account,
+                oaath_relay::registry::owner_validator_for(
+                    request.logical_account.owner_credential()
+                )
+                .as_deref(),
+            )
+            .as_deref(),
+            Some(account),
+            "{name}"
+        );
+        assert_eq!(
+            grant_signing_request(&request, &request.policy, account)
+                .unwrap()
+                .to_json(),
+            case["signingRequest"],
+            "{name}"
+        );
+        let decided_at_ms = case["decision"]["decidedAt"].as_u64().unwrap() * 1_000;
+        let verified = verify_grant_approval(
+            &request,
+            account,
+            &case["decision"].to_string(),
+            decided_at_ms,
+            &relying_party,
+        );
+        let expected = case["expect"]["valid"].as_bool().unwrap();
+        assert_eq!(verified.is_ok(), expected, "{name}");
+        valid += usize::from(expected);
+    }
+    assert_eq!(valid, 3);
+}

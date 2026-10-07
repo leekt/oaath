@@ -9,16 +9,14 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type CaptureContext, captureRecord } from "@oaath/protocol";
+import { type CaptureContext, captureAddress, captureRecord } from "@oaath/protocol";
 import type { Hash } from "cetane";
 import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import type { PreparedPaymaster } from "../prepared-user-operation.js";
-import { capabilityInvalid } from "../routing/types.js";
+import { capabilityInvalid, OaathRoutingError } from "../routing/types.js";
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const CANONICAL_QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT120 = (1n << 120n) - 1n;
 
@@ -92,8 +90,7 @@ function exactConfigurationRecord(
 }
 
 function address(value: unknown): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) invalid();
-  return value as `0x${string}`;
+  return captureAddress(value, "ERC-7902 paymaster address", capabilityInvalid);
 }
 
 function bytes(value: unknown): `0x${string}` {
@@ -201,7 +198,8 @@ export function captureErc7902StaticPaymasterConfiguration(
         data: bytes(record.paymasterData),
       }),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathRoutingError) throw error;
     return invalid();
   }
 }

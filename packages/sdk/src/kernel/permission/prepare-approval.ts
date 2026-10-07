@@ -302,9 +302,10 @@ function existingSigningRequest(
  * kernelPermissionInstallNonce for the account's global-minimum constraint. A
  * Kernel `0.3.3` request binds the account's current enable nonce.
  *
- * Supported: an existing Kernel `0.3.3` or `0.4.0` account with its ECDSA or
- * raw P-256 root owner, proven onchain, and a P-256 owner of a Kernel `0.4.0`
- * account derived through the Kernel factory. Any other request fails with
+ * Supported: an existing Kernel `0.3.3` or `0.4.0` account with its root
+ * owner proven onchain, and a Kernel `0.4.0` account derived through the
+ * Kernel factory whose single root is its ECDSA (through `ECDSA_VALIDATOR`),
+ * raw P-256, or WebAuthn owner credential. Any other request fails with
  * `kernel_runtime_unsupported` before any signing.
  */
 export async function prepareKernelPermissionApproval(
@@ -320,10 +321,10 @@ export async function prepareKernelPermissionApproval(
   const account = request.logicalAccount;
   const ownerCredential = account.ownerCredential;
   const existing = isKernelExistingAccountProfile(account);
-  if (!existing && (ownerCredential.kind !== "p256" || account.factoryRoute !== "kernel_factory")) {
+  if (!existing && account.factoryRoute !== "kernel_factory") {
     return runtimeFail(
       "kernel_runtime_unsupported",
-      "Kernel approval preparation requires an existing account or a P-256 owner of a factory-derived Kernel 0.4.0 account",
+      "Kernel approval preparation requires an existing account or a factory-derived Kernel 0.4.0 account",
     );
   }
   if (typeof input.chainId !== "number") return inputInvalid("approval chain is invalid");

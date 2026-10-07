@@ -29,6 +29,7 @@ import {
   advanceGrant,
   applyPermissionDecision,
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   createGrantFromPermissionRequest,
@@ -340,7 +341,11 @@ function policyFromInput(
         }
         calls.push(
           Object.freeze({
-            target: call.target as `0x${string}`,
+            target: captureAddress(
+              call.target,
+              `permission ${index} call ${callIndex} target`,
+              (message) => clientFail("oaath_client_input_invalid", message),
+            ),
             selector: selector as `0x${string}`,
             valueLimit: call.valueLimit,
             argumentEquals: Object.freeze([]),

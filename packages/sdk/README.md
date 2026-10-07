@@ -132,6 +132,11 @@ Kernel version, and `verifyKernelPermissionRevocation` proves removal at a
 finalized canonical block. A successful operation receipt alone does not prove
 removal.
 
+Address inputs accept lowercase, uppercase hex digits, or a valid EIP-55 checksum.
+The SDK captures them in lowercase before hashing or persistence. Invalid mixed-case
+checksums fail before signing; wallet RPC failures use `-32602` with the field and
+reason in `error.data.address` and a readable diagnostic in `error.data.message`.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The
@@ -750,9 +755,10 @@ takes one signature from a key profile, and `complete(artifact, decidedAt)`
 verifies an owner device's P-256 signing artifact. Both return the permission
 decision plus install approval consumed by the browser client. The caller owns
 any device transport; the helper does not submit or persist anything. It
-supports an existing Kernel `0.3.3` or `0.4.0` account whose ECDSA or raw P-256
-root owner is proven onchain, a P-256 owner of a factory-derived Kernel `0.4.0`
-account, and the current ECDSA/WebAuthn operator profiles. `reads` must serve
+supports an existing Kernel `0.3.3` or `0.4.0` account whose root owner is
+proven onchain, a factory-derived Kernel `0.4.0` account whose single root is
+its ECDSA (through `ECDSA_VALIDATOR`), raw P-256, or WebAuthn owner, and the
+current ECDSA/WebAuthn operator profiles. `reads` must serve
 every supported deployment (`createKernelReads`). Any other request fails with
 `kernel_runtime_unsupported` before signing, as does `complete` for a non-P-256
 owner. Wallet-approved mode prepares its approval through the same owner.

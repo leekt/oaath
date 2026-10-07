@@ -38,7 +38,15 @@ export interface RegisterSignerResponse {
   readonly signer_id: string;
 }
 
-export type AccountRole = "root";
+/** `root`: the signer owns the account; `permission`: a scoped signer on it. */
+/** `GET /portal/signers/by-credential/{credentialId}`: identification only. */
+export interface IdentifiedSigner {
+  readonly signer_id: string;
+  readonly kind: OwnerCredentialProfile["kind"];
+  readonly profile: OwnerCredentialProfile;
+}
+
+export type AccountRole = "root" | "permission";
 
 export interface PortalAccount {
   readonly account_id: string;
@@ -128,6 +136,8 @@ export const portalApi = {
   transaction: (id: string) => call<PortalTransaction>(`/portal/transactions/${segment(id)}`),
   registerSigner: (body: RegisterSignerRequest) =>
     call<RegisterSignerResponse>("/portal/signers", { method: "POST", body }),
+  signerByCredential: (credentialId: string) =>
+    call<IdentifiedSigner>(`/portal/signers/by-credential/${segment(credentialId)}`),
   signerAccounts: (signerId: string) =>
     call<SignerAccountsResponse>(`/portal/signers/${segment(signerId)}/accounts`),
   createAccount: (body: CreateAccountRequest) =>

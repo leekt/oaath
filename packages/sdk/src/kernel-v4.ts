@@ -1,3 +1,5 @@
+import { captureAddress } from "@oaath/protocol";
+
 export {
   encodeKernelInstallNonceInvalidationCall,
   encodeKernelPermissionUninstallCalls,
@@ -60,7 +62,6 @@ const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const BYTES4 = /^0x[0-9a-f]{8}$/u;
 const BYTES32 = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT16 = (1n << 16n) - 1n;
 const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT64 = (1n << 64n) - 1n;
@@ -448,14 +449,7 @@ function exact(
 }
 
 function address(value: unknown, label: string): `0x${string}` {
-  if (typeof value !== "string") return fail(`${label} is invalid`);
-  try {
-    const canonical = getAddress(value).toLowerCase() as `0x${string}`;
-    if (canonical === ZERO_ADDRESS) return fail(`${label} is invalid`);
-    return canonical;
-  } catch {
-    return fail(`${label} is invalid`);
-  }
+  return captureAddress(value, label, fail);
 }
 
 function bytes(value: unknown, label: string): `0x${string}` {
@@ -485,14 +479,7 @@ function evidenceInvalid(message: string): never {
 }
 
 function evidenceAddress(value: unknown, label: string): `0x${string}` {
-  if (typeof value !== "string") return evidenceInvalid(`${label} is invalid`);
-  try {
-    const canonical = getAddress(value).toLowerCase() as `0x${string}`;
-    if (canonical === ZERO_ADDRESS) return evidenceInvalid(`${label} is invalid`);
-    return canonical;
-  } catch {
-    return evidenceInvalid(`${label} is invalid`);
-  }
+  return captureAddress(value, label, evidenceInvalid);
 }
 
 function evidenceCode(value: unknown, label: string): `0x${string}` {
