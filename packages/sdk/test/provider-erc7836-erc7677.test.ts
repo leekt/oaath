@@ -13,9 +13,9 @@ import type {
   OaathChainCapability,
   OaathChainSponsorship,
 } from "../src/advanced.js";
+import { oaathProvider } from "../src/cetane.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { encodeKernelV4Execution } from "../src/kernel-v4.js";
-
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
 import { openOaathDatabase } from "../src/persistence/indexeddb/database.js";
@@ -24,7 +24,6 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
 import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
-import { oaathProvider } from "../src/cetane.js";
 import {
   bundlerProbe,
   CALL_DATA,

@@ -37,6 +37,7 @@ import {
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { encodeKernelNonceKey, readKernelLaneSequence } from "../src/advanced.js";
+import { createCetaneChainPorts } from "../src/cetane.js";
 import { createOAAth } from "../src/index.js";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
 import { createKernelV33Reads, kernelV33Deployment } from "../src/kernel/deployment/v33.js";
@@ -76,7 +77,6 @@ import {
 } from "../src/kernel.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
-import { createCetaneChainPorts } from "../src/cetane.js";
 import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
 import { createKernelV33Account, deployKernelV33Account } from "./support/kernel-v33.js";
 

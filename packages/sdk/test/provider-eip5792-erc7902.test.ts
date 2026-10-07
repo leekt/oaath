@@ -10,12 +10,12 @@ import type {
   OaathQuoteRequest,
 } from "../src/advanced.js";
 import { hashErc7902StaticPaymasterConfiguration } from "../src/advanced.js";
+import { oaathProvider } from "../src/cetane.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
-import { oaathProvider } from "../src/cetane.js";
 import {
   bundlerProbe,
   CALL_DATA,

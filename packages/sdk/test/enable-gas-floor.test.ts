@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Erc7677PaymasterServiceRequest, OaathChainCapability } from "../src/advanced.js";
 import { prepareSponsoredKernelOperation } from "../src/advanced.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   createKernelRuntime,
   kernelDeployment,
@@ -8,7 +9,6 @@ import {
   prepareUserOperation,
   sessionOperator,
 } from "../src/kernel.js";
-import { oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,

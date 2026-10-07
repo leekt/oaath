@@ -6,6 +6,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { oaathProvider } from "../src/cetane.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
@@ -19,7 +20,6 @@ import {
   hashCapturedWalletSendCallsRequest,
   hashWalletCallBundleProvenance,
 } from "../src/provider/capture.js";
-import { oaathProvider } from "../src/cetane.js";
 import {
   ACCOUNT,
   bindingInput,

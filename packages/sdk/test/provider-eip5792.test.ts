@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { createMemoryWalletCallBundleStoreAdapter } from "../src/persistence/memory/stores.js";
 import {
@@ -13,7 +14,6 @@ import {
   OaathProviderRpcError,
   UNSUPPORTED_CHAIN,
 } from "../src/provider/errors.js";
-import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,
