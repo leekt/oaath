@@ -12,12 +12,12 @@ The packages are pre-release and have not yet been authorized for production
 use.
 
 Owner signing is a closed experimental preview. Raw-digest requests are
-reject-only. The only owner-signing request that can be approved is the exact
-current Kernel v4 replayable-install EIP-712 profile with its bound P-256
-owner. The native app derives and binds that digest locally and passes only the
-verified digest to user-presence-capable custody. Host and simulator evidence
-does not prove a physical-device prompt or provide a released physical-custody
-guarantee.
+reject-only. The account root signs in the OAAth portal with its wallet or
+passkey, and only two profiles: the exact Kernel v4 replayable-install EIP-712
+request of a Grant, which the portal derives with the SDK and compares with the
+relay's before signing, and one exact owner-operation UserOperation hash. The
+relay and the SDK each verify the root's signature before a Grant or operation
+is used.
 
 Generic ERC-7871 `wallet_sign`, ERC-7730 or application-supplied display
 metadata, Permit/Permit2/application-purpose signing, and signing simulation

@@ -43,8 +43,7 @@ public identities and loopback endpoints. After client process loss, pass it
 and the same directory to `openLocalAnvilRecoveryClient({ recovery,
 stateDirectory })`, then use `connect().resume()` and `Grant.getOperation()`.
 The recovery client has no signing, authorization, quote or submission
-capability. It uses fresh authenticated local relay access and the SDK's
-existing durable resume validation. Anvil must still be running; a parent
+capability. It uses the SDK's existing durable resume validation. Anvil must still be running; a parent
 harness that kills the producing process owns cleanup of `processIds` and the
 temporary directory. Normal fixture `close()` stops its own Anvil processes.
 
@@ -59,7 +58,7 @@ direct-Grant durability proof and remain in-memory fixture stores.
 
 The root export exposes raw SQLite Grant/Operation adapters for SDK composition,
 a context adapter, and validated aggregate Grant/Operation stores for direct
-store tests. SQLite test schema `oaath.sqlite-test-store/v2` rejects old files;
+store tests. SQLite test schema `oaath.sqlite-test-store/v1` rejects old files;
 recreate disposable state instead of migrating it. These are test-only adapters,
 not a production SQLite persistence guarantee.
 
