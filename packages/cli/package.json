@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@oaath/sdk": "workspace:*",
-    "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz"
+    "cetane": "0.0.3"
   },
   "devDependencies": {
     "@types/node": "22.13.0",

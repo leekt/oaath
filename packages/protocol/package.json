@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
-    "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz",
+    "cetane": "0.0.3",
     "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
