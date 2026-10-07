@@ -48,7 +48,7 @@ async fn open_account(h: &Harness, root: &Root) -> (Signed, Value) {
             "POST",
             "/portal/accounts",
             Some(&signed.cookie),
-            Some(json!({ "root_signer_id": signed.signer_id })),
+            Some(json!({ "root_signer_id": signed.signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

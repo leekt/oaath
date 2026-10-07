@@ -167,7 +167,7 @@ async fn create_account(h: &Harness, signer_id: &str) -> Reply {
         "POST",
         "/portal/accounts",
         Some(&cookie),
-        Some(json!({ "root_signer_id": signer_id })),
+        Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
     ))
     .await
 }
@@ -648,7 +648,7 @@ async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer })),
+            Some(json!({ "root_signer_id": signer, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -835,7 +835,7 @@ async fn keeps_a_link_approval_single_use_and_its_removal_across_restarts() {
             "POST",
             "/portal/accounts",
             Some(&root_cookie),
-            Some(json!({ "root_signer_id": root_id })),
+            Some(json!({ "root_signer_id": root_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -972,7 +972,7 @@ async fn keeps_templates_and_a_template_approved_member_grant_across_restarts() 
             "POST",
             "/portal/accounts",
             Some(&root_cookie),
-            Some(json!({ "root_signer_id": root_id })),
+            Some(json!({ "root_signer_id": root_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -1235,4 +1235,29 @@ async fn reads_a_row_of_another_record_version_as_unreadable() {
     assert_eq!(refused.status, 500);
     assert_eq!(refused.body["error_code"], json!("relay_record_unreadable"));
     shutdown(h).await;
+}
+
+#[tokio::test]
+async fn creates_one_account_for_concurrent_retries_of_one_key() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let first = fixture.process(clock.clone()).await;
+    let second = fixture.process(clock.clone()).await;
+    let signer = register(&first, ecdsa_profile()).await;
+    let cookie = first.session_for(&signer).await;
+    let create = || {
+        portal_as(
+            "POST",
+            "/portal/accounts",
+            Some(&cookie),
+            Some(json!({ "root_signer_id": signer, "creation_key": "key-1" })),
+        )
+    };
+    let (a, b) = tokio::join!(first.send(create()), second.send(create()));
+    assert_eq!(a.ok(201), b.ok(201));
+    let listed = signer_accounts(&first, &signer).await.ok(200).clone();
+    assert_eq!(listed["accounts"].as_array().unwrap().len(), 1);
+    shutdown(first).await;
+    shutdown(second).await;
 }

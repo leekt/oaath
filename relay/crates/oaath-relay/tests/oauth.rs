@@ -91,7 +91,7 @@ async fn signer_and_account(h: &Harness, seed: u8) -> (String, Value, String) {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)
@@ -580,7 +580,7 @@ async fn a_suspended_member_cannot_log_in_until_restored_and_the_claim_lists_act
             "POST",
             "/portal/accounts",
             Some(&member_cookie),
-            Some(json!({ "root_signer_id": member_id })),
+            Some(json!({ "root_signer_id": member_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

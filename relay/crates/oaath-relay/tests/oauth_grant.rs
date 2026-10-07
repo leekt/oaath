@@ -312,7 +312,7 @@ async fn register_root(h: &Harness, root: &Root) -> (String, Value, String) {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

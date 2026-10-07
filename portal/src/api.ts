@@ -120,6 +120,11 @@ export interface SignerAccountsResponse {
 /** `POST /portal/accounts`: derive one counterfactual account offline. */
 export interface CreateAccountRequest {
   readonly root_signer_id: string;
+  /**
+   * The idempotency key of this one creation: a retry with the same key
+   * answers the account it created, never a second one.
+   */
+  readonly creation_key: string;
 }
 export interface CreateAccountResponse {
   readonly account_id: string;

@@ -80,7 +80,7 @@ async fn create_account(h: &Harness, signer_id: &str) -> Reply {
         "/portal/accounts",
         Some("same-origin"),
         Some(&cookie),
-        Some(json!({ "root_signer_id": signer_id })),
+        Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
     ))
     .await
 }
@@ -221,7 +221,7 @@ async fn refuses_an_unknown_signer_and_malformed_requests() {
         "POST",
         "/portal/accounts",
         Some("same-origin"),
-        Some(json!({ "root_signer_id": "unknown-signer" })),
+        Some(json!({ "root_signer_id": "unknown-signer", "creation_key": creation_key() })),
     ))
     .await
     .failure(E::Unauthenticated);
@@ -248,6 +248,9 @@ async fn refuses_an_unknown_signer_and_malformed_requests() {
         json!({}),
         json!({ "root_signer_id": 7 }),
         json!({ "root_signer_id": "a", "account_index": 0 }),
+        // Every creation names its idempotency key.
+        json!({ "root_signer_id": signer }),
+        json!({ "root_signer_id": signer, "creation_key": "not canonical" }),
     ] {
         h.send(portal_as(
             "POST",
@@ -284,7 +287,7 @@ async fn refuses_cross_site_requests() {
                 "POST",
                 "/portal/accounts",
                 Some(site),
-                Some(json!({ "root_signer_id": signer })),
+                Some(json!({ "root_signer_id": signer, "creation_key": creation_key() })),
             ),
             portal(
                 "GET",
@@ -429,4 +432,54 @@ async fn reads_an_ambiguous_credential_as_absent() {
     by_credential(&h, &credential_id, Some("same-origin"))
         .await
         .failure(E::NotFound);
+}
+
+#[tokio::test]
+async fn answers_a_retried_creation_with_the_account_it_created() {
+    let h = harness();
+    let (ecdsa, address_0) = address_case("ecdsa index 0");
+    let (_, address_1) = address_case("ecdsa index 1");
+    let signer = register(&h, &ecdsa).await;
+    let cookie = h.session_for(&signer).await;
+    let create = |key: &str| {
+        portal_as(
+            "POST",
+            "/portal/accounts",
+            Some("same-origin"),
+            Some(&cookie),
+            Some(json!({ "root_signer_id": signer, "creation_key": key })),
+        )
+    };
+    let first = h.send(create("key-1")).await.ok(201).clone();
+    assert_eq!(first["address"], json!(address_0));
+    // The reply was lost; the retry with the same key answers the same account.
+    h.clock.advance(1);
+    assert_eq!(h.send(create("key-1")).await.ok(201), &first);
+    assert_eq!(
+        accounts(&h, &signer).await.ok(200)["accounts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // A new creation is a new key.
+    let second = h.send(create("key-2")).await.ok(201).clone();
+    assert_eq!(second["address"], json!(address_1));
+    assert_ne!(second["account_id"], first["account_id"]);
+    // Keys belong to their root: another root's same key creates its own.
+    let (p256, _) = address_case("p256 index 0");
+    let other = register(&h, &p256).await;
+    let other_cookie = h.session_for(&other).await;
+    let theirs = h
+        .send(portal_as(
+            "POST",
+            "/portal/accounts",
+            Some("same-origin"),
+            Some(&other_cookie),
+            Some(json!({ "root_signer_id": other, "creation_key": "key-1" })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    assert_ne!(theirs["account_id"], first["account_id"]);
 }

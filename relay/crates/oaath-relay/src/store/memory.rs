@@ -368,8 +368,10 @@ impl RelayTransaction for MemoryTransaction {
             let stored = AccountRecord::parse(value)?;
             if stored.address == record.address
                 || (stored.root_signer_id == record.root_signer_id
-                    && stored.account_index.is_some()
-                    && stored.account_index == record.account_index)
+                    && ((stored.account_index.is_some()
+                        && stored.account_index == record.account_index)
+                        || (stored.creation_key.is_some()
+                            && stored.creation_key == record.creation_key)))
             {
                 return Ok(false);
             }
@@ -408,6 +410,22 @@ impl RelayTransaction for MemoryTransaction {
 
     async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>> {
         read(&self.staged.accounts, account_id, AccountRecord::parse)
+    }
+
+    async fn lock_account_by_creation_key(
+        &mut self,
+        root_signer_id: &str,
+        creation_key: &str,
+    ) -> RelayResult<Option<AccountRecord>> {
+        for value in self.staged.accounts.values() {
+            let account = AccountRecord::parse(value)?;
+            if account.root_signer_id == root_signer_id
+                && account.creation_key.as_deref() == Some(creation_key)
+            {
+                return Ok(Some(account));
+            }
+        }
+        Ok(None)
     }
 
     async fn lock_account_by_address(

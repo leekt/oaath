@@ -158,6 +158,9 @@ pub struct AccountRecord {
     pub root_signer_id: String,
     /// The factory index of a derived account; none for an imported one.
     pub account_index: Option<u64>,
+    /// The root's idempotency key for creating a derived account, so a retried
+    /// creation answers the same account; none for an imported one.
+    pub creation_key: Option<String>,
     /// The ECDSA root validator the address binds (the bootstrap
     /// `ownerValidator`), or none for a protocol-pinned validator.
     pub owner_validator: Option<String>,
@@ -181,6 +184,7 @@ impl AccountRecord {
                 "address",
                 "rootSignerId",
                 "accountIndex",
+                "creationKey",
                 "ownerValidator",
                 "profile",
                 "createdAt",
@@ -196,6 +200,10 @@ impl AccountRecord {
             account_index: match r.get("accountIndex") {
                 Some(Value::Null) => None,
                 other => Some(timestamp(other, UNREADABLE)?),
+            },
+            creation_key: match r.get("creationKey") {
+                Some(Value::Null) => None,
+                other => Some(identifier(other)?),
             },
             owner_validator: match r.get("ownerValidator") {
                 Some(Value::Null) => None,
@@ -214,14 +222,16 @@ impl AccountRecord {
             return Err(UNREADABLE);
         }
         let consistent = match (&account, record.account_index) {
-            (KernelAccountProfile::Derived(profile), Some(index)) => {
+            (KernelAccountProfile::Derived(profile), Some(index))
+                if record.creation_key.is_some() =>
+            {
                 profile.factory_route == KernelFactoryRoute::KernelFactory
                     && profile.account_index == index.to_string()
                     && derive_account_address(&account, record.owner_validator.as_deref())
                         .as_deref()
                         == Some(record.address.as_str())
             }
-            (KernelAccountProfile::Existing(profile), None) => {
+            (KernelAccountProfile::Existing(profile), None) if record.creation_key.is_none() => {
                 profile.kernel_version == KernelExistingAccountVersion::V0_4_0
                     && profile.address == record.address
             }
