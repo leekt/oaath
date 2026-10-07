@@ -163,9 +163,16 @@ export async function identifyPasskey(): Promise<NewSigner | null> {
   };
 }
 
-/** EIP-1193 provider surface the portal uses: account access only. */
-interface Eip1193Provider {
-  request(args: { method: "eth_requestAccounts" }): Promise<unknown>;
+/**
+ * EIP-1193 provider surface the portal uses: account access, and the one typed
+ * data signature a grant's root approval needs.
+ */
+export interface Eip1193Provider {
+  request(
+    args:
+      | { method: "eth_requestAccounts" }
+      | { method: "eth_signTypedData_v4"; params: [`0x${string}`, string] },
+  ): Promise<unknown>;
 }
 
 export interface AnnouncedWallet {

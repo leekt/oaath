@@ -17,6 +17,7 @@
     "test:e2e": "vite build && OAATH_PORTAL_E2E=1 vitest run"
   },
   "dependencies": {
+    "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
     "react": "19.2.0",
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "jose": "6.2.12",
     "puppeteer-core": "25.5.0",
+    "viem": "2.55.8",
     "vite": "8.2.0",
     "vitest": "4.1.10"
   }

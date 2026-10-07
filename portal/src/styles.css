@@ -255,3 +255,53 @@ h1:focus {
     transition: border-color 120ms ease;
   }
 }
+
+.review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.15rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+.review dt {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.review dt:first-child {
+  margin-top: 0;
+}
+
+.review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.calls li {
+  display: grid;
+}
+
+.call-name {
+  font-weight: 600;
+}
+
+.notice {
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--card);
+}

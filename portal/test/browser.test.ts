@@ -7,14 +7,18 @@ import { access, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hashPermissionRequest, parsePermissionRequest } from "@oaath/protocol";
+import { prepareDerivedAccountPermissionApproval } from "@oaath/sdk/kernel";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   CreateAccountResponse,
   DecisionRequest,
+  GrantDetail,
   IdentifiedSigner,
   PortalAccount,
   PortalTransaction,
+  PrepareGrantResponse,
   RedirectResponse,
   RegisterSignerResponse,
   SignerAccountsResponse,
@@ -63,7 +67,133 @@ function json(response: import("node:http").ServerResponse, status: number, body
   response.end(JSON.stringify(body));
 }
 
+/** One grant the dapp requests, as the relay composes and prepares it. */
+const NOW = Math.floor(Date.now() / 1000);
+const GRANT_DETAIL = {
+  type: "oaath_grant",
+  signer: {
+    version: "oaath.operator-credential-profile/v1",
+    kind: "ecdsa",
+    address: `0x${"d1".repeat(20)}`,
+  },
+  policy: {
+    version: "oaath.grant-policy/v2",
+    calls: [
+      {
+        target: `0x${"aa".repeat(20)}`,
+        selector: "0xa9059cbb",
+        valueLimit: "500000000000000000",
+        argumentEquals: [],
+      },
+      {
+        target: `0x${"bb".repeat(20)}`,
+        selector: "0xdeadbeef",
+        valueLimit: "0",
+        argumentEquals: [],
+      },
+    ],
+    validAfter: NOW,
+    validUntil: NOW + 3600,
+    perChainOperationLimit: { count: 3, intervalSeconds: null },
+  },
+  chains: [8453],
+  expires_at: NOW + 7200,
+  device_id: "device-1",
+} satisfies GrantDetail;
+const ROOT_ACCOUNT: PortalAccount = {
+  account_id: "account-grant-root",
+  address: `0x${"ab".repeat(20)}`,
+  role: "root",
+  profile: {
+    version: "oaath.kernel-account-profile/v1",
+    kind: "kernel",
+    accountIndex: "0",
+    kernelVersion: "0.4.0",
+    factoryRoute: "kernel_factory",
+    entryPoint: { version: "0.9" },
+    ownerCredential: WALLET_SIGNER.profile,
+  },
+};
+const GRANT_SIGNER: RememberedSigner = { ...WALLET_SIGNER, signer_id: "signer-grant" };
+const PHONE_SIGNER: RememberedSigner = {
+  ...WALLET_SIGNER,
+  signer_id: "signer-phone",
+  kind: "phone",
+  label: "Phone",
+  profile: {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "p256",
+    publicKey: KNOWN_PUBLIC_KEY,
+  },
+};
+const PHONE_ACCOUNT: PortalAccount = {
+  ...ROOT_ACCOUNT,
+  account_id: "account-phone-root",
+  profile: { ...ROOT_ACCOUNT.profile, ownerCredential: PHONE_SIGNER.profile },
+};
+
+function grantPreparation(account: PortalAccount): PrepareGrantResponse {
+  const request = parsePermissionRequest({
+    version: "oaath.permission-request/v2",
+    requestId: "par-grant",
+    context: {
+      version: "oaath.workspace-account-context/v1",
+      workspaceId: "personal-1",
+      workspaceKind: "personal",
+      accountId: "account-1",
+    },
+    application: {
+      applicationId: "client-1",
+      clientId: "client-1",
+      origin: "https://dapp.example",
+      deviceId: "device-1",
+    },
+    chainScope: "all",
+    logicalAccount: account.profile,
+    operatorCredential: GRANT_DETAIL.signer,
+    policy: GRANT_DETAIL.policy,
+    requestedAt: NOW,
+    expiresAt: GRANT_DETAIL.expires_at,
+    sessionSigner: null,
+  });
+  return {
+    permission_request: request,
+    request_hash: hashPermissionRequest(request),
+    approved_policy: request.policy,
+    signing_request: prepareDerivedAccountPermissionApproval({
+      request,
+      chainId: 8453,
+      account: account.address,
+    }).signingRequest,
+  };
+}
+
+function grantTransaction(id: string): PortalTransaction {
+  return {
+    transaction_id: id,
+    client_id: "client-1",
+    client_name: "Example Dapp",
+    redirect_origin: origin,
+    authorization_details: [GRANT_DETAIL],
+    expires_at: NOW + 600,
+  };
+}
+
 async function stubRelay(path: string, method: string, body: unknown) {
+  const grant = /^\/portal\/transactions\/(par-grant(?:-tampered)?)(\/prepare)?$/u.exec(path);
+  if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
+  if (grant?.[1] && grant[2] && method === "POST") {
+    const selection = body as { account_id: string };
+    const prepared = grantPreparation(
+      selection.account_id === PHONE_ACCOUNT.account_id ? PHONE_ACCOUNT : ROOT_ACCOUNT,
+    );
+    return grant[1] === "par-grant-tampered"
+      ? {
+          ...prepared,
+          signing_request: { ...prepared.signing_request, expectedDigest: `0x${"66".repeat(32)}` },
+        }
+      : prepared;
+  }
   if (path === "/portal/transactions/par-1" && method === "GET")
     return {
       transaction_id: "par-1",
@@ -96,7 +226,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
     accounts.set(signer, [{ ...created, role: "root" }]);
     return created;
   }
-  if (path === "/portal/transactions/par-1/decision" && method === "POST")
+  if (/^\/portal\/transactions\/par-[\w-]+\/decision$/u.test(path) && method === "POST")
     return {
       redirect:
         (body as DecisionRequest).outcome === "cancelled"
@@ -119,6 +249,16 @@ async function stubRelay(path: string, method: string, body: unknown) {
 
 beforeAll(async () => {
   await access(join(DIST, "index.html"));
+  accounts.set(GRANT_SIGNER.signer_id, [
+    ROOT_ACCOUNT,
+    {
+      ...ROOT_ACCOUNT,
+      account_id: "account-grant-member",
+      address: `0x${"cd".repeat(20)}`,
+      role: "permission",
+    },
+  ]);
+  accounts.set(PHONE_SIGNER.signer_id, [PHONE_ACCOUNT]);
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     let raw = "";
@@ -182,14 +322,14 @@ afterAll(async () => {
   await new Promise((resolve) => server?.close(resolve));
 });
 
-async function openPortal(seed: readonly RememberedSigner[]): Promise<Page> {
+async function openPortal(seed: readonly RememberedSigner[], transaction = "par-1"): Promise<Page> {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
   await page.evaluateOnNewDocument((signers: string) => {
     localStorage.setItem("oaath.portal.signers/v1", signers);
   }, JSON.stringify(seed));
   await page.goto(
-    `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-1`,
+    `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:${transaction}`,
   );
   await page.waitForSelector("#signer-heading");
   return page;
@@ -395,6 +535,101 @@ describe("portal in Chrome", () => {
     expect(calls.at(-1)).toEqual({
       method: "POST",
       path: "/portal/transactions/par-1/decision",
+      body: { outcome: "cancelled" },
+    });
+    await page.close();
+  });
+
+  it("shows a grant's signer and policy and offers only accounts the signer owns", async () => {
+    calls.length = 0;
+    const page = await openPortal([GRANT_SIGNER], "par-grant");
+    await clickText(page, "Test Wallet");
+    await page.waitForSelector("::-p-text(0xabab…abab)");
+    // A signer that is not the root cannot approve a grant, so it is not offered.
+    expect(await page.$("::-p-text(0xcdcd…cdcd)")).toBeNull();
+    await capture(page, "5-grant-accounts");
+    await clickText(page, "0xabab…abab");
+    const review = await page.waitForSelector(".review");
+    const text = await review?.evaluate((node) => (node as HTMLElement).innerText);
+    expect(text).toContain(`Ethereum key 0x${"d1".repeat(20)}`);
+    expect(text).toContain("transfer");
+    expect(text).toContain("Sends up to 0.5 ETH");
+    expect(text).toContain("0xdeadbeef");
+    expect(text).toContain("Up to 3 operations per chain in total");
+    expect(text).toContain("Base");
+    expect(await page.$("::-p-text(the only signature OAAth ever asks for)")).not.toBeNull();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await capture(page, "6-grant-review");
+    expect(calls.at(-1)).toEqual({
+      method: "POST",
+      path: "/portal/transactions/par-grant/prepare",
+      body: { signer_id: "signer-grant", account_id: "account-grant-root" },
+    });
+    await page.close();
+  });
+
+  it("refuses a signing request whose digest it did not derive, before any wallet prompt", async () => {
+    calls.length = 0;
+    const page = await browser.newPage();
+    await page.evaluateOnNewDocument(
+      (signers: string) => {
+        localStorage.setItem("oaath.portal.signers/v1", signers);
+        const methods: string[] = [];
+        Object.assign(window, { walletMethods: methods });
+        const provider = {
+          request: async ({ method }: { method: string }) => {
+            methods.push(method);
+            return [`0x${"11".repeat(20)}`];
+          },
+        };
+        window.addEventListener("eip6963:requestProvider", () =>
+          window.dispatchEvent(
+            new CustomEvent("eip6963:announceProvider", {
+              detail: Object.freeze({
+                info: { uuid: "w", name: "Test Wallet", icon: "", rdns: "test.wallet" },
+                provider,
+              }),
+            }),
+          ),
+        );
+      },
+      JSON.stringify([GRANT_SIGNER]),
+    );
+    await page.goto(
+      `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-grant-tampered`,
+    );
+    await clickText(page, "Test Wallet");
+    await clickText(page, "0xabab…abab");
+    await page.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    await clickText(page, "Approve and sign");
+    const alert = await page.waitForSelector("[role=alert]");
+    expect(await alert?.evaluate((node) => node.textContent)).toContain("will not sign it");
+    expect(
+      await page.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods),
+    ).toEqual([]);
+    expect(calls.some((call) => call.path.endsWith("/decision"))).toBe(false);
+    await page.close();
+  });
+
+  it("offers a phone root approval only as coming soon, and cancels with access_denied", async () => {
+    calls.length = 0;
+    const page = await openPortal([PHONE_SIGNER], "par-grant");
+    await clickText(page, "Phone");
+    await clickText(page, "0xabab…abab");
+    await page.waitForSelector(".review");
+    expect(
+      await page.$eval(
+        "::-p-text(Approve on your phone)",
+        (node) => (node as HTMLButtonElement).disabled,
+      ),
+    ).toBe(true);
+    await Promise.all([page.waitForNavigation(), clickText(page, "Cancel and return to the app")]);
+    expect(new URL(page.url()).searchParams.get("error")).toBe("access_denied");
+    expect(calls.at(-1)).toEqual({
+      method: "POST",
+      path: "/portal/transactions/par-grant/decision",
       body: { outcome: "cancelled" },
     });
     await page.close();

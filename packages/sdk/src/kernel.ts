@@ -52,6 +52,8 @@ export {
   prepareKernelUserOperation,
 } from "./kernel/deployment/account.js";
 export type { KernelDeployment } from "./kernel/deployment/profile.js";
+/** ZeroDev's ECDSA validator: the ECDSA root of OAAth-derived accounts on every Kernel version. */
+export { ECDSA_VALIDATOR } from "./kernel/deployment/v33.js";
 export type { KernelGasPolicy } from "./kernel/gas-policy.js";
 export type {
   EcdsaKeyAccount,
@@ -123,11 +125,13 @@ export type {
   ExistingAccountApproval as KernelExistingAccountApproval,
   ExistingAccountApprovalChain as KernelExistingAccountApprovalChain,
   KernelPermissionDecision,
+  PrepareDerivedAccountPermissionApprovalInput,
   PreparedKernelPermissionApproval,
   PrepareExistingAccountPermissionApprovalInput,
   PrepareKernelPermissionApprovalInput,
 } from "./kernel/permission/prepare-approval.js";
 export {
+  prepareDerivedAccountPermissionApproval,
   prepareExistingAccountPermissionApproval,
   prepareKernelPermissionApproval,
 } from "./kernel/permission/prepare-approval.js";

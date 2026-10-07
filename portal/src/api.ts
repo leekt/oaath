@@ -7,7 +7,14 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { KernelAccountProfile, OwnerCredentialProfile } from "@oaath/protocol";
+import type {
+  Eip712OwnerSigningRequest,
+  GrantPolicy,
+  KernelAccountProfile,
+  OperatorCredentialProfile,
+  OwnerCredentialProfile,
+  PermissionRequest,
+} from "@oaath/protocol";
 
 /** RFC 6749 error body with the relay's structured code. */
 export interface PortalErrorBody {
@@ -17,6 +24,18 @@ export interface PortalErrorBody {
   readonly error_code?: string;
 }
 
+/** The dapp's requested grant: its own signer and the policy it may use. */
+export interface GrantDetail {
+  readonly type: "oaath_grant";
+  readonly signer: OperatorCredentialProfile;
+  readonly policy: GrantPolicy;
+  /** The chains the dapp names; display-only, the approval covers every chain. */
+  readonly chains: readonly number[];
+  /** Unix seconds: the Grant's exclusive expiry. */
+  readonly expires_at: number;
+  readonly device_id: string;
+}
+
 /** `GET /portal/transactions/{par_id}`: one pending authorization. */
 export interface PortalTransaction {
   readonly transaction_id: string;
@@ -24,8 +43,8 @@ export interface PortalTransaction {
   readonly client_name: string;
   /** Origin of the registered redirect URI the dapp asked to return to. */
   readonly redirect_origin: string;
-  /** Requested grant details; reviewed in a later screen, never here. */
-  readonly authorization_details: readonly unknown[];
+  /** Empty for a login; one `oaath_grant` when the dapp asks for a grant. */
+  readonly authorization_details: readonly GrantDetail[];
   /** Unix seconds after which the request is no longer usable. */
   readonly expires_at: number;
 }
@@ -38,7 +57,6 @@ export interface RegisterSignerResponse {
   readonly signer_id: string;
 }
 
-/** `root`: the signer owns the account; `permission`: a scoped signer on it. */
 /** `GET /portal/signers/by-credential/{credentialId}`: identification only. */
 export interface IdentifiedSigner {
   readonly signer_id: string;
@@ -46,6 +64,7 @@ export interface IdentifiedSigner {
   readonly profile: OwnerCredentialProfile;
 }
 
+/** `root`: the signer owns the account; `permission`: a scoped signer on it. */
 export type AccountRole = "root" | "permission";
 
 export interface PortalAccount {
@@ -70,12 +89,28 @@ export interface CreateAccountResponse {
   readonly profile: KernelAccountProfile;
 }
 
-/** `POST /portal/transactions/{id}/decision`: the login outcome. */
+/** `POST /portal/transactions/{id}/prepare`: only the account's root may prepare. */
+export interface PrepareGrantRequest {
+  readonly signer_id: string;
+  readonly account_id: string;
+}
+export interface PrepareGrantResponse {
+  /** The composed request the decision must approve, byte for byte. */
+  readonly permission_request: PermissionRequest;
+  readonly request_hash: `0x${string}`;
+  readonly approved_policy: GrantPolicy;
+  /** The Kernel replayable-install request the account root signs. */
+  readonly signing_request: Eip712OwnerSigningRequest;
+}
+
+/** `POST /portal/transactions/{id}/decision`: the login or grant outcome. */
 export type DecisionRequest =
   | {
       readonly outcome: "approved";
       readonly signer_id: string;
       readonly account_id: string;
+      /** For a grant: the root-signed decision, `JSON.stringify(KernelPermissionDecision)`. */
+      readonly artifact?: string;
     }
   /** The redirect then carries `error=access_denied`. */
   | { readonly outcome: "cancelled" };
@@ -142,6 +177,11 @@ export const portalApi = {
     call<SignerAccountsResponse>(`/portal/signers/${segment(signerId)}/accounts`),
   createAccount: (body: CreateAccountRequest) =>
     call<CreateAccountResponse>("/portal/accounts", { method: "POST", body }),
+  prepareGrant: (id: string, body: PrepareGrantRequest) =>
+    call<PrepareGrantResponse>(`/portal/transactions/${segment(id)}/prepare`, {
+      method: "POST",
+      body,
+    }),
   decide: (id: string, body: DecisionRequest) =>
     call<RedirectResponse>(`/portal/transactions/${segment(id)}/decision`, {
       method: "POST",
