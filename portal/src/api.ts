@@ -3,8 +3,9 @@
  *
  * Every wire shape the SPA reads or writes lives here, so the relay side
  * (stage 5a B1/B2) can adjust one module. A signer's accounts, account
- * creation, and grant decisions need that signer's session: an HttpOnly cookie
- * the relay sets after the signer proves control (`session.ts`).
+ * creation, grant decisions, links and members need that signer's session: an
+ * HttpOnly cookie the relay sets after the signer proves control
+ * (`session.ts`).
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -145,6 +146,71 @@ export interface RedirectResponse {
   readonly redirect: string;
 }
 
+/** `POST /portal/links`: the signed-in new signer asks to join an account. */
+export interface CreateLinkRequest {
+  readonly signer_id: string;
+  readonly account: `0x${string}`;
+  /** The requester's name for this signer, shown to the account's owner. */
+  readonly label: string;
+}
+export interface CreateLinkResponse {
+  readonly link_id: string;
+  readonly expires_at: number;
+}
+
+export type LinkStatus = "pending" | "approved" | "rejected" | "expired" | "removed";
+
+/** The OAAth membership approval an account's root signs (EIP-712). */
+export interface MembershipApprovalTypedData {
+  readonly types: Readonly<Record<string, readonly { name: string; type: string }[]>>;
+  readonly primaryType: "MembershipApproval";
+  readonly domain: { readonly name: "OAAth"; readonly version: "1" };
+  readonly message: {
+    readonly account: `0x${string}`;
+    readonly signerProfileHash: `0x${string}`;
+    readonly role: "permission";
+    readonly issuedAt: number;
+    readonly expiresAt: number;
+    readonly nonce: string;
+  };
+}
+
+/** `GET /portal/links/{id}`: for the requester and the account's root. */
+export interface PortalLink {
+  readonly link_id: string;
+  readonly status: LinkStatus;
+  readonly account_id: string;
+  readonly address: `0x${string}`;
+  readonly signer: {
+    readonly signer_id: string;
+    readonly kind: OwnerCredentialProfile["kind"];
+    readonly profile: OwnerCredentialProfile;
+    readonly profile_hash: `0x${string}`;
+  };
+  readonly label: string;
+  readonly role: "permission";
+  readonly expires_at: number;
+  readonly typed_data: MembershipApprovalTypedData;
+  readonly digest: `0x${string}`;
+}
+
+/** `GET /portal/accounts/{id}/members`: the root's view of its account. */
+export interface PortalMember {
+  readonly signer_id: string;
+  readonly kind: OwnerCredentialProfile["kind"];
+  readonly profile: OwnerCredentialProfile;
+  readonly role: AccountRole;
+  /** A login-only member's link and label. */
+  readonly link_id: string | null;
+  readonly label: string | null;
+  /** A dapp signer's grant. */
+  readonly grant_id: string | null;
+  readonly joined_at: number;
+}
+export interface MembersResponse {
+  readonly members: readonly PortalMember[];
+}
+
 /** A failed portal call with the relay's structured code, never its prose. */
 export class PortalApiError extends Error {
   readonly status: number;
@@ -224,4 +290,21 @@ export const portalApi = {
       body,
     }),
   redirect: (id: string) => call<RedirectResponse>(`/portal/transactions/${segment(id)}/redirect`),
+  createLink: (body: CreateLinkRequest) =>
+    call<CreateLinkResponse>("/portal/links", { method: "POST", body }),
+  link: (id: string) => call<PortalLink>(`/portal/links/${segment(id)}`),
+  approveLink: (id: string, signature: `0x${string}`) =>
+    call<PortalLink>(`/portal/links/${segment(id)}/approve`, {
+      method: "POST",
+      body: { signature },
+    }),
+  rejectLink: (id: string) =>
+    call<PortalLink>(`/portal/links/${segment(id)}/reject`, { method: "POST", body: {} }),
+  members: (accountId: string) =>
+    call<MembersResponse>(`/portal/accounts/${segment(accountId)}/members`),
+  removeMember: (accountId: string, signerId: string) =>
+    call<{ readonly removed: number }>(
+      `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}`,
+      { method: "DELETE" },
+    ),
 };

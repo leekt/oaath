@@ -132,6 +132,7 @@ export type {
 } from "./identity-profile.js";
 export {
   createKernelAccountActionInput,
+  hashOwnerCredentialProfile,
   isKernelExistingAccountProfile,
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,

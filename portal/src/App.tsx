@@ -2,11 +2,13 @@
  * The "Login with OAAth" popup: sign in with a signer, then choose an account,
  * then return to the dapp. Signing in proves the signer (a passkey assertion
  * or a wallet's Sign-In with Ethereum message) and approves nothing. A grant
- * adds one review in which the account root signs the dapp's request.
+ * adds one review in which the account root signs the dapp's request. A
+ * signer without an account may ask an existing account's owner to add it
+ * (`/link/{id}`, `Links.tsx`).
  *
  * @author taek <leekt216@gmail.com>
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type DecisionRequest,
   type PortalAccount,
@@ -16,19 +18,9 @@ import {
   transactionIdFromRequestUri,
 } from "./api.js";
 import { GrantReview } from "./GrantReview.js";
-import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
-import {
-  type AnnouncedWallet,
-  connectWallet,
-  createPasskey,
-  type NewSigner,
-  type RememberedSigner,
-  rememberedSigners,
-  rememberSigner,
-  shortAddress,
-  signerDetail,
-  watchWallets,
-} from "./signers.js";
+import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
+import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
+import { type RememberedSigner, rememberSigner, shortAddress } from "./signers.js";
 
 type Step =
   | { readonly name: "signer" }
@@ -37,38 +29,11 @@ type Step =
   | { readonly name: "review"; readonly signer: RememberedSigner; readonly account: PortalAccount }
   | { readonly name: "returning" };
 
-function message(error: unknown): string {
-  const code = error instanceof PortalApiError ? error.code : (error as { code?: string })?.code;
-  switch (code) {
-    case "network_unavailable":
-      return "OAAth is unreachable. Check your connection and try again.";
-    case "cancelled":
-    case "timeout":
-      return "The passkey prompt was dismissed.";
-    case "already-registered":
-      return "This passkey is already on this device.";
-    case "passkey-unknown":
-      return "This passkey isn't registered with OAAth. Add it as a new signer instead.";
-    case "unsupported":
-    case "rp-mismatch":
-      return "This browser cannot create a passkey here.";
-    case "wallet-unavailable":
-      return "Your wallet isn't available. Open it and try again.";
-    case "wallet-declined":
-      return "The sign-in was declined in your wallet.";
-    case "wallet-account-mismatch":
-      return "Your wallet is on another account. Switch to this signer's account and try again.";
-    case "sign-in-refused":
-      return "OAAth couldn't verify that sign-in. Please try again.";
-    case "relay_unauthenticated":
-      return "Your sign-in expired. Choose your signer again.";
-    default:
-      return "Something went wrong. Please try again.";
-  }
-}
-
 export function App() {
   const params = new URLSearchParams(location.search);
+  const link = /^\/link\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
+  if (link) return <LinkApproval linkId={link} />;
+  if (location.pathname === "/accounts") return <ManageAccounts />;
   if (location.pathname !== "/authorize") return <Landing />;
   const transactionId = transactionIdFromRequestUri(params.get("request_uri"));
   if (!transactionId || !params.get("client_id"))
@@ -88,6 +53,9 @@ function Landing() {
       <h1>OAAth</h1>
       <p className="lede">
         One account for every app. Start from an app's “Login with OAAth” button.
+      </p>
+      <p>
+        <a href="/accounts">Manage your accounts</a>
       </p>
     </Frame>
   );
@@ -207,172 +175,6 @@ function Authorize({ transactionId }: { transactionId: string }) {
   );
 }
 
-function SignerStep({
-  onChosen,
-  onCancel,
-}: {
-  onChosen: (signer: RememberedSigner) => void;
-  onCancel: () => void;
-}) {
-  const [signers] = useState(rememberedSigners);
-  const [adding, setAdding] = useState(false);
-  const [wallets, setWallets] = useState<AnnouncedWallet[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => heading.current?.focus(), []);
-  useEffect(() => (adding ? watchWallets(setWallets) : undefined), [adding]);
-
-  /** Every path ends in a fresh session for the chosen signer. */
-  async function run(choose: () => Promise<RememberedSigner | null>) {
-    setBusy(true);
-    setError(null);
-    try {
-      const signer = await choose();
-      if (!signer) throw Object.assign(new Error("unknown passkey"), { code: "passkey-unknown" });
-      rememberSigner(signer);
-      onChosen(signer);
-    } catch (failure) {
-      setError(message(failure));
-      setBusy(false);
-    }
-  }
-
-  async function signIn(signer: RememberedSigner, wallet: AnnouncedWallet | null = null) {
-    if (signer.profile.kind === "ecdsa")
-      await signInWallet(signer.signer_id, signer.profile.address, wallet, signer.rdns);
-    else await signInPasskey(signer.signer_id, signer);
-    return { ...signer, lastUsedAt: Date.now() };
-  }
-
-  async function add(create: () => Promise<NewSigner>, wallet: AnnouncedWallet | null = null) {
-    const created = await create();
-    const { signer_id } = await portalApi.registerSigner({ profile: created.profile });
-    return signIn({ ...created, signer_id, lastUsedAt: Date.now() }, wallet);
-  }
-
-  async function recognise() {
-    const found = await signInUnknownPasskey();
-    if (!found) return null;
-    const { signerId, ...fields } = found;
-    return { ...fields, signer_id: signerId, lastUsedAt: Date.now() };
-  }
-
-  return (
-    <section aria-labelledby="signer-heading">
-      <h1 id="signer-heading" ref={heading} tabIndex={-1}>
-        Sign in with…
-      </h1>
-      <p className="quiet">Your passkey or wallet confirms it's you. This approves nothing.</p>
-      {signers.length === 0 ? (
-        <p className="quiet">No signers on this browser yet. Add one to continue.</p>
-      ) : (
-        <ul className="choices">
-          {signers.map((signer) => (
-            <li key={signer.signer_id}>
-              <button
-                type="button"
-                className="choice"
-                disabled={busy}
-                onClick={() => run(() => signIn(signer))}
-              >
-                <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
-                <span className="choice-text">
-                  <span className="choice-title">{signer.label}</span>
-                  <span className="choice-detail mono">{signerDetail(signer.profile)}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <button
-        type="button"
-        className="secondary"
-        aria-expanded={adding}
-        aria-controls="add-signer"
-        onClick={() => setAdding(!adding)}
-      >
-        Add signer
-      </button>
-      <p>
-        <button type="button" className="link" disabled={busy} onClick={() => run(recognise)}>
-          Use a passkey from another device or browser
-        </button>
-      </p>
-      {adding && (
-        <ul id="add-signer" className="choices options" aria-label="Signer options">
-          <li>
-            <button
-              type="button"
-              className="choice"
-              disabled={busy}
-              onClick={() => run(() => add(() => createPasskey(signers)))}
-            >
-              <span className="badge badge-passkey" aria-hidden="true" />
-              <span className="choice-text">
-                <span className="choice-title">New passkey</span>
-                <span className="choice-detail">Face, fingerprint or device PIN</span>
-              </span>
-            </button>
-          </li>
-          {wallets.length === 0 ? (
-            <li className="quiet">No browser wallet found.</li>
-          ) : (
-            wallets.map((wallet) => (
-              <li key={wallet.info.uuid}>
-                <button
-                  type="button"
-                  className="choice"
-                  disabled={busy}
-                  onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
-                >
-                  <span className="badge badge-wallet" aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">{wallet.info.name}</span>
-                    <span className="choice-detail">Sign in with your wallet</span>
-                  </span>
-                </button>
-              </li>
-            ))
-          )}
-          <li>
-            <button type="button" className="choice" disabled aria-describedby="phone-soon">
-              <span className="badge badge-phone" aria-hidden="true" />
-              <span className="choice-text">
-                <span className="choice-title">Phone</span>
-                <span className="choice-detail" id="phone-soon">
-                  Coming soon
-                </span>
-              </span>
-            </button>
-          </li>
-        </ul>
-      )}
-      {busy && (
-        <p className="quiet" aria-live="polite">
-          Confirm the sign-in with your passkey or wallet…
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <CancelButton onCancel={onCancel} disabled={busy} />
-    </section>
-  );
-}
-
-function CancelButton({ onCancel, disabled }: { onCancel: () => void; disabled: boolean }) {
-  return (
-    <button type="button" className="cancel" disabled={disabled} onClick={onCancel}>
-      Cancel and return to the app
-    </button>
-  );
-}
-
 const ROLE_LABEL: Readonly<Record<PortalAccount["role"], string>> = {
   root: "Owner",
   permission: "Signer",
@@ -393,22 +195,33 @@ function AccountStep({
   onCancel: () => void;
 }) {
   const [accounts, setAccounts] = useState<readonly PortalAccount[] | null>(null);
+  const [linking, setLinking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => heading.current?.focus(), []);
+  /** Reloaded when a link is approved, so the newly joined account appears. */
+  const load = useCallback(
+    () =>
+      portalApi.signerAccounts(signer.signer_id).then(
+        (response) =>
+          setAccounts(
+            rootOnly
+              ? response.accounts.filter((account) => account.role === "root")
+              : response.accounts,
+          ),
+        (failure: unknown) => setError(message(failure)),
+      ),
+    [signer.signer_id, rootOnly],
+  );
   useEffect(() => {
-    portalApi.signerAccounts(signer.signer_id).then(
-      (response) =>
-        setAccounts(
-          rootOnly
-            ? response.accounts.filter((account) => account.role === "root")
-            : response.accounts,
-        ),
-      (failure: unknown) => setError(message(failure)),
-    );
-  }, [signer.signer_id, rootOnly]);
+    load();
+  }, [load]);
+  const linked = useCallback(() => {
+    setLinking(false);
+    load();
+  }, [load]);
 
   async function create() {
     setBusy(true);
@@ -473,39 +286,26 @@ function AccountStep({
         <button type="button" className="primary" disabled={busy} onClick={create}>
           Create account
         </button>
-        <button type="button" className="secondary" disabled aria-describedby="link-soon">
-          Link to an existing account
-        </button>
-        <p className="choice-detail" id="link-soon">
-          Linking an existing account is coming soon.
-        </p>
+        {!rootOnly && (
+          <button
+            type="button"
+            className="secondary"
+            aria-expanded={linking}
+            aria-controls="link-request"
+            disabled={busy}
+            onClick={() => setLinking(!linking)}
+          >
+            Link to an existing account
+          </button>
+        )}
       </div>
+      {linking && <LinkRequest signer={signer} onApproved={linked} />}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
       <CancelButton onCancel={onCancel} disabled={busy} />
-    </section>
-  );
-}
-
-function Frame({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="frame">
-      <div className="mark" aria-hidden="true">
-        OAAth
-      </div>
-      {children}
-    </main>
-  );
-}
-
-function Notice({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section role="status">
-      <h1>{title}</h1>
-      <p className="quiet">{children}</p>
     </section>
   );
 }

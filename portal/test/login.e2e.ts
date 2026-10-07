@@ -283,8 +283,12 @@ async function click(page: Page, selector: string) {
 }
 
 /** Opens the example dapp, ready to log in (its client is registered on load). */
-async function openDapp(url = dapp, ready = "#login:not([disabled])") {
-  const page = await browser.newPage();
+async function openDapp(
+  url = dapp,
+  ready = "#login:not([disabled])",
+  context: Pick<Browser, "newPage"> = browser,
+) {
+  const page = await context.newPage();
   // The dapp's PAR waits until the popup is instrumented; it is delayed, never altered.
   let release = () => {};
   const instrumented = new Promise<void>((resolve) => {
@@ -996,5 +1000,94 @@ describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
       "demo stopped: time cap reached",
     );
     expect(capped.usage().used).toBe(0);
+  });
+});
+
+describe("adding a passkey on a second device to an existing account", () => {
+  it("links, the wallet root approves with one signature, and the passkey logs in as the account", async () => {
+    // The root device: its remembered wallet signer owns an account.
+    const root = await browser.newPage();
+    await root.setViewport({ width: 390, height: 844 });
+    await installWallet(root);
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
+    const address = /0x[0-9a-f]{40}/u.exec(
+      (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+    )?.[0];
+    if (!address) throw new Error("no root account");
+
+    // The second device: its own browser profile, a new passkey, no account.
+    const device = await browser.createBrowserContext();
+    const dappPage = await openDapp(dapp, "#login:not([disabled])", device);
+    const popup = await startLogin(dappPage);
+    const session = await popup.createCDPSession();
+    await session.send("WebAuthn.enable");
+    await session.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+      },
+    });
+    await click(popup, "::-p-text(Add signer)");
+    await click(popup, "::-p-text(New passkey)");
+    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+    await click(popup, "::-p-text(Link to an existing account)");
+    await popup.type("#link-account", address);
+    await popup.$eval("#link-label", (node) => {
+      (node as HTMLInputElement).select();
+    });
+    await popup.type("#link-label", "Second device");
+    await click(popup, "::-p-text(Request access)");
+    const shared = await popup.waitForSelector("#link-url");
+    const linkUrl = (await shared?.evaluate((node) => node.textContent)) ?? "";
+    expect(linkUrl).toMatch(new RegExp(`^${portal}/link/[A-Za-z0-9_-]+$`, "u"));
+    expect(await popup.$("svg.qr")).not.toBeNull();
+
+    // The root opens the link, signs in, reviews, and signs once.
+    await root.goto(linkUrl);
+    await click(root, "::-p-text(E2E Wallet)");
+    await root.waitForSelector("::-p-text(Add a signer to your account)");
+    const review = await root.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain(address);
+    expect(review).toContain("Passkey “Second device”");
+    expect(review).toContain("Sign in only");
+    const signatures = walletSignatures;
+    await click(root, "::-p-text(Approve and sign)");
+    await root.waitForSelector("::-p-text(Signer added)");
+    expect(walletSignatures).toBe(signatures + 1);
+    await root.waitForSelector("::-p-text(Second device)");
+
+    // The second device sees the approval and signs in as the account.
+    const linked = await popup.waitForSelector(
+      `button[aria-label='Smart account ${address}, Signer']`,
+    );
+    await linked?.click();
+    expect(await outcome(dappPage.page)).toBe("signed-in");
+    const login: Record<string, unknown> = await dappPage.page.evaluate(() => {
+      const value = (window as unknown as { oaathLogin: Record<string, unknown> }).oaathLogin;
+      const clientKey = Object.keys(localStorage).find((key) =>
+        key.startsWith("oaath-example-client:"),
+      );
+      return { ...value, clientId: clientKey ? localStorage.getItem(clientKey) : null };
+    });
+    const { payload } = await jwtVerify(
+      String(login.idToken),
+      createRemoteJWKSet(new URL(`${portal}/oauth/jwks`)),
+      { issuer: portal, audience: String(login.clientId), algorithms: ["ES256"] },
+    );
+    expect(payload.sub).toBe(address);
+    expect(payload.verified).toBe(true);
+    expect(payload.signer).toMatchObject({ kind: "webauthn", profile: { kind: "webauthn" } });
+
+    // The owner removes the member; nothing happens on-chain.
+    await click(root, "button[aria-label='Remove Second device']");
+    await click(root, "::-p-text(Confirm removal)");
+    await root.waitForSelector("button[aria-label='Remove Second device']", { hidden: true });
+    await root.close();
+    await device.close();
   });
 });

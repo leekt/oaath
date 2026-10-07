@@ -84,7 +84,7 @@ export function reviewedRequest(input: {
 }
 
 /** A key profile for the account root, signing only through the user's own device. */
-async function rootKey(signer: RememberedSigner, typedData: unknown) {
+export async function rootKey(signer: RememberedSigner, typedData: unknown) {
   const profile = signer.profile;
   if (profile.kind === "ecdsa") {
     const wallet = await findWallet(signer.rdns);
