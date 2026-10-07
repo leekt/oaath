@@ -12,6 +12,7 @@ pub mod clock;
 pub mod config;
 pub mod display;
 pub mod error;
+pub mod grant;
 pub mod handler;
 pub mod kms;
 pub mod oauth;

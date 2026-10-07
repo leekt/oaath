@@ -2154,11 +2154,13 @@ version = "0.3.4"
 dependencies = [
  "aes-gcm",
  "alloy-primitives",
+ "alloy-sol-types",
  "async-trait",
  "axum",
  "base64 0.22.1",
  "hex",
  "jsonwebtoken",
+ "k256",
  "oaath-protocol",
  "p256",
  "rand 0.9.5",

@@ -25,7 +25,7 @@ use crate::records::{
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v7";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v8";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -34,13 +34,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v7 (
+        "CREATE TABLE oaath_relay_schema_v8 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v7 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v8 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -182,6 +182,7 @@ pub fn schema_statements() -> Vec<String> {
     state text,
     nonce text,
     scope text NOT NULL,
+    authorization_details text,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max})
   )"
@@ -432,6 +433,7 @@ fn par_record(row: &PgRow) -> RelayResult<ParRecord> {
             ("state", "state", false),
             ("nonce", "nonce", false),
             ("scope", "scope", false),
+            ("authorizationDetails", "authorization_details", false),
             ("createdAt", "created_at", true),
             ("expiresAt", "expires_at", true),
         ],
@@ -882,7 +884,7 @@ impl RelayTransaction for PostgresTransaction {
         self.first(
             sqlx::query(
                 "SELECT par_id, record_version, client_id, redirect_uri, code_challenge, state, \
-                 nonce, scope, created_at, expires_at FROM oauth_par_v1 \
+                 nonce, scope, authorization_details, created_at, expires_at FROM oauth_par_v1 \
                  WHERE par_id = $1 FOR UPDATE",
             )
             .bind(par_id),
@@ -897,8 +899,8 @@ impl RelayTransaction for PostgresTransaction {
             sqlx::query(
                 "INSERT INTO oauth_par_v1 (\
                  par_id, record_version, client_id, redirect_uri, code_challenge, state, nonce, \
-                 scope, created_at, expires_at) \
-                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 \
+                 scope, authorization_details, created_at, expires_at) \
+                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 \
                  WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
                  ON CONFLICT DO NOTHING",
             )
@@ -910,6 +912,7 @@ impl RelayTransaction for PostgresTransaction {
             .bind(&record.state)
             .bind(&record.nonce)
             .bind(&record.scope)
+            .bind(&record.authorization_details)
             .bind(bigint(record.created_at))
             .bind(bigint(record.expires_at)),
         )

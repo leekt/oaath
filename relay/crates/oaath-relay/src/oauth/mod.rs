@@ -30,6 +30,8 @@
 pub mod id_token;
 pub mod records;
 
+use oaath_protocol::capture::parse_json;
+use oaath_protocol::identity::parse_kernel_account_profile;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use url::Url;
@@ -46,13 +48,20 @@ use crate::authorization::challenge::{
 use crate::authorization::code::{ConsumeAuthorizationCode, consume_authorization_code};
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::grant::details::{Composition, compose, parse_grant_details};
+use crate::grant::grant_signing_request;
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::records::{
     AUTHORIZATION_CODE_RECORD_VERSION, AUTHORIZATION_DECISION_RECORD_VERSION,
     AUTHORIZATION_REQUEST_RECORD_VERSION, AuthorizationCodeRecord, AuthorizationDecisionRecord,
     AuthorizationRequestRecord, DecisionOutcome, bounded_str, canonical_str, limits,
 };
+use crate::registry::{AccountRecord, MembershipRole};
 use crate::store::{RelayStore, RelayTransaction, settle};
+use oaath_protocol::grant_policy::{
+    GrantPolicy, is_captured_policy_attenuation, parse_grant_policy,
+};
+use oaath_protocol::permission::PermissionRequest;
 
 /// The stored scope of every login request: a kind marker, not a payload.
 pub const LOGIN_SELECTION_SCOPE: &str = r#"{"version":"oaath.login-selection/v1"}"#;
@@ -180,6 +189,15 @@ pub fn discovery(issuer: &str) -> Value {
     })
 }
 
+/// 160 random bits as lowercase hex: a client id is also the protocol
+/// `application.clientId`, whose canonical form is lowercase.
+fn client_identifier() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 20];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
 #[derive(Debug, Serialize)]
 pub struct RegisteredClient {
     pub client_id: String,
@@ -227,7 +245,7 @@ pub async fn register_client(
     }
     let record = OAuthClientRecord {
         version: OAUTH_CLIENT_RECORD_VERSION,
-        client_id: random_identifier(),
+        client_id: client_identifier(),
         client_name: client_name.to_owned(),
         redirect_uris,
         created_at: relay_now(clock)?,
@@ -261,12 +279,6 @@ pub async fn push_authorization_request(
     request_ttl_ms: u64,
     form: &Map<String, Value>,
 ) -> OAuthResult<PushedRequest> {
-    if form.contains_key("authorization_details") {
-        return Err(OAuthFailure {
-            description: Some("authorization_details grants are not supported yet"),
-            ..OAuthFailure::new(400, "invalid_authorization_details", INVALID)
-        });
-    }
     if form.contains_key("request_uri") || form.contains_key("request") {
         return Err(INVALID.into());
     }
@@ -290,15 +302,24 @@ pub async fn push_authorization_request(
         return Err(OAuthFailure::new(400, "invalid_scope", INVALID));
     }
     let created_at = relay_now(clock)?;
+    let par_id = random_identifier();
+    let authorization_details = match param(form, "authorization_details") {
+        None => None,
+        Some(details) => Some(
+            grant_details(details, &par_id, client_id, redirect_uri, created_at)
+                .map_err(|_| OAuthFailure::new(400, "invalid_authorization_details", INVALID))?,
+        ),
+    };
     let record = ParRecord {
         version: OAUTH_PAR_RECORD_VERSION,
-        par_id: random_identifier(),
+        par_id,
         client_id: client_id.to_owned(),
         redirect_uri: redirect_uri.to_owned(),
         code_challenge: code_challenge.to_owned(),
         state: optional_bounded(form, "state")?,
         nonce: optional_bounded(form, "nonce")?,
         scope: scope.to_owned(),
+        authorization_details,
         created_at,
         expires_at: created_at + request_ttl_ms,
     };
@@ -314,6 +335,52 @@ pub async fn push_authorization_request(
         request_uri: format!("{REQUEST_URI_PREFIX}{}", record.par_id),
         expires_in: request_ttl_ms / 1_000,
     })
+}
+
+/// The redirect URI's `URL.origin`, as the grant's application origin.
+pub fn redirect_origin(redirect_uri: &str) -> RelayResult<String> {
+    Url::parse(redirect_uri)
+        .map(|url| url.origin().ascii_serialization())
+        .map_err(|_| INVALID)
+}
+
+/// Captures one `oaath_grant` detail and proves it composes into a protocol
+/// request (with a stand-in account; the real one is chosen in the portal).
+/// Answers its canonical stored form.
+fn grant_details(
+    text: &str,
+    par_id: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    created_at: u64,
+) -> RelayResult<String> {
+    let detail = parse_grant_details(&parse_json(text).map_err(|_| INVALID)?)?;
+    let stand_in = parse_kernel_account_profile(&json!({
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": { "version": "0.9" },
+        "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x0000000000000000000000000000000000000001",
+        },
+    }))
+    .map_err(|_| RelayErrorCode::Internal)?;
+    compose(
+        &detail,
+        &Composition {
+            request_id: par_id,
+            client_id,
+            redirect_origin: &redirect_origin(redirect_uri)?,
+            requested_at: created_at / 1_000,
+            account_address: "0x0000000000000000000000000000000000000001",
+            account: &stand_in,
+        },
+    )?;
+    Ok(json!([detail.to_json()]).to_string())
 }
 
 async fn push(transaction: &mut dyn RelayTransaction, record: &ParRecord) -> OAuthResult<()> {
@@ -379,7 +446,13 @@ pub async fn read_transaction(
         client_id: client.client_id,
         client_name: client.client_name,
         redirect_origin: origin,
-        authorization_details: Vec::new(),
+        authorization_details: match &par.authorization_details {
+            None => Vec::new(),
+            Some(text) => match parse_json(text) {
+                Ok(Value::Array(details)) => details,
+                _ => return Err(RelayErrorCode::RecordUnreadable),
+            },
+        },
         expires_at: par.expires_at / 1_000,
     })
 }
@@ -491,6 +564,10 @@ async fn decide(
             signer_id,
             account_id,
         } => {
+            // A grant needs the root's signed approval artifact.
+            if par.authorization_details.is_some() {
+                return Err(INVALID);
+            }
             transaction
                 .lock_signer(signer_id)
                 .await?
@@ -749,4 +826,121 @@ async fn login_claims(
         .await?
         .ok_or(RelayErrorCode::RecordUnreadable)?;
     Ok((par, account, signer))
+}
+
+#[derive(Debug, Serialize)]
+pub struct PreparedGrant {
+    /// The composed protocol request the decision must approve, byte for byte.
+    pub permission_request: Value,
+    pub request_hash: String,
+    /// The policy the root approves: the request's, or the owner's narrowing.
+    pub approved_policy: Value,
+    /// The exact `kernel-enable` owner signing request the account root signs.
+    pub signing_request: Value,
+}
+
+/// `{signer_id, account_id, approved_policy?}`.
+pub fn prepare_selection(
+    body: &Map<String, Value>,
+) -> RelayResult<(String, String, Option<GrantPolicy>)> {
+    let allowed = ["signer_id", "account_id", "approved_policy"];
+    if body.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(INVALID);
+    }
+    let text = |key| {
+        body.get(key)
+            .and_then(Value::as_str)
+            .and_then(|value| canonical_str(value, INVALID).ok())
+            .map(str::to_owned)
+            .ok_or(INVALID)
+    };
+    let approved = body
+        .get("approved_policy")
+        .map(|policy| parse_grant_policy(policy).map_err(|_| INVALID))
+        .transpose()?;
+    Ok((text("signer_id")?, text("account_id")?, approved))
+}
+
+/// Reads an undecided, unexpired grant transaction and the root's account,
+/// and composes the one request a decision may approve.
+pub async fn grant_selection(
+    transaction: &mut dyn RelayTransaction,
+    transaction_id: &str,
+    signer_id: &str,
+    account_id: &str,
+    now: u64,
+) -> RelayResult<(ParRecord, PermissionRequest, AccountRecord)> {
+    let par = transaction
+        .lock_par(transaction_id)
+        .await?
+        .ok_or(RelayErrorCode::NotFound)?;
+    let details = par.authorization_details.as_deref().ok_or(INVALID)?;
+    if transaction
+        .lock_authorization_request(&par.par_id)
+        .await?
+        .is_some()
+    {
+        return Err(RelayErrorCode::AlreadyDecided);
+    }
+    if now >= par.expires_at {
+        return Err(RelayErrorCode::Expired);
+    }
+    // Only the account's policy-free root approves a grant.
+    let account = transaction
+        .list_signer_accounts(signer_id)
+        .await?
+        .into_iter()
+        .find(|(account, membership)| {
+            account.account_id == account_id && membership.role == MembershipRole::Root
+        })
+        .map(|(account, _)| account)
+        .ok_or(RelayErrorCode::Forbidden)?;
+    let detail = parse_grant_details(&parse_json(details).map_err(|_| INVALID)?)
+        .map_err(|_| RelayErrorCode::RecordUnreadable)?;
+    let request = compose(
+        &detail,
+        &Composition {
+            request_id: &par.par_id,
+            client_id: &par.client_id,
+            redirect_origin: &redirect_origin(&par.redirect_uri)?,
+            requested_at: par.created_at / 1_000,
+            account_address: &account.address,
+            account: &account.account_profile()?,
+        },
+    )?;
+    Ok((par, request, account))
+}
+
+/// What the account root must sign for this grant; nothing is persisted.
+pub async fn prepare_grant(
+    store: &dyn RelayStore,
+    clock: &dyn RelayClock,
+    transaction_id: &str,
+    body: &Map<String, Value>,
+) -> RelayResult<PreparedGrant> {
+    let (signer_id, account_id, approved) = prepare_selection(body)?;
+    let now = relay_now(clock)?;
+    let mut transaction = store.begin().await?;
+    let result = grant_selection(
+        &mut *transaction,
+        transaction_id,
+        &signer_id,
+        &account_id,
+        now,
+    )
+    .await;
+    let (_, request, account) = settle(transaction, result).await?;
+    let policy = match approved {
+        None => request.policy.clone(),
+        // The owner may narrow, never widen.
+        Some(policy) if is_captured_policy_attenuation(&request.policy, &policy) => policy,
+        Some(_) => return Err(INVALID),
+    };
+    let signing = grant_signing_request(&request, &policy, &account.address)?;
+    Ok(PreparedGrant {
+        permission_request: request.to_json(),
+        request_hash: format!("{:#x}", request.hash()),
+        approved_policy: policy.to_json(),
+        signing_request: signing.to_json(),
+    })
 }

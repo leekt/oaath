@@ -4,17 +4,19 @@
 //! matched exactly. A PAR is immutable: it holds only the client's intent, and
 //! its identifier becomes the authorization request id when the portal decides.
 
+use oaath_protocol::capture::parse_json;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::grant::details::parse_grant_details;
 use crate::records::{
     bounded_str, bounded_text, canonical_identifier, exact_record, limits, timestamp,
 };
 
 pub const OAUTH_CLIENT_RECORD_VERSION: &str = "oaath.oauth-client-record/v1";
-pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v1";
+pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v2";
 
 pub const MAX_CLIENT_NAME: usize = 128;
 pub const MAX_REDIRECT_URIS: usize = 8;
@@ -105,7 +107,8 @@ impl OAuthClientRecord {
     }
 }
 
-/// One pushed authorization request (RFC 9126), login only.
+/// One pushed authorization request (RFC 9126): a login, or a login with one
+/// `oaath_grant` authorization detail.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParRecord {
@@ -120,6 +123,8 @@ pub struct ParRecord {
     pub nonce: Option<String>,
     /// Space-separated scope; always contains `openid`.
     pub scope: String,
+    /// Canonical JSON of the captured `authorization_details`, if any.
+    pub authorization_details: Option<String>,
     pub created_at: u64,
     pub expires_at: u64,
 }
@@ -137,6 +142,7 @@ impl ParRecord {
                 "state",
                 "nonce",
                 "scope",
+                "authorizationDetails",
                 "createdAt",
                 "expiresAt",
             ],
@@ -156,6 +162,21 @@ impl ParRecord {
             state: optional_text(r.get("state"), MAX_STATE)?,
             nonce: optional_text(r.get("nonce"), MAX_STATE)?,
             scope: bounded_text(r.get("scope"), MAX_STATE, UNREADABLE)?.to_owned(),
+            authorization_details: match r.get("authorizationDetails") {
+                Some(Value::Null) => None,
+                Some(Value::String(text)) => {
+                    // Stored details stay the canonical form of a valid grant.
+                    let detail = parse_json(text)
+                        .map_err(|_| UNREADABLE)
+                        .and_then(|value| parse_grant_details(&value).map_err(|_| UNREADABLE))?;
+                    let canonical = json!([detail.to_json()]).to_string();
+                    if *text != canonical {
+                        return Err(UNREADABLE);
+                    }
+                    Some(text.clone())
+                }
+                _ => return Err(UNREADABLE),
+            },
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
             expires_at: timestamp(r.get("expiresAt"), UNREADABLE)?,
         })
