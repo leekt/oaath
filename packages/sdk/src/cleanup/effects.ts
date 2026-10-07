@@ -16,7 +16,6 @@
  */
 
 import type { OaathGrantHandle } from "../client/grant-handle.js";
-import { forgetPendingAuthorization } from "../client/pending-authorization.js";
 import type {
   OaathCleanupEffectName,
   OaathContextStore,
@@ -37,7 +36,7 @@ export function closeEffect(close: () => Promise<void>): OaathCleanupEffect {
   return effect("close", close);
 }
 
-/** Revokes relay or application authentication. */
+/** Stops every open connection of the realm. */
 export function signOutEffect(signOut: () => Promise<void>): OaathCleanupEffect {
   return effect("signOut", signOut);
 }
@@ -55,7 +54,6 @@ export function forgetLocalEffect(input: {
 }): OaathCleanupEffect {
   return effect("forgetLocal", async () => {
     const failures: unknown[] = [];
-    await forgetPendingAuthorization(input).catch((error: unknown) => failures.push(error));
     for (const keyId of input.keyIds)
       await input.keys.delete(keyId).catch((error: unknown) => failures.push(error));
     await input.contexts.clear(input.bindingId).catch((error: unknown) => failures.push(error));

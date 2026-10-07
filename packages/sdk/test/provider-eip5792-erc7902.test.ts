@@ -22,7 +22,7 @@ import {
   CHAIN_ID,
   type ChainFixture,
   createChainFixture,
-  createUrlRealm,
+  createRealm,
   permissionInput,
   TARGET,
   withBundler,
@@ -109,7 +109,7 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
     const quoteRequests: OaathQuoteRequest[] = [];
     const base = createChainFixture();
     const chain = staticChain({ base, approved, quoteRequests });
-    const first = createUrlRealm({ chain });
+    const first = createRealm({ chain });
     const connection = await first.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const account = await grant.account(CHAIN_ID);
@@ -155,11 +155,10 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
     expect(retained?.value.operation?.identity.userOperationHash).toBe(exactHash);
     await connection.close();
 
-    const second = createUrlRealm({
+    const second = createRealm({
       chain,
       stores: first.stores,
       clock: first.clock,
-      relay: first.relay,
     });
     const reconnected = await second.oaath.connect();
     const resumed = await reconnected.resume();
@@ -181,7 +180,7 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
   it("rejects a required policy mismatch before bundle or execution effects and leaves the ID reusable", async () => {
     const approved = configuration();
     const base = createChainFixture();
-    const realm = createUrlRealm({ chain: staticChain({ base, approved }) });
+    const realm = createRealm({ chain: staticChain({ base, approved }) });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const account = await grant.account(CHAIN_ID);
@@ -222,7 +221,7 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
     const approved = configuration();
     const quoteRequests: OaathQuoteRequest[] = [];
     const base = createChainFixture();
-    const realm = createUrlRealm({ chain: staticChain({ base, approved, quoteRequests }) });
+    const realm = createRealm({ chain: staticChain({ base, approved, quoteRequests }) });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const account = await grant.account(CHAIN_ID);
@@ -250,7 +249,7 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
   it("rejects contradictory dynamic and static sponsorship before bundle or execution effects", async () => {
     const approved = configuration();
     const base = createChainFixture();
-    const realm = createUrlRealm({ chain: staticChain({ base, approved }) });
+    const realm = createRealm({ chain: staticChain({ base, approved }) });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const account = await grant.account(CHAIN_ID);
@@ -290,7 +289,7 @@ describe("wallet_sendCalls ERC-7902 static paymaster orchestration", () => {
       feePayer: { address: `0x${"77".repeat(20)}`, balance: "1000000000000000000" },
     });
     const chain = staticChain({ base, approved });
-    const realm = createUrlRealm({
+    const realm = createRealm({
       chain: replaceChain(chain, {
         routes: withBundler(
           base.capability,

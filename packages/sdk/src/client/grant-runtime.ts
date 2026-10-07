@@ -2,11 +2,7 @@
 import { isKernelExistingAccountProfile, type KernelAccountProfile } from "@oaath/protocol";
 import { createKernelRuntime } from "../kernel/create-kernel-runtime.js";
 import type { KernelAccountDescriptor } from "../kernel/deployment/account.js";
-import {
-  type KernelV33AccountDescriptor,
-  type KernelV33Reads,
-  kernelV33Deployment,
-} from "../kernel/deployment/v33.js";
+import { type KernelV33Reads, kernelV33Deployment } from "../kernel/deployment/v33.js";
 import type { KernelGasPolicy } from "../kernel/gas-policy.js";
 import { ownerOperator } from "../kernel/operator/owner.js";
 import type { KernelGrantApproval } from "../kernel/permission/approval.js";
@@ -22,11 +18,7 @@ import type {
   KeyProfile,
   OperatorProfile,
 } from "../kernel/types.js";
-import {
-  type KernelV4AccountDescriptor,
-  type KernelV4AccountReadCapability,
-  kernelV4Deployment,
-} from "../kernel-v4.js";
+import { type KernelV4AccountReadCapability, kernelV4Deployment } from "../kernel-v4.js";
 import type { PreparedUserOperation } from "../prepared-user-operation.js";
 import { clientFail } from "./errors.js";
 

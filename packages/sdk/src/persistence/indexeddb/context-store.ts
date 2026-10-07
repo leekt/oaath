@@ -8,15 +8,9 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import {
-  type OaathClientContext,
-  type OaathContextStore,
-  type OaathPendingAuthorizationWrite,
-  persistenceId,
-} from "../interfaces.js";
+import { type OaathClientContext, type OaathContextStore, persistenceId } from "../interfaces.js";
 import {
   deleteRecord,
-  matchesExpectedRevision,
   OAATH_INDEXEDDB_STORES,
   type OaathDatabase,
   putRecord,
@@ -37,23 +31,6 @@ export function createIndexedDbContextStore(database: OaathDatabase): OaathConte
       return database.transact(context, "readwrite", async ([store]) =>
         store === undefined ? undefined : putRecord(store, key, value),
       );
-    },
-    async compareAndSwapPending(input: Readonly<OaathPendingAuthorizationWrite>) {
-      const key = persistenceId(input.bindingId, "pending bindingId");
-      if (
-        input.next.bindingId !== key ||
-        input.next.storeRevision !== (input.expectedStoreRevision ?? 0) + 1
-      )
-        return false;
-      return database.transact(context, "readwrite", async ([store]) => {
-        if (
-          store === undefined ||
-          !matchesExpectedRevision(await readRecord(store, key), input.expectedStoreRevision)
-        )
-          return false;
-        await putRecord(store, key, input.next);
-        return true;
-      });
     },
     async clear(bindingId: string): Promise<unknown> {
       const key = persistenceId(bindingId, "IndexedDB bindingId");

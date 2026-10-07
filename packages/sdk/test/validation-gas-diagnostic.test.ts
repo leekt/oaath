@@ -8,7 +8,6 @@ import {
   CHAIN_ID,
   createChainFixture,
   createRealm,
-  createUrlRealm,
   permissionInput,
   sendCallsInput,
   TARGET,
@@ -162,33 +161,33 @@ describe("AA23 empty validation revert diagnostic", () => {
     },
   );
 
-  it.each([
-    { name: "direct", create: createRealm },
-    { name: "relay", create: createUrlRealm },
-  ])("reaches the $name Grant caller before signing", async ({ create }) => {
-    const { chain, base } = fixture();
-    const realm = create({ chain });
-    try {
-      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
-      const error = await grant.sendCalls(sendCallsInput()).catch((error: unknown) => error);
-      expect(error).toMatchObject({
-        code: "oaath_client_preparation_failed",
-        failure: {
-          stage: "estimate",
-          code: "account-validation",
-          entryPointCode: "AA23",
-          retryable: false,
-        },
-        diagnostic,
-        message: "likely validation out-of-gas (verificationGasLimit=2000000)",
-      });
-      expect(JSON.stringify(error).includes("provider-private-material")).toBe(false);
-      expect(base.signatures.length).toBe(0);
-      expect(base.sends.length).toBe(0);
-    } finally {
-      await realm.oaath.close();
-    }
-  });
+  it.each([{ name: "direct", create: createRealm }])(
+    "reaches the $name Grant caller before signing",
+    async ({ create }) => {
+      const { chain, base } = fixture();
+      const realm = create({ chain });
+      try {
+        const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+        const error = await grant.sendCalls(sendCallsInput()).catch((error: unknown) => error);
+        expect(error).toMatchObject({
+          code: "oaath_client_preparation_failed",
+          failure: {
+            stage: "estimate",
+            code: "account-validation",
+            entryPointCode: "AA23",
+            retryable: false,
+          },
+          diagnostic,
+          message: "likely validation out-of-gas (verificationGasLimit=2000000)",
+        });
+        expect(JSON.stringify(error).includes("provider-private-material")).toBe(false);
+        expect(base.signatures.length).toBe(0);
+        expect(base.sends.length).toBe(0);
+      } finally {
+        await realm.oaath.close();
+      }
+    },
+  );
 
   it.each([
     revert("AA24 signature error"),

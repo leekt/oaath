@@ -1,10 +1,6 @@
 /**
- * The same five chain ports, answered by a real local chain.
- *
- * `OAATH_REQUIRE_ANVIL=1` selects this file instead of ./fake-chain.mjs. Nothing
- * in ./run.mjs changes: the journey, the relay, the stores, and the credentials
- * are identical, which is the point — a chain capability is the whole boundary
- * between the SDK and a network.
+ * The five chain ports, answered by a real local chain: a chain capability is
+ * the whole boundary between the SDK and a network.
  *
  * The devnet has no bundler, so the probe reports `absent` and the routing
  * decision falls back to direct `EntryPoint.handleOps` with an EOA fee payer —

@@ -104,10 +104,6 @@ jobs:
       - run: bun run smoke:passkey
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
-      - run: bun run smoke:pending-approval
-        env:
-          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
-      - run: bun run smoke:browser
       # The extension smoke is headful so Chrome runs its real MV3 worker and
       # IndexedDB implementation; Puppeteer then force-closes that worker.
       - run: xvfb-run --auto-servernum bun run smoke:extension

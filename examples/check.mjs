@@ -22,7 +22,6 @@ function anvilAvailable() {
 }
 
 const examples = [
-  { label: "browser", script: "browser/run.mjs", env: {} },
   { label: "extension", script: "extension/check.mjs", env: {} },
   { label: "server", script: "server/run.mjs", env: { OAATH_SMOKE: "1", OAATH_PORT: "0" } },
   {

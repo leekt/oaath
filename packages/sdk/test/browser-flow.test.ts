@@ -14,7 +14,6 @@ import {
   CALL_DATA,
   CHAIN_ID,
   createChainFixture,
-  createClock,
   createMemoryStores,
   createRealm,
   operatorCredential,
@@ -193,7 +192,6 @@ describe("browser golden path", () => {
       stores: {
         ...memory,
         context: {
-          compareAndSwapPending: memory.context.compareAndSwapPending,
           read: async (bindingId: Parameters<typeof memory.context.read>[0]) => {
             const value = await memory.context.read(bindingId);
             if (gateRead && !readBlocked) {
@@ -523,9 +521,7 @@ describe("browser golden path", () => {
       "close",
       "requestPermission",
       "resume",
-      "resumePendingPermission",
       "signOut",
-      "withdrawPendingPermission",
     ]);
     expect(Object.keys(grant).sort()).toEqual([
       "account",

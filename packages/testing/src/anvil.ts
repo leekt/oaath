@@ -2,9 +2,9 @@
 import {
   hashPermissionRequest,
   OAATH_PERMISSION_DECISION_VERSION,
-  parseGrantPolicy,
+  type PermissionRequest,
 } from "@oaath/protocol";
-import { createOAAth, type Oaath, type OaathSession } from "@oaath/sdk";
+import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability, OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import {
@@ -19,10 +19,9 @@ import {
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import { createMemoryRelayStore, createRelayHandler, type RelayCaller } from "@oaath/server";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { IDBFactory } from "fake-indexeddb";
-import { LOCAL_ISSUER, LOCAL_REDIRECT, localClientBinding } from "./anvil-binding.js";
+import { localClientBinding } from "./anvil-binding.js";
 import { createAnvilChain } from "./anvil-chain.mjs";
 import { captureLocalAnvilRecovery, type LocalAnvilRecovery } from "./anvil-recovery.js";
 import { openLocalClientStores } from "./anvil-stores.js";
@@ -45,13 +44,6 @@ export interface LocalAnvilFixture {
   readonly rpcUrl: (chainId: number) => string;
   /** Closes prior SDK/database instances and opens a new client over retained state. */
   readonly openClient: () => Promise<Readonly<Oaath>>;
-  /**
-   * The same, composed from the issuer URL alone (`GET /bootstrap`), with the
-   * optional caller-supplied session setting.
-   */
-  readonly openServiceClient: (
-    input?: Readonly<{ session?: Readonly<OaathSession> }>,
-  ) => Promise<Readonly<Oaath>>;
   readonly closeClient: () => Promise<void>;
   readonly approvalCount: number;
   readonly submissionCount: number;
@@ -120,190 +112,65 @@ export async function createLocalAnvilFixture(
     for (const chain of chains.values()) chain.stop();
     throw new Error("local_fixture_account_mismatch");
   }
-  const issuerUrl = LOCAL_ISSUER;
-  const redirectUri = LOCAL_REDIRECT;
-  const clientToken = crypto.randomUUID();
-  const ownerToken = crypto.randomUUID();
-  const kms = new Map<string, string>();
-  const callers = new Map<string, RelayCaller>([
-    [
-      clientToken,
-      {
-        role: "client",
-        clientId: "fixture-client",
-        subject: "fixture-subject",
-        redirectUris: [redirectUri],
-        organizationAudience: null,
-      },
-    ],
-    [
-      ownerToken,
-      {
-        role: "owner",
-        clientId: "fixture-owner",
-        subject: "fixture-subject",
-        redirectUris: [],
-        organizationAudience: null,
-      },
-    ],
-  ]);
-  const relay = createRelayHandler({
-    ownerRouting: {
-      async resolveOwner() {
-        return { ownerDeviceId: "fixture-owner", ownerSubject: "fixture-subject" };
-      },
-    },
-    store: createMemoryRelayStore(),
-    bootstrap: {
-      async resolve() {
-        const binding = localClientBinding(owner.address, session.address, first.existingAccount);
-        return {
-          application: {
-            applicationId: binding.applicationId,
-            applicationName: binding.applicationName,
-          },
-          context: binding.context,
-          account: binding.account,
-          ownerValidator: first.validator,
-          chainIds,
-        } as never;
-      },
-    },
-    chains: [...chains.values()].map(({ capability }) => ({
-      chainId: capability.chainId,
-      reads: (request: unknown) => capability.reads.read(request as never),
-      observation: (request: unknown) => capability.observation.read(request as never),
-      bundler: (request: unknown) => {
-        const route = capability.routes.find((entry) => entry.kind === "erc4337-bundler");
-        if (route?.kind !== "erc4337-bundler") throw new Error("local_fixture_bundler_missing");
-        return route.bundler.probe(request as never);
-      },
-      quote: (request: unknown) => capability.quote(request as never),
-      // One submission settles per call: open, send once, close.
-      async submission(request: unknown) {
-        const opened = await capability.submission.open(request as never);
-        try {
-          return await opened.send();
-        } finally {
-          await opened.close();
-        }
-      },
-      usage: (request: unknown) => capability.usage(request as never),
-      feePayer: handleOpsFeePayer(capability) as { address: `0x${string}`; balance: string },
-      // The Anvil chain offers no sponsorship setting.
-      staticPaymasterConfigurationHash: null,
-    })),
-    authentication: {
-      async authenticate(request) {
-        const header = request.headers.get("authorization") ?? "";
-        return callers.get(header.startsWith("Bearer ") ? header.slice(7) : "") ?? null;
-      },
-    },
-    kms: {
-      async encrypt(plaintext) {
-        const id = crypto.randomUUID();
-        kms.set(id, plaintext);
-        return id;
-      },
-      async decrypt(id) {
-        const value = kms.get(id);
-        if (value === undefined) throw new Error("fixture_record_missing");
-        return value;
-      },
-    },
-    clock: { now: () => now() * 1000 },
-  });
-  function authorized(request: Request, token: string): Request {
-    const headers = new Headers(request.headers);
-    headers.set("authorization", `Bearer ${token}`);
-    return new Request(request, { headers });
-  }
   let approvalCount = 0;
-  const authorization = {
-    async authorize({ requestId }: { readonly requestId: string }) {
-      approvalCount += 1;
-      const stateResponse = await relay(
-        authorized(new Request(`${issuerUrl}/authorization/requests/${requestId}`), ownerToken),
-      );
-      if (!stateResponse.ok) throw new Error("fixture_authorization_unavailable");
-      const state = await stateResponse.json();
-      const scope = JSON.parse(state.requestedScope);
-      const ownerKey = kernelKey({ account: owner, validator: first.validator });
-      // Like an owner device: the packages bind the operator credential the
-      // owner reviewed, never a key the application holds.
-      const sessionKey = kernelKey({ credential: scope.operatorCredential, validator: null });
-      const requestHash = hashPermissionRequest({ ...scope, requestId });
-      const installApproval = await (async () => {
-        const reads = first.capability.reads;
-        const sessionOperatorProfile = sessionOperator({
-          key: sessionKey,
-          policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-        });
-        // An existing account names its own deployment; a derived one uses the default.
-        const existing =
-          first.existingAccount === null
-            ? null
-            : await bindKernelAccount({
-                chainId: firstChainId,
-                address: first.existingAccount,
-                reads,
-              });
-        const deployment =
-          existing === null
-            ? kernelDeployment({ chainId: firstChainId })
-            : kernelAccountDeployment(existing);
-        const runtime = createKernelRuntime({
-          deployment,
-          operator: sessionOperatorProfile,
-          reads,
-        });
-        const ownerRuntime = createKernelRuntime({
-          deployment,
-          operator: ownerOperator({ key: ownerKey }),
-          reads,
-        });
-        const account =
-          first.existingAccount !== null
-            ? await runtime.bindAccount({ address: first.existingAccount })
-            : await ownerRuntime.bindAccount({
-                accountIndex: "0",
-                initialPackages: [...ownerRuntime.packages],
-              });
-        return approveKernelPermission({
-          owner: ownerKey,
-          runtime,
-          account,
-          nonce: await kernelPermissionNonce({ runtime, account, reads, requestHash }),
-        });
-      })();
-      const response = await relay(
-        authorized(
-          new Request(`${issuerUrl}/authorization/requests/${requestId}/decision`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              outcome: "approved",
-              artifact: JSON.stringify({
-                version: OAATH_PERMISSION_DECISION_VERSION,
-                kind: "approve",
-                requestId,
-                requestHash,
-                decidedAt: now(),
-                approvedPolicy: scope.policy,
-                capabilityHash: kernelPermissionCapabilityHash(installApproval),
-                installApproval,
-              }),
-            }),
-          }),
-          ownerToken,
-        ),
-      );
-      if (!response.ok) throw new Error("fixture_decision_failed");
-      const result = await response.json();
-      if (typeof result.code !== "string") throw new Error("fixture_decision_failed");
-      return { code: result.code };
-    },
-  };
+  /** The fixture owner approves every reviewed request, as an owner device would. */
+  const approving = first;
+  const approvingChainId = firstChainId;
+  async function approve(request: Readonly<PermissionRequest>): Promise<unknown> {
+    approvalCount += 1;
+    const ownerKey = kernelKey({ account: owner, validator: approving.validator });
+    // Like an owner device: the packages bind the operator credential the
+    // owner reviewed, never a key the application holds.
+    const sessionKey = kernelKey({ credential: request.operatorCredential, validator: null });
+    const requestHash = hashPermissionRequest(request);
+    const reads = approving.capability.reads;
+    const sessionOperatorProfile = sessionOperator({
+      key: sessionKey,
+      policies: deriveSessionPolicyProfiles(request.policy),
+    });
+    // An existing account names its own deployment; a derived one uses the default.
+    const existing =
+      approving.existingAccount === null
+        ? null
+        : await bindKernelAccount({
+            chainId: approvingChainId,
+            address: approving.existingAccount,
+            reads,
+          });
+    const deployment =
+      existing === null
+        ? kernelDeployment({ chainId: approvingChainId })
+        : kernelAccountDeployment(existing);
+    const runtime = createKernelRuntime({ deployment, operator: sessionOperatorProfile, reads });
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({ key: ownerKey }),
+      reads,
+    });
+    const account =
+      approving.existingAccount !== null
+        ? await runtime.bindAccount({ address: approving.existingAccount })
+        : await ownerRuntime.bindAccount({
+            accountIndex: "0",
+            initialPackages: [...ownerRuntime.packages],
+          });
+    const installApproval = await approveKernelPermission({
+      owner: ownerKey,
+      runtime,
+      account,
+      nonce: await kernelPermissionNonce({ runtime, account, reads, requestHash }),
+    });
+    return {
+      version: OAATH_PERMISSION_DECISION_VERSION,
+      kind: "approve",
+      requestId: request.requestId,
+      requestHash,
+      decidedAt: now(),
+      approvedPolicy: request.policy,
+      capabilityHash: kernelPermissionCapabilityHash(installApproval),
+      installApproval,
+    };
+  }
   const factory = new IDBFactory();
   let client: Readonly<Oaath> | undefined;
   let storage: Awaited<ReturnType<typeof openLocalClientStores>> | undefined;
@@ -365,12 +232,7 @@ export async function createLocalAnvilFixture(
       storage = await openLocalClientStores(factory, stateDirectory);
       client = createOAAth({
         binding: localClientBinding(owner.address, session.address, first.existingAccount),
-        issuer: {
-          url: issuerUrl,
-          fetch: (request: Request) => relay(authorized(request, clientToken)),
-          async signOut() {},
-        },
-        authorization,
+        approve,
         // This fixture proves execution only and must never fabricate revocation evidence.
         invalidation: {
           async invalidateCapability() {
@@ -396,27 +258,6 @@ export async function createLocalAnvilFixture(
       });
       return client;
     },
-    async openServiceClient(
-      options: Readonly<{ session?: Readonly<OaathSession> }> = {},
-    ): Promise<Readonly<Oaath>> {
-      if (closed) throw new Error("local_fixture_closed");
-      await closeClient();
-      storage = await openLocalClientStores(factory, stateDirectory);
-      client = createOAAth({
-        approvals: {
-          kind: "service",
-          url: issuerUrl,
-          fetch: (request: Request) => relay(authorized(request, clientToken)),
-          authorization,
-        },
-        origin: new URL(redirectUri).origin,
-        // Every store is the fixture's own, so the named backend opens nothing.
-        stores: { kind: "indexeddb", ...storage.stores },
-        now,
-        ...(options.session === undefined ? {} : { session: options.session }),
-      });
-      return client;
-    },
     closeClient,
     async close(): Promise<void> {
       const results = await Promise.allSettled([
@@ -427,7 +268,6 @@ export async function createLocalAnvilFixture(
       ]);
       if (results.some((result) => result.status === "rejected"))
         throw new Error("local_fixture_cleanup_failed");
-      kms.clear();
       closed = true;
     },
   });

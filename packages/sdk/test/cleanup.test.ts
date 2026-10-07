@@ -643,7 +643,6 @@ function trackedStores() {
       },
       cleanup: stores.cleanup,
       context: {
-        compareAndSwapPending: stores.context.compareAndSwapPending,
         read: (bindingId: string) => stores.context.read(bindingId),
         write: (context: Parameters<typeof stores.context.write>[0]) =>
           stores.context.write(context),

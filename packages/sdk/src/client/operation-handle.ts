@@ -17,7 +17,6 @@ import type {
   OperationInclusion,
   OperationKind,
   OperationOutcome,
-  OperationSubmissionEvidence,
   ValidationGasDiagnostic,
 } from "@oaath/protocol";
 import { verifyOperationExecutionEvidence } from "../operation-execution.js";

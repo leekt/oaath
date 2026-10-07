@@ -11,7 +11,6 @@
   },
   "scripts": {
     "check": "node check.mjs",
-    "example:browser": "node --import ./support/workspace-typescript.mjs browser/run.mjs",
     "example:server": "node --import ./support/workspace-typescript.mjs server/run.mjs",
     "example:all-chain": "node --import ./support/workspace-typescript.mjs all-chain/run.mjs",
     "example:oauth-login": "node oauth-login/run.mjs",

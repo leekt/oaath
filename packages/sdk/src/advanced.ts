@@ -33,14 +33,9 @@ export {
   OAATH_BINDING_VERSION,
 } from "./client/binding.js";
 export type {
-  OaathAuthorizationCapability,
-  OaathIssuerCapability,
-} from "./client/connection.js";
-export type {
   OaathCapabilityInvalidationCapability,
   OaathChainCapability,
   OaathChainSponsorship,
-  OaathOwnerRevocationCapability,
   OaathQuoteCapability,
   OaathQuoteRequest,
   OaathSubmissionCapability,
