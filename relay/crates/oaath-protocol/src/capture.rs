@@ -110,16 +110,6 @@ pub fn safe_integer(value: &Value, minimum: u64, maximum: u64) -> Option<u64> {
     Some(number as u64)
 }
 
-/// `typeof value === "number" && Number.isSafeInteger(value)`, where `-0`
-/// compares equal to zero.
-pub(crate) fn loose_safe_integer(value: &Value) -> Option<i64> {
-    let number = js_number(value)?;
-    if number.fract() != 0.0 || number.abs() > MAX_SAFE_INTEGER {
-        return None;
-    }
-    Some(number as i64)
-}
-
 pub const MAX_SAFE_INTEGER_U64: u64 = 9_007_199_254_740_991;
 pub const MAX_UINT48: u64 = (1 << 48) - 1;
 
@@ -156,13 +146,6 @@ pub(crate) fn canonical_bounded_string(value: &Value, maximum: usize) -> Option<
     let text = value.as_str()?;
     let length = utf16_len(text);
     (length >= 1 && length <= maximum && is_js_trimmed(text)).then_some(text)
-}
-
-/// A string of 1 through `maximum` UTF-16 units.
-pub(crate) fn bounded_text(value: &Value, maximum: usize) -> Option<&str> {
-    let text = value.as_str()?;
-    let length = utf16_len(text);
-    (length >= 1 && length <= maximum).then_some(text)
 }
 
 /// `^0x[0-9a-f]{2*bytes}$`.

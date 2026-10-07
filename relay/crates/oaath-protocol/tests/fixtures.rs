@@ -30,8 +30,8 @@ use oaath_protocol::permission::{
 };
 use oaath_protocol::pkce::derive_code_challenge;
 use oaath_protocol::scope::classify_stored_authorization_scope;
-use oaath_protocol::service_bootstrap::{parse_service_bootstrap, parse_workspace_account_context};
 use oaath_protocol::signing_request::{hash_owner_signing_request, parse_owner_signing_request};
+use oaath_protocol::workspace::parse_workspace_account_context;
 use oaath_protocol::{ErrorCode, ProtocolError, ProtocolResult};
 use serde_json::{Value, json};
 
@@ -73,7 +73,6 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
         "parseWorkspaceAccountContext" => {
             parse_workspace_account_context(input).map(|c| c.to_json())
         }
-        "parseServiceBootstrap" => parse_service_bootstrap(input).map(|b| b.to_json()),
         "parsePermissionRequest" => parse_permission_request(input).map(|r| r.to_json()),
         "hashPermissionRequest" => string(hash_permission_request(input)),
         "parsePermissionDecision" => parse_permission_decision(input).map(|d| d.to_json()),
