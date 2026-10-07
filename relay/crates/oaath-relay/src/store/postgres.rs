@@ -127,10 +127,13 @@ pub fn schema_statements() -> Vec<String> {
     signer_id text PRIMARY KEY,
     record_version text NOT NULL,
     profile_hash text NOT NULL UNIQUE,
+    authenticator_id_hash text,
     profile text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
+        "CREATE INDEX oaath_signer_authenticator_v1 ON oaath_signer_v1 (authenticator_id_hash)"
+            .to_owned(),
         format!(
             "CREATE TABLE oaath_account_v1 (
     account_id text PRIMARY KEY,
@@ -138,6 +141,7 @@ pub fn schema_statements() -> Vec<String> {
     address text NOT NULL UNIQUE,
     root_signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
     account_index bigint NOT NULL CHECK (account_index >= 0 AND account_index <= {max}),
+    owner_validator text,
     profile text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     UNIQUE (root_signer_id, account_index)
@@ -347,12 +351,13 @@ fn signer_record(row: &PgRow) -> RelayResult<SignerRecord> {
     )?)
 }
 
-const ACCOUNT_FIELDS: [(&str, &str, bool); 7] = [
+const ACCOUNT_FIELDS: [(&str, &str, bool); 8] = [
     ("version", "account_version", false),
     ("accountId", "account_id", false),
     ("address", "address", false),
     ("rootSignerId", "root_signer_id", false),
     ("accountIndex", "account_index", true),
+    ("ownerValidator", "owner_validator", false),
     ("profile", "profile", false),
     ("createdAt", "account_created_at", true),
 ];
@@ -656,16 +661,43 @@ impl RelayTransaction for PostgresTransaction {
         .await
     }
 
+    async fn list_signers_by_authenticator(
+        &mut self,
+        authenticator_id_hash: &str,
+    ) -> RelayResult<Vec<SignerRecord>> {
+        let rows = sqlx::query(
+            "SELECT signer_id, record_version, profile_hash, profile, created_at \
+             FROM oaath_signer_v1 WHERE authenticator_id_hash = $1 \
+             ORDER BY created_at, signer_id COLLATE \"C\"",
+        )
+        .bind(authenticator_id_hash)
+        .fetch_all(&mut *self.transaction)
+        .await
+        .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        let signers = rows
+            .iter()
+            .map(signer_record)
+            .collect::<RelayResult<Vec<_>>>()?;
+        // The index column is a copy; the stored profile owns the fact.
+        for signer in &signers {
+            if signer.authenticator_id_hash()?.as_deref() != Some(authenticator_id_hash) {
+                return Err(RelayErrorCode::RecordUnreadable);
+            }
+        }
+        Ok(signers)
+    }
+
     async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool> {
         self.applied(
             sqlx::query(
                 "INSERT INTO oaath_signer_v1 (\
-                 signer_id, record_version, profile_hash, profile, created_at\
-                 ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+                 signer_id, record_version, profile_hash, authenticator_id_hash, profile, \
+                 created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             )
             .bind(&record.signer_id)
             .bind(record.version)
             .bind(&record.profile_hash)
+            .bind(record.authenticator_id_hash()?)
             .bind(&record.profile)
             .bind(bigint(record.created_at)),
         )
@@ -678,7 +710,8 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<Vec<(AccountRecord, AccountSignerRecord)>> {
         let rows = sqlx::query(
             "SELECT account.record_version AS account_version, account.account_id, \
-             account.address, account.root_signer_id, account.account_index, account.profile, \
+             account.address, account.root_signer_id, account.account_index, \
+             account.owner_validator, account.profile, \
              account.created_at AS account_created_at, \
              membership.record_version AS membership_version, membership.signer_id, \
              membership.role, membership.request_id, \
@@ -700,8 +733,8 @@ impl RelayTransaction for PostgresTransaction {
         self.applied(
             sqlx::query(
                 "INSERT INTO oaath_account_v1 (\
-                 account_id, record_version, address, root_signer_id, account_index, profile, \
-                 created_at) SELECT $1, $2, $3, $4, $5, $6, $7 \
+                 account_id, record_version, address, root_signer_id, account_index, \
+                 owner_validator, profile, created_at) SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
                  WHERE EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
                  ON CONFLICT DO NOTHING",
             )
@@ -710,6 +743,7 @@ impl RelayTransaction for PostgresTransaction {
             .bind(&record.address)
             .bind(&record.root_signer_id)
             .bind(bigint(record.account_index))
+            .bind(&record.owner_validator)
             .bind(&record.profile)
             .bind(bigint(record.created_at)),
         )

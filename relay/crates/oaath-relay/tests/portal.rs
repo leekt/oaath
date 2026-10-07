@@ -308,3 +308,72 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
         json!({ "accounts": [] })
     );
 }
+
+/// A passkey profile whose `authenticatorIdHash` binds `credential_id`, as
+/// the SDK enrols it (`keccak256(rawId)`), with a fixture public key.
+fn passkey(credential_id: &[u8], public_key_case: &str) -> (Value, String) {
+    use base64::Engine;
+    let (fixture, _) = address_case(public_key_case);
+    let profile = json!({
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": fixture["publicKey"],
+        "authenticatorIdHash": format!(
+            "0x{}",
+            hex::encode(alloy_primitives::keccak256(credential_id))
+        ),
+    });
+    (
+        profile,
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(credential_id),
+    )
+}
+
+async fn by_credential(h: &Harness, credential_id: &str, site: Option<&str>) -> Reply {
+    h.send(portal(
+        "GET",
+        &format!("/portal/signers/by-credential/{credential_id}"),
+        site,
+        None,
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn recognises_a_passkey_by_its_credential_id() {
+    let h = harness();
+    let (profile, credential_id) = passkey(b"credential-1", "webauthn index 0");
+    let signer = register(&h, &profile).await;
+    assert_eq!(
+        *by_credential(&h, &credential_id, Some("same-origin"))
+            .await
+            .ok(200),
+        json!({ "signer_id": signer, "kind": "webauthn", "profile": profile })
+    );
+    let (_, unknown) = passkey(b"credential-2", "webauthn index 0");
+    by_credential(&h, &unknown, Some("same-origin"))
+        .await
+        .failure(E::NotFound);
+    for malformed in ["a+b", "YQ%3D%3D", "Y"] {
+        by_credential(&h, malformed, Some("same-origin"))
+            .await
+            .failure(E::RequestInvalid);
+    }
+    by_credential(&h, &credential_id, Some("cross-site"))
+        .await
+        .failure(E::Forbidden);
+}
+
+#[tokio::test]
+async fn reads_an_ambiguous_credential_as_absent() {
+    let h = harness();
+    let (profile, credential_id) = passkey(b"credential-1", "webauthn index 0");
+    register(&h, &profile).await;
+    // Another public key claiming the same authenticator.
+    let (mut copied, _) = passkey(b"credential-1", "webauthn index 0");
+    copied["publicKey"] = address_case("p256 index 0").0["publicKey"].clone();
+    register(&h, &copied).await;
+    by_credential(&h, &credential_id, Some("same-origin"))
+        .await
+        .failure(E::NotFound);
+}

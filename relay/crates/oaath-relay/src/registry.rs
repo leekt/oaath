@@ -40,21 +40,29 @@ pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v1"
 const UNREADABLE: RelayErrorCode = RelayErrorCode::RecordUnreadable;
 
 /// The ECDSA root validator the SDK runtime binds for Kernel v4 (`ECDSA_VALIDATOR`
-/// in `packages/sdk/src/kernel/deployment/v33.ts`). P-256 and WebAuthn roots use
-/// the validators the protocol pins.
+/// in `packages/sdk/src/kernel/deployment/v33.ts`), recorded on each new ECDSA
+/// account. P-256 and WebAuthn roots use the validators the protocol pins.
 pub const ECDSA_ROOT_VALIDATOR: &str = "0x845adb2c711129d4f3966735ed98a9f09fc4ce57";
+
+/// The root validator an account binds for its owner credential: the SDK's
+/// ECDSA validator, or none where the protocol pins it.
+pub fn owner_validator_for(owner: &OwnerCredentialProfile) -> Option<String> {
+    match owner {
+        OwnerCredentialProfile::Ecdsa { .. } => Some(ECDSA_ROOT_VALIDATOR.to_owned()),
+        OwnerCredentialProfile::P256 { .. } | OwnerCredentialProfile::WebAuthn { .. } => None,
+    }
+}
 
 /// The offline counterfactual address of a factory-derived account whose
 /// single policy-free root is the profile's owner credential.
-pub fn derive_account_address(profile: &KernelAccountProfile) -> Option<String> {
+pub fn derive_account_address(
+    profile: &KernelAccountProfile,
+    owner_validator: Option<&str>,
+) -> Option<String> {
     let KernelAccountProfile::Derived(profile) = profile else {
         return None;
     };
-    let validator = match profile.owner_credential {
-        OwnerCredentialProfile::Ecdsa { .. } => Some(ECDSA_ROOT_VALIDATOR),
-        OwnerCredentialProfile::P256 { .. } | OwnerCredentialProfile::WebAuthn { .. } => None,
-    };
-    derive_kernel_v4_account_address(profile, validator).ok()
+    derive_kernel_v4_account_address(profile, owner_validator).ok()
 }
 
 fn version(value: Option<&Value>, expected: &str) -> RelayResult<()> {
@@ -91,6 +99,18 @@ pub struct SignerRecord {
 }
 
 impl SignerRecord {
+    /// A WebAuthn signer's `authenticatorIdHash` (keccak256 of its credential
+    /// ID), the key a passkey is recognised by in another browser.
+    pub fn authenticator_id_hash(&self) -> RelayResult<Option<String>> {
+        Ok(match self.credential()? {
+            OwnerCredentialProfile::WebAuthn {
+                authenticator_id_hash,
+                ..
+            } => Some(authenticator_id_hash),
+            _ => None,
+        })
+    }
+
     pub fn credential(&self) -> RelayResult<OwnerCredentialProfile> {
         let value = parse_json(&self.profile).map_err(|_| UNREADABLE)?;
         parse_owner_credential_profile(&value).map_err(|_| UNREADABLE)
@@ -131,6 +151,9 @@ pub struct AccountRecord {
     pub address: String,
     pub root_signer_id: String,
     pub account_index: u64,
+    /// The ECDSA root validator the address binds (the bootstrap
+    /// `ownerValidator`), or none for a protocol-pinned validator.
+    pub owner_validator: Option<String>,
     /// Canonical JSON of the protocol `KernelDerivedAccountProfile`.
     pub profile: String,
     pub created_at: u64,
@@ -151,6 +174,7 @@ impl AccountRecord {
                 "address",
                 "rootSignerId",
                 "accountIndex",
+                "ownerValidator",
                 "profile",
                 "createdAt",
             ],
@@ -163,6 +187,10 @@ impl AccountRecord {
             address: text(r.get("address"))?.to_owned(),
             root_signer_id: identifier(r.get("rootSignerId"))?,
             account_index: timestamp(r.get("accountIndex"), UNREADABLE)?,
+            owner_validator: match r.get("ownerValidator") {
+                Some(Value::Null) => None,
+                other => Some(text(other)?.to_owned()),
+            },
             profile: text(r.get("profile"))?.to_owned(),
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         };
@@ -176,7 +204,9 @@ impl AccountRecord {
         if profile.factory_route != KernelFactoryRoute::KernelFactory
             || profile.account_index != record.account_index.to_string()
             || record.profile != canonical
-            || derive_account_address(&account).as_deref() != Some(record.address.as_str())
+            || owner_validator_for(&profile.owner_credential) != record.owner_validator
+            || derive_account_address(&account, record.owner_validator.as_deref()).as_deref()
+                != Some(record.address.as_str())
         {
             return Err(UNREADABLE);
         }

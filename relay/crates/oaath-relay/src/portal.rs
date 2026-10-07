@@ -3,6 +3,7 @@
 //! ```text
 //! POST /portal/signers                 {profile}         -> {signer_id}
 //! GET  /portal/signers/{id}/accounts                     -> {accounts: [...]}
+//! GET  /portal/signers/by-credential/{credentialId}      -> {signer_id, kind, profile}
 //! POST /portal/accounts                {root_signer_id}  -> {account_id, address, profile}
 //! ```
 //!
@@ -11,7 +12,10 @@
 //! The routes are same-origin only, so another site cannot drive them from a
 //! visitor's browser.
 
+use alloy_primitives::keccak256;
 use axum::http::HeaderMap;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oaath_protocol::identity::{
     KernelAccountProfile, KernelDerivedAccountProfile, KernelFactoryRoute,
     parse_owner_credential_profile,
@@ -26,6 +30,7 @@ use crate::records::canonical_str;
 use crate::registry::{
     ACCOUNT_RECORD_VERSION, ACCOUNT_SIGNER_RECORD_VERSION, AccountRecord, AccountSignerRecord,
     MembershipRole, SIGNER_RECORD_VERSION, SignerRecord, derive_account_address, hex_hash,
+    owner_validator_for,
 };
 use crate::store::{RelayStore, RelayTransaction, settle};
 
@@ -90,6 +95,54 @@ async fn register(
         .await?
         .map(|existing| existing.signer_id)
         .ok_or(RelayErrorCode::Internal)
+}
+
+#[derive(Debug, Serialize)]
+pub struct IdentifiedSigner {
+    pub signer_id: String,
+    pub kind: &'static str,
+    pub profile: Value,
+}
+
+/// WebAuthn allows credential IDs of up to 1023 bytes.
+const MAX_CREDENTIAL_ID_BYTES: usize = 1023;
+
+/// Recognises a passkey registered from another browser by its credential ID
+/// (base64url, as `navigator.credentials.get()` returns it). Identification
+/// only: nothing is verified, and a match grants no authority. The match is
+/// the profile's own `authenticatorIdHash = keccak256(credentialId)`, so no
+/// separate credential fact is stored. More than one match (a profile copying
+/// another's authenticator) is ambiguous and reads as absent.
+pub async fn signer_by_credential(
+    store: &dyn RelayStore,
+    credential_id: &str,
+) -> RelayResult<IdentifiedSigner> {
+    if !credential_id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        return Err(INVALID);
+    }
+    let raw = URL_SAFE_NO_PAD.decode(credential_id).map_err(|_| INVALID)?;
+    if raw.is_empty() || raw.len() > MAX_CREDENTIAL_ID_BYTES {
+        return Err(INVALID);
+    }
+    let authenticator_id_hash = hex_hash(keccak256(&raw));
+    let mut transaction = store.begin().await?;
+    let result = transaction
+        .list_signers_by_authenticator(&authenticator_id_hash)
+        .await;
+    let mut signers = settle(transaction, result).await?;
+    if signers.len() != 1 {
+        return Err(RelayErrorCode::NotFound);
+    }
+    let signer = signers.remove(0);
+    let credential = signer.credential()?;
+    Ok(IdentifiedSigner {
+        signer_id: signer.signer_id,
+        kind: credential.kind(),
+        profile: credential.to_json(),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -193,17 +246,21 @@ async fn create(
     let account_index = (0..)
         .find(|index| !used.contains(index))
         .ok_or(RelayErrorCode::Internal)?;
+    let owner_credential = signer.credential()?;
+    let owner_validator = owner_validator_for(&owner_credential);
     let profile = KernelAccountProfile::Derived(KernelDerivedAccountProfile {
         account_index: account_index.to_string(),
         factory_route: KernelFactoryRoute::KernelFactory,
-        owner_credential: signer.credential()?,
+        owner_credential,
     });
     let account = AccountRecord {
         version: ACCOUNT_RECORD_VERSION,
         account_id: random_identifier(),
-        address: derive_account_address(&profile).ok_or(RelayErrorCode::Internal)?,
+        address: derive_account_address(&profile, owner_validator.as_deref())
+            .ok_or(RelayErrorCode::Internal)?,
         root_signer_id: root_signer_id.to_owned(),
         account_index,
+        owner_validator,
         profile: profile.to_json().to_string(),
         created_at: now,
     };

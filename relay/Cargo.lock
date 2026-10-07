@@ -2071,6 +2071,7 @@ name = "oaath-relay"
 version = "0.3.4"
 dependencies = [
  "aes-gcm",
+ "alloy-primitives",
  "async-trait",
  "axum",
  "base64 0.22.1",

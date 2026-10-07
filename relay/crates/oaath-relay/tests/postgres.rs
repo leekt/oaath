@@ -465,27 +465,71 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
 }
 
 #[tokio::test]
-async fn reads_a_tampered_account_address_as_unreadable() {
+async fn reads_a_tampered_account_address_or_validator_as_unreadable() {
+    let Some(url) = database() else { return };
+    for tamper in [
+        format!(
+            "UPDATE oaath_account_v1 SET address = '0x{}'",
+            "99".repeat(20)
+        ),
+        "UPDATE oaath_account_v1 SET owner_validator = NULL".to_owned(),
+        format!(
+            "UPDATE oaath_account_v1 SET owner_validator = '0x{}'",
+            "22".repeat(20)
+        ),
+    ] {
+        let fixture = Fixture::create(url.clone()).await;
+        let h = fixture.process(TestClock::new()).await;
+        let signer = register(&h, ecdsa_profile()).await;
+        create_account(&h, &signer).await.ok(201);
+        let pool = fixture.pool().await;
+        sqlx::raw_sql(&tamper).execute(&pool).await.unwrap();
+        pool.close().await;
+        h.send(portal_request(
+            "GET",
+            &format!("/portal/signers/{signer}/accounts"),
+            None,
+        ))
+        .await
+        .failure(E::RecordUnreadable);
+        shutdown(h).await;
+    }
+}
+
+#[tokio::test]
+async fn recognises_a_passkey_by_credential_id_across_a_restart() {
+    use base64::Engine;
     let Some(url) = database() else { return };
     let fixture = Fixture::create(url).await;
     let clock = TestClock::new();
-    let h = fixture.process(clock).await;
-    let signer = register(&h, ecdsa_profile()).await;
-    let account = create_account(&h, &signer).await.ok(201).clone();
-    let pool = fixture.pool().await;
-    sqlx::query("UPDATE oaath_account_v1 SET address = $2 WHERE account_id = $1")
-        .bind(text(&account, "account_id"))
-        .bind(format!("0x{}", "99".repeat(20)))
-        .execute(&pool)
+    let credential_id = b"credential-1";
+    let profile = json!({
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": format!(
+            "0x{}",
+            hex::encode(alloy_primitives::keccak256(credential_id))
+        ),
+    });
+    let first = fixture.process(clock.clone()).await;
+    let signer = register(&first, profile.clone()).await;
+    shutdown(first).await;
+
+    let second = fixture.process(clock).await;
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(credential_id);
+    let found = second
+        .send(portal_request(
+            "GET",
+            &format!("/portal/signers/by-credential/{encoded}"),
+            None,
+        ))
         .await
-        .unwrap();
-    pool.close().await;
-    h.send(portal_request(
-        "GET",
-        &format!("/portal/signers/{signer}/accounts"),
-        None,
-    ))
-    .await
-    .failure(E::RecordUnreadable);
-    shutdown(h).await;
+        .ok(200)
+        .clone();
+    assert_eq!(
+        found,
+        json!({ "signer_id": signer, "kind": "webauthn", "profile": profile })
+    );
+    shutdown(second).await;
 }

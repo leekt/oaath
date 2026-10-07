@@ -18,6 +18,7 @@
 //! POST /grants/verify                                client  grant reference verification
 //! POST /portal/signers                               portal  register signer
 //! GET  /portal/signers/{signerId}/accounts           portal  signer's accounts
+//! GET  /portal/signers/by-credential/{credentialId}  portal  recognise a passkey
 //! POST /portal/accounts                              portal  derive and record account
 //! ```
 //!
@@ -57,7 +58,9 @@ use crate::bootstrap::{BootstrapConfiguration, capture_chains, serve_bootstrap};
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
-use crate::portal::{assert_same_origin, create_account, register_signer, signer_accounts};
+use crate::portal::{
+    assert_same_origin, create_account, register_signer, signer_accounts, signer_by_credential,
+};
 use crate::records::{
     bounded_text, canonical_identifier, canonical_str, is_lowercase_hash, limits,
 };
@@ -316,6 +319,11 @@ impl Relay {
                 require_method(method, &Method::POST)?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
                 return reply(200, &register_signer(store, clock, &body).await?);
+            }
+            if count == 4 && group == Some("signers") && third == Some("by-credential") {
+                require_method(method, &Method::GET)?;
+                let credential_id = fourth.unwrap_or_default();
+                return reply(200, &signer_by_credential(store, credential_id).await?);
             }
             if count == 4 && group == Some("signers") && fourth == Some("accounts") {
                 require_method(method, &Method::GET)?;
