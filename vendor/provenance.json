@@ -11,11 +11,11 @@
   {
     "name": "@oaath/sdk",
     "version": "0.3.4",
-    "file": "oaath-sdk-0.3.4-63d94987cd4b.tgz",
-    "commit": "d81beeb555801ccf73804397997da59e4345670a",
+    "file": "oaath-sdk-0.3.4-53bd65857a26.tgz",
+    "commit": "d7c38d524d9d3c8073335ef8db11c22a816d2460",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
-    "sha256": "63d94987cd4b9091cfb5513a1ae679ce9739e4d589975727894f8d363eaf65b6"
+    "sha256": "53bd65857a2676e0e831745632c2d34a2d4e550bb852b6a754fcf1f320070dde"
   },
   {
     "name": "@oaath/server",

@@ -6,7 +6,7 @@ work is imported. The original OAAth checkout and its RPC dedup change remain
 untouched. DCA codec/contracts belong in this repository; the old DCA-specific
 upstream patches are replaced by the authority/operation/custody series here.
 
-OAAth source: clean `automation-foundation` branch at `d81beeb`, based on
+OAAth source: clean `automation-foundation` branch at `d7c38d5`, based on
 `2f12e82` (merged Cetane protocol prerequisite). Patches in `oaath/` apply in
 order. Each commit stays within 25 non-generated files and 2,000 added lines.
 
@@ -37,3 +37,5 @@ use file overrides. No Cetane or Moesi source checkout is required.
 The eleventh patch removes OAAth's temporary source-artifact override now that
 Cetane 0.0.3 is published. Package contents are byte-for-byte identical to the
 previous source-built 0.0.3 artifact; archive checksums differ.
+
+The twelfth patch rejects zero effective verification gas from a bundler before signing or publication. It adds no automatic submission retries.
