@@ -60,7 +60,8 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
 use crate::oauth::{
     OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, login_decision,
-    parse_form, push_authorization_request, read_transaction, recover_redirect, register_client,
+    parse_form, prepare_grant, push_authorization_request, read_transaction, recover_redirect,
+    register_client,
 };
 use crate::portal::{
     assert_same_origin, create_account, register_signer, signer_accounts, signer_by_credential,
@@ -441,6 +442,11 @@ impl Relay {
                         )
                         .await?;
                         return reply(200, &redirect);
+                    }
+                    Some("prepare") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        return reply(200, &prepare_grant(store, clock, id, &body).await?);
                     }
                     Some("redirect") => {
                         require_method(method, &Method::GET)?;

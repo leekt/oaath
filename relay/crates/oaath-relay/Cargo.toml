@@ -17,6 +17,8 @@ base64.workspace = true
 rand.workspace = true
 hex.workspace = true
 alloy-primitives.workspace = true
+alloy-sol-types.workspace = true
+k256.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 axum.workspace = true
 sqlx.workspace = true

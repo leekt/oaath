@@ -248,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v7 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v8 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v7");
+    assert_eq!(version, "oaath.relay-postgres-schema/v8");
     pool.close().await;
 }
 
@@ -642,4 +642,89 @@ async fn keeps_a_login_transaction_and_its_code_across_restarts() {
         json!("relay_code_already_consumed")
     );
     shutdown(last).await;
+}
+
+#[tokio::test]
+async fn keeps_a_grant_transaction_preparable_across_a_restart() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let first = fixture.process(clock.clone()).await;
+    let client = first
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Dapp", "redirect_uris": [REDIRECT_URI] })),
+        ))
+        .await;
+    let client_id = text(client.ok(201), "client_id").to_owned();
+    let detail = json!([{
+        "type": "oaath_grant",
+        "signer": {
+            "version": "oaath.operator-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": format!("0x{}", "44".repeat(20)),
+        },
+        "policy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [{
+                "target": format!("0x{}", "aa".repeat(20)),
+                "selector": "0xa9059cbb",
+                "valueLimit": "0",
+                "argumentEquals": [],
+            }],
+            "validAfter": CLOCK_SECONDS,
+            "validUntil": CLOCK_SECONDS + 3_600,
+            "perChainOperationLimit": { "count": 10, "intervalSeconds": null },
+        },
+        "chains": [1],
+        "expires_at": CLOCK_SECONDS + 7_200,
+        "device_id": "device-1",
+    }])
+    .to_string();
+    let challenge = code_challenge();
+    let pushed = first
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+                ("authorization_details", &detail),
+            ],
+        ))
+        .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let signer = register(&first, ecdsa_profile()).await;
+    let account = create_account(&first, &signer).await.ok(201).clone();
+    shutdown(first).await;
+
+    let second = fixture.process(clock).await;
+    let read = second
+        .send(portal_request(
+            "GET",
+            &format!("/portal/transactions/{id}"),
+            None,
+        ))
+        .await;
+    assert_eq!(read.ok(200)["authorization_details"].to_string(), detail);
+    let prepared = second
+        .send(portal_request(
+            "POST",
+            &format!("/portal/transactions/{id}/prepare"),
+            Some(json!({ "signer_id": signer, "account_id": account["account_id"] })),
+        ))
+        .await;
+    assert_eq!(
+        prepared.ok(200)["signing_request"]["signer"]["account"],
+        account["address"]
+    );
+    shutdown(second).await;
 }

@@ -1,0 +1,1508 @@
+[
+  {
+    "name": "ecdsa root, ecdsa signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x7564105e977516c53be337314c7e53838967bdac"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "23070456880109659419539026677734991115972319271379802470422751673727278120960",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+            "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+            "internalData": "0x6b46ef39e9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "23070456880109659419539026677734991115972319271379802470422751673727278120960",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+                  "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+                  "internalData": "0x6b46ef39e9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0xc69ddb24eeb25258241bb03497b3734ea179b46c533f5be0807edc2fc0bbf266",
+          "replay": {
+            "nonce": "23070456880109659419539026677734991115972319271379802470422751673727278120960",
+            "deadline": null
+          }
+        },
+        "digest": "0xc69ddb24eeb25258241bb03497b3734ea179b46c533f5be0807edc2fc0bbf266",
+        "capabilityHash": "0xa0be017c3a87f0aaf2f638355f2bdd691def8485b00fa6b96c2528e756b06932",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0x33016a7596b62610028d6a141a29d90484584176936ad66b7213dca56d13c520\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0xa0be017c3a87f0aaf2f638355f2bdd691def8485b00fa6b96c2528e756b06932\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"23070456880109659419539026677734991115972319271379802470422751673727278120960\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":6,\"module\":\"0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff\",\"moduleData\":\"0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac\",\"internalData\":\"0x6b46ef39e9ae5c53\"}],\"digest\":\"0xc69ddb24eeb25258241bb03497b3734ea179b46c533f5be0807edc2fc0bbf266\",\"enableSignature\":\"0xade53de3ad28a23ca6ca8ca2ed8bf964f149e4eaaed14fa035ee13c948726b222f86497f28ca154a3e6d0471fb09f24e015b79ee194645d16dd6741abb832cad1c\"}}"
+      }
+    }
+  },
+  {
+    "name": "ecdsa root, webauthn signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x0457e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec",
+          "authenticatorIdHash": "0x49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "72879746482078515569448465823781576103806910387575752900737652201468276506624",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+            "internalData": "0x0b6f2a3be9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "72879746482078515569448465823781576103806910387575752900737652201468276506624",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+                  "internalData": "0x0b6f2a3be9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0xf5257109e4ce941c438ed47e194b269c9ab49e96f31b03f02dc57539fcb4c61d",
+          "replay": {
+            "nonce": "72879746482078515569448465823781576103806910387575752900737652201468276506624",
+            "deadline": null
+          }
+        },
+        "digest": "0xf5257109e4ce941c438ed47e194b269c9ab49e96f31b03f02dc57539fcb4c61d",
+        "capabilityHash": "0xa4d13302589c82da8c7e30c85934b9a305ede4f6c3043847d6fe4b1ce051f480",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0xa12079871e603bd72437abe16d8bc4afdb06595c5d831684aba0bc2f02500828\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0xa4d13302589c82da8c7e30c85934b9a305ede4f6c3043847d6fe4b1ce051f480\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"72879746482078515569448465823781576103806910387575752900737652201468276506624\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":6,\"module\":\"0x8b2df925aa16071fcdf0053768420e242935ac65\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5\",\"internalData\":\"0x0b6f2a3be9ae5c53\"}],\"digest\":\"0xf5257109e4ce941c438ed47e194b269c9ab49e96f31b03f02dc57539fcb4c61d\",\"enableSignature\":\"0x7efa3c59dacda9234fc0b2c1198e33d8bd699aa6db54d7233a4e73b3f0570fbe4b61f77c8a27e1f7950f5566d333863cd9b9a2e20f11925949e3fcc9286b034d1c\"}}"
+      }
+    }
+  },
+  {
+    "name": "p256 root, ecdsa signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "p256",
+            "publicKey": "0x04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x7564105e977516c53be337314c7e53838967bdac"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "12001757683348937947802976959872953251019975039428776497659848753472209944576",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+            "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+            "internalData": "0x6b46ef39e9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "p256",
+              "publicKey": "0x04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "12001757683348937947802976959872953251019975039428776497659848753472209944576",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+                  "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+                  "internalData": "0x6b46ef39e9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0xab007e65042ca9657561a65b5de8a3b9ed66feb4694f44e36ef334d3393350b3",
+          "replay": {
+            "nonce": "12001757683348937947802976959872953251019975039428776497659848753472209944576",
+            "deadline": null
+          }
+        },
+        "digest": "0xab007e65042ca9657561a65b5de8a3b9ed66feb4694f44e36ef334d3393350b3",
+        "capabilityHash": "0x2f56c0e1f43c5bdaa9c2824a0f7ed03c06662600bd02c6c004a85585e90de96b",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0x1a88c10e2e6eda58dc038a40d39ff47195f18c8400a73515bc7f0b5b6df550d9\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x2f56c0e1f43c5bdaa9c2824a0f7ed03c06662600bd02c6c004a85585e90de96b\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"12001757683348937947802976959872953251019975039428776497659848753472209944576\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":6,\"module\":\"0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff\",\"moduleData\":\"0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac\",\"internalData\":\"0x6b46ef39e9ae5c53\"}],\"digest\":\"0xab007e65042ca9657561a65b5de8a3b9ed66feb4694f44e36ef334d3393350b3\",\"enableSignature\":\"0x31b76718faf9feb20ce5681391d147bf176019ce2a0982e794f91f53ef53fca6793d983c5141be642199abab451a8d59b5e8d0d7068b6658029096010f855ea8\"}}"
+      }
+    }
+  },
+  {
+    "name": "p256 root, webauthn signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "p256",
+            "publicKey": "0x04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x0457e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec",
+          "authenticatorIdHash": "0x49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "80552175868564480738583898793851072364828445594902927737648411124837092687872",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+            "internalData": "0x0b6f2a3be9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "p256",
+              "publicKey": "0x04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "80552175868564480738583898793851072364828445594902927737648411124837092687872",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+                  "internalData": "0x0b6f2a3be9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0x414e61cf91b31832e9d83bc7922f895a34ecb5b2b90e619fb7ed844c547a95e2",
+          "replay": {
+            "nonce": "80552175868564480738583898793851072364828445594902927737648411124837092687872",
+            "deadline": null
+          }
+        },
+        "digest": "0x414e61cf91b31832e9d83bc7922f895a34ecb5b2b90e619fb7ed844c547a95e2",
+        "capabilityHash": "0x369b44e47cc124eb2e5786e6714175014c1d887b984fb728d12089c041845615",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0xb216ea75d44fca97ff5f83aec54a5f078617718ee5037c29a60cc2dbae8f8c3e\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x369b44e47cc124eb2e5786e6714175014c1d887b984fb728d12089c041845615\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"80552175868564480738583898793851072364828445594902927737648411124837092687872\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":6,\"module\":\"0x8b2df925aa16071fcdf0053768420e242935ac65\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5\",\"internalData\":\"0x0b6f2a3be9ae5c53\"}],\"digest\":\"0x414e61cf91b31832e9d83bc7922f895a34ecb5b2b90e619fb7ed844c547a95e2\",\"enableSignature\":\"0x70525459e8f646ba4c30151919696319c2a03426d00ee4dad7f5638d933885ee3bb39885f5f6c1bf0cd5116c897c08d7652f5afe1ed298a8911cc21a2c38bc90\"}}"
+      }
+    }
+  },
+  {
+    "name": "webauthn root, ecdsa signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "webauthn",
+            "publicKey": "0x0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+            "authenticatorIdHash": "0x874c5cbcd99e12578bb7a773f1463350b680c43a91e5721225c443ac01697d35"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x7564105e977516c53be337314c7e53838967bdac"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "65938716893041953725359887167393664939641534288417201936663317664878792015872",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x6b46ef39"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+            "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+            "internalData": "0x6b46ef39e9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "webauthn",
+              "publicKey": "0x0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+              "authenticatorIdHash": "0x874c5cbcd99e12578bb7a773f1463350b680c43a91e5721225c443ac01697d35"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "65938716893041953725359887167393664939641534288417201936663317664878792015872",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x6b46ef39"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+                  "moduleData": "0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+                  "internalData": "0x6b46ef39e9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0x5e9842c2b2f54c8fecfb1f127f939cb846d6e3ffc719b285787175c7ad4d2bec",
+          "replay": {
+            "nonce": "65938716893041953725359887167393664939641534288417201936663317664878792015872",
+            "deadline": null
+          }
+        },
+        "digest": "0x5e9842c2b2f54c8fecfb1f127f939cb846d6e3ffc719b285787175c7ad4d2bec",
+        "capabilityHash": "0x240ac5fa4e31b636a412f896cd05e1ee949642bd50a092d89b472cc473ca3616",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0x91c7fdbeae5b1f3a090b209ebbcde38e9077cb03b877caf1e4b569db12ca40da\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x240ac5fa4e31b636a412f896cd05e1ee949642bd50a092d89b472cc473ca3616\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"65938716893041953725359887167393664939641534288417201936663317664878792015872\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x6b46ef3900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x6b46ef390000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x6b46ef39\"},{\"moduleType\":6,\"module\":\"0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff\",\"moduleData\":\"0x6b46ef39000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac\",\"internalData\":\"0x6b46ef39e9ae5c53\"}],\"digest\":\"0x5e9842c2b2f54c8fecfb1f127f939cb846d6e3ffc719b285787175c7ad4d2bec\",\"enableSignature\":\"0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001a4e2e42a9f84c64fecb20264f4a07d19c104eebe50898ef3097569381690f8e00a6e70d9811434a86c440ed8df2cf47d0664628d308858b2252a454d7ea15270000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000257c6c7c21c2f4a2181b1a4ee76f1a8787840242441cf98a47eb536b29bb94c676050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000837b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a225870684377724c3154495f732d78385366354f6375456257345f5f4847624b46654846317836314e4b2d77222c226f726967696e223a2268747470733a2f2f6f616174682e74657374222c2263726f73734f726967696e223a66616c73657d0000000000000000000000000000000000000000000000000000000000\"}}"
+      }
+    }
+  },
+  {
+    "name": "webauthn root, webauthn signer",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "webauthn",
+            "publicKey": "0x0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+            "authenticatorIdHash": "0x874c5cbcd99e12578bb7a773f1463350b680c43a91e5721225c443ac01697d35"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x0457e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec",
+          "authenticatorIdHash": "0x49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "100434102228724157512829270067133236931873217392466887936241131554325546401792",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+            "internalData": "0x0b6f2a3b"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+            "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+            "internalData": "0x0b6f2a3be9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "webauthn",
+              "publicKey": "0x0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+              "authenticatorIdHash": "0x874c5cbcd99e12578bb7a773f1463350b680c43a91e5721225c443ac01697d35"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "100434102228724157512829270067133236931873217392466887936241131554325546401792",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xf63d4139b25c836334edd76641356c6b74c86873",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000",
+                  "internalData": "0x0b6f2a3b"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x8b2df925aa16071fcdf0053768420e242935ac65",
+                  "moduleData": "0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5",
+                  "internalData": "0x0b6f2a3be9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0xc93c3a4d97a3908e6010a97ca69b2f96bac7b1c5fd84a2f6a503a895e5743830",
+          "replay": {
+            "nonce": "100434102228724157512829270067133236931873217392466887936241131554325546401792",
+            "deadline": null
+          }
+        },
+        "digest": "0xc93c3a4d97a3908e6010a97ca69b2f96bac7b1c5fd84a2f6a503a895e5743830",
+        "capabilityHash": "0xe34738470578f365321d225d2cae09a788a668087e46915f830a2acc6f02f1ac",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0xde0baff9416a59778d6a72a82ddc05e0c8c879b0e932c975c5572cc0c1e57f20\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0xe34738470578f365321d225d2cae09a788a668087e46915f830a2acc6f02f1ac\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"100434102228724157512829270067133236931873217392466887936241131554325546401792\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0x0b6f2a3b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":5,\"module\":\"0xf63d4139b25c836334edd76641356c6b74c86873\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000\",\"internalData\":\"0x0b6f2a3b\"},{\"moduleType\":6,\"module\":\"0x8b2df925aa16071fcdf0053768420e242935ac65\",\"moduleData\":\"0x0b6f2a3b0000000000000000000000000000000000000000000000000000000057e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec49b676a0c79322f54281a9322400a58484e2e9efe2b4ed9ab245194d62a043e5\",\"internalData\":\"0x0b6f2a3be9ae5c53\"}],\"digest\":\"0xc93c3a4d97a3908e6010a97ca69b2f96bac7b1c5fd84a2f6a503a895e5743830\",\"enableSignature\":\"0x00000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000012a339f408c934cf7f60b9f4f4d61dd3aef61315b23e53adc219e4ebb41d1a56b68b6619cda4e9ce279934a0b802a64368c229c1a9a1b40365c9691e3f5980f92000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000257c6c7c21c2f4a2181b1a4ee76f1a8787840242441cf98a47eb536b29bb94c676050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000837b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a2279547736545a656a6b493567454b6c38707073766c72724873635839684b4c3270514f6f6c6556304f4441222c226f726967696e223a2268747470733a2f2f6f616174682e74657374222c2263726f73734f726967696e223a66616c73657d0000000000000000000000000000000000000000000000000000000000\"}}"
+      }
+    }
+  },
+  {
+    "name": "rate-limited policy",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x7564105e977516c53be337314c7e53838967bdac"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": []
+            },
+            {
+              "target": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selector": "0x12345678",
+              "valueLimit": "1000",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 3,
+            "intervalSeconds": 3600
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "rpId": "oaath.test",
+      "origin": "https://oaath.test"
+    },
+    "expect": {
+      "ok": {
+        "installNonce": "53662781234088126063722073563767280539606132251520032012876566034464284606464",
+        "packages": [
+          {
+            "moduleType": 5,
+            "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+            "moduleData": "0xe034175b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+            "internalData": "0xe034175b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+            "moduleData": "0xe034175b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+            "internalData": "0xe034175b"
+          },
+          {
+            "moduleType": 5,
+            "module": "0xe2663e2f94ef2dc11cc06a7914a037d78a0652dc",
+            "moduleData": "0xe034175b00000000000000000000000000000000000000000000000000000000000000000e10000000000003",
+            "internalData": "0xe034175b"
+          },
+          {
+            "moduleType": 6,
+            "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+            "moduleData": "0xe034175b000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+            "internalData": "0xe034175be9ae5c53"
+          }
+        ],
+        "signingRequest": {
+          "version": "oaath.owner-signing-request/v1",
+          "kind": "eip712",
+          "purpose": "kernel-enable",
+          "signer": {
+            "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+            }
+          },
+          "typedData": {
+            "types": {
+              "EIP712Domain": [
+                {
+                  "name": "name",
+                  "type": "string"
+                },
+                {
+                  "name": "version",
+                  "type": "string"
+                },
+                {
+                  "name": "verifyingContract",
+                  "type": "address"
+                }
+              ],
+              "Install": [
+                {
+                  "name": "moduleType",
+                  "type": "uint256"
+                },
+                {
+                  "name": "module",
+                  "type": "address"
+                },
+                {
+                  "name": "moduleData",
+                  "type": "bytes"
+                },
+                {
+                  "name": "internalData",
+                  "type": "bytes"
+                }
+              ],
+              "InstallPackages": [
+                {
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "name": "packages",
+                  "type": "Install[]"
+                }
+              ]
+            },
+            "primaryType": "InstallPackages",
+            "domain": {
+              "name": "Kernel",
+              "version": "0.4.0",
+              "verifyingContract": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "message": {
+              "nonce": "53662781234088126063722073563767280539606132251520032012876566034464284606464",
+              "packages": [
+                {
+                  "moduleType": "5",
+                  "module": "0x9a52283276a0ec8740df50bf01b28a80d880eaf2",
+                  "moduleData": "0xe034175b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000",
+                  "internalData": "0xe034175b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152",
+                  "moduleData": "0xe034175b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be",
+                  "internalData": "0xe034175b"
+                },
+                {
+                  "moduleType": "5",
+                  "module": "0xe2663e2f94ef2dc11cc06a7914a037d78a0652dc",
+                  "moduleData": "0xe034175b00000000000000000000000000000000000000000000000000000000000000000e10000000000003",
+                  "internalData": "0xe034175b"
+                },
+                {
+                  "moduleType": "6",
+                  "module": "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
+                  "moduleData": "0xe034175b000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac",
+                  "internalData": "0xe034175be9ae5c53"
+                }
+              ]
+            }
+          },
+          "expectedDigest": "0x45fff44f757916a8dfeebd44312e684fdb5afb0ec9863d821501898d969d035d",
+          "replay": {
+            "nonce": "53662781234088126063722073563767280539606132251520032012876566034464284606464",
+            "deadline": null
+          }
+        },
+        "digest": "0x45fff44f757916a8dfeebd44312e684fdb5afb0ec9863d821501898d969d035d",
+        "capabilityHash": "0x3e68c90f3e88c05b77465b92e81cbb722d02d728bfef04c0546004cdb54d7c3f",
+        "artifact": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"grant-fixture-1\",\"requestHash\":\"0x76a40ece2a2be211f131132a3022dd3bf7af376971bcff584e9daee1da37ad98\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"selector\":\"0xa9059cbb\",\"valueLimit\":\"0\",\"argumentEquals\":[]},{\"target\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"selector\":\"0x12345678\",\"valueLimit\":\"1000\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":3,\"intervalSeconds\":3600}},\"capabilityHash\":\"0x3e68c90f3e88c05b77465b92e81cbb722d02d728bfef04c0546004cdb54d7c3f\",\"installApproval\":{\"version\":\"oaath.kernel.all-chain-approval/v1\",\"account\":\"0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"installNonce\":\"53662781234088126063722073563767280539606132251520032012876566034464284606464\",\"packages\":[{\"moduleType\":5,\"module\":\"0x9a52283276a0ec8740df50bf01b28a80d880eaf2\",\"moduleData\":\"0xe034175b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9059cbb00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb123456780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000\",\"internalData\":\"0xe034175b\"},{\"moduleType\":5,\"module\":\"0x828ef0aa6d7e90dd39bb855afe9d9b4f9bd30152\",\"moduleData\":\"0xe034175b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000be\",\"internalData\":\"0xe034175b\"},{\"moduleType\":5,\"module\":\"0xe2663e2f94ef2dc11cc06a7914a037d78a0652dc\",\"moduleData\":\"0xe034175b00000000000000000000000000000000000000000000000000000000000000000e10000000000003\",\"internalData\":\"0xe034175b\"},{\"moduleType\":6,\"module\":\"0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff\",\"moduleData\":\"0xe034175b000000000000000000000000000000000000000000000000000000007564105e977516c53be337314c7e53838967bdac\",\"internalData\":\"0xe034175be9ae5c53\"}],\"digest\":\"0x45fff44f757916a8dfeebd44312e684fdb5afb0ec9863d821501898d969d035d\",\"enableSignature\":\"0x5a4d2db28d342f30cd99a3ace9001097610cee0df92f23b660a8bc2f00884fcf4f70bd1ee76472dd82817be599e20dda81ca1fb7e69032562d21db1ae7e068961b\"}}"
+      }
+    }
+  },
+  {
+    "name": "argument constraint",
+    "input": {
+      "request": {
+        "version": "oaath.permission-request/v2",
+        "requestId": "grant-fixture-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "account-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "client-1",
+          "clientId": "client-1",
+          "origin": "https://app.example",
+          "deviceId": "device-1"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x7564105e977516c53be337314c7e53838967bdac"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v2",
+          "calls": [
+            {
+              "target": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "selector": "0xa9059cbb",
+              "valueLimit": "0",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": 190,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      },
+      "account": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    },
+    "expect": {
+      "error": "kernel_runtime_policy_unavailable"
+    }
+  }
+]

@@ -100,7 +100,13 @@ fn validate_package_sequence(packages: &[KernelInstall]) -> ProtocolResult<()> {
     ensure(pending.is_none(), CODE)
 }
 
-fn expected_typed_data(account: &str, nonce: &str, packages: &[KernelInstall]) -> Value {
+/// The exact `InstallPackages` EIP-712 typed data a Kernel 0.4.0 replayable
+/// install signs: chainless domain, the account as verifying contract.
+pub fn kernel_v4_replayable_install_typed_data(
+    account: &str,
+    nonce: &str,
+    packages: &[KernelInstall],
+) -> Value {
     let packages: Vec<Value> = packages
         .iter()
         .map(|install| {
@@ -159,7 +165,7 @@ pub fn parse_kernel_replayable_install_owner_signing_request(
     validate_package_sequence(&packages)?;
     ensure(
         request.typed_data.to_json()
-            == expected_typed_data(&request.signer.account, &nonce, &packages),
+            == kernel_v4_replayable_install_typed_data(&request.signer.account, &nonce, &packages),
         CODE,
     )?;
     let digest = crate::identity::hex_hash(request.typed_data.hash()?);
