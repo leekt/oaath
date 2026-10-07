@@ -26,6 +26,8 @@ import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 import {
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
+  KERNEL_WEBAUTHN_VALIDATOR,
+  KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
   OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH,
   pinnedValidatorModule,
@@ -108,6 +110,7 @@ function base64Url(value: Uint8Array): string {
 
 function runtimeCodeHash(address: `0x${string}`): `0x${string}` {
   if (address === KERNEL_V4_ENTRY_POINT_V09) return KERNEL_ENTRY_POINT_V07.runtimeCodeHash;
+  if (address === KERNEL_WEBAUTHN_VALIDATOR) return KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH;
   if (address === KERNEL_P256_VERIFIER) return KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH;
   if (address === OAATH_KERNEL_V4_VALIDITY_POLICY) {
     return OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH;
@@ -298,18 +301,10 @@ describe("Kernel composition matrix", () => {
       expect(key.kind).toBe(kind);
       const composeOperator = () => operatorProfiles[authority](key);
       // An owner needs a validator module for its key kind and a session needs a
-      // permission signer module: raw P-256 has only the validator, WebAuthn only
-      // the signer, so each axis fails closed on its own module rather than
-      // borrowing the other's. A consumer-authored kind binds both itself.
-      const callerBound = kind === "ecdsa" || kind === customKind;
+      // permission signer module. Raw P-256 has only the validator.
+      // A consumer-authored kind binds both itself.
       const unavailable =
-        authority === "session"
-          ? kind === "p256"
-            ? "kernel_runtime_signer_unavailable"
-            : null
-          : callerBound || kind === "p256"
-            ? null
-            : "kernel_runtime_validator_unavailable";
+        authority === "session" && kind === "p256" ? "kernel_runtime_signer_unavailable" : null;
       if (authority === "session" && unavailable) {
         expect(composeOperator).toThrowError(
           expect.objectContaining({ name: "OaathKernelRuntimeError", code: unavailable }),
@@ -332,7 +327,8 @@ describe("Kernel composition matrix", () => {
       if (authority === "owner") {
         // A caller-bound kind installs the validator its own profile named; raw
         // P-256 installs the pinned reviewed one, which is not that address.
-        const authorityModule = kind === "p256" ? pinnedValidatorModule("p256") : validator;
+        const authorityModule =
+          kind === "p256" || kind === "webauthn" ? pinnedValidatorModule(kind) : validator;
         expect(kind === "p256" ? authorityModule !== validator : true).toBe(true);
         expect(operator.policy).toBeNull();
         expect(runtime.authorityModule).toBe(authorityModule);
@@ -504,6 +500,55 @@ describe("Kernel composition matrix", () => {
       deployed.bindAccount({ accountIndex: "0", initialPackages: deployed.packages }),
     ).resolves.toMatchObject({ state: "deployed", account });
   });
+
+  it.each(["wrong-key", "unsupported-root", "wrong-code", "unreadable-key"] as const)(
+    "refuses an existing WebAuthn root before signing: %s",
+    async (failure) => {
+      let signatures = 0;
+      const key = kernelKey({
+        credential: webauthnCredential,
+        credentialId,
+        rpId,
+        origin,
+        authenticate: async (request) => {
+          signatures++;
+          return webauthnAuthenticate()(request);
+        },
+      });
+      const runtime = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({ key }),
+        reads: {
+          read: async (request) => {
+            if (request.type === "kernel_v4_account_root")
+              return `0x01${(failure === "unsupported-root" ? validator : key.resolveValidator(deployment)).slice(2)}`;
+            if (request.type === "kernel_webauthn_owner") {
+              if (failure === "unreadable-key") throw new Error("unreadable");
+              return failure === "wrong-key"
+                ? `0x${"00".repeat(64)}`
+                : key.publicMaterial.slice(0, 130);
+            }
+            if (
+              failure === "wrong-code" &&
+              request.type === "runtime_code_hash" &&
+              request.address === key.resolveValidator(deployment)
+            )
+              return `0x${"00".repeat(32)}`;
+            return reads("deployed").read(request);
+          },
+        },
+      });
+      await expect(runtime.bindAccount({ address: account })).rejects.toMatchObject({
+        code:
+          failure === "unreadable-key"
+            ? "kernel_runtime_read_unavailable"
+            : failure === "wrong-code"
+              ? "kernel_runtime_validator_unavailable"
+              : "kernel_runtime_binding_mismatch",
+      });
+      expect(signatures).toBe(0);
+    },
+  );
 
   it("refuses to bind an account whose root packages exclude the owner authority", async () => {
     const runtime = ecdsaRuntime("owner");

@@ -67,14 +67,22 @@ import type { KernelBuiltInKeyKind, KernelKeyKind, KernelPolicyProfile } from ".
  * Where a supported chain lacks it, this axis is unavailable in fact even though
  * the registry entry is chain-independent, and no client-side list is kept.
  *
- * WebAuthn carries no entry: the reviewed plugin sets ship no v4 WebAuthn
- * validator, so root WebAuthn authority still fails closed. ECDSA carries no entry
+ * WebAuthn uses the reviewed local plugin source a267d794, reproduced in
+ * contracts/artifacts/KernelWebAuthnValidator.json (solc 0.8.30, Paris, via-IR,
+ * optimizer 200, no metadata). Binding proves its exact runtime hash and stored
+ * public key. The assertion uses the chain P-256 precompile, Solady verifier or
+ * Daimo fallback as selected by that contract. ECDSA carries no entry
  * by design: kernel/key/ecdsa.ts binds the caller's validator module and
  * bindKernelV4Account proves it has code before any account address depends on it.
  */
+export const KERNEL_WEBAUTHN_VALIDATOR = "0x6f781fff97b830daa2e11ee0ad6344aff7131ef2" as const;
+export const KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH =
+  "0x694c733f786af4134b8874ecf61bb3234bff90d97f1fa117979debddbea655f0" as const;
+
 const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
   Object.freeze({
     p256: "0x9906ab44ff795883c5a725687a2705be4118b0f3",
+    webauthn: KERNEL_WEBAUTHN_VALIDATOR,
   });
 
 /**

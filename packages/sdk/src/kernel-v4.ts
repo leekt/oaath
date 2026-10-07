@@ -242,8 +242,8 @@ export type KernelV4AccountReadRequest =
       account: `0x${string}`;
     }>
   | Readonly<{
-      /** The raw P-256 root validator's stored public key for one account. */
-      type: "kernel_p256_owner";
+      /** The reviewed P-256 or WebAuthn validator's stored public key for one account. */
+      type: "kernel_p256_owner" | "kernel_webauthn_owner";
       chainId: number;
       validator: `0x${string}`;
       account: `0x${string}`;
@@ -377,6 +377,10 @@ const P256_VALIDATOR_ABI = [
       { name: "y", type: "uint256" },
     ],
   },
+] as const;
+
+const WEBAUTHN_VALIDATOR_ABI = [
+  { ...P256_VALIDATOR_ABI[0], name: "webAuthnValidatorStorage" },
 ] as const;
 
 const KERNEL_ABI = [
@@ -784,12 +788,13 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
           ? nonce.toString(10)
           : undefined;
       }
-      if (request.type === "kernel_p256_owner") {
+      if (request.type === "kernel_p256_owner" || request.type === "kernel_webauthn_owner") {
         const result = await client.call({
           to: request.validator,
           data: encodeFunctionData({
-            abi: P256_VALIDATOR_ABI,
-            functionName: "publicKey",
+            abi: request.type === "kernel_p256_owner" ? P256_VALIDATOR_ABI : WEBAUTHN_VALIDATOR_ABI,
+            functionName:
+              request.type === "kernel_p256_owner" ? "publicKey" : "webAuthnValidatorStorage",
             args: [request.account],
           }),
         });

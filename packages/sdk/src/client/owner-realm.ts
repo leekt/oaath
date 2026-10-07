@@ -91,8 +91,7 @@ export interface OaathOwnerCallsReview extends OaathCallsReviewContract {
 /**
  * The account's root owner key: a connected ECDSA wallet (the default), or any
  * `kernelKey(...)` signing profile such as a raw P-256 key. Each send proves it
- * is the account's onchain root owner before it is asked to sign; a key whose
- * root validator exposes no owner onchain (WebAuthn) fails closed.
+ * is the account's onchain root owner before it is asked to sign.
  */
 export type OaathOwnerKey = EcdsaWalletClient | Readonly<KeyProfile>;
 
@@ -107,8 +106,6 @@ export function captureOwnerKey(value: unknown): Readonly<KeyProfile> {
   } catch (error) {
     return mapClientFailure(error, "owner key could not be captured");
   }
-  // No WebAuthn root validator is pinned, so no account can prove that owner.
-  if (key.kind === "webauthn") return ownerKeyUnsupported();
   return key;
 }
 

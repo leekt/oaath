@@ -14,7 +14,6 @@ import {
   type KernelCapability,
   type KernelCapabilityEvidence,
   type KernelCapabilityReason,
-  type KernelRuntime,
   type KernelRuntimeErrorCode,
   type KeyProfile,
   kernelDeployment,
@@ -99,7 +98,7 @@ type Expectation =
 
 /**
  * The exact fact every capability carries on every supported chain: Kernel v4
- * pins a reviewed raw P-256 validator module but no WebAuthn one, every
+ * pins reviewed raw P-256 and WebAuthn validator modules, every
  * supported session credential has a reviewed signer, every policy axis has a
  * reviewed module, and the ECDSA validator is caller-bound and code-proven when
  * an account binds.
@@ -109,10 +108,7 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
   // Root P-256 authority is the phone's Secure Enclave key holding the account:
   // one pinned reviewed validator, chain-independent like every other pin.
   owner_p256: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
-  owner_webauthn: Object.freeze({
-    status: "unsupported",
-    reason: "validator_module_deployment_unproven",
-  }),
+  owner_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   // A consumer-authored kind resolves no pinned module on either axis, so both
   // its axes are available on caller-bound evidence alone: the validator and
   // permission signer module its own KeyProfile binds, each proven to carry code
@@ -295,65 +291,31 @@ describe("Kernel capability diagnosis", () => {
       expect(key.kind).toBe(kind);
       expect(key.publicMaterial).not.toBe(ecdsaAccount.address.toLowerCase());
 
-      // Raw P-256 has a reviewed validator module and WebAuthn does not, so root
-      // authority resolves this kind's own pinned module or fails closed. Either
-      // way it is never the ECDSA validator or the ECDSA signer.
+      const pinned = pinnedValidatorModule(kind);
+      expect(pinned).toMatch(/^0x[0-9a-f]{40}$/u);
+      expect(pinned).not.toBe(validator);
+      expect(pinned).not.toBe(pinnedSignerModule("ecdsa"));
+      expect(key.resolveValidator(deployment)).toBe(pinned);
+      const owner = createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads });
+      expect(owner.keyKind).toBe(kind);
+      expect(owner.authorityModule).toBe(pinned);
+      expect(owner.validation).toEqual({ kind: "root" });
+      expect(owner.packages[0]?.moduleData).toBe(key.publicMaterial);
+      expect(diagnoseKernelCapability({ chainId, capability: `owner_${kind}` })).toEqual({
+        capability: `owner_${kind}`,
+        chainId,
+        status: "available",
+        evidence: "pinned_reviewed_module",
+      });
       if (kind === "p256") {
-        const pinned = pinnedValidatorModule("p256");
-        expect(pinned).toMatch(/^0x[0-9a-f]{40}$/u);
-        expect(pinned).not.toBe(validator);
-        expect(pinned).not.toBe(pinnedSignerModule("ecdsa"));
-        expect(key.resolveValidator(deployment)).toBe(pinned);
-        const owner = createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads });
-        expect(owner.keyKind).toBe("p256");
-        expect(owner.authorityModule).toBe(pinned);
-        expect(owner.validation).toEqual({ kind: "root" });
-        expect(owner.packages[0]?.moduleData).toBe(key.publicMaterial);
-        expect(diagnoseKernelCapability({ chainId, capability: "owner_p256" })).toEqual({
-          capability: "owner_p256",
-          chainId,
-          status: "available",
-          evidence: "pinned_reviewed_module",
-        });
-
-        // Raw P-256 is owner-only: constructing a session fails before any
-        // diagnosable capability can be named or another signer can be borrowed.
         expect(() => sessionOperator({ key, policies: [scope] })).toThrowError(
           expect.objectContaining({ code: "kernel_runtime_signer_unavailable" }),
         );
         expect(() =>
           diagnoseKernelCapability({ chainId, capability: "session_p256" } as never),
-        ).toThrowError(
-          expect.objectContaining({
-            name: "OaathKernelRuntimeError",
-            code: "kernel_runtime_input_invalid",
-          }),
-        );
+        ).toThrowError(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
         return;
       }
-
-      expect(() => key.resolveValidator(deployment)).toThrowError(
-        expect.objectContaining({ code: "kernel_runtime_validator_unavailable" }),
-      );
-      let runtime: Readonly<KernelRuntime> | null = null;
-      let code: unknown = null;
-      try {
-        runtime = createKernelRuntime({
-          deployment,
-          operator: ownerOperator({ key }),
-          reads,
-        });
-      } catch (error) {
-        code = (error as Readonly<{ code: unknown }>).code;
-      }
-      expect(runtime).toBeNull();
-      expect(code).toBe("kernel_runtime_validator_unavailable");
-      expect(diagnoseKernelCapability({ chainId, capability: "owner_webauthn" })).toEqual({
-        capability: "owner_webauthn",
-        chainId,
-        status: "unsupported",
-        reason: "validator_module_deployment_unproven",
-      });
 
       // WebAuthn has a reviewed signer, and it must be the WebAuthn module, never
       // the ECDSA one.
