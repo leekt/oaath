@@ -9,12 +9,12 @@ mkdirSync(output, { recursive: true });
 const run = (cmd, args, cwd) =>
 	execFileSync(cmd, args, { cwd, stdio: "pipe", env: process.env }).toString();
 const paths = [
-	["@oaath/protocol", ".local/oaath-dca/packages/protocol"],
-	["@oaath/sdk", ".local/oaath-dca/packages/sdk"],
-	["@oaath/server", ".local/oaath-dca/packages/server"],
-	["@oaath/testing", ".local/oaath-dca/packages/testing"],
-	["cetane", "../cetane"],
-	["moesi", ".local/moesi-dca/packages/moesi"],
+	["@oaath/protocol", ".local/oaath-automation/packages/protocol"],
+	["@oaath/sdk", ".local/oaath-automation/packages/sdk"],
+	["@oaath/server", ".local/oaath-automation/packages/server"],
+	["@oaath/testing", ".local/oaath-automation/packages/testing"],
+	["cetane", ".local/cetane-automation"],
+	["moesi", ".local/moesi-automation/packages/moesi"],
 ];
 const provenance = [];
 for (const [name, path] of paths) {
@@ -43,11 +43,7 @@ for (const [name, path] of paths) {
 }
 for (const name of ["DcaExecutor", "DcaFactory"]) {
 	copyFileSync(
-		join(
-			root,
-			".local/oaath-dca/packages/contracts/out/DcaExecutor.sol",
-			`${name}.json`,
-		),
+		join(root, "recipes/dca/contracts/out/DcaExecutor.sol", `${name}.json`),
 		join(output, `${name}.json`),
 	);
 }
@@ -56,11 +52,7 @@ for (const [from, to] of [
 	["Feed", "FixtureFeed"],
 ])
 	copyFileSync(
-		join(
-			root,
-			".local/oaath-dca/packages/contracts/out/DcaExecutor.t.sol",
-			`${from}.json`,
-		),
+		join(root, "recipes/dca/contracts/out/DcaExecutor.t.sol", `${from}.json`),
 		join(output, `${to}.json`),
 	);
 writeFileSync(
@@ -70,7 +62,7 @@ writeFileSync(
 const pkg = JSON.parse(readFileSync(join(root, "package.json")));
 pkg.overrides = Object.fromEntries(
 	provenance
-		.filter((p) => p.name.startsWith("@oaath"))
+		.filter((p) => p.name !== "moesi")
 		.map((p) => [p.name, `file:vendor/${p.file}`]),
 );
 for (const p of provenance) {

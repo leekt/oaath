@@ -1,0 +1,250 @@
+From 592d213036cc9e94d16c7848eca9607c57934db8 Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 15:30:20 +0900
+Subject: [PATCH 4/9] Use Cetane accounts and neutral wallet capabilities in
+ SDK clients
+
+---
+ packages/sdk/src/client/binding.ts               |  2 +-
+ packages/sdk/src/client/connected-eoa.ts         | 10 +++++++++-
+ packages/sdk/src/client/grant-handle.ts          |  2 +-
+ packages/sdk/src/client/local-permission.ts      |  2 +-
+ packages/sdk/src/client/local-realm.ts           |  4 ++--
+ packages/sdk/src/client/service-realm.ts         |  2 +-
+ packages/sdk/src/client/service-session.ts       |  2 +-
+ packages/sdk/src/client/session-credential.ts    |  2 +-
+ packages/sdk/src/persistence/interfaces.ts       |  2 +-
+ packages/sdk/src/provider/bundle-store.ts        |  2 +-
+ packages/sdk/src/provider/capabilities.ts        |  2 +-
+ packages/sdk/src/provider/capture.ts             |  4 +++-
+ packages/sdk/src/provider/erc7836.ts             |  4 +++-
+ packages/sdk/src/provider/erc7902.ts             |  3 ++-
+ packages/sdk/src/provider/prepared-call-store.ts |  2 +-
+ packages/sdk/src/routing/capabilities.ts         |  2 +-
+ 16 files changed, 30 insertions(+), 17 deletions(-)
+
+diff --git a/packages/sdk/src/client/binding.ts b/packages/sdk/src/client/binding.ts
+index bc99d8d..e7cede6 100644
+--- a/packages/sdk/src/client/binding.ts
++++ b/packages/sdk/src/client/binding.ts
+@@ -33,7 +33,7 @@ import {
+   type SubjectBinding,
+   type WorkspaceAccountContext,
+ } from "@oaath/protocol";
+-import { encodeAbiParameters, keccak256 } from "viem";
++import { encodeAbiParameters, keccak256 } from "cetane/utils";
+ import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
+ 
+ export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v2" as const;
+diff --git a/packages/sdk/src/client/connected-eoa.ts b/packages/sdk/src/client/connected-eoa.ts
+index 5b5054a..9e3a957 100644
+--- a/packages/sdk/src/client/connected-eoa.ts
++++ b/packages/sdk/src/client/connected-eoa.ts
+@@ -1,6 +1,14 @@
+ /** One optional connected-wallet send after a conclusive refusal of the exact signed operation. */
+ import { type CaptureContext, captureRecord } from "@oaath/protocol";
+-import { type Account, toHex, type WalletClient } from "viem";
++import { toHex } from "cetane/utils";
++
++type Account = { readonly address: `0x${string}`; readonly type?: string };
++type WalletRequest = (
++  input: { method: string; params?: readonly unknown[] },
++  options?: { retryCount: 0 },
++) => Promise<unknown>;
++type WalletClient = { readonly account?: Account; readonly request: WalletRequest };
++
+ import type { OperationSubmissionSession } from "../operation-runner.js";
+ import { routingAddress } from "../routing/capabilities.js";
+ import { classifyBundlerAcceptance } from "../routing/erc4337/bundler.js";
+diff --git a/packages/sdk/src/client/grant-handle.ts b/packages/sdk/src/client/grant-handle.ts
+index a76259a..e8a97cd 100644
+--- a/packages/sdk/src/client/grant-handle.ts
++++ b/packages/sdk/src/client/grant-handle.ts
+@@ -51,7 +51,7 @@ import {
+   parseOperationIdentity,
+   parseOperationLane,
+ } from "@oaath/protocol";
+-import { publicKeyToAddress } from "viem/accounts";
++import { publicKeyToAddress } from "cetane/accounts";
+ import {
+   diagnoseKernelCapability,
+   type KernelCapability,
+diff --git a/packages/sdk/src/client/local-permission.ts b/packages/sdk/src/client/local-permission.ts
+index 381cc2c..b8b09f8 100644
+--- a/packages/sdk/src/client/local-permission.ts
++++ b/packages/sdk/src/client/local-permission.ts
+@@ -5,7 +5,7 @@ import {
+   OAATH_PERMISSION_DECISION_VERSION,
+   type PermissionRequest,
+ } from "@oaath/protocol";
+-import { keccak256, stringToHex } from "viem";
++import { keccak256, stringToHex } from "cetane/utils";
+ import {
+   approveKernelPermission,
+   type KernelPermissionEnableTypedData,
+diff --git a/packages/sdk/src/client/local-realm.ts b/packages/sdk/src/client/local-realm.ts
+index a23b5c3..efd4143 100644
+--- a/packages/sdk/src/client/local-realm.ts
++++ b/packages/sdk/src/client/local-realm.ts
+@@ -13,8 +13,8 @@ import {
+   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+   parseKernelAccountProfile,
+ } from "@oaath/protocol";
+-import type { Address } from "viem";
+-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
++import type { Address } from "cetane";
++import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+ import { OaathCleanupError } from "../cleanup/coordinator.js";
+ import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
+ import { detectKernelAccountDeployment } from "../kernel/deployment/account.js";
+diff --git a/packages/sdk/src/client/service-realm.ts b/packages/sdk/src/client/service-realm.ts
+index d636aa7..c17e506 100644
+--- a/packages/sdk/src/client/service-realm.ts
++++ b/packages/sdk/src/client/service-realm.ts
+@@ -32,7 +32,7 @@ import {
+   parseUserOperationFailure,
+   type ServiceBootstrap,
+ } from "@oaath/protocol";
+-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
++import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+ import { credentialKey } from "../kernel/key/credential.js";
+ import { ecdsaKey } from "../kernel/key/ecdsa.js";
+ import type { KeyProfile } from "../kernel/types.js";
+diff --git a/packages/sdk/src/client/service-session.ts b/packages/sdk/src/client/service-session.ts
+index 3290fe1..b12bac0 100644
+--- a/packages/sdk/src/client/service-session.ts
++++ b/packages/sdk/src/client/service-session.ts
+@@ -19,7 +19,7 @@
+  * @author taek <leekt216@gmail.com>
+  */
+ import type { ServiceBootstrap } from "@oaath/protocol";
+-import { encodeAbiParameters, keccak256 } from "viem";
++import { encodeAbiParameters, keccak256 } from "cetane/utils";
+ import { requireNonExtractableKey } from "../persistence/interfaces.js";
+ 
+ export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v2" as const;
+diff --git a/packages/sdk/src/client/session-credential.ts b/packages/sdk/src/client/session-credential.ts
+index 48f5482..7313417 100644
+--- a/packages/sdk/src/client/session-credential.ts
++++ b/packages/sdk/src/client/session-credential.ts
+@@ -15,7 +15,7 @@
+  * @author taek <leekt216@gmail.com>
+  */
+ import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
+-import { keccak256 } from "viem";
++import { keccak256 } from "cetane/utils";
+ import { type WebAuthnKeyInput, webauthnKey } from "../kernel/key/webauthn.js";
+ import type { KeyProfile } from "../kernel/types.js";
+ import { clientFail, clientFailure } from "./errors.js";
+diff --git a/packages/sdk/src/persistence/interfaces.ts b/packages/sdk/src/persistence/interfaces.ts
+index 645251a..a408bc3 100644
+--- a/packages/sdk/src/persistence/interfaces.ts
++++ b/packages/sdk/src/persistence/interfaces.ts
+@@ -39,7 +39,7 @@ import {
+   parseOperationIdentity,
+   parsePermissionRequest,
+ } from "@oaath/protocol";
+-import type { Address, Hash } from "viem";
++import type { Address, Hash } from "cetane";
+ import {
+   type KernelGrantApproval,
+   parseKernelGrantApproval,
+diff --git a/packages/sdk/src/provider/bundle-store.ts b/packages/sdk/src/provider/bundle-store.ts
+index be808b2..3ce567d 100644
+--- a/packages/sdk/src/provider/bundle-store.ts
++++ b/packages/sdk/src/provider/bundle-store.ts
+@@ -14,7 +14,7 @@ import {
+   exactRecord as exactRecordValue,
+   parseOperationIdentity,
+ } from "@oaath/protocol";
+-import type { Hash } from "viem";
++import type { Hash } from "cetane";
+ import {
+   OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
+   OAATH_WALLET_CALL_BUNDLE_VERSION,
+diff --git a/packages/sdk/src/provider/capabilities.ts b/packages/sdk/src/provider/capabilities.ts
+index ccd7539..770988b 100644
+--- a/packages/sdk/src/provider/capabilities.ts
++++ b/packages/sdk/src/provider/capabilities.ts
+@@ -8,7 +8,7 @@
+  * @author taek <leekt216@gmail.com>
+  */
+ import { OAATH_ISSUER_VERSION, parseIssuerIdentity } from "@oaath/protocol";
+-import type { Hash } from "viem";
++import type { Hash } from "cetane";
+ import type {
+   CapturedJsonObject,
+   CapturedWalletCall,
+diff --git a/packages/sdk/src/provider/capture.ts b/packages/sdk/src/provider/capture.ts
+index 8c0f133..0cc6bd5 100644
+--- a/packages/sdk/src/provider/capture.ts
++++ b/packages/sdk/src/provider/capture.ts
+@@ -14,7 +14,9 @@ import {
+   captureRecord,
+   type ExactRecord,
+ } from "@oaath/protocol";
+-import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
++import type { Hash, Hex } from "cetane";
++import { keccak256 } from "cetane/utils";
++import { stringToBytes } from "../internal/bytes.js";
+ import {
+   type CapturedWalletStaticPaymasterConfiguration,
+   captureAtomicCapability,
+diff --git a/packages/sdk/src/provider/erc7836.ts b/packages/sdk/src/provider/erc7836.ts
+index 1c96a48..d304d36 100644
+--- a/packages/sdk/src/provider/erc7836.ts
++++ b/packages/sdk/src/provider/erc7836.ts
+@@ -7,7 +7,9 @@
+  *
+  * @author taek <leekt216@gmail.com>
+  */
+-import { encodeAbiParameters, type Hash, keccak256 } from "viem";
++
++import type { Hash } from "cetane";
++import { encodeAbiParameters, keccak256 } from "cetane/utils";
+ import { OaathClientError } from "../client/errors.js";
+ import type {
+   OaathExternalPreparedCallPlan,
+diff --git a/packages/sdk/src/provider/erc7902.ts b/packages/sdk/src/provider/erc7902.ts
+index 2dfa44b..e913fd7 100644
+--- a/packages/sdk/src/provider/erc7902.ts
++++ b/packages/sdk/src/provider/erc7902.ts
+@@ -10,7 +10,8 @@
+  * @author taek <leekt216@gmail.com>
+  */
+ import { type CaptureContext, captureRecord } from "@oaath/protocol";
+-import { encodeAbiParameters, type Hash, keccak256 } from "viem";
++import type { Hash } from "cetane";
++import { encodeAbiParameters, keccak256 } from "cetane/utils";
+ import type { PreparedPaymaster } from "../prepared-user-operation.js";
+ import { capabilityInvalid } from "../routing/types.js";
+ 
+diff --git a/packages/sdk/src/provider/prepared-call-store.ts b/packages/sdk/src/provider/prepared-call-store.ts
+index 841fce7..a8c0441 100644
+--- a/packages/sdk/src/provider/prepared-call-store.ts
++++ b/packages/sdk/src/provider/prepared-call-store.ts
+@@ -28,7 +28,7 @@ import {
+   exactCapturedRecord,
+   exactRecord as exactRecordValue,
+ } from "@oaath/protocol";
+-import type { Hash } from "viem";
++import type { Hash } from "cetane";
+ import {
+   type PreparedUserOperation,
+   parsePreparedUserOperation,
+diff --git a/packages/sdk/src/routing/capabilities.ts b/packages/sdk/src/routing/capabilities.ts
+index 16eeb57..4dc0b49 100644
+--- a/packages/sdk/src/routing/capabilities.ts
++++ b/packages/sdk/src/routing/capabilities.ts
+@@ -13,7 +13,7 @@ import {
+   captureRecord,
+   exactCapturedRecord,
+ } from "@oaath/protocol";
+-import { getAddress } from "viem";
++import { getAddress } from "cetane/utils";
+ import {
+   capabilityInvalid,
+   exactRoutingRecord,
+-- 
+2.54.0 (Apple Git-157)
+

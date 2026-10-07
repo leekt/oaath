@@ -1,0 +1,41 @@
+From ac05f790b2f4c4ee476a99a473db4d9deed250b9 Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 16:05:03 +0900
+Subject: [PATCH 9/9] Verify scoped signer package exports
+
+---
+ packages/server/test/package.test.ts | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/packages/server/test/package.test.ts b/packages/server/test/package.test.ts
+index 62552c0..ca29b6c 100644
+--- a/packages/server/test/package.test.ts
++++ b/packages/server/test/package.test.ts
+@@ -61,6 +61,7 @@ describe("package boundary", () => {
+       "OaathRelayError",
+       "REDACTED",
+       "RELAY_ERROR_STATUS",
++      "SessionSignerError",
+       "claimEncryptedArtifact",
+       "consumeAuthorizationCode",
+       "createAuthorizationRequest",
+@@ -68,6 +69,7 @@ describe("package boundary", () => {
+       "createMemoryRelayStore",
+       "createMemoryServiceDirectoryStore",
+       "createRelayHandler",
++      "createScopedSessionSigner",
+       "createServiceDirectory",
+       "fetchAuthorizationRequest",
+       "isCodeChallengeS256",
+@@ -93,6 +95,8 @@ describe("package boundary", () => {
+       "createPostgresRelayStore",
+       "createPostgresServiceDirectorySchema",
+       "createPostgresServiceDirectoryStore",
++      "createPostgresSignerSchema",
++      "createPostgresSignerStore",
+     ]);
+   });
+ 
+-- 
+2.54.0 (Apple Git-157)
+

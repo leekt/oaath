@@ -1,27 +1,35 @@
-# OAAth prerequisites
+# Upstream ownership and reproducible prerequisites
 
-The three focused patches apply in order to
-`895bc93b6408537d736100ac20d577711313717c`. They keep canonical DCA terms in
-protocol, executor enforcement in contracts, and keyed publication in SDK.
-No Moesi dependency enters OAAth. Each patch stays under the repository's
-25-file / 2,000-added-line limit.
+The current product consumes exact local tarballs. No sibling's uncommitted
+work is imported. The original OAAth checkout and its RPC dedup change remain
+untouched. DCA codec/contracts belong in this repository; the old DCA-specific
+upstream patches are replaced by the authority/operation/custody series here.
 
-These are isolated prerequisites; the sibling checkout's RPC deduplication
-change is untouched. The transfer-only `IMPLEMENTATION_PLAN.md` at that
-baseline is superseded for this milestone by this repository's
-[implementation plan](../IMPLEMENTATION_PLAN.md).
-
-To recreate the exact source worktree, from this repository:
+OAAth source: clean `automation-foundation` branch at `ac05f79`, based on
+`2f12e82` (merged Cetane protocol prerequisite). Patches in `oaath/` apply in
+order. Each commit stays within 25 non-generated files and 2,000 added lines.
 
 ```sh
-git -C ../oaath worktree add -b dogfood-dca-foundation "$PWD/.local/oaath-dca" \
-  895bc93b6408537d736100ac20d577711313717c
-git -C .local/oaath-dca am "$PWD"/upstream/oaath/*.patch
-bun install --cwd .local/oaath-dca
-forge build --root .local/oaath-dca/packages/contracts
+git -C ../oaath worktree add -b automation-replay "$PWD/.local/oaath-automation" 2f12e82
+git -C .local/oaath-automation am "$PWD"/upstream/oaath/*.patch
+bun install --cwd .local/oaath-automation
 ```
 
-Normal product installation uses the retained tarballs and requires no source
-worktree. `scripts/pack-dependencies.mjs` is a maintainer command: it rebuilds
-from `.local/oaath-dca`, `.local/moesi-dca` and `../cetane`, then records artifact
-checksums. Repacking a changed sibling source requires rerunning the proof.
+Use a different path/branch if the working tree already exists. These are local
+prerequisites, not published package versions or merged upstream PRs.
+
+| Repository | Owned capability | Issue / source |
+| --- | --- | --- |
+| OAAth | Cetane runtime adapter and neutral wallet types; no viem production dependency | [#385](https://github.com/leekt/oaath/issues/385) |
+| OAAth | Stable scoped signer registry, sealed custody, PostgreSQL atomic creation/recovery | [#386](https://github.com/leekt/oaath/issues/386) |
+| OAAth | Durable keyed execution over existing Grant publication owner | First patch in this series |
+| Cetane | Key generation/address, ABI, typed data, operation hash, receipt codecs | [#7](https://github.com/leekt/cetane/issues/7), committed source `9862f7c` |
+| Moesi | Finalized/safe snapshots and shared per-method admission | [#89](https://github.com/leekt/moesi/issues/89), [#90](https://github.com/leekt/moesi/issues/90), committed source `0ef5be6` |
+
+Cetane and Moesi already contain those capabilities; no duplicate product-owned
+observer or cryptographic library is introduced. Their clean worktrees are
+`.local/cetane-automation` and `.local/moesi-automation`. Rebuild with
+`scripts/pack-dependencies.mjs` after preparing these source worktrees and
+building `recipes/dca/contracts`. `vendor/provenance.json` records exact hashes.
+The product uses file overrides so package consumers resolve those exact
+artifacts, not a similarly numbered registry package.
