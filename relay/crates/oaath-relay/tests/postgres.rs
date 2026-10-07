@@ -11,6 +11,7 @@ mod support;
 use std::sync::Arc;
 
 use oaath_relay::error::RelayErrorCode as E;
+use oaath_relay::registry::{ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole};
 use oaath_relay::store::RelayStore;
 use oaath_relay::store::postgres::{PostgresRelayStore, create_relay_schema};
 use serde_json::{Value, json};
@@ -247,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v5 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v6 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v5");
+    assert_eq!(version, "oaath.relay-postgres-schema/v6");
     pool.close().await;
 }
 
@@ -274,4 +275,261 @@ async fn projects_an_unreachable_database_to_store_unavailable() {
     ))
     .await
     .failure(E::StoreUnavailable);
+}
+
+fn portal_request(
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> axum::http::Request<axum::body::Body> {
+    let builder = axum::http::Request::builder()
+        .method(method)
+        .uri(path)
+        .header("sec-fetch-site", "same-origin");
+    match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string())),
+        None => builder.body(axum::body::Body::empty()),
+    }
+    .unwrap()
+}
+
+fn ecdsa_profile() -> Value {
+    json!({
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111",
+    })
+}
+
+async fn register(h: &Harness, profile: Value) -> String {
+    let reply = h
+        .send(portal_request(
+            "POST",
+            "/portal/signers",
+            Some(json!({ "profile": profile })),
+        ))
+        .await;
+    text(reply.ok(200), "signer_id").to_owned()
+}
+
+async fn create_account(h: &Harness, signer_id: &str) -> Reply {
+    h.send(portal_request(
+        "POST",
+        "/portal/accounts",
+        Some(json!({ "root_signer_id": signer_id })),
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn keeps_signers_and_accounts_across_restarts() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let first = fixture.process(clock.clone()).await;
+    let signer = register(&first, ecdsa_profile()).await;
+    let account = create_account(&first, &signer).await.ok(201).clone();
+    shutdown(first).await;
+
+    // A new process answers the same signer and allocates the next index.
+    let second = fixture.process(clock.clone()).await;
+    assert_eq!(register(&second, ecdsa_profile()).await, signer);
+    clock.advance(1);
+    let next = create_account(&second, &signer).await.ok(201).clone();
+    assert_eq!(next["profile"]["accountIndex"], json!("1"));
+    shutdown(second).await;
+
+    let third = fixture.process(clock).await;
+    let listed = third
+        .send(portal_request(
+            "GET",
+            &format!("/portal/signers/{signer}/accounts"),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let ids: Vec<&Value> = listed["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| &entry["account_id"])
+        .collect();
+    assert_eq!(ids, [&account["account_id"], &next["account_id"]]);
+    assert_eq!(listed["accounts"][0]["address"], account["address"]);
+    assert_eq!(listed["accounts"][0]["role"], json!("root"));
+    shutdown(third).await;
+}
+
+#[tokio::test]
+async fn allocates_distinct_indices_across_independent_connections() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let processes = [
+        fixture.process(clock.clone()).await,
+        fixture.process(clock.clone()).await,
+        fixture.process(clock.clone()).await,
+    ];
+    // Concurrent registrations of one profile converge on one signer.
+    let (a, b, c) = tokio::join!(
+        register(&processes[0], ecdsa_profile()),
+        register(&processes[1], ecdsa_profile()),
+        register(&processes[2], ecdsa_profile()),
+    );
+    assert!(a == b && b == c);
+    let (x, y, z) = tokio::join!(
+        create_account(&processes[0], &a),
+        create_account(&processes[1], &a),
+        create_account(&processes[2], &a),
+    );
+    let mut indices: Vec<String> = [x, y, z]
+        .iter()
+        .map(|reply| {
+            reply.ok(201)["profile"]["accountIndex"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    indices.sort();
+    assert_eq!(indices, ["0", "1", "2"]);
+    for process in processes {
+        shutdown(process).await;
+    }
+}
+
+#[tokio::test]
+async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let h = fixture.process(clock.clone()).await;
+    let root = register(&h, ecdsa_profile()).await;
+    let other = register(
+        &h,
+        json!({
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x2222222222222222222222222222222222222222",
+        }),
+    )
+    .await;
+    let account = create_account(&h, &root).await.ok(201).clone();
+    shutdown(h).await;
+
+    let membership =
+        |account_id: &str, role: MembershipRole, request_id: Option<&str>| AccountSignerRecord {
+            version: ACCOUNT_SIGNER_RECORD_VERSION,
+            account_id: account_id.to_owned(),
+            signer_id: other.clone(),
+            role,
+            request_id: request_id.map(str::to_owned),
+            created_at: CLOCK_START,
+        };
+    let h = fixture.process(clock.clone()).await;
+    let mut transaction = h.store.begin().await.unwrap();
+    let account_id = text(&account, "account_id");
+    assert!(
+        !transaction
+            .insert_account_signer(&membership(account_id, MembershipRole::Root, None))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !transaction
+            .insert_account_signer(&membership("unknown-account", MembershipRole::Root, None))
+            .await
+            .unwrap()
+    );
+    transaction.commit().await.unwrap();
+    shutdown(h).await;
+
+    // The partial unique index itself refuses a second root, without the
+    // guarded insert.
+    let pool = fixture.pool().await;
+    let inserted = sqlx::query(
+        "INSERT INTO oaath_account_signer_v1 \
+         (account_id, signer_id, record_version, role, request_id, created_at) \
+         VALUES ($1, $2, $3, 'root', NULL, 0)",
+    )
+    .bind(account_id)
+    .bind(&other)
+    .bind(ACCOUNT_SIGNER_RECORD_VERSION)
+    .execute(&pool)
+    .await;
+    assert!(inserted.is_err());
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn reads_a_tampered_account_address_or_validator_as_unreadable() {
+    let Some(url) = database() else { return };
+    for tamper in [
+        format!(
+            "UPDATE oaath_account_v1 SET address = '0x{}'",
+            "99".repeat(20)
+        ),
+        "UPDATE oaath_account_v1 SET owner_validator = NULL".to_owned(),
+        format!(
+            "UPDATE oaath_account_v1 SET owner_validator = '0x{}'",
+            "22".repeat(20)
+        ),
+    ] {
+        let fixture = Fixture::create(url.clone()).await;
+        let h = fixture.process(TestClock::new()).await;
+        let signer = register(&h, ecdsa_profile()).await;
+        create_account(&h, &signer).await.ok(201);
+        let pool = fixture.pool().await;
+        sqlx::raw_sql(&tamper).execute(&pool).await.unwrap();
+        pool.close().await;
+        h.send(portal_request(
+            "GET",
+            &format!("/portal/signers/{signer}/accounts"),
+            None,
+        ))
+        .await
+        .failure(E::RecordUnreadable);
+        shutdown(h).await;
+    }
+}
+
+#[tokio::test]
+async fn recognises_a_passkey_by_credential_id_across_a_restart() {
+    use base64::Engine;
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let credential_id = b"credential-1";
+    let profile = json!({
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": format!(
+            "0x{}",
+            hex::encode(alloy_primitives::keccak256(credential_id))
+        ),
+    });
+    let first = fixture.process(clock.clone()).await;
+    let signer = register(&first, profile.clone()).await;
+    shutdown(first).await;
+
+    let second = fixture.process(clock).await;
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(credential_id);
+    let found = second
+        .send(portal_request(
+            "GET",
+            &format!("/portal/signers/by-credential/{encoded}"),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(
+        found,
+        json!({ "signer_id": signer, "kind": "webauthn", "profile": profile })
+    );
+    shutdown(second).await;
 }

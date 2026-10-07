@@ -21,6 +21,7 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
 };
+use crate::registry::{AccountRecord, AccountSignerRecord, MembershipRole, SignerRecord};
 
 #[derive(Clone, Default)]
 struct Tables {
@@ -29,6 +30,9 @@ struct Tables {
     codes: HashMap<String, Value>,
     artifacts: HashMap<String, Value>,
     invalidations: HashMap<String, Value>,
+    signers: HashMap<String, Value>,
+    accounts: HashMap<String, Value>,
+    memberships: Vec<Value>,
 }
 
 #[derive(Default)]
@@ -266,6 +270,122 @@ impl RelayTransaction for MemoryTransaction {
         self.staged
             .artifacts
             .insert(artifact_id.to_owned(), to_value(&record));
+        Ok(true)
+    }
+
+    async fn lock_signer(&mut self, signer_id: &str) -> RelayResult<Option<SignerRecord>> {
+        read(&self.staged.signers, signer_id, SignerRecord::parse)
+    }
+
+    async fn lock_signer_by_profile_hash(
+        &mut self,
+        profile_hash: &str,
+    ) -> RelayResult<Option<SignerRecord>> {
+        let mut found = None;
+        for value in self.staged.signers.values() {
+            let record = SignerRecord::parse(value)?;
+            if record.profile_hash == profile_hash {
+                found = Some(record);
+            }
+        }
+        Ok(found)
+    }
+
+    async fn list_signers_by_authenticator(
+        &mut self,
+        authenticator_id_hash: &str,
+    ) -> RelayResult<Vec<SignerRecord>> {
+        let mut signers = Vec::new();
+        for value in self.staged.signers.values() {
+            let record = SignerRecord::parse(value)?;
+            if record.authenticator_id_hash()?.as_deref() == Some(authenticator_id_hash) {
+                signers.push(record);
+            }
+        }
+        signers.sort_by(|a, b| (a.created_at, &a.signer_id).cmp(&(b.created_at, &b.signer_id)));
+        Ok(signers)
+    }
+
+    async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool> {
+        if self
+            .lock_signer_by_profile_hash(&record.profile_hash)
+            .await?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.signers,
+            &record.signer_id,
+            to_value(record),
+        ))
+    }
+
+    async fn list_signer_accounts(
+        &mut self,
+        signer_id: &str,
+    ) -> RelayResult<Vec<(AccountRecord, AccountSignerRecord)>> {
+        let mut accounts = Vec::new();
+        for value in &self.staged.memberships {
+            let membership = AccountSignerRecord::parse(value)?;
+            if membership.signer_id != signer_id {
+                continue;
+            }
+            let account = read(
+                &self.staged.accounts,
+                &membership.account_id,
+                AccountRecord::parse,
+            )?
+            .ok_or(RelayErrorCode::RecordUnreadable)?;
+            accounts.push((account, membership));
+        }
+        accounts.sort_by(|(a, _), (b, _)| {
+            (a.created_at, &a.account_id).cmp(&(b.created_at, &b.account_id))
+        });
+        Ok(accounts)
+    }
+
+    async fn insert_account(&mut self, record: &AccountRecord) -> RelayResult<bool> {
+        if !self.staged.signers.contains_key(&record.root_signer_id) {
+            return Ok(false);
+        }
+        for value in self.staged.accounts.values() {
+            let stored = AccountRecord::parse(value)?;
+            if stored.address == record.address
+                || (stored.root_signer_id == record.root_signer_id
+                    && stored.account_index == record.account_index)
+            {
+                return Ok(false);
+            }
+        }
+        Ok(insert(
+            &mut self.staged.accounts,
+            &record.account_id,
+            to_value(record),
+        ))
+    }
+
+    async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool> {
+        if !self.staged.accounts.contains_key(&record.account_id)
+            || !self.staged.signers.contains_key(&record.signer_id)
+        {
+            return Ok(false);
+        }
+        for value in &self.staged.memberships {
+            let stored = AccountSignerRecord::parse(value)?;
+            if stored.account_id != record.account_id {
+                continue;
+            }
+            let second_root =
+                stored.role == MembershipRole::Root && record.role == MembershipRole::Root;
+            let repeated = stored.signer_id == record.signer_id
+                && stored.request_id.is_some()
+                && stored.request_id == record.request_id;
+            if second_root || repeated {
+                return Ok(false);
+            }
+        }
+        self.staged.memberships.push(to_value(record));
         Ok(true)
     }
 
