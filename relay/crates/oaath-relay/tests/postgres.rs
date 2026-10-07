@@ -250,11 +250,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v13 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v14 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v13");
+    assert_eq!(version, "oaath.relay-postgres-schema/v14");
     pool.close().await;
 }
 
@@ -1218,5 +1218,89 @@ async fn keeps_templates_and_a_template_approved_member_grant_across_restarts() 
         .clone();
     assert_eq!(grant["status"], "approved");
     assert_eq!(grant["permission_request"], prepared["permission_request"]);
+    shutdown(h).await;
+}
+
+#[tokio::test]
+async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts() {
+    use alloy_primitives::{Address, B256};
+    use oaath_relay::account_import::{AccountImport, import_digest};
+    use support::grant::{Root, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::P256(p256::ecdsa::SigningKey::from_slice(&[0x22; 32]).unwrap());
+    let address = "0x00000000000000000000000000000000000000ab";
+    let fingerprint = format!("0x{}", "22".repeat(32));
+
+    let chain = support::chain::stub_chain(
+        421_614,
+        &[(
+            address,
+            support::chain::StubAccount::kernel(
+                &oaath_protocol::identity::parse_owner_credential_profile(&root.profile()).unwrap(),
+            ),
+        )],
+    )
+    .await;
+    let process = |clock: Arc<TestClock>| {
+        let reader = chain.reader();
+        async {
+            let store: Arc<dyn RelayStore> =
+                Arc::new(PostgresRelayStore::owning(fixture.pool().await));
+            harness_on(store, clock, move |options| options.chain = Some(reader))
+        }
+    };
+    let h = process(clock.clone()).await;
+    let (signer_id, cookie) = sign_in(&h, &root).await;
+    let digest = import_digest(&AccountImport {
+        account: address.parse::<Address>().unwrap(),
+        ownerProfileHash: oaath_protocol::identity::parse_owner_credential_profile(&root.profile())
+            .unwrap()
+            .hash(),
+        inventoryFingerprint: fingerprint.parse::<B256>().unwrap(),
+        issuedAt: CLOCK_SECONDS,
+        nonce: "import-1".to_owned(),
+    });
+    let body = json!({
+        "root_signer_id": signer_id,
+        "address": address,
+        "inventory_fingerprint": fingerprint,
+        "issued_at": CLOCK_SECONDS,
+        "nonce": "import-1",
+        "signature": format!("0x{}", hex::encode(root.sign(digest))),
+    });
+    let import = || {
+        portal_call(
+            "POST",
+            "/portal/accounts/import",
+            Some(&cookie),
+            Some(body.clone()),
+        )
+    };
+    let imported = h.send(import()).await.ok(201).clone();
+    shutdown(h).await;
+
+    let h = process(clock).await;
+    h.send(import()).await.failure(E::AlreadyDecided);
+    let accounts = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/signers/{signer_id}/accounts"),
+            Some(&cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(accounts["accounts"][0]["profile"], imported["profile"]);
+    let mut transaction = h.store.begin().await.unwrap();
+    let evidence = transaction
+        .lock_account_import(text(&imported, "account_id"))
+        .await
+        .unwrap()
+        .unwrap();
+    transaction.rollback().await;
+    assert_eq!(evidence.inventory_fingerprint, fingerprint);
     shutdown(h).await;
 }

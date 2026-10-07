@@ -22,6 +22,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hashOwnerCredentialProfile } from "@oaath/protocol";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
   createKernelRuntime,
@@ -126,6 +127,23 @@ async function startRelay(issuer: string) {
   await writeFile(join(work, "id-token.pem"), privateKey.export({ type: "pkcs8", format: "pem" }));
   idTokenKid = await calculateJwkThumbprint(publicKey.export({ format: "jwk" }) as JWK);
   const port = await freePort();
+  // The relay proves an import's root on chain through this loopback hop to
+  // whichever local chain a test started; nothing reaches a public RPC.
+  const rpcPort = await listen(async (incoming, outgoing) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) chunks.push(chunk as Buffer);
+    try {
+      const upstream = await fetch(rpcUpstream, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: Buffer.concat(chunks),
+      });
+      outgoing.writeHead(upstream.status, { "content-type": "application/json" });
+      outgoing.end(Buffer.from(await upstream.arrayBuffer()));
+    } catch {
+      outgoing.writeHead(502).end();
+    }
+  });
   relay = spawn(join(RELAY_DIR, "target/debug/oaath-relay"), [], {
     stdio: ["ignore", "ignore", "inherit"],
     env: {
@@ -135,6 +153,7 @@ async function startRelay(issuer: string) {
       OAATH_KMS_KEY: randomBytes(32).toString("hex"),
       OAATH_ISSUER: issuer,
       OAATH_ID_TOKEN_KEY: join(work, "id-token.pem"),
+      OAATH_RPC_421614: `http://127.0.0.1:${rpcPort}/`,
     },
   });
   const base = `http://127.0.0.1:${port}`;
@@ -1363,6 +1382,12 @@ describe("importing an existing account through the portal's chain-read proxy", 
     expect(
       await popup.$eval(".inventory", (node) => (node as HTMLElement).dataset.fingerprint),
     ).not.toBe(fingerprint);
+    // Importing an account with modules outside OAAth needs an acknowledgment.
+    const importButton = () =>
+      popup.$eval("::-p-text(Import and sign)", (node) => (node as HTMLButtonElement).disabled);
+    expect(await importButton()).toBe(true);
+    await click(popup, ".acknowledge input");
+    expect(await importButton()).toBe(false);
 
     expect(await inspect(foreign)).toContain(
       "This signer is not the account's root owner. Sign in with the signer that owns the account.",
@@ -1374,7 +1399,112 @@ describe("importing an existing account through the portal's chain-read proxy", 
     expect(await inspect(`0x${"12".repeat(20)}`)).toContain(
       "No contract is deployed at this address on Arbitrum Sepolia.",
     );
-    await popup.close();
+
+    // The root imports its account with one signature and logs in with it.
+    await inspect(owned);
+    const signatures = walletSignatures;
+    await click(popup, "::-p-text(Import and sign)");
+    const imported = await popup.waitForSelector(
+      `button[aria-label='Smart account ${owned.toLowerCase()}, Owner']`,
+    );
+    expect(walletSignatures).toBe(signatures + 1);
+    expect(await imported?.evaluate((node) => (node as HTMLElement).innerText)).toContain(
+      "Imported",
+    );
+    await imported?.click();
+    expect(await outcome(dappPage.page)).toBe("signed-in");
+    const login: Record<string, unknown> = await dappPage.page.evaluate(() => {
+      const value = (window as unknown as { oaathLogin: Record<string, unknown> }).oaathLogin;
+      const clientKey = Object.keys(localStorage).find((key) =>
+        key.startsWith("oaath-example-client:"),
+      );
+      return { ...value, clientId: clientKey ? localStorage.getItem(clientKey) : null };
+    });
+    const { payload } = await jwtVerify(
+      String(login.idToken),
+      createRemoteJWKSet(new URL(`${portal}/oauth/jwks`)),
+      { issuer: portal, audience: String(login.clientId), algorithms: ["ES256"] },
+    );
+    expect(payload.sub).toBe(owned.toLowerCase());
+    expect(payload.oaath_account).toMatchObject({
+      address: owned.toLowerCase(),
+      kernelVersion: "0.4.0",
+    });
+    expect(payload.oaath_accounts).toContainEqual({
+      address: owned.toLowerCase(),
+      role: "root",
+      status: "active",
+    });
+
+    // A second import of the same account is refused.
+    const again = await openDapp();
+    const retry = await startLogin(again);
+    await click(retry, "::-p-text(E2E Wallet)");
+    await retry.waitForSelector("#account-heading");
+    await click(retry, "::-p-text(Import an existing account)");
+    await retry.waitForSelector("#import-address");
+    await retry.type("#import-address", owned);
+    await click(retry, "::-p-text(Check account)");
+    await click(retry, "::-p-text(Import and sign)");
+    await retry.waitForSelector("::-p-text(This account is already in OAAth.)");
+
+    // The relay proves the root on chain itself: an API call that skips the
+    // portal's checks cannot import an EOA, a non-Kernel contract, or a
+    // Kernel account whose root is another key.
+    const ownerProfileHash = hashOwnerCredentialProfile({
+      version: "oaath.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: WALLET_ADDRESS,
+    });
+    for (const address of [`0x${"12".repeat(20)}`, deployment.entryPoint.address, foreign]) {
+      const issuedAt = Math.floor(Date.now() / 1000) - 5;
+      const fingerprint = `0x${"22".repeat(32)}` as const;
+      const signature = await WALLET.sign({
+        hash: hashTypedData({
+          domain: { name: "OAAth", version: "1" },
+          types: {
+            AccountImport: [
+              { name: "account", type: "address" },
+              { name: "ownerProfileHash", type: "bytes32" },
+              { name: "inventoryFingerprint", type: "bytes32" },
+              { name: "issuedAt", type: "uint64" },
+              { name: "nonce", type: "string" },
+            ],
+          },
+          primaryType: "AccountImport",
+          message: {
+            account: address as `0x${string}`,
+            ownerProfileHash,
+            inventoryFingerprint: fingerprint,
+            issuedAt: BigInt(issuedAt),
+            nonce: "direct-1",
+          },
+        }),
+      });
+      const refused = await retry.evaluate(
+        async (body) => {
+          const [signer] = JSON.parse(localStorage.getItem("oaath.portal.signers/v1") ?? "[]") as {
+            signer_id: string;
+          }[];
+          const response = await fetch("/portal/accounts/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...body, root_signer_id: signer?.signer_id }),
+          });
+          return { status: response.status, body: await response.json() };
+        },
+        {
+          address: address.toLowerCase(),
+          inventory_fingerprint: fingerprint,
+          issued_at: issuedAt,
+          nonce: "direct-1",
+          signature,
+        },
+      );
+      expect(refused).toEqual({ status: 403, body: { error: { code: "relay_forbidden" } } });
+    }
+    await retry.close();
+    await again.page.close();
     await dappPage.page.close();
   });
 });

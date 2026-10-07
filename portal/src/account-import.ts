@@ -3,14 +3,19 @@
  * signed-in signer is its root, and every module installed on it.
  *
  * Every read goes through the portal's own budgeted `/rpc/421614` proxy. The
- * checks stop at the first failure with a plain explanation; nothing is signed
- * or saved here. The inventory fingerprint is what an owner later acknowledges
- * when submitting the import (O4b), so it commits to the account, the root, the
- * coverage and every module outside OAAth.
+ * checks stop at the first failure with a plain explanation. The inventory
+ * fingerprint is what the root acknowledges when it signs the import
+ * (`signAccountImport`), so it commits to the account, the root, the coverage
+ * and every module outside OAAth. The relay records what the root signed; it
+ * reads no chain itself.
  *
  * @author taek <leekt216@gmail.com>
  */
-import { captureAddress, type OwnerCredentialProfile } from "@oaath/protocol";
+import {
+  captureAddress,
+  hashOwnerCredentialProfile,
+  type OwnerCredentialProfile,
+} from "@oaath/protocol";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
   createKernelRuntime,
@@ -25,7 +30,10 @@ import {
   readKernelModules,
 } from "@oaath/sdk/kernel";
 import { createPublicClient, http } from "cetane";
-import { keccak256, toHex } from "cetane/utils";
+import { hashTypedData, keccak256, toHex } from "cetane/utils";
+import type { ImportAccountRequest } from "./api.js";
+import { rootKey } from "./root-signing.js";
+import type { RememberedSigner } from "./signers.js";
 
 export const IMPORT_CHAIN_ID = 421_614;
 export const IMPORT_NETWORK = "Arbitrum Sepolia";
@@ -401,4 +409,65 @@ export async function inspectAccount(input: {
       inventoryError: `The account's installed modules could not be read from ${IMPORT_NETWORK}. Try again.`,
     };
   }
+}
+
+const IMPORT_TYPES = {
+  AccountImport: [
+    { name: "account", type: "address" },
+    { name: "ownerProfileHash", type: "bytes32" },
+    { name: "inventoryFingerprint", type: "bytes32" },
+    { name: "issuedAt", type: "uint64" },
+    { name: "nonce", type: "string" },
+  ],
+} as const;
+
+/**
+ * The root's one signature that imports an account: an OAAth EIP-712
+ * statement over the account, the root's own profile, the inventory it
+ * acknowledged, the time and a fresh nonce. Nothing is sent on-chain.
+ */
+export async function signAccountImport(input: {
+  readonly inventory: AccountInventory;
+  readonly signer: RememberedSigner;
+}): Promise<ImportAccountRequest> {
+  const { inventory, signer } = input;
+  // A little behind this device's clock, so a fast clock is not "in the future".
+  const issuedAt = Math.floor(Date.now() / 1_000) - 5;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const message = {
+    account: inventory.account.toLowerCase() as `0x${string}`,
+    ownerProfileHash: hashOwnerCredentialProfile(signer.profile),
+    inventoryFingerprint: inventory.fingerprint,
+    issuedAt,
+    nonce,
+  };
+  const domain = { name: "OAAth", version: "1" } as const;
+  const digest = hashTypedData({
+    domain,
+    types: IMPORT_TYPES,
+    primaryType: "AccountImport",
+    message: { ...message, issuedAt: BigInt(issuedAt) },
+  });
+  const key = await rootKey(signer, {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+      ],
+      ...IMPORT_TYPES,
+    },
+    primaryType: "AccountImport",
+    domain,
+    message,
+  });
+  return {
+    root_signer_id: signer.signer_id,
+    address: message.account,
+    inventory_fingerprint: inventory.fingerprint,
+    issued_at: issuedAt,
+    nonce,
+    signature: await key.sign(digest),
+  };
 }

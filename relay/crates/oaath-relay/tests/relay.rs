@@ -17,7 +17,7 @@ use oaath_relay::bootstrap::{
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::{RelayStore, RelayTransaction};
-use oaath_relay::{Relay, link, oauth, policy, records, registry, session};
+use oaath_relay::{Relay, account_import, link, oauth, policy, records, registry, session};
 use serde_json::{Value, json};
 use support::*;
 
@@ -111,6 +111,8 @@ ambiguous_transaction! {
     insert_policy_template(r: &policy::PolicyTemplateRecord) -> RelayResult<bool>;
     update_policy_template(r: &policy::PolicyTemplateRecord) -> RelayResult<bool>;
     delete_policy_template(id: &str) -> RelayResult<bool>;
+    insert_account_import(r: &account_import::AccountImportRecord) -> RelayResult<bool>;
+    lock_account_import(id: &str) -> RelayResult<Option<account_import::AccountImportRecord>>;
     remove_link_request(id: &str, at: u64) -> RelayResult<bool>;
     lock_oauth_client(id: &str) -> RelayResult<Option<oauth::records::OAuthClientRecord>>;
     insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;

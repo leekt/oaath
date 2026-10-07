@@ -4,10 +4,12 @@
 //! `{"error":{"code":...}}` envelope) is identical to the TypeScript relay so
 //! the SDK, phone, and extension clients work unchanged.
 
+pub mod account_import;
 pub mod authentication;
 pub mod authority;
 pub mod authorization;
 pub mod bootstrap;
+pub mod chain;
 pub mod clock;
 pub mod config;
 pub mod display;

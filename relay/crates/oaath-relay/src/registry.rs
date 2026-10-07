@@ -27,8 +27,8 @@
 
 use oaath_protocol::capture::parse_json;
 use oaath_protocol::identity::{
-    KernelAccountProfile, KernelFactoryRoute, OwnerCredentialProfile, parse_kernel_account_profile,
-    parse_owner_credential_profile,
+    KernelAccountProfile, KernelExistingAccountVersion, KernelFactoryRoute, OwnerCredentialProfile,
+    parse_kernel_account_profile, parse_owner_credential_profile,
 };
 use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use serde::Serialize;
@@ -145,8 +145,9 @@ impl SignerRecord {
     }
 }
 
-/// One factory-derived Kernel 0.4.0 account whose single policy-free root is
-/// its root signer's credential.
+/// One Kernel 0.4.0 account whose single policy-free root is its root
+/// signer's credential: factory-derived by the relay (at an index), or an
+/// existing account its root imported (`account_import.rs`, no index).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountRecord {
@@ -155,7 +156,8 @@ pub struct AccountRecord {
     /// Lowercase counterfactual address.
     pub address: String,
     pub root_signer_id: String,
-    pub account_index: u64,
+    /// The factory index of a derived account; none for an imported one.
+    pub account_index: Option<u64>,
     /// The ECDSA root validator the address binds (the bootstrap
     /// `ownerValidator`), or none for a protocol-pinned validator.
     pub owner_validator: Option<String>,
@@ -191,7 +193,10 @@ impl AccountRecord {
             account_id: identifier(r.get("accountId"))?,
             address: text(r.get("address"))?.to_owned(),
             root_signer_id: identifier(r.get("rootSignerId"))?,
-            account_index: timestamp(r.get("accountIndex"), UNREADABLE)?,
+            account_index: match r.get("accountIndex") {
+                Some(Value::Null) => None,
+                other => Some(timestamp(other, UNREADABLE)?),
+            },
             owner_validator: match r.get("ownerValidator") {
                 Some(Value::Null) => None,
                 other => Some(text(other)?.to_owned()),
@@ -199,20 +204,30 @@ impl AccountRecord {
             profile: text(r.get("profile"))?.to_owned(),
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         };
-        // Only a canonical factory-derived profile at the stored index and
-        // its derived address.
+        // A canonical factory-derived profile at the stored index and its
+        // derived address, or an imported 0.4.0 account at its own address.
         let account = record.account_profile()?;
         let canonical = account.to_json().to_string();
-        let KernelAccountProfile::Derived(profile) = &account else {
-            return Err(UNREADABLE);
-        };
-        if profile.factory_route != KernelFactoryRoute::KernelFactory
-            || profile.account_index != record.account_index.to_string()
-            || record.profile != canonical
-            || owner_validator_for(&profile.owner_credential) != record.owner_validator
-            || derive_account_address(&account, record.owner_validator.as_deref()).as_deref()
-                != Some(record.address.as_str())
+        if record.profile != canonical
+            || owner_validator_for(account.owner_credential()) != record.owner_validator
         {
+            return Err(UNREADABLE);
+        }
+        let consistent = match (&account, record.account_index) {
+            (KernelAccountProfile::Derived(profile), Some(index)) => {
+                profile.factory_route == KernelFactoryRoute::KernelFactory
+                    && profile.account_index == index.to_string()
+                    && derive_account_address(&account, record.owner_validator.as_deref())
+                        .as_deref()
+                        == Some(record.address.as_str())
+            }
+            (KernelAccountProfile::Existing(profile), None) => {
+                profile.kernel_version == KernelExistingAccountVersion::V0_4_0
+                    && profile.address == record.address
+            }
+            _ => false,
+        };
+        if !consistent {
             return Err(UNREADABLE);
         }
         Ok(record)

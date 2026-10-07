@@ -1,7 +1,8 @@
 /**
  * "Import an existing account": checks that the signed-in signer is the root of
  * a deployed Kernel v4 account on Arbitrum Sepolia and lists every installed
- * module. Reading signs and saves nothing; the import itself is submitted later.
+ * module. Checking signs and saves nothing; importing asks the root to sign one
+ * statement that acknowledges this reading, and adds the account.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -12,7 +13,10 @@ import {
   type InventoryModule,
   inspectAccount,
   type ModuleOrigin,
+  signAccountImport,
 } from "./account-import.js";
+import { type PortalAccount, portalApi } from "./api.js";
+import { message } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 const STATUS_MARK = { pass: "✓", fail: "✕", unknown: "?" } as const;
@@ -52,15 +56,25 @@ function ModuleRow({ module }: { module: InventoryModule }) {
   );
 }
 
-export function ImportAccount({ signer }: { signer: RememberedSigner }) {
+export function ImportAccount({
+  signer,
+  onImported,
+}: {
+  signer: RememberedSigner;
+  onImported: (account: PortalAccount) => void;
+}) {
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [inspection, setInspection] = useState<AccountInspection | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function check(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setInspection(null);
+    setAcknowledged(false);
+    setError(null);
     try {
       setInspection(
         await inspectAccount({
@@ -75,6 +89,26 @@ export function ImportAccount({ signer }: { signer: RememberedSigner }) {
   }
 
   const inventory = inspection?.inventory ?? null;
+  // Modules outside OAAth, or a reading that could not confirm every module,
+  // need the owner's explicit acknowledgment.
+  const caveats = inventory !== null && (inventory.outside > 0 || !inventory.complete);
+
+  async function submit() {
+    if (!inventory) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await portalApi.importAccount(await signAccountImport({ inventory, signer }));
+      onImported({ ...created, role: "root", status: "active" });
+    } catch (failure) {
+      setError(
+        (failure as { code?: string })?.code === "relay_already_decided"
+          ? "This account is already in OAAth."
+          : message(failure),
+      );
+    }
+    setBusy(false);
+  }
   return (
     <section id="import-account" className="import" aria-labelledby="import-heading">
       <h2 id="import-heading">Import an existing account</h2>
@@ -152,7 +186,33 @@ export function ImportAccount({ signer }: { signer: RememberedSigner }) {
               {shortAddress(inventory.fingerprint)}
             </span>
           </p>
+          {caveats && (
+            <label className="acknowledge">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(event) => setAcknowledged(event.target.checked)}
+              />
+              I understand the modules outside OAAth keep their authority over this account.
+            </label>
+          )}
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || (caveats && !acknowledged)}
+            onClick={submit}
+          >
+            Import and sign
+          </button>
+          <p className="quiet">
+            You sign once with {signer.label} to confirm this reading. Nothing is sent on-chain.
+          </p>
         </div>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
       )}
     </section>
   );

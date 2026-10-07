@@ -85,6 +85,7 @@ pub fn compose(
         max_body_bytes: None,
         bootstrap: None,
         oauth,
+        chain: None,
     };
     let Some(config) = config else {
         tracing::info!("authentication: none; caller-authenticated relay routes refuse");

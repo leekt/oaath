@@ -29,6 +29,7 @@ pub mod postgres;
 
 use async_trait::async_trait;
 
+use crate::account_import::AccountImportRecord;
 use crate::error::RelayResult;
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
@@ -163,6 +164,13 @@ pub trait RelayTransaction: Send {
         status: MembershipStatus,
         at: u64,
     ) -> RelayResult<bool>;
+
+    /// `false` when the account already has an import or is unknown.
+    async fn insert_account_import(&mut self, record: &AccountImportRecord) -> RelayResult<bool>;
+    async fn lock_account_import(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Option<AccountImportRecord>>;
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>>;
     /// `false` when the identifier exists or the account or signer is unknown.

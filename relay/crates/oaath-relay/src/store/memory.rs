@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::{RelayStore, RelayTransaction};
+use crate::account_import::AccountImportRecord;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
@@ -46,6 +47,7 @@ struct Tables {
     portal_sessions: HashMap<String, Value>,
     link_requests: HashMap<String, Value>,
     policy_templates: HashMap<String, Value>,
+    account_imports: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -366,6 +368,7 @@ impl RelayTransaction for MemoryTransaction {
             let stored = AccountRecord::parse(value)?;
             if stored.address == record.address
                 || (stored.root_signer_id == record.root_signer_id
+                    && stored.account_index.is_some()
                     && stored.account_index == record.account_index)
             {
                 return Ok(false);
@@ -496,6 +499,28 @@ impl RelayTransaction for MemoryTransaction {
             moved = true;
         }
         Ok(moved)
+    }
+
+    async fn insert_account_import(&mut self, record: &AccountImportRecord) -> RelayResult<bool> {
+        if !self.staged.accounts.contains_key(&record.account_id) {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.account_imports,
+            &record.account_id,
+            to_value(record),
+        ))
+    }
+
+    async fn lock_account_import(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Option<AccountImportRecord>> {
+        read(
+            &self.staged.account_imports,
+            account_id,
+            AccountImportRecord::parse,
+        )
     }
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {

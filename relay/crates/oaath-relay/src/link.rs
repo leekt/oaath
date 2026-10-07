@@ -105,7 +105,7 @@ sol! {
     }
 }
 
-const DOMAIN: Eip712Domain = eip712_domain! { name: "OAAth", version: "1", };
+pub(crate) const DOMAIN: Eip712Domain = eip712_domain! { name: "OAAth", version: "1", };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

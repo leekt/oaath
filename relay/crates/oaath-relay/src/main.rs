@@ -13,6 +13,9 @@
 //!                     /oauth/*, discovery, and the portal transaction routes
 //! OAATH_ID_TOKEN_KEY  path to the ES256 (P-256) PKCS#8 PEM id_token key
 //! OAATH_ID_TOKEN_KID  optional `kid`; defaults to the key's RFC 7638 thumbprint
+//! OAATH_RPC_421614    optional JSON-RPC URL for chain 421614, read only to
+//!                     prove an imported account's root; without it imports
+//!                     are refused. Never logged
 //! --create-schema     create the current PostgreSQL schema first; fails if
 //!                     any object already exists
 //! ```
@@ -23,6 +26,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use oaath_relay::Relay;
+use oaath_relay::chain::{ChainReader, IMPORT_CHAIN_ID};
 use oaath_relay::clock::SystemClock;
 use oaath_relay::config::{DevConfig, compose};
 use oaath_relay::kms::AesGcmKms;
@@ -78,6 +82,14 @@ async fn run() -> Result<(), String> {
         _ => None,
     };
 
+    let chain = match std::env::var("OAATH_RPC_421614") {
+        Ok(url) if !url.is_empty() => Some(Arc::new(
+            ChainReader::new(IMPORT_CHAIN_ID, &url)
+                .ok_or("OAATH_RPC_421614 must be an http(s) URL")?,
+        )),
+        _ => None,
+    };
+
     let store: Arc<dyn RelayStore> = match std::env::var("OAATH_POSTGRES_URL") {
         Ok(url) if !url.is_empty() => {
             let pool = PgPoolOptions::new()
@@ -102,13 +114,17 @@ async fn run() -> Result<(), String> {
         }
     };
 
-    let options = compose(
+    let mut options = compose(
         store.clone(),
         Arc::new(kms),
         Arc::new(SystemClock),
         oauth,
         config,
     );
+    if chain.is_none() {
+        tracing::info!("chain: none; account imports are refused");
+    }
+    options.chain = chain;
     let relay =
         Relay::new(options).map_err(|code| format!("relay configuration is invalid ({code})"))?;
 
