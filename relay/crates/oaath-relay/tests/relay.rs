@@ -363,7 +363,7 @@ ambiguous_transaction! {
     claim_encrypted_artifact(id: &str, at: u64) -> RelayResult<bool>;
     lock_signer(id: &str) -> RelayResult<Option<registry::SignerRecord>>;
     lock_signer_by_profile_hash(hash: &str) -> RelayResult<Option<registry::SignerRecord>>;
-    list_signers_by_authenticator(hash: &str) -> RelayResult<Vec<registry::SignerRecord>>;
+    lock_signer_by_authenticator(hash: &str) -> RelayResult<Option<registry::SignerRecord>>;
     insert_signer(r: &registry::SignerRecord) -> RelayResult<bool>;
     list_signer_accounts(id: &str) -> RelayResult<Vec<(registry::AccountRecord, registry::AccountSignerRecord)>>;
     insert_account(r: &registry::AccountRecord) -> RelayResult<bool>;

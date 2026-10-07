@@ -114,13 +114,13 @@ pub trait RelayTransaction: Send {
         &mut self,
         profile_hash: &str,
     ) -> RelayResult<Option<SignerRecord>>;
-    /// WebAuthn signers whose profile names this `authenticatorIdHash`, in
-    /// registration order.
-    async fn list_signers_by_authenticator(
+    /// The one WebAuthn signer whose profile names this `authenticatorIdHash`.
+    async fn lock_signer_by_authenticator(
         &mut self,
         authenticator_id_hash: &str,
-    ) -> RelayResult<Vec<SignerRecord>>;
-    /// `false` when the identifier or the profile hash already exists.
+    ) -> RelayResult<Option<SignerRecord>>;
+    /// `false` when the identifier, the profile hash, or a WebAuthn profile's
+    /// `authenticatorIdHash` already exists.
     async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool>;
     /// Every account the signer belongs to, with its membership, ordered by
     /// account creation time then account identifier.
