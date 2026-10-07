@@ -30,7 +30,7 @@ describe("workspace account context", () => {
     ["an empty account id", { ...context, accountId: "" }],
   ])("refuses %s", (_, value) => {
     expect(() => parseWorkspaceAccountContext(value)).toThrowError(
-      expect.objectContaining({ code: "service_bootstrap_invalid" }),
+      expect.objectContaining({ code: "workspace_account_context_invalid" }),
     );
   });
 });

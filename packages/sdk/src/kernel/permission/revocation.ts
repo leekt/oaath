@@ -41,7 +41,7 @@ import {
 } from "./v33-revocation.js";
 
 export const OAATH_KERNEL_PERMISSION_REVOCATION_VERSION =
-  "oaath.kernel-permission-revocation/v2" as const;
+  "oaath.kernel-permission-revocation/v1" as const;
 
 export interface PrepareKernelPermissionRevocationInput {
   /** The exact issued Kernel `0.3.3` Grant approval. */

@@ -216,26 +216,35 @@ async function handlePopup(message) {
       if (current?.state === "active" || current?.state === "revoking") {
         return rpcError(-32000, "this origin already holds a permission; revoke it first");
       }
+      // A member's earlier request may since have been approved by the root.
+      const redeemed = await realm.connection.redeemPending();
       // The account root reviews and signs in the issuer's portal; this only
       // opens it and waits for the decision.
-      grant = await realm.connection.requestPermission({
-        chainScope: "all",
-        permissions: [
-          {
-            calls: [
-              {
-                target: String(scope.target),
-                selectors: [String(scope.selector)],
-                valueLimit: String(scope.valueLimit ?? "0"),
-              },
-            ],
-          },
-        ],
-        expiresIn: Number(scope.expiresIn ?? 1_800),
-        perChainOperationLimit: Number(scope.perChainOperationLimit ?? 10),
-      });
+      grant =
+        redeemed ??
+        (await realm.connection.requestPermission({
+          chainScope: "all",
+          permissions: [
+            {
+              calls: [
+                {
+                  target: String(scope.target),
+                  selectors: [String(scope.selector)],
+                  valueLimit: String(scope.valueLimit ?? "0"),
+                },
+              ],
+            },
+          ],
+          expiresIn: Number(scope.expiresIn ?? 1_800),
+          perChainOperationLimit: Number(scope.perChainOperationLimit ?? 10),
+        }));
     } finally {
       realm.pairing = false;
+    }
+    // A member's request waits for the account root; the SDK journals it and
+    // the dapp's next request redeems it.
+    if (grant.state === "pending") {
+      return rpcError(-32002, "the request awaits the account root's approval");
     }
     realm.grant = grant;
     realm.providers.clear();

@@ -74,7 +74,7 @@ impl TemplatePolicy {
             })
             .collect::<RelayResult<Vec<_>>>()?;
         let policy = parse_grant_policy(&json!({
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": calls,
             "validAfter": 0,
             "validUntil": lifetime_seconds,
@@ -125,7 +125,7 @@ impl TemplatePolicy {
             })
             .collect();
         parse_grant_policy(&json!({
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": calls,
             "validAfter": valid_after,
             "validUntil": valid_after + lifetime_seconds,

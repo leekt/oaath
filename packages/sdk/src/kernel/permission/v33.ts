@@ -48,7 +48,7 @@ import type { KernelV33Runtime, KernelV33RuntimePrepareInput, KeyProfile } from 
 import type { KernelPermissionMaterialization } from "./materialize.js";
 
 const NO_HOOK = "0x0000000000000000000000000000000000000001" as const;
-export const OAATH_KERNEL_V33_APPROVAL_VERSION = "oaath.kernel.v33-permission-approval/v2" as const;
+export const OAATH_KERNEL_V33_APPROVAL_VERSION = "oaath.kernel.v33-permission-approval/v1" as const;
 const SCOPE_KEYS = ["chainScope", "account", "nonce", "permissionId", "packages"] as const;
 
 export interface KernelV33PermissionScope {

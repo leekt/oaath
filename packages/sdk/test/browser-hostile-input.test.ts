@@ -67,7 +67,7 @@ const createOAAth = (value: unknown) => createTypedOAAth(value as never);
 describe("hostile input at the client boundary", () => {
   it("keeps existing v3.3 account addresses distinct in the browser binding", () => {
     const account = {
-      version: "oaath.kernel-existing-account-profile/v3",
+      version: "oaath.kernel-existing-account-profile/v1",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: TARGET,

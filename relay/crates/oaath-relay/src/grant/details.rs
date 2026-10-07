@@ -120,7 +120,7 @@ pub struct Composition<'a> {
 /// logical account, and the dapp's signer and policy.
 pub fn compose(detail: &GrantDetail, at: &Composition<'_>) -> RelayResult<PermissionRequest> {
     parse_permission_request(&json!({
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": at.request_id,
         "context": {
             "version": "oaath.workspace-account-context/v1",

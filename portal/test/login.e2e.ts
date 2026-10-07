@@ -541,7 +541,7 @@ async function pushGrant(page: Page): Promise<PushedGrant> {
           address: `0x${"d1".repeat(20)}`,
         },
         policy: {
-          version: "oaath.grant-policy/v2",
+          version: "oaath.grant-policy/v1",
           calls: [
             {
               target: `0x${"aa".repeat(20)}`,
@@ -1152,6 +1152,7 @@ describe("adding a passkey on a second device to an existing account", () => {
     expect(payload.verified).toBe(true);
     expect(payload.signer).toMatchObject({ kind: "webauthn", profile: { kind: "webauthn" } });
     expect(payload.oaath_accounts).toEqual([{ address, role: "permission", status: "active" }]);
+    expect(login.accounts).toEqual(payload.oaath_accounts);
 
     // The owner suspends the member: its next login is refused.
     await click(root, "button[aria-label='Suspend Second device']");

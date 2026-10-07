@@ -3,9 +3,9 @@
     "name": "approve at relay time",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -41,7 +41,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -84,10 +84,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -120,7 +120,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -128,9 +128,9 @@
     "name": "approve with install approval",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -166,7 +166,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -209,10 +209,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -245,7 +245,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"version\":\"x\",\"signature\":\"0x00\"}}"
       }
     }
   },
@@ -253,9 +253,9 @@
     "name": "approve with null install approval",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -291,7 +291,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -334,10 +334,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -370,7 +370,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":null}"
       }
     }
   },
@@ -378,9 +378,9 @@
     "name": "relay time floors to decision second",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -416,7 +416,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -459,10 +459,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -495,7 +495,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -503,9 +503,9 @@
     "name": "relay time before decision",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -541,7 +541,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -586,9 +586,9 @@
     "name": "relay time long after",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -624,7 +624,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -667,10 +667,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -703,7 +703,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -711,9 +711,9 @@
     "name": "decidedAt equals requestedAt",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -749,7 +749,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -792,10 +792,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 100,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -828,7 +828,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":100,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -836,9 +836,9 @@
     "name": "decidedAt before requestedAt",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":99,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":99,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -874,7 +874,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -919,9 +919,9 @@
     "name": "decidedAt at expiresAt",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":200,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":200,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -957,7 +957,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1002,9 +1002,9 @@
     "name": "decidedAt after policy validUntil",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":191,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":191,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1040,7 +1040,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1085,9 +1085,9 @@
     "name": "decidedAt after narrowed validUntil",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":110,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":110,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1123,7 +1123,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1168,9 +1168,9 @@
     "name": "decidedAt at narrowed validUntil",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1206,7 +1206,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1249,10 +1249,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1285,7 +1285,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":120,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -1293,9 +1293,9 @@
     "name": "decidedAt 1.2e2",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1331,7 +1331,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1374,10 +1374,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1410,7 +1410,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":1.2e2,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -1418,9 +1418,9 @@
     "name": "decidedAt -0",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1456,7 +1456,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1501,9 +1501,9 @@
     "name": "decidedAt -0 overwritten by duplicate",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1539,7 +1539,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1582,10 +1582,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1618,7 +1618,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":-0,\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -1626,9 +1626,9 @@
     "name": "decidedAt 120 overwritten by -0",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"decidedAt\":-0,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1664,7 +1664,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1709,9 +1709,9 @@
     "name": "install approval holding -0",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1747,7 +1747,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1790,10 +1790,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -1826,7 +1826,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"installApproval\":{\"nonce\":-0}}"
       }
     }
   },
@@ -1834,9 +1834,9 @@
     "name": "reject decision",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1872,7 +1872,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1917,9 +1917,9 @@
     "name": "other requestId",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-2\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-2\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1955,7 +1955,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2000,9 +2000,9 @@
     "name": "other requestHash",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x6666666666666666666666666666666666666666666666666666666666666666\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x6666666666666666666666666666666666666666666666666666666666666666\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2038,7 +2038,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2083,9 +2083,9 @@
     "name": "widened value limit",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"101\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"101\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2121,7 +2121,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2166,9 +2166,9 @@
     "name": "widened validUntil",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":195,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":195,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2204,7 +2204,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2249,9 +2249,9 @@
     "name": "narrowed calls",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2287,7 +2287,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2330,10 +2330,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -2360,7 +2360,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -2368,9 +2368,9 @@
     "name": "narrowed count",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2406,7 +2406,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2449,10 +2449,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -2485,7 +2485,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":1,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -2493,9 +2493,9 @@
     "name": "changed window",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":60}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":60}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2531,7 +2531,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2576,9 +2576,9 @@
     "name": "invalid decision",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2614,7 +2614,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2659,9 +2659,9 @@
     "name": "unknown key",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"note\":\"x\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"note\":\"x\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2697,7 +2697,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2742,9 +2742,9 @@
     "name": "duplicate kind last wins approve",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2780,7 +2780,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2823,10 +2823,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -2859,7 +2859,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"reject\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -2867,9 +2867,9 @@
     "name": "duplicate kind last wins reject",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"kind\":\"reject\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2905,7 +2905,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2950,9 +2950,9 @@
     "name": "surrounding whitespace",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n",
+      "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2988,7 +2988,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3031,10 +3031,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -3067,7 +3067,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n"
+        "plaintext": "\n\t {\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"} \r\n"
       }
     }
   },
@@ -3075,9 +3075,9 @@
     "name": "escaped key",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3113,7 +3113,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3156,10 +3156,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c",
+          "requestHash": "0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -3192,7 +3192,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"\\u006bind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -3202,7 +3202,7 @@
     "input": {
       "plaintext": "",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3238,7 +3238,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3283,9 +3283,9 @@
     "name": "plaintext truncated",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3321,7 +3321,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3366,9 +3366,9 @@
     "name": "plaintext trailing comma",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3404,7 +3404,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3449,9 +3449,9 @@
     "name": "plaintext trailing garbage",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}x",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}x",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3487,7 +3487,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3532,9 +3532,9 @@
     "name": "plaintext leading BOM",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "﻿{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "﻿{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3570,7 +3570,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3617,7 +3617,7 @@
     "input": {
       "plaintext": "{'kind':'approve'}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3653,7 +3653,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3700,7 +3700,7 @@
     "input": {
       "plaintext": "null",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3736,7 +3736,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3781,9 +3781,9 @@
     "name": "plaintext array",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "[{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}]",
+      "plaintext": "[{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}]",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3819,7 +3819,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3864,9 +3864,9 @@
     "name": "plaintext string",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "\"{\\\"version\\\":\\\"oaath.permission-decision/v1\\\",\\\"kind\\\":\\\"approve\\\",\\\"requestId\\\":\\\"permission-request-1\\\",\\\"requestHash\\\":\\\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\\\",\\\"decidedAt\\\":120,\\\"approvedPolicy\\\":{\\\"version\\\":\\\"oaath.grant-policy/v2\\\",\\\"calls\\\":[{\\\"target\\\":\\\"0x1111111111111111111111111111111111111111\\\",\\\"selector\\\":\\\"0x12345678\\\",\\\"valueLimit\\\":\\\"100\\\",\\\"argumentEquals\\\":[{\\\"index\\\":0,\\\"value\\\":\\\"0x3333333333333333333333333333333333333333333333333333333333333333\\\"},{\\\"index\\\":2,\\\"value\\\":\\\"0x4444444444444444444444444444444444444444444444444444444444444444\\\"}]},{\\\"target\\\":\\\"0x2222222222222222222222222222222222222222\\\",\\\"selector\\\":\\\"0xabcdef01\\\",\\\"valueLimit\\\":\\\"0\\\",\\\"argumentEquals\\\":[]}],\\\"validAfter\\\":100,\\\"validUntil\\\":190,\\\"perChainOperationLimit\\\":{\\\"count\\\":10,\\\"intervalSeconds\\\":null}},\\\"capabilityHash\\\":\\\"0x5555555555555555555555555555555555555555555555555555555555555555\\\"}\"",
+      "plaintext": "\"{\\\"version\\\":\\\"oaath.permission-decision/v1\\\",\\\"kind\\\":\\\"approve\\\",\\\"requestId\\\":\\\"permission-request-1\\\",\\\"requestHash\\\":\\\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\\\",\\\"decidedAt\\\":120,\\\"approvedPolicy\\\":{\\\"version\\\":\\\"oaath.grant-policy/v1\\\",\\\"calls\\\":[{\\\"target\\\":\\\"0x1111111111111111111111111111111111111111\\\",\\\"selector\\\":\\\"0x12345678\\\",\\\"valueLimit\\\":\\\"100\\\",\\\"argumentEquals\\\":[{\\\"index\\\":0,\\\"value\\\":\\\"0x3333333333333333333333333333333333333333333333333333333333333333\\\"},{\\\"index\\\":2,\\\"value\\\":\\\"0x4444444444444444444444444444444444444444444444444444444444444444\\\"}]},{\\\"target\\\":\\\"0x2222222222222222222222222222222222222222\\\",\\\"selector\\\":\\\"0xabcdef01\\\",\\\"valueLimit\\\":\\\"0\\\",\\\"argumentEquals\\\":[]}],\\\"validAfter\\\":100,\\\"validUntil\\\":190,\\\"perChainOperationLimit\\\":{\\\"count\\\":10,\\\"intervalSeconds\\\":null}},\\\"capabilityHash\\\":\\\"0x5555555555555555555555555555555555555555555555555555555555555555\\\"}\"",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3902,7 +3902,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3949,7 +3949,7 @@
     "input": {
       "plaintext": "120",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3985,7 +3985,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4030,9 +4030,9 @@
     "name": "existing account request",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xa1a07cb7b580f2a4be49957dad70b9ce914912965a29b67e0f59a4a361ea9610\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4048,7 +4048,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.3.3",
           "address": "0x6666666666666666666666666666666666666666",
@@ -4068,7 +4068,7 @@
           "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4111,10 +4111,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd",
+          "requestHash": "0xa1a07cb7b580f2a4be49957dad70b9ce914912965a29b67e0f59a4a361ea9610",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -4147,7 +4147,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xa1a07cb7b580f2a4be49957dad70b9ce914912965a29b67e0f59a4a361ea9610\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   },
@@ -4155,9 +4155,9 @@
     "name": "decision for another request",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0x2b10cfacc9d4ee0d4181cf24220e64de810f1a38e7495a13bfd048e5aebcde2a\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4173,7 +4173,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.3.3",
           "address": "0x6666666666666666666666666666666666666666",
@@ -4193,7 +4193,7 @@
           "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4238,9 +4238,9 @@
     "name": "existing webauthn account request",
     "fn": "parseApprovedPermission",
     "input": {
-      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xbe410c7ca8acb18128b4ad19598e5435021bc6af101da82a5a46f84ff67f87ee\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
+      "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xd8245287c757f5efb8cfcffa383dba40cb4b998591c375467e361b716077f26f\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4256,7 +4256,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.4.0",
           "address": "0x6666666666666666666666666666666666666666",
@@ -4276,7 +4276,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4319,10 +4319,10 @@
           "version": "oaath.permission-decision/v1",
           "kind": "approve",
           "requestId": "permission-request-1",
-          "requestHash": "0xbe410c7ca8acb18128b4ad19598e5435021bc6af101da82a5a46f84ff67f87ee",
+          "requestHash": "0xd8245287c757f5efb8cfcffa383dba40cb4b998591c375467e361b716077f26f",
           "decidedAt": 120,
           "approvedPolicy": {
-            "version": "oaath.grant-policy/v2",
+            "version": "oaath.grant-policy/v1",
             "calls": [
               {
                 "target": "0x1111111111111111111111111111111111111111",
@@ -4355,7 +4355,7 @@
           },
           "capabilityHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
-        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xbe410c7ca8acb18128b4ad19598e5435021bc6af101da82a5a46f84ff67f87ee\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
+        "plaintext": "{\"version\":\"oaath.permission-decision/v1\",\"kind\":\"approve\",\"requestId\":\"permission-request-1\",\"requestHash\":\"0xd8245287c757f5efb8cfcffa383dba40cb4b998591c375467e361b716077f26f\",\"decidedAt\":120,\"approvedPolicy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"capabilityHash\":\"0x5555555555555555555555555555555555555555555555555555555555555555\"}"
       }
     }
   }

@@ -21,6 +21,8 @@ const RESPONSE = "oaath.authorization-response/v1";
 export type PortalBehaviour =
   | "approve"
   | "cancel"
+  /** A member's request: the token waits for `decide` on the root's behalf. */
+  | "pending"
   | Readonly<{ tamper: (request: Record<string, unknown>) => void }>;
 
 export interface OAuthPortalOptions {
@@ -29,6 +31,10 @@ export interface OAuthPortalOptions {
   /** The root's factory-derived account; any address when nothing is executed. */
   readonly account?: `0x${string}`;
   readonly root?: Readonly<{ credential: object; key: Readonly<KeyProfile> }>;
+  /** The root's signed owner operation for a PAR's `oaath_operation` request. */
+  readonly signOperation?: (request: unknown) => Promise<unknown>;
+  /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
+  readonly accounts?: unknown;
 }
 
 function ecdsaRoot() {
@@ -61,11 +67,18 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     entryPoint: { version: "0.9" },
     ownerCredential: root.credential,
   };
+  const accounts = Object.hasOwn(options, "accounts")
+    ? options.accounts
+    : [{ address: account, role: "root", status: "active" }];
   const { privateKey, publicKey } = await generateKeyPair("ES256");
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: "k1", alg: "ES256" }] };
   const pars = new Map<string, URLSearchParams>();
   let token: Record<string, unknown> | null = null;
   const popups: { closed: boolean }[] = [];
+  // The root's decision on a pending request; the code redeems once.
+  let rootDecision: "approve" | "reject" | null = null;
+  let redeemed = false;
+  const tokenCalls = { count: 0 };
 
   /** The portal's decision for one authorization URL, as its redirect query. */
   async function authorize(href: string): Promise<Record<string, string>> {
@@ -74,11 +87,42 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     const par = pars.get(parId)!;
     if (behaviour === "cancel")
       return { error: "access_denied", state: par.get("state")!, iss: ISSUER };
-    const [detail] = JSON.parse(par.get("authorization_details")!);
+    const signIn = (nonce: string | null) =>
+      new SignJWT({
+        nonce,
+        verified: true,
+        oaath_account: accountProfile,
+        oaath_accounts: accounts,
+        signer: { id: "root-signer", kind: "ecdsa", profile: root.credential },
+      })
+        .setProtectedHeader({ alg: "ES256", kid: "k1" })
+        .setIssuer(ISSUER)
+        .setAudience(CLIENT)
+        .setSubject(account)
+        .setIssuedAt()
+        .setExpirationTime("10m")
+        .sign(privateKey);
+    const details = par.get("authorization_details");
+    // Login only: no grant, just the identity.
+    if (details === null) {
+      token = { id_token: await signIn(par.get("nonce")), token_type: "Bearer", scope: "openid" };
+      return { code: "code-1", state: par.get("state")!, iss: ISSUER };
+    }
+    const [detail] = JSON.parse(details);
+    if (detail.type === "oaath_operation") {
+      const signed = await options.signOperation?.(detail.request);
+      token = {
+        id_token: await signIn(par.get("nonce")),
+        token_type: "Bearer",
+        scope: "openid",
+        authorization_details: [{ type: "oaath_operation", signed }],
+      };
+      return { code: "code-1", state: par.get("state")!, iss: ISSUER };
+    }
     const requestedAt = Math.floor(Date.now() / 1000);
     // The relay's compose.
     const request: Record<string, unknown> = {
-      version: "oaath.permission-request/v2",
+      version: "oaath.permission-request/v1",
       requestId: parId,
       context: {
         version: "oaath.workspace-account-context/v1",
@@ -107,19 +151,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       account,
     }).sign(root.key, requestedAt);
     const { installApproval, ...rest } = decision;
-    const idToken = await new SignJWT({
-      nonce: par.get("nonce"),
-      verified: true,
-      oaath_account: accountProfile,
-      signer: { id: "root-signer", kind: "ecdsa", profile: root.credential },
-    })
-      .setProtectedHeader({ alg: "ES256", kid: "k1" })
-      .setIssuer(ISSUER)
-      .setAudience(CLIENT)
-      .setSubject(account)
-      .setIssuedAt()
-      .setExpirationTime("10m")
-      .sign(privateKey);
+    const idToken = await signIn(par.get("nonce"));
     token = {
       id_token: idToken,
       access_token: "access",
@@ -170,7 +202,15 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       pars.set(id, form);
       return json({ request_uri: `urn:ietf:params:oauth:request_uri:${id}`, expires_in: 300 }, 201);
     }
-    if (url.pathname === "/oauth/token") return json(token);
+    if (url.pathname === "/oauth/token") {
+      tokenCalls.count += 1;
+      if (behaviour !== "pending") return json(token);
+      if (redeemed) return json({ error: "invalid_grant" }, 400);
+      if (rootDecision === null) return json({ error: "authorization_pending" }, 400);
+      if (rootDecision === "reject") return json({ error: "access_denied" }, 400);
+      redeemed = true;
+      return json(token);
+    }
     return json({ error: "not_found" }, 404);
   });
 
@@ -208,5 +248,8 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     clientId: CLIENT,
     redirectUri: REDIRECT,
   };
-  return { approvals, window, popups, pars, root, launch };
+  const decide = (decision: "approve" | "reject") => {
+    rootDecision = decision;
+  };
+  return { approvals, window, popups, pars, root, launch, decide, tokenCalls };
 }

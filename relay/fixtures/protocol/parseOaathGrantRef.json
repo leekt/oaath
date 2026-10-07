@@ -10,7 +10,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -21,7 +21,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -36,7 +36,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -53,7 +53,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -64,7 +64,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -79,7 +79,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -90,7 +90,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -105,7 +105,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -114,7 +114,7 @@
   {
     "name": "revision -0",
     "fn": "parseOaathGrantRef",
-    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a\"}",
     "expect": {
       "error": "grant_reference_invalid"
     }
@@ -122,7 +122,7 @@
   {
     "name": "revision 1.0",
     "fn": "parseOaathGrantRef",
-    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a\"}",
     "expect": {
       "ok": {
         "version": "oaath.grant-reference/v1",
@@ -132,14 +132,14 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
   {
     "name": "revision 1e0",
     "fn": "parseOaathGrantRef",
-    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a\"}",
     "expect": {
       "ok": {
         "version": "oaath.grant-reference/v1",
@@ -149,7 +149,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -164,7 +164,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -181,7 +181,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -192,7 +192,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -207,7 +207,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -218,7 +218,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -233,7 +233,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -250,7 +250,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -267,7 +267,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -284,7 +284,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -301,7 +301,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -318,7 +318,7 @@
       "clientId": "A-z_0.9~",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -329,7 +329,7 @@
         "clientId": "A-z_0.9~",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -344,7 +344,7 @@
       "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -355,7 +355,7 @@
         "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -370,7 +370,7 @@
       "clientId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -387,7 +387,7 @@
       "clientId": "a b",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -404,7 +404,7 @@
       "clientId": "a/b",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -421,7 +421,7 @@
       "clientId": "café",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -438,7 +438,7 @@
       "clientId": "",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -455,7 +455,7 @@
       "clientId": "client-1",
       "organizationAudience": "A-z_0.9~",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -466,7 +466,7 @@
         "clientId": "client-1",
         "organizationAudience": "A-z_0.9~",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -481,7 +481,7 @@
       "clientId": "client-1",
       "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -492,7 +492,7 @@
         "clientId": "client-1",
         "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -507,7 +507,7 @@
       "clientId": "client-1",
       "organizationAudience": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -524,7 +524,7 @@
       "clientId": "client-1",
       "organizationAudience": "a b",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -541,7 +541,7 @@
       "clientId": "client-1",
       "organizationAudience": "a/b",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -558,7 +558,7 @@
       "clientId": "client-1",
       "organizationAudience": "café",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -575,7 +575,7 @@
       "clientId": "client-1",
       "organizationAudience": "",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -592,7 +592,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -603,7 +603,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -618,7 +618,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -635,7 +635,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -646,7 +646,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -661,7 +661,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -672,7 +672,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -687,7 +687,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -704,7 +704,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -715,7 +715,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -729,7 +729,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -746,7 +746,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -763,7 +763,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -780,7 +780,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -797,7 +797,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -814,7 +814,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -831,7 +831,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -847,7 +847,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -864,7 +864,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -881,7 +881,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -898,7 +898,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -909,7 +909,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -924,7 +924,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -941,7 +941,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -958,7 +958,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -974,7 +974,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -991,7 +991,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1008,7 +1008,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1025,7 +1025,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1042,7 +1042,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1059,7 +1059,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1075,7 +1075,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1092,7 +1092,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1109,7 +1109,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1126,7 +1126,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1137,7 +1137,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1152,7 +1152,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1169,7 +1169,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1186,7 +1186,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1202,7 +1202,7 @@
       "subject": "subject-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1219,7 +1219,7 @@
       "clientId": null,
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1236,7 +1236,7 @@
       "clientId": 1,
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1253,7 +1253,7 @@
       "clientId": "x",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1264,7 +1264,7 @@
         "clientId": "x",
         "organizationAudience": "org.example",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1279,7 +1279,7 @@
       "clientId": [],
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1296,7 +1296,7 @@
       "clientId": {},
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1313,7 +1313,7 @@
       "clientId": true,
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1329,7 +1329,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1346,7 +1346,7 @@
       "clientId": "client-1",
       "organizationAudience": null,
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1363,7 +1363,7 @@
       "clientId": "client-1",
       "organizationAudience": 1,
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1380,7 +1380,7 @@
       "clientId": "client-1",
       "organizationAudience": "x",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1391,7 +1391,7 @@
         "clientId": "client-1",
         "organizationAudience": "x",
         "state": "active",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1406,7 +1406,7 @@
       "clientId": "client-1",
       "organizationAudience": [],
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1423,7 +1423,7 @@
       "clientId": "client-1",
       "organizationAudience": {},
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1440,7 +1440,7 @@
       "clientId": "client-1",
       "organizationAudience": true,
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1456,7 +1456,7 @@
       "subject": "subject-1",
       "clientId": "client-1",
       "organizationAudience": "org.example",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1473,7 +1473,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": null,
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1490,7 +1490,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": 1,
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1507,7 +1507,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "x",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1524,7 +1524,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": [],
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1541,7 +1541,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": {},
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1558,7 +1558,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": true,
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1693,7 +1693,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec",
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a",
       "unexpected": true
     },
     "expect": {
@@ -1743,7 +1743,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "pending",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1754,7 +1754,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "pending",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1769,7 +1769,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "revoked",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1780,7 +1780,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "revoked",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1795,7 +1795,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "expired",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "ok": {
@@ -1806,7 +1806,7 @@
         "clientId": "client-1",
         "organizationAudience": "org.example",
         "state": "expired",
-        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
       }
     }
   },
@@ -1821,7 +1821,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "approved",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"
@@ -1838,7 +1838,7 @@
       "clientId": "client-1",
       "organizationAudience": "org.example",
       "state": "active",
-      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      "policyDigest": "0x4527c90ff73470673e657f91d6891ce81a28f4b57937350bf18102ec1148da2a"
     },
     "expect": {
       "error": "grant_reference_invalid"

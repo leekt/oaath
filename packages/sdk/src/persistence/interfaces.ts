@@ -53,9 +53,9 @@ import type { StoreRecord } from "../store.js";
 
 export const OAATH_CLEANUP_CHECKPOINT_VERSION = "oaath.cleanup-checkpoint/v1" as const;
 export const OAATH_CLIENT_CONTEXT_VERSION = "oaath.client-context/v1" as const;
-export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v7" as const;
+export const OAATH_WALLET_CALL_BUNDLE_VERSION = "oaath.wallet-call-bundle/v1" as const;
 export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
-  "oaath.wallet-call-bundle-store-record/v7" as const;
+  "oaath.wallet-call-bundle-store-record/v1" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const MAX_ID_LENGTH = 256;

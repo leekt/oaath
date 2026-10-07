@@ -9,7 +9,7 @@
       "name": "ecdsa root: valid",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -45,7 +45,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -129,7 +129,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -158,9 +158,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -168,10 +168,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -187,11 +187,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x5a5e70b740c4496472286ef363b8cc79568165ef69db5aba28a8ba5a8a0e6db2",
+        "capabilityHash": "0x7d684e75f88c2f3e1f2da8fb08578f4d6f7c45c7d37826d791718de2804e7aea",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -218,8 +218,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
-          "enableSignature": "0x8cfe4d438c46b74496e9368c0e94f85d0950168a1cefe02f570c030d4b2bcdeb5e1583e779757b957e87dc999de2e40bf6738be759b6a33ac972713c37d3db821c"
+          "digest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
+          "enableSignature": "0x889531c0aaca74099c97501ce77b7159793a80cc9e1f3f6308e903786eff452073bc70af441213e2966e9a346823d85f5486b4e084a66050ad6873888c69e9e01c"
         }
       },
       "expect": {
@@ -230,7 +230,7 @@
       "name": "ecdsa root: signature byte flipped",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -266,7 +266,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -350,7 +350,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -379,9 +379,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -389,10 +389,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -408,11 +408,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xca4cab014d6b125129a15570ad0bd52e8e9c3663c885830b29f7d6a63536bf4a",
+        "capabilityHash": "0xc53038ce59b68e4b8ce97d812b241b9f9cc049eece1192348110f9232054382b",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -439,8 +439,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
-          "enableSignature": "0x8cfe4d438c46b74496e9378c0e94f85d0950168a1cefe02f570c030d4b2bcdeb5e1583e779757b957e87dc999de2e40bf6738be759b6a33ac972713c37d3db821c"
+          "digest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
+          "enableSignature": "0x889531c0aaca74099c97511ce77b7159793a80cc9e1f3f6308e903786eff452073bc70af441213e2966e9a346823d85f5486b4e084a66050ad6873888c69e9e01c"
         }
       },
       "expect": {
@@ -452,7 +452,7 @@
       "name": "ecdsa root: signed by another key of the same kind",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -488,7 +488,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -572,7 +572,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -601,9 +601,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -611,10 +611,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -630,11 +630,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x5dbfbef38858d9a9cdb7489dacbfcebc47511f45d947bb19041e2133612425ac",
+        "capabilityHash": "0x3929a05097ae731169c3a56a46b90123259ef3d105348563bdfd3194f868ff3b",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -661,8 +661,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
-          "enableSignature": "0x0b6fe78cbe68f2e626cb95f8effcef91d1890d46c1b289b707fcd6734f2e263a79adad4f4877d01952f543d1431399dd4f9512cda86e5543eb5d3e248285084f1b"
+          "digest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
+          "enableSignature": "0x08ed50a764d6090eb06d0f87229b36edf7086aec8ee60d4a658c0ef52f0d10fa7fe1edd604eaa2318bdfe0e834cc81f8b9e3929b65addf969c46b8a586530f1a1b"
         }
       },
       "expect": {
@@ -674,7 +674,7 @@
       "name": "ecdsa root: signature over another digest",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -710,7 +710,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -794,7 +794,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -823,9 +823,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -833,10 +833,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -852,11 +852,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x9b2debd5306341083b2a0666e086fb92bdbfc4a1020dfdae14471f044b677156",
+        "capabilityHash": "0x850ab7cc9176126c571d3d0403a255b35961b137edc1b14809fa3174dee5b6c7",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -883,7 +883,7 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+          "digest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
           "enableSignature": "0x8f2c76e71659f2b3e8daaaeb67369d9e14e85dd16ce4fe16511af4a351c71d782feb20249c2b8086f05cbbdfe999a713e42c3cf2ee54d62b8883299b417421191b"
         }
       },
@@ -896,7 +896,7 @@
       "name": "ecdsa root: capability hash does not commit to the approval",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -932,7 +932,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1016,7 +1016,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -1045,9 +1045,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -1055,10 +1055,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1078,7 +1078,7 @@
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -1105,8 +1105,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
-          "enableSignature": "0x8cfe4d438c46b74496e9368c0e94f85d0950168a1cefe02f570c030d4b2bcdeb5e1583e779757b957e87dc999de2e40bf6738be759b6a33ac972713c37d3db821c"
+          "digest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
+          "enableSignature": "0x889531c0aaca74099c97501ce77b7159793a80cc9e1f3f6308e903786eff452073bc70af441213e2966e9a346823d85f5486b4e084a66050ad6873888c69e9e01c"
         }
       },
       "expect": {
@@ -1118,7 +1118,7 @@
       "name": "ecdsa root: approval digest altered",
       "rootKind": "ecdsa",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-ecdsa",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1154,7 +1154,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1238,7 +1238,7 @@
             "verifyingContract": "0x62b5f314710bc515d87276a9d00527ac482b2e6a"
           },
           "message": {
-            "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+            "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
             "packages": [
               {
                 "moduleType": "5",
@@ -1267,9 +1267,9 @@
             ]
           }
         },
-        "expectedDigest": "0x0e5c08838afa0c49e4a42af8ea61d21151280a7f0446000de3853e687fce9da5",
+        "expectedDigest": "0xc7d35a6dd90155427f9295c9ee2c02d82cf07301d179fe80e0ce16b39294ccea",
         "replay": {
-          "nonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "nonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "deadline": null
         }
       },
@@ -1277,10 +1277,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-ecdsa",
-        "requestHash": "0x8e7f76fbf87f8a6ea4f4563d29deeb71ca4d4433086c60971ae0f8a0d3373c35",
+        "requestHash": "0x0bb236ae3c75df5b72fa554a022c24e55ab851e66a4ca03e24c32ff36390996a",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1296,11 +1296,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x5a5e70b740c4496472286ef363b8cc79568165ef69db5aba28a8ba5a8a0e6db2",
+        "capabilityHash": "0x7d684e75f88c2f3e1f2da8fb08578f4d6f7c45c7d37826d791718de2804e7aea",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x62b5f314710bc515d87276a9d00527ac482b2e6a",
-          "installNonce": "64453635275236132255679715640369444440515366578774559466422268037030454755328",
+          "installNonce": "5290317503647156887062691639533558715800830759735359435441984071431226392576",
           "packages": [
             {
               "moduleType": 5,
@@ -1328,7 +1328,7 @@
             }
           ],
           "digest": "0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-          "enableSignature": "0x8cfe4d438c46b74496e9368c0e94f85d0950168a1cefe02f570c030d4b2bcdeb5e1583e779757b957e87dc999de2e40bf6738be759b6a33ac972713c37d3db821c"
+          "enableSignature": "0x889531c0aaca74099c97501ce77b7159793a80cc9e1f3f6308e903786eff452073bc70af441213e2966e9a346823d85f5486b4e084a66050ad6873888c69e9e01c"
         }
       },
       "expect": {
@@ -1340,7 +1340,7 @@
       "name": "p256 root: valid",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1376,7 +1376,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1460,7 +1460,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -1489,9 +1489,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -1499,10 +1499,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1518,11 +1518,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x5095c8f29999044674f81a22190d9023a117a8cdd25c513828daa4adf3fac540",
+        "capabilityHash": "0xbba5e82293ba994b57b51fcebcf3bf93e3237dc9f76de344c3ad9780235bd551",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -1549,8 +1549,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
-          "enableSignature": "0xbdf6ceec984f0d2e167205411965b6a3e3a6381f6c9907792b3a6d235012027d2dadbb42be1aa8a4250fb2fabdc519b05e1bb3f179b69275618e9296c2593d2d"
+          "digest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
+          "enableSignature": "0x9f406e6202ac001defd81b013d8c17cdea184346cc2b53b0b60bd854a21b66f52441e1da6c6727cbca19ef72031181ad7620f2882f76ccb6e3f5dc23247682e6"
         }
       },
       "expect": {
@@ -1561,7 +1561,7 @@
       "name": "p256 root: signature byte flipped",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1597,7 +1597,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1681,7 +1681,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -1710,9 +1710,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -1720,10 +1720,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1739,11 +1739,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xd15c8d247fbcd296946e68dfc23951263983ff595bdce99e34d682e1488ac584",
+        "capabilityHash": "0x8ee57fba177c0f9cec59d509485d9b1f7dd18253b42e15b41c3bf00831918d5d",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -1770,8 +1770,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
-          "enableSignature": "0xbdf6ceec984f0d2e167204411965b6a3e3a6381f6c9907792b3a6d235012027d2dadbb42be1aa8a4250fb2fabdc519b05e1bb3f179b69275618e9296c2593d2d"
+          "digest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
+          "enableSignature": "0x9f406e6202ac001defd81a013d8c17cdea184346cc2b53b0b60bd854a21b66f52441e1da6c6727cbca19ef72031181ad7620f2882f76ccb6e3f5dc23247682e6"
         }
       },
       "expect": {
@@ -1783,7 +1783,7 @@
       "name": "p256 root: signed by another key of the same kind",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1819,7 +1819,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1903,7 +1903,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -1932,9 +1932,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -1942,10 +1942,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -1961,11 +1961,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x46ed1d8cfd23b5637f7790692ce06ba35d5e03061f10c772e617b664a37eb0d3",
+        "capabilityHash": "0x2aaabbf529fa499981eaba507da82b1d6107e6f230f13307d4f2bd9f3db10016",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -1992,8 +1992,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
-          "enableSignature": "0xeb7f87f0e59981409d3e5dd7719bbc1f1cced33b4000b22885574fd3b9777fdd4387c9f6ae115ae94f3105fcf4a0ef04ab16e21559c0a3e5df796a9255d7a371"
+          "digest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
+          "enableSignature": "0x6f8a879d144ab7077253a478ed691dc759bfc365866b6218e0d2ba70892db66e7bda78d9ee0aa452bbd2e95d637124b3ef755c62f0fd98b21135d7d0a86418e6"
         }
       },
       "expect": {
@@ -2005,7 +2005,7 @@
       "name": "p256 root: signature over another digest",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2041,7 +2041,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2125,7 +2125,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -2154,9 +2154,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -2164,10 +2164,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2183,11 +2183,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x7e47088c6754b4abc98afc0b80fa3386d17365d2511b38564476d26b99d2591a",
+        "capabilityHash": "0xe2ee30907ad9a485c9f69818766539a1f2fabdd251b2f05f27cc7f30382690a0",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -2214,7 +2214,7 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+          "digest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
           "enableSignature": "0x651c7bb209644b6912f2c34e90531f7ad56b4c12599e1970481e569c4de3281429040b36ceb2e5acd9a53a3b4471dc615ac2803a62db85ec58b20a1000d5fa8b"
         }
       },
@@ -2227,7 +2227,7 @@
       "name": "p256 root: capability hash does not commit to the approval",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2263,7 +2263,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2347,7 +2347,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -2376,9 +2376,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -2386,10 +2386,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2409,7 +2409,7 @@
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -2436,8 +2436,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
-          "enableSignature": "0xbdf6ceec984f0d2e167205411965b6a3e3a6381f6c9907792b3a6d235012027d2dadbb42be1aa8a4250fb2fabdc519b05e1bb3f179b69275618e9296c2593d2d"
+          "digest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
+          "enableSignature": "0x9f406e6202ac001defd81b013d8c17cdea184346cc2b53b0b60bd854a21b66f52441e1da6c6727cbca19ef72031181ad7620f2882f76ccb6e3f5dc23247682e6"
         }
       },
       "expect": {
@@ -2449,7 +2449,7 @@
       "name": "p256 root: approval digest altered",
       "rootKind": "p256",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-p256",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2485,7 +2485,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2569,7 +2569,7 @@
             "verifyingContract": "0x23c5e054c911b29200ce6c8b792f005d79b6832a"
           },
           "message": {
-            "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+            "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
             "packages": [
               {
                 "moduleType": "5",
@@ -2598,9 +2598,9 @@
             ]
           }
         },
-        "expectedDigest": "0x462514abc0e58ec3054cc49855fe7ef016bc65f2cd6ffd33995dcd26c32e584b",
+        "expectedDigest": "0xe67d025a028e4b29c7ebcf3db5cccb6dde9b6f26548406d8b7b25972f349e632",
         "replay": {
-          "nonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "nonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "deadline": null
         }
       },
@@ -2608,10 +2608,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-p256",
-        "requestHash": "0x92f258ba67cab5e00e371ee119053c09955ebdabf70da7623b12d8c3688918e2",
+        "requestHash": "0xb7611bcbecd48e9d5e558ec3126b376c3af59425c4aa49d73edbcac931e37fbb",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2627,11 +2627,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x5095c8f29999044674f81a22190d9023a117a8cdd25c513828daa4adf3fac540",
+        "capabilityHash": "0xbba5e82293ba994b57b51fcebcf3bf93e3237dc9f76de344c3ad9780235bd551",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x23c5e054c911b29200ce6c8b792f005d79b6832a",
-          "installNonce": "66465865261992415654108250696287512482787433200579031500498849842680664424448",
+          "installNonce": "82944827300982930877427885531088167902706886300972448638091178283237971591168",
           "packages": [
             {
               "moduleType": 5,
@@ -2659,7 +2659,7 @@
             }
           ],
           "digest": "0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-          "enableSignature": "0xbdf6ceec984f0d2e167205411965b6a3e3a6381f6c9907792b3a6d235012027d2dadbb42be1aa8a4250fb2fabdc519b05e1bb3f179b69275618e9296c2593d2d"
+          "enableSignature": "0x9f406e6202ac001defd81b013d8c17cdea184346cc2b53b0b60bd854a21b66f52441e1da6c6727cbca19ef72031181ad7620f2882f76ccb6e3f5dc23247682e6"
         }
       },
       "expect": {
@@ -2671,7 +2671,7 @@
       "name": "webauthn root: valid",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2708,7 +2708,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2793,7 +2793,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -2822,9 +2822,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -2832,10 +2832,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -2851,11 +2851,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xf438c93b33ad3f0017d195e2bae9d8d743c15554b495b220d8c57a473bb67ddf",
+        "capabilityHash": "0x603f5f588206fe78c215950dd9d965717e24059cff984d28eacdfbd76442c233",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -2882,8 +2882,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001d3f52e61b6f545b49ca6c5157c9b76084fd971ed04674e049559964ae6f1e1534b2ec7d9362348052c50c126ce0975cbd0dafba1ad9a9532d12ddf12160a645600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001f0017de209909700d84eb6be22ae6f0a2802d06bb0e964e3ac570c02bd086af7064788e68d788f649f659573b83d58a0689571037b33af3d1b5267741b8dbe9b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -2894,7 +2894,7 @@
       "name": "webauthn root: signature byte flipped",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2931,7 +2931,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3016,7 +3016,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -3045,9 +3045,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -3055,10 +3055,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3074,11 +3074,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x4fe896c6d9fff59cdc99e4f42261e5c26b801b47ce7821098825b4246af30e6a",
+        "capabilityHash": "0x8984dd99221269149ee58302f2bfd9098aef6580f7dce6ff2198083ba92fe053",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -3105,8 +3105,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001d3f52e61b7f545b49ca6c5157c9b76084fd971ed04674e049559964ae6f1e1534b2ec7d9362348052c50c126ce0975cbd0dafba1ad9a9532d12ddf12160a645600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001f0017de208909700d84eb6be22ae6f0a2802d06bb0e964e3ac570c02bd086af7064788e68d788f649f659573b83d58a0689571037b33af3d1b5267741b8dbe9b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -3118,7 +3118,7 @@
       "name": "webauthn root: signed by another key of the same kind",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3155,7 +3155,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3240,7 +3240,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -3269,9 +3269,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -3279,10 +3279,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3298,11 +3298,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x524091992fe9716b8dd453679a6d1e6c45475fa127acf2cfcecd73fd1eed9741",
+        "capabilityHash": "0x37ae9c09142c04a09e033b343c45d033f7bf7c8c2508c92a2a4dcbd4cdc1227a",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -3329,8 +3329,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001155bc8c1b4f90ad1afbd5d863f9bd825dd56cd57ae8cc5097f147ac9ddde6a9639e7d7314a077a2c63a0f22b3c60c9aefb5245487484c2a31827011ad8d3b08600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000019d6255b65137f5b9bca95e195f34ef811e4d647fcd6268fbfe9bd562d511fbfe0f331c31a82b692d1c515ddf7b2f590ac94937bb7071d37ea204293664b2ab4500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -3342,7 +3342,7 @@
       "name": "webauthn root: signature over another digest",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3379,7 +3379,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3464,7 +3464,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -3493,9 +3493,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -3503,10 +3503,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3522,11 +3522,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x692ae849abf7d06a88f415307a5129da44726b8c26fcb9e1317523af46364801",
+        "capabilityHash": "0xca7bec197f5b3eecfeb44aba30cad90ab07181d240857189b129062dccb9724c",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -3553,7 +3553,7 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
           "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001e429cd69d8fc15fdb765b18058cfce2d40dcc6ef8e508bcafcfd8a363cb4e9a74f2e75ca4572d87117579eb9999eff18128c0cf2c40e0d74fafa16b60c34258d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a2258467863584678635846786358467863584678635846786358467863584678635846786358467863584677222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
@@ -3566,7 +3566,7 @@
       "name": "webauthn root: capability hash does not commit to the approval",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3603,7 +3603,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3688,7 +3688,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -3717,9 +3717,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -3727,10 +3727,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3750,7 +3750,7 @@
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -3777,8 +3777,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001d3f52e61b6f545b49ca6c5157c9b76084fd971ed04674e049559964ae6f1e1534b2ec7d9362348052c50c126ce0975cbd0dafba1ad9a9532d12ddf12160a645600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001f0017de209909700d84eb6be22ae6f0a2802d06bb0e964e3ac570c02bd086af7064788e68d788f649f659573b83d58a0689571037b33af3d1b5267741b8dbe9b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -3790,7 +3790,7 @@
       "name": "webauthn root: approval digest altered",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3827,7 +3827,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3912,7 +3912,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -3941,9 +3941,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -3951,10 +3951,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -3970,11 +3970,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xf438c93b33ad3f0017d195e2bae9d8d743c15554b495b220d8c57a473bb67ddf",
+        "capabilityHash": "0x603f5f588206fe78c215950dd9d965717e24059cff984d28eacdfbd76442c233",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -4002,7 +4002,7 @@
             }
           ],
           "digest": "0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001d3f52e61b6f545b49ca6c5157c9b76084fd971ed04674e049559964ae6f1e1534b2ec7d9362348052c50c126ce0975cbd0dafba1ad9a9532d12ddf12160a645600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001f0017de209909700d84eb6be22ae6f0a2802d06bb0e964e3ac570c02bd086af7064788e68d788f649f659573b83d58a0689571037b33af3d1b5267741b8dbe9b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -4014,7 +4014,7 @@
       "name": "webauthn root: assertion from another origin",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4051,7 +4051,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4136,7 +4136,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -4165,9 +4165,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -4175,10 +4175,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4194,11 +4194,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xa447fc16317f0aacd078a7cfb40a938358aa3dc7e0cb5dc104b5006d90f3beb9",
+        "capabilityHash": "0x9988e488376ea44e0cae7ccdc67decfc189246bac2c56e0a5964a66ff8e011c3",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -4225,8 +4225,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000012fc826de778b0f6a95d5d31f841b55a3fb07eea77c2f3af80b42036f6ed962cc791bd9fe47b38094d494ad86eb2639b07f6113feb531e4cd9f7055012125204700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000857b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6576696c2e6578616d706c65222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001811fb27d164990ab97deb88925d3075abd32d6ee3a93ad5f3847d7885465b3871dd868e7cd1d637592eb6b65ff021b411a8018c2be22132d3a840860265fb5d600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000857b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6576696c2e6578616d706c65222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -4238,7 +4238,7 @@
       "name": "webauthn root: assertion for another challenge",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4275,7 +4275,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4360,7 +4360,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -4389,9 +4389,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -4399,10 +4399,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4418,11 +4418,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x880b576094308f82d81ccdda7fd9623993113f3656f6a35a86651bd56fe652cc",
+        "capabilityHash": "0x81bdab366fdfb4ce501bf4d43cb36b1c5a8bbe32efd1f92b0b057755bbef09b0",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -4449,7 +4449,7 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
           "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000156b337c49756d6af1ca7472d3987eccd84ffab57979e51d54668aaf21b50b8f06eec4b41129a1270426561f9059d7ef419a2bb9ab35b2e6699bca8c1bc4fc6f300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000617b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a2241414141222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d00000000000000000000000000000000000000000000000000000000000000"
         }
       },
@@ -4462,7 +4462,7 @@
       "name": "webauthn root: assertion of type create",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4499,7 +4499,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4584,7 +4584,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -4613,9 +4613,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -4623,10 +4623,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4642,11 +4642,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0xe2d0bd91d064fe9a60c87f71a77832ce0a9db866e5929a26513edacaac651740",
+        "capabilityHash": "0x8237bf5923866f2901cedf0247599f00474e2c5329c4be4fe36ee6f7aa2496f0",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -4673,8 +4673,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001952932315459f6b9cf74f62d9c1d46e207dcc59a709f94ad32e5cf40b695e8bb212148b3ff335eb505869b9dd91783cea388e657c80b7038b519f2062a55929700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad50500000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008b7b2274797065223a22776562617574686e2e637265617465222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000019ae3ddb05d222f600b3e1f7bf75b761cdbf4eead26bbd0e8ad84a7dce0b84fa342a39d064d44724bf5aae08285521b8d5b841ca49309f0f3193ea2e379c5ee3e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad50500000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008b7b2274797065223a22776562617574686e2e637265617465222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -4686,7 +4686,7 @@
       "name": "webauthn root: assertion without user verification",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4723,7 +4723,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4808,7 +4808,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -4837,9 +4837,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -4847,10 +4847,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -4866,11 +4866,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x42ff0e3a0866c508ad6818177866bdb5d6308114c913432e6c4f1ea653083c8c",
+        "capabilityHash": "0xd254aaeba71ddb2fae9fd043c5baec127a7011c4e0d4ff87a798f06bef4a9fb6",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -4897,8 +4897,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001dfa7435e1c2d9a7e87c01cf76da454b7acc16c93e2fa51fe21a2ceb2b3c49dfe7c51316543e817c6fc27f55449bcca2e0c6c00b9c5916adfdf5d73009bd3a60c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5010000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001c5b3650af6abbf8f699a3ca03349fe5dd66a6dce20818f2051cf221c411ebc2461f5a65f6237c2e377d96783efca78c856bf8f5de66d4384bbdb8ae15a42392900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000025746f806e38f25df23150ba0b6a12f5a324865a4545fd52c95dcd48e58193fad5010000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {
@@ -4910,7 +4910,7 @@
       "name": "webauthn root: assertion for another relying party",
       "rootKind": "webauthn",
       "request": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "portal-webauthn",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4947,7 +4947,7 @@
           "address": "0x757b4e1f4d15d14b99725ad9b618d446ffdfc21d"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -5032,7 +5032,7 @@
             "verifyingContract": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c"
           },
           "message": {
-            "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+            "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
             "packages": [
               {
                 "moduleType": "5",
@@ -5061,9 +5061,9 @@
             ]
           }
         },
-        "expectedDigest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
+        "expectedDigest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
         "replay": {
-          "nonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "nonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "deadline": null
         }
       },
@@ -5071,10 +5071,10 @@
         "version": "oaath.permission-decision/v1",
         "kind": "approve",
         "requestId": "portal-webauthn",
-        "requestHash": "0x8843311fa1fa952b55c85193ecdb1e84d99851175f5c9b4a4b9e6c4cf5c004f7",
+        "requestHash": "0xe47a5bd10eaf95bbc8f695b281b2096d5b5d7e1a6ca3e872469f06dc18e88450",
         "decidedAt": 1800000010,
         "approvedPolicy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
@@ -5090,11 +5090,11 @@
             "intervalSeconds": null
           }
         },
-        "capabilityHash": "0x8cfd71586438129e60a1566515e1c46dafcbd639e26ce6bf15a9e94a8aff0522",
+        "capabilityHash": "0x5fbde6b2379c77939b3cc29e4814dbb0d115549f2c8bd02bb44d9688bbd0e439",
         "installApproval": {
           "version": "oaath.kernel.all-chain-approval/v1",
           "account": "0x24ca5f61149f407aa0e1f4dc21d34859926d844c",
-          "installNonce": "61633265199052082687407216955037095670767780014671511139865631081567501680640",
+          "installNonce": "103343518513980714333372270809736248612231179872158328228238295948237540950016",
           "packages": [
             {
               "moduleType": 5,
@@ -5121,8 +5121,8 @@
               "internalData": "0x29c892f1e9ae5c53"
             }
           ],
-          "digest": "0x7d28bf930ea3105b3b540dffe16e64966ad2404c631060efe75b809713bece68",
-          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000001b4069fc6bba4b1ed94f970ab8e2aaab76b9ef39763a1eaa76012a4302d72334e03f82646c807a53107314118f16f5ddf98ea8fcc1f30b62a505d9cf6db6d43f6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000250000000000000000000000000000000000000000000000000000000000000000050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226653695f6b77366a454673375641335f3457356b6c6d72535145786a45474476353175416c784f2d7a6d67222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
+          "digest": "0x9c12f618d6bb650c0c99cb59714a5438e44e0d0930c5a8d8abb4db9907d53893",
+          "enableSignature": "0x00000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000105578f0b30ec942b45f4d14a454858ad87b967b7b50d066d73e1a6a18a269f1e0b0513fbfb6654d53acc16f5e0e0a98733f9e26ccc8593e403ef25ad4d5e1b65000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000250000000000000000000000000000000000000000000000000000000000000000050000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000887b2274797065223a22776562617574686e2e676574222c226368616c6c656e6765223a226e424c32474e61375a51774d6d63745a635570554f4f524f44516b7778616a59713754626d5166564f4a4d222c226f726967696e223a2268747470733a2f2f6f616174682e7461656b2e74656368222c2263726f73734f726967696e223a66616c73657d000000000000000000000000000000000000000000000000"
         }
       },
       "expect": {

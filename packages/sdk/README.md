@@ -111,13 +111,27 @@ from a click handler: the popup opens before anything is awaited. The page at
 `redirectUri` (on the same origin) calls `completeOAAthLogin()`, which posts the
 response to the opener on that origin only; `state` and the RFC 9207 `iss` are
 checked before the code is redeemed. It resolves to
-`{ account, accountProfile, signer, verified: true, idToken }`: the account and
-signer the user chose. The signer proved control of its credential to OAAth
+`{ account, accountProfile, signer, accounts, verified: true, idToken }`: the
+account and signer the user chose, and `accounts`, every account the signer is
+an active member of (`{ address, role: "root" | "permission", status: "active" }`,
+from the id_token's `oaath_accounts`). A malformed entry refuses the login with
+`oaath_client_identity_invalid`. The signer proved control of its credential to OAAth
 and is a member of the account; login is identity, never authority. Failures are `OaathClientError` codes: `oaath_client_access_denied`
 (cancelled or closed), `oaath_client_popup_blocked`, `oaath_client_login_timeout`,
 `oaath_client_issuer_mismatch`, `oaath_client_state_mismatch`, and
 `oaath_client_identity_invalid`. The client is registered once with
 `POST {issuer}/oauth/clients`; see `examples/oauth-login`.
+
+`requestOwnerOperationApproval({ issuer, clientId, redirectUri, request })` asks
+the account root to approve one owner operation in the same popup (or through
+`launch`, as for Grants). `request` is
+the exact unsigned request from `prepareOwnerOperation` (`@oaath/sdk/kernel`).
+The returned signed operation must be for that same request, and
+`verifyOwnerOperation` checks the account binding and the root's signature (a
+WebAuthn root asserts for the issuer's relying party). It resolves to
+`{ signed, entryPoint, userOperation }`, ready for the caller's own
+`eth_sendUserOperation`; OAAth never submits. A signed operation for another
+request fails with `oaath_client_state_conflict` (`oauth_operation_mismatch`).
 
 Portal-approved Grants (`createOAAth({ chains, approvals: { kind: "oauth", issuer,
 clientId, redirectUri } })`) open the same popup from `requestPermission`. Where no
@@ -126,6 +140,19 @@ replaces it: it opens the portal (for example `chrome.identity.launchWebAuthFlow
 and resolves with the redirect URL, which must be `redirectUri` itself; `state`,
 `iss`, the code exchange and the id_token are checked exactly as for the popup.
 See `examples/extension`.
+
+A member's request waits for the account root to approve it in the portal: the
+issuer answers the code exchange with `authorization_pending`, and
+`requestPermission` resolves to `{ state: "pending", requestId, expiresAt }`
+instead of a Grant. The SDK journals the issued code, its PKCE verifier and
+nonce in the realm's stores (one pending request per issuer, client and origin;
+another `requestPermission` meanwhile fails with `oaath_client_state_conflict`,
+source `oauth_permission_pending`). `connection.redeemPending()` makes exactly
+one token request per call and never starts a new authorization: it returns the
+Grant once the root approved, the same pending result while it has not, or
+`null` when nothing is pending. Polling is the application's choice. A root
+rejection fails with `oaath_client_permission_rejected`; it, an expired or spent
+code (`invalid_grant`), and the request's expiry clear the journal.
 
 ## Owner operations
 
@@ -416,11 +443,11 @@ The Monad enable gas floor applies before hashing or signing. Missing signer or
 policy deployments prevent binding. These primitives prepare and sign only;
 submission journaling and observation remain the caller's responsibility when
 using them directly. A missing receipt never authorizes another send.
-The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
+The approval schema is `oaath.kernel.v33-permission-approval/v1`; earlier
 chain-bound approval records are rejected and must be recreated.
 
 Custom issuer configurations can execute a v3.3 Grant using an account profile
-with version `oaath.kernel-existing-account-profile/v3`, `kernelVersion: "0.3.3"`,
+with version `oaath.kernel-existing-account-profile/v1`, `kernelVersion: "0.3.3"`,
 the existing `address`, EntryPoint version `0.7` (Kernel `0.3.3`) or `0.9` (Kernel v4), and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
 decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission
@@ -618,7 +645,7 @@ Recreate it after reload using the saved reference; `close()` drains active
 bounded observations and closes the supplied capability. A missing or unreadable
 receipt leaves the saved identity unresolved.
 
-Operation records now use `oaath.operation/v5`. Older records are rejected;
+Operation records now use `oaath.operation/v1`. Older records are rejected;
 IndexedDB schema 16 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.

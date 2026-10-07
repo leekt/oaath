@@ -153,7 +153,7 @@ const OPERATORS = {
 // --------------------------------------------------------------- requests
 
 const POLICY = {
-  version: "oaath.grant-policy/v2",
+  version: "oaath.grant-policy/v1",
   calls: [
     {
       target: `0x${"aa".repeat(20)}`,
@@ -175,7 +175,7 @@ const POLICY = {
 
 function request(owner, operator, policy = POLICY) {
   return {
-    version: "oaath.permission-request/v2",
+    version: "oaath.permission-request/v1",
     requestId: "grant-fixture-1",
     context: {
       version: "oaath.workspace-account-context/v1",

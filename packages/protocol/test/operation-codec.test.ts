@@ -199,7 +199,7 @@ describe("Operation current codec", () => {
     >;
 
     expectRecordInvalid({ ...operation, version: "oaath.operation/v0" });
-    expectRecordInvalid({ ...operation, version: "oaath.operation/v1" });
+    expectRecordInvalid({ ...operation, version: "oaath.operation/v0" });
     expectRecordInvalid({ ...operation, compatibilityState: "legacy" });
 
     const missing = { ...operation };

@@ -3,7 +3,7 @@
     "name": "frontend derived ecdsa",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -39,7 +39,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -76,7 +76,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -112,7 +112,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -153,7 +153,7 @@
     "name": "existing account webauthn operator",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -169,7 +169,7 @@
       },
       "chainScope": "all",
       "logicalAccount": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x6666666666666666666666666666666666666666",
@@ -189,7 +189,7 @@
         "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -226,7 +226,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -242,7 +242,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.3.3",
           "address": "0x6666666666666666666666666666666666666666",
@@ -262,7 +262,7 @@
           "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -303,7 +303,7 @@
     "name": "p256 owner application backend",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -339,7 +339,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -379,7 +379,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -415,7 +415,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -459,7 +459,7 @@
     "name": "webauthn owner oaath hosted team",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -496,7 +496,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -536,7 +536,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -573,7 +573,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -617,7 +617,7 @@
     "name": "existing 0.4.0 p256 windowed",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -633,7 +633,7 @@
       },
       "chainScope": "all",
       "logicalAccount": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -652,7 +652,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -689,7 +689,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -705,7 +705,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.4.0",
           "address": "0x6666666666666666666666666666666666666666",
@@ -724,7 +724,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -765,7 +765,7 @@
     "name": "existing 0.4.0 webauthn owner",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -781,7 +781,7 @@
       },
       "chainScope": "all",
       "logicalAccount": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -801,7 +801,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -838,7 +838,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -854,7 +854,7 @@
         },
         "chainScope": "all",
         "logicalAccount": {
-          "version": "oaath.kernel-existing-account-profile/v3",
+          "version": "oaath.kernel-existing-account-profile/v1",
           "kind": "kernel",
           "kernelVersion": "0.4.0",
           "address": "0x6666666666666666666666666666666666666666",
@@ -874,7 +874,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -915,7 +915,7 @@
     "name": "origin uppercase host",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -951,7 +951,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -988,7 +988,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1024,7 +1024,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1065,7 +1065,7 @@
     "name": "origin default port",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1101,7 +1101,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1138,7 +1138,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1174,7 +1174,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1215,7 +1215,7 @@
     "name": "origin root slash",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1251,7 +1251,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1288,7 +1288,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1324,7 +1324,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1365,7 +1365,7 @@
     "name": "origin http port",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1401,7 +1401,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1438,7 +1438,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1474,7 +1474,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1515,7 +1515,7 @@
     "name": "origin http default port",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1551,7 +1551,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1588,7 +1588,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1624,7 +1624,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1665,7 +1665,7 @@
     "name": "origin path",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1701,7 +1701,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1744,7 +1744,7 @@
     "name": "origin query",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1780,7 +1780,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1823,7 +1823,7 @@
     "name": "origin empty query",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -1859,7 +1859,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -1896,7 +1896,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -1932,7 +1932,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -1973,7 +1973,7 @@
     "name": "origin empty fragment",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2009,7 +2009,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2046,7 +2046,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2082,7 +2082,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2123,7 +2123,7 @@
     "name": "origin fragment",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2159,7 +2159,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2202,7 +2202,7 @@
     "name": "origin credentials",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2238,7 +2238,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2281,7 +2281,7 @@
     "name": "origin empty credentials",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2317,7 +2317,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2354,7 +2354,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2390,7 +2390,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2431,7 +2431,7 @@
     "name": "origin empty password",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2467,7 +2467,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2504,7 +2504,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2540,7 +2540,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2581,7 +2581,7 @@
     "name": "origin surrounding spaces",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2617,7 +2617,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2654,7 +2654,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2690,7 +2690,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2731,7 +2731,7 @@
     "name": "origin embedded newline",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2767,7 +2767,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2804,7 +2804,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2840,7 +2840,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -2881,7 +2881,7 @@
     "name": "origin unicode host",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -2917,7 +2917,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -2954,7 +2954,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -2990,7 +2990,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3031,7 +3031,7 @@
     "name": "origin ipv4 decimal",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3067,7 +3067,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3104,7 +3104,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3140,7 +3140,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3181,7 +3181,7 @@
     "name": "origin ipv6",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3217,7 +3217,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3254,7 +3254,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3290,7 +3290,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3331,7 +3331,7 @@
     "name": "origin ftp",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3367,7 +3367,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3410,7 +3410,7 @@
     "name": "origin wss",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3446,7 +3446,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3489,7 +3489,7 @@
     "name": "origin file",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3525,7 +3525,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3568,7 +3568,7 @@
     "name": "origin no scheme",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3604,7 +3604,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3647,7 +3647,7 @@
     "name": "origin 2049 characters",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3683,7 +3683,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3726,7 +3726,7 @@
     "name": "requestId 256 units",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3762,7 +3762,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3799,7 +3799,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -3835,7 +3835,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -3876,7 +3876,7 @@
     "name": "requestId 257 units",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3912,7 +3912,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -3955,7 +3955,7 @@
     "name": "requestId surrogate pairs at 256 units",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -3991,7 +3991,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4028,7 +4028,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4064,7 +4064,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4105,7 +4105,7 @@
     "name": "requestId surrogate pairs at 258 units",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4141,7 +4141,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4184,7 +4184,7 @@
     "name": "requestId leading space",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": " request",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4220,7 +4220,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4263,7 +4263,7 @@
     "name": "requestId trailing tab",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request\t",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4299,7 +4299,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4342,7 +4342,7 @@
     "name": "requestId trailing NEL (not JavaScript whitespace)",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4378,7 +4378,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4415,7 +4415,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "request",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4451,7 +4451,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4492,7 +4492,7 @@
     "name": "requestId leading BOM (JavaScript whitespace)",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "﻿request",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4528,7 +4528,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4571,7 +4571,7 @@
     "name": "requestId trailing ideographic space",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request　",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4607,7 +4607,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4650,7 +4650,7 @@
     "name": "requestId trailing line separator",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request ",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4686,7 +4686,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4729,7 +4729,7 @@
     "name": "requestId trailing narrow no-break space",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request ",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4765,7 +4765,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4808,7 +4808,7 @@
     "name": "requestId trailing zero width space (not whitespace)",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "request​",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4844,7 +4844,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -4881,7 +4881,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "request​",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -4917,7 +4917,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -4958,7 +4958,7 @@
     "name": "requestId inner spaces",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "a request id",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -4994,7 +4994,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5031,7 +5031,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "a request id",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -5067,7 +5067,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -5108,7 +5108,7 @@
     "name": "requestId empty",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5144,7 +5144,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5184,10 +5184,10 @@
     }
   },
   {
-    "name": "version v1",
+    "name": "version v0",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v1",
+      "version": "oaath.permission-request/v0",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5223,7 +5223,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5266,7 +5266,7 @@
     "name": "chainScope one",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5302,7 +5302,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5345,7 +5345,7 @@
     "name": "expiresAt equals requestedAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5381,7 +5381,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5424,7 +5424,7 @@
     "name": "policy validUntil null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5460,7 +5460,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5503,7 +5503,7 @@
     "name": "policy validUntil equals requestedAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5539,7 +5539,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5576,7 +5576,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -5612,7 +5612,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -5653,7 +5653,7 @@
     "name": "policy validUntil before requestedAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5689,7 +5689,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5732,7 +5732,7 @@
     "name": "policy validUntil equals expiresAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5768,7 +5768,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5811,7 +5811,7 @@
     "name": "policy invalid",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5847,7 +5847,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [],
         "validAfter": 100,
         "validUntil": 190,
@@ -5868,7 +5868,7 @@
     "name": "operator p256",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5904,7 +5904,7 @@
         "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -5947,7 +5947,7 @@
     "name": "context invalid",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -5983,7 +5983,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6026,7 +6026,7 @@
     "name": "sessionSigner frontend object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6062,7 +6062,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6108,7 +6108,7 @@
     "name": "sessionSigner empty provider",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6144,7 +6144,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6190,7 +6190,7 @@
     "name": "sessionSigner 257 provider",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6226,7 +6226,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6272,7 +6272,7 @@
     "name": "sessionSigner null provider",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6308,7 +6308,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6354,7 +6354,7 @@
     "name": "sessionSigner extra key",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6390,7 +6390,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6436,7 +6436,7 @@
   {
     "name": "requestedAt -0",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":-0,\"expiresAt\":200,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":-0,\"expiresAt\":200,\"sessionSigner\":null}",
     "expect": {
       "error": "permission_request_invalid"
     }
@@ -6444,10 +6444,10 @@
   {
     "name": "requestedAt 1e2",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":1e2,\"expiresAt\":200,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":1e2,\"expiresAt\":200,\"sessionSigner\":null}",
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -6483,7 +6483,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -6524,7 +6524,7 @@
     "name": "requestedAt 2^48",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6560,7 +6560,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6603,7 +6603,7 @@
     "name": "requestedAt negative",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6639,7 +6639,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6681,7 +6681,7 @@
   {
     "name": "requestedAt fraction",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":150.5,\"expiresAt\":200,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":150.5,\"expiresAt\":200,\"sessionSigner\":null}",
     "expect": {
       "error": "permission_request_invalid"
     }
@@ -6689,7 +6689,7 @@
   {
     "name": "expiresAt -0",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":-0,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":-0,\"sessionSigner\":null}",
     "expect": {
       "error": "permission_request_invalid"
     }
@@ -6697,7 +6697,7 @@
   {
     "name": "expiresAt 1e2",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":1e2,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":1e2,\"sessionSigner\":null}",
     "expect": {
       "error": "permission_request_invalid"
     }
@@ -6706,7 +6706,7 @@
     "name": "expiresAt 2^48",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6742,7 +6742,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6785,7 +6785,7 @@
     "name": "expiresAt negative",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6821,7 +6821,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -6863,7 +6863,7 @@
   {
     "name": "expiresAt fraction",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":150.5,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":150.5,\"sessionSigner\":null}",
     "expect": {
       "error": "permission_request_invalid"
     }
@@ -6871,10 +6871,10 @@
   {
     "name": "requestedAt 100.0 and expiresAt 2e2",
     "fn": "parsePermissionRequest",
-    "inputText": "{\"version\":\"oaath.permission-request/v2\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100.0,\"expiresAt\":2e2,\"sessionSigner\":null}",
+    "inputText": "{\"version\":\"oaath.permission-request/v1\",\"requestId\":\"permission-request-1\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-account-profile/v1\",\"kind\":\"kernel\",\"accountIndex\":\"7\",\"kernelVersion\":\"0.4.0\",\"factoryRoute\":\"meta_factory\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x1111111111111111111111111111111111111111\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v1\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100.0,\"expiresAt\":2e2,\"sessionSigner\":null}",
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -6910,7 +6910,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -6951,7 +6951,7 @@
     "name": "expiresAt 2^48 - 1",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -6987,7 +6987,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7024,7 +7024,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -7060,7 +7060,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -7101,7 +7101,7 @@
     "name": "application deviceId 64 characters",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7137,7 +7137,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7174,7 +7174,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -7210,7 +7210,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -7251,7 +7251,7 @@
     "name": "application deviceId 65 characters",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7287,7 +7287,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7330,7 +7330,7 @@
     "name": "application deviceId uppercase",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7366,7 +7366,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7409,7 +7409,7 @@
     "name": "application deviceId leading hyphen",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7445,7 +7445,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7488,7 +7488,7 @@
     "name": "application deviceId leading dot",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7524,7 +7524,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7567,7 +7567,7 @@
     "name": "application deviceId digit first",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7603,7 +7603,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7640,7 +7640,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -7676,7 +7676,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -7717,7 +7717,7 @@
     "name": "application deviceId underscore and dot",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7753,7 +7753,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7790,7 +7790,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -7826,7 +7826,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -7867,7 +7867,7 @@
     "name": "application deviceId tilde",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7903,7 +7903,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -7946,7 +7946,7 @@
     "name": "application deviceId space",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -7982,7 +7982,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8025,7 +8025,7 @@
     "name": "application deviceId empty",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -8061,7 +8061,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8104,7 +8104,7 @@
     "name": "application deviceId trailing newline",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -8140,7 +8140,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8218,7 +8218,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8297,7 +8297,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8376,7 +8376,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8455,7 +8455,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8534,7 +8534,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8613,7 +8613,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8692,7 +8692,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8735,7 +8735,7 @@
     "name": "request: drop root.requestId",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
         "workspaceId": "personal-1",
@@ -8770,7 +8770,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8813,7 +8813,7 @@
     "name": "request: root.requestId as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": null,
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -8849,7 +8849,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8892,7 +8892,7 @@
     "name": "request: root.requestId as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": 1,
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -8928,7 +8928,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -8971,7 +8971,7 @@
     "name": "request: root.requestId as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "x",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9007,7 +9007,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9044,7 +9044,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "x",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -9080,7 +9080,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -9121,7 +9121,7 @@
     "name": "request: root.requestId as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": [],
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9157,7 +9157,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9200,7 +9200,7 @@
     "name": "request: root.requestId as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": {},
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9236,7 +9236,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9279,7 +9279,7 @@
     "name": "request: root.requestId as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": true,
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9315,7 +9315,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9358,7 +9358,7 @@
     "name": "request: drop root.context",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "application": {
         "applicationId": "oaath-tests",
@@ -9388,7 +9388,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9431,7 +9431,7 @@
     "name": "request: root.context as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": null,
       "application": {
@@ -9462,7 +9462,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9505,7 +9505,7 @@
     "name": "request: root.context as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": 1,
       "application": {
@@ -9536,7 +9536,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9579,7 +9579,7 @@
     "name": "request: root.context as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": "x",
       "application": {
@@ -9610,7 +9610,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9653,7 +9653,7 @@
     "name": "request: root.context as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": [],
       "application": {
@@ -9684,7 +9684,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9727,7 +9727,7 @@
     "name": "request: root.context as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {},
       "application": {
@@ -9758,7 +9758,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9801,7 +9801,7 @@
     "name": "request: root.context as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": true,
       "application": {
@@ -9832,7 +9832,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9875,7 +9875,7 @@
     "name": "request: drop root.application",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9905,7 +9905,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -9948,7 +9948,7 @@
     "name": "request: root.application as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -9979,7 +9979,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10022,7 +10022,7 @@
     "name": "request: root.application as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10053,7 +10053,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10096,7 +10096,7 @@
     "name": "request: root.application as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10127,7 +10127,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10170,7 +10170,7 @@
     "name": "request: root.application as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10201,7 +10201,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10244,7 +10244,7 @@
     "name": "request: root.application as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10275,7 +10275,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10318,7 +10318,7 @@
     "name": "request: root.application as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10349,7 +10349,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10392,7 +10392,7 @@
     "name": "request: drop root.chainScope",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10427,7 +10427,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10470,7 +10470,7 @@
     "name": "request: root.chainScope as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10506,7 +10506,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10549,7 +10549,7 @@
     "name": "request: root.chainScope as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10585,7 +10585,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10628,7 +10628,7 @@
     "name": "request: root.chainScope as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10664,7 +10664,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10707,7 +10707,7 @@
     "name": "request: root.chainScope as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10743,7 +10743,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10786,7 +10786,7 @@
     "name": "request: root.chainScope as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10822,7 +10822,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10865,7 +10865,7 @@
     "name": "request: root.chainScope as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10901,7 +10901,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -10944,7 +10944,7 @@
     "name": "request: drop root.logicalAccount",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -10965,7 +10965,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11008,7 +11008,7 @@
     "name": "request: root.logicalAccount as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11030,7 +11030,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11073,7 +11073,7 @@
     "name": "request: root.logicalAccount as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11095,7 +11095,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11138,7 +11138,7 @@
     "name": "request: root.logicalAccount as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11160,7 +11160,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11203,7 +11203,7 @@
     "name": "request: root.logicalAccount as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11225,7 +11225,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11268,7 +11268,7 @@
     "name": "request: root.logicalAccount as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11290,7 +11290,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11333,7 +11333,7 @@
     "name": "request: root.logicalAccount as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11355,7 +11355,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11398,7 +11398,7 @@
     "name": "request: drop root.operatorCredential",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11429,7 +11429,7 @@
         }
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11472,7 +11472,7 @@
     "name": "request: root.operatorCredential as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11504,7 +11504,7 @@
       },
       "operatorCredential": null,
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11547,7 +11547,7 @@
     "name": "request: root.operatorCredential as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11579,7 +11579,7 @@
       },
       "operatorCredential": 1,
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11622,7 +11622,7 @@
     "name": "request: root.operatorCredential as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11654,7 +11654,7 @@
       },
       "operatorCredential": "x",
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11697,7 +11697,7 @@
     "name": "request: root.operatorCredential as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11729,7 +11729,7 @@
       },
       "operatorCredential": [],
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11772,7 +11772,7 @@
     "name": "request: root.operatorCredential as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11804,7 +11804,7 @@
       },
       "operatorCredential": {},
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11847,7 +11847,7 @@
     "name": "request: root.operatorCredential as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11879,7 +11879,7 @@
       },
       "operatorCredential": true,
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -11922,7 +11922,7 @@
     "name": "request: drop root.policy",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -11969,7 +11969,7 @@
     "name": "request: root.policy as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12017,7 +12017,7 @@
     "name": "request: root.policy as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12065,7 +12065,7 @@
     "name": "request: root.policy as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12113,7 +12113,7 @@
     "name": "request: root.policy as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12161,7 +12161,7 @@
     "name": "request: root.policy as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12209,7 +12209,7 @@
     "name": "request: root.policy as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12257,7 +12257,7 @@
     "name": "request: drop root.requestedAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12293,7 +12293,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12335,7 +12335,7 @@
     "name": "request: root.requestedAt as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12371,7 +12371,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12414,7 +12414,7 @@
     "name": "request: root.requestedAt as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12450,7 +12450,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12487,7 +12487,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -12523,7 +12523,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -12564,7 +12564,7 @@
     "name": "request: root.requestedAt as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12600,7 +12600,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12643,7 +12643,7 @@
     "name": "request: root.requestedAt as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12679,7 +12679,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12722,7 +12722,7 @@
     "name": "request: root.requestedAt as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12758,7 +12758,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12801,7 +12801,7 @@
     "name": "request: root.requestedAt as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12837,7 +12837,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12880,7 +12880,7 @@
     "name": "request: drop root.expiresAt",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12916,7 +12916,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -12958,7 +12958,7 @@
     "name": "request: root.expiresAt as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -12994,7 +12994,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13037,7 +13037,7 @@
     "name": "request: root.expiresAt as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13073,7 +13073,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13116,7 +13116,7 @@
     "name": "request: root.expiresAt as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13152,7 +13152,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13195,7 +13195,7 @@
     "name": "request: root.expiresAt as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13231,7 +13231,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13274,7 +13274,7 @@
     "name": "request: root.expiresAt as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13310,7 +13310,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13353,7 +13353,7 @@
     "name": "request: root.expiresAt as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13389,7 +13389,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13432,7 +13432,7 @@
     "name": "request: drop root.sessionSigner",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13468,7 +13468,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13510,7 +13510,7 @@
     "name": "request: root.sessionSigner as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13546,7 +13546,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13589,7 +13589,7 @@
     "name": "request: root.sessionSigner as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13625,7 +13625,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13668,7 +13668,7 @@
     "name": "request: root.sessionSigner as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13704,7 +13704,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13747,7 +13747,7 @@
     "name": "request: root.sessionSigner as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13783,7 +13783,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13826,7 +13826,7 @@
     "name": "request: root.sessionSigner as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13862,7 +13862,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -13905,7 +13905,7 @@
     "name": "request: unknown key at root",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -13941,7 +13941,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14017,7 +14017,7 @@
     "name": "application: drop application.applicationId",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14052,7 +14052,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14095,7 +14095,7 @@
     "name": "application: application.applicationId as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14131,7 +14131,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14174,7 +14174,7 @@
     "name": "application: application.applicationId as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14210,7 +14210,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14253,7 +14253,7 @@
     "name": "application: application.applicationId as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14289,7 +14289,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14326,7 +14326,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -14362,7 +14362,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -14403,7 +14403,7 @@
     "name": "application: application.applicationId as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14439,7 +14439,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14482,7 +14482,7 @@
     "name": "application: application.applicationId as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14518,7 +14518,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14561,7 +14561,7 @@
     "name": "application: application.applicationId as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14597,7 +14597,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14640,7 +14640,7 @@
     "name": "application: drop application.clientId",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14675,7 +14675,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14718,7 +14718,7 @@
     "name": "application: application.clientId as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14754,7 +14754,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14797,7 +14797,7 @@
     "name": "application: application.clientId as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14833,7 +14833,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14876,7 +14876,7 @@
     "name": "application: application.clientId as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -14912,7 +14912,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -14949,7 +14949,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -14985,7 +14985,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -15026,7 +15026,7 @@
     "name": "application: application.clientId as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15062,7 +15062,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15105,7 +15105,7 @@
     "name": "application: application.clientId as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15141,7 +15141,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15184,7 +15184,7 @@
     "name": "application: application.clientId as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15220,7 +15220,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15263,7 +15263,7 @@
     "name": "application: drop application.origin",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15298,7 +15298,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15341,7 +15341,7 @@
     "name": "application: application.origin as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15377,7 +15377,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15420,7 +15420,7 @@
     "name": "application: application.origin as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15456,7 +15456,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15499,7 +15499,7 @@
     "name": "application: application.origin as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15535,7 +15535,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15578,7 +15578,7 @@
     "name": "application: application.origin as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15614,7 +15614,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15657,7 +15657,7 @@
     "name": "application: application.origin as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15693,7 +15693,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15736,7 +15736,7 @@
     "name": "application: application.origin as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15772,7 +15772,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15815,7 +15815,7 @@
     "name": "application: drop application.deviceId",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15850,7 +15850,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15893,7 +15893,7 @@
     "name": "application: application.deviceId as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -15929,7 +15929,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -15972,7 +15972,7 @@
     "name": "application: application.deviceId as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16008,7 +16008,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16051,7 +16051,7 @@
     "name": "application: application.deviceId as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16087,7 +16087,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16124,7 +16124,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.permission-request/v2",
+        "version": "oaath.permission-request/v1",
         "requestId": "permission-request-1",
         "context": {
           "version": "oaath.workspace-account-context/v1",
@@ -16160,7 +16160,7 @@
           "address": "0x4444444444444444444444444444444444444444"
         },
         "policy": {
-          "version": "oaath.grant-policy/v2",
+          "version": "oaath.grant-policy/v1",
           "calls": [
             {
               "target": "0x1111111111111111111111111111111111111111",
@@ -16201,7 +16201,7 @@
     "name": "application: application.deviceId as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16237,7 +16237,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16280,7 +16280,7 @@
     "name": "application: application.deviceId as object",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16316,7 +16316,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16359,7 +16359,7 @@
     "name": "application: application.deviceId as boolean",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16395,7 +16395,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16438,7 +16438,7 @@
     "name": "application: unknown key at application",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16475,7 +16475,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16518,7 +16518,7 @@
     "name": "application: application as null",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16549,7 +16549,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16592,7 +16592,7 @@
     "name": "application: application as number",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16623,7 +16623,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16666,7 +16666,7 @@
     "name": "application: application as string",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16697,7 +16697,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",
@@ -16740,7 +16740,7 @@
     "name": "application: application as array",
     "fn": "parsePermissionRequest",
     "input": {
-      "version": "oaath.permission-request/v2",
+      "version": "oaath.permission-request/v1",
       "requestId": "permission-request-1",
       "context": {
         "version": "oaath.workspace-account-context/v1",
@@ -16771,7 +16771,7 @@
         "address": "0x4444444444444444444444444444444444444444"
       },
       "policy": {
-        "version": "oaath.grant-policy/v2",
+        "version": "oaath.grant-policy/v1",
         "calls": [
           {
             "target": "0x1111111111111111111111111111111111111111",

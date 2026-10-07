@@ -204,7 +204,7 @@ export async function createLocalAnvilFixture(
       stateDirectory === undefined
         ? null
         : captureLocalAnvilRecovery({
-            version: "oaath.local-anvil-recovery/v2",
+            version: "oaath.local-anvil-recovery/v1",
             existingAccount: first.existingAccount,
             owner: owner.address,
             session: session.address,

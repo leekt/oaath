@@ -428,7 +428,7 @@
     "name": "existing 0.3.3 ecdsa",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -443,7 +443,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x6666666666666666666666666666666666666666",
@@ -462,7 +462,7 @@
     "name": "existing 0.4.0 ecdsa",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.4.0",
       "address": "0x6666666666666666666666666666666666666666",
@@ -477,7 +477,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -496,7 +496,7 @@
     "name": "existing 0.4.0 p256",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.4.0",
       "address": "0x6666666666666666666666666666666666666666",
@@ -511,7 +511,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -530,7 +530,7 @@
     "name": "existing 0.3.3 p256",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -551,7 +551,7 @@
     "name": "existing 0.4.0 webauthn",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.4.0",
       "address": "0x6666666666666666666666666666666666666666",
@@ -567,7 +567,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x6666666666666666666666666666666666666666",
@@ -587,7 +587,7 @@
     "name": "existing 0.3.3 webauthn",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -609,7 +609,7 @@
     "name": "existing 0.4.0 webauthn checksummed address",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.4.0",
       "address": "0x52908400098527886E0F7030069857D2E4169EE7",
@@ -625,7 +625,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.4.0",
         "address": "0x52908400098527886e0f7030069857d2e4169ee7",
@@ -645,7 +645,7 @@
     "name": "existing 0.4.0 webauthn invalid authenticatorIdHash",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.4.0",
       "address": "0x6666666666666666666666666666666666666666",
@@ -667,7 +667,7 @@
     "name": "existing 0.3.3 entryPoint 0.9",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -688,7 +688,7 @@
     "name": "existing kernel 0.3.1",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.1",
       "address": "0x6666666666666666666666666666666666666666",
@@ -709,7 +709,7 @@
     "name": "existing with derived fields",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -820,7 +820,7 @@
     "name": "existing address: mixed EIP-55",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD",
@@ -835,7 +835,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
@@ -854,7 +854,7 @@
     "name": "existing address: single-case uppercase",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD",
@@ -869,7 +869,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
@@ -888,7 +888,7 @@
     "name": "existing address: incorrect mixed checksum",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0xABcdeFABcdEFabcdEfAbCdefabcdeFABcDEFabCD",
@@ -909,7 +909,7 @@
     "name": "existing address: EIP-55 checksummed",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x52908400098527886E0F7030069857D2E4169EE7",
@@ -924,7 +924,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x52908400098527886e0f7030069857d2e4169ee7",
@@ -943,7 +943,7 @@
     "name": "existing address: lowercase mixed-hex",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x52908400098527886e0f7030069857d2e4169ee7",
@@ -958,7 +958,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x52908400098527886e0f7030069857d2e4169ee7",
@@ -977,7 +977,7 @@
     "name": "existing address: uppercase hex digits",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x52908400098527886E0F7030069857D2E4169EE7",
@@ -992,7 +992,7 @@
     },
     "expect": {
       "ok": {
-        "version": "oaath.kernel-existing-account-profile/v3",
+        "version": "oaath.kernel-existing-account-profile/v1",
         "kind": "kernel",
         "kernelVersion": "0.3.3",
         "address": "0x52908400098527886e0f7030069857d2e4169ee7",
@@ -1011,7 +1011,7 @@
     "name": "existing address: invalid checksum",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x52908400098527886e0F7030069857D2E4169EE7",
@@ -1032,7 +1032,7 @@
     "name": "existing address: zero",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x0000000000000000000000000000000000000000",
@@ -1053,7 +1053,7 @@
     "name": "existing address: 19 bytes",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x11111111111111111111111111111111111111",
@@ -1074,7 +1074,7 @@
     "name": "existing address: missing 0x",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "1111111111111111111111111111111111111111",
@@ -1095,7 +1095,7 @@
     "name": "existing address: 0X prefix",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0X1111111111111111111111111111111111111111",
@@ -2346,7 +2346,7 @@
     "name": "existing: drop root.kind",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
       "entryPoint": {
@@ -2366,7 +2366,7 @@
     "name": "existing: root.kind as null",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": null,
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2387,7 +2387,7 @@
     "name": "existing: root.kind as number",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": 1,
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2408,7 +2408,7 @@
     "name": "existing: root.kind as string",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "x",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2429,7 +2429,7 @@
     "name": "existing: root.kind as array",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": [],
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2450,7 +2450,7 @@
     "name": "existing: root.kind as object",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": {},
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2471,7 +2471,7 @@
     "name": "existing: root.kind as boolean",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": true,
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2492,7 +2492,7 @@
     "name": "existing: drop root.kernelVersion",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "address": "0x6666666666666666666666666666666666666666",
       "entryPoint": {
@@ -2512,7 +2512,7 @@
     "name": "existing: root.kernelVersion as null",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": null,
       "address": "0x6666666666666666666666666666666666666666",
@@ -2533,7 +2533,7 @@
     "name": "existing: root.kernelVersion as number",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": 1,
       "address": "0x6666666666666666666666666666666666666666",
@@ -2554,7 +2554,7 @@
     "name": "existing: root.kernelVersion as string",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "x",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2575,7 +2575,7 @@
     "name": "existing: root.kernelVersion as array",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": [],
       "address": "0x6666666666666666666666666666666666666666",
@@ -2596,7 +2596,7 @@
     "name": "existing: root.kernelVersion as object",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": {},
       "address": "0x6666666666666666666666666666666666666666",
@@ -2617,7 +2617,7 @@
     "name": "existing: root.kernelVersion as boolean",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": true,
       "address": "0x6666666666666666666666666666666666666666",
@@ -2638,7 +2638,7 @@
     "name": "existing: drop root.address",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "entryPoint": {
@@ -2658,7 +2658,7 @@
     "name": "existing: root.address as null",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": null,
@@ -2679,7 +2679,7 @@
     "name": "existing: root.address as number",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": 1,
@@ -2700,7 +2700,7 @@
     "name": "existing: root.address as string",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "x",
@@ -2721,7 +2721,7 @@
     "name": "existing: root.address as array",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": [],
@@ -2742,7 +2742,7 @@
     "name": "existing: root.address as object",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": {},
@@ -2763,7 +2763,7 @@
     "name": "existing: root.address as boolean",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": true,
@@ -2784,7 +2784,7 @@
     "name": "existing: drop root.entryPoint",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2802,7 +2802,7 @@
     "name": "existing: root.entryPoint as null",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2821,7 +2821,7 @@
     "name": "existing: root.entryPoint as number",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2840,7 +2840,7 @@
     "name": "existing: root.entryPoint as string",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2859,7 +2859,7 @@
     "name": "existing: root.entryPoint as array",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2878,7 +2878,7 @@
     "name": "existing: root.entryPoint as object",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2897,7 +2897,7 @@
     "name": "existing: root.entryPoint as boolean",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2916,7 +2916,7 @@
     "name": "existing: drop root.ownerCredential",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2932,7 +2932,7 @@
     "name": "existing: root.ownerCredential as null",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2949,7 +2949,7 @@
     "name": "existing: root.ownerCredential as number",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2966,7 +2966,7 @@
     "name": "existing: root.ownerCredential as string",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -2983,7 +2983,7 @@
     "name": "existing: root.ownerCredential as array",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -3000,7 +3000,7 @@
     "name": "existing: root.ownerCredential as object",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -3017,7 +3017,7 @@
     "name": "existing: root.ownerCredential as boolean",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",
@@ -3034,7 +3034,7 @@
     "name": "existing: unknown key at root",
     "fn": "parseKernelAccountProfile",
     "input": {
-      "version": "oaath.kernel-existing-account-profile/v3",
+      "version": "oaath.kernel-existing-account-profile/v1",
       "kind": "kernel",
       "kernelVersion": "0.3.3",
       "address": "0x6666666666666666666666666666666666666666",

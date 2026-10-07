@@ -23,7 +23,7 @@ const secondWord = `0x${"44".repeat(32)}` as const;
 const fillerWord = `0x${"55".repeat(32)}` as const;
 
 const policy: GrantPolicy = {
-  version: "oaath.grant-policy/v2",
+  version: "oaath.grant-policy/v1",
   calls: [
     {
       target: firstTarget,
@@ -111,7 +111,7 @@ function expectPolicyError(action: () => unknown, code: OaathGrantPolicyError["c
 
 describe("canonical Grant policy", () => {
   it("round-trips one immutable current policy with a stable domain-separated encoding", () => {
-    expect(OAATH_GRANT_POLICY_VERSION).toBe("oaath.grant-policy/v2");
+    expect(OAATH_GRANT_POLICY_VERSION).toBe("oaath.grant-policy/v1");
     expect(OAATH_GRANT_POLICY_HASH_DOMAIN).toBe("@oaath/protocol:grant-policy");
     const mutable = clone(policy);
     const parsed = parseGrantPolicy(mutable);
@@ -127,7 +127,7 @@ describe("canonical Grant policy", () => {
     expect(hashGrantPolicy(clone(parsed))).toBe(hashGrantPolicy(parsed));
     expect(encodeGrantPolicy(parsed)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashGrantPolicy(parsed)).toBe(
-      "0x5aaba009970b9697efc0c96051c259637c9820bab581821eb1f9b581b05ed2f7",
+      "0x03a3eb051257d5afc31bf874424917fecace98fd58c9152c703d4a1616f616f7",
     );
 
     const indefinite = { ...clone(policy), validUntil: null };

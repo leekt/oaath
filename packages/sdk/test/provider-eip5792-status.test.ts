@@ -135,7 +135,7 @@ describe("Final EIP-5792 status projection", () => {
       status: "observed",
       observation: { status: "abandoned", operation: abandoned },
       record: {
-        version: "oaath.operation-store-record/v3",
+        version: "oaath.operation-store-record/v1",
         storeRevision: 1,
         updatedAt: abandoned.updatedAt,
         value: abandoned,

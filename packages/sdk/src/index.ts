@@ -52,11 +52,18 @@ export type {
 export type {
   OaathAuthorizationLauncher,
   OaathLogin,
+  OaathLoginAccount,
   OaathLoginOptions,
   OaathLoginSigner,
 } from "./client/oauth-login.js";
 export { completeOAAthLogin, loginWithOAAth } from "./client/oauth-login.js";
-export type { OaathOAuthApprovals, OaathOAuthOptions } from "./client/oauth-realm.js";
+export type {
+  OaathOAuthApprovals,
+  OaathOAuthClient,
+  OaathOAuthConnection,
+  OaathOAuthOptions,
+  OaathPendingPermission,
+} from "./client/oauth-realm.js";
 export type {
   OaathOperationExecution,
   OaathOperationHandle,
@@ -65,6 +72,8 @@ export type {
   OaathOperationReceipt,
   OaathOperationStatus,
 } from "./client/operation-handle.js";
+export type { OaathOwnerOperationApprovalOptions } from "./client/owner-operation-approval.js";
+export { requestOwnerOperationApproval } from "./client/owner-operation-approval.js";
 export type {
   OaathOwnerAccount,
   OaathOwnerCallsReview,
