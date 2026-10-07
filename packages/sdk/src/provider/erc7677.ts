@@ -10,6 +10,7 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   classifyUserOperationError,
@@ -33,12 +34,10 @@ import {
   walletCallSponsorResultCapabilities,
 } from "./result-capabilities.js";
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const NONEMPTY_BYTES = /^0x(?:[0-9a-f]{2})+$/u;
 const CANONICAL_QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT120 = (1n << 120n) - 1n;
 
 const LIMITS = Object.freeze({
@@ -217,12 +216,7 @@ function allowedRecord(
 }
 
 function canonicalAddress(value: unknown, label: string): `0x${string}` {
-  if (typeof value !== "string") return invalidEvidence(`${label} is invalid`);
-  const canonical = value.toLowerCase();
-  if (!ADDRESS.test(canonical) || canonical === ZERO_ADDRESS) {
-    return invalidEvidence(`${label} is invalid`);
-  }
-  return canonical as `0x${string}`;
+  return captureAddress(value, label, invalidEvidence);
 }
 
 function canonicalBytes(value: unknown, label: string): `0x${string}` {

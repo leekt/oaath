@@ -1,5 +1,6 @@
 import {
   type CaptureContext,
+  captureAddress,
   captureRecord as captureExactRecord,
   type ExactRecord,
   exactCapturedRecord as exactCapturedRecordValue,
@@ -12,11 +13,9 @@ import { getSigningHash, type Operation } from "cetane/execution/erc4337";
 
 export const OAATH_PREPARED_USER_OPERATION_VERSION = "oaath.prepared-user-operation/v1" as const;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HEX = /^0x(?:[0-9a-f]{2})*$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const EIP_7702_FACTORY = `0x7702${"00".repeat(18)}`;
 const MAX_UINT120 = (1n << 120n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -145,10 +144,7 @@ function address(
   label: string,
   code: PreparedUserOperationErrorCode,
 ): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return invalid(code, `${label} must be a nonzero lowercase 20-byte address`);
-  }
-  return value as `0x${string}`;
+  return captureAddress(value, label, captureFailure(code));
 }
 
 function hex(
@@ -476,7 +472,8 @@ export function prepareUserOperation(value: unknown): PreparedUserOperation {
       ...preparation,
       userOperationHash: deriveUserOperationHash(preparation),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathPreparedUserOperationError) throw error;
     throw new OaathPreparedUserOperationError(
       code,
       "prepared UserOperation input could not be captured safely",
@@ -488,7 +485,8 @@ export function parsePreparedUserOperation(value: unknown): PreparedUserOperatio
   const code = "prepared_user_operation_record_invalid" as const;
   try {
     return parsePreparedUserOperationUnsafe(value, code, new WeakSet());
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathPreparedUserOperationError) throw error;
     throw new OaathPreparedUserOperationError(
       code,
       "prepared UserOperation record could not be captured safely",

@@ -11,12 +11,14 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   type ExactRecord,
 } from "@oaath/protocol";
 import { clientFail } from "./client/errors.js";
 import { grantProviderPort, type OaathGrantHandle } from "./client/grant-handle.js";
+import { captureWalletAddress } from "./provider/capture.js";
 import {
   createEip5792Orchestrator,
   type OaathCallsConfirmer,
@@ -43,7 +45,6 @@ export {
   type OaathRpcErrorCode,
 } from "./cetane/rpc.js";
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 
@@ -110,12 +111,11 @@ function captureTransaction(
   );
   acceptOnly(record, ["from", "to", "value", "data"]);
 
-  const from = record.from;
-  if (typeof from !== "string" || !ADDRESS.test(from) || lower(from) !== account) {
+  const from = captureWalletAddress(record.from, "from");
+  if (from !== account) {
     return rpcFail(INVALID_PARAMS);
   }
-  const to = record.to;
-  if (typeof to !== "string" || !ADDRESS.test(to)) return rpcFail(INVALID_PARAMS);
+  const to = captureWalletAddress(record.to, "to");
   const value = record.value ?? "0x0";
   if (typeof value !== "string" || !QUANTITY.test(value)) return rpcFail(INVALID_PARAMS);
   const data = record.data ?? "0x";
@@ -191,8 +191,12 @@ export function oaathProvider(input: Readonly<OaathProviderInput>): OaathEip1193
   });
 
   async function account(): Promise<`0x${string}`> {
-    const value = (await port.account(chain)).toLowerCase();
-    if (!ADDRESS.test(value)) return rpcFail(INTERNAL_ERROR);
+    const value = captureAddress(
+      await port.account(chain),
+      "account",
+      () => rpcFail(INTERNAL_ERROR),
+      true,
+    );
     return value as `0x${string}`;
   }
 

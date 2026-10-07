@@ -10,6 +10,7 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   type ExactRecord,
@@ -32,12 +33,12 @@ export type { CapturedWalletValidityTimeRange } from "./erc7902.js";
 
 import {
   INTERNAL_ERROR,
+  invalidProviderAddress,
   invalidProviderParams,
   refuseProviderExecution,
   rpcFail,
 } from "./errors.js";
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const LOWERCASE_BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const CANONICAL_CHAIN_ID = /^0x[1-9a-fA-F][0-9a-fA-F]*$/u;
@@ -351,7 +352,12 @@ interface CapturedWalletCallDraft {
 }
 
 export function isWalletAddress(value: unknown): value is CapturedAddress {
-  return typeof value === "string" && ADDRESS.test(value);
+  try {
+    captureAddress(value, "wallet account", invalidProviderParams, true);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isHexBytes(value: unknown): value is CapturedHex {
@@ -371,11 +377,16 @@ export function isCanonicalQuantity(value: unknown): value is CapturedHex {
   return typeof value === "string" && CANONICAL_QUANTITY.test(value);
 }
 
-function canonicalAddress(value: unknown): CapturedAddress {
-  if (!isWalletAddress(value)) return invalidProviderParams();
-  const canonical = value.toLowerCase();
-  if (!isWalletAddress(canonical)) return invalidProviderParams();
-  return canonical;
+export function captureWalletAddress(
+  value: unknown,
+  field: "from" | "to" | "account",
+): CapturedAddress {
+  return captureAddress(
+    value,
+    field,
+    (_message, reason) => invalidProviderAddress(field, reason),
+    true,
+  );
 }
 
 function canonicalBytes(value: unknown): CapturedHex {
@@ -655,6 +666,10 @@ function captureCapabilities(
       paymasterService = capturePaymasterServiceCapability(capability);
     } else if (name === "staticPaymasterConfiguration") {
       staticPaymasterConfiguration = captureStaticPaymasterConfigurationCapability(capability);
+      values[name] = Object.freeze({
+        ...capability,
+        paymaster: staticPaymasterConfiguration.paymaster.address,
+      });
     } else if (name === "validityTimeRange") {
       validityTimeRange = captureValidityTimeRangeCapability(capability);
     }
@@ -695,7 +710,7 @@ function optionalId(record: ExactRecord): string | undefined {
 
 function optionalFrom(record: ExactRecord): CapturedAddress | undefined {
   if (!Object.hasOwn(record, "from")) return undefined;
-  return canonicalAddress(record.from);
+  return captureWalletAddress(record.from, "from");
 }
 
 function capturePreparedCallsKey(
@@ -772,7 +787,7 @@ function captureCall(
   const record = captureRecord(value, "wallet_sendCalls call", context, invalidProviderParams);
   acceptOnly(record, CALL_KEYS);
 
-  const to = Object.hasOwn(record, "to") ? canonicalAddress(record.to) : null;
+  const to = Object.hasOwn(record, "to") ? captureWalletAddress(record.to, "to") : null;
 
   let data: CapturedHex | undefined;
   if (Object.hasOwn(record, "data")) {
@@ -1123,7 +1138,7 @@ export function captureWalletGetCapabilitiesParams(
   );
   if (entries.length !== 1 && entries.length !== 2) return invalidProviderParams();
 
-  const address = canonicalAddress(entries[0]);
+  const address = captureWalletAddress(entries[0], "account");
   let chainIds: readonly CapturedHex[] | undefined;
   if (entries.length === 2) {
     const requested = captureDenseArray(

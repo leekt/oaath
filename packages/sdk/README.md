@@ -132,6 +132,11 @@ Kernel version, and `verifyKernelPermissionRevocation` proves removal at a
 finalized canonical block. A successful operation receipt alone does not prove
 removal.
 
+Address inputs accept lowercase, uppercase hex digits, or a valid EIP-55 checksum.
+The SDK captures them in lowercase before hashing or persistence. Invalid mixed-case
+checksums fail before signing; wallet RPC failures use `-32602` with the field and
+reason in `error.data.address` and a readable diagnostic in `error.data.message`.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The

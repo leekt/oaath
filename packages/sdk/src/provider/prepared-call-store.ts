@@ -23,6 +23,7 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord as captureRecordValue,
   exactCapturedRecord,
@@ -46,13 +47,11 @@ export const OAATH_PREPARED_CALL_STORE_RECORD_VERSION =
 /** Exclusive local lifetime of one prepared context, owned by this durable codec. */
 export const OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS = 300;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const BYTES4 = /^0x[0-9a-f]{8}$/u;
 const UNCOMPRESSED_SECP256K1_PUBLIC_KEY = /^0x04[0-9a-f]{128}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT64 = (1n << 64n) - 1n;
 const MAX_UINT48 = (1n << 48n) - 1n;
 const MAX_UINT192 = (1n << 192n) - 1n;
@@ -279,10 +278,7 @@ function chainId(value: unknown, code: StoreErrorCode): number {
 }
 
 function address(value: unknown, label: string, code: StoreErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return invalid(code, `${label} must be a nonzero lowercase address`);
-  }
-  return value as `0x${string}`;
+  return captureAddress(value, label, (message) => invalid(code, message));
 }
 
 function bytes(value: unknown, label: string, code: StoreErrorCode): `0x${string}` {
@@ -692,7 +688,8 @@ export function parsePreparedCallKey(value: unknown): Readonly<PreparedCallKey> 
 function inputRecord(value: unknown): Readonly<PreparedCallContextRecord> {
   try {
     return parsePreparedCallRecord(value);
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathStoreError) return invalid("store_input_invalid", error.message);
     return invalid("store_input_invalid", "Prepared call context value is invalid");
   }
 }
