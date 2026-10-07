@@ -97,7 +97,6 @@ export function OperationReview({
 
   const request = reviewed.request;
   const operation = request?.userOperation;
-  const phone = signer.profile.kind === "p256";
   return (
     <section aria-labelledby="operation-heading">
       <h1 id="operation-heading" ref={heading} tabIndex={-1}>
@@ -155,12 +154,7 @@ export function OperationReview({
         </p>
       )}
       <div className="actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={!request || busy || phone}
-          onClick={approve}
-        >
+        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
           Approve and sign
         </button>
       </div>

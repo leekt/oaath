@@ -571,9 +571,7 @@ describe("portal in Chrome", () => {
     expect(await page.$("::-p-text(No signers on this browser yet.)")).not.toBeNull();
     await clickText(page, "Add signer");
     await page.waitForSelector("::-p-text(No browser wallet found.)");
-    expect(await page.$eval("::-p-text(Phone)", (node) => node.closest("button")?.disabled)).toBe(
-      true,
-    );
+    expect(await page.$("::-p-text(Phone)")).toBeNull();
     await capture(page, "4-add-signer");
     await clickText(page, "New passkey");
     await page.waitForSelector("#account-heading");

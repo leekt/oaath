@@ -153,7 +153,6 @@ export function GrantReview({
   }
 
   const request = prepared?.request;
-  const phone = signer.profile.kind === "p256";
   return (
     <section aria-labelledby="review-heading">
       <h1 id="review-heading" ref={heading} tabIndex={-1}>
@@ -207,20 +206,9 @@ export function GrantReview({
         </p>
       )}
       <div className="actions">
-        {phone ? (
-          <button type="button" className="primary" disabled aria-describedby="phone-approval">
-            Approve on your phone
-          </button>
-        ) : (
-          <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
-            Approve and sign
-          </button>
-        )}
-        {phone && (
-          <p className="choice-detail" id="phone-approval">
-            Approving on your phone is coming soon.
-          </p>
-        )}
+        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
+          Approve and sign
+        </button>
       </div>
       {error && (
         <p className="error" role="alert">

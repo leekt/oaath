@@ -15,7 +15,7 @@ import {
 } from "@oaath/protocol";
 import { enrolWebAuthnCredential } from "@oaath/sdk/kernel";
 
-export type SignerKind = "passkey" | "wallet" | "phone";
+export type SignerKind = "passkey" | "wallet";
 
 export interface RememberedSigner {
   readonly signer_id: string;
@@ -38,7 +38,7 @@ function readOne(value: unknown): RememberedSigner | null {
   try {
     if (
       typeof entry.signer_id !== "string" ||
-      !["passkey", "wallet", "phone"].includes(entry.kind as string) ||
+      !["passkey", "wallet"].includes(entry.kind as string) ||
       typeof entry.label !== "string" ||
       (entry.credentialId !== null && typeof entry.credentialId !== "string") ||
       (entry.rdns !== null && typeof entry.rdns !== "string") ||
