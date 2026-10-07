@@ -21,7 +21,7 @@ import { type RelayErrorCode, relayFailure } from "../relay/errors.js";
 export const OAATH_AUTHORIZATION_REQUEST_RECORD_VERSION =
   "oaath.authorization-request-record/v2" as const;
 export const OAATH_AUTHORIZATION_DECISION_RECORD_VERSION =
-  "oaath.authorization-decision-record/v1" as const;
+  "oaath.authorization-decision-record/v2" as const;
 export const OAATH_AUTHORIZATION_CODE_RECORD_VERSION =
   "oaath.authorization-code-record/v1" as const;
 export const OAATH_ENCRYPTED_ARTIFACT_RECORD_VERSION =
@@ -70,7 +70,7 @@ export interface AuthorizationRequestRecord extends AuthorizationOwnerRoute {
   readonly expiresAt: number;
 }
 
-export type AuthorizationDecisionOutcome = "approved" | "rejected";
+export type AuthorizationDecisionOutcome = "approved" | "rejected" | "withdrawn";
 
 /**
  * Terminal decision. Its existence is the single authoritative fact that an
@@ -85,7 +85,7 @@ export interface AuthorizationDecisionRecord {
    * KMS-sealed copy of the released code for authenticated client pickup, and
    * its expiry. The relay mints the code itself, so holding a sealed copy adds
    * no new trust; PKCE still guards consumption. Both are null exactly when
-   * the outcome is a rejection.
+   * the outcome is a rejection or withdrawal.
    */
   readonly codeRef: string | null;
   readonly codeExpiresAt: number | null;
@@ -275,7 +275,11 @@ export function parseAuthorizationDecisionRecord(value: unknown): AuthorizationD
     ["version", "requestId", "outcome", "decidedAt", "codeRef", "codeExpiresAt"],
     "authorization decision record",
   );
-  if (record.outcome !== "approved" && record.outcome !== "rejected") {
+  if (
+    record.outcome !== "approved" &&
+    record.outcome !== "rejected" &&
+    record.outcome !== "withdrawn"
+  ) {
     return relayFailure(UNREADABLE, "decision outcome is unsupported");
   }
   // The sealed code exists exactly when a code was released: an approval with

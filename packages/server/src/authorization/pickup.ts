@@ -34,7 +34,7 @@ export interface FetchAuthorizationCodeInput {
 
 export type FetchedAuthorizationCode =
   | Readonly<{ outcome: "pending" }>
-  | Readonly<{ outcome: "rejected"; decidedAt: number }>
+  | Readonly<{ outcome: "rejected" | "withdrawn"; decidedAt: number }>
   | Readonly<{ outcome: "approved"; decidedAt: number; code: string; codeExpiresAt: number }>;
 
 export async function fetchAuthorizationCode(
@@ -43,7 +43,11 @@ export async function fetchAuthorizationCode(
   const now = relayNow(input.clock);
   const decided = await withRelayTransaction(input.store, async (transaction) => {
     const request = await transaction.lockAuthorizationRequest(input.requestId);
-    if (!request || request.clientId !== input.caller.clientId) {
+    if (
+      !request ||
+      request.clientId !== input.caller.clientId ||
+      request.subject !== input.caller.subject
+    ) {
       return relayFailure("relay_not_found", "authorization request does not exist");
     }
     const decision = await transaction.lockAuthorizationDecision(input.requestId);
@@ -56,8 +60,8 @@ export async function fetchAuthorizationCode(
     return decision;
   });
   if (decided === null) return Object.freeze({ outcome: "pending" });
-  if (decided.outcome === "rejected" || decided.codeRef === null) {
-    return Object.freeze({ outcome: "rejected", decidedAt: decided.decidedAt });
+  if (decided.outcome !== "approved") {
+    return Object.freeze({ outcome: decided.outcome, decidedAt: decided.decidedAt });
   }
   const codeExpiresAt = decided.codeExpiresAt ?? 0;
   if (now >= codeExpiresAt) {
@@ -67,7 +71,7 @@ export async function fetchAuthorizationCode(
   return Object.freeze({
     outcome: "approved",
     decidedAt: decided.decidedAt,
-    code: await openArtifact(input.kms, decided.codeRef),
+    code: await openArtifact(input.kms, decided.codeRef!),
     codeExpiresAt,
   });
 }

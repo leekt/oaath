@@ -29,7 +29,7 @@ export const LIST_PENDING_OWNER_REQUESTS = `
       request.request_id AS operation_id, request.expires_at
     FROM oaath_relay_authorization_request_v2 AS request
     WHERE request.owner_subject = $1 AND request.expires_at > $2
-      AND NOT EXISTS (SELECT 1 FROM oaath_relay_authorization_decision_v1 AS decision
+      AND NOT EXISTS (SELECT 1 FROM oaath_relay_authorization_decision_v2 AS decision
         WHERE decision.request_id = request.request_id)
     UNION ALL
     SELECT 'revocation' AS kind, request.record,
@@ -57,13 +57,13 @@ export const INSERT_AUTHORIZATION_REQUEST = `
 
 export const LOCK_AUTHORIZATION_DECISION = `
   SELECT request_id, record_version, outcome, decided_at, code_ref, code_expires_at
-  FROM oaath_relay_authorization_decision_v1
+  FROM oaath_relay_authorization_decision_v2
   WHERE request_id = $1
   FOR UPDATE
 `;
 
 export const INSERT_AUTHORIZATION_DECISION = `
-  INSERT INTO oaath_relay_authorization_decision_v1 (
+  INSERT INTO oaath_relay_authorization_decision_v2 (
     request_id, record_version, outcome, decided_at, code_ref, code_expires_at
   ) VALUES ($1, $2, $3, $4, $5, $6)
   ON CONFLICT (request_id) DO NOTHING

@@ -8,16 +8,16 @@
  * @author taek <leekt216@gmail.com>
  */
 
-export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v4" as const;
+export const OAATH_RELAY_POSTGRES_SCHEMA_VERSION = "oaath.relay-postgres-schema/v5" as const;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.freeze([
-  `CREATE TABLE oaath_relay_schema_v4 (
+  `CREATE TABLE oaath_relay_schema_v5 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )`,
-  `INSERT INTO oaath_relay_schema_v4 (schema_id, version)
+  `INSERT INTO oaath_relay_schema_v5 (schema_id, version)
    VALUES ('oaath', '${OAATH_RELAY_POSTGRES_SCHEMA_VERSION}')`,
   `CREATE TABLE oaath_relay_authorization_request_v2 (
     request_id text PRIMARY KEY,
@@ -33,11 +33,11 @@ export const OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS: readonly string[] = Object.
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= ${MAX_SAFE_INTEGER}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= ${MAX_SAFE_INTEGER})
   )`,
-  `CREATE TABLE oaath_relay_authorization_decision_v1 (
+  `CREATE TABLE oaath_relay_authorization_decision_v2 (
     request_id text PRIMARY KEY
       REFERENCES oaath_relay_authorization_request_v2 (request_id),
     record_version text NOT NULL,
-    outcome text NOT NULL CHECK (outcome IN ('approved', 'rejected')),
+    outcome text NOT NULL CHECK (outcome IN ('approved', 'rejected', 'withdrawn')),
     decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= ${MAX_SAFE_INTEGER}),
     code_ref text,
     code_expires_at bigint CHECK (code_expires_at >= 0 AND code_expires_at <= ${MAX_SAFE_INTEGER}),

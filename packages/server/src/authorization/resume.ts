@@ -29,7 +29,8 @@ export function resumeAuthorization(input: ResumeAuthorizationInput): Promise<Au
       transaction,
       input.requestId,
       now,
-      (request) => request.clientId === input.caller.clientId,
+      (request) =>
+        request.clientId === input.caller.clientId && request.subject === input.caller.subject,
     ),
   );
 }

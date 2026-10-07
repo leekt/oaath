@@ -33,6 +33,11 @@ export type {
 export { createAuthorizationRequest, fetchAuthorizationRequest } from "./authorization/request.js";
 export type { ResumeAuthorizationInput } from "./authorization/resume.js";
 export { resumeAuthorization } from "./authorization/resume.js";
+export type {
+  WithdrawAuthorizationInput,
+  WithdrawnAuthorization,
+} from "./authorization/withdraw.js";
+export { withdrawAuthorizationRequest } from "./authorization/withdraw.js";
 export type { RelayClock } from "./clock.js";
 export type {
   DirectoryAccount,

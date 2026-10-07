@@ -300,7 +300,7 @@ How an application organization/audience maps to the OAAth client/realm:
 ## Schema
 
 `createPostgresRelaySchema` creates the one current schema
-(`oaath.relay-postgres-schema/v4`). There is no migration runner: an obsolete
+(`oaath.relay-postgres-schema/v5`). There is no migration runner: an obsolete
 database is dropped and recreated.
 
 ## Tests
@@ -341,3 +341,10 @@ return one committed winner; a lost creation acknowledgement can be reconciled
 by explicit creation. Missing, unreadable or contradictory custody never rotates
 a key. The deployment owns pool shutdown, KMS configuration and signing admission.
 `createMemorySessionSignerRegistry()` is available for explicitly ephemeral use.
+
+`POST /authorization/requests/{requestId}/withdraw` with `{}` authenticates the
+creating client and subject. It commits `withdrawn` only while pending and returns
+`{ requestId, outcome, decidedAt }`. Retries return the existing `approved`,
+`rejected` or `withdrawn` decision; an undecided expired request returns `expired`.
+Withdrawal never revokes an issued approval or an operation. Native phone decision
+attempts against a withdrawn request return `relay_already_decided`.
