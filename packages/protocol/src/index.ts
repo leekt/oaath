@@ -19,6 +19,7 @@ export {
   OAATH_SUBJECT_VERSION,
   parseSubjectBinding,
 } from "./actors/subject.js";
+export { captureAddress } from "./address.js";
 export {
   type BundlerRejection,
   captureBundlerRejection,

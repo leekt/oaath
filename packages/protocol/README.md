@@ -38,7 +38,13 @@ operation into the returned owner artifact. The owner device still verifies its
 paired account, current consent and configured chain before signing. This is
 separate from generic owner-signing requests; raw digests remain reject-only.
 
-Ethereum encoding and hashing use the exact Cetane tarball pinned in this repository.
+Address inputs accept lowercase, uppercase hex digits, or a valid EIP-55 checksum.
+Mixed-case input with an invalid checksum is rejected with the field name. All
+captured addresses, serialized artifacts, and hash inputs use lowercase.
+`captureAddress` owns this rule for protocol and SDK input boundaries; domain
+owners retain their error codes and zero-address rules.
+
+Ethereum encoding and hashing use the exact Cetane version pinned in this repository.
 `entryPointAbi` owns the shared packed-operation ABI for EntryPoint 0.7 and 0.9.
 Run `bun run smoke:protocol` from the repository root to verify packed protocol
 vectors without viem installed. Viem is a development-only reference oracle.

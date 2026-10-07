@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use serde_json::{Map, Value};
 
 pub type Record = Map<String, Value>;
@@ -188,6 +188,23 @@ pub(crate) fn lower_hash(value: &Value) -> Option<&str> {
 /// `^0x[0-9a-f]{40}$`.
 pub(crate) fn lower_address(value: &Value) -> Option<&str> {
     value.as_str().filter(|text| is_lower_hex(text, 20))
+}
+
+/// Single-case or EIP-55 input, normalized to lowercase. Each owner decides
+/// whether zero is meaningful for its field.
+pub(crate) fn capture_address(value: &Value) -> Option<String> {
+    let text = value.as_str()?;
+    let digits = text.strip_prefix("0x")?;
+    if digits.len() != 40 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    if digits != digits.to_ascii_lowercase()
+        && digits != digits.to_ascii_uppercase()
+        && text != text.parse::<Address>().ok()?.to_checksum(None)
+    {
+        return None;
+    }
+    Some(text.to_ascii_lowercase())
 }
 
 pub(crate) const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";

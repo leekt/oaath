@@ -16,6 +16,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { captureCanonicalHttpsUrl } from "./actors/issuer.js";
+import { captureAddress } from "./address.js";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import { captureKernelAccountProfile, type KernelAccountProfile } from "./identity-profile.js";
 import { parseClientId } from "./ids.js";
@@ -83,7 +84,6 @@ const MAX_REDIRECT_URIS = 8;
 const MAX_CHAINS = 32;
 const MAX_NAME_LENGTH = 256;
 const MAX_HANDLE_LENGTH = 256;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
@@ -110,10 +110,7 @@ export function captureServiceAccount(
   const account = captureKernelAccountProfile(accountValue, context, fail);
   let ownerValidator: `0x${string}` | null = null;
   if (validatorValue !== null) {
-    if (typeof validatorValue !== "string" || !ADDRESS.test(validatorValue)) {
-      return fail("service account owner validator must be a lowercase address");
-    }
-    ownerValidator = validatorValue as `0x${string}`;
+    ownerValidator = captureAddress(validatorValue, "service account owner validator", fail, true);
   }
   if ((account.ownerCredential.kind === "ecdsa") !== (ownerValidator !== null)) {
     return fail("service account owner validator does not match the owner credential kind");
@@ -255,13 +252,16 @@ function captureChain(
       context,
       fail,
     );
-    if (typeof payer.address !== "string" || !ADDRESS.test(payer.address)) {
-      return fail("service bootstrap fee payer address must be a lowercase address");
-    }
+    const address = captureAddress(
+      payer.address,
+      "service bootstrap fee payer address",
+      fail,
+      true,
+    );
     if (typeof payer.balance !== "string" || !DECIMAL_UINT.test(payer.balance)) {
       return fail("service bootstrap fee payer balance must be a canonical decimal");
     }
-    feePayer = Object.freeze({ address: payer.address as `0x${string}`, balance: payer.balance });
+    feePayer = Object.freeze({ address, balance: payer.balance });
   }
   let paymasterService: Readonly<ServiceBootstrapPaymasterService> | null = null;
   if (record.paymasterService !== null) {

@@ -16,7 +16,7 @@ const challenge: string = deriveCodeChallenge("a".repeat(43));
 void [digest, challenge, entryPointAbi];`,
     "consumer.mjs": `import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { hashCanonicalEip712TypedData, deriveCodeChallenge } from "@oaath/protocol";
+import { hashCanonicalEip712TypedData, deriveCodeChallenge, parseGrantPolicy, encodeGrantPolicy, hashGrantPolicy } from "@oaath/protocol";
 assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 const fixture = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url), "utf8"));
 for (const vector of fixture.vectors) {
@@ -31,6 +31,19 @@ for (const vector of fixture.vectors) {
   }
 }
 assert.equal(deriveCodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+const checked = "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826";
+const policy = (target) => ({
+  version: "oaath.grant-policy/v2", calls: [{ target, selector: "0x12345678", valueLimit: "1", argumentEquals: [] }],
+  validAfter: 0, validUntil: null, perChainOperationLimit: { count: 1, intervalSeconds: null },
+});
+for (const address of [checked, "0x" + checked.slice(2).toUpperCase()]) {
+  assert.deepEqual(parseGrantPolicy(policy(address)), parseGrantPolicy(policy(checked.toLowerCase())));
+  assert.equal(encodeGrantPolicy(policy(address)), encodeGrantPolicy(policy(checked.toLowerCase())));
+  assert.equal(hashGrantPolicy(policy(address)), hashGrantPolicy(policy(checked.toLowerCase())));
+}
+assert.throws(() => parseGrantPolicy(policy(checked.replace("D", "d"))), {
+  code: "grant_policy_invalid", message: /call 0 target.*checksum/,
+});
 assert.throws(() => hashCanonicalEip712TypedData({}));
 assert.throws(() => deriveCodeChallenge("short"));
 console.log("Packed protocol vectors and PKCE pass without viem installed.");`,
