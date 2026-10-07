@@ -1,0 +1,8 @@
+.local/
+node_modules/
+target/
+dist/
+.env
+*.log
+artifacts/
+consumer/dist/
