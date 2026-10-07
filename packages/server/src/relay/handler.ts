@@ -67,6 +67,7 @@ import {
 } from "../authorization/request.js";
 import { resumeAuthorization } from "../authorization/resume.js";
 import { verifyGrantReference } from "../authorization/verify.js";
+import { withdrawAuthorizationRequest } from "../authorization/withdraw.js";
 import { type RelayClock, relayNow } from "../clock.js";
 import { submitOwnerPhoneDecision } from "../native/decision.js";
 import { listOwnerPhoneRequests } from "../native/inbox.js";
@@ -896,6 +897,27 @@ export function createRelayHandler(options: RelayHandlerOptions): RelayHandler {
         return relayFailure("relay_internal", "resolved bootstrap is invalid");
       }
       return jsonResponse(200, document);
+    }
+
+    if (
+      head === "authorization" &&
+      group === "requests" &&
+      fourth === "withdraw" &&
+      segments.length === 4
+    ) {
+      requireMethod(request, "POST");
+      const caller = await authenticate(request, "client", "authorization.withdraw");
+      const requestId = canonicalIdentifier(third, "requestId", INVALID);
+      exactBody(await bodyRecord(request, captured.maxBodyBytes), []);
+      return jsonResponse(
+        200,
+        await withdrawAuthorizationRequest({
+          store: captured.store,
+          clock: captured.clock,
+          caller,
+          requestId,
+        }),
+      );
     }
 
     if (head === "session-signers") {

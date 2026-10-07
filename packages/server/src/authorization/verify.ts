@@ -131,7 +131,7 @@ export async function verifyGrantReference(
 
     const decision = await transaction.lockAuthorizationDecision(assertion.grantId);
     if (!decision) return denied("grant_pending");
-    if (decision.outcome === "rejected") return denied("grant_rejected");
+    if (decision.outcome !== "approved") return denied("grant_rejected");
     if (await transaction.lockCapabilityInvalidation(assertion.grantId)) {
       return denied("grant_revoked");
     }

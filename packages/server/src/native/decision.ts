@@ -63,7 +63,7 @@ export interface SubmitOwnerPhoneDecisionInput {
 export interface OwnerPhoneDecision {
   readonly operationId: string;
   /** The stored outcome, which on a replay may differ from the command sent. */
-  readonly outcome: AuthorizationDecisionOutcome;
+  readonly outcome: Exclude<AuthorizationDecisionOutcome, "withdrawn">;
   readonly decidedAt: number;
   /** `decided` performed the transition; `replayed` answered the stored one. */
   readonly settlement: "decided" | "replayed";
@@ -78,6 +78,8 @@ export async function submitOwnerPhoneDecision(
     return relayFailure("relay_forbidden", "caller may not act in the required role");
   }
   const pending = await fetchAuthorizationRequest({ ...input, requestId: input.operationId });
+  if (pending.decision?.outcome === "withdrawn")
+    return relayFailure("relay_already_decided", "the creator withdrew this request");
   // A committed outcome wins before preparation, even if the provider is now unavailable.
   if (pending.decision !== null)
     return Object.freeze({
@@ -138,6 +140,8 @@ export async function submitOwnerPhoneDecision(
   if (state.decision === null) {
     return relayFailure("relay_internal", "decided request has no decision record");
   }
+  if (state.decision.outcome === "withdrawn")
+    return relayFailure("relay_already_decided", "the creator withdrew this request");
   return Object.freeze({
     operationId: input.operationId,
     outcome: state.decision.outcome,

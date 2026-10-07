@@ -81,6 +81,7 @@ describe("package boundary", () => {
       "sealArtifact",
       "submitAuthorizationDecision",
       "verifyPkceS256",
+      "withdrawAuthorizationRequest",
     ]);
   });
 

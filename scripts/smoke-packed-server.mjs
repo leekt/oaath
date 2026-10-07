@@ -344,6 +344,18 @@ const teamInbox = await ok(await handler(request("GET", "/native/inbox", TEAM_OW
 if (teamInbox.requests.length !== 1 || teamInbox.requests[0].operationId !== teamCreated.requestId) fail("team phone did not discover its pending request");
 if ((await ok(await handler(request("GET", "/native/inbox", OWNER_TOKEN)), 200, "isolated phone inbox")).requests.length !== 0) fail("personal phone discovered a team request");
 if (JSON.stringify(teamProjection.scope.context) !== JSON.stringify(JSON.parse(teamScope).context)) fail("team phone lost requested account context");
+// Creator withdrawal is terminal and cannot replace an already issued approval.
+const withdrawnRequest = await ok(await handler(request("POST", "/authorization/requests", CLIENT_TOKEN, {
+  redirectUri: REDIRECT_URI, codeChallenge: deriveCodeChallenge(CODE_VERIFIER), requestedScope,
+})), 201, "withdrawal create");
+const withdrawal = await ok(await handler(request("POST", "/authorization/requests/" + withdrawnRequest.requestId + "/withdraw", CLIENT_TOKEN, {})), 200, "withdrawal");
+if (withdrawal.outcome !== "withdrawn") fail("creator withdrawal was not retained");
+const pickup = await ok(await handler(request("GET", "/authorization/requests/" + withdrawnRequest.requestId + "/code", CLIENT_TOKEN)), 200, "withdrawn pickup");
+if (pickup.outcome !== "withdrawn") fail("withdrawal released a code");
+if ((await handler(request("POST", "/authorization/requests/" + withdrawnRequest.requestId + "/decision", OWNER_TOKEN, {outcome: "rejected"}))).status !== 409) fail("withdrawal permitted a later decision");
+const preserved = await ok(await handler(request("POST", "/authorization/requests/" + created.requestId + "/withdraw", CLIENT_TOKEN, {})), 200, "approved withdrawal");
+if (preserved.outcome !== "approved") fail("withdrawal changed an approval");
+
 const snapshot = await directory.read();
 await directory.replace({ expectedRevision: snapshot.revision, directory: { ...snapshot.directory, memberships: [] } });
 const refused = await handler(request("POST", "/authorization/requests", CLIENT_TOKEN, {
