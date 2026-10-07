@@ -82,7 +82,7 @@ use crate::registry::{
 };
 use crate::store::{RelayStore, RelayTransaction, settle};
 
-pub const LINK_REQUEST_RECORD_VERSION: &str = "oaath.link-request-record/v2";
+pub const LINK_REQUEST_RECORD_VERSION: &str = "oaath.link-request-record/v1";
 pub const LINK_TTL_MS: u64 = 3_600_000;
 /// The role a link admits a signer with.
 pub const LINK_ROLE: &str = "permission";

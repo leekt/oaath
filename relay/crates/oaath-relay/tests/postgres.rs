@@ -85,11 +85,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v14 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v1 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v14");
+    assert_eq!(version, "oaath.relay-postgres-schema/v1");
     pool.close().await;
 }
 
@@ -307,7 +307,7 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
     // guarded insert.
     let pool = fixture.pool().await;
     let inserted = sqlx::query(
-        "INSERT INTO oaath_account_signer_v3 \
+        "INSERT INTO oaath_account_signer_v1 \
          (account_id, signer_id, record_version, role, request_id, created_at, status) \
          VALUES ($1, $2, $3, 'root', NULL, 0, 'active')",
     )
@@ -1223,10 +1223,10 @@ async fn reads_a_row_of_another_record_version_as_unreadable() {
     let (client_id, request_id, code) = login_code(&h).await;
     let pool = fixture.pool().await;
     sqlx::query(
-        "UPDATE oaath_relay_authorization_request_v2 SET record_version = $2 WHERE request_id = $1",
+        "UPDATE oaath_relay_authorization_request_v1 SET record_version = $2 WHERE request_id = $1",
     )
     .bind(&request_id)
-    .bind("oaath.authorization-request-record/v1")
+    .bind("oaath.authorization-request-record/v0")
     .execute(&pool)
     .await
     .unwrap();
