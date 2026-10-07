@@ -196,6 +196,7 @@ export type {
   SelectedKernelRuntime as KernelRuntime,
 } from "./kernel/types.js";
 export { OaathKernelRuntimeError } from "./kernel/types.js";
+export type { ReviewedKernelImplementation } from "./kernel-v4.js";
 export type {
   PreparedEntryPoint,
   PreparedFactory,

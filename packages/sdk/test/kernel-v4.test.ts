@@ -154,6 +154,7 @@ describe("Kernel v4 deployment profile", () => {
         profile: "kernel-v4-uups-entrypoint-v0.9",
         kernelVersion: "0.4.0",
         accountType: "uups",
+        reviewedImplementations: [],
         chainId,
         entryPoint: {
           version: "0.9",

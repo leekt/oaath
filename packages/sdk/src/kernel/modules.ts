@@ -13,7 +13,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { kernelV4Deployment } from "../kernel-v4.js";
+import { captureKernelV4Deployment, kernelV4Deployment } from "../kernel-v4.js";
 import type { KernelDeployment } from "./deployment/profile.js";
 import { kernelV33Deployment } from "./deployment/v33.js";
 import { inputInvalid, isBuiltInKeyKind, runtimeFail } from "./internal.js";
@@ -243,8 +243,9 @@ export function exactKernelDeployment(value: unknown): Readonly<KernelDeployment
   } catch {
     return inputInvalid("Kernel deployment profile is invalid");
   }
+  if (version !== "0.3.3") kernelV4Deployment(chainId);
   const deployment =
-    version === "0.3.3" ? kernelV33Deployment(chainId) : kernelV4Deployment(chainId);
+    version === "0.3.3" ? kernelV33Deployment(chainId) : captureKernelV4Deployment(value);
   if (deployment !== value) {
     return inputInvalid("Kernel deployment profile is not the supported Kernel profile");
   }
