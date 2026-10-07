@@ -107,13 +107,6 @@ All five use one fixed `0.x.y` release group. The current source is versioned
 `0.3.4`, following the initial `0.1.0` proof of concept; no package becomes
 `1.0.0` during this program. Versioned source does not imply npm publication.
 
-[`native/ios`](native/ios/README.md) carries the experimental owner-phone
-SwiftUI approval app. Use its source from the same repository revision used to
-build the fixed npm group: phone and relay wire contracts change together.
-The Swift targets are not npm packages; native distribution packaging remains
-release work. Their host tests run in CI alongside the package gates;
-run the same check on macOS with `bun run test:phone`.
-
 ## Status
 
 The fixed package group is versioned for the next proof-of-concept release,
