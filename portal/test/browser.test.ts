@@ -8,10 +8,14 @@ import { access, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hashPermissionRequest, parsePermissionRequest } from "@oaath/protocol";
+import {
+  hashOwnerCredentialProfile,
+  hashPermissionRequest,
+  parsePermissionRequest,
+} from "@oaath/protocol";
 import { prepareDerivedAccountPermissionApproval } from "@oaath/sdk/kernel";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { keccak256 } from "viem";
+import { hashTypedData, keccak256 } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   ChallengeResponse,
@@ -20,6 +24,7 @@ import type {
   GrantDetail,
   IdentifiedSigner,
   PortalAccount,
+  PortalLink,
   PortalTransaction,
   PrepareGrantResponse,
   RedirectResponse,
@@ -169,7 +174,72 @@ function grantTransaction(id: string): PortalTransaction {
   };
 }
 
+/** A link from a second device's passkey to ROOT_ACCOUNT, as the relay reads it. */
+function portalLink(id: string): PortalLink {
+  const profile = {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "webauthn",
+    publicKey: KNOWN_PUBLIC_KEY,
+    authenticatorIdHash: keccak256(KNOWN_CREDENTIAL_BYTES),
+  } as const;
+  const message = {
+    account: ROOT_ACCOUNT.address,
+    signerProfileHash: hashOwnerCredentialProfile(profile),
+    role: "permission",
+    issuedAt: NOW,
+    expiresAt: NOW + 3600,
+    nonce: id,
+  } as const;
+  const types = {
+    MembershipApproval: [
+      { name: "account", type: "address" },
+      { name: "signerProfileHash", type: "bytes32" },
+      { name: "role", type: "string" },
+      { name: "issuedAt", type: "uint64" },
+      { name: "expiresAt", type: "uint64" },
+      { name: "nonce", type: "string" },
+    ],
+  } as const;
+  const digest = hashTypedData({
+    domain: { name: "OAAth", version: "1" },
+    types,
+    primaryType: "MembershipApproval",
+    message: { ...message, issuedAt: BigInt(NOW), expiresAt: BigInt(NOW + 3600) },
+  });
+  return {
+    link_id: id,
+    status: "pending",
+    account_id: ROOT_ACCOUNT.account_id,
+    address: ROOT_ACCOUNT.address,
+    signer: {
+      signer_id: "signer-second-device",
+      kind: "webauthn",
+      profile,
+      profile_hash: message.signerProfileHash,
+    },
+    label: "Second device",
+    role: "permission",
+    expires_at: NOW + 3600,
+    typed_data: {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+        ...types,
+      },
+      primaryType: "MembershipApproval",
+      domain: { name: "OAAth", version: "1" },
+      message,
+    },
+    // A relay that shows one signer but asks for a signature over another.
+    digest: id === "link-tampered" ? `0x${"77".repeat(32)}` : digest,
+  };
+}
+
 async function stubRelay(path: string, method: string, body: unknown) {
+  const link = /^\/portal\/links\/(link-[\w-]+)$/u.exec(path);
+  if (link?.[1] && method === "GET") return portalLink(link[1]);
   const grant = /^\/portal\/transactions\/(par-grant(?:-tampered)?)(\/prepare)?$/u.exec(path);
   if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
   if (grant?.[1] && grant[2] && method === "POST") {
@@ -403,7 +473,7 @@ describe("portal in Chrome", () => {
         "::-p-text(Link to an existing account)",
         (node) => (node as HTMLButtonElement).disabled,
       ),
-    ).toBe(true);
+    ).toBe(false);
     await capture(page, "2-accounts-empty");
     await clickText(page, "Create account");
     await page.waitForSelector("::-p-text(0xabab…abab)");
@@ -630,6 +700,35 @@ describe("portal in Chrome", () => {
     // Only the sign-in was signed; the grant typed data never reached the wallet.
     expect(await walletMethods(page)).toEqual(["eth_requestAccounts", "personal_sign"]);
     expect(calls.some((call) => call.path.endsWith("/decision"))).toBe(false);
+    await page.close();
+  });
+
+  it("shows the owner a link request and refuses to sign a digest it did not derive", async () => {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844 });
+    await installWallet(page);
+    await page.evaluateOnNewDocument(
+      (signers: string) => {
+        localStorage.setItem("oaath.portal.signers/v1", signers);
+      },
+      JSON.stringify([GRANT_SIGNER]),
+    );
+    await page.goto(`${origin}/link/link-tampered`);
+    await clickText(page, "Test Wallet");
+    await page.waitForSelector("::-p-text(Add a signer to your account)");
+    const review = await page.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain(ROOT_ACCOUNT.address);
+    expect(review).toContain("Passkey “Second device”");
+    expect(review).toContain("Sign in only");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await capture(page, "7-link-review");
+    const before = calls.length;
+    await clickText(page, "Approve and sign");
+    await page.waitForSelector("::-p-text(doesn't match what you were shown)");
+    expect(await walletMethods(page)).not.toContain("eth_signTypedData_v4");
+    expect(calls.slice(before).some((call) => call.path.endsWith("/approve"))).toBe(false);
     await page.close();
   });
 });

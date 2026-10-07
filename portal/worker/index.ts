@@ -2,7 +2,8 @@
  * The `oaath.taek.tech` edge: serves the portal SPA and forwards protocol and
  * portal API traffic to the relay through one Workers VPC service binding.
  *
- * - `/`, `/authorize`, `/assets/*`: built assets (GET/HEAD only).
+ * - `/`, `/authorize`, `/link/{id}`, `/accounts`, `/assets/*`: built assets
+ *   (GET/HEAD only).
  * - `/oauth/*`, `/.well-known/*`: public OAuth surface; cross-site allowed with
  *   credential-free CORS, because dapps call it from their own origins.
  * - `/portal/*`: the portal's private API; same-origin only. Its session
@@ -161,7 +162,11 @@ export default {
       return forward(request, url, env, false);
     }
 
-    const page = url.pathname === "/" || url.pathname === "/authorize";
+    const page =
+      url.pathname === "/" ||
+      url.pathname === "/authorize" ||
+      url.pathname === "/accounts" ||
+      /^\/link\/[A-Za-z0-9._~-]{1,256}$/u.test(url.pathname);
     const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2?|svg|png|ico)$/u.test(
       url.pathname,
     );

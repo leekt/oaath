@@ -305,3 +305,95 @@ h1:focus {
   border-left: 3px solid var(--accent);
   background: var(--card);
 }
+
+.link-request {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+.link-request h2,
+.members h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.link-request label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.link-request input {
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  min-width: 0;
+}
+
+.link-url {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.qr {
+  width: min(14rem, 100%);
+  height: auto;
+  justify-self: center;
+}
+
+.access {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+.access label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5rem;
+  font-weight: 600;
+}
+
+.access .choice-detail {
+  grid-column: 2;
+  font-weight: 400;
+}
+
+.access .disabled {
+  opacity: 0.55;
+}
+
+.members {
+  margin-top: 1.5rem;
+}
+
+.member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.danger {
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  font: 600 1rem / 1 var(--sans);
+  color: var(--paper);
+  background: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}

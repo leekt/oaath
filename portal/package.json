@@ -20,8 +20,10 @@
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
+    "cetane": "0.0.4",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "uqr": "0.1.2"
   },
   "devDependencies": {
     "@types/node": "22.13.0",
