@@ -103,6 +103,9 @@ ambiguous_transaction! {
     insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
     lock_par(id: &str) -> RelayResult<Option<oauth::records::ParRecord>>;
     insert_par(r: &oauth::records::ParRecord) -> RelayResult<bool>;
+    lock_access_token(hash: &str) -> RelayResult<Option<oauth::records::AccessTokenRecord>>;
+    insert_access_token(r: &oauth::records::AccessTokenRecord) -> RelayResult<bool>;
+    revoke_access_token(hash: &str, at: u64) -> RelayResult<bool>;
 }
 
 #[async_trait]

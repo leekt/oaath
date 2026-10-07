@@ -29,7 +29,7 @@ pub mod postgres;
 use async_trait::async_trait;
 
 use crate::error::RelayResult;
-use crate::oauth::records::{OAuthClientRecord, ParRecord};
+use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
@@ -140,6 +140,16 @@ pub trait RelayTransaction: Send {
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>>;
     /// `false` when the identifier exists or the client is unknown.
     async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool>;
+
+    async fn lock_access_token(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<AccessTokenRecord>>;
+    /// `false` when the hash exists or the client or request is unknown.
+    async fn insert_access_token(&mut self, record: &AccessTokenRecord) -> RelayResult<bool>;
+    /// `true` only when this call set `revoked_at`.
+    async fn revoke_access_token(&mut self, token_hash: &str, revoked_at: u64)
+    -> RelayResult<bool>;
 
     /// `relay_state_ambiguous` when the outcome cannot be proven.
     async fn commit(self: Box<Self>) -> RelayResult<()>;

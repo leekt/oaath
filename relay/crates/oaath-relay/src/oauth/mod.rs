@@ -27,6 +27,7 @@
 //! the relay derives from those records. The PAR keeps owning `state`,
 //! `nonce`, and `scope`.
 
+pub mod grant;
 pub mod id_token;
 pub mod records;
 
@@ -42,6 +43,8 @@ use self::records::{
     OAUTH_PAR_RECORD_VERSION, OAuthClientRecord, ParRecord, redirect_uri_allowed,
 };
 use crate::authentication::{RelayCaller, RelayCallerRole};
+use crate::authority::stored_permission_request;
+use crate::authorization::artifact::claim_encrypted_artifact;
 use crate::authorization::challenge::{
     is_code_challenge_s256, random_identifier, sha256_base64url,
 };
@@ -462,16 +465,34 @@ pub enum LoginDecision {
         signer_id: String,
         account_id: String,
     },
+    /// A root-signed grant approval artifact for a grant transaction.
+    Grant {
+        signer_id: String,
+        account_id: String,
+        artifact: String,
+    },
     Cancelled,
 }
 
-/// `{outcome: "approved", signer_id, account_id}` or `{outcome: "cancelled"}`.
+/// `{outcome: "approved", signer_id, account_id, artifact?}` or
+/// `{outcome: "cancelled"}`. The artifact is the root-signed grant approval.
 pub fn login_decision(body: &Map<String, Value>) -> RelayResult<LoginDecision> {
     let text = |key| body.get(key).and_then(Value::as_str);
+    let id = |key| canonical_str(text(key).ok_or(INVALID)?, INVALID).map(str::to_owned);
     match text("outcome") {
         Some("approved") if body.len() == 3 => Ok(LoginDecision::Approved {
-            signer_id: canonical_str(text("signer_id").ok_or(INVALID)?, INVALID)?.to_owned(),
-            account_id: canonical_str(text("account_id").ok_or(INVALID)?, INVALID)?.to_owned(),
+            signer_id: id("signer_id")?,
+            account_id: id("account_id")?,
+        }),
+        Some("approved") if body.len() == 4 => Ok(LoginDecision::Grant {
+            signer_id: id("signer_id")?,
+            account_id: id("account_id")?,
+            artifact: bounded_str(
+                text("artifact").ok_or(INVALID)?,
+                limits::ARTIFACT_PLAINTEXT,
+                INVALID,
+            )?
+            .to_owned(),
         }),
         Some("cancelled") if body.len() == 1 => Ok(LoginDecision::Cancelled),
         _ => Err(INVALID),
@@ -483,7 +504,11 @@ pub struct LoginRedirect {
     pub redirect: String,
 }
 
-fn redirect_url(issuer: &str, par: &ParRecord, outcome: Result<&str, ()>) -> RelayResult<String> {
+pub(crate) fn redirect_url(
+    issuer: &str,
+    par: &ParRecord,
+    outcome: Result<&str, ()>,
+) -> RelayResult<String> {
     let mut url = Url::parse(&par.redirect_uri).map_err(|_| RelayErrorCode::RecordUnreadable)?;
     {
         let mut query = url.query_pairs_mut();
@@ -513,6 +538,7 @@ pub async fn decide_login(
     let decided_at = relay_now(clock)?;
     // Seal before the transaction: the store only ever receives the reference.
     let code = match decision {
+        LoginDecision::Grant { .. } => return Err(RelayErrorCode::Internal),
         LoginDecision::Approved { .. } => {
             let code = random_identifier();
             let code_ref = seal_artifact(kms, &code).await?;
@@ -587,6 +613,7 @@ async fn decide(
             (account_id.as_str(), signer_id.as_str())
         }
         LoginDecision::Cancelled => (CANCELLED_SUBJECT, CANCELLED_SUBJECT),
+        LoginDecision::Grant { .. } => return Err(RelayErrorCode::Internal),
     };
     let request = AuthorizationRequestRecord {
         version: AUTHORIZATION_REQUEST_RECORD_VERSION,
@@ -690,12 +717,14 @@ pub async fn recover_redirect(
 
 #[derive(Debug, Serialize)]
 pub struct TokenResponse {
-    /// Opaque and unstored: no endpoint accepts it until grants arrive.
+    /// Opaque; stored as its hash. It reads and invalidates its own grant.
     pub access_token: String,
     pub token_type: &'static str,
     pub expires_in: u64,
     pub id_token: String,
     pub scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_details: Option<Vec<Value>>,
 }
 
 #[derive(Serialize)]
@@ -717,6 +746,7 @@ struct IdTokenClaims<'a> {
 pub async fn exchange_code(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
+    kms: &dyn RelayKms,
     configuration: &OAuthConfiguration,
     form: &Map<String, Value>,
 ) -> OAuthResult<TokenResponse> {
@@ -764,7 +794,21 @@ pub async fn exchange_code(
     let iat = relay_now(clock)? / 1_000;
     let mut transaction = store.begin().await?;
     let result = login_claims(&mut *transaction, &consumed.request_id).await;
-    let (par, account, signer) = settle(transaction, result).await?;
+    let (par, account, signer, grant) = settle(transaction, result).await?;
+    // A grant's sealed approval is released once, with the token.
+    let authorization_details = match grant {
+        None => None,
+        Some(permission_request) => {
+            let claimed =
+                claim_encrypted_artifact(store, clock, kms, &caller, &consumed.artifact_id).await?;
+            Some(vec![grant::grant_detail(
+                &par.par_id,
+                &permission_request,
+                &claimed.artifact,
+            )?])
+        }
+    };
+    let access_token = grant::issue_access_token(store, clock, client_id, &par.par_id).await?;
     let credential = signer.credential()?;
     let id_token = configuration.key.sign(&IdTokenClaims {
         iss: &configuration.issuer,
@@ -783,11 +827,12 @@ pub async fn exchange_code(
         verified: false,
     })?;
     Ok(TokenResponse {
-        access_token: random_identifier(),
+        access_token,
         token_type: "Bearer",
         expires_in: ID_TOKEN_TTL_SECONDS,
         id_token,
         scope: par.scope,
+        authorization_details,
     })
 }
 
@@ -798,14 +843,23 @@ async fn login_claims(
     ParRecord,
     crate::registry::AccountRecord,
     crate::registry::SignerRecord,
+    Option<Value>,
 )> {
-    // Only a login request's code redeems here; any other code was released
-    // by another flow and answers as invalid.
+    // Only a login's or an OAuth grant's code redeems here; any other code
+    // was released by another flow and answers as invalid.
     let request = transaction
         .lock_authorization_request(request_id)
         .await?
-        .filter(|request| request.requested_scope == LOGIN_SELECTION_SCOPE)
         .ok_or(RelayErrorCode::CodeInvalid)?;
+    let grant = if request.requested_scope == LOGIN_SELECTION_SCOPE {
+        None
+    } else {
+        Some(
+            stored_permission_request(&request.requested_scope, request_id)
+                .ok_or(RelayErrorCode::CodeInvalid)?
+                .to_json(),
+        )
+    };
     let approved = transaction
         .lock_authorization_decision(request_id)
         .await?
@@ -825,7 +879,7 @@ async fn login_claims(
         .lock_signer(&request.owner_subject)
         .await?
         .ok_or(RelayErrorCode::RecordUnreadable)?;
-    Ok((par, account, signer))
+    Ok((par, account, signer, grant))
 }
 
 #[derive(Debug, Serialize)]

@@ -248,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v8 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v9 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v8");
+    assert_eq!(version, "oaath.relay-postgres-schema/v9");
     pool.close().await;
 }
 
@@ -727,4 +727,154 @@ async fn keeps_a_grant_transaction_preparable_across_a_restart() {
         account["address"]
     );
     shutdown(second).await;
+}
+
+fn bearer(
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Option<Value>,
+) -> axum::http::Request<axum::body::Body> {
+    let builder = axum::http::Request::builder()
+        .method(method)
+        .uri(path)
+        .header("authorization", format!("Bearer {token}"));
+    match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string())),
+        None => builder.body(axum::body::Body::empty()),
+    }
+    .unwrap()
+}
+
+#[tokio::test]
+async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
+    use support::grant::{Root, address_of, approval, detail, root_key};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+
+    let first = fixture.process(clock.clone()).await;
+    let client = first
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Dapp", "redirect_uris": [REDIRECT_URI] })),
+        ))
+        .await;
+    let client_id = text(client.ok(201), "client_id").to_owned();
+    let challenge = code_challenge();
+    let details = json!([detail()]).to_string();
+    let pushed = first
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+                ("authorization_details", &details),
+            ],
+        ))
+        .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let signer = register(
+        &first,
+        json!({
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": address_of(&root_key()),
+        }),
+    )
+    .await;
+    let account = create_account(&first, &signer).await.ok(201).clone();
+    let selection = json!({ "signer_id": signer, "account_id": account["account_id"] });
+    let prepared = first
+        .send(portal_request(
+            "POST",
+            &format!("/portal/transactions/{id}/prepare"),
+            Some(selection),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let artifact = approval(&prepared, &root);
+    let decided = first
+        .send(portal_request(
+            "POST",
+            &format!("/portal/transactions/{id}/decision"),
+            Some(json!({
+                "outcome": "approved",
+                "signer_id": signer,
+                "account_id": account["account_id"],
+                "artifact": artifact.to_string(),
+            })),
+        ))
+        .await;
+    let code = redirect_code(&decided);
+    shutdown(first).await;
+
+    let second = fixture.process(clock.clone()).await;
+    let tokens = second
+        .send(oauth_form(
+            "/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", client_id.as_str()),
+                ("code", code.as_str()),
+                ("code_verifier", CODE_VERIFIER),
+                ("redirect_uri", REDIRECT_URI),
+            ],
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(tokens["authorization_details"][0]["grant_id"], json!(id));
+    let access = text(&tokens, "access_token").to_owned();
+    shutdown(second).await;
+
+    let third = fixture.process(clock.clone()).await;
+    let path = format!("/oauth/grants/{id}");
+    let view = third.send(bearer("GET", &path, &access, None)).await;
+    assert_eq!(view.ok(200)["status"], json!("approved"));
+    third
+        .send(bearer(
+            "POST",
+            &format!("{path}/invalidate"),
+            &access,
+            Some(json!({ "capability_hash": artifact["capabilityHash"] })),
+        ))
+        .await
+        .ok(200);
+    shutdown(third).await;
+
+    let fourth = fixture.process(clock.clone()).await;
+    let view = fourth.send(bearer("GET", &path, &access, None)).await;
+    assert_eq!(view.ok(200)["status"], json!("invalidated"));
+    fourth
+        .send(oauth_form(
+            "/oauth/revoke",
+            &[
+                ("token", access.as_str()),
+                ("client_id", client_id.as_str()),
+            ],
+        ))
+        .await
+        .ok(200);
+    shutdown(fourth).await;
+
+    let last = fixture.process(clock).await;
+    assert_eq!(
+        last.send(bearer("GET", &path, &access, None)).await.status,
+        401
+    );
+    shutdown(last).await;
 }

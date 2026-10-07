@@ -17,8 +17,11 @@ use crate::records::{
 
 pub const OAUTH_CLIENT_RECORD_VERSION: &str = "oaath.oauth-client-record/v1";
 pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v2";
+pub const OAUTH_ACCESS_TOKEN_RECORD_VERSION: &str = "oaath.oauth-access-token-record/v1";
 
 pub const MAX_CLIENT_NAME: usize = 128;
+/// Access token lifetime: ten minutes.
+pub const ACCESS_TOKEN_TTL_MS: u64 = 600_000;
 pub const MAX_REDIRECT_URIS: usize = 8;
 /// Bound for the opaque client `state` and OIDC `nonce`.
 pub const MAX_STATE: usize = 512;
@@ -179,6 +182,53 @@ impl ParRecord {
             },
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
             expires_at: timestamp(r.get("expiresAt"), UNREADABLE)?,
+        })
+    }
+}
+
+/// One opaque bearer token, stored only as its SHA-256. It reads and
+/// invalidates the one authorization request it was issued for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessTokenRecord {
+    pub version: &'static str,
+    pub token_hash: String,
+    pub client_id: String,
+    /// The login or grant request (the grant id) the token was issued for.
+    pub request_id: String,
+    pub created_at: u64,
+    pub expires_at: u64,
+    /// Set exactly once (RFC 7009). A non-null value is terminal.
+    pub revoked_at: Option<u64>,
+}
+
+impl AccessTokenRecord {
+    pub fn parse(value: &Value) -> RelayResult<Self> {
+        let r = exact_record(
+            value,
+            &[
+                "version",
+                "tokenHash",
+                "clientId",
+                "requestId",
+                "createdAt",
+                "expiresAt",
+                "revokedAt",
+            ],
+            UNREADABLE,
+        )?;
+        version(r.get("version"), OAUTH_ACCESS_TOKEN_RECORD_VERSION)?;
+        Ok(Self {
+            version: OAUTH_ACCESS_TOKEN_RECORD_VERSION,
+            token_hash: canonical_identifier(r.get("tokenHash"), UNREADABLE)?.to_owned(),
+            client_id: canonical_identifier(r.get("clientId"), UNREADABLE)?.to_owned(),
+            request_id: canonical_identifier(r.get("requestId"), UNREADABLE)?.to_owned(),
+            created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
+            expires_at: timestamp(r.get("expiresAt"), UNREADABLE)?,
+            revoked_at: match r.get("revokedAt") {
+                Some(Value::Null) => None,
+                other => Some(timestamp(other, UNREADABLE)?),
+            },
         })
     }
 }
