@@ -49,7 +49,9 @@ use crate::records::{
     AuthorizationRequestRecord, DecisionOutcome, ENCRYPTED_ARTIFACT_RECORD_VERSION,
     EncryptedArtifactRecord, canonical_str,
 };
-use crate::registry::{ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole};
+use crate::registry::{
+    ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole, MembershipStatus,
+};
 use crate::store::{RelayStore, RelayTransaction, settle};
 
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
@@ -200,6 +202,9 @@ pub async fn decide_grant(
                 request_id: Some(par.par_id.clone()),
                 link_id: None,
                 created_at: decided_at,
+                status: MembershipStatus::Active,
+                suspended_at: None,
+                restored_at: None,
             })
             .await?;
         if !joined {

@@ -511,3 +511,229 @@ async fn composes_the_production_relay_without_a_dev_config() {
     let (client_id, _, _, _, code, _) = approved_code(&h).await;
     token(&h, &client_id, &code, CODE_VERIFIER).await.ok(200);
 }
+
+async fn member_status(
+    h: &Harness,
+    account: &Value,
+    signer_id: &str,
+    action: &str,
+    cookie: &str,
+) -> Reply {
+    h.send(portal_call(
+        "POST",
+        &format!(
+            "/portal/accounts/{}/members/{signer_id}/{action}",
+            text(account, "account_id")
+        ),
+        Some(cookie),
+        Some(json!({})),
+    ))
+    .await
+}
+
+async fn login(h: &Harness, signer_id: &str, account: &Value, cookie: &str) -> Reply {
+    let (_, id) = push(h).await;
+    decide(
+        h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(cookie),
+    )
+    .await
+}
+
+/// The verified claims of the id_token a login decision's code redeems for.
+async fn claims_after(h: &Harness, client_id: &str, decided: &Reply) -> Value {
+    let redirect = text(decided.ok(200), "redirect").to_owned();
+    let code = query(&redirect)
+        .into_iter()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1;
+    let response = token(h, client_id, &code, CODE_VERIFIER)
+        .await
+        .ok(200)
+        .clone();
+    let jwks: JwkSet =
+        serde_json::from_value(h.send(get("/oauth/jwks", None)).await.ok(200).clone()).unwrap();
+    let key = DecodingKey::from_jwk(jwks.find(ID_TOKEN_KID).unwrap()).unwrap();
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.set_audience(&[client_id]);
+    validation.validate_exp = false;
+    decode::<Value>(text(&response, "id_token"), &key, &validation)
+        .unwrap()
+        .claims
+}
+
+#[tokio::test]
+async fn a_suspended_member_cannot_log_in_until_restored_and_the_claim_lists_active_accounts() {
+    let h = harness();
+    // Two accounts with their roots; a passkey member of both, which also owns
+    // an account of its own.
+    let root = grant::Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x11; 32]).unwrap());
+    let (root_id, account, root_cookie) = signer_and_account(&h, 0x11).await;
+    h.clock.advance(1);
+    let other_root = grant::Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x12; 32]).unwrap());
+    let (_, other, other_cookie) = signer_and_account(&h, 0x12).await;
+    let passkey = grant::Root::WebAuthn(
+        p256::ecdsa::SigningKey::from_slice(&[0x44; 32]).unwrap(),
+        b"member".to_vec(),
+    );
+    let (member_id, member_cookie) = grant::sign_in(&h, &passkey).await;
+    h.clock.advance(1);
+    let own = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&member_cookie),
+            Some(json!({ "root_signer_id": member_id })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    for (address, root, cookie) in [
+        (&account, &root, root_cookie.as_str()),
+        (&other, &other_root, other_cookie.as_str()),
+    ] {
+        grant::link_member(
+            &h,
+            text(address, "address"),
+            (&member_id, &member_cookie),
+            (root, cookie),
+        )
+        .await;
+    }
+
+    // Active: it logs in as the account, and the claim lists all three.
+    let (client_id, id) = push(&h).await;
+    let decided = decide(
+        &h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": member_id, "account_id": account["account_id"] }),
+        Some(&member_cookie),
+    )
+    .await;
+    let claims = claims_after(&h, &client_id, &decided).await;
+    assert_eq!(claims["sub"], account["address"]);
+    assert_eq!(
+        claims["oaath_accounts"],
+        json!([
+            { "address": account["address"], "role": "permission", "status": "active" },
+            { "address": other["address"], "role": "permission", "status": "active" },
+            { "address": own["address"], "role": "root", "status": "active" },
+        ])
+    );
+
+    // A code released before the suspension no longer redeems.
+    let (early_client, early) = push(&h).await;
+    let pending = decide(
+        &h,
+        &early,
+        json!({ "outcome": "approved", "signer_id": member_id, "account_id": account["account_id"] }),
+        Some(&member_cookie),
+    )
+    .await;
+    let pending_code = query(text(pending.ok(200), "redirect"))
+        .into_iter()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1;
+
+    // Only the account's root suspends, never the root, and only once.
+    member_status(&h, &account, &member_id, "suspend", &member_cookie)
+        .await
+        .failure(E::Forbidden);
+    member_status(&h, &account, &member_id, "suspend", &other_cookie)
+        .await
+        .failure(E::Forbidden);
+    member_status(&h, &account, &root_id, "suspend", &root_cookie)
+        .await
+        .failure(E::RequestInvalid);
+    assert_eq!(
+        member_status(&h, &account, &member_id, "suspend", &root_cookie)
+            .await
+            .ok(200),
+        &json!({ "signer_id": member_id, "status": "suspended" })
+    );
+    member_status(&h, &account, &member_id, "suspend", &root_cookie)
+        .await
+        .failure(E::AlreadyDecided);
+    member_status(&h, &other, &member_id, "restore", &other_cookie)
+        .await
+        .failure(E::AlreadyDecided);
+
+    login(&h, &member_id, &account, &member_cookie)
+        .await
+        .failure(E::MembershipSuspended);
+    oauth_error(
+        &token(&h, &early_client, &pending_code, CODE_VERIFIER).await,
+        400,
+        "invalid_grant",
+        E::MembershipSuspended,
+    );
+    // Its other memberships are unaffected; the claim omits the suspended one.
+    let (client_id, id) = push(&h).await;
+    let decided = decide(
+        &h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": member_id, "account_id": other["account_id"] }),
+        Some(&member_cookie),
+    )
+    .await;
+    let claims = claims_after(&h, &client_id, &decided).await;
+    assert_eq!(claims["sub"], other["address"]);
+    assert_eq!(
+        claims["oaath_accounts"],
+        json!([
+            { "address": other["address"], "role": "permission", "status": "active" },
+            { "address": own["address"], "role": "root", "status": "active" },
+        ])
+    );
+    let listed = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/signers/{member_id}/accounts"),
+            Some(&member_cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(listed["accounts"][0]["status"], json!("suspended"));
+
+    // Restored, it logs in again.
+    h.clock.advance(1);
+    assert_eq!(
+        member_status(&h, &account, &member_id, "restore", &root_cookie)
+            .await
+            .ok(200)["status"],
+        json!("active")
+    );
+    let members = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/accounts/{}/members", text(&account, "account_id")),
+            Some(&root_cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(members["members"][1]["status"], json!("active"));
+    assert_eq!(members["members"][1]["suspended_at"], json!(CLOCK_SECONDS));
+    let (client_id, id) = push(&h).await;
+    let decided = decide(
+        &h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": member_id, "account_id": account["account_id"] }),
+        Some(&member_cookie),
+    )
+    .await;
+    assert_eq!(
+        claims_after(&h, &client_id, &decided).await["oaath_accounts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}

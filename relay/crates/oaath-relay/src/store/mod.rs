@@ -36,7 +36,7 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
-use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
+use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[async_trait]
@@ -150,6 +150,17 @@ pub trait RelayTransaction: Send {
         &mut self,
         account_id: &str,
         signer_id: &str,
+    ) -> RelayResult<bool>;
+
+    /// Moves the signer's permission memberships of the account to `status`
+    /// at `at`; a root membership never moves. `true` only when this call
+    /// moved at least one.
+    async fn set_account_signer_status(
+        &mut self,
+        account_id: &str,
+        signer_id: &str,
+        status: MembershipStatus,
+        at: u64,
     ) -> RelayResult<bool>;
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>>;

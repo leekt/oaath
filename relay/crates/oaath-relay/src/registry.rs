@@ -13,7 +13,9 @@
 //! transitions            none -> signer; none -> account + root membership in one
 //!                        transaction; a permission membership arrives with a
 //!                        verified grant decision or a root-approved link
-//!                        (`link.rs`); the root removes a permission membership
+//!                        (`link.rs`); the root suspends, restores, or
+//!                        removes a permission membership; a root is always
+//!                        active
 //! forbidden              a second root; a root carrying a grant or a link; a
 //!                        permission membership with neither or both; a
 //!                        membership on an unknown account or signer
@@ -34,10 +36,11 @@ use serde_json::Value;
 
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::records::{canonical_identifier, exact_record, timestamp};
+use crate::store::RelayTransaction;
 
 pub const SIGNER_RECORD_VERSION: &str = "oaath.signer-record/v1";
 pub const ACCOUNT_RECORD_VERSION: &str = "oaath.account-record/v1";
-pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v2";
+pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v3";
 
 const UNREADABLE: RelayErrorCode = RelayErrorCode::RecordUnreadable;
 
@@ -235,9 +238,28 @@ impl MembershipRole {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MembershipStatus {
+    Active,
+    /// The root suspended the signer: it cannot sign in as the account, and
+    /// its grants on the account were invalidated. Restoring revives neither.
+    Suspended,
+}
+
+impl MembershipStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Suspended => "suspended",
+        }
+    }
+}
+
 /// One account ↔ signer index row. A root carries no evidence; a permission
 /// membership points at exactly one approval: the grant (`request_id`) or the
-/// link (`link_id`) its root signed.
+/// link (`link_id`) its root signed. `suspended_at` and `restored_at` are the
+/// latest suspension and restoration; a root is never suspended.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountSignerRecord {
@@ -248,9 +270,16 @@ pub struct AccountSignerRecord {
     pub request_id: Option<String>,
     pub link_id: Option<String>,
     pub created_at: u64,
+    pub status: MembershipStatus,
+    pub suspended_at: Option<u64>,
+    pub restored_at: Option<u64>,
 }
 
 impl AccountSignerRecord {
+    pub fn is_active(&self) -> bool {
+        self.status == MembershipStatus::Active
+    }
+
     pub fn parse(value: &Value) -> RelayResult<Self> {
         let r = exact_record(
             value,
@@ -262,6 +291,9 @@ impl AccountSignerRecord {
                 "requestId",
                 "linkId",
                 "createdAt",
+                "status",
+                "suspendedAt",
+                "restoredAt",
             ],
             UNREADABLE,
         )?;
@@ -281,6 +313,28 @@ impl AccountSignerRecord {
         if evidence != usize::from(role == MembershipRole::Permission) {
             return Err(UNREADABLE);
         }
+        let status = match r.get("status").and_then(Value::as_str) {
+            Some("active") => MembershipStatus::Active,
+            Some("suspended") => MembershipStatus::Suspended,
+            _ => return Err(UNREADABLE),
+        };
+        let moment = |key| match r.get(key) {
+            Some(Value::Null) => Ok(None),
+            other => timestamp(other, UNREADABLE).map(Some),
+        };
+        let suspended_at = moment("suspendedAt")?;
+        let restored_at = moment("restoredAt")?;
+        // The latest transition decides the status; a root never moves.
+        let consistent = match (status, suspended_at, restored_at) {
+            (MembershipStatus::Active, None, None) => true,
+            (MembershipStatus::Active, Some(suspended), Some(restored)) => restored >= suspended,
+            (MembershipStatus::Suspended, Some(_), None) => true,
+            (MembershipStatus::Suspended, Some(suspended), Some(restored)) => suspended >= restored,
+            _ => false,
+        };
+        if !consistent || (role == MembershipRole::Root && suspended_at.is_some()) {
+            return Err(UNREADABLE);
+        }
         Ok(Self {
             version: ACCOUNT_SIGNER_RECORD_VERSION,
             account_id: identifier(r.get("accountId"))?,
@@ -289,6 +343,33 @@ impl AccountSignerRecord {
             request_id,
             link_id,
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
+            status,
+            suspended_at,
+            restored_at,
         })
     }
+}
+
+/// The signer may act as the account only through an active membership: a
+/// non-member is `relay_forbidden`, a signer whose memberships of the account
+/// are all suspended is `relay_membership_suspended`.
+pub async fn require_active_member(
+    transaction: &mut dyn RelayTransaction,
+    signer_id: &str,
+    account_id: &str,
+) -> RelayResult<()> {
+    let memberships: Vec<AccountSignerRecord> = transaction
+        .list_signer_accounts(signer_id)
+        .await?
+        .into_iter()
+        .filter(|(account, _)| account.account_id == account_id)
+        .map(|(_, membership)| membership)
+        .collect();
+    if memberships.is_empty() {
+        return Err(RelayErrorCode::Forbidden);
+    }
+    if !memberships.iter().any(AccountSignerRecord::is_active) {
+        return Err(RelayErrorCode::MembershipSuspended);
+    }
+    Ok(())
 }

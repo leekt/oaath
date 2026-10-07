@@ -236,7 +236,7 @@ function AccountStep({
       const created = await portalApi.createAccount({ root_signer_id: signer.signer_id });
       setAccounts((current) => [
         ...(current ?? []).filter((account) => account.account_id !== created.account_id),
-        { ...created, role: "root" },
+        { ...created, role: "root", status: "active" },
       ]);
     } catch (failure) {
       setError(message(failure));
@@ -274,14 +274,20 @@ function AccountStep({
               <button
                 type="button"
                 className="choice"
-                disabled={busy}
-                aria-label={`Smart account ${account.address}, ${ROLE_LABEL[account.role]}`}
+                // The owner suspended this signer: it cannot sign in as the account.
+                disabled={busy || account.status === "suspended"}
+                aria-label={`Smart account ${account.address}, ${ROLE_LABEL[account.role]}${
+                  account.status === "suspended" ? ", suspended" : ""
+                }`}
                 onClick={() => onChosen(account)}
               >
                 <span className="badge badge-account" aria-hidden="true" />
                 <span className="choice-text">
                   <span className="choice-title mono">{shortAddress(account.address)}</span>
-                  <span className="choice-detail">Smart account · {ROLE_LABEL[account.role]}</span>
+                  <span className="choice-detail">
+                    Smart account · {ROLE_LABEL[account.role]}
+                    {account.status === "suspended" && " · Suspended by the owner"}
+                  </span>
                 </span>
               </button>
             </li>

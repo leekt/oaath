@@ -59,7 +59,7 @@ use crate::records::{
     AUTHORIZATION_REQUEST_RECORD_VERSION, AuthorizationCodeRecord, AuthorizationDecisionRecord,
     AuthorizationRequestRecord, DecisionOutcome, bounded_str, canonical_str, limits,
 };
-use crate::registry::{AccountRecord, MembershipRole};
+use crate::registry::{AccountRecord, MembershipRole, require_active_member};
 use crate::store::{RelayStore, RelayTransaction, settle};
 use oaath_protocol::grant_policy::{
     GrantPolicy, is_captured_policy_attenuation, parse_grant_policy,
@@ -110,7 +110,8 @@ impl OAuthFailure {
             }
             RelayErrorCode::CodeInvalid
             | RelayErrorCode::CodeAlreadyConsumed
-            | RelayErrorCode::Expired => Self::new(400, "invalid_grant", code),
+            | RelayErrorCode::Expired
+            | RelayErrorCode::MembershipSuspended => Self::new(400, "invalid_grant", code),
             RelayErrorCode::StoreUnavailable | RelayErrorCode::KmsUnavailable => {
                 Self::new(503, "temporarily_unavailable", code)
             }
@@ -187,7 +188,7 @@ pub fn discovery(issuer: &str) -> Value {
         "code_challenge_methods_supported": ["S256"],
         "claims_supported": [
             "iss", "sub", "aud", "azp", "iat", "exp", "nonce",
-            "oaath_account", "signer", "verified",
+            "oaath_account", "oaath_accounts", "signer", "verified",
         ],
     })
 }
@@ -602,14 +603,7 @@ async fn decide(
                 .lock_account(account_id)
                 .await?
                 .ok_or(RelayErrorCode::NotFound)?;
-            let member = transaction
-                .list_signer_accounts(signer_id)
-                .await?
-                .iter()
-                .any(|(account, _)| &account.account_id == account_id);
-            if !member {
-                return Err(RelayErrorCode::Forbidden);
-            }
+            require_active_member(&mut *transaction, signer_id, account_id).await?;
             (account_id.as_str(), signer_id.as_str())
         }
         LoginDecision::Cancelled => (CANCELLED_SUBJECT, CANCELLED_SUBJECT),
@@ -738,6 +732,8 @@ struct IdTokenClaims<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     nonce: Option<&'a str>,
     oaath_account: Value,
+    /// Every account the signer is an active member of.
+    oaath_accounts: Vec<Value>,
     signer: Value,
     verified: bool,
 }
@@ -794,7 +790,7 @@ pub async fn exchange_code(
     let iat = relay_now(clock)? / 1_000;
     let mut transaction = store.begin().await?;
     let result = login_claims(&mut *transaction, &consumed.request_id).await;
-    let (par, account, signer, grant) = settle(transaction, result).await?;
+    let (par, account, signer, grant, memberships) = settle(transaction, result).await?;
     // A grant's sealed approval is released once, with the token.
     let authorization_details = match grant {
         None => None,
@@ -819,6 +815,7 @@ pub async fn exchange_code(
         exp: iat + ID_TOKEN_TTL_SECONDS,
         nonce: par.nonce.as_deref(),
         oaath_account: account.account_profile()?.to_json(),
+        oaath_accounts: memberships,
         signer: json!({
             "id": signer.signer_id,
             "kind": credential.kind(),
@@ -846,6 +843,7 @@ async fn login_claims(
     crate::registry::AccountRecord,
     crate::registry::SignerRecord,
     Option<Value>,
+    Vec<Value>,
 )> {
     // Only a login's or an OAuth grant's code redeems here; any other code
     // was released by another flow and answers as invalid.
@@ -881,7 +879,39 @@ async fn login_claims(
         .lock_signer(&request.owner_subject)
         .await?
         .ok_or(RelayErrorCode::RecordUnreadable)?;
-    Ok((par, account, signer, grant))
+    // A suspension between the decision and the exchange still refuses.
+    require_active_member(transaction, &signer.signer_id, &account.account_id).await?;
+    let memberships = active_accounts(transaction, &signer.signer_id).await?;
+    Ok((par, account, signer, grant, memberships))
+}
+
+/// The `oaath_accounts` claim: one entry per account the signer actively
+/// belongs to, in account creation order, as root when any active membership
+/// is the root.
+async fn active_accounts(
+    transaction: &mut dyn RelayTransaction,
+    signer_id: &str,
+) -> RelayResult<Vec<Value>> {
+    let mut accounts: Vec<(String, MembershipRole)> = Vec::new();
+    for (account, membership) in transaction.list_signer_accounts(signer_id).await? {
+        if !membership.is_active() {
+            continue;
+        }
+        match accounts
+            .iter_mut()
+            .find(|(address, _)| *address == account.address)
+        {
+            Some((_, role)) if membership.role == MembershipRole::Root => {
+                *role = MembershipRole::Root
+            }
+            Some(_) => {}
+            None => accounts.push((account.address, membership.role)),
+        }
+    }
+    Ok(accounts
+        .into_iter()
+        .map(|(address, role)| json!({ "address": address, "role": role, "status": "active" }))
+        .collect())
 }
 
 #[derive(Debug, Serialize)]

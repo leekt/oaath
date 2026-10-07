@@ -113,6 +113,7 @@ const ROOT_ACCOUNT: PortalAccount = {
   account_id: "account-grant-root",
   address: `0x${"ab".repeat(20)}`,
   role: "root",
+  status: "active",
   profile: {
     version: "oaath.kernel-account-profile/v1",
     kind: "kernel",
@@ -291,7 +292,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
         ownerCredential: WALLET_SIGNER.profile,
       },
     } satisfies CreateAccountResponse;
-    accounts.set(signer, [{ ...created, role: "root" }]);
+    accounts.set(signer, [{ ...created, role: "root", status: "active" }]);
     return created;
   }
   if (/^\/portal\/transactions\/par-[\w-]+\/decision$/u.test(path) && method === "POST")

@@ -9,6 +9,7 @@
 //! POST   /portal/links/{id}/reject              {}                          -> link view
 //! GET    /portal/accounts/{id}/members                                      -> {members: [...]}
 //! DELETE /portal/accounts/{id}/members/{signer}                             -> {removed: n}
+//! POST   /portal/accounts/{id}/members/{signer}/suspend|restore  {}         -> {signer_id, status}
 //! ```
 //!
 //! ```text
@@ -27,6 +28,10 @@
 //!                      over other data; a link for a signer that is already a
 //!                      member; removing the root
 //! crash/reload         every transition commits with its membership change
+//! members              the root suspends a member (active -> suspended, its
+//!                      grants invalidated in the same transaction) and
+//!                      restores it (suspended -> active, grants stay
+//!                      invalidated); each move once; never the root
 //! cleanup owner        expiry; the root's removal. A removed grant member's
 //!                      capability is invalidated by the existing owner
 //!                      (`authorization/invalidation.rs`) in the same
@@ -66,6 +71,7 @@ use crate::oauth::grant::{granted_capability, relying_party};
 use crate::records::{bounded_text, canonical_identifier, canonical_str, exact_record, timestamp};
 use crate::registry::{
     ACCOUNT_SIGNER_RECORD_VERSION, AccountRecord, AccountSignerRecord, MembershipRole,
+    MembershipStatus,
 };
 use crate::store::{RelayStore, RelayTransaction, settle};
 
@@ -502,6 +508,9 @@ pub async fn decide_link(
                     request_id: None,
                     link_id: Some(link.link_id.clone()),
                     created_at: now,
+                    status: MembershipStatus::Active,
+                    suspended_at: None,
+                    restored_at: None,
                 })
                 .await?;
             if !joined {
@@ -542,6 +551,9 @@ pub struct Member {
     pub grant_id: Option<String>,
     /// Unix seconds.
     pub joined_at: u64,
+    pub status: MembershipStatus,
+    /// Unix seconds of the latest suspension, if any.
+    pub suspended_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -595,6 +607,8 @@ pub async fn list_members(
                 label,
                 grant_id: membership.request_id,
                 joined_at: membership.created_at / 1_000,
+                status: membership.status,
+                suspended_at: membership.suspended_at.map(|at| at / 1_000),
             });
         }
         Ok(Members { members })
@@ -623,50 +637,15 @@ pub async fn remove_member(
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;
     let result = async {
-        root_account(&mut *transaction, account_id, session).await?;
-        let memberships: Vec<AccountSignerRecord> = transaction
-            .list_account_signers(account_id)
-            .await?
-            .into_iter()
-            .map(|(_, membership)| membership)
-            .filter(|membership| membership.signer_id == signer_id)
-            .collect();
-        if memberships.is_empty() {
-            return Err(RelayErrorCode::NotFound);
-        }
-        if memberships
-            .iter()
-            .any(|membership| membership.role == MembershipRole::Root)
-        {
-            return Err(INVALID);
-        }
+        let memberships = member_rows(&mut *transaction, account_id, signer_id, session).await?;
         for membership in &memberships {
             if let Some(link_id) = &membership.link_id
                 && !transaction.remove_link_request(link_id, now).await?
             {
                 return Err(UNREADABLE);
             }
-            if let Some(grant_id) = &membership.request_id
-                && let Some((client_id, capability_hash)) =
-                    granted_capability(&mut *transaction, kms, grant_id).await?
-            {
-                let caller = RelayCaller {
-                    role: RelayCallerRole::Client,
-                    client_id: client_id.clone(),
-                    subject: client_id,
-                    redirect_uris: Vec::new(),
-                    organization_audience: None,
-                };
-                invalidate(
-                    &mut *transaction,
-                    clock,
-                    &caller,
-                    grant_id,
-                    &capability_hash,
-                )
-                .await?;
-            }
         }
+        invalidate_grants(&mut *transaction, clock, kms, &memberships).await?;
         if !transaction
             .delete_account_signers(account_id, signer_id)
             .await?
@@ -675,6 +654,106 @@ pub async fn remove_member(
         }
         Ok(RemovedMember {
             removed: memberships.len(),
+        })
+    }
+    .await;
+    settle(transaction, result).await
+}
+
+/// The signer's memberships of the root's account; never the root's own.
+async fn member_rows(
+    transaction: &mut dyn RelayTransaction,
+    account_id: &str,
+    signer_id: &str,
+    session: &str,
+) -> RelayResult<Vec<AccountSignerRecord>> {
+    root_account(transaction, account_id, session).await?;
+    let memberships: Vec<AccountSignerRecord> = transaction
+        .list_account_signers(account_id)
+        .await?
+        .into_iter()
+        .map(|(_, membership)| membership)
+        .filter(|membership| membership.signer_id == signer_id)
+        .collect();
+    if memberships.is_empty() {
+        return Err(RelayErrorCode::NotFound);
+    }
+    if memberships
+        .iter()
+        .any(|membership| membership.role == MembershipRole::Root)
+    {
+        return Err(INVALID);
+    }
+    Ok(memberships)
+}
+
+/// Invalidates every live grant that admitted these memberships, through
+/// the existing capability-invalidation owner, in the caller's transaction.
+async fn invalidate_grants(
+    transaction: &mut dyn RelayTransaction,
+    clock: &dyn RelayClock,
+    kms: &dyn RelayKms,
+    memberships: &[AccountSignerRecord],
+) -> RelayResult<()> {
+    for membership in memberships {
+        if let Some(grant_id) = &membership.request_id
+            && let Some((client_id, capability_hash)) =
+                granted_capability(&mut *transaction, kms, grant_id).await?
+        {
+            let caller = RelayCaller {
+                role: RelayCallerRole::Client,
+                client_id: client_id.clone(),
+                subject: client_id,
+                redirect_uris: Vec::new(),
+                organization_audience: None,
+            };
+            invalidate(
+                &mut *transaction,
+                clock,
+                &caller,
+                grant_id,
+                &capability_hash,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemberStanding {
+    pub signer_id: String,
+    pub status: MembershipStatus,
+}
+
+/// The root suspends a member (it can no longer sign in as the account, and
+/// its grants on the account are invalidated) or restores it (it can sign in
+/// again; invalidated grants stay invalidated). Each move happens once.
+pub async fn set_member_status(
+    store: &dyn RelayStore,
+    clock: &dyn RelayClock,
+    kms: &dyn RelayKms,
+    account_id: &str,
+    signer_id: &str,
+    session: &str,
+    status: MembershipStatus,
+) -> RelayResult<MemberStanding> {
+    let now = relay_now(clock)?;
+    let mut transaction = store.begin().await?;
+    let result = async {
+        let memberships = member_rows(&mut *transaction, account_id, signer_id, session).await?;
+        if status == MembershipStatus::Suspended {
+            invalidate_grants(&mut *transaction, clock, kms, &memberships).await?;
+        }
+        if !transaction
+            .set_account_signer_status(account_id, signer_id, status, now)
+            .await?
+        {
+            return Err(RelayErrorCode::AlreadyDecided);
+        }
+        Ok(MemberStanding {
+            signer_id: signer_id.to_owned(),
+            status,
         })
     }
     .await;

@@ -11,7 +11,9 @@ mod support;
 use std::sync::Arc;
 
 use oaath_relay::error::RelayErrorCode as E;
-use oaath_relay::registry::{ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole};
+use oaath_relay::registry::{
+    ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole, MembershipStatus,
+};
 use oaath_relay::store::RelayStore;
 use oaath_relay::store::postgres::{PostgresRelayStore, create_relay_schema};
 use serde_json::{Value, json};
@@ -248,11 +250,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v11 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v12 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v11");
+    assert_eq!(version, "oaath.relay-postgres-schema/v12");
     pool.close().await;
 }
 
@@ -448,6 +450,9 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
             request_id: request_id.map(str::to_owned),
             link_id: None,
             created_at: CLOCK_START,
+            status: MembershipStatus::Active,
+            suspended_at: None,
+            restored_at: None,
         };
     let h = fixture.process(clock.clone()).await;
     let mut transaction = h.store.begin().await.unwrap();
@@ -471,9 +476,9 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
     // guarded insert.
     let pool = fixture.pool().await;
     let inserted = sqlx::query(
-        "INSERT INTO oaath_account_signer_v2 \
-         (account_id, signer_id, record_version, role, request_id, created_at) \
-         VALUES ($1, $2, $3, 'root', NULL, 0)",
+        "INSERT INTO oaath_account_signer_v3 \
+         (account_id, signer_id, record_version, role, request_id, created_at, status) \
+         VALUES ($1, $2, $3, 'root', NULL, 0, 'active')",
     )
     .bind(account_id)
     .bind(&other)
@@ -1064,6 +1069,32 @@ async fn keeps_a_link_approval_single_use_and_its_removal_across_restarts() {
     let listed = h.send(accounts()).await.ok(200).clone();
     assert_eq!(listed["accounts"][0]["account_id"], json!(account_id));
     assert_eq!(listed["accounts"][0]["role"], "permission");
+    let status = |action: &str| {
+        portal_call(
+            "POST",
+            &format!("/portal/accounts/{account_id}/members/{device_id}/{action}"),
+            Some(&root_cookie),
+            Some(json!({})),
+        )
+    };
+    h.send(status("suspend")).await.ok(200);
+    shutdown(h).await;
+
+    // The suspension survives a restart, refuses a second suspension, and
+    // restores once.
+    let h = fixture.process(clock.clone()).await;
+    assert_eq!(
+        h.send(accounts()).await.ok(200)["accounts"][0]["status"],
+        "suspended"
+    );
+    h.send(status("suspend")).await.failure(E::AlreadyDecided);
+    h.send(status("restore")).await.ok(200);
+    shutdown(h).await;
+    let h = fixture.process(clock.clone()).await;
+    assert_eq!(
+        h.send(accounts()).await.ok(200)["accounts"][0]["status"],
+        "active"
+    );
     h.send(portal_call(
         "DELETE",
         &format!("/portal/accounts/{account_id}/members/{device_id}"),

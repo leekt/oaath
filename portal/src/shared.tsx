@@ -42,6 +42,8 @@ export function message(error: unknown): string {
       return "Your wallet is on another account. Switch to this signer's account and try again.";
     case "sign-in-refused":
       return "OAAth couldn't verify that sign-in. Please try again.";
+    case "relay_membership_suspended":
+      return "The account's owner suspended this signer. Ask them to restore it.";
     case "relay_unauthenticated":
       return "Your sign-in expired. Choose your signer again.";
     default:

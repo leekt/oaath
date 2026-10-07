@@ -198,6 +198,7 @@ async fn each_root_kind_admits_a_login_only_member_with_one_signature() {
                 "account_id": account_id,
                 "address": address,
                 "role": "permission",
+                "status": "active",
                 "profile": account["profile"],
             }])
         );
@@ -214,6 +215,8 @@ async fn each_root_kind_admits_a_login_only_member_with_one_signature() {
                     "label": null,
                     "grant_id": null,
                     "joined_at": CLOCK_SECONDS,
+                    "status": "active",
+                    "suspended_at": null,
                 },
                 {
                     "signer_id": device.signer_id,
@@ -224,6 +227,8 @@ async fn each_root_kind_admits_a_login_only_member_with_one_signature() {
                     "label": "Work laptop",
                     "grant_id": null,
                     "joined_at": CLOCK_SECONDS,
+                    "status": "active",
+                    "suspended_at": null,
                 },
             ])
         );
