@@ -22,8 +22,9 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
+use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v5";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v6";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -32,13 +33,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v5 (
+        "CREATE TABLE oaath_relay_schema_v6 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v5 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v6 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -121,6 +122,42 @@ pub fn schema_statements() -> Vec<String> {
     (record #>> '{signingRequest,chainId}'), ((record->>'createdAt')::bigint) DESC
   )"
         .to_owned(),
+        format!(
+            "CREATE TABLE oaath_signer_v1 (
+    signer_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    profile_hash text NOT NULL UNIQUE,
+    profile text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_account_v1 (
+    account_id text PRIMARY KEY,
+    record_version text NOT NULL,
+    address text NOT NULL UNIQUE,
+    root_signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
+    account_index bigint NOT NULL CHECK (account_index >= 0 AND account_index <= {max}),
+    profile text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    UNIQUE (root_signer_id, account_index)
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_account_signer_v1 (
+    account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
+    signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
+    record_version text NOT NULL,
+    role text NOT NULL CHECK (role IN ('root', 'permission')),
+    request_id text REFERENCES oaath_relay_authorization_request_v2 (request_id),
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    CHECK ((role = 'root') = (request_id IS NULL)),
+    UNIQUE (account_id, signer_id, request_id)
+  )"
+        ),
+        "CREATE UNIQUE INDEX oaath_account_signer_root_v1 ON oaath_account_signer_v1 (account_id)
+    WHERE role = 'root'"
+            .to_owned(),
     ]
 }
 
@@ -295,6 +332,45 @@ fn artifact_record(row: &PgRow) -> RelayResult<EncryptedArtifactRecord> {
             ("claimedAt", "claimed_at", true),
         ],
     )?)
+}
+
+fn signer_record(row: &PgRow) -> RelayResult<SignerRecord> {
+    SignerRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("signerId", "signer_id", false),
+            ("profileHash", "profile_hash", false),
+            ("profile", "profile", false),
+            ("createdAt", "created_at", true),
+        ],
+    )?)
+}
+
+const ACCOUNT_FIELDS: [(&str, &str, bool); 7] = [
+    ("version", "account_version", false),
+    ("accountId", "account_id", false),
+    ("address", "address", false),
+    ("rootSignerId", "root_signer_id", false),
+    ("accountIndex", "account_index", true),
+    ("profile", "profile", false),
+    ("createdAt", "account_created_at", true),
+];
+
+const MEMBERSHIP_FIELDS: [(&str, &str, bool); 6] = [
+    ("version", "membership_version", false),
+    ("accountId", "account_id", false),
+    ("signerId", "signer_id", false),
+    ("role", "role", false),
+    ("requestId", "request_id", false),
+    ("createdAt", "membership_created_at", true),
+];
+
+fn membership_row(row: &PgRow) -> RelayResult<(AccountRecord, AccountSignerRecord)> {
+    Ok((
+        AccountRecord::parse(&columns(row, &ACCOUNT_FIELDS)?)?,
+        AccountSignerRecord::parse(&columns(row, &MEMBERSHIP_FIELDS)?)?,
+    ))
 }
 
 type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
@@ -549,6 +625,115 @@ impl RelayTransaction for PostgresTransaction {
             )
             .bind(artifact_id)
             .bind(bigint(claimed_at)),
+        )
+        .await
+    }
+
+    async fn lock_signer(&mut self, signer_id: &str) -> RelayResult<Option<SignerRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT signer_id, record_version, profile_hash, profile, created_at \
+                 FROM oaath_signer_v1 WHERE signer_id = $1 FOR UPDATE",
+            )
+            .bind(signer_id),
+            signer_record,
+        )
+        .await
+    }
+
+    async fn lock_signer_by_profile_hash(
+        &mut self,
+        profile_hash: &str,
+    ) -> RelayResult<Option<SignerRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT signer_id, record_version, profile_hash, profile, created_at \
+                 FROM oaath_signer_v1 WHERE profile_hash = $1 FOR UPDATE",
+            )
+            .bind(profile_hash),
+            signer_record,
+        )
+        .await
+    }
+
+    async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_signer_v1 (\
+                 signer_id, record_version, profile_hash, profile, created_at\
+                 ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.signer_id)
+            .bind(record.version)
+            .bind(&record.profile_hash)
+            .bind(&record.profile)
+            .bind(bigint(record.created_at)),
+        )
+        .await
+    }
+
+    async fn list_signer_accounts(
+        &mut self,
+        signer_id: &str,
+    ) -> RelayResult<Vec<(AccountRecord, AccountSignerRecord)>> {
+        let rows = sqlx::query(
+            "SELECT account.record_version AS account_version, account.account_id, \
+             account.address, account.root_signer_id, account.account_index, account.profile, \
+             account.created_at AS account_created_at, \
+             membership.record_version AS membership_version, membership.signer_id, \
+             membership.role, membership.request_id, \
+             membership.created_at AS membership_created_at \
+             FROM oaath_account_signer_v1 AS membership \
+             JOIN oaath_account_v1 AS account ON account.account_id = membership.account_id \
+             WHERE membership.signer_id = $1 \
+             ORDER BY account.created_at, account.account_id COLLATE \"C\"",
+        )
+        .bind(signer_id)
+        .fetch_all(&mut *self.transaction)
+        .await
+        .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        rows.iter().map(membership_row).collect()
+    }
+
+    async fn insert_account(&mut self, record: &AccountRecord) -> RelayResult<bool> {
+        // An unknown root signer inserts nothing instead of aborting.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_account_v1 (\
+                 account_id, record_version, address, root_signer_id, account_index, profile, \
+                 created_at) SELECT $1, $2, $3, $4, $5, $6, $7 \
+                 WHERE EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.account_id)
+            .bind(record.version)
+            .bind(&record.address)
+            .bind(&record.root_signer_id)
+            .bind(bigint(record.account_index))
+            .bind(&record.profile)
+            .bind(bigint(record.created_at)),
+        )
+        .await
+    }
+
+    async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool> {
+        // An unknown account or signer inserts nothing instead of aborting;
+        // the partial unique index refuses a second root.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_account_signer_v1 (\
+                 account_id, signer_id, record_version, role, request_id, created_at\
+                 ) SELECT $1, $2, $3, $4, $5, $6 \
+                 WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $1) \
+                 AND EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $2) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.account_id)
+            .bind(&record.signer_id)
+            .bind(record.version)
+            .bind(record.role.as_str())
+            .bind(&record.request_id)
+            .bind(bigint(record.created_at)),
         )
         .await
     }

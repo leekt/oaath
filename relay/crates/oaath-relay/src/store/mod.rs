@@ -20,7 +20,8 @@
 //! transaction (`SELECT ... FOR UPDATE` semantics). Every one-shot writer
 //! additionally guards on the terminal column being null and reports whether
 //! *this* call performed the transition. Revocation and owner-inbox reads are
-//! later-stage additions to this contract.
+//! later-stage additions to this contract. The signer/account registry state
+//! model lives in `registry.rs`.
 
 pub mod memory;
 pub mod postgres;
@@ -32,6 +33,7 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
+use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
 
 #[async_trait]
 pub trait RelayTransaction: Send {
@@ -99,6 +101,26 @@ pub trait RelayTransaction: Send {
         artifact_id: &str,
         claimed_at: u64,
     ) -> RelayResult<bool>;
+
+    async fn lock_signer(&mut self, signer_id: &str) -> RelayResult<Option<SignerRecord>>;
+    async fn lock_signer_by_profile_hash(
+        &mut self,
+        profile_hash: &str,
+    ) -> RelayResult<Option<SignerRecord>>;
+    /// `false` when the identifier or the profile hash already exists.
+    async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool>;
+    /// Every account the signer belongs to, with its membership, ordered by
+    /// account creation time then account identifier.
+    async fn list_signer_accounts(
+        &mut self,
+        signer_id: &str,
+    ) -> RelayResult<Vec<(AccountRecord, AccountSignerRecord)>>;
+    /// `false` when the identifier, the address, or the root signer's index
+    /// is taken, or the root signer is unknown.
+    async fn insert_account(&mut self, record: &AccountRecord) -> RelayResult<bool>;
+    /// `false` for an unknown account or signer, a second root, or a repeated
+    /// (account, signer, request) row.
+    async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool>;
 
     /// `relay_state_ambiguous` when the outcome cannot be proven.
     async fn commit(self: Box<Self>) -> RelayResult<()>;

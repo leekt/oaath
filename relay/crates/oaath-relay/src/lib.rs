@@ -14,7 +14,9 @@ pub mod display;
 pub mod error;
 pub mod handler;
 pub mod kms;
+pub mod portal;
 pub mod records;
+pub mod registry;
 pub mod store;
 
 pub use error::{RelayErrorCode, RelayResult};

@@ -17,7 +17,7 @@ use oaath_relay::bootstrap::{
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::{RelayStore, RelayTransaction};
-use oaath_relay::{Relay, records};
+use oaath_relay::{Relay, records, registry};
 use serde_json::{Value, json};
 use support::*;
 
@@ -91,6 +91,12 @@ ambiguous_transaction! {
     lock_encrypted_artifact_by_request_id(id: &str) -> RelayResult<Option<records::EncryptedArtifactRecord>>;
     insert_encrypted_artifact(r: &records::EncryptedArtifactRecord) -> RelayResult<bool>;
     claim_encrypted_artifact(id: &str, at: u64) -> RelayResult<bool>;
+    lock_signer(id: &str) -> RelayResult<Option<registry::SignerRecord>>;
+    lock_signer_by_profile_hash(hash: &str) -> RelayResult<Option<registry::SignerRecord>>;
+    insert_signer(r: &registry::SignerRecord) -> RelayResult<bool>;
+    list_signer_accounts(id: &str) -> RelayResult<Vec<(registry::AccountRecord, registry::AccountSignerRecord)>>;
+    insert_account(r: &registry::AccountRecord) -> RelayResult<bool>;
+    insert_account_signer(r: &registry::AccountSignerRecord) -> RelayResult<bool>;
 }
 
 #[async_trait]

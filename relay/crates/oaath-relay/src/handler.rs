@@ -16,6 +16,9 @@
 //! GET  /bootstrap                                    client  URL-only service context
 //! POST /invalidations                                client  capability invalidation
 //! POST /grants/verify                                client  grant reference verification
+//! POST /portal/signers                               portal  register signer
+//! GET  /portal/signers/{signerId}/accounts           portal  signer's accounts
+//! POST /portal/accounts                              portal  derive and record account
 //! ```
 //!
 //! Later stages: `/grants/{grantId}/revocations/{chainId}`, `/chains/...`,
@@ -54,6 +57,7 @@ use crate::bootstrap::{BootstrapConfiguration, capture_chains, serve_bootstrap};
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
+use crate::portal::{assert_same_origin, create_account, register_signer, signer_accounts};
 use crate::records::{
     bounded_text, canonical_identifier, canonical_str, is_lowercase_hash, limits,
 };
@@ -300,6 +304,29 @@ impl Relay {
         }
         // Later stage: EXPERIMENTAL PREVIEW owner-phone routes.
         if head == Some("native") {
+            return Err(RelayErrorCode::NotFound);
+        }
+
+        // Unauthenticated portal registry routes; same-origin only.
+        if head == Some("portal") {
+            assert_same_origin(headers)?;
+            let store = self.store.as_ref();
+            let clock = self.clock.as_ref();
+            if count == 2 && group == Some("signers") {
+                require_method(method, &Method::POST)?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                return reply(200, &register_signer(store, clock, &body).await?);
+            }
+            if count == 4 && group == Some("signers") && fourth == Some("accounts") {
+                require_method(method, &Method::GET)?;
+                let signer_id = canonical_str(third.unwrap_or_default(), INVALID)?;
+                return reply(200, &signer_accounts(store, signer_id).await?);
+            }
+            if count == 2 && group == Some("accounts") {
+                require_method(method, &Method::POST)?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                return reply(201, &create_account(store, clock, &body).await?);
+            }
             return Err(RelayErrorCode::NotFound);
         }
 
