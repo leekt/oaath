@@ -10,6 +10,10 @@
  * value that text parses to. The output is deterministic: no clock, no
  * randomness, fixed keys.
  *
+ * Kernel v4 account-address cases start two local loopback Anvil chains
+ * (foundry's `anvil` must be installed) and read the deployed factory; no other
+ * case touches a chain, and nothing contacts a public RPC.
+ *
  * Run: bun run fixtures:protocol (the `oaath-source` condition resolves the
  * server's `@oaath/protocol` imports to the same sources, never a stale build)
  *
@@ -2503,6 +2507,147 @@ record("parseOaathGrantRef", "version v2", { ...GRANT_REF, version: "oaath.grant
   record(fn, "missing state", { code: "grant_pending" });
   record(fn, "null", null);
   record(fn, "array", []);
+}
+
+// ------------------------------------------- Kernel v4 account derivation
+
+/**
+ * The expected address is the deployed factory's own `getAddress`, read on two
+ * local loopback Anvil chains with different chain IDs (no public RPC), over the
+ * root package the SDK's owner operator installs for the credential. Rejections
+ * mirror the SDK: a malformed profile fails its parse; an existing account, a
+ * non-factory route, or a validator that does not match the owner kind is not
+ * derivable (`kernel_account_derivation_invalid`).
+ */
+{
+  const fn = "deriveKernelV4AccountAddress";
+  const { startAnvil, deployKernelStack } = await import(
+    `${root}packages/testing/src/anvil-process.mjs`
+  );
+  const { credentialKey } = await import(`${root}packages/sdk/src/kernel/key/credential.ts`);
+  const { ownerOperator } = await import(`${root}packages/sdk/src/kernel/operator/owner.ts`);
+  const { encodeKernelV4FactoryAddressRead, kernelV4Deployment } = await import(
+    `${root}packages/sdk/src/kernel-v4.ts`
+  );
+  const ECDSA_VALIDATOR = "0x845adb2c711129d4f3966735ed98a9f09fc4ce57";
+  const chains = [];
+  try {
+    for (const chainId of [31_337, 8_453]) {
+      const chain = await startAnvil(chainId);
+      chains.push(chain);
+      await deployKernelStack(chain);
+    }
+    const derive = async (value) => {
+      const account = P.parseKernelAccountProfile(value.account);
+      if (P.isKernelExistingAccountProfile(account) || account.factoryRoute !== "kernel_factory") {
+        throw Object.assign(new Error("not derivable"), {
+          code: "kernel_account_derivation_invalid",
+        });
+      }
+      const addresses = [];
+      for (const chain of chains) {
+        const deployment = kernelV4Deployment(chain.chainId);
+        let initialPackages;
+        try {
+          const key = credentialKey({
+            credential: account.ownerCredential,
+            validator: value.ownerValidator,
+          });
+          initialPackages = ownerOperator({ key }).resolvePackages(deployment);
+        } catch (error) {
+          if (!String(error?.code).startsWith("kernel_runtime_")) throw error;
+          throw Object.assign(new Error("not derivable"), {
+            code: "kernel_account_derivation_invalid",
+          });
+        }
+        const data = encodeKernelV4FactoryAddressRead({
+          initialPackages,
+          accountIndex: account.accountIndex,
+        });
+        const result = await chain.rpc("eth_call", [{ to: deployment.factory, data }, "latest"]);
+        addresses.push(`0x${result.slice(-40)}`);
+      }
+      if (addresses[0] !== addresses[1]) throw new Error("factory address depends on the chain");
+      return addresses[0];
+    };
+    const cases = [];
+    const add = (name, account, ownerValidator = null) =>
+      cases.push([name, { account, ownerValidator }]);
+    const derived = (ownerCredential, accountIndex, extra = {}) => ({
+      ...DERIVED_ACCOUNT,
+      factoryRoute: "kernel_factory",
+      ownerCredential,
+      accountIndex,
+      ...extra,
+    });
+    for (const index of ["0", "1", "7", "4294967296", MAX_UINT256]) {
+      add(`ecdsa index ${index}`, derived(OWNER_ECDSA, index), ECDSA_VALIDATOR);
+      add(`p256 index ${index}`, derived(OWNER_P256, index));
+      add(`webauthn index ${index}`, derived(OWNER_WEBAUTHN, index));
+    }
+    add(
+      "ecdsa other owner",
+      derived({ ...OWNER_ECDSA, address: hex("ab", 20) }, "0"),
+      ECDSA_VALIDATOR,
+    );
+    add("ecdsa other validator", derived(OWNER_ECDSA, "0"), hex("22", 20));
+    add("ecdsa checksummed validator", derived(OWNER_ECDSA, "0"), checksum(MIXED_ADDRESS));
+    add(
+      "ecdsa checksummed owner",
+      derived({ ...OWNER_ECDSA, address: checksum(MIXED_ADDRESS) }, "0"),
+      ECDSA_VALIDATOR,
+    );
+    add("p256 other key", derived({ ...OWNER_P256, publicKey: OTHER_PUBLIC_KEY }, "0"));
+    add(
+      "webauthn other authenticator",
+      derived({ ...OWNER_WEBAUTHN, authenticatorIdHash: hex("99", 32) }, "0"),
+    );
+    add(
+      "webauthn same key as p256",
+      derived({ ...OWNER_WEBAUTHN, publicKey: OWNER_PUBLIC_KEY }, "0"),
+    );
+    add("ecdsa without validator", derived(OWNER_ECDSA, "0"));
+    add("ecdsa zero validator", derived(OWNER_ECDSA, "0"), ZERO_ADDRESS);
+    add("ecdsa short validator", derived(OWNER_ECDSA, "0"), hex("22", 19));
+    add("p256 with validator", derived(OWNER_P256, "0"), ECDSA_VALIDATOR);
+    add("webauthn with validator", derived(OWNER_WEBAUTHN, "0"), ECDSA_VALIDATOR);
+    add("meta factory route", derived(OWNER_P256, "0", { factoryRoute: "meta_factory" }));
+    add("index above uint256", derived(OWNER_P256, (2n ** 256n).toString()));
+    add("index negative", derived(OWNER_P256, "-1"));
+    add("index leading zero", derived(OWNER_P256, "01"));
+    add("index number", derived(OWNER_P256, 0));
+    add("existing 0.4.0 p256", {
+      ...EXISTING_ACCOUNT,
+      kernelVersion: "0.4.0",
+      entryPoint: { version: "0.9" },
+      ownerCredential: OWNER_P256,
+    });
+    add("existing 0.3.3 ecdsa", EXISTING_ACCOUNT, ECDSA_VALIDATOR);
+    add(
+      "kernel 0.3.3 derived",
+      derived(OWNER_ECDSA, "0", { kernelVersion: "0.3.3", entryPoint: { version: "0.7" } }),
+      ECDSA_VALIDATOR,
+    );
+    add(
+      "unsupported owner kind",
+      derived({ ...OWNER_ECDSA, kind: "weighted-ecdsa" }, "0"),
+      ECDSA_VALIDATOR,
+    );
+    for (const [name, input] of cases) {
+      let expect;
+      try {
+        expect = { ok: await derive(JSON.parse(JSON.stringify(input))) };
+      } catch (error) {
+        if (typeof error?.code !== "string") throw error;
+        expect = { error: error.code };
+      }
+      const list = files.get(fn) ?? [];
+      list.push({ name, fn, input: JSON.parse(JSON.stringify(input)), expect });
+      files.set(fn, list);
+    }
+  } finally {
+    for (const chain of chains) chain.stop();
+  }
 }
 
 // ------------------------------------------------------------------ output
