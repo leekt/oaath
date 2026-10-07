@@ -56,7 +56,8 @@ function refuse(code: string): never {
  */
 export function reviewedRequest(input: {
   readonly prepared: PrepareGrantResponse;
-  readonly detail: GrantDetail;
+  /** What the user was shown: the dapp's signer and policy. */
+  readonly detail: Pick<GrantDetail, "signer" | "policy">;
   readonly signer: RememberedSigner;
   readonly account: PortalAccount;
 }): Readonly<PermissionRequest> {

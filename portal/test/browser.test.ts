@@ -711,13 +711,13 @@ describe("portal in Chrome", () => {
     await page.close();
   });
 
-  it("shows a grant's signer and policy and offers only accounts the signer owns", async () => {
+  it("shows a grant's signer and policy, and offers member accounts for the owner to approve", async () => {
     calls.length = 0;
     const page = await openPortal([GRANT_SIGNER], "par-grant");
     await clickText(page, "Test Wallet");
     await page.waitForSelector("::-p-text(0xabab…abab)");
-    // A signer that is not the root cannot approve a grant, so it is not offered.
-    expect(await page.$("::-p-text(0xcdcd…cdcd)")).toBeNull();
+    // A member account is offered too: its grant request goes to the owner.
+    expect(await page.$("::-p-text(0xcdcd…cdcd)")).not.toBeNull();
     await capture(page, "5-grant-accounts");
     await clickText(page, "0xabab…abab");
     const review = await page.waitForSelector(".review");

@@ -34,7 +34,13 @@ function call(path: string, init: RequestInit = {}, recorded = environment()) {
 
 describe("portal worker", () => {
   it("serves the SPA document for its pages, and hashed assets", async () => {
-    for (const path of ["/", "/authorize?client_id=a&request_uri=b", "/link/Ab_c-1", "/accounts"]) {
+    for (const path of [
+      "/",
+      "/authorize?client_id=a&request_uri=b",
+      "/link/Ab_c-1",
+      "/requests/Ab_c-1",
+      "/accounts",
+    ]) {
       const response = await call(path);
       expect(response.status).toBe(200);
       expect(await response.text()).toBe("<!doctype html>");
@@ -50,6 +56,7 @@ describe("portal worker", () => {
     expect((await call("/assets/../secret")).status).toBe(404);
     expect((await call("/link/")).status).toBe(404);
     expect((await call("/link/a/b")).status).toBe(404);
+    expect((await call("/requests/a/b")).status).toBe(404);
     expect((await call("/", { method: "POST" })).status).toBe(404);
     const recorded = environment();
     const other = await worker.fetch(new Request("https://evil.example/portal/x"), recorded.env);

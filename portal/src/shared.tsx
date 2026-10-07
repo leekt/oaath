@@ -1,10 +1,11 @@
 /**
- * Pieces every portal page shares: the frame, notices, error copy, and the
+ * Pieces every portal page shares: the frame, notices, error copy, QR codes, and the
  * signer step that ends in a fresh session for the chosen signer.
  *
  * @author taek <leekt216@gmail.com>
  */
 import { useEffect, useRef, useState } from "react";
+import { encode } from "uqr";
 import { PortalApiError, portalApi } from "./api.js";
 import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
 import {
@@ -224,5 +225,28 @@ export function Notice({ title, children }: { title: string; children: React.Rea
       <h1>{title}</h1>
       <p className="quiet">{children}</p>
     </section>
+  );
+}
+
+/** A QR code as plain SVG rectangles: no script, no network. */
+export function QrCode({ text, label }: { text: string; label: string }) {
+  const { data, size } = encode(text, { ecc: "M", border: 2 });
+  const cells: string[] = [];
+  data.forEach((row, y) => {
+    row.forEach((dark, x) => {
+      if (dark) cells.push(`M${x} ${y}h1v1h-1z`);
+    });
+  });
+  return (
+    <svg
+      className="qr"
+      viewBox={`0 0 ${size} ${size}`}
+      role="img"
+      aria-label={label}
+      shapeRendering="crispEdges"
+    >
+      <rect width={size} height={size} fill="#fff" />
+      <path d={cells.join("")} fill="#000" />
+    </svg>
   );
 }
