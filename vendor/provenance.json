@@ -2,26 +2,26 @@
   {
     "name": "@oaath/protocol",
     "version": "0.3.4",
-    "file": "oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-    "commit": "ac05f790b2f4c4ee476a99a473db4d9deed250b9",
+    "file": "oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+    "commit": "eb4536ec8a1866d0d988ee0858f456a224ae381d",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
-    "sha256": "d7cfba755ad67dd95e9c3553b22b27dc9c27b1b39ff388621455311776610ec4"
+    "sha256": "0aae97b8ad5b07bc8a51c436347a1e372a0a96f19e8d8328c7695b6b88290e06"
   },
   {
     "name": "@oaath/sdk",
     "version": "0.3.4",
-    "file": "oaath-sdk-0.3.4-7abaf7923b67.tgz",
-    "commit": "ac05f790b2f4c4ee476a99a473db4d9deed250b9",
+    "file": "oaath-sdk-0.3.4-63d94987cd4b.tgz",
+    "commit": "eb4536ec8a1866d0d988ee0858f456a224ae381d",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
-    "sha256": "7abaf7923b679d6bd1dbd4d1530282f72920181a17cdf690a79625f8f2899e07"
+    "sha256": "63d94987cd4b9091cfb5513a1ae679ce9739e4d589975727894f8d363eaf65b6"
   },
   {
     "name": "@oaath/server",
     "version": "0.3.4",
     "file": "oaath-server-0.3.4-b3dd6110b317.tgz",
-    "commit": "ac05f790b2f4c4ee476a99a473db4d9deed250b9",
+    "commit": "eb4536ec8a1866d0d988ee0858f456a224ae381d",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
     "sha256": "b3dd6110b31792e95575a02b221cfa44ed9fe3f4de87167219bb16bca998ab56"
@@ -30,19 +30,19 @@
     "name": "@oaath/testing",
     "version": "0.3.4",
     "file": "oaath-testing-0.3.4-c9779c85670a.tgz",
-    "commit": "ac05f790b2f4c4ee476a99a473db4d9deed250b9",
+    "commit": "eb4536ec8a1866d0d988ee0858f456a224ae381d",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
     "sha256": "c9779c85670a9a1036f8195ec6b0b8e1891b5de1ece678748b66ca9113113e86"
   },
   {
     "name": "cetane",
-    "version": "0.0.2",
-    "file": "cetane-0.0.2-44d836698a8c.tgz",
-    "commit": "9862f7cfac61200e1e660cc5efd74a030af795e8",
+    "version": "0.0.3",
+    "file": "cetane-0.0.3-9402c6396e1c.tgz",
+    "commit": "5730621c6d6e6edf0fc348f7b58002fc1966349b",
     "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sourceState": "clean commit",
-    "sha256": "44d836698a8c6862106b50be2834272b1d651d104c676f9344f4441d61cefbb6"
+    "sha256": "9402c6396e1c3e60438137652079fff6720c13105e96f0ec0c3d530bcc91b073"
   },
   {
     "name": "moesi",

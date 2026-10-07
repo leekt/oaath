@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const visited = new Set(),
 	names = new Set();
+const cetaneVersion = JSON.parse(readFileSync("vendor/provenance.json")).find(
+	(p) => p.name === "cetane",
+).version;
 function visit(name, from) {
 	let parent = dirname(from instanceof URL ? fileURLToPath(from) : from);
 	let dir;
@@ -22,12 +25,15 @@ function visit(name, from) {
 	if (visited.has(dir)) return;
 	visited.add(dir);
 	const p = JSON.parse(readFileSync(join(dir, "package.json")));
+	if (p.name === "cetane") assert.equal(p.version, cetaneVersion);
 	names.add(p.name);
 	for (const dependency of Object.keys(p.dependencies ?? {}))
 		visit(dependency, join(dir, "package.json"));
 }
-for (const name of ["@oaath/sdk", "@oaath/protocol"])
+for (const name of ["@oaath/sdk", "@oaath/protocol"]) {
 	visit(name, new URL("../package.json", import.meta.url));
+	visit(name, new URL("../.local/consumer/package.json", import.meta.url));
+}
 for (const name of ["@oaath/server", "moesi"])
 	visit(name, new URL("../runtime/package.json", import.meta.url));
 assert.ok(!names.has("viem"));
@@ -54,6 +60,7 @@ writeFileSync(
 	JSON.stringify(
 		{
 			publicExports: Object.keys(r),
+			cetaneVersion,
 			productionViemDependencies: 0,
 			productionDependencyNames: [...names].sort(),
 		},

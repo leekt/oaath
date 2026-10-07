@@ -84,9 +84,11 @@ baseline and make no quantified claim about them.
 ## Exact sources and limits
 
 [SDK artifact](sdk-artifact.json), [dependency provenance](../vendor/provenance.json)
-and [checksums](../vendor/checksums.json) identify the retained bytes. OAAth's
-isolated `automation-foundation` branch is `ac05f79`; nine focused patches are
-retained in [upstream/](../upstream/README.md). Cetane `9862f7c` and Moesi `0ef5be6`
+and [checksums](../vendor/checksums.json) identify the current retained bytes.
+[The Cetane 0.0.3 update record](cetane-0.0.3.md) lists the focused checks rerun
+after the original acceptance proofs above. OAAth's
+isolated `automation-foundation` branch is `eb4536e`; ten focused patches are
+retained in [upstream/](../upstream/README.md). Cetane 0.0.3 `5730621` and Moesi `0ef5be6`
 are clean committed sources. Sibling checkout changes were not imported.
 
 The schema and API are current unreleased definitions, without compatibility

@@ -3,6 +3,7 @@
     "AutomationError",
     "createAutomation"
   ],
+  "cetaneVersion": "0.0.3",
   "productionViemDependencies": 0,
   "productionDependencyNames": [
     "@noble/curves",

@@ -22,8 +22,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
-    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
     "@oaath/testing": "file:vendor/oaath-testing-0.3.4-c9779c85670a.tgz",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/cli": "^4.3.3",
@@ -31,7 +31,7 @@
     "@types/pg": "8.15.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "cetane": "file:vendor/cetane-0.0.2-44d836698a8c.tgz",
+    "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz",
     "fake-indexeddb": "^6.2.5",
     "pg": "8.22.0",
     "tailwindcss": "^4.3.3",
@@ -44,10 +44,10 @@
     "@openzeppelin/contracts": "5.4.0"
   },
   "overrides": {
-    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
     "@oaath/server": "file:vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
     "@oaath/testing": "file:vendor/oaath-testing-0.3.4-c9779c85670a.tgz",
-    "cetane": "file:vendor/cetane-0.0.2-44d836698a8c.tgz"
+    "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz"
   }
 }

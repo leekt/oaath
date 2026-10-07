@@ -5,7 +5,7 @@ work is imported. The original OAAth checkout and its RPC dedup change remain
 untouched. DCA codec/contracts belong in this repository; the old DCA-specific
 upstream patches are replaced by the authority/operation/custody series here.
 
-OAAth source: clean `automation-foundation` branch at `ac05f79`, based on
+OAAth source: clean `automation-foundation` branch at `eb4536e`, based on
 `2f12e82` (merged Cetane protocol prerequisite). Patches in `oaath/` apply in
 order. Each commit stays within 25 non-generated files and 2,000 added lines.
 
@@ -15,15 +15,14 @@ git -C .local/oaath-automation am "$PWD"/upstream/oaath/*.patch
 bun install --cwd .local/oaath-automation
 ```
 
-Use a different path/branch if the working tree already exists. These are local
-prerequisites, not published package versions or merged upstream PRs.
+Use a different path/branch if the working tree already exists. The OAAth prerequisites remain local changes, not merged upstream PRs.
 
 | Repository | Owned capability | Issue / source |
 | --- | --- | --- |
 | OAAth | Cetane runtime adapter and neutral wallet types; no viem production dependency | [#385](https://github.com/leekt/oaath/issues/385) |
 | OAAth | Stable scoped signer registry, sealed custody, PostgreSQL atomic creation/recovery | [#386](https://github.com/leekt/oaath/issues/386) |
 | OAAth | Durable keyed execution over existing Grant publication owner | First patch in this series |
-| Cetane | Key generation/address, ABI, typed data, operation hash, receipt codecs | [#7](https://github.com/leekt/cetane/issues/7), committed source `9862f7c` |
+| Cetane | Key generation/address, ABI, typed data, operation hash, receipt codecs | [#7](https://github.com/leekt/cetane/issues/7), 0.0.3 release commit `5730621` |
 | Moesi | Finalized/safe snapshots and shared per-method admission | [#89](https://github.com/leekt/moesi/issues/89), [#90](https://github.com/leekt/moesi/issues/90), committed source `0ef5be6` |
 
 Cetane and Moesi already contain those capabilities; no duplicate product-owned
@@ -33,3 +32,8 @@ observer or cryptographic library is introduced. Their clean worktrees are
 building `recipes/dca/contracts`. `vendor/provenance.json` records exact hashes.
 The product uses file overrides so package consumers resolve those exact
 artifacts, not a similarly numbered registry package.
+
+Cetane now uses the clean 0.0.3 release commit `5730621`. At verification,
+`npm view cetane@0.0.3` returned E404, so its exact source-built tarball is
+retained instead of claiming a registry download. OAAth protocol and SDK
+dependency declarations also target 0.0.3; the tenth patch records that update.

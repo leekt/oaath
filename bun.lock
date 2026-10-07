@@ -11,8 +11,8 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.5",
-        "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-        "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+        "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+        "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
         "@oaath/testing": "file:vendor/oaath-testing-0.3.4-c9779c85670a.tgz",
         "@playwright/test": "^1.63.0",
         "@tailwindcss/cli": "^4.3.3",
@@ -20,7 +20,7 @@
         "@types/pg": "8.15.5",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
-        "cetane": "file:vendor/cetane-0.0.2-44d836698a8c.tgz",
+        "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz",
         "fake-indexeddb": "^6.2.5",
         "pg": "8.22.0",
         "tailwindcss": "^4.3.3",
@@ -40,10 +40,10 @@
       "name": "automation-runtime",
       "version": "0.1.0",
       "dependencies": {
-        "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-        "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+        "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+        "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
         "@oaath/server": "file:../vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
-        "cetane": "file:../vendor/cetane-0.0.2-44d836698a8c.tgz",
+        "cetane": "file:../vendor/cetane-0.0.3-9402c6396e1c.tgz",
         "moesi": "file:../vendor/moesi-0.15.2-dbee82a83ae6.tgz",
         "pg": "8.22.0",
       },
@@ -74,11 +74,11 @@
     },
   },
   "overrides": {
-    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz",
-    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz",
+    "@oaath/protocol": "file:vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
+    "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
     "@oaath/server": "file:vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
     "@oaath/testing": "file:vendor/oaath-testing-0.3.4-c9779c85670a.tgz",
-    "cetane": "file:vendor/cetane-0.0.2-44d836698a8c.tgz",
+    "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz",
   },
   "packages": {
     "@account-abstraction/contracts": ["@account-abstraction/contracts@0.7.0", "", { "dependencies": { "@openzeppelin/contracts": "^5.0.0", "@uniswap/v3-periphery": "^1.4.3" } }, "sha512-Bt/66ilu3u8I9+vFZ9fTd+cWs55fdb9J5YKfrhsrFafH1drkzwuCSL/xEot1GGyXXNJLQuXbMRztQPyelNbY1A=="],
@@ -129,9 +129,9 @@
 
     "@oaath/automation": ["@oaath/automation@workspace:sdk"],
 
-    "@oaath/protocol": ["@oaath/protocol@vendor/oaath-protocol-0.3.4-d7cfba755ad6.tgz", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "1.8.0", "cetane": "0.0.2" } }, "sha512-dSz59DUhrYBGRdV+Kl5uGlXKkNBnpGYsrwfW+zbPUGlrsMTFM69cd1NJz9ZiMlbe9J78TNG2oR3ojgagFDARfQ=="],
+    "@oaath/protocol": ["@oaath/protocol@vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "1.8.0", "cetane": "0.0.3" } }, "sha512-l5KYIho1cjeHZv2K0kUNWPTWrX5VyTIwka6QuSFf3VJ/3By7dzPp8FaCSPMroCjCJNNe927n7HgAAaHrqlt3qQ=="],
 
-    "@oaath/sdk": ["@oaath/sdk@vendor/oaath-sdk-0.3.4-7abaf7923b67.tgz", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "2.2.0", "@oaath/protocol": "0.3.4", "cetane": "0.0.2" } }, "sha512-cU9uGb3Vqcd21jEJRXZlNYlio1dK55ttwhwFNsOU5UmzsbzUzcmB9Z0YTA09xtIpUs0acXt/Bwct/I5PSMINoQ=="],
+    "@oaath/sdk": ["@oaath/sdk@vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "2.2.0", "@oaath/protocol": "0.3.4", "cetane": "0.0.3" } }, "sha512-OZUUWnm/INODigdz7oN/P2gbKGcdq5qq12US7GQ9TDppamoGWSajPoGR0F+dt7HEZ6F42a/gQlMaFpKJJYZd7g=="],
 
     "@oaath/server": ["@oaath/server@vendor/oaath-server-0.3.4-b3dd6110b317.tgz", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "2.2.0", "@oaath/protocol": "0.3.4", "@oaath/sdk": "0.3.4", "pg": "8.22.0" } }, "sha512-KHETgY6i+wj/V87OGor7D9gKX3PR/8UZ6KNVPCL53j/j5FGe/OIqCRw6sA6wql+vHBjtZjXABn5Faw4UzINOng=="],
 
@@ -331,7 +331,7 @@
 
     "braces": ["braces@3.0.3", "", { "dependencies": { "fill-range": "^7.1.1" } }, "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="],
 
-    "cetane": ["cetane@vendor/cetane-0.0.2-44d836698a8c.tgz", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-QN94SgSRRjLJqnoqntpBeMzoBPtzxarQc8tbc9n52tt0Nej+xAAHhiCp3QjnpACP8APkGrmvMOQRVj3Io6Avzw=="],
+    "cetane": ["cetane@vendor/cetane-0.0.3-9402c6396e1c.tgz", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-ANsjifHMwZkC95udaZIDXw7If2MUCUEH0Tk4l/Kn+D5VyeGg9bT3p8fIuINrXRujQOADKaV7coLA7+tfcuZuiA=="],
 
     "class-variance-authority": ["class-variance-authority@0.7.1", "", { "dependencies": { "clsx": "^2.1.1" } }, "sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg=="],
 
