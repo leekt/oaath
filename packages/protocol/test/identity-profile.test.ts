@@ -307,7 +307,7 @@ describe("identity profile codecs", () => {
     const badChecksum = `0x${checksummed.slice(2).replace(/[a-f]/u, (c) => c.toUpperCase())}`;
     expect(badChecksum).not.toBe(checksummed);
     expect(badChecksum.toLowerCase()).toBe(lowercase);
-    for (const address of [badChecksum, lowercase.toUpperCase().replace("0X", "0x")]) {
+    for (const address of [badChecksum]) {
       expectProfileError(
         () => parseOwnerCredentialProfile({ ...ownerEcdsa, address }),
         "owner_credential_profile_invalid",

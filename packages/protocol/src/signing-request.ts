@@ -10,6 +10,7 @@
  */
 import type { Hex } from "cetane";
 import { encodeAbiParameters, hashTypedData, keccak256 } from "cetane/utils";
+import { captureAddress } from "./address.js";
 import { capturedByProtocol, type ProtocolContractErrorCode, protocolFailure } from "./errors.js";
 import {
   captureOwnerCredentialProfile,
@@ -31,12 +32,10 @@ export const OAATH_OWNER_SIGNING_REQUEST_HASH_DOMAIN =
 
 const ERROR_CODE = "signing_request_invalid" satisfies ProtocolContractErrorCode;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]*)$/u;
 const DECIMAL_INT = /^(?:0|-?[1-9][0-9]*)$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const RESERVED_RECORD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MAX_TYPES = 64;
 const MAX_FIELDS = 64;
@@ -144,10 +143,7 @@ function identifier(value: unknown, label: string, fail: CaptureFailure): string
 }
 
 function address(value: unknown, label: string, allowZero: boolean, fail: CaptureFailure): Hex {
-  if (typeof value !== "string" || !ADDRESS.test(value) || (!allowZero && value === ZERO_ADDRESS)) {
-    return fail(`${label} must be a canonical lowercase address`);
-  }
-  return value as Hex;
+  return captureAddress(value, label, fail, allowZero);
 }
 
 function hash(value: unknown, label: string, fail: CaptureFailure): Hex {

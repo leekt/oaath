@@ -120,19 +120,8 @@ impl KernelAccountProfile {
     }
 }
 
-/// `isAddress(value, { strict: true })`: lowercase or exact EIP-55, captured
-/// lowercase and nonzero.
 fn checksummed_address(value: &Value) -> Option<String> {
-    let text = value.as_str()?;
-    let digits = text.strip_prefix("0x")?;
-    if digits.len() != 40 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    let lowercase = text.to_ascii_lowercase();
-    if text != lowercase && text != text.parse::<Address>().ok()?.to_checksum(None) {
-        return None;
-    }
-    (lowercase != ZERO_ADDRESS).then_some(lowercase)
+    crate::capture::capture_address(value).filter(|text| text != ZERO_ADDRESS)
 }
 
 /// `^0x04[0-9a-f]{128}$` naming a point on P-256.

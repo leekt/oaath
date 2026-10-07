@@ -1,4 +1,4 @@
-import { isAddress } from "cetane/utils";
+import { captureAddress } from "./address.js";
 import {
   type CaptureContext,
   captureRecord as captureExactRecord,
@@ -9,10 +9,8 @@ import {
 
 export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v5" as const;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_GRANT_ID_LENGTH = 256;
 const LANE_ID = /^[A-Za-z0-9._:-]{1,128}$/u;
@@ -331,10 +329,9 @@ function canonicalGrantId(value: unknown, code: OperationErrorCode): string {
 }
 
 function address(value: unknown, label: string, code: OperationErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return invalid(code, `${label} must be a nonzero lowercase 20-byte address`);
-  }
-  return value as `0x${string}`;
+  return captureAddress(value, label, (message, reason) =>
+    invalid(reason === "checksum" ? "operation_address_checksum_invalid" : code, message),
+  );
 }
 
 function hash(value: unknown, label: string, code: OperationErrorCode): `0x${string}` {
@@ -408,23 +405,9 @@ function parseLane(
   });
 }
 
-/** Normalizes public reference addresses; persisted records still require canonical lowercase. */
-function referenceAddress(value: unknown, label: string, code: OperationErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !isAddress(value, { strict: false }))
-    return invalid(code, `${label} must be a nonzero 20-byte address`);
-  if (!isAddress(value, { strict: true }))
-    return invalid("operation_address_checksum_invalid", `${label} has an invalid EIP-55 checksum`);
-  return address(value.toLowerCase(), label, code);
-}
-
 /** Capture the exact public identity, normalizing lowercase or valid EIP-55 addresses. */
 export function parseUserOperationReference(value: unknown): Readonly<UserOperationReference> {
-  return captureUserOperationReference(
-    value,
-    "operation_input_invalid",
-    new WeakSet(),
-    referenceAddress,
-  );
+  return captureUserOperationReference(value, "operation_input_invalid", new WeakSet(), address);
 }
 
 function captureUserOperationReference(
@@ -953,7 +936,8 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
 export function parseOperation(value: unknown): Operation {
   try {
     return parseOperationUnsafe(value, new WeakSet());
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathOperationError) throw error;
     throw new OaathOperationError(
       "operation_record_invalid",
       "operation record could not be captured safely",
@@ -971,7 +955,8 @@ export function parseOperationLane(value: unknown): Readonly<OperationLane> {
 export function parseOperationIdentity(value: unknown): Readonly<OperationIdentity> {
   try {
     return parseIdentity(value, "operation_record_invalid", new WeakSet());
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathOperationError) throw error;
     throw new OaathOperationError(
       "operation_record_invalid",
       "operation identity could not be captured safely",
@@ -1006,7 +991,8 @@ export function parseOperationSubmissionEvidence(
 ): Readonly<OperationSubmissionEvidence> {
   try {
     return parseSubmission(value, "operation_record_invalid", new WeakSet());
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathOperationError) throw error;
     throw new OaathOperationError(
       "operation_record_invalid",
       "operation submission evidence could not be captured safely",
@@ -1041,7 +1027,8 @@ export function createOperation(value: unknown): PreparedOperation {
       updatedAt: preparedAt,
       observation: null,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathOperationError) throw error;
     throw new OaathOperationError(
       "operation_input_invalid",
       "operation preparation could not be captured safely",
@@ -1270,7 +1257,8 @@ function inclusionOccurrenceEqual(left: OperationInclusion, right: OperationIncl
 function captureTransition(transitionValue: unknown): InternalOperationTransition {
   try {
     return parseTransition(transitionValue);
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathOperationError) throw error;
     throw new OaathOperationError(
       "operation_transition_invalid",
       "operation transition could not be captured safely",

@@ -1,3 +1,4 @@
+import { captureAddress } from "./address.js";
 import {
   captureKernelAccountProfile,
   captureOperatorCredentialProfile,
@@ -17,12 +18,10 @@ import {
 
 export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v3" as const;
 
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const PERMISSION_ID = /^0x[0-9a-f]{8}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_GRANT_ID_LENGTH = 256;
 
@@ -412,10 +411,7 @@ function canonicalGrantId(value: unknown, code: GrantErrorCode): string {
 }
 
 function address(value: unknown, label: string, code: GrantErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value) || value === ZERO_ADDRESS) {
-    return invalid(code, `${label} must be a nonzero lowercase 20-byte address`);
-  }
-  return value as `0x${string}`;
+  return captureAddress(value, label, (message) => invalid(code, message));
 }
 
 function hash(value: unknown, label: string, code: GrantErrorCode): `0x${string}` {
@@ -1413,7 +1409,8 @@ function parseGrantUnsafe(value: unknown): Grant {
 export function parseGrant(value: unknown): Grant {
   try {
     return parseGrantUnsafe(value);
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathGrantError) throw error;
     throw new OaathGrantError("grant_record_invalid", "grant record could not be captured safely");
   }
 }
@@ -1449,7 +1446,8 @@ export function createGrant(value: unknown): RequestedGrant {
       revocation: null,
       materializations: Object.freeze([]),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathGrantError) throw error;
     throw new OaathGrantError("grant_input_invalid", "grant request could not be captured safely");
   }
 }
@@ -1874,7 +1872,8 @@ export function advanceGrant(value: unknown, transitionValue: unknown): Grant {
   let transition: GrantTransition;
   try {
     transition = parseGrantTransition(transitionValue);
-  } catch {
+  } catch (error) {
+    if (error instanceof OaathGrantError) throw error;
     throw new OaathGrantError(
       "grant_transition_invalid",
       "grant transition could not be captured safely",

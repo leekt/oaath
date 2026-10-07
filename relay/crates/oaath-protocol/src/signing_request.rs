@@ -8,8 +8,8 @@ use alloy_sol_types::SolValue;
 use serde_json::{Map, Value, json};
 
 use crate::capture::{
-    ZERO_ADDRESS, capture_dense_array, capture_record, exact_record, field, has_exact_keys,
-    hex_bytes, is_canonical_decimal, is_lower_hex_bytes, lower_address, lower_hash, utf16_len,
+    ZERO_ADDRESS, capture_address, capture_dense_array, capture_record, exact_record, field,
+    has_exact_keys, hex_bytes, is_canonical_decimal, is_lower_hex_bytes, lower_hash, utf16_len,
 };
 use crate::error::{ErrorCode, OrFail, ProtocolResult, ensure, fail};
 use crate::identity::{
@@ -286,8 +286,8 @@ fn capture_scalar(value: &Value, base: &str, budget: &mut Budget) -> ProtocolRes
         return Ok(Value::Bool(value.as_bool().or_fail(CODE)?));
     }
     if base == "address" {
-        let address = lower_address(value).or_fail(CODE)?;
-        budget.consume_bytes(address, MAX_SCALAR_BYTES)?;
+        let address = capture_address(value).or_fail(CODE)?;
+        budget.consume_bytes(&address, MAX_SCALAR_BYTES)?;
         return Ok(Value::String(address.to_owned()));
     }
     if base == "string" {
@@ -520,7 +520,7 @@ pub(crate) fn capture_owner_signing_request(value: &Value) -> ProtocolResult<Own
     };
     let signer =
         exact_record(field(record, "signer"), &["account", "ownerCredential"]).or_fail(CODE)?;
-    let account = lower_address(field(signer, "account")).filter(|text| *text != ZERO_ADDRESS);
+    let account = capture_address(field(signer, "account")).filter(|text| *text != ZERO_ADDRESS);
     let replay = exact_record(field(record, "replay"), &["nonce", "deadline"]).or_fail(CODE)?;
     Ok(OwnerSigningRequest::Eip712(Box::new(
         Eip712OwnerSigningRequest {

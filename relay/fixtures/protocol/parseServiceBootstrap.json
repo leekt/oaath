@@ -710,7 +710,53 @@
       }
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "ok": {
+        "version": "oaath.service-bootstrap/v4",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "app-a",
+          "applicationName": "OAAth Example",
+          "clientId": "client-a",
+          "redirectUris": [
+            "https://app.example/callback"
+          ]
+        },
+        "userHandle": "user-1",
+        "account": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "ownerValidator": "0x52908400098527886e0f7030069857d2e4169ee7",
+        "chains": [
+          {
+            "chainId": 31337,
+            "usage": true,
+            "feePayer": null,
+            "paymasterService": null,
+            "staticPaymasterConfigurationHash": null
+          }
+        ],
+        "sessionSigner": {
+          "mode": "frontend",
+          "providerId": null
+        }
+      }
     }
   },
   {
@@ -8780,7 +8826,56 @@
       }
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "ok": {
+        "version": "oaath.service-bootstrap/v4",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "app-a",
+          "applicationName": "OAAth Example",
+          "clientId": "client-a",
+          "redirectUris": [
+            "https://app.example/callback"
+          ]
+        },
+        "userHandle": "user-1",
+        "account": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "0",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "kernel_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "ownerValidator": "0x2222222222222222222222222222222222222222",
+        "chains": [
+          {
+            "chainId": 31337,
+            "usage": true,
+            "feePayer": {
+              "address": "0xabababababababababababababababababababab",
+              "balance": "1"
+            },
+            "paymasterService": null,
+            "staticPaymasterConfigurationHash": null
+          }
+        ],
+        "sessionSigner": {
+          "mode": "frontend",
+          "providerId": null
+        }
+      }
     }
   },
   {

@@ -96,9 +96,8 @@ fn capture_call(value: &Value, code: ErrorCode) -> ProtocolResult<GrantPolicyCal
             .all(|pair| pair[0].index < pair[1].index),
         code,
     )?;
-    let target = field(record, "target")
-        .as_str()
-        .filter(|text| is_lower_hex(text, 20) && *text != ZERO_ADDRESS);
+    let target = crate::capture::capture_address(field(record, "target"))
+        .filter(|text| text != ZERO_ADDRESS);
     let selector = field(record, "selector")
         .as_str()
         .filter(|text| is_lower_hex(text, 4) && *text != ZERO_SELECTOR);

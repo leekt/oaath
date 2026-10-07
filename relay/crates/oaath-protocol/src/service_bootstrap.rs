@@ -7,8 +7,8 @@ use alloy_primitives::U256;
 use serde_json::{Map, Value, json};
 
 use crate::capture::{
-    bounded_text, capture_dense_array, capture_record, exact_record, field, has_exact_keys,
-    is_canonical_decimal, loose_safe_integer, lower_address, lower_hash,
+    bounded_text, capture_address, capture_dense_array, capture_record, exact_record, field,
+    has_exact_keys, is_canonical_decimal, loose_safe_integer, lower_hash,
 };
 use crate::error::{ErrorCode, OrFail, ProtocolResult, ensure, fail};
 use crate::identity::{KernelAccountProfile, OwnerCredentialProfile, capture_kernel_account};
@@ -107,7 +107,7 @@ pub fn capture_service_account(
     let owner_validator = if validator.is_null() {
         None
     } else {
-        Some(lower_address(validator).or_fail(code)?.to_owned())
+        Some(capture_address(validator).or_fail(code)?.to_owned())
     };
     ensure(
         matches!(
@@ -222,7 +222,7 @@ fn capture_chain(value: &Value, code: ErrorCode) -> ProtocolResult<ServiceBootst
                 .as_str()
                 .filter(|text| is_canonical_decimal(text, 78));
             Some(ServiceBootstrapFeePayer {
-                address: lower_address(field(payer, "address"))
+                address: capture_address(field(payer, "address"))
                     .or_fail(code)?
                     .to_owned(),
                 balance: balance.or_fail(code)?.to_owned(),
