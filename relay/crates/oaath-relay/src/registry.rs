@@ -47,7 +47,10 @@ pub const ECDSA_ROOT_VALIDATOR: &str = "0x845adb2c711129d4f3966735ed98a9f09fc4ce
 /// The offline counterfactual address of a factory-derived account whose
 /// single policy-free root is the profile's owner credential.
 pub fn derive_account_address(profile: &KernelAccountProfile) -> Option<String> {
-    let validator = match profile.owner_credential() {
+    let KernelAccountProfile::Derived(profile) = profile else {
+        return None;
+    };
+    let validator = match profile.owner_credential {
         OwnerCredentialProfile::Ecdsa { .. } => Some(ECDSA_ROOT_VALIDATOR),
         OwnerCredentialProfile::P256 { .. } | OwnerCredentialProfile::WebAuthn { .. } => None,
     };
