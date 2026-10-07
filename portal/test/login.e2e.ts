@@ -1363,6 +1363,12 @@ describe("importing an existing account through the portal's chain-read proxy", 
     expect(
       await popup.$eval(".inventory", (node) => (node as HTMLElement).dataset.fingerprint),
     ).not.toBe(fingerprint);
+    // Importing an account with modules outside OAAth needs an acknowledgment.
+    const importButton = () =>
+      popup.$eval("::-p-text(Import and sign)", (node) => (node as HTMLButtonElement).disabled);
+    expect(await importButton()).toBe(true);
+    await click(popup, ".acknowledge input");
+    expect(await importButton()).toBe(false);
 
     expect(await inspect(foreign)).toContain(
       "This signer is not the account's root owner. Sign in with the signer that owns the account.",
@@ -1374,7 +1380,56 @@ describe("importing an existing account through the portal's chain-read proxy", 
     expect(await inspect(`0x${"12".repeat(20)}`)).toContain(
       "No contract is deployed at this address on Arbitrum Sepolia.",
     );
-    await popup.close();
+
+    // The root imports its account with one signature and logs in with it.
+    await inspect(owned);
+    const signatures = walletSignatures;
+    await click(popup, "::-p-text(Import and sign)");
+    const imported = await popup.waitForSelector(
+      `button[aria-label='Smart account ${owned.toLowerCase()}, Owner']`,
+    );
+    expect(walletSignatures).toBe(signatures + 1);
+    expect(await imported?.evaluate((node) => (node as HTMLElement).innerText)).toContain(
+      "Imported",
+    );
+    await imported?.click();
+    expect(await outcome(dappPage.page)).toBe("signed-in");
+    const login: Record<string, unknown> = await dappPage.page.evaluate(() => {
+      const value = (window as unknown as { oaathLogin: Record<string, unknown> }).oaathLogin;
+      const clientKey = Object.keys(localStorage).find((key) =>
+        key.startsWith("oaath-example-client:"),
+      );
+      return { ...value, clientId: clientKey ? localStorage.getItem(clientKey) : null };
+    });
+    const { payload } = await jwtVerify(
+      String(login.idToken),
+      createRemoteJWKSet(new URL(`${portal}/oauth/jwks`)),
+      { issuer: portal, audience: String(login.clientId), algorithms: ["ES256"] },
+    );
+    expect(payload.sub).toBe(owned.toLowerCase());
+    expect(payload.oaath_account).toMatchObject({
+      address: owned.toLowerCase(),
+      kernelVersion: "0.4.0",
+    });
+    expect(payload.oaath_accounts).toContainEqual({
+      address: owned.toLowerCase(),
+      role: "root",
+      status: "active",
+    });
+
+    // A second import of the same account is refused.
+    const again = await openDapp();
+    const retry = await startLogin(again);
+    await click(retry, "::-p-text(E2E Wallet)");
+    await retry.waitForSelector("#account-heading");
+    await click(retry, "::-p-text(Import an existing account)");
+    await retry.waitForSelector("#import-address");
+    await retry.type("#import-address", owned);
+    await click(retry, "::-p-text(Check account)");
+    await click(retry, "::-p-text(Import and sign)");
+    await retry.waitForSelector("::-p-text(This account is already in OAAth.)");
+    await retry.close();
+    await again.page.close();
     await dappPage.page.close();
   });
 });

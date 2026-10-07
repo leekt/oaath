@@ -537,3 +537,10 @@ h1:focus {
   border: 1px solid var(--rule);
   border-radius: 0.5rem;
 }
+
+.acknowledge {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}

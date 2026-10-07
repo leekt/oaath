@@ -17,6 +17,7 @@ use sqlx::query::Query;
 use sqlx::{Postgres, Row, Transaction};
 
 use super::{RelayStore, RelayTransaction};
+use crate::account_import::AccountImportRecord;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
@@ -28,7 +29,7 @@ use crate::records::{
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v13";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v14";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -37,13 +38,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v13 (
+        "CREATE TABLE oaath_relay_schema_v14 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v13 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v14 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -144,7 +145,7 @@ pub fn schema_statements() -> Vec<String> {
     record_version text NOT NULL,
     address text NOT NULL UNIQUE,
     root_signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
-    account_index bigint NOT NULL CHECK (account_index >= 0 AND account_index <= {max}),
+    account_index bigint CHECK (account_index >= 0 AND account_index <= {max}),
     owner_validator text,
     profile text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
@@ -253,6 +254,17 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
     signed_out_at bigint CHECK (signed_out_at >= created_at AND signed_out_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_account_import_v1 (
+    account_id text PRIMARY KEY REFERENCES oaath_account_v1 (account_id),
+    record_version text NOT NULL,
+    inventory_fingerprint text NOT NULL,
+    issued_at bigint NOT NULL CHECK (issued_at >= 0 AND issued_at <= {max}),
+    nonce text NOT NULL,
+    signature text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
         format!(
@@ -983,7 +995,7 @@ impl RelayTransaction for PostgresTransaction {
             .bind(record.version)
             .bind(&record.address)
             .bind(&record.root_signer_id)
-            .bind(bigint(record.account_index))
+            .bind(record.account_index.map(bigint))
             .bind(&record.owner_validator)
             .bind(&record.profile)
             .bind(bigint(record.created_at)),
@@ -1116,6 +1128,56 @@ impl RelayTransaction for PostgresTransaction {
             .await
             .map_err(|_| RelayErrorCode::StoreUnavailable)?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn insert_account_import(&mut self, record: &AccountImportRecord) -> RelayResult<bool> {
+        // An unknown account inserts nothing instead of aborting.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_account_import_v1 (\
+                 account_id, record_version, inventory_fingerprint, issued_at, nonce, signature, \
+                 created_at) SELECT $1, $2, $3, $4, $5, $6, $7 \
+                 WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $1) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.account_id)
+            .bind(record.version)
+            .bind(&record.inventory_fingerprint)
+            .bind(bigint(record.issued_at))
+            .bind(&record.nonce)
+            .bind(&record.signature)
+            .bind(bigint(record.created_at)),
+        )
+        .await
+    }
+
+    async fn lock_account_import(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Option<AccountImportRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT account_id, record_version, inventory_fingerprint, issued_at, nonce, \
+                 signature, created_at FROM oaath_account_import_v1 \
+                 WHERE account_id = $1 FOR UPDATE",
+            )
+            .bind(account_id),
+            |row| {
+                AccountImportRecord::parse(&columns(
+                    row,
+                    &[
+                        ("version", "record_version", false),
+                        ("accountId", "account_id", false),
+                        ("inventoryFingerprint", "inventory_fingerprint", false),
+                        ("issuedAt", "issued_at", true),
+                        ("nonce", "nonce", false),
+                        ("signature", "signature", false),
+                        ("createdAt", "created_at", true),
+                    ],
+                )?)
+            },
+        )
+        .await
     }
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {

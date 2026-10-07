@@ -310,6 +310,7 @@ function AccountStep({
                   <span className="choice-title mono">{shortAddress(account.address)}</span>
                   <span className="choice-detail">
                     Smart account · {ROLE_LABEL[account.role]}
+                    {"address" in account.profile && " · Imported"}
                     {account.status === "suspended" && " · Suspended by the owner"}
                   </span>
                 </span>
@@ -348,7 +349,13 @@ function AccountStep({
       {linking && <LinkRequest signer={signer} onApproved={linked} />}
       {importing && (
         <Suspense fallback={<p className="quiet">Loading…</p>}>
-          <ImportAccount signer={signer} />
+          <ImportAccount
+            signer={signer}
+            onImported={() => {
+              setImporting(false);
+              load();
+            }}
+          />
         </Suspense>
       )}
       {error && (

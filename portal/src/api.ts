@@ -265,6 +265,18 @@ export interface MemberGrantView {
   readonly enable: unknown;
 }
 
+/** `POST /portal/accounts/import`: the root's signed import statement. */
+export interface ImportAccountRequest {
+  readonly root_signer_id: string;
+  readonly address: `0x${string}`;
+  /** The inventory fingerprint the root acknowledged. */
+  readonly inventory_fingerprint: `0x${string}`;
+  /** Unix seconds, as signed. */
+  readonly issued_at: number;
+  readonly nonce: string;
+  readonly signature: `0x${string}`;
+}
+
 /** A failed portal call with the relay's structured code, never its prose. */
 export class PortalApiError extends Error {
   readonly status: number;
@@ -331,6 +343,8 @@ export const portalApi = {
     call<IdentifiedSigner>(`/portal/signers/by-credential/${segment(credentialId)}`),
   signerAccounts: (signerId: string) =>
     call<SignerAccountsResponse>(`/portal/signers/${segment(signerId)}/accounts`),
+  importAccount: (body: ImportAccountRequest) =>
+    call<CreateAccountResponse>("/portal/accounts/import", { method: "POST", body }),
   createAccount: (body: CreateAccountRequest) =>
     call<CreateAccountResponse>("/portal/accounts", { method: "POST", body }),
   prepareGrant: (id: string, body: PrepareGrantRequest) =>

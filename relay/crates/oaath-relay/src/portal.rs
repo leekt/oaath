@@ -256,7 +256,7 @@ async fn create(
         .await?
         .into_iter()
         .filter(|(account, _)| account.root_signer_id == root_signer_id)
-        .map(|(account, _)| account.account_index)
+        .filter_map(|(account, _)| account.account_index)
         .collect();
     let account_index = (0..)
         .find(|index| !used.contains(index))
@@ -274,7 +274,7 @@ async fn create(
         address: derive_account_address(&profile, owner_validator.as_deref())
             .ok_or(RelayErrorCode::Internal)?,
         root_signer_id: root_signer_id.to_owned(),
-        account_index,
+        account_index: Some(account_index),
         owner_validator,
         profile: profile.to_json().to_string(),
         created_at: now,

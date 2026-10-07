@@ -20,6 +20,7 @@
 //! GET  /portal/signers/{signerId}/accounts           portal  signer's accounts
 //! GET  /portal/signers/by-credential/{credentialId}  portal  recognise a passkey
 //! POST /portal/accounts                              portal  derive and record account
+//! POST /portal/accounts/import                       portal  the root imports an account
 //! POST /portal/sessions/challenge                    portal  sign-in challenge
 //! POST /portal/sessions                              portal  prove a signer, set cookie
 //! DELETE /portal/sessions                            portal  sign out, clear cookie
@@ -53,6 +54,7 @@ use oaath_protocol::capture::parse_json;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+use crate::account_import::import_account;
 use crate::authentication::{
     RelayAuthentication, RelayCaller, RelayCallerRole, RelayRateLimiter, assert_within_rate_limit,
     authenticate_caller,
@@ -504,6 +506,14 @@ impl Relay {
                 let signer_id = canonical_str(third.unwrap_or_default(), INVALID)?;
                 require_signer(store, clock, headers, signer_id).await?;
                 return reply(200, &signer_accounts(store, signer_id).await?);
+            }
+            if count == 3 && group == Some("accounts") && third == Some("import") {
+                require_method(method, &Method::POST)?;
+                let session = session_signer(store, clock, headers).await?;
+                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                let imported = import_account(store, clock, issuer, &body, &session).await?;
+                return reply(201, &imported);
             }
             if count == 2 && group == Some("accounts") {
                 require_method(method, &Method::POST)?;
