@@ -19,7 +19,9 @@ describe("package boundary", () => {
     expect(Object.keys(root).sort()).toEqual([
       "OAATH_CALLS_REVIEW_VERSION",
       "OaathClientError",
+      "completeOAAthLogin",
       "createOAAth",
+      "loginWithOAAth",
       "parseOaathCallsReview",
     ]);
   });
