@@ -1396,6 +1396,93 @@ describe("a member's grant request waits for the account root", () => {
   });
 });
 
+describe("a member's Grant requested with the SDK waits for the root, then installs on chain", () => {
+  it("returns pending, the root approves in /accounts, redeemPending after a reload yields the Grant, and the first operation enables it", async () => {
+    const local = await startLocalArbitrumSepolia();
+    const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
+    const demo = await startGrantDemo({
+      issuer: portal,
+      chainId: 421_614,
+      rpcUrl: local.chain.url,
+      bundlerUrl: local.bundlerUrl,
+      explorerTxUrl: "https://sepolia.arbiscan.io/tx/",
+      maxRequests: 600,
+      timeCapMs: 120_000,
+      pollIntervalMs: 500,
+      target: "0x000000000000000000000000000000000000dead",
+      selector: "0x12345678",
+      host: "127.0.0.1",
+      log: () => undefined,
+    });
+    closers.push(demo.close);
+
+    const root = await browser.newPage();
+    await root.setViewport({ width: 390, height: 844 });
+    await installWallet(root);
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
+    const address = /0x[0-9a-f]{40}/u.exec(
+      (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+    )?.[0];
+    if (!address) throw new Error("no root account");
+
+    // A member device: the SDK's popup, a new passkey linked to the root's account.
+    const device = await browser.createBrowserContext();
+    const dappPage = await openDapp(demo.url, "#grant:not([disabled])", device);
+    const popup = await startLogin(dappPage, undefined, "#grant");
+    await addAuthenticator(popup);
+    await click(popup, "::-p-text(Add signer)");
+    await click(popup, "::-p-text(New passkey)");
+    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+    await click(popup, "::-p-text(Link to an existing account)");
+    await popup.type("#link-account", address);
+    await click(popup, "::-p-text(Request access)");
+    const shared = await popup.waitForSelector("#link-url");
+    await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, "::-p-text(Approve and sign)");
+    await root.waitForSelector("::-p-text(Signer added)");
+
+    // The member sends the request: the SDK journals the code and reports pending.
+    await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
+    await popup.waitForSelector("#ask-heading");
+    await click(popup, "::-p-text(Send request to the owner)");
+    expect(await outcome(dappPage.page)).toBe("pending");
+    expect(await dappPage.page.$eval("#account", (node) => node.textContent)).toBe("");
+
+    // The root approves from its members view with one signature.
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, `button[aria-label='Smart account ${address}']`);
+    await root.waitForSelector("#requests-heading");
+    const signatures = walletSignatures;
+    await click(root, "button[aria-label='Approve OAAth Grant demo']");
+    await root.waitForSelector("#requests-heading", { hidden: true });
+    expect(walletSignatures).toBe(signatures + 1);
+    await root.close();
+
+    // A reload recreates the SDK; redeemPending exchanges the journaled code once.
+    await dappPage.page.reload();
+    expect(await outcome(dappPage.page)).toBe("granted");
+    await dappPage.page.waitForSelector("#amount:not(:empty)");
+    expect(await dappPage.page.$eval("#account", (node) => node.textContent)).toBe(address);
+
+    // The first covered call deploys the account and enables the member's permission.
+    expect(await local.chain.rpc("eth_getCode", [address, "latest"])).toBe("0x");
+    await local.chain.rpc("anvil_setBalance", [address, toHex(10n ** 18n)]);
+    await click(dappPage.page, "#send");
+    await dappPage.page.waitForSelector("#result[data-outcome=finalized]", { timeout: 30_000 });
+    expect(local.sent).toHaveLength(1);
+    expect(BigInt(local.sent[0]?.nonce ?? 0) >> 248n).toBe(12n);
+    expect(local.sent[0]?.factory).toBeTruthy();
+    expect(await local.chain.rpc("eth_getCode", [address, "latest"])).not.toBe("0x");
+    // Approval was the root's one signature; the member's send asked it nothing.
+    expect(walletSignatures).toBe(signatures + 1);
+    await device.close();
+  });
+});
+
 describe("importing an existing account through the portal's chain-read proxy", () => {
   it("checks the root and lists modules, marking an executor installed elsewhere as outside", async () => {
     const local = await startLocalArbitrumSepolia();
