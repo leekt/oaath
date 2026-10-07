@@ -8,19 +8,29 @@ execFileSync(
 	["pm", "pack", "--destination", "../vendor", "--ignore-scripts"],
 	{ cwd: "sdk", stdio: "pipe" },
 );
-const file = "vendor/oaath-dca-0.1.0.tgz",
+const provenance = JSON.parse(readFileSync("vendor/provenance.json"));
+const peerPins = Object.fromEntries(
+	provenance
+		.filter((p) => ["@oaath/sdk", "@oaath/protocol", "cetane"].includes(p.name))
+		.map((p) => [p.name, `file:../../vendor/${p.file}`]),
+);
+const file = "vendor/oaath-automation-0.1.0.tgz",
 	data = readFileSync(file),
 	digest = createHash("sha256").update(data).digest("hex");
-const pinned = `oaath-dca-0.1.0-${digest.slice(0, 12)}.tgz`;
+const pinned = `oaath-automation-0.1.0-${digest.slice(0, 12)}.tgz`;
 copyFileSync(file, `vendor/${pinned}`);
 mkdirSync(".local/consumer", { recursive: true });
 writeFileSync(
 	".local/consumer/package.json",
 	JSON.stringify({
-		name: "public-dca-consumer",
+		name: "automation-consumer",
 		private: true,
 		type: "module",
-		dependencies: { "@oaath/dca": `file:../../vendor/${pinned}` },
+		dependencies: {
+			"@oaath/automation": `file:../../vendor/${pinned}`,
+			...peerPins,
+		},
+		overrides: peerPins,
 	}),
 );
 execFileSync("bun", ["install"], { cwd: ".local/consumer", stdio: "inherit" });

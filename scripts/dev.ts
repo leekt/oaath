@@ -78,16 +78,16 @@ try {
 				"start",
 			]);
 		}
-		const database = `dca_${Date.now()}`;
+		const database = `automation_${Date.now()}`;
 		run("createdb", ["-h", "127.0.0.1", "-p", "55437", database]);
 		start(["scripts/local-chain.ts"], {
-			DCA_DATABASE_URL: `postgres://${encodeURIComponent(userInfo().username)}@127.0.0.1:55437/${database}`,
+			AUTOMATION_DATABASE_URL: `postgres://${encodeURIComponent(userInfo().username)}@127.0.0.1:55437/${database}`,
 		});
 		for (let n = 0; n < 120; n++) {
 			await new Promise((r) => setTimeout(r, 500));
 			if (existsSync(".local/environment.json")) {
 				const e = JSON.parse(readFileSync(".local/environment.json", "utf8"));
-				if (e.DCA_DATABASE_URL.endsWith(`/${database}`)) break;
+				if (e.AUTOMATION_DATABASE_URL.endsWith(`/${database}`)) break;
 			}
 		}
 	}
@@ -98,16 +98,23 @@ try {
 		try {
 			run("bun", ["scripts/stop.mjs", mode]);
 		} catch {}
-		start(["scripts/run.mjs", mode], { DCA_RELEASE: "1" });
+		start(["scripts/run.mjs", mode], { AUTOMATION_RELEASE: "1" });
 	}
 	await ready("http://127.0.0.1:4317/health");
-	const { url } = JSON.parse(readFileSync(".local/public-url.json", "utf8"));
+	const { url, webUrl } = JSON.parse(
+		readFileSync(".local/public-url.json", "utf8"),
+	);
 	await ready(`${url}/health`);
 	const r = await fetch(`${url}/v1/config`, {
-		headers: { authorization: `Bearer ${e.DCA_API_TOKEN}` },
+		headers: { authorization: `Bearer ${e.AUTOMATION_API_TOKEN}` },
 	});
 	if (!r.ok) throw Error("tailnet_api_verification_failed");
-	console.log(`DCA API ready: ${url}/health`);
+	try {
+		run("bun", ["scripts/stop.mjs", "web"]);
+	} catch {}
+	start(["scripts/run.mjs", "web"]);
+	await ready(webUrl);
+	console.log(`Automation ready: ${webUrl}`);
 	await new Promise<void>((resolve) => {
 		process.once("SIGINT", resolve);
 		process.once("SIGTERM", resolve);

@@ -16,16 +16,25 @@ if (
 )
 	throw Error("tailscale_port_already_owned");
 const url = `http://${name}:4317`;
+const webUrl = `http://${name}:4320`;
+if (
+	current.TCP?.["4320"] &&
+	current.TCP["4320"].TCPForward !== "127.0.0.1:4320"
+)
+	throw Error("tailscale_web_port_already_owned");
 const path = new URL("../.local/environment.json", import.meta.url);
 const env = JSON.parse(readFileSync(path, "utf8"));
-const config = JSON.parse(readFileSync(env.DCA_CONFIG, "utf8"));
-config.origin = url;
-env.DCA_ALLOWED_HOSTS = `127.0.0.1:4317,localhost:4317,${ip}:4317,${name}:4317`;
-writeFileSync(env.DCA_CONFIG, JSON.stringify(config, null, 2), { mode: 0o600 });
+const config = JSON.parse(readFileSync(env.AUTOMATION_CONFIG, "utf8"));
+config.origin = webUrl;
+env.AUTOMATION_ALLOWED_HOSTS = `127.0.0.1:4317,localhost:4317,${ip}:4317,${name}:4317`;
+writeFileSync(env.AUTOMATION_CONFIG, JSON.stringify(config, null, 2), {
+	mode: 0o600,
+});
 writeFileSync(path, JSON.stringify(env), { mode: 0o600 });
 run("serve", "--bg", "--tcp=4317", "tcp://127.0.0.1:4317");
 writeFileSync(
 	new URL("../.local/public-url.json", import.meta.url),
-	JSON.stringify({ url, ip, name }),
+	JSON.stringify({ url, webUrl, ip, name }),
 );
-console.log(url);
+run("serve", "--bg", "--tcp=4320", "tcp://127.0.0.1:4320");
+console.log(webUrl);

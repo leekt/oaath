@@ -161,6 +161,7 @@ await tx(
 		args: [fixture.address, 10_000n * 10n ** 6n],
 	}),
 );
+await fixture.mine();
 const chainDescriptors = await fixture.chainDescriptors();
 const tokenSecret = randomBytes(32).toString("hex"),
 	runtimeToken = randomBytes(32).toString("hex"),
@@ -194,20 +195,20 @@ writeFileSync(
 writeFileSync(
 	new URL(".local/environment.json", root),
 	JSON.stringify({
-		DCA_DATABASE_URL:
-			process.env.DCA_DATABASE_URL ??
+		AUTOMATION_DATABASE_URL:
+			process.env.AUTOMATION_DATABASE_URL ??
 			`postgres://${encodeURIComponent(userInfo().username)}@127.0.0.1:55437/dca`,
-		DCA_CONFIG: new URL(".local/deployment.json", root).pathname,
-		DCA_APPLICATION_HASHES: JSON.stringify([
+		AUTOMATION_CONFIG: new URL(".local/deployment.json", root).pathname,
+		AUTOMATION_APPLICATION_HASHES: JSON.stringify([
 			["local-demo", createHash("sha256").update(tokenSecret).digest("hex")],
 		]),
-		DCA_API_TOKEN: tokenSecret,
-		DCA_RUNTIME_TOKEN: runtimeToken,
-		DCA_SEAL_KEY: randomBytes(32).toString("hex"),
-		DCA_RUNTIME_URL: "http://127.0.0.1:4318",
-		DCA_RUNTIME_PORT: "4318",
+		AUTOMATION_API_TOKEN: tokenSecret,
+		AUTOMATION_RUNTIME_TOKEN: runtimeToken,
+		AUTOMATION_SEAL_KEY: randomBytes(32).toString("hex"),
+		AUTOMATION_RUNTIME_URL: "http://127.0.0.1:4318",
+		AUTOMATION_RUNTIME_PORT: "4318",
 		DCA_OWNER_TOKEN: ownerToken,
-		DCA_ALLOWED_HOSTS:
+		AUTOMATION_ALLOWED_HOSTS:
 			"127.0.0.1:4317,localhost:4317,100.89.250.34:4317,leekt-macmini.tail45c85e.ts.net:4317",
 	}),
 	{ mode: 0o600 },

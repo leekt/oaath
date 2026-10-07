@@ -15,11 +15,14 @@ const clean = Object.fromEntries(
 );
 const command =
 	mode === "api"
-		? process.env.DCA_RELEASE === "1"
-			? "./target/release/dca-api"
-			: "./target/debug/dca-api"
+		? process.env.AUTOMATION_RELEASE === "1"
+			? "./target/release/automation-api"
+			: "./target/debug/automation-api"
 		: process.execPath;
-const args = mode === "api" ? [] : ["runtime/src/main.ts"];
+const args =
+	mode === "api"
+		? []
+		: [mode === "web" ? "examples/dca/server.ts" : "runtime/src/main.ts"];
 const child = spawn(command, args, {
 	env: { ...clean, ...settings },
 	stdio: "inherit",
