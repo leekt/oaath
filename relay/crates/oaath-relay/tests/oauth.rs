@@ -470,42 +470,36 @@ async fn refuses_malformed_registrations_and_pushed_requests() {
 }
 
 #[tokio::test]
-async fn composes_the_production_relay_without_a_dev_config() {
-    use std::sync::Arc;
-    let kms = TestKms::new(KmsMode::Reversible);
-    let clock = TestClock::new();
-    let store: Arc<dyn oaath_relay::store::RelayStore> =
-        Arc::new(oaath_relay::store::memory::MemoryRelayStore::new());
-    let options = oaath_relay::config::compose(
-        store.clone(),
-        kms.clone(),
-        clock.clone(),
-        Some(oaath_relay::oauth::OAuthConfiguration {
-            issuer: ISSUER.to_owned(),
-            key: oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(None, &id_token_pem())
-                .unwrap(),
-        }),
-        None,
-    );
-    let h = Harness {
-        relay: Arc::new(oaath_relay::Relay::new(options).unwrap()),
-        store,
-        clock,
-        kms,
-    };
-    // The legacy, caller-authenticated routes refuse with 401.
+async fn answers_not_found_for_the_retired_service_routes() {
+    let h = harness();
     for request in [
+        post("/authorization/requests", Some("token"), Some(json!({}))),
+        get("/authorization/requests/some-id", Some("token")),
         post(
-            "/authorization/requests",
-            Some(CLIENT_TOKEN),
+            "/authorization/requests/some-id/decision",
+            Some("token"),
             Some(json!({})),
         ),
-        get("/authorization/requests/some-id", Some(OWNER_TOKEN)),
-        get("/bootstrap", Some(CLIENT_TOKEN)),
-        post("/grants/verify", Some(CLIENT_TOKEN), Some(json!({}))),
-        post("/invalidations", Some(CLIENT_TOKEN), Some(json!({}))),
+        post(
+            "/authorization/codes/consume",
+            Some("token"),
+            Some(json!({})),
+        ),
+        post(
+            "/authorization/artifacts/some-id/claim",
+            Some("token"),
+            None,
+        ),
+        post("/authorization/resume", Some("token"), Some(json!({}))),
+        get("/bootstrap", Some("token")),
+        post("/grants/verify", Some("token"), Some(json!({}))),
+        post("/invalidations", Some("token"), Some(json!({}))),
+        get("/session-signers", None),
+        get("/chains/1/operations", None),
+        get("/native/devices", None),
+        post("/grants/g/revocations/1", None, Some(json!({}))),
     ] {
-        h.send(request).await.failure(E::Unauthenticated);
+        h.send(request).await.failure(E::NotFound);
     }
     // The login flow needs no caller.
     let (client_id, _, _, _, code, _) = approved_code(&h).await;

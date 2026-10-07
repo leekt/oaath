@@ -4,11 +4,6 @@
 //! OAATH_LISTEN        listen address, default 127.0.0.1:8787
 //! OAATH_POSTGRES_URL  PostgreSQL store; the memory store when unset
 //! OAATH_KMS_KEY       64 hex characters: the AES-256-GCM artifact key
-//! OAATH_CONFIG        optional path to the DEV ONLY JSON config (tokens, owner
-//!                     route, bootstrap selection). Without it the
-//!                     caller-authenticated relay routes answer
-//!                     relay_unauthenticated; /portal/*, /oauth/*, and discovery
-//!                     need no caller.
 //! OAATH_ISSUER        OAuth/OIDC issuer URL (no trailing slash); enables
 //!                     /oauth/*, discovery, and the portal transaction routes
 //! OAATH_ID_TOKEN_KEY  path to the ES256 (P-256) PKCS#8 PEM id_token key
@@ -25,10 +20,8 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use oaath_relay::Relay;
 use oaath_relay::chain::{ChainReader, IMPORT_CHAIN_ID};
 use oaath_relay::clock::SystemClock;
-use oaath_relay::config::{DevConfig, compose};
 use oaath_relay::kms::AesGcmKms;
 use oaath_relay::oauth::OAuthConfiguration;
 use oaath_relay::oauth::id_token::IdTokenKey;
@@ -37,6 +30,7 @@ use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::postgres::{
     PostgresRelayStore, RELAY_POSTGRES_SCHEMA_VERSION, create_relay_schema,
 };
+use oaath_relay::{Relay, RelayOptions};
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -67,15 +61,6 @@ async fn run() -> Result<(), String> {
         .ok()
         .and_then(|key| AesGcmKms::from_hex(&key))
         .ok_or("OAATH_KMS_KEY must be 64 hex characters")?;
-    let config = match std::env::var("OAATH_CONFIG") {
-        Ok(path) if !path.is_empty() => {
-            let text = std::fs::read_to_string(&path)
-                .map_err(|_| "OAATH_CONFIG could not be read".to_owned())?;
-            Some(DevConfig::parse(&text)?)
-        }
-        _ => None,
-    };
-
     // Every configuration error surfaces before any schema is created.
     let oauth = match std::env::var("OAATH_ISSUER") {
         Ok(issuer) if !issuer.is_empty() => Some(oauth_configuration(issuer)?),
@@ -114,17 +99,19 @@ async fn run() -> Result<(), String> {
         }
     };
 
-    let mut options = compose(
-        store.clone(),
-        Arc::new(kms),
-        Arc::new(SystemClock),
-        oauth,
-        config,
-    );
     if chain.is_none() {
         tracing::info!("chain: none; account imports are refused");
     }
-    options.chain = chain;
+    let options = RelayOptions {
+        store: store.clone(),
+        kms: Arc::new(kms),
+        clock: Arc::new(SystemClock),
+        request_ttl_ms: None,
+        code_ttl_ms: None,
+        max_body_bytes: None,
+        oauth,
+        chain,
+    };
     let relay =
         Relay::new(options).map_err(|code| format!("relay configuration is invalid ({code})"))?;
 

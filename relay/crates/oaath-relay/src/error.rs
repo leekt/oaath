@@ -50,10 +50,6 @@ pub enum RelayErrorCode {
     #[error("relay_code_invalid")]
     #[serde(rename = "relay_code_invalid")]
     CodeInvalid,
-    /// The optional deployment limiter rejected the call.
-    #[error("relay_rate_limited")]
-    #[serde(rename = "relay_rate_limited")]
-    RateLimited,
     /// A durable record could not be read as the current schema version.
     #[error("relay_record_unreadable")]
     #[serde(rename = "relay_record_unreadable")]
@@ -111,7 +107,6 @@ impl RelayErrorCode {
             Self::CodeAlreadyConsumed => 409,
             Self::ArtifactAlreadyClaimed => 409,
             Self::CodeInvalid => 400,
-            Self::RateLimited => 429,
             Self::RecordUnreadable => 500,
             Self::KmsUnavailable => 503,
             Self::StoreUnavailable => 503,

@@ -137,14 +137,6 @@ fn owned(text: &str) -> String {
     text.to_owned()
 }
 
-/// Deployment-selected device reference and its authenticated approving subject.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AuthorizationOwnerRoute {
-    pub owner_device_id: String,
-    pub owner_subject: String,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationRequestRecord {
