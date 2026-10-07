@@ -103,6 +103,9 @@ export async function startAnvil(chainId, hardfork = "prague") {
   const client = createPublicClient({
     chain: { id: chainId, name: "Anvil", nativeAA: false },
     transport: http(url),
+    // Automining can finish just after the send reply. Keep local fixture
+    // receipt waits short instead of spending one second per deployment.
+    pollingInterval: 25,
   });
   for (let attempt = 0; ; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Anvil exited before chain ${chainId} was ready`);
