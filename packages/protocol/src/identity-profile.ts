@@ -1,5 +1,6 @@
 import { p256 } from "@noble/curves/nist.js";
-import { encodeAbiParameters, type Hex, isAddress, keccak256 } from "viem";
+import type { Hex } from "cetane";
+import { encodeAbiParameters, isAddress, keccak256 } from "cetane/utils";
 import {
   type CaptureContext,
   type CaptureFailure,

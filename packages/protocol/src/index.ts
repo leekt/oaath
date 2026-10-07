@@ -25,6 +25,7 @@ export {
   OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES,
   readRpcBundlerRejection,
 } from "./bundler-rejection.js";
+export { entryPointAbi } from "./entry-point-abi.js";
 export type { ProtocolContractErrorCode } from "./errors.js";
 export { OaathProtocolError } from "./errors.js";
 export type {

@@ -42,11 +42,13 @@
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
-    "viem": "2.55.8"
+    "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz",
+    "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
     "@types/node": "22.13.0",
-    "fast-check": "^4.9.0"
+    "fast-check": "^4.9.0",
+    "viem": "2.55.8"
   },
   "publishConfig": {
     "access": "public"

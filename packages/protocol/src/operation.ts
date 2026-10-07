@@ -1,4 +1,4 @@
-import { isAddress } from "viem";
+import { isAddress } from "cetane/utils";
 import {
   type CaptureContext,
   captureRecord as captureExactRecord,

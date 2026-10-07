@@ -1,6 +1,6 @@
 /** Provider failure decoding belongs here, never in routing or retry decisions. */
-import { decodeErrorResult, encodeErrorResult } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { decodeErrorResult, encodeErrorResult } from "cetane/utils";
+import { entryPointAbi } from "./entry-point-abi.js";
 
 const STAGES = ["estimate", "sponsor", "send", "receipt"] as const;
 export type UserOperationFailureStage = (typeof STAGES)[number];
@@ -135,7 +135,7 @@ export function readUserOperationFailure(error: unknown): Readonly<OaathUserOper
 }
 
 /**
- * Normalizes RPC/viem/caller-adapter errors. ERC-7769 numeric codes and exact
+ * Normalizes RPC/Cetane/caller-adapter errors. ERC-7769 numeric codes and exact
  * EntryPoint ABI errors are preferred; standard AA tokens are captured at this
  * boundary only. Unrecognized/contradictory evidence is unknown. The original
  * cause remains available but is non-enumerable and must not be logged.
@@ -186,11 +186,11 @@ export function classifyUserOperationError(
     }
     if (typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value) && value.length <= 65536) {
       try {
-        const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: value as `0x${string}` });
+        const decoded = decodeErrorResult({ abi: entryPointAbi, data: value as `0x${string}` });
         if (
           (decoded.errorName === "FailedOp" || decoded.errorName === "FailedOpWithRevert") &&
           encodeErrorResult({
-            abi: entryPoint07Abi,
+            abi: entryPointAbi,
             errorName: decoded.errorName,
             args: decoded.args,
           }).toLowerCase() === value.toLowerCase()

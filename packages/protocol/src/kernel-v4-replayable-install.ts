@@ -9,7 +9,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { getAddress } from "viem";
+import { getAddress } from "cetane/utils";
 import { capturedByProtocol, protocolFailure } from "./errors.js";
 import {
   type CaptureContext,
