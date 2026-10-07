@@ -1,4 +1,4 @@
-import { type Approval, DcaError } from "./index.js";
+import { type Approval, AutomationError } from "./index.js";
 export type OwnerReview = NonNullable<Approval["review"]>;
 export interface SignedConsent {
 	commitment: string;
@@ -38,7 +38,7 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 		let record = await options.journal.read(key);
 		if (!record) {
 			if (!(await options.confirm(review)))
-				throw new DcaError("owner_declined", 0);
+				throw new AutomationError("owner_declined", 0);
 			const evidence = {
 				commitment: key,
 				consentSignature: await options.signTypedData(review.consent),
@@ -50,7 +50,7 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 				evidence,
 			};
 			if (!(await options.journal.compareAndSwap(key, null, next)))
-				throw new DcaError("approval_in_progress", 0);
+				throw new AutomationError("approval_in_progress", 0);
 			record = next;
 		}
 		if (
@@ -58,7 +58,7 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 			!["reviewed", "setup_started", "submitted"].includes(record.stage) ||
 			record.evidence.commitment !== key
 		)
-			throw new DcaError("consent_mismatch", 0);
+			throw new AutomationError("consent_mismatch", 0);
 		if (record.stage !== "reviewed") return record.evidence;
 		const started: ApprovalRecord = {
 			version: "dca.owner-approval/v1",
@@ -66,7 +66,7 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 			evidence: record.evidence,
 		};
 		if (!(await options.journal.compareAndSwap(key, record, started)))
-			throw new DcaError("approval_in_progress", 0);
+			throw new AutomationError("approval_in_progress", 0);
 		// Retain the signed evidence even if the owner transaction's acknowledgement is lost.
 		let result: { operationId: string };
 		try {
@@ -80,7 +80,7 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 			evidence: { ...started.evidence, setupOperation: result.operationId },
 		};
 		if (!(await options.journal.compareAndSwap(key, started, next)))
-			throw new DcaError("approval_journal_conflict", 0);
+			throw new AutomationError("approval_journal_conflict", 0);
 		return next.evidence;
 	};
 }

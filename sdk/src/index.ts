@@ -1,3 +1,4 @@
+import { createTransport } from "./transport.js";
 export type Address = `0x${string}`;
 export type PlanStatus =
 	| "draft"
@@ -9,16 +10,35 @@ export type PlanStatus =
 	| "cancelled"
 	| "expired"
 	| "completed";
+export type KeyScope = "user" | "application";
 export interface CreatePlan {
-	account: Address;
-	chainId: number;
-	sell: { token: Address; amount: string };
-	buy: { token: Address };
-	intervalSeconds: 86400;
-	maxRuns: number;
+	recipe: "dca.v1";
+	amount: string;
+	opportunities: number;
 	maxSlippageBps: number;
 	startAt?: number;
 	idempotencyKey: string;
+}
+export interface Session {
+	token: string;
+	expiresAt: number;
+	account: Address;
+	keyScope: KeyScope;
+}
+export interface Config {
+	version: "automation.api/v1";
+	recipes: readonly { id: "dca.v1"; name: string }[];
+	account: Address | null;
+	keyScope: KeyScope;
+	chainId: number;
+	sell: { token: Address; symbol: string; decimals: number };
+	buy: { token: Address; symbol: string; decimals: number };
+	intervalSeconds: number;
+	graceSeconds: number;
+	serviceFee: string;
+	maxFeePerGas: string;
+	maxGasCost: string;
+	factory: Address;
 }
 export interface Terms {
 	version: "oaath.dca-terms/v1";
@@ -43,6 +63,8 @@ export interface Terms {
 	maxSlippageBps: number;
 }
 export interface Plan {
+	recipe: "dca.v1";
+	keyScope: KeyScope;
 	id: Address;
 	status: PlanStatus;
 	revision: number;
@@ -54,7 +76,13 @@ export interface Plan {
 	nextSlot: number;
 	nextAt: number;
 	setup: unknown;
-	cancellation: unknown;
+	cancellation: null | {
+		status: "confirmed" | "owner_action_required";
+		calls?: readonly { target: Address; data: Address; value: string }[];
+		executorStopped?: boolean;
+		grantRevoked?: boolean;
+		allowanceCleared?: boolean;
+	};
 	diagnostic: string | null;
 	fees: {
 		serviceFee: string;
@@ -87,6 +115,7 @@ export interface Approval {
 	review?: {
 		commitment: Address;
 		custody: "oaath_hosted";
+		keyScope: KeyScope;
 		terms: Terms;
 		fees: Plan["fees"];
 		permission: unknown;
@@ -94,13 +123,13 @@ export interface Approval {
 		setupCalls: readonly { target: Address; data: Address; value: string }[];
 	};
 }
-export class DcaError extends Error {
+export class AutomationError extends Error {
 	constructor(
 		readonly code: string,
 		readonly status: number,
 	) {
 		super(code);
-		this.name = "DcaError";
+		this.name = "AutomationError";
 	}
 }
 export interface ClientOptions {
@@ -108,63 +137,13 @@ export interface ClientOptions {
 	token: string | (() => string | Promise<string>);
 	fetch?: typeof fetch;
 	timeoutMs?: number;
-	approve?: (review: NonNullable<Approval["review"]>) => Promise<unknown>;
 }
 /** HTTP-only entry: no private keys, chain polling, database, wallet or scheduler dependency. */
-export function createDca(options: ClientOptions) {
-	const url = new URL(options.baseUrl);
-	if (
-		!["http:", "https:"].includes(url.protocol) ||
-		url.username ||
-		url.password ||
-		url.search ||
-		url.hash
-	)
-		throw new DcaError("base_url_invalid", 0);
-	const base = url.href.replace(/\/$/, "");
-	const fetcher = options.fetch ?? globalThis.fetch;
-	async function request<T>(
-		method: string,
-		path: string,
-		body?: unknown,
-	): Promise<T> {
-		const token =
-			typeof options.token === "function"
-				? await options.token()
-				: options.token;
-		let r: Response;
-		try {
-			r = await fetcher(base + path, {
-				method,
-				headers: {
-					authorization: `Bearer ${token}`,
-					"content-type": "application/json",
-				},
-				...(body === undefined ? {} : { body: JSON.stringify(body) }),
-				signal: AbortSignal.timeout(options.timeoutMs ?? 30000),
-				redirect: "error",
-			});
-		} catch {
-			throw new DcaError("request_outcome_unknown", 0);
-		}
-		const value: unknown = await r.json().catch(() => {
-			throw new DcaError("response_unreadable", r.status);
-		});
-		if (!r.ok) {
-			const code = (value as { error?: { code?: unknown } })?.error?.code;
-			throw new DcaError(
-				typeof code === "string" && /^[a-z0-9_]{1,100}$/.test(code)
-					? code
-					: "request_failed",
-				r.status,
-			);
-		}
-		if (!value || typeof value !== "object")
-			throw new DcaError("response_invalid", r.status);
-		return value as T;
-	}
+export function createAutomation(options: ClientOptions) {
+	const request = createTransport(options);
 	const path = (id: string) => {
-		if (!/^0x[0-9a-f]{64}$/.test(id)) throw new DcaError("plan_id_invalid", 0);
+		if (!/^0x[0-9a-f]{64}$/.test(id))
+			throw new AutomationError("plan_id_invalid", 0);
 		return `/v1/plans/${id}`;
 	};
 	return Object.freeze({
@@ -177,17 +156,8 @@ export function createDca(options: ClientOptions) {
 				path(id) +
 					`/runs?after=${options.after ?? -1}&limit=${options.limit ?? 50}`,
 			),
-		async authorize(id: string): Promise<Approval> {
-			const approval = await request<Approval>("POST", `${path(id)}/authorize`);
-			if (approval.review && options.approve) {
-				return request<Approval>(
-					"POST",
-					`${path(id)}/approve`,
-					await options.approve(approval.review),
-				);
-			}
-			return approval;
-		},
+		authorize: (id: string) =>
+			request<Approval>("POST", `${path(id)}/authorize`),
 		submitApproval: (id: string, evidence: unknown) =>
 			request<Approval>("POST", `${path(id)}/approve`, evidence),
 		pause: (id: string) => request<Plan>("POST", `${path(id)}/pause`),
@@ -198,7 +168,7 @@ export function createDca(options: ClientOptions) {
 				"POST",
 				`${path(id)}/refresh`,
 			),
-		config: () => request<Record<string, unknown>>("GET", "/v1/config"),
+		config: () => request<Config>("GET", "/v1/config"),
 	});
 }
-export type DcaClient = ReturnType<typeof createDca>;
+export type AutomationClient = ReturnType<typeof createAutomation>;

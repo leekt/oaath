@@ -3,11 +3,11 @@ import {
 	type ApprovalRecord,
 	createOwnerApproval,
 } from "../sdk/src/approval.ts";
-import { createDca, DcaError } from "../sdk/src/index.ts";
+import { AutomationError, createAutomation } from "../sdk/src/index.ts";
 
 test("HTTP transport does not retry an unknown mutation or follow redirects", async () => {
 	let calls = 0;
-	const dca = createDca({
+	const dca = createAutomation({
 		baseUrl: "http://service",
 		token: "secret",
 		fetch: async (_, init) => {
@@ -22,7 +22,7 @@ test("HTTP transport does not retry an unknown mutation or follow redirects", as
 	expect(calls).toBe(1);
 });
 test("SDK sanitizes upstream errors", async () => {
-	const dca = createDca({
+	const dca = createAutomation({
 		baseUrl: "http://service",
 		token: "secret",
 		fetch: async () =>
@@ -79,7 +79,7 @@ test("declining owner review causes no signature or setup", async () => {
 		},
 	});
 	await expect(approve({ commitment: "0x" } as any)).rejects.toBeInstanceOf(
-		DcaError,
+		AutomationError,
 	);
 });
 
@@ -109,4 +109,16 @@ test("unknown persisted approval versions fail closed", async () => {
 	await expect(approve({ commitment: "0xabc" } as any)).rejects.toMatchObject({
 		code: "consent_mismatch",
 	});
+});
+
+test("HTTP authorize returns a review without invoking owner effects", async () => {
+	const client = createAutomation({
+		baseUrl: "http://service",
+		token: "user",
+		fetch: async () =>
+			Response.json({ status: "pending", review: { commitment: "0xabc" } }),
+	});
+	expect((await client.authorize(`0x${"ab".repeat(32)}`)).status).toBe(
+		"pending",
+	);
 });

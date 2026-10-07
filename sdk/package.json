@@ -1,23 +1,73 @@
 {
-	"name": "@oaath/dca",
-	"version": "0.1.0",
-	"type": "module",
-	"sideEffects": false,
-	"files": [
-		"dist",
-		"README.md"
-	],
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"default": "./dist/index.js"
-		},
-		"./approval": {
-			"types": "./dist/approval.d.ts",
-			"default": "./dist/approval.js"
-		}
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json"
-	}
+  "name": "@oaath/automation",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./approval": {
+      "types": "./dist/approval.d.ts",
+      "default": "./dist/approval.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./wallet": {
+      "types": "./dist/wallet.d.ts",
+      "default": "./dist/wallet.js"
+    },
+    "./journal": {
+      "types": "./dist/journal.d.ts",
+      "default": "./dist/journal.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./cancellation": {
+      "types": "./dist/cancellation.d.ts",
+      "default": "./dist/cancellation.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tailwindcss -i src/styles.css -o dist/styles.css --minify"
+  },
+  "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.24",
+    "@radix-ui/react-label": "^2.1.16",
+    "@radix-ui/react-select": "^2.3.8",
+    "@radix-ui/react-slot": "^1.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.52.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@oaath/sdk": "^0.3.4"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "@oaath/sdk": {
+      "optional": true
+    }
+  }
 }
