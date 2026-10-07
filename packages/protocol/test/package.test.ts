@@ -78,6 +78,7 @@ describe("package boundary", () => {
       "hashGrantPolicy",
       "hashGrantPolicyCalls",
       "hashKernelRevocationSigningRequest",
+      "hashOwnerCredentialProfile",
       "hashOwnerSigningRequest",
       "hashPermissionDecision",
       "hashPermissionRequest",
