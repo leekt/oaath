@@ -1,6 +1,7 @@
 /**
  * The "Login with OAAth" popup: choose a signer, then an account, then return
- * to the dapp. Choosing is the whole login; nothing here signs anything.
+ * to the dapp. Choosing is the whole login; nothing here signs anything. A
+ * grant adds one review in which the account root signs the dapp's request.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -13,6 +14,7 @@ import {
   portalApi,
   transactionIdFromRequestUri,
 } from "./api.js";
+import { GrantReview } from "./GrantReview.js";
 import {
   type AnnouncedWallet,
   connectWallet,
@@ -27,10 +29,11 @@ import {
   watchWallets,
 } from "./signers.js";
 
-// A grant-review step (stage 5a PR E) slots in between "account" and the decision.
 type Step =
   | { readonly name: "signer" }
   | { readonly name: "account"; readonly signer: RememberedSigner }
+  /** A grant transaction: the account root reviews and signs the dapp's request. */
+  | { readonly name: "review"; readonly signer: RememberedSigner; readonly account: PortalAccount }
   | { readonly name: "returning" };
 
 function message(error: unknown): string {
@@ -109,12 +112,13 @@ function Authorize({ transactionId }: { transactionId: string }) {
     }
   }
 
-  function finish(signer: RememberedSigner, account: PortalAccount) {
+  function finish(signer: RememberedSigner, account: PortalAccount, artifact?: string) {
     rememberSigner({ ...signer, lastUsedAt: Date.now() });
     return decide({
       outcome: "approved",
       signer_id: signer.signer_id,
       account_id: account.account_id,
+      ...(artifact === undefined ? {} : { artifact }),
     });
   }
 
@@ -135,6 +139,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
         </p>
       </Frame>
     );
+  const grant = transaction.authorization_details.find((detail) => detail.type === "oaath_grant");
   if (transaction.expires_at * 1000 <= Date.now())
     return (
       <Frame>
@@ -159,7 +164,22 @@ function Authorize({ transactionId }: { transactionId: string }) {
         <AccountStep
           signer={step.signer}
           onBack={() => setStep({ name: "signer" })}
-          onChosen={(account) => finish(step.signer, account)}
+          rootOnly={grant !== undefined}
+          onChosen={(account) =>
+            grant
+              ? setStep({ name: "review", signer: step.signer, account })
+              : finish(step.signer, account)
+          }
+          onCancel={cancel}
+        />
+      )}
+      {step.name === "review" && grant && (
+        <GrantReview
+          transaction={transaction}
+          detail={grant}
+          signer={step.signer}
+          account={step.account}
+          onApproved={(artifact) => finish(step.signer, step.account, artifact)}
           onCancel={cancel}
         />
       )}
@@ -322,11 +342,14 @@ const ROLE_LABEL: Readonly<Record<PortalAccount["role"], string>> = {
 
 function AccountStep({
   signer,
+  rootOnly,
   onBack,
   onChosen,
   onCancel,
 }: {
   signer: RememberedSigner;
+  /** A grant is approved by an account's root: other memberships are not offered. */
+  rootOnly: boolean;
   onBack: () => void;
   onChosen: (account: PortalAccount) => void;
   onCancel: () => void;
@@ -339,10 +362,15 @@ function AccountStep({
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
     portalApi.signerAccounts(signer.signer_id).then(
-      (response) => setAccounts(response.accounts),
+      (response) =>
+        setAccounts(
+          rootOnly
+            ? response.accounts.filter((account) => account.role === "root")
+            : response.accounts,
+        ),
       (failure: unknown) => setError(message(failure)),
     );
-  }, [signer.signer_id]);
+  }, [signer.signer_id, rootOnly]);
 
   async function create() {
     setBusy(true);
@@ -375,7 +403,13 @@ function AccountStep({
           Loading accounts…
         </p>
       )}
-      {accounts?.length === 0 && <p className="quiet">This signer has no account yet.</p>}
+      {accounts?.length === 0 && (
+        <p className="quiet">
+          {rootOnly
+            ? "This signer owns no account yet. Only an account's owner can approve app access."
+            : "This signer has no account yet."}
+        </p>
+      )}
       {accounts && accounts.length > 0 && (
         <ul className="choices">
           {accounts.map((account) => (

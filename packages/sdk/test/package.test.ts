@@ -43,6 +43,7 @@ describe("package boundary", () => {
 
   it("exposes the version-agnostic Kernel primitives on /kernel", () => {
     expect(Object.keys(kernel).sort()).toEqual([
+      "ECDSA_VALIDATOR",
       "NONCE_ALIGNMENT_PERMISSION_ID",
       "OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION",
       "OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION",
@@ -78,6 +79,7 @@ describe("package boundary", () => {
       "parsePreparedUserOperation",
       "pinnedPolicyModule",
       "pinnedSignerModule",
+      "prepareDerivedAccountPermissionApproval",
       "prepareExistingAccountPermissionApproval",
       "prepareKernelPermissionApproval",
       "prepareKernelPermissionRevocation",

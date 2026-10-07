@@ -293,6 +293,60 @@ function existingSigningRequest(
   return request;
 }
 
+/** The owner and session keys a captured request names. */
+function requestKeys(request: Readonly<PermissionRequest>) {
+  const ownerCredential = request.logicalAccount.ownerCredential;
+  return {
+    ownerKey: credentialKey({
+      credential: ownerCredential,
+      validator: ownerCredential.kind === "ecdsa" ? ECDSA_VALIDATOR : null,
+    }),
+    sessionKey: credentialKey({ credential: request.operatorCredential, validator: null }),
+  };
+}
+
+/** Session packages are pinned modules: deriving them reads no chain. */
+const NO_READS: KernelReads = Object.freeze({
+  read: async () =>
+    runtimeFail("kernel_runtime_unsupported", "offline approval preparation reads no chain"),
+});
+
+/** The replayable install a factory-derived account's root signs, for `account`. */
+function derivedApproval(
+  request: Readonly<PermissionRequest>,
+  chainId: number,
+  account: `0x${string}`,
+): Readonly<PreparedKernelPermissionApproval> {
+  const { ownerKey, sessionKey } = requestKeys(request);
+  const installNonce = kernelPermissionInstallNonce(hashPermissionRequest(request));
+  const sessionRuntime = createKernelRuntime({
+    deployment: kernelV4Deployment(chainId),
+    operator: sessionOperator({
+      key: sessionKey,
+      policies: deriveSessionPolicyProfiles(request.policy),
+    }),
+    reads: NO_READS,
+  });
+  const scope = Object.freeze({ account, nonce: installNonce, packages: sessionRuntime.packages });
+  const signingRequest = parseKernelReplayableInstallOwnerSigningRequest({
+    version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
+    kind: "eip712",
+    purpose: "kernel-enable",
+    signer: { account, ownerCredential: request.logicalAccount.ownerCredential },
+    typedData: kernelV4ReplayableInstallTypedData(scope),
+    expectedDigest: kernelV4ReplayableInstallDigest(scope),
+    replay: { nonce: installNonce, deadline: null },
+  });
+  return preparedApproval(request, ownerKey, signingRequest, (owner) =>
+    approveKernelPermissionAllChain({
+      owner,
+      account,
+      installNonce,
+      packages: sessionRuntime.packages,
+    }),
+  );
+}
+
 /**
  * Prepares the owner's Kernel approval from one captured request. Account and
  * permission packages come from createKernelRuntime; the owner never needs an
@@ -319,7 +373,6 @@ export async function prepareKernelPermissionApproval(
   );
   const request = parsePermissionRequest(input.request);
   const account = request.logicalAccount;
-  const ownerCredential = account.ownerCredential;
   const existing = isKernelExistingAccountProfile(account);
   if (!existing && account.factoryRoute !== "kernel_factory") {
     return runtimeFail(
@@ -329,72 +382,88 @@ export async function prepareKernelPermissionApproval(
   }
   if (typeof input.chainId !== "number") return inputInvalid("approval chain is invalid");
   const reads = input.reads as KernelReads;
-  const requestHash = hashPermissionRequest(request);
-  const ownerKey = credentialKey({
-    credential: ownerCredential,
-    validator: ownerCredential.kind === "ecdsa" ? ECDSA_VALIDATOR : null,
-  });
-  const sessionKey = credentialKey({ credential: request.operatorCredential, validator: null });
-
-  let signingRequest: Readonly<Eip712OwnerSigningRequest>;
-  let approve: (owner: Readonly<KeyProfile>) => Promise<Readonly<KernelGrantApproval>>;
-  if (existing) {
-    const approval = await prepareExistingAccountApproval({
-      request,
-      owner: ownerKey,
-      session: sessionKey,
-      chains: [{ chainId: input.chainId, reads }],
-    });
-    signingRequest = existingSigningRequest(account, approval);
-    approve = (owner) =>
-      approveKernelPermission({
-        owner,
-        runtime: approval.runtime,
-        account: approval.account,
-        nonce: approval.nonce,
-      });
-  } else {
-    const deployment = kernelV4Deployment(input.chainId);
-    const installNonce = kernelPermissionInstallNonce(requestHash);
-    const ownerRuntime = createKernelRuntime({
-      deployment,
+  const { ownerKey, sessionKey } = requestKeys(request);
+  if (!existing) {
+    // The account binding is proven onchain before its address is signed.
+    const owner = createKernelRuntime({
+      deployment: kernelV4Deployment(input.chainId),
       operator: ownerOperator({ key: ownerKey }),
       reads,
     });
-    const sessionRuntime = createKernelRuntime({
-      deployment,
-      operator: sessionOperator({
-        key: sessionKey,
-        policies: deriveSessionPolicyProfiles(request.policy),
-      }),
-      reads,
-    });
-    const descriptor = await ownerRuntime.bindAccount({
+    const descriptor = await owner.bindAccount({
       accountIndex: account.accountIndex,
-      initialPackages: ownerRuntime.packages,
+      initialPackages: owner.packages,
     });
-    const scope = Object.freeze({
-      account: descriptor.account,
-      nonce: installNonce,
-      packages: sessionRuntime.packages,
-    });
-    signingRequest = parseKernelReplayableInstallOwnerSigningRequest({
-      version: OAATH_OWNER_SIGNING_REQUEST_VERSION,
-      kind: "eip712",
-      purpose: "kernel-enable",
-      signer: { account: descriptor.account, ownerCredential },
-      typedData: kernelV4ReplayableInstallTypedData(scope),
-      expectedDigest: kernelV4ReplayableInstallDigest(scope),
-      replay: { nonce: installNonce, deadline: null },
-    });
-    approve = (owner) =>
-      approveKernelPermissionAllChain({
-        owner,
-        account: descriptor.account,
-        installNonce,
-        packages: sessionRuntime.packages,
-      });
+    return derivedApproval(request, input.chainId, descriptor.account);
   }
+  const approval = await prepareExistingAccountApproval({
+    request,
+    owner: ownerKey,
+    session: sessionKey,
+    chains: [{ chainId: input.chainId, reads }],
+  });
+  return preparedApproval(request, ownerKey, existingSigningRequest(account, approval), (owner) =>
+    approveKernelPermission({
+      owner,
+      runtime: approval.runtime,
+      account: approval.account,
+      nonce: approval.nonce,
+    }),
+  );
+}
+
+export interface PrepareDerivedAccountPermissionApprovalInput {
+  readonly request: Readonly<PermissionRequest>;
+  /** Selects the deployment the permission packages derive from; the approval covers every chain. */
+  readonly chainId: number;
+  /**
+   * The request's factory-derived account address, derived by the caller
+   * offline (the OAAth registry does). It is the signed EIP-712
+   * `verifyingContract`, so an approval for any other address installs
+   * nothing on this account.
+   */
+  readonly account: `0x${string}`;
+}
+
+/**
+ * The same approval `prepareKernelPermissionApproval` prepares for a
+ * factory-derived Kernel `0.4.0` account, for a caller that already holds the
+ * counterfactual address and has no chain reads: nothing is read, bound, or
+ * proven onchain here. Existing accounts need `prepareKernelPermissionApproval`.
+ */
+export function prepareDerivedAccountPermissionApproval(
+  value: PrepareDerivedAccountPermissionApprovalInput,
+): Readonly<PreparedKernelPermissionApproval> {
+  const input = exactInput(
+    value,
+    ["request", "chainId", "account"],
+    "Kernel derived-account approval preparation",
+    new WeakSet(),
+  );
+  const request = parsePermissionRequest(input.request);
+  const account = request.logicalAccount;
+  if (isKernelExistingAccountProfile(account) || account.factoryRoute !== "kernel_factory")
+    return runtimeFail(
+      "kernel_runtime_unsupported",
+      "offline approval preparation requires a factory-derived Kernel 0.4.0 account",
+    );
+  if (typeof input.chainId !== "number") return inputInvalid("approval chain is invalid");
+  return derivedApproval(
+    request,
+    input.chainId,
+    inputAddress(input.account, "Kernel derived account"),
+  );
+}
+
+/** The decision assembly every preparation shares once its signing request is fixed. */
+function preparedApproval(
+  request: Readonly<PermissionRequest>,
+  ownerKey: Readonly<KeyProfile>,
+  signingRequest: Readonly<Eip712OwnerSigningRequest>,
+  approve: (owner: Readonly<KeyProfile>) => Promise<Readonly<KernelGrantApproval>>,
+): Readonly<PreparedKernelPermissionApproval> {
+  const ownerCredential = request.logicalAccount.ownerCredential;
+  const requestHash = hashPermissionRequest(request);
   const signingRequestHash = hashOwnerSigningRequest(signingRequest);
 
   function requireDecisionTime(decidedAt: number): void {

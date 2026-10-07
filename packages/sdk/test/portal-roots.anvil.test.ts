@@ -19,6 +19,7 @@ import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.j
 import {
   kernelDeployment,
   materializeKernelPermission,
+  prepareDerivedAccountPermissionApproval,
   prepareKernelPermissionApproval,
 } from "../src/kernel.js";
 import { type AnvilChain, createHarness, deployKernelStack, startAnvil } from "./support/anvil.js";
@@ -87,6 +88,14 @@ async function portalChain() {
         reads: harness.reads,
       });
       expect(prepared.signingRequest.signer.ownerCredential).toEqual(root.credential);
+      // Offline preparation from the registry's address signs the identical request.
+      expect(
+        prepareDerivedAccountPermissionApproval({
+          request,
+          chainId: CHAIN_ID,
+          account: prepared.signingRequest.signer.account,
+        }).signingRequest,
+      ).toEqual(prepared.signingRequest);
 
       // Another key of the same kind is refused before it is asked to sign.
       await expect(prepared.sign(portalRoot(kind, "other").key, now)).rejects.toMatchObject({

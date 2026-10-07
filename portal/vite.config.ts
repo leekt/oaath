@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   // Workspace packages resolve to their sources, so the portal never bundles a stale build.
   resolve: { conditions: ["oaath-source", "browser", "module", "import", "default"] },
+  // Tests run the same workspace sources under Node.
+  ssr: { resolve: { conditions: ["oaath-source", "node", "module", "development|production"] } },
   build: { outDir: "dist", assetsDir: "assets", sourcemap: false },
   test: {
     name: "@oaath/portal",
