@@ -496,7 +496,8 @@ describe("portal in Chrome", () => {
     const page = await openPortal([]);
     await withResidentPasskey(page, KNOWN_CREDENTIAL_BYTES);
     await clickText(page, "Use a passkey from another device or browser");
-    await page.waitForSelector("#account-heading");
+    // The account list has loaded only once its request has been answered.
+    await page.waitForSelector("::-p-text(This signer has no account yet.)");
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       "GET /portal/transactions/par-1",
       `GET /portal/signers/by-credential/${KNOWN_CREDENTIAL}`,
