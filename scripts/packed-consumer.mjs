@@ -15,7 +15,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runWorkspaceScript } from "./run-workspaces.mjs";
 
@@ -70,14 +70,6 @@ export async function packWorkspacePackages(names, destination) {
       throw new Error(`bun pm pack did not produce a tarball for ${name}`);
     }
     tarballs.set(name, filename);
-    for (const [dependency, specifier] of Object.entries(workspace.dependencies ?? {})) {
-      if (!specifier.startsWith("file:")) continue;
-      if (!specifier.endsWith(".tgz")) throw new Error("Local dependencies must be exact tarballs");
-      const archive = resolve(workspace.directory, specifier.slice(5));
-      if (tarballs.has(dependency) && tarballs.get(dependency) !== archive)
-        throw new Error(`Conflicting tarballs for ${dependency}`);
-      tarballs.set(dependency, archive);
-    }
   }
   return tarballs;
 }
