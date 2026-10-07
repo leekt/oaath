@@ -18,14 +18,14 @@ use sqlx::{Postgres, Row, Transaction};
 
 use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
-use crate::oauth::records::{OAuthClientRecord, ParRecord};
+use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v8";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v9";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -34,13 +34,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v8 (
+        "CREATE TABLE oaath_relay_schema_v9 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v8 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v9 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -185,6 +185,17 @@ pub fn schema_statements() -> Vec<String> {
     authorization_details text,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oauth_access_token_v1 (
+    token_hash text PRIMARY KEY,
+    record_version text NOT NULL,
+    client_id text NOT NULL REFERENCES oauth_client_v1 (client_id),
+    request_id text NOT NULL REFERENCES oaath_relay_authorization_request_v2 (request_id),
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
+    revoked_at bigint CHECK (revoked_at >= created_at AND revoked_at <= {max})
   )"
         ),
     ]
@@ -436,6 +447,21 @@ fn par_record(row: &PgRow) -> RelayResult<ParRecord> {
             ("authorizationDetails", "authorization_details", false),
             ("createdAt", "created_at", true),
             ("expiresAt", "expires_at", true),
+        ],
+    )?)
+}
+
+fn access_token_record(row: &PgRow) -> RelayResult<AccessTokenRecord> {
+    AccessTokenRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("tokenHash", "token_hash", false),
+            ("clientId", "client_id", false),
+            ("requestId", "request_id", false),
+            ("createdAt", "created_at", true),
+            ("expiresAt", "expires_at", true),
+            ("revokedAt", "revoked_at", true),
         ],
     )?)
 }
@@ -915,6 +941,60 @@ impl RelayTransaction for PostgresTransaction {
             .bind(&record.authorization_details)
             .bind(bigint(record.created_at))
             .bind(bigint(record.expires_at)),
+        )
+        .await
+    }
+
+    async fn lock_access_token(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<AccessTokenRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT token_hash, record_version, client_id, request_id, created_at, \
+                 expires_at, revoked_at FROM oauth_access_token_v1 \
+                 WHERE token_hash = $1 FOR UPDATE",
+            )
+            .bind(token_hash),
+            access_token_record,
+        )
+        .await
+    }
+
+    async fn insert_access_token(&mut self, record: &AccessTokenRecord) -> RelayResult<bool> {
+        // An unknown client or request inserts nothing instead of aborting.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oauth_access_token_v1 (\
+                 token_hash, record_version, client_id, request_id, created_at, expires_at, \
+                 revoked_at) SELECT $1, $2, $3, $4, $5, $6, NULL \
+                 WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
+                 AND EXISTS (SELECT 1 FROM oaath_relay_authorization_request_v2 \
+                 WHERE request_id = $4) ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.token_hash)
+            .bind(record.version)
+            .bind(&record.client_id)
+            .bind(&record.request_id)
+            .bind(bigint(record.created_at))
+            .bind(bigint(record.expires_at)),
+        )
+        .await
+    }
+
+    async fn revoke_access_token(
+        &mut self,
+        token_hash: &str,
+        revoked_at: u64,
+    ) -> RelayResult<bool> {
+        // One-shot: the guard makes a second revocation affect zero rows.
+        self.applied(
+            sqlx::query(
+                "UPDATE oauth_access_token_v1 SET revoked_at = $2 \
+                 WHERE token_hash = $1 AND revoked_at IS NULL",
+            )
+            .bind(token_hash)
+            .bind(bigint(revoked_at)),
         )
         .await
     }

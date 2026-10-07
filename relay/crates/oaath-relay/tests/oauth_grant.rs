@@ -3,7 +3,7 @@
 
 mod support;
 
-use alloy_primitives::{B256, keccak256};
+use alloy_primitives::B256;
 use axum::body::Body;
 use axum::http::Request;
 use k256::ecdsa::SigningKey;
@@ -13,47 +13,8 @@ use oaath_relay::error::RelayErrorCode as E;
 use oaath_relay::grant::approval::{capability_hash, verify_grant_approval};
 use oaath_relay::grant::signature::RelyingParty;
 use serde_json::{Value, json};
+use support::grant::*;
 use support::*;
-
-fn root_key() -> SigningKey {
-    SigningKey::from_slice(&[0x11; 32]).unwrap()
-}
-
-fn address_of(key: &SigningKey) -> String {
-    let point = key.verifying_key().to_encoded_point(false);
-    format!(
-        "0x{}",
-        hex::encode(&keccak256(&point.as_bytes()[1..])[12..])
-    )
-}
-
-fn policy(value_limit: &str) -> Value {
-    json!({
-        "version": "oaath.grant-policy/v2",
-        "calls": [
-            { "target": format!("0x{}", "aa".repeat(20)), "selector": "0xa9059cbb", "valueLimit": "0", "argumentEquals": [] },
-            { "target": format!("0x{}", "bb".repeat(20)), "selector": "0x12345678", "valueLimit": value_limit, "argumentEquals": [] },
-        ],
-        "validAfter": CLOCK_SECONDS,
-        "validUntil": CLOCK_SECONDS + 3_600,
-        "perChainOperationLimit": { "count": 10, "intervalSeconds": null },
-    })
-}
-
-fn detail() -> Value {
-    json!({
-        "type": "oaath_grant",
-        "signer": {
-            "version": "oaath.operator-credential-profile/v1",
-            "kind": "ecdsa",
-            "address": format!("0x{}", "44".repeat(20)),
-        },
-        "policy": policy("1000"),
-        "chains": [8453, 1],
-        "expires_at": CLOCK_SECONDS + 7_200,
-        "device_id": "device-1",
-    })
-}
 
 fn form(path: &str, pairs: &[(&str, &str)]) -> Request<Body> {
     let body = url::form_urlencoded::Serializer::new(String::new())
@@ -352,4 +313,309 @@ async fn keeps_login_and_grant_transactions_apart() {
     let late = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
     h.clock.advance(300_000);
     prepare(&h, &late, selection).await.failure(E::Expired);
+}
+
+async fn register_root(h: &Harness, root: &Root) -> (String, Value) {
+    let signer = h
+        .send(post(
+            "/portal/signers",
+            None,
+            Some(json!({ "profile": root.profile() })),
+        ))
+        .await;
+    let signer_id = text(signer.ok(200), "signer_id").to_owned();
+    let account = h
+        .send(post(
+            "/portal/accounts",
+            None,
+            Some(json!({ "root_signer_id": signer_id })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    (signer_id, account)
+}
+
+async fn decide_grant(
+    h: &Harness,
+    id: &str,
+    signer_id: &str,
+    account: &Value,
+    artifact: &Value,
+) -> Reply {
+    h.send(post(
+        &format!("/portal/transactions/{id}/decision"),
+        None,
+        Some(json!({
+            "outcome": "approved",
+            "signer_id": signer_id,
+            "account_id": account["account_id"],
+            "artifact": artifact.to_string(),
+        })),
+    ))
+    .await
+}
+
+fn code_of(reply: &Reply) -> String {
+    url::Url::parse(text(reply.ok(200), "redirect"))
+        .unwrap()
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned()
+}
+
+async fn token(h: &Harness, client_id: &str, code: &str) -> Reply {
+    h.send(form(
+        "/oauth/token",
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", client_id),
+            ("code", code),
+            ("code_verifier", CODE_VERIFIER),
+            ("redirect_uri", REDIRECT_URI),
+        ],
+    ))
+    .await
+}
+
+fn bearer_get(path: &str, token: &str) -> Request<Body> {
+    Request::builder()
+        .uri(path)
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn bearer_post(path: &str, token: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+/// One approved grant through the whole flow: PAR, prepare, root signature,
+/// decision, token.
+async fn approved_grant(h: &Harness, root: &Root) -> (String, String, Value, Value, Value) {
+    let client_id = client(h).await;
+    let id = transaction_id(&par(h, &client_id, Some(&json!([detail()]))).await);
+    let (signer_id, account) = register_root(h, root).await;
+    let prepared = prepare(
+        h,
+        &id,
+        json!({ "signer_id": signer_id, "account_id": account["account_id"] }),
+    )
+    .await
+    .ok(200)
+    .clone();
+    let artifact = approval(&prepared, root);
+    let code = code_of(&decide_grant(h, &id, &signer_id, &account, &artifact).await);
+    let tokens = token(h, &client_id, &code).await.ok(200).clone();
+    (id, client_id, prepared, artifact, tokens)
+}
+
+#[tokio::test]
+async fn releases_a_root_approved_grant_for_every_root_kind() {
+    for root in [
+        Root::Ecdsa(root_key()),
+        Root::P256(p256::ecdsa::SigningKey::from_slice(&[0x22; 32]).unwrap()),
+        Root::WebAuthn(
+            p256::ecdsa::SigningKey::from_slice(&[0x33; 32]).unwrap(),
+            b"credential-1".to_vec(),
+        ),
+    ] {
+        let h = harness();
+        let (id, _, prepared, artifact, tokens) = approved_grant(&h, &root).await;
+        let mut decision = artifact.clone();
+        let enable = decision
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("installApproval")
+            .unwrap();
+        assert_eq!(
+            tokens["authorization_details"],
+            json!([{
+                "type": "oaath_grant",
+                "grant_id": id,
+                "permission_request": prepared["permission_request"],
+                "decision": decision,
+                "enable": enable,
+            }])
+        );
+        let view = h
+            .send(bearer_get(
+                &format!("/oauth/grants/{id}"),
+                text(&tokens, "access_token"),
+            ))
+            .await
+            .ok(200)
+            .clone();
+        assert_eq!(
+            view,
+            json!({
+                "grant_id": id,
+                "status": "approved",
+                "permission_request": prepared["permission_request"],
+                "decision": decision,
+                "enable": enable,
+            })
+        );
+    }
+}
+
+#[tokio::test]
+async fn lists_the_dapp_signer_under_the_account_as_a_permission_signer() {
+    let h = harness();
+    let (_, _, _, _, _) = approved_grant(&h, &Root::Ecdsa(root_key())).await;
+    let dapp = h
+        .send(post(
+            "/portal/signers",
+            None,
+            Some(json!({ "profile": {
+                "version": "oaath.owner-credential-profile/v1",
+                "kind": "ecdsa",
+                "address": format!("0x{}", "44".repeat(20)),
+            } })),
+        ))
+        .await;
+    let dapp_id = text(dapp.ok(200), "signer_id").to_owned();
+    let accounts = h
+        .send(get(&format!("/portal/signers/{dapp_id}/accounts"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(accounts["accounts"].as_array().unwrap().len(), 1);
+    assert_eq!(accounts["accounts"][0]["role"], json!("permission"));
+}
+
+#[tokio::test]
+async fn refuses_an_approval_the_root_did_not_sign_for_this_grant() {
+    let h = harness();
+    let root = Root::Ecdsa(root_key());
+    let client_id = client(&h).await;
+    let id = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
+    let (signer_id, account) = register_root(&h, &root).await;
+    let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
+    let prepared = prepare(&h, &id, selection).await.ok(200).clone();
+    let artifact = approval(&prepared, &root);
+
+    let mut tampered = Vec::new();
+    // Another key's signature.
+    tampered.push(approval(
+        &prepared,
+        &Root::Ecdsa(SigningKey::from_slice(&[0x66; 32]).unwrap()),
+    ));
+    // A tampered capability hash.
+    let mut capability = artifact.clone();
+    capability["capabilityHash"] = json!(format!("0x{}", "ab".repeat(32)));
+    tampered.push(capability);
+    // A widened policy.
+    let mut widened = artifact.clone();
+    widened["approvedPolicy"]["calls"][1]["valueLimit"] = json!("1001");
+    tampered.push(widened);
+    // The install approval names another account.
+    let mut other_account = artifact.clone();
+    other_account["installApproval"]["account"] = json!(format!("0x{}", "ce".repeat(20)));
+    tampered.push(other_account);
+    for artifact in &tampered {
+        decide_grant(&h, &id, &signer_id, &account, artifact)
+            .await
+            .failure(E::RequestInvalid);
+    }
+    // A non-root signer of the account may not approve.
+    let (stranger, _) = register_root(
+        &h,
+        &Root::Ecdsa(SigningKey::from_slice(&[0x77; 32]).unwrap()),
+    )
+    .await;
+    decide_grant(&h, &id, &stranger, &account, &artifact)
+        .await
+        .failure(E::Forbidden);
+
+    // The genuine approval decides once; a replay refuses.
+    let code = code_of(&decide_grant(&h, &id, &signer_id, &account, &artifact).await);
+    decide_grant(&h, &id, &signer_id, &account, &artifact)
+        .await
+        .failure(E::AlreadyDecided);
+    // The redirect recovers the same code.
+    let recovered = h
+        .send(get(&format!("/portal/transactions/{id}/redirect"), None))
+        .await;
+    assert_eq!(code_of(&recovered), code);
+    // The same artifact replayed onto another grant transaction refuses.
+    let other = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
+    decide_grant(&h, &other, &signer_id, &account, &artifact)
+        .await
+        .failure(E::RequestInvalid);
+}
+
+#[tokio::test]
+async fn invalidates_off_chain_and_revokes_the_access_token() {
+    let h = harness();
+    let (id, client_id, _, artifact, tokens) = approved_grant(&h, &Root::Ecdsa(root_key())).await;
+    let access = text(&tokens, "access_token").to_owned();
+    let invalidate = |token: &str, hash: Value| {
+        h.send(bearer_post(
+            &format!("/oauth/grants/{id}/invalidate"),
+            token,
+            json!({ "capability_hash": hash }),
+        ))
+    };
+    let wrong = invalidate(&access, json!(format!("0x{}", "ab".repeat(32)))).await;
+    assert_eq!(
+        (wrong.status, wrong.body["error"].clone()),
+        (400, json!("invalid_request"))
+    );
+    let unknown = invalidate("unknown-token", artifact["capabilityHash"].clone()).await;
+    assert_eq!(
+        (unknown.status, unknown.body["error"].clone()),
+        (401, json!("invalid_token"))
+    );
+    let evidence = invalidate(&access, artifact["capabilityHash"].clone())
+        .await
+        .ok(200)
+        .clone();
+    assert!(evidence["evidenceHash"].is_string());
+    let view = h
+        .send(bearer_get(&format!("/oauth/grants/{id}"), &access))
+        .await;
+    assert_eq!(view.ok(200)["status"], json!("invalidated"));
+
+    // RFC 7009: another client cannot revoke it; its own client can.
+    let revoke = |client: &str| {
+        h.send(form(
+            "/oauth/revoke",
+            &[("token", access.as_str()), ("client_id", client)],
+        ))
+    };
+    assert_eq!(*revoke("another-client").await.ok(200), json!({}));
+    h.send(bearer_get(&format!("/oauth/grants/{id}"), &access))
+        .await
+        .ok(200);
+    assert_eq!(*revoke(&client_id).await.ok(200), json!({}));
+    let refused = h
+        .send(bearer_get(&format!("/oauth/grants/{id}"), &access))
+        .await;
+    assert_eq!(
+        (refused.status, refused.body["error"].clone()),
+        (401, json!("invalid_token"))
+    );
+    // Revoking an unknown token is still a success.
+    let unknown = h
+        .send(form(
+            "/oauth/revoke",
+            &[("token", "unknown"), ("client_id", client_id.as_str())],
+        ))
+        .await;
+    unknown.ok(200);
+    // A token reads only its own grant.
+    let (other_id, _, _, _, _) = approved_grant(&h, &Root::Ecdsa(root_key())).await;
+    let foreign = h
+        .send(bearer_get(&format!("/oauth/grants/{other_id}"), &access))
+        .await;
+    assert_eq!(foreign.status, 401);
 }

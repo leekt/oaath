@@ -17,7 +17,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
-use crate::oauth::records::{OAuthClientRecord, ParRecord};
+use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
@@ -36,6 +36,7 @@ struct Tables {
     memberships: Vec<Value>,
     oauth_clients: HashMap<String, Value>,
     pars: HashMap<String, Value>,
+    access_tokens: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -428,6 +429,53 @@ impl RelayTransaction for MemoryTransaction {
             &record.par_id,
             to_value(record),
         ))
+    }
+
+    async fn lock_access_token(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<AccessTokenRecord>> {
+        read(
+            &self.staged.access_tokens,
+            token_hash,
+            AccessTokenRecord::parse,
+        )
+    }
+
+    async fn insert_access_token(&mut self, record: &AccessTokenRecord) -> RelayResult<bool> {
+        if !self.staged.oauth_clients.contains_key(&record.client_id)
+            || !self.staged.requests.contains_key(&record.request_id)
+        {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.access_tokens,
+            &record.token_hash,
+            to_value(record),
+        ))
+    }
+
+    async fn revoke_access_token(
+        &mut self,
+        token_hash: &str,
+        revoked_at: u64,
+    ) -> RelayResult<bool> {
+        let Some(mut record) = read(
+            &self.staged.access_tokens,
+            token_hash,
+            AccessTokenRecord::parse,
+        )?
+        else {
+            return Ok(false);
+        };
+        if record.revoked_at.is_some() {
+            return Ok(false);
+        }
+        record.revoked_at = Some(revoked_at);
+        self.staged
+            .access_tokens
+            .insert(token_hash.to_owned(), to_value(&record));
+        Ok(true)
     }
 
     async fn commit(self: Box<Self>) -> RelayResult<()> {

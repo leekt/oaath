@@ -59,9 +59,9 @@ use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
 use crate::oauth::{
-    OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, login_decision,
-    parse_form, prepare_grant, push_authorization_request, read_transaction, recover_redirect,
-    register_client,
+    LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
+    login_decision, parse_form, prepare_grant, push_authorization_request, read_transaction,
+    recover_redirect, register_client,
 };
 use crate::portal::{
     assert_same_origin, create_account, register_signer, signer_accounts, signer_by_credential,
@@ -353,10 +353,34 @@ impl Relay {
             ["oauth", "token"] => {
                 require_method(method, &Method::POST)?;
                 let form = form(body).await?;
+                let kms = self.kms.as_ref();
                 Ok(reply(
                     200,
-                    &exchange_code(store, clock, oauth, &form).await?,
+                    &exchange_code(store, clock, kms, oauth, &form).await?,
                 )?)
+            }
+            ["oauth", "revoke"] => {
+                require_method(method, &Method::POST)?;
+                let form = form(body).await?;
+                Ok(reply(
+                    200,
+                    &grant::revoke_token(store, clock, &form).await?,
+                )?)
+            }
+            ["oauth", "grants", id] => {
+                require_method(method, &Method::GET)?;
+                let id = canonical_str(id, INVALID)?;
+                let view = grant::grant_view(store, clock, self.kms.as_ref(), headers, id).await?;
+                Ok(reply(200, &view)?)
+            }
+            ["oauth", "grants", id, "invalidate"] => {
+                require_method(method, &Method::POST)?;
+                let id = canonical_str(id, INVALID)?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                let kms = self.kms.as_ref();
+                let evidence =
+                    grant::invalidate_grant(store, clock, kms, headers, id, &body).await?;
+                Ok(reply(200, &evidence)?)
             }
             _ => Err(RelayErrorCode::NotFound.into()),
         }
@@ -431,6 +455,26 @@ impl Relay {
                         require_method(method, &Method::POST)?;
                         let body = body_record(headers, body, self.max_body_bytes).await?;
                         let decision = login_decision(&body)?;
+                        if let LoginDecision::Grant {
+                            signer_id,
+                            account_id,
+                            artifact,
+                        } = &decision
+                        {
+                            let redirect = grant::decide_grant(
+                                store,
+                                clock,
+                                kms,
+                                oauth,
+                                self.code_ttl_ms,
+                                id,
+                                signer_id,
+                                account_id,
+                                artifact,
+                            )
+                            .await?;
+                            return reply(200, &redirect);
+                        }
                         let redirect = decide_login(
                             store,
                             clock,

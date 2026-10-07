@@ -17,7 +17,7 @@ use axum::http::HeaderMap;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oaath_protocol::identity::{
-    KernelAccountProfile, KernelDerivedAccountProfile, KernelFactoryRoute,
+    KernelAccountProfile, KernelDerivedAccountProfile, KernelFactoryRoute, OwnerCredentialProfile,
     parse_owner_credential_profile,
 };
 use serde::Serialize;
@@ -63,20 +63,26 @@ pub async fn register_signer(
     }
     let credential =
         parse_owner_credential_profile(body.get("profile").ok_or(INVALID)?).map_err(|_| INVALID)?;
-    let record = SignerRecord {
-        version: SIGNER_RECORD_VERSION,
-        signer_id: random_identifier(),
-        profile_hash: hex_hash(credential.hash()),
-        profile: credential.to_json().to_string(),
-        created_at: relay_now(clock)?,
-    };
+    let record = signer_record(&credential, relay_now(clock)?);
     let mut transaction = store.begin().await?;
     let result = register(&mut *transaction, &record).await;
     let signer_id = settle(transaction, result).await?;
     Ok(RegisteredSigner { signer_id })
 }
 
-async fn register(
+/// A new signer record for one credential.
+pub fn signer_record(credential: &OwnerCredentialProfile, now: u64) -> SignerRecord {
+    SignerRecord {
+        version: SIGNER_RECORD_VERSION,
+        signer_id: random_identifier(),
+        profile_hash: hex_hash(credential.hash()),
+        profile: credential.to_json().to_string(),
+        created_at: now,
+    }
+}
+
+/// The signer for this profile hash, registering it if absent.
+pub async fn register(
     transaction: &mut dyn RelayTransaction,
     record: &SignerRecord,
 ) -> RelayResult<String> {
