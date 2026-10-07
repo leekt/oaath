@@ -11,9 +11,8 @@
   "vpc_services": [
     {
       "binding": "RELAY",
-      // TODO(deploy): replace with the Workers VPC service id for the relay on the
-      // OCI VM's loopback, created at deploy time. This placeholder binds nothing.
-      "service_id": "00000000-0000-0000-0000-000000000000"
+      // Workers VPC service `oaath-relay`: 127.0.0.1:4315 on the OCI VM's loopback.
+      "service_id": "01a115c3-9a1a-7141-8dc6-306a0311b266"
     }
   ],
   "observability": { "enabled": true }
