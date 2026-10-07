@@ -147,9 +147,9 @@ from a click handler: the popup opens before anything is awaited. The page at
 `redirectUri` (on the same origin) calls `completeOAAthLogin()`, which posts the
 response to the opener on that origin only; `state` and the RFC 9207 `iss` are
 checked before the code is redeemed. It resolves to
-`{ account, accountProfile, signer, verified: false, idToken }`: the account and
-signer the user chose. Login carries no signature, so it is identity, never
-authority. Failures are `OaathClientError` codes: `oaath_client_access_denied`
+`{ account, accountProfile, signer, verified: true, idToken }`: the account and
+signer the user chose. The signer proved control of its credential to OAAth
+and is a member of the account; login is identity, never authority. Failures are `OaathClientError` codes: `oaath_client_access_denied`
 (cancelled or closed), `oaath_client_popup_blocked`, `oaath_client_login_timeout`,
 `oaath_client_issuer_mismatch`, `oaath_client_state_mismatch`, and
 `oaath_client_identity_invalid`. The client is registered once with

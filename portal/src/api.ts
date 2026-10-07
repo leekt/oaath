@@ -2,8 +2,9 @@
  * The portal's view of the relay's same-origin `/portal/*` endpoints.
  *
  * Every wire shape the SPA reads or writes lives here, so the relay side
- * (stage 5a B1/B2) can adjust one module. The portal holds no authority:
- * nothing it sends is trusted as proof, and login carries no signature.
+ * (stage 5a B1/B2) can adjust one module. A signer's accounts, account
+ * creation, and grant decisions need that signer's session: an HttpOnly cookie
+ * the relay sets after the signer proves control (`session.ts`).
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -62,6 +63,31 @@ export interface IdentifiedSigner {
   readonly signer_id: string;
   readonly kind: OwnerCredentialProfile["kind"];
   readonly profile: OwnerCredentialProfile;
+}
+
+/** `POST /portal/sessions/challenge`: a single-use nonce, five minutes. */
+export interface ChallengeRequest {
+  /** Names a wallet signer, so the relay returns its Sign-In with Ethereum message. */
+  readonly signer_id?: string;
+}
+export interface ChallengeResponse {
+  /** 32 bytes as 64 hex digits; a passkey's WebAuthn challenge. */
+  readonly nonce: string;
+  readonly expires_at: number;
+  /** The ERC-4361 message a wallet signer signs with `personal_sign`. */
+  readonly message?: string;
+}
+
+/** `POST /portal/sessions`: sets the session cookie for this signer. */
+export interface SignInRequest {
+  readonly signer_id: string;
+  readonly nonce: string;
+  /** Wallet: the `personal_sign` signature; passkey: the WebAuthn assertion envelope. */
+  readonly signature: string;
+}
+export interface SignInResponse {
+  readonly signer_id: string;
+  readonly expires_at: number;
 }
 
 /** `root`: the signer owns the account; `permission`: a scoped signer on it. */
@@ -140,16 +166,21 @@ export function transactionIdFromRequestUri(requestUri: string | null): string |
   return /^[A-Za-z0-9._~-]{1,256}$/u.test(id) ? id : null;
 }
 
-async function call<Response>(path: string, init?: { method: "POST"; body: unknown }) {
+async function call<Response>(
+  path: string,
+  init?: { method: "POST"; body: unknown } | { method: "DELETE" },
+) {
+  const sent = init && "body" in init ? JSON.stringify(init.body) : null;
   let response: globalThis.Response;
   try {
     response = await fetch(path, {
       method: init?.method ?? "GET",
-      headers: init
+      headers: sent
         ? { accept: "application/json", "content-type": "application/json" }
         : { accept: "application/json" },
-      body: init ? JSON.stringify(init.body) : null,
-      credentials: "omit",
+      body: sent,
+      // The session cookie is same-origin and HttpOnly.
+      credentials: "same-origin",
       cache: "no-store",
     });
   } catch {
@@ -169,6 +200,11 @@ const segment = encodeURIComponent;
 
 export const portalApi = {
   transaction: (id: string) => call<PortalTransaction>(`/portal/transactions/${segment(id)}`),
+  challenge: (body: ChallengeRequest) =>
+    call<ChallengeResponse>("/portal/sessions/challenge", { method: "POST", body }),
+  signIn: (body: SignInRequest) =>
+    call<SignInResponse>("/portal/sessions", { method: "POST", body }),
+  signOut: () => call<Record<string, never>>("/portal/sessions", { method: "DELETE" }),
   registerSigner: (body: RegisterSignerRequest) =>
     call<RegisterSignerResponse>("/portal/signers", { method: "POST", body }),
   signerByCredential: (credentialId: string) =>

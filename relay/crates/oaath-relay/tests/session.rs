@@ -1,7 +1,6 @@
 //! Portal sessions over the memory store: Sign-In with Ethereum and passkey
-//! proofs, single-use expiring nonces, and the session cookie, read back
-//! through the session owner (`session_signer`). Restart behavior is in
-//! `postgres.rs`.
+//! proofs, single-use expiring nonces, the session cookie, and the signer
+//! endpoints that require it. Restart behavior is in `postgres.rs`.
 
 mod support;
 
@@ -44,11 +43,14 @@ async fn prove(h: &Harness, signer_id: &str, nonce: &Value, signature: &str) -> 
     .await
 }
 
-/// The signer of the session `cookie` names, as the session owner reads it.
-async fn session_of(h: &Harness, cookie: Option<&str>) -> Result<String, E> {
-    let request = portal_call("GET", "/", cookie, None);
-    oaath_relay::session::session_signer(h.store.as_ref(), h.clock.as_ref(), request.headers())
-        .await
+async fn accounts(h: &Harness, signer_id: &str, cookie: Option<&str>) -> Reply {
+    h.send(portal_call(
+        "GET",
+        &format!("/portal/signers/{signer_id}/accounts"),
+        cookie,
+        None,
+    ))
+    .await
 }
 
 fn personal_sign(key: &SigningKey, message: &str) -> String {
@@ -92,6 +94,9 @@ async fn signs_in_an_ecdsa_signer_with_sign_in_with_ethereum() {
         )
     );
 
+    accounts(&h, &signer_id, None)
+        .await
+        .failure(E::Unauthenticated);
     let reply = prove(&h, &signer_id, &issued["nonce"], &root.prove(&issued)).await;
     assert_eq!(
         *reply.ok(200),
@@ -104,7 +109,7 @@ async fn signs_in_an_ecdsa_signer_with_sign_in_with_ethereum() {
         set_cookie,
         format!("{token}; Max-Age=1800; Path=/portal; HttpOnly; Secure; SameSite=Strict")
     );
-    assert_eq!(session_of(&h, Some(&token)).await, Ok(signer_id.clone()));
+    accounts(&h, &signer_id, Some(&token)).await.ok(200);
 
     // The nonce is single use.
     prove(&h, &signer_id, &issued["nonce"], &root.prove(&issued))
@@ -223,24 +228,47 @@ async fn signs_in_a_passkey_with_an_assertion_over_the_nonce() {
     )
     .await;
     reply.ok(200);
-    assert_eq!(
-        session_of(&h, Some(&cookie_of(&reply))).await,
-        Ok(signer_id)
-    );
+    accounts(&h, &signer_id, Some(&cookie_of(&reply)))
+        .await
+        .ok(200);
 }
 
 #[tokio::test]
-async fn ends_a_session_on_sign_out_and_expiry_only() {
+async fn requires_the_signers_own_active_session_for_its_private_routes() {
     let h = harness();
-    let (signer_id, cookie) = sign_in(&h, &Root::Ecdsa(root_key())).await;
+    let root = Root::Ecdsa(root_key());
+    let (signer_id, cookie) = sign_in(&h, &root).await;
     let other = Root::P256(p256::ecdsa::SigningKey::from_slice(&[0x22; 32]).unwrap());
     let (other_id, other_cookie) = sign_in(&h, &other).await;
-    assert_eq!(session_of(&h, None).await, Err(E::Unauthenticated));
+
+    let create = |cookie: Option<&str>| {
+        portal_call(
+            "POST",
+            "/portal/accounts",
+            cookie,
+            Some(json!({ "root_signer_id": signer_id })),
+        )
+    };
+    h.send(create(None)).await.failure(E::Unauthenticated);
+    h.send(create(Some(&other_cookie)))
+        .await
+        .failure(E::Forbidden);
+    h.send(create(Some("oaath_portal_session=forged")))
+        .await
+        .failure(E::Unauthenticated);
+    let account = h.send(create(Some(&cookie))).await.ok(201).clone();
+
+    accounts(&h, &signer_id, None)
+        .await
+        .failure(E::Unauthenticated);
+    accounts(&h, &signer_id, Some(&other_cookie))
+        .await
+        .failure(E::Forbidden);
     assert_eq!(
-        session_of(&h, Some("oaath_portal_session=forged")).await,
-        Err(E::Unauthenticated)
+        accounts(&h, &signer_id, Some(&cookie)).await.ok(200)["accounts"][0]["account_id"],
+        account["account_id"]
     );
-    assert_eq!(session_of(&h, Some(&cookie)).await, Ok(signer_id));
+    accounts(&h, &other_id, Some(&other_cookie)).await.ok(200);
 
     // Sign-out ends only that session and clears the cookie.
     let out = h
@@ -256,15 +284,16 @@ async fn ends_a_session_on_sign_out_and_expiry_only() {
         out.headers["set-cookie"],
         "oaath_portal_session=; Max-Age=0; Path=/portal; HttpOnly; Secure; SameSite=Strict"
     );
-    assert_eq!(session_of(&h, Some(&cookie)).await, Err(E::Unauthenticated));
-    assert_eq!(session_of(&h, Some(&other_cookie)).await, Ok(other_id));
+    accounts(&h, &signer_id, Some(&cookie))
+        .await
+        .failure(E::Unauthenticated);
+    accounts(&h, &other_id, Some(&other_cookie)).await.ok(200);
 
     // Expiry ends a session.
     h.clock.advance(1_800_000);
-    assert_eq!(
-        session_of(&h, Some(&other_cookie)).await,
-        Err(E::Unauthenticated)
-    );
+    accounts(&h, &other_id, Some(&other_cookie))
+        .await
+        .failure(E::Unauthenticated);
 
     // Sessions are same-origin like every portal route.
     let mut cross = portal_call("DELETE", "/portal/sessions", None, None);

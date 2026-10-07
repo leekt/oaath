@@ -97,9 +97,48 @@ describe("portal worker", () => {
     const [forwarded] = recorded.requests;
     expect(forwarded?.url).toBe("http://oaath.taek.tech/portal/signers");
     expect(await forwarded?.text()).toBe('{"profile":{}}');
-    for (const name of ["x-forwarded-for", "forwarded", "cf-connecting-ip", "cookie"])
+    for (const name of ["x-forwarded-for", "forwarded", "cf-connecting-ip"])
       expect(forwarded?.headers.get(name)).toBeNull();
     expect(forwarded?.headers.get("content-type")).toBe("application/json");
+    expect(forwarded?.headers.get("cookie")).toBe("session=1");
+  });
+
+  it("carries the session cookie on /portal/* only, in both directions", async () => {
+    const SET_COOKIE =
+      "oaath_portal_session=t; Max-Age=1800; Path=/portal; HttpOnly; Secure; SameSite=Strict";
+    const requests: Request[] = [];
+    const env: Env = {
+      ...environment().env,
+      RELAY: {
+        fetch: async (request) => {
+          requests.push(request);
+          return Response.json({}, { headers: { "set-cookie": SET_COOKIE } });
+        },
+      },
+    };
+    const portal = await worker.fetch(
+      new Request(`${ORIGIN}/portal/sessions`, {
+        method: "DELETE",
+        headers: { origin: ORIGIN, "sec-fetch-site": "same-origin", cookie: "a=1" },
+      }),
+      env,
+    );
+    expect(portal.status).toBe(200);
+    expect(portal.headers.get("set-cookie")).toBe(SET_COOKIE);
+    expect(requests[0]?.method).toBe("DELETE");
+    expect(requests[0]?.headers.get("cookie")).toBe("a=1");
+
+    const oauth = await worker.fetch(
+      new Request(`${ORIGIN}/oauth/token`, {
+        method: "POST",
+        headers: { cookie: "a=1" },
+        body: "grant_type=authorization_code",
+      }),
+      env,
+    );
+    expect(oauth.status).toBe(200);
+    expect(oauth.headers.get("set-cookie")).toBeNull();
+    expect(requests[1]?.headers.get("cookie")).toBeNull();
   });
 
   it("answers OAuth CORS preflight and forwards cross-site OAuth calls", async () => {

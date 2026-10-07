@@ -554,6 +554,33 @@ pub fn cookie_of(reply: &Reply) -> String {
 }
 
 impl Harness {
+    /// Setup only, for a test whose subject is not sign-in: a session for
+    /// `signer_id` written straight to the store. Sign-in itself is proven
+    /// through the wire in `tests/session.rs`.
+    pub async fn session_for(&self, signer_id: &str) -> String {
+        use oaath_relay::session::{
+            PORTAL_SESSION_RECORD_VERSION, PortalSessionRecord, SESSION_COOKIE, SESSION_TTL_MS,
+        };
+        let token = oaath_relay::authorization::challenge::random_identifier();
+        let now = self.clock.now().unwrap();
+        let mut transaction = self.store.begin().await.unwrap();
+        assert!(
+            transaction
+                .insert_portal_session(&PortalSessionRecord {
+                    version: PORTAL_SESSION_RECORD_VERSION,
+                    token_hash: sha256_base64url(&token),
+                    signer_id: signer_id.to_owned(),
+                    created_at: now,
+                    expires_at: now + SESSION_TTL_MS,
+                    signed_out_at: None,
+                })
+                .await
+                .unwrap()
+        );
+        transaction.commit().await.unwrap();
+        format!("{SESSION_COOKIE}={token}")
+    }
+
     pub async fn send(&self, request: Request<Body>) -> Reply {
         let response = self.relay.handle(request).await;
         let status = response.status().as_u16();

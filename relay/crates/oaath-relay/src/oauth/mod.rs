@@ -824,7 +824,9 @@ pub async fn exchange_code(
             "kind": credential.kind(),
             "profile": credential.to_json(),
         }),
-        verified: false,
+        // Every approved decision required this signer's portal session, and
+        // the decision checked its membership in the account.
+        verified: true,
     })?;
     Ok(TokenResponse {
         access_token,
@@ -966,13 +968,18 @@ pub async fn grant_selection(
 }
 
 /// What the account root must sign for this grant; nothing is persisted.
+/// `session` is the request's proven signer; only it may prepare.
 pub async fn prepare_grant(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     transaction_id: &str,
     body: &Map<String, Value>,
+    session: &str,
 ) -> RelayResult<PreparedGrant> {
     let (signer_id, account_id, approved) = prepare_selection(body)?;
+    if signer_id != session {
+        return Err(RelayErrorCode::Forbidden);
+    }
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;
     let result = grant_selection(

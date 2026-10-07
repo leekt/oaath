@@ -11,6 +11,7 @@ use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use oaath_relay::error::RelayErrorCode as E;
 use serde_json::{Value, json};
+use support::grant;
 use support::*;
 use url::Url;
 
@@ -80,37 +81,29 @@ async fn push(h: &Harness) -> (String, String) {
     (client_id, id)
 }
 
-/// A registered ECDSA signer and its first account.
-async fn signer_and_account(h: &Harness, address: &str) -> (String, Value) {
-    let profile = json!({
-        "version": "oaath.owner-credential-profile/v1",
-        "kind": "ecdsa",
-        "address": address,
-    });
-    let signer = h
-        .send(post(
-            "/portal/signers",
-            None,
-            Some(json!({ "profile": profile })),
-        ))
-        .await;
-    let signer_id = text(signer.ok(200), "signer_id").to_owned();
+/// A signed-in ECDSA signer (key `[seed; 32]`), its first account, and its
+/// session cookie.
+async fn signer_and_account(h: &Harness, seed: u8) -> (String, Value, String) {
+    let root = grant::Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[seed; 32]).unwrap());
+    let (signer_id, cookie) = grant::sign_in(h, &root).await;
     let account = h
-        .send(post(
+        .send(portal_call(
+            "POST",
             "/portal/accounts",
-            None,
+            Some(&cookie),
             Some(json!({ "root_signer_id": signer_id })),
         ))
         .await
         .ok(201)
         .clone();
-    (signer_id, account)
+    (signer_id, account, cookie)
 }
 
-async fn decide(h: &Harness, id: &str, body: Value) -> Reply {
-    h.send(post(
+async fn decide(h: &Harness, id: &str, body: Value, cookie: Option<&str>) -> Reply {
+    h.send(portal_call(
+        "POST",
         &format!("/portal/transactions/{id}/decision"),
-        None,
+        cookie,
         Some(body),
     ))
     .await
@@ -139,14 +132,14 @@ async fn token(h: &Harness, client_id: &str, code: &str, verifier: &str) -> Repl
 }
 
 /// PAR, an approved decision, and its code.
-async fn approved_code(h: &Harness) -> (String, String, String, Value, String) {
+async fn approved_code(h: &Harness) -> (String, String, String, Value, String, String) {
     let (client_id, id) = push(h).await;
-    let (signer_id, account) =
-        signer_and_account(h, "0x1111111111111111111111111111111111111111").await;
+    let (signer_id, account, cookie) = signer_and_account(h, 0x11).await;
     let reply = decide(
         h,
         &id,
         json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
     )
     .await;
     let redirect = text(reply.ok(200), "redirect").to_owned();
@@ -155,7 +148,7 @@ async fn approved_code(h: &Harness) -> (String, String, String, Value, String) {
         .find(|(key, _)| key == "code")
         .unwrap()
         .1;
-    (client_id, id, signer_id, account, code)
+    (client_id, id, signer_id, account, code, cookie)
 }
 
 #[tokio::test]
@@ -170,8 +163,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
     assert_eq!(discovery["jwks_uri"], json!(format!("{ISSUER}/oauth/jwks")));
 
     let (client_id, id) = push(&h).await;
-    let (signer_id, account) =
-        signer_and_account(&h, "0x1111111111111111111111111111111111111111").await;
+    let (signer_id, account, cookie) = signer_and_account(&h, 0x11).await;
     let transaction = h
         .send(get(&format!("/portal/transactions/{id}"), None))
         .await
@@ -193,6 +185,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
         &h,
         &id,
         json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
     )
     .await
     .ok(200)
@@ -231,7 +224,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
     assert_eq!(claims["aud"], json!(client_id));
     assert_eq!(claims["azp"], json!(client_id));
     assert_eq!(claims["nonce"], json!(NONCE));
-    assert_eq!(claims["verified"], json!(false));
+    assert_eq!(claims["verified"], json!(true));
     assert_eq!(claims["iat"], json!(CLOCK_SECONDS));
     assert_eq!(claims["exp"], json!(CLOCK_SECONDS + 600));
     assert_eq!(claims["oaath_account"], account["profile"]);
@@ -259,7 +252,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
 #[tokio::test]
 async fn burns_the_code_on_a_wrong_verifier_and_refuses_a_second_exchange() {
     let h = harness();
-    let (client_id, _, _, _, code) = approved_code(&h).await;
+    let (client_id, _, _, _, code, _) = approved_code(&h).await;
     let wrong = format!("{}Z", &CODE_VERIFIER[..42]);
     oauth_error(
         &token(&h, &client_id, &code, &wrong).await,
@@ -274,7 +267,7 @@ async fn burns_the_code_on_a_wrong_verifier_and_refuses_a_second_exchange() {
         E::CodeAlreadyConsumed,
     );
 
-    let (client_id, _, _, _, code) = approved_code(&h).await;
+    let (client_id, _, _, _, code, _) = approved_code(&h).await;
     token(&h, &client_id, &code, CODE_VERIFIER).await.ok(200);
     oauth_error(
         &token(&h, &client_id, &code, CODE_VERIFIER).await,
@@ -293,7 +286,7 @@ async fn burns_the_code_on_a_wrong_verifier_and_refuses_a_second_exchange() {
 #[tokio::test]
 async fn recovers_the_same_code_after_a_lost_decision_reply() {
     let h = harness();
-    let (client_id, id, signer_id, account, code) = approved_code(&h).await;
+    let (client_id, id, signer_id, account, code, cookie) = approved_code(&h).await;
     let recovered = h
         .send(get(&format!("/portal/transactions/{id}/redirect"), None))
         .await
@@ -304,6 +297,7 @@ async fn recovers_the_same_code_after_a_lost_decision_reply() {
         &h,
         &id,
         json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
     )
     .await
     .failure(E::AlreadyDecided);
@@ -314,8 +308,7 @@ async fn recovers_the_same_code_after_a_lost_decision_reply() {
 async fn refuses_an_expired_transaction() {
     let h = harness();
     let (_, id) = push(&h).await;
-    let (signer_id, account) =
-        signer_and_account(&h, "0x1111111111111111111111111111111111111111").await;
+    let (signer_id, account, cookie) = signer_and_account(&h, 0x11).await;
     h.clock.advance(300_000);
     h.send(get(&format!("/portal/transactions/{id}"), None))
         .await
@@ -324,6 +317,7 @@ async fn refuses_an_expired_transaction() {
         &h,
         &id,
         json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
     )
     .await
     .failure(E::Expired);
@@ -336,12 +330,13 @@ async fn refuses_an_expired_transaction() {
 async fn refuses_a_signer_that_is_not_a_member_of_the_account() {
     let h = harness();
     let (_, id) = push(&h).await;
-    let (_, account) = signer_and_account(&h, "0x1111111111111111111111111111111111111111").await;
-    let (stranger, _) = signer_and_account(&h, "0x2222222222222222222222222222222222222222").await;
+    let (_, account, _) = signer_and_account(&h, 0x11).await;
+    let (stranger, _, cookie) = signer_and_account(&h, 0x22).await;
     decide(
         &h,
         &id,
         json!({ "outcome": "approved", "signer_id": stranger, "account_id": account["account_id"] }),
+        Some(&cookie),
     )
     .await
     .failure(E::Forbidden);
@@ -355,7 +350,7 @@ async fn refuses_a_signer_that_is_not_a_member_of_the_account() {
 async fn cancels_with_access_denied_and_no_code() {
     let h = harness();
     let (_, id) = push(&h).await;
-    let reply = decide(&h, &id, json!({ "outcome": "cancelled" })).await;
+    let reply = decide(&h, &id, json!({ "outcome": "cancelled" }), None).await;
     let redirect = text(reply.ok(200), "redirect").to_owned();
     assert_eq!(
         query(&redirect),
@@ -374,9 +369,9 @@ async fn cancels_with_access_denied_and_no_code() {
         json!({ "outcome": "approved", "signer_id": "a" }),
         json!({ "outcome": "approve" }),
     ] {
-        decide(&h, &id, body).await.failure(E::RequestInvalid);
+        decide(&h, &id, body, None).await.failure(E::RequestInvalid);
     }
-    decide(&h, &id, json!({ "outcome": "cancelled" }))
+    decide(&h, &id, json!({ "outcome": "cancelled" }), None)
         .await
         .failure(E::AlreadyDecided);
 }
@@ -513,6 +508,6 @@ async fn composes_the_production_relay_without_a_dev_config() {
         h.send(request).await.failure(E::Unauthenticated);
     }
     // The login flow needs no caller.
-    let (client_id, _, _, _, code) = approved_code(&h).await;
+    let (client_id, _, _, _, code, _) = approved_code(&h).await;
     token(&h, &client_id, &code, CODE_VERIFIER).await.ok(200);
 }

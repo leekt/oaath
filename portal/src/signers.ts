@@ -2,9 +2,9 @@
  * Signers this browser remembers, and the two ways to add one.
  *
  * Storage holds public identity only: no key, no secret, no session. Adding a
- * signer never signs anything: a passkey is created (its public key is read
- * from the attestation, not trusted as proof), and a wallet only reveals its
- * address through `eth_requestAccounts`.
+ * signer proves nothing by itself: a passkey is created (its public key is
+ * read from the attestation, not trusted as proof), and a wallet only reveals
+ * its address through `eth_requestAccounts`. Sign-in (`session.ts`) proves it.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -14,7 +14,6 @@ import {
   parseOwnerCredentialProfile,
 } from "@oaath/protocol";
 import { enrolWebAuthnCredential } from "@oaath/sdk/kernel";
-import { PortalApiError, portalApi } from "./api.js";
 
 export type SignerKind = "passkey" | "wallet" | "phone";
 
@@ -91,8 +90,6 @@ export interface NewSigner {
   readonly profile: OwnerCredentialProfile;
   readonly credentialId: string | null;
   readonly rdns: string | null;
-  /** Set when the relay already knows the signer; registration is then skipped. */
-  readonly signerId?: string;
 }
 
 /** Creates a passkey on this device and returns its public owner profile. */
@@ -117,60 +114,14 @@ export async function createPasskey(existing: readonly RememberedSigner[]): Prom
 }
 
 /**
- * Recognises a passkey this browser has not seen: the authenticator names one
- * of its discoverable credentials and the relay maps that ID to a signer.
- * Identification only: the assertion is discarded and nothing is verified,
- * because login carries no signature. `null` means OAAth does not know it.
- */
-export async function identifyPasskey(): Promise<NewSigner | null> {
-  if (typeof navigator.credentials?.get !== "function")
-    throw Object.assign(new Error("passkeys unavailable"), { code: "unsupported" });
-  let credential: Credential | null;
-  try {
-    credential = await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rpId: location.hostname,
-        allowCredentials: [],
-        userVerification: "preferred",
-        timeout: 60_000,
-      },
-    });
-  } catch (error) {
-    throw Object.assign(new Error("passkey prompt failed"), {
-      code:
-        error instanceof DOMException && error.name === "SecurityError"
-          ? "rp-mismatch"
-          : "cancelled",
-    });
-  }
-  if (!credential || !/^[A-Za-z0-9_-]{1,1366}$/u.test(credential.id))
-    throw Object.assign(new Error("no passkey"), { code: "cancelled" });
-  let identified: Awaited<ReturnType<typeof portalApi.signerByCredential>>;
-  try {
-    identified = await portalApi.signerByCredential(credential.id);
-  } catch (error) {
-    if (error instanceof PortalApiError && error.status === 404) return null;
-    throw error;
-  }
-  return {
-    kind: "passkey",
-    label: "Passkey",
-    profile: parseOwnerCredentialProfile(identified.profile),
-    credentialId: credential.id,
-    rdns: null,
-    signerId: identified.signer_id,
-  };
-}
-
-/**
- * EIP-1193 provider surface the portal uses: account access, and the one typed
- * data signature a grant's root approval needs.
+ * EIP-1193 provider surface the portal uses: account access, the sign-in
+ * message, and the one typed data signature a grant's root approval needs.
  */
 export interface Eip1193Provider {
   request(
     args:
       | { method: "eth_requestAccounts" }
+      | { method: "personal_sign"; params: [`0x${string}`, `0x${string}`] }
       | { method: "eth_signTypedData_v4"; params: [`0x${string}`, string] },
   ): Promise<unknown>;
 }
