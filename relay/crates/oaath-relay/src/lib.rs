@@ -1,18 +1,14 @@
-//! OAAth authorization relay: the Rust port of `packages/server`'s relay core.
+//! OAAth relay: the OAuth 2.0 / OpenID Connect issuer and the portal's API.
 //!
-//! The HTTP wire (paths, methods, statuses, JSON bodies, headers, and the
-//! `{"error":{"code":...}}` envelope) is identical to the TypeScript relay so
-//! the SDK, phone, and extension clients work unchanged.
+//! Failures leave as the `{"error":{"code":...}}` envelope on `/portal/*` and
+//! as RFC 6749 bodies with an `error_code` on `/oauth/*`.
 
 pub mod account_import;
 pub mod authentication;
 pub mod authority;
 pub mod authorization;
-pub mod bootstrap;
 pub mod chain;
 pub mod clock;
-pub mod config;
-pub mod display;
 pub mod error;
 pub mod grant;
 pub mod handler;

@@ -79,171 +79,6 @@ async fn shutdown(h: Harness) {
 }
 
 #[tokio::test]
-async fn keeps_the_distinct_approving_device_after_a_restart_and_routing_change() {
-    let Some(url) = database() else { return };
-    let fixture = Fixture::create(url).await;
-    let clock = TestClock::new();
-    let store: Arc<dyn RelayStore> = Arc::new(PostgresRelayStore::owning(fixture.pool().await));
-    let before = harness_on(store, clock.clone(), |options| {
-        options.owner_routing = TestOwnerRouting::new(Some(("team-phone", "subject-2")));
-    });
-    let request_id = before.create_request().await;
-    shutdown(before).await;
-
-    let after = fixture.process(clock).await;
-    let mut transaction = after.store.begin().await.unwrap();
-    let stored = transaction
-        .lock_authorization_request(&request_id)
-        .await
-        .unwrap()
-        .unwrap();
-    transaction.rollback().await;
-    assert_eq!(stored.subject, "subject-1");
-    assert_eq!(stored.owner_device_id, "team-phone");
-    assert_eq!(stored.owner_subject, "subject-2");
-    after
-        .fetch(&request_id, OWNER_TOKEN)
-        .await
-        .failure(E::NotFound);
-    let state = after
-        .fetch(&request_id, OTHER_OWNER_TOKEN)
-        .await
-        .ok(200)
-        .clone();
-    assert_eq!(state["decision"], Value::Null);
-    let decision = after
-        .decide(
-            &request_id,
-            OTHER_OWNER_TOKEN,
-            json!({ "outcome": "approved", "artifact": permission_artifact(&request_id) }),
-        )
-        .await
-        .ok(200)
-        .clone();
-    after.consume(text(&decision, "code")).await.ok(200);
-    shutdown(after).await;
-}
-
-#[tokio::test]
-async fn keeps_a_code_and_an_artifact_one_shot_across_a_restart() {
-    let Some(url) = database() else { return };
-    let fixture = Fixture::create(url).await;
-    let clock = TestClock::new();
-    let before = fixture.process(clock.clone()).await;
-    let request_id = before.create_request().await;
-    let decision = before.approve(&request_id).await;
-    before.consume(text(&decision, "code")).await.ok(200);
-    shutdown(before).await;
-
-    let after = fixture.process(clock.clone()).await;
-    after
-        .consume(text(&decision, "code"))
-        .await
-        .failure(E::CodeAlreadyConsumed);
-    let claimed = after
-        .claim(text(&decision, "artifactId"))
-        .await
-        .ok(200)
-        .clone();
-    assert_eq!(claimed["artifact"], json!(permission_artifact(&request_id)));
-    shutdown(after).await;
-
-    let last = fixture.process(clock).await;
-    last.claim(text(&decision, "artifactId"))
-        .await
-        .failure(E::ArtifactAlreadyClaimed);
-    shutdown(last).await;
-}
-
-#[tokio::test]
-async fn keeps_a_decision_terminal_and_invalidation_stable_across_a_restart() {
-    let Some(url) = database() else { return };
-    let fixture = Fixture::create(url).await;
-    let clock = TestClock::new();
-    let before = fixture.process(clock.clone()).await;
-    let request_id = before.create_request().await;
-    before.approve(&request_id).await;
-    let invalidation =
-        json!({ "grantId": "grant-1", "capabilityHash": format!("0x{}", "ab".repeat(32)) });
-    let evidence = before
-        .send(post(
-            "/invalidations",
-            Some(CLIENT_TOKEN),
-            Some(invalidation.clone()),
-        ))
-        .await
-        .ok(200)
-        .clone();
-    shutdown(before).await;
-
-    clock.advance(5_000);
-    let after = fixture.process(clock).await;
-    after
-        .decide(&request_id, OWNER_TOKEN, json!({ "outcome": "rejected" }))
-        .await
-        .failure(E::AlreadyDecided);
-    assert_eq!(
-        *after
-            .send(post(
-                "/invalidations",
-                Some(CLIENT_TOKEN),
-                Some(invalidation)
-            ))
-            .await
-            .ok(200),
-        evidence
-    );
-    shutdown(after).await;
-}
-
-#[tokio::test]
-async fn releases_exactly_one_consume_across_independent_connections() {
-    let Some(url) = database() else { return };
-    let fixture = Fixture::create(url).await;
-    let clock = TestClock::new();
-    let first = fixture.process(clock.clone()).await;
-    let second = fixture.process(clock.clone()).await;
-    let third = fixture.process(clock).await;
-    let request_id = first.create_request().await;
-    let decision = first.approve(&request_id).await;
-    let code = text(&decision, "code");
-    let (a, b, c) = tokio::join!(
-        first.consume(code),
-        second.consume(code),
-        third.consume(code)
-    );
-    let mut statuses = [a.status, b.status, c.status];
-    statuses.sort();
-    assert_eq!(statuses, [200, 409, 409]);
-    shutdown(first).await;
-    shutdown(second).await;
-    shutdown(third).await;
-}
-
-#[tokio::test]
-async fn reads_a_row_of_another_record_version_as_unreadable() {
-    let Some(url) = database() else { return };
-    let fixture = Fixture::create(url).await;
-    let clock = TestClock::new();
-    let h = fixture.process(clock).await;
-    let request_id = h.create_request().await;
-    let pool = fixture.pool().await;
-    sqlx::query(
-        "UPDATE oaath_relay_authorization_request_v2 SET record_version = $2 WHERE request_id = $1",
-    )
-    .bind(&request_id)
-    .bind("oaath.authorization-request-record/v1")
-    .execute(&pool)
-    .await
-    .unwrap();
-    pool.close().await;
-    h.fetch(&request_id, OWNER_TOKEN)
-        .await
-        .failure(E::RecordUnreadable);
-    shutdown(h).await;
-}
-
-#[tokio::test]
 async fn refuses_to_create_the_schema_over_existing_objects() {
     let Some(url) = database() else { return };
     let fixture = Fixture::create(url).await;
@@ -267,13 +102,9 @@ async fn projects_an_unreachable_database_to_store_unavailable() {
     let h = harness_on(store, TestClock::new(), |_| {});
     pool.close().await;
     h.send(post(
-        "/authorization/requests",
-        Some(CLIENT_TOKEN),
-        Some(json!({
-            "redirectUri": REDIRECT_URI,
-            "codeChallenge": code_challenge(),
-            "requestedScope": "{}",
-        })),
+        "/portal/signers",
+        None,
+        Some(json!({ "profile": ecdsa_profile() })),
     ))
     .await
     .failure(E::StoreUnavailable);
@@ -1302,5 +1133,106 @@ async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts
         .unwrap();
     transaction.rollback().await;
     assert_eq!(evidence.inventory_fingerprint, fingerprint);
+    shutdown(h).await;
+}
+
+/// A registered client's approved login code, decided by a fresh root.
+async fn login_code(h: &Harness) -> (String, String, String) {
+    let client = h
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Example dapp", "redirect_uris": [REDIRECT_URI] })),
+        ))
+        .await;
+    let client_id = text(client.ok(201), "client_id").to_owned();
+    let challenge = code_challenge();
+    let pushed = h
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+            ],
+        ))
+        .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let signer = register(h, ecdsa_profile()).await;
+    let account = create_account(h, &signer).await.ok(201).clone();
+    let cookie = h.session_for(&signer).await;
+    let decided = h
+        .send(portal_as(
+            "POST",
+            &format!("/portal/transactions/{id}/decision"),
+            Some(&cookie),
+            Some(json!({ "outcome": "approved", "signer_id": signer, "account_id": account["account_id"] })),
+        ))
+        .await;
+    (client_id, id, redirect_code(&decided))
+}
+
+fn exchange(client_id: &str, code: &str) -> axum::http::Request<axum::body::Body> {
+    oauth_form(
+        "/oauth/token",
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", client_id),
+            ("code", code),
+            ("code_verifier", CODE_VERIFIER),
+            ("redirect_uri", REDIRECT_URI),
+        ],
+    )
+}
+
+#[tokio::test]
+async fn releases_exactly_one_token_exchange_across_independent_connections() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let first = fixture.process(clock.clone()).await;
+    let second = fixture.process(clock.clone()).await;
+    let third = fixture.process(clock).await;
+    let (client_id, _, code) = login_code(&first).await;
+    let (a, b, c) = tokio::join!(
+        first.send(exchange(&client_id, &code)),
+        second.send(exchange(&client_id, &code)),
+        third.send(exchange(&client_id, &code)),
+    );
+    let mut statuses = [a.status, b.status, c.status];
+    statuses.sort();
+    assert_eq!(statuses, [200, 400, 400]);
+    shutdown(first).await;
+    shutdown(second).await;
+    shutdown(third).await;
+}
+
+#[tokio::test]
+async fn reads_a_row_of_another_record_version_as_unreadable() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let h = fixture.process(clock).await;
+    let (client_id, request_id, code) = login_code(&h).await;
+    let pool = fixture.pool().await;
+    sqlx::query(
+        "UPDATE oaath_relay_authorization_request_v2 SET record_version = $2 WHERE request_id = $1",
+    )
+    .bind(&request_id)
+    .bind("oaath.authorization-request-record/v1")
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    let refused = h.send(exchange(&client_id, &code)).await;
+    assert_eq!(refused.status, 500);
+    assert_eq!(refused.body["error_code"], json!("relay_record_unreadable"));
     shutdown(h).await;
 }

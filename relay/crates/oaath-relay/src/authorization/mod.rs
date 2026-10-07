@@ -1,9 +1,7 @@
-//! The authorization request state machine and its read projections.
+//! The authorization record state machine the OAuth and portal flows share:
+//! one-time codes and artifacts, capability invalidation, and PKCE.
 
 pub mod artifact;
 pub mod challenge;
 pub mod code;
-pub mod decision;
 pub mod invalidation;
-pub mod request;
-pub mod verify;

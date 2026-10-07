@@ -1,9 +1,8 @@
 /**
  * Login with OAAth end to end, with no stub on the authorization path:
  *
- * - the real Rust relay binary, configured as production runs it (no
- *   OAATH_CONFIG, kid from the key thumbprint) with the memory store and a
- *   throwaway ES256 key;
+ * - the real Rust relay binary, configured as production runs it (kid from
+ *   the key thumbprint) with the memory store and a throwaway ES256 key;
  * - the real portal Worker module, run in Node in front of the built SPA and
  *   bound to that relay (the Workers VPC binding becomes a loopback fetch);
  * - the examples/oauth-login dapp on another origin, whose page calls the
