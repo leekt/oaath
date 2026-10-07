@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
+  type DecisionRequest,
   type PortalAccount,
   PortalApiError,
   type PortalTransaction,
@@ -16,6 +17,7 @@ import {
   type AnnouncedWallet,
   connectWallet,
   createPasskey,
+  identifyPasskey,
   type NewSigner,
   type RememberedSigner,
   rememberedSigners,
@@ -41,6 +43,8 @@ function message(error: unknown): string {
       return "The passkey prompt was dismissed.";
     case "already-registered":
       return "This passkey is already on this device.";
+    case "passkey-unknown":
+      return "This passkey isn't registered with OAAth. Add it as a new signer instead.";
     case "unsupported":
     case "rp-mismatch":
       return "This browser cannot create a passkey here.";
@@ -92,13 +96,11 @@ function Authorize({ transactionId }: { transactionId: string }) {
       );
   }, [transactionId]);
 
-  async function finish(signer: RememberedSigner, account: PortalAccount) {
+  async function decide(decision: DecisionRequest) {
     setStep({ name: "returning" });
-    rememberSigner({ ...signer, lastUsedAt: Date.now() });
-    const body = { signer_id: signer.signer_id, account_id: account.account_id } as const;
     try {
       const { redirect } = await portalApi
-        .decide(transactionId, { ...body, outcome: "approved" })
+        .decide(transactionId, decision)
         // A lost reply or an already-recorded decision recovers the sealed redirect.
         .catch(() => portalApi.redirect(transactionId));
       location.assign(redirect);
@@ -106,6 +108,18 @@ function Authorize({ transactionId }: { transactionId: string }) {
       setFailure(message(error));
     }
   }
+
+  function finish(signer: RememberedSigner, account: PortalAccount) {
+    rememberSigner({ ...signer, lastUsedAt: Date.now() });
+    return decide({
+      outcome: "approved",
+      signer_id: signer.signer_id,
+      account_id: account.account_id,
+    });
+  }
+
+  // The dapp's redirect then carries error=access_denied.
+  const cancel = () => decide({ outcome: "cancelled" });
 
   if (failure)
     return (
@@ -139,13 +153,14 @@ function Authorize({ transactionId }: { transactionId: string }) {
         </p>
       </header>
       {step.name === "signer" && (
-        <SignerStep onChosen={(signer) => setStep({ name: "account", signer })} />
+        <SignerStep onChosen={(signer) => setStep({ name: "account", signer })} onCancel={cancel} />
       )}
       {step.name === "account" && (
         <AccountStep
           signer={step.signer}
           onBack={() => setStep({ name: "signer" })}
           onChosen={(account) => finish(step.signer, account)}
+          onCancel={cancel}
         />
       )}
       {step.name === "returning" && (
@@ -157,7 +172,13 @@ function Authorize({ transactionId }: { transactionId: string }) {
   );
 }
 
-function SignerStep({ onChosen }: { onChosen: (signer: RememberedSigner) => void }) {
+function SignerStep({
+  onChosen,
+  onCancel,
+}: {
+  onChosen: (signer: RememberedSigner) => void;
+  onCancel: () => void;
+}) {
   const [signers] = useState(rememberedSigners);
   const [adding, setAdding] = useState(false);
   const [wallets, setWallets] = useState<AnnouncedWallet[]>([]);
@@ -168,13 +189,16 @@ function SignerStep({ onChosen }: { onChosen: (signer: RememberedSigner) => void
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => (adding ? watchWallets(setWallets) : undefined), [adding]);
 
-  async function add(create: () => Promise<NewSigner>) {
+  async function add(create: () => Promise<NewSigner | null>) {
     setBusy(true);
     setError(null);
     try {
       const created = await create();
-      const { signer_id } = await portalApi.registerSigner({ profile: created.profile });
-      const signer = { ...created, signer_id, lastUsedAt: Date.now() };
+      if (!created) throw Object.assign(new Error("unknown passkey"), { code: "passkey-unknown" });
+      const { signerId, ...fields } = created;
+      const signer_id =
+        signerId ?? (await portalApi.registerSigner({ profile: created.profile })).signer_id;
+      const signer = { ...fields, signer_id, lastUsedAt: Date.now() };
       rememberSigner(signer);
       onChosen(signer);
     } catch (failure) {
@@ -219,6 +243,11 @@ function SignerStep({ onChosen }: { onChosen: (signer: RememberedSigner) => void
       >
         Add signer
       </button>
+      <p>
+        <button type="button" className="link" disabled={busy} onClick={() => add(identifyPasskey)}>
+          Use a passkey from another device or browser
+        </button>
+      </p>
       {adding && (
         <ul id="add-signer" className="choices options" aria-label="Signer options">
           <li>
@@ -273,18 +302,34 @@ function SignerStep({ onChosen }: { onChosen: (signer: RememberedSigner) => void
           {error}
         </p>
       )}
+      <CancelButton onCancel={onCancel} disabled={busy} />
     </section>
   );
 }
+
+function CancelButton({ onCancel, disabled }: { onCancel: () => void; disabled: boolean }) {
+  return (
+    <button type="button" className="cancel" disabled={disabled} onClick={onCancel}>
+      Cancel and return to the app
+    </button>
+  );
+}
+
+const ROLE_LABEL: Readonly<Record<PortalAccount["role"], string>> = {
+  root: "Owner",
+  permission: "Signer",
+};
 
 function AccountStep({
   signer,
   onBack,
   onChosen,
+  onCancel,
 }: {
   signer: RememberedSigner;
   onBack: () => void;
   onChosen: (account: PortalAccount) => void;
+  onCancel: () => void;
 }) {
   const [accounts, setAccounts] = useState<readonly PortalAccount[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -339,12 +384,13 @@ function AccountStep({
                 type="button"
                 className="choice"
                 disabled={busy}
+                aria-label={`Smart account ${account.address}, ${ROLE_LABEL[account.role]}`}
                 onClick={() => onChosen(account)}
               >
                 <span className="badge badge-account" aria-hidden="true" />
                 <span className="choice-text">
                   <span className="choice-title mono">{shortAddress(account.address)}</span>
-                  <span className="choice-detail">Smart account · {account.role}</span>
+                  <span className="choice-detail">Smart account · {ROLE_LABEL[account.role]}</span>
                 </span>
               </button>
             </li>
@@ -367,6 +413,7 @@ function AccountStep({
           {error}
         </p>
       )}
+      <CancelButton onCancel={onCancel} disabled={busy} />
     </section>
   );
 }

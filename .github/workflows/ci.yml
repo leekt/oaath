@@ -53,6 +53,10 @@ jobs:
         working-directory: relay
       - run: cargo test --workspace
         working-directory: relay
+      # Login with OAAth end to end: the relay binary built above, the real
+      # portal Worker module, the built SPA, and headless Chrome. Loopback only.
+      - run: bun run --filter @oaath/portal test:e2e
+        timeout-minutes: 5
 
   check:
     runs-on: ubuntu-latest
