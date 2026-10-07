@@ -52,7 +52,13 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("caller-reserved Kernel
         source: "operation_lane_permission_not_installed",
       });
       const install = await grant.sendCalls({ chain, calls });
-      expect((await install.wait({ attempts: 3 })).status).toBe("finalized");
+      const installed = await install.wait({ attempts: 3 });
+      expect({
+        status: installed.status,
+        state: installed.state,
+        reason: installed.reason,
+        failure: installed.failure?.code,
+      }).toMatchObject({ status: "finalized" });
 
       holdNext = true;
       const a = await grant.sendCalls({ chain, calls, lane: laneA });
