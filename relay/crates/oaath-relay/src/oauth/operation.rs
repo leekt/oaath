@@ -10,8 +10,9 @@
 //! resource occupied?   one decision per PAR
 //! retry safe?          decision: refused once decided, the redirect is
 //!                      recovered from the sealed code; token: never retried
-//! forbidden            an account outside the registry or not derived from
-//!                      its profile; a non-root approver; a signature that is
+//! forbidden            an account outside the registry, or whose profile,
+//!                      address, factory or EntryPoint the request contradicts;
+//!                      a non-root approver; a signature that is
 //!                      not the root's over the request's UserOperation hash;
 //!                      a second decision
 //! crash/reload         one transaction per transition; verification is pure
@@ -21,7 +22,6 @@
 //! and submits it through its own bundler.
 
 use oaath_protocol::capture::parse_json;
-use oaath_protocol::identity::KernelAccountProfile;
 use oaath_protocol::owner_operation::{
     OwnerOperationRequest, SignedOwnerOperation, parse_owner_operation_request,
     verify_owner_operation_binding,
@@ -105,7 +105,7 @@ pub async fn bound_account(
         .lock_account_by_address(&request.user_operation.sender)
         .await?
         .ok_or(INVALID)?;
-    if account.account_profile()? != KernelAccountProfile::Derived(request.account.clone())
+    if account.account_profile()? != request.account
         || verify_owner_operation_binding(request, account.owner_validator.as_deref()).is_err()
     {
         return Err(INVALID);

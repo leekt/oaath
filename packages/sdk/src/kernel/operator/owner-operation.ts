@@ -1,15 +1,18 @@
 /**
- * One exact owner operation for a factory-derived Kernel 0.4.0 account: the
- * request its root reviews and signs offline, and the verification a holder of
- * the signed artifact runs before submitting it. Nothing is read from a chain:
- * the caller states the nonce, gas, fees, paymaster, and whether the account is
- * deployed. Submission and observation stay with the caller.
+ * One exact owner operation for a factory-derived or an existing (imported)
+ * Kernel 0.4.0 account: the request its root reviews and signs offline, and
+ * the verification a holder of the signed artifact runs before submitting it.
+ * Nothing is read from a chain: the caller states the nonce, gas, fees,
+ * paymaster, and whether a derived account is deployed; an existing account is
+ * deployed and carries no factory. Submission and observation stay with the
+ * caller.
  *
  * @author taek <leekt216@gmail.com>
  */
 import {
   isKernelExistingAccountProfile,
   type KernelDerivedAccountProfile,
+  type KernelExistingAccountProfile,
   OAATH_OWNER_OPERATION_REQUEST_VERSION,
   OAATH_SIGNED_OWNER_OPERATION_VERSION,
   type OwnerCredentialProfile,
@@ -43,10 +46,16 @@ import type { KernelCall, KernelUserOperationGas, KeyProfile } from "../types.js
 import { ownerOperator } from "./owner.js";
 
 export interface PrepareOwnerOperationInput {
-  /** The factory-derived account profile; its owner credential is the signing root. */
-  readonly account: Readonly<KernelDerivedAccountProfile>;
+  /**
+   * The factory-derived or existing Kernel 0.4.0 account profile; its owner
+   * credential is the signing root.
+   */
+  readonly account: Readonly<KernelDerivedAccountProfile | KernelExistingAccountProfile>;
   readonly chainId: number;
-  /** `false` adds the Kernel factory deployment, so the first operation deploys the account. */
+  /**
+   * `false` adds the Kernel factory deployment, so the first operation deploys
+   * a derived account. An existing account is deployed: always `true`.
+   */
   readonly deployed: boolean;
   readonly calls: readonly Readonly<KernelCall>[];
   /** Root-validation uint16 lane and that lane's next EntryPoint sequence on this chain. */
@@ -82,6 +91,11 @@ function rootValidator(credential: Readonly<OwnerCredentialProfile>): `0x${strin
   return credential.kind === "ecdsa" ? ECDSA_VALIDATOR : null;
 }
 
+/** An existing account's own address. */
+function existingAddress(account: Readonly<OwnerOperationRequest["account"]>): `0x${string}` {
+  return (account as Readonly<KernelExistingAccountProfile>).address as `0x${string}`;
+}
+
 /** The single root package the account was derived from, for the request's chain. */
 function rootPackages(account: Readonly<KernelDerivedAccountProfile>, chainId: number) {
   const key = credentialKey({
@@ -108,13 +122,20 @@ export function prepareOwnerOperation(
   if (typeof input.chainId !== "number") return inputInvalid("owner operation chain is invalid");
   const nonce = exactInput(input.nonce, ["lane", "sequence"], "owner operation nonce", context);
   const account = parseKernelAccountProfile(input.account);
-  if (isKernelExistingAccountProfile(account) || account.factoryRoute !== "kernel_factory")
+  const existing = isKernelExistingAccountProfile(account);
+  if (existing ? account.kernelVersion !== "0.4.0" : account.factoryRoute !== "kernel_factory")
     return runtimeFail(
       "kernel_runtime_unsupported",
-      "owner operations require a factory-derived Kernel 0.4.0 account",
+      "owner operations require a factory-derived or an existing Kernel 0.4.0 account",
     );
-  const initialPackages = rootPackages(account, input.chainId);
-  const accountInput = { initialPackages, accountIndex: account.accountIndex };
+  if (existing && !input.deployed)
+    return inputInvalid("an existing account is deployed; nothing deploys it");
+  const accountInput = existing
+    ? null
+    : {
+        initialPackages: rootPackages(account, input.chainId),
+        accountIndex: account.accountIndex,
+      };
   const gas = exactInput(
     input.gas,
     [
@@ -136,7 +157,9 @@ export function prepareOwnerOperation(
     chainId: input.chainId,
     entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
     userOperation: {
-      sender: deriveKernelV4RootAccountAddress(accountInput),
+      sender: accountInput
+        ? deriveKernelV4RootAccountAddress(accountInput)
+        : existingAddress(account),
       nonce: encodeKernelV4Nonce({
         key: encodeKernelV4NonceKey({
           mode: "standard",
@@ -147,9 +170,10 @@ export function prepareOwnerOperation(
       }),
       callData: encodeKernelV4Execution({ calls }),
       ...gas,
-      factory: input.deployed
-        ? null
-        : { address: KERNEL_V4_FACTORY_V09, data: encodeKernelV4FactoryDeploy(accountInput) },
+      factory:
+        input.deployed || !accountInput
+          ? null
+          : { address: KERNEL_V4_FACTORY_V09, data: encodeKernelV4FactoryDeploy(accountInput) },
       paymaster: input.paymaster ?? null,
     },
   });
@@ -214,8 +238,9 @@ async function rootSigned(
 
 /**
  * Verifies a signed owner operation before submission: the protocol shape and
- * hash, the account's offline derivation, its factory deployment and the
- * reviewed EntryPoint, then the root's signature over the hash. Any mismatch
+ * hash, the account's address (its offline derivation and factory deployment,
+ * or an existing profile's own address with no factory) and the reviewed
+ * EntryPoint, then the root's signature over the hash. Any mismatch
  * fails with `kernel_runtime_binding_mismatch` or
  * `kernel_runtime_signature_invalid`; nothing is submitted.
  */
@@ -225,18 +250,24 @@ export async function verifyOwnerOperation(
 ): Promise<Readonly<VerifiedOwnerOperation>> {
   const signed = parseSignedOwnerOperation(value);
   const { request } = signed;
-  const accountInput = {
-    initialPackages: rootPackages(request.account, request.chainId),
-    accountIndex: request.account.accountIndex,
-  };
+  const { account } = request;
   const factory = request.userOperation.factory;
-  if (
-    request.entryPoint !== KERNEL_V4_ENTRY_POINT_V09 ||
-    request.userOperation.sender !== deriveKernelV4RootAccountAddress(accountInput) ||
-    (factory !== null &&
-      (factory.address !== KERNEL_V4_FACTORY_V09 ||
-        factory.data !== encodeKernelV4FactoryDeploy(accountInput)))
-  )
+  let bound: boolean;
+  if (isKernelExistingAccountProfile(account)) {
+    // An existing account executes at its own address and is never deployed here.
+    bound = request.userOperation.sender === account.address && factory === null;
+  } else {
+    const accountInput = {
+      initialPackages: rootPackages(account, request.chainId),
+      accountIndex: account.accountIndex,
+    };
+    bound =
+      request.userOperation.sender === deriveKernelV4RootAccountAddress(accountInput) &&
+      (factory === null ||
+        (factory.address === KERNEL_V4_FACTORY_V09 &&
+          factory.data === encodeKernelV4FactoryDeploy(accountInput)));
+  }
+  if (request.entryPoint !== KERNEL_V4_ENTRY_POINT_V09 || !bound)
     return runtimeFail(
       "kernel_runtime_binding_mismatch",
       "owner operation is not bound to its derived account",
