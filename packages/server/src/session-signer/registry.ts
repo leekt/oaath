@@ -14,8 +14,10 @@ export type SessionSignerErrorCode =
   | "session_signer_registry_unavailable";
 
 export class SessionSignerError extends Error {
-  constructor(readonly code: SessionSignerErrorCode) {
+  readonly code: SessionSignerErrorCode;
+  constructor(code: SessionSignerErrorCode) {
     super(code);
+    this.code = code;
     this.name = "SessionSignerError";
   }
 }
