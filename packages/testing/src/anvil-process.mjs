@@ -57,6 +57,31 @@ async function reservePort() {
 }
 
 /**
+ * Pins the running node's clock at least one whole second ahead of wall time.
+ *
+ * Grants take `validAfter` from wall time, so a block stamped earlier than the
+ * second it was requested in fails validation (AA22) and its handleOps
+ * reverts. A genesis `--timestamp` chosen before spawning Anvil leaves only
+ * `1 - frac(now)` seconds of margin, which any startup delay consumes; once
+ * consumed, every block lags wall time for the chain's life and a fast first
+ * send fails. Setting the clock on the ready node removes startup from the
+ * margin: the offset is whole seconds and the call itself is local.
+ */
+async function keepChainTimeAhead(url) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "anvil_setTime",
+      params: [Math.floor(Date.now() / 1000) + 2],
+    }),
+  });
+  if ((await response.json()).error) throw new Error("local_rpc_failed");
+}
+
+/**
  * Starts one loopback Anvil bound to `chainId`, or throws if Anvil is absent.
  *
  * The hardfork is a parameter because one module's dependency is a chain
@@ -87,13 +112,6 @@ export async function startAnvil(chainId, hardfork = "prague") {
       // instead of from an assumption this example made up.
       "--slots-in-an-epoch",
       "1",
-      // Anvil derives its clock offset from a genesis timestamp it reads before
-      // its clock starts; a second boundary between the two reads leaves every
-      // block a second behind wall time, so a wall-clock validAfter (AA22) is
-      // not yet due. An explicit genesis one second ahead keeps chain time at or
-      // ahead of wall time unless startup itself takes over a second.
-      "--timestamp",
-      String(Math.floor(Date.now() / 1000) + 1),
       "--silent",
     ],
     { stdio: "ignore" },
@@ -119,6 +137,7 @@ export async function startAnvil(chainId, hardfork = "prague") {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
+  await keepChainTimeAhead(url);
   return {
     chainId,
     url,
