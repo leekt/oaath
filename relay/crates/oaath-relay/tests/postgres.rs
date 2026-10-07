@@ -248,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v9 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v10 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v9");
+    assert_eq!(version, "oaath.relay-postgres-schema/v10");
     pool.close().await;
 }
 
@@ -877,4 +877,73 @@ async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
         401
     );
     shutdown(last).await;
+}
+
+async fn issue_challenge(h: &Harness, signer: &str) -> Value {
+    h.send(portal_request(
+        "POST",
+        "/portal/sessions/challenge",
+        Some(json!({ "signer_id": signer })),
+    ))
+    .await
+    .ok(200)
+    .clone()
+}
+
+async fn prove(h: &Harness, root: &support::grant::Root, signer: &str, issued: &Value) -> Reply {
+    h.send(portal_request(
+        "POST",
+        "/portal/sessions",
+        Some(json!({
+            "signer_id": signer,
+            "nonce": issued["nonce"],
+            "signature": root.prove(issued),
+        })),
+    ))
+    .await
+}
+
+/// The signer of the session `cookie` names, as the session owner reads it.
+async fn session_of(h: &Harness, cookie: &str) -> Result<String, E> {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("cookie", cookie.parse().unwrap());
+    oaath_relay::session::session_signer(h.store.as_ref(), h.clock.as_ref(), &headers).await
+}
+
+#[tokio::test]
+async fn keeps_sessions_and_refuses_consumed_nonces_across_restarts() {
+    use support::grant::{Root, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x5a; 32]).unwrap());
+
+    let first = fixture.process(clock.clone()).await;
+    let (signer, cookie) = sign_in(&first, &root).await;
+    let used = issue_challenge(&first, &signer).await;
+    prove(&first, &root, &signer, &used).await.ok(200);
+    let unused = issue_challenge(&first, &signer).await;
+    shutdown(first).await;
+
+    // A new process keeps the session and the nonce's consumption.
+    let second = fixture.process(clock.clone()).await;
+    assert_eq!(session_of(&second, &cookie).await, Ok(signer.clone()));
+    prove(&second, &root, &signer, &used)
+        .await
+        .failure(E::Unauthenticated);
+    let fresh = prove(&second, &root, &signer, &unused).await;
+    fresh.ok(200);
+    let fresh = cookie_of(&fresh);
+    let mut out = portal_request("DELETE", "/portal/sessions", None);
+    out.headers_mut().insert("cookie", cookie.parse().unwrap());
+    second.send(out).await.ok(200);
+    shutdown(second).await;
+
+    // Sign-out and expiry are durable too.
+    let third = fixture.process(clock.clone()).await;
+    assert_eq!(session_of(&third, &cookie).await, Err(E::Unauthenticated));
+    assert_eq!(session_of(&third, &fresh).await, Ok(signer));
+    clock.advance(oaath_relay::session::SESSION_TTL_MS);
+    assert_eq!(session_of(&third, &fresh).await, Err(E::Unauthenticated));
+    shutdown(third).await;
 }

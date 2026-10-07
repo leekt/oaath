@@ -24,8 +24,9 @@ use crate::records::{
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
+use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v9";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v10";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -34,13 +35,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v9 (
+        "CREATE TABLE oaath_relay_schema_v10 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v9 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v10 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -196,6 +197,25 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
     revoked_at bigint CHECK (revoked_at >= created_at AND revoked_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_portal_challenge_v1 (
+    nonce text PRIMARY KEY,
+    record_version text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
+    consumed_at bigint CHECK (consumed_at >= created_at AND consumed_at <= {max})
+  )"
+        ),
+        format!(
+            "CREATE TABLE oaath_portal_session_v1 (
+    token_hash text PRIMARY KEY,
+    record_version text NOT NULL,
+    signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
+    signed_out_at bigint CHECK (signed_out_at >= created_at AND signed_out_at <= {max})
   )"
         ),
     ]
@@ -462,6 +482,33 @@ fn access_token_record(row: &PgRow) -> RelayResult<AccessTokenRecord> {
             ("createdAt", "created_at", true),
             ("expiresAt", "expires_at", true),
             ("revokedAt", "revoked_at", true),
+        ],
+    )?)
+}
+
+fn challenge_record(row: &PgRow) -> RelayResult<PortalChallengeRecord> {
+    PortalChallengeRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("nonce", "nonce", false),
+            ("createdAt", "created_at", true),
+            ("expiresAt", "expires_at", true),
+            ("consumedAt", "consumed_at", true),
+        ],
+    )?)
+}
+
+fn session_record(row: &PgRow) -> RelayResult<PortalSessionRecord> {
+    PortalSessionRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("tokenHash", "token_hash", false),
+            ("signerId", "signer_id", false),
+            ("createdAt", "created_at", true),
+            ("expiresAt", "expires_at", true),
+            ("signedOutAt", "signed_out_at", true),
         ],
     )?)
 }
@@ -995,6 +1042,105 @@ impl RelayTransaction for PostgresTransaction {
             )
             .bind(token_hash)
             .bind(bigint(revoked_at)),
+        )
+        .await
+    }
+
+    async fn lock_portal_challenge(
+        &mut self,
+        nonce: &str,
+    ) -> RelayResult<Option<PortalChallengeRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT nonce, record_version, created_at, expires_at, consumed_at \
+                 FROM oaath_portal_challenge_v1 WHERE nonce = $1 FOR UPDATE",
+            )
+            .bind(nonce),
+            challenge_record,
+        )
+        .await
+    }
+
+    async fn insert_portal_challenge(
+        &mut self,
+        record: &PortalChallengeRecord,
+    ) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_portal_challenge_v1 (\
+                 nonce, record_version, created_at, expires_at, consumed_at) \
+                 VALUES ($1, $2, $3, $4, NULL) ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.nonce)
+            .bind(record.version)
+            .bind(bigint(record.created_at))
+            .bind(bigint(record.expires_at)),
+        )
+        .await
+    }
+
+    async fn consume_portal_challenge(
+        &mut self,
+        nonce: &str,
+        consumed_at: u64,
+    ) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query(
+                "UPDATE oaath_portal_challenge_v1 SET consumed_at = $2 \
+                 WHERE nonce = $1 AND consumed_at IS NULL",
+            )
+            .bind(nonce)
+            .bind(bigint(consumed_at)),
+        )
+        .await
+    }
+
+    async fn lock_portal_session(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<PortalSessionRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT token_hash, record_version, signer_id, created_at, expires_at, \
+                 signed_out_at FROM oaath_portal_session_v1 WHERE token_hash = $1 FOR UPDATE",
+            )
+            .bind(token_hash),
+            session_record,
+        )
+        .await
+    }
+
+    async fn insert_portal_session(&mut self, record: &PortalSessionRecord) -> RelayResult<bool> {
+        // An unknown signer inserts nothing instead of aborting.
+        self.applied(
+            sqlx::query(
+                "INSERT INTO oaath_portal_session_v1 (\
+                 token_hash, record_version, signer_id, created_at, expires_at, signed_out_at) \
+                 SELECT $1, $2, $3, $4, $5, NULL \
+                 WHERE EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $3) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&record.token_hash)
+            .bind(record.version)
+            .bind(&record.signer_id)
+            .bind(bigint(record.created_at))
+            .bind(bigint(record.expires_at)),
+        )
+        .await
+    }
+
+    async fn end_portal_session(
+        &mut self,
+        token_hash: &str,
+        signed_out_at: u64,
+    ) -> RelayResult<bool> {
+        self.applied(
+            sqlx::query(
+                "UPDATE oaath_portal_session_v1 SET signed_out_at = $2 \
+                 WHERE token_hash = $1 AND signed_out_at IS NULL",
+            )
+            .bind(token_hash)
+            .bind(bigint(signed_out_at)),
         )
         .await
     }

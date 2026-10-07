@@ -55,7 +55,7 @@ use crate::store::{RelayStore, RelayTransaction, settle};
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
 
 /// The relying party a WebAuthn root asserts to: the issuer itself.
-fn relying_party(issuer: &str) -> RelayResult<(String, String)> {
+pub(crate) fn relying_party(issuer: &str) -> RelayResult<(String, String)> {
     let url = Url::parse(issuer).map_err(|_| RelayErrorCode::Internal)?;
     let host = url.host_str().ok_or(RelayErrorCode::Internal)?.to_owned();
     Ok((host, url.origin().ascii_serialization()))

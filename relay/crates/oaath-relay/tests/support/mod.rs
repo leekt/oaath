@@ -531,6 +531,28 @@ pub fn get(path: &str, token: Option<&str>) -> Request<Body> {
     request("GET", path, token, None)
 }
 
+/// A portal request carrying the session `cookie` (a `Cookie` header value).
+pub fn portal_call(
+    method: &str,
+    path: &str,
+    cookie: Option<&str>,
+    body: Option<Value>,
+) -> Request<Body> {
+    let mut request = request(method, path, None, body);
+    if let Some(cookie) = cookie {
+        request
+            .headers_mut()
+            .insert("cookie", cookie.parse().unwrap());
+    }
+    request
+}
+
+/// The `Cookie` header value a browser sends back for a `Set-Cookie` reply.
+pub fn cookie_of(reply: &Reply) -> String {
+    let set_cookie = reply.headers["set-cookie"].to_str().unwrap();
+    set_cookie.split(';').next().unwrap().to_owned()
+}
+
 impl Harness {
     pub async fn send(&self, request: Request<Body>) -> Reply {
         let response = self.relay.handle(request).await;

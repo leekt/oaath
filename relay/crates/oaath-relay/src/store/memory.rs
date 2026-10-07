@@ -23,6 +23,7 @@ use crate::records::{
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipRole, SignerRecord};
+use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[derive(Clone, Default)]
 struct Tables {
@@ -37,6 +38,8 @@ struct Tables {
     oauth_clients: HashMap<String, Value>,
     pars: HashMap<String, Value>,
     access_tokens: HashMap<String, Value>,
+    portal_challenges: HashMap<String, Value>,
+    portal_sessions: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -474,6 +477,86 @@ impl RelayTransaction for MemoryTransaction {
         record.revoked_at = Some(revoked_at);
         self.staged
             .access_tokens
+            .insert(token_hash.to_owned(), to_value(&record));
+        Ok(true)
+    }
+
+    async fn lock_portal_challenge(
+        &mut self,
+        nonce: &str,
+    ) -> RelayResult<Option<PortalChallengeRecord>> {
+        read(
+            &self.staged.portal_challenges,
+            nonce,
+            PortalChallengeRecord::parse,
+        )
+    }
+
+    async fn insert_portal_challenge(
+        &mut self,
+        record: &PortalChallengeRecord,
+    ) -> RelayResult<bool> {
+        Ok(insert(
+            &mut self.staged.portal_challenges,
+            &record.nonce,
+            to_value(record),
+        ))
+    }
+
+    async fn consume_portal_challenge(
+        &mut self,
+        nonce: &str,
+        consumed_at: u64,
+    ) -> RelayResult<bool> {
+        let Some(mut record) = self.lock_portal_challenge(nonce).await? else {
+            return Ok(false);
+        };
+        if record.consumed_at.is_some() {
+            return Ok(false);
+        }
+        record.consumed_at = Some(consumed_at);
+        self.staged
+            .portal_challenges
+            .insert(nonce.to_owned(), to_value(&record));
+        Ok(true)
+    }
+
+    async fn lock_portal_session(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<PortalSessionRecord>> {
+        read(
+            &self.staged.portal_sessions,
+            token_hash,
+            PortalSessionRecord::parse,
+        )
+    }
+
+    async fn insert_portal_session(&mut self, record: &PortalSessionRecord) -> RelayResult<bool> {
+        if !self.staged.signers.contains_key(&record.signer_id) {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.portal_sessions,
+            &record.token_hash,
+            to_value(record),
+        ))
+    }
+
+    async fn end_portal_session(
+        &mut self,
+        token_hash: &str,
+        signed_out_at: u64,
+    ) -> RelayResult<bool> {
+        let Some(mut record) = self.lock_portal_session(token_hash).await? else {
+            return Ok(false);
+        };
+        if record.signed_out_at.is_some() {
+            return Ok(false);
+        }
+        record.signed_out_at = Some(signed_out_at);
+        self.staged
+            .portal_sessions
             .insert(token_hash.to_owned(), to_value(&record));
         Ok(true)
     }

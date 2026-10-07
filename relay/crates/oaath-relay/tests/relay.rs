@@ -17,7 +17,7 @@ use oaath_relay::bootstrap::{
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::{RelayStore, RelayTransaction};
-use oaath_relay::{Relay, oauth, records, registry};
+use oaath_relay::{Relay, oauth, records, registry, session};
 use serde_json::{Value, json};
 use support::*;
 
@@ -106,6 +106,12 @@ ambiguous_transaction! {
     lock_access_token(hash: &str) -> RelayResult<Option<oauth::records::AccessTokenRecord>>;
     insert_access_token(r: &oauth::records::AccessTokenRecord) -> RelayResult<bool>;
     revoke_access_token(hash: &str, at: u64) -> RelayResult<bool>;
+    lock_portal_challenge(nonce: &str) -> RelayResult<Option<session::PortalChallengeRecord>>;
+    insert_portal_challenge(r: &session::PortalChallengeRecord) -> RelayResult<bool>;
+    consume_portal_challenge(nonce: &str, at: u64) -> RelayResult<bool>;
+    lock_portal_session(hash: &str) -> RelayResult<Option<session::PortalSessionRecord>>;
+    insert_portal_session(r: &session::PortalSessionRecord) -> RelayResult<bool>;
+    end_portal_session(hash: &str, at: u64) -> RelayResult<bool>;
 }
 
 #[async_trait]

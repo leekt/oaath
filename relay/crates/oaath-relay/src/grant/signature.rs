@@ -4,13 +4,14 @@
 //!
 //! - ECDSA: 65-byte `r || s || v` recovering to the owner over the digest, or
 //!   over its EIP-191 message hash (Kernel's ECDSA validator accepts both);
+//!   a portal sign-in message is recovered over its EIP-191 hash only;
 //! - P-256: compact low-S `r || s` over the digest;
 //! - WebAuthn: the reviewed validator's ABI assertion envelope, verified like
 //!   `packages/sdk/src/kernel/key/webauthn.ts` `verify`.
 //!
 //! Anything malformed or unsupported is `false`.
 
-use alloy_primitives::{B256, Bytes, U256, keccak256};
+use alloy_primitives::{B256, Bytes, U256, eip191_hash_message, keccak256};
 use alloy_sol_types::SolValue;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -52,6 +53,18 @@ pub fn verify_root_signature(
 }
 
 fn verify_ecdsa(owner: &str, digest: B256, signature: &[u8]) -> bool {
+    let eip191 = keccak256([b"\x19Ethereum Signed Message:\n32".as_slice(), &digest.0].concat());
+    recovers_owner(owner, &[digest, eip191], signature)
+}
+
+/// An EIP-191 `personal_sign` signature by `owner` over the exact `message`.
+pub fn verify_ecdsa_message(owner: &str, message: &[u8], signature: &[u8]) -> bool {
+    recovers_owner(owner, &[eip191_hash_message(message)], signature)
+}
+
+/// A low-S 65-byte `r || s || v` signature over one of `hashes` that recovers
+/// to `owner`.
+fn recovers_owner(owner: &str, hashes: &[B256], signature: &[u8]) -> bool {
     let Ok(bytes) = <[u8; 65]>::try_from(signature) else {
         return false;
     };
@@ -70,9 +83,8 @@ fn verify_ecdsa(owner: &str, digest: B256, signature: &[u8]) -> bool {
     let Some(recovery) = k256::ecdsa::RecoveryId::from_byte(recovery) else {
         return false;
     };
-    let eip191 = keccak256([b"\x19Ethereum Signed Message:\n32".as_slice(), &digest.0].concat());
     let owner = hex_bytes(owner);
-    [digest, eip191].iter().any(|hash| {
+    hashes.iter().any(|hash| {
         k256::ecdsa::VerifyingKey::recover_from_prehash(&hash.0, &sig, recovery).is_ok_and(|key| {
             let point = key.to_encoded_point(false);
             keccak256(&point.as_bytes()[1..])[12..] == owner[..]

@@ -21,7 +21,7 @@
 //! additionally guards on the terminal column being null and reports whether
 //! *this* call performed the transition. Revocation and owner-inbox reads are
 //! later-stage additions to this contract. The signer/account registry state
-//! model lives in `registry.rs`.
+//! model lives in `registry.rs`, and the portal session model in `session.rs`.
 
 pub mod memory;
 pub mod postgres;
@@ -35,6 +35,7 @@ use crate::records::{
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
+use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[async_trait]
 pub trait RelayTransaction: Send {
@@ -150,6 +151,35 @@ pub trait RelayTransaction: Send {
     /// `true` only when this call set `revoked_at`.
     async fn revoke_access_token(&mut self, token_hash: &str, revoked_at: u64)
     -> RelayResult<bool>;
+
+    async fn lock_portal_challenge(
+        &mut self,
+        nonce: &str,
+    ) -> RelayResult<Option<PortalChallengeRecord>>;
+    /// `false` when the nonce already exists.
+    async fn insert_portal_challenge(
+        &mut self,
+        record: &PortalChallengeRecord,
+    ) -> RelayResult<bool>;
+    /// `true` only when this call set `consumed_at`.
+    async fn consume_portal_challenge(
+        &mut self,
+        nonce: &str,
+        consumed_at: u64,
+    ) -> RelayResult<bool>;
+
+    async fn lock_portal_session(
+        &mut self,
+        token_hash: &str,
+    ) -> RelayResult<Option<PortalSessionRecord>>;
+    /// `false` when the hash exists or the signer is unknown.
+    async fn insert_portal_session(&mut self, record: &PortalSessionRecord) -> RelayResult<bool>;
+    /// `true` only when this call set `signed_out_at`.
+    async fn end_portal_session(
+        &mut self,
+        token_hash: &str,
+        signed_out_at: u64,
+    ) -> RelayResult<bool>;
 
     /// `relay_state_ambiguous` when the outcome cannot be proven.
     async fn commit(self: Box<Self>) -> RelayResult<()>;
